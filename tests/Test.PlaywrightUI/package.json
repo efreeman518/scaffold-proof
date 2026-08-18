@@ -2,7 +2,7 @@
   "private": true,
   "devDependencies": {
     "@playwright/test": "latest",
-    "@types/node": "^22"
+    "@types/node": "^26"
   },
   "scripts": {
     "test": "npx playwright test",
