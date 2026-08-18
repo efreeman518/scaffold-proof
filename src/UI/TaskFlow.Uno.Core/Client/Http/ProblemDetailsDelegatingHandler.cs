@@ -1,4 +1,6 @@
+using System.Text.Json;
 using TaskFlow.Uno.Core.Business.Notifications;
+using TaskFlow.Uno.Core.Client;
 
 namespace TaskFlow.Uno.Core.Client.Http;
 
@@ -22,13 +24,19 @@ public sealed class ProblemDetailsDelegatingHandler(INotificationService notific
         ProblemDetailsPayload? problem;
         try
         {
-            problem = await response.Content
-                .ReadFromJsonAsync<ProblemDetailsPayload>(cancellationToken)
+            problem = await TaskFlowApiJson
+                .ReadAsync<ProblemDetailsPayload>(response.Content, cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch
+        catch (JsonException)
         {
             // Malformed problem+json - fall back to the raw response, caller's
+            // EnsureSuccessStatusCode will surface a plain HttpRequestException.
+            return response;
+        }
+        catch (NotSupportedException)
+        {
+            // Unsupported problem+json - fall back to the raw response, caller's
             // EnsureSuccessStatusCode will surface a plain HttpRequestException.
             return response;
         }

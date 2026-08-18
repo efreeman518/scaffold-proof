@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Hosting.StaticWebAssets;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Net.Http.Headers;
+using TaskFlow.Uno.WasmHost;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,7 +10,8 @@ var builder = WebApplication.CreateBuilder(args);
 // when configured) and health alongside the other .NET hosts. No-ops cleanly without Azure config.
 builder.AddServiceDefaults();
 
-var distPath = builder.Configuration["UnoWasm:DistPath"];
+var configuredDistPath = builder.Configuration["UnoWasm:DistPath"];
+var distPath = configuredDistPath;
 
 if (string.IsNullOrWhiteSpace(distPath))
 {
@@ -26,7 +28,8 @@ if (string.IsNullOrWhiteSpace(distPath))
         "TaskFlow.Uno",
         "bin",
         configuration,
-        "net10.0-browserwasm"));
+        "net10.0-browserwasm",
+        configuration == "Release" ? "publish" : string.Empty));
 }
 else
 {
@@ -45,26 +48,79 @@ var app = builder.Build();
 app.MapDefaultEndpoints();
 
 var indexPath = Path.Combine(distPath, "wwwroot", "index.html");
-if (!File.Exists(indexPath))
+var requirePublishedAssets = (builder.Configuration.GetValue<bool?>("UnoWasm:RequirePublishedAssets")
+    ?? app.Environment.IsProduction())
+    || !string.IsNullOrWhiteSpace(configuredDistPath);
+string webRootPath;
+if (requirePublishedAssets)
 {
-    app.Logger.LogWarning("Uno WASM assets were not found at {DistPath}. Build TaskFlow.Uno for net10.0-browserwasm first.", distPath);
+    webRootPath = PublishedAssetContract.Validate(distPath);
+}
+else
+{
+    if (!File.Exists(indexPath))
+    {
+        app.Logger.LogWarning("Uno WASM assets were not found at {DistPath}. Build TaskFlow.Uno for net10.0-browserwasm first.", distPath);
+    }
+
+    Directory.CreateDirectory(distPath);
+    webRootPath = Path.Combine(distPath, "wwwroot");
+    Directory.CreateDirectory(webRootPath);
 }
 
-Directory.CreateDirectory(distPath);
-var webRootPath = Path.Combine(distPath, "wwwroot");
-Directory.CreateDirectory(webRootPath);
 var fileProvider = new PhysicalFileProvider(webRootPath);
 
 var contentTypeProvider = new FileExtensionContentTypeProvider();
 contentTypeProvider.Mappings[".dat"] = "application/octet-stream";
 contentTypeProvider.Mappings[".pdb"] = "application/octet-stream";
+PublishedAssetContract.AddPrecompressedContentTypes(contentTypeProvider);
 
-var cacheHeaders = new Action<StaticFileResponseContext>(context =>
+const string originalAssetPathKey = "TaskFlow.Uno.OriginalAssetPath";
+var responseHeaders = new Action<StaticFileResponseContext>(context =>
 {
-    context.Context.Response.Headers[HeaderNames.CacheControl] = "no-cache, no-store";
+    var requestPath = context.Context.Items.TryGetValue(originalAssetPathKey, out var originalPath)
+        ? (string)originalPath!
+        : context.Context.Request.Path.Value ?? string.Empty;
+    context.Context.Response.Headers[HeaderNames.CacheControl] = PublishedAssetContract.CacheControlFor(requestPath);
+
+    if (context.Context.Items.TryGetValue(originalAssetPathKey, out _)
+        && contentTypeProvider.TryGetContentType(requestPath, out var contentType))
+    {
+        context.Context.Response.ContentType = contentType;
+    }
 });
 
 app.MapGet("/health", () => Results.Ok(new { status = "Healthy", distPath }));
+app.Use(async (context, next) =>
+{
+    if (!HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method))
+    {
+        await next();
+        return;
+    }
+
+    var originalPath = context.Request.Path.Value ?? string.Empty;
+    var relativePath = originalPath.TrimStart('/');
+    var brotliExists = fileProvider.GetFileInfo(relativePath + ".br").Exists;
+    var gzipExists = fileProvider.GetFileInfo(relativePath + ".gz").Exists;
+    if (brotliExists || gzipExists)
+    {
+        context.Response.Headers.Append(HeaderNames.Vary, HeaderNames.AcceptEncoding);
+    }
+
+    var encoding = PublishedAssetContract.SelectEncoding(
+        context.Request.Headers.AcceptEncoding.ToString(),
+        brotliExists,
+        gzipExists);
+    if (encoding is not null)
+    {
+        context.Items[originalAssetPathKey] = originalPath;
+        context.Request.Path = originalPath + (encoding == "br" ? ".br" : ".gz");
+        context.Response.Headers.ContentEncoding = encoding;
+    }
+
+    await next();
+});
 app.UseDefaultFiles(new DefaultFilesOptions
 {
     FileProvider = fileProvider
@@ -73,13 +129,23 @@ app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = fileProvider,
     ContentTypeProvider = contentTypeProvider,
-    OnPrepareResponse = cacheHeaders
+    OnPrepareResponse = responseHeaders
+});
+app.Use(async (context, next) =>
+{
+    if (PublishedAssetContract.LooksLikeAssetRequest(context.Request.Path.Value ?? string.Empty))
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+
+    await next();
 });
 app.MapFallbackToFile("index.html", new StaticFileOptions
 {
     FileProvider = fileProvider,
     ContentTypeProvider = contentTypeProvider,
-    OnPrepareResponse = cacheHeaders
+    OnPrepareResponse = responseHeaders
 });
 
 app.Run();

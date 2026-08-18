@@ -32,11 +32,11 @@ public class CommentRepositoryQuery(TaskFlowDbContextQuery db)
         // ordering
         if (request.Sorts?.Any() ?? false)
         {
-            q = q.OrderBy(request.Sorts);
+            q = ((IOrderedQueryable<Comment>)q.OrderBy(request.Sorts)).ThenBy(e => e.Id);
         }
         else
         {
-            q = q.OrderBy(e => e.Body);
+            q = q.OrderBy(e => e.Body).ThenBy(e => e.Id);
         }
 
         // filtering

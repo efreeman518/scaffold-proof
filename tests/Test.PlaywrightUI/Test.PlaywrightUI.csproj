@@ -24,6 +24,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Test.Support\Test.Support.csproj" />
     <ProjectReference Include="..\..\src\Host\Aspire\AppHost\AppHost.csproj" AdditionalProperties="SkipUnoWasmBuild=true" />
+    <ProjectReference Include="..\..\src\Host\TaskFlow.Uno.WasmHost\TaskFlow.Uno.WasmHost.csproj" AdditionalProperties="SkipUnoWasmBuild=true" />
   </ItemGroup>
 
 </Project>

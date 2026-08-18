@@ -1,287 +1,504 @@
 name: Deploy TaskFlow
 
 on:
-  workflow_call:      # Called by CI on main after tests pass
-  workflow_dispatch:  # Manual trigger
+  workflow_call:
+    inputs:
+      operation:
+        type: string
+        default: deploy
+      commit_sha:
+        type: string
+        required: false
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Release operation
+        type: choice
+        options: [deploy, rollback]
+        default: deploy
+      commit_sha:
+        description: Full green commit SHA. Required for deploy; ignored for rollback.
+        type: string
+        required: false
+
+concurrency:
+  group: taskflow-deploy-dev
+  cancel-in-progress: false
 
 permissions:
-  id-token: write   # OIDC token for Azure login
-  contents: read     # Checkout code
-  packages: write    # Push to ghcr.io
+  actions: read
+  checks: read
+  contents: read
+  id-token: write
+  packages: write
 
 env:
   REGISTRY: ghcr.io
   RESOURCE_PREFIX: taskflow
   ENVIRONMENT_NAME: dev
+  AZURE_LOCATION: eastus2
 
 jobs:
-  build-and-push:
-    name: Build & Push Container Images
+  validate-entry:
     runs-on: ubuntu-latest
     outputs:
-      image-tag: ${{ steps.meta.outputs.version }}
+      operation: ${{ steps.resolve.outputs.operation }}
+      sha: ${{ steps.resolve.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Resolve operation and exact commit
+        id: resolve
+        env:
+          OPERATION: ${{ inputs.operation }}
+          REQUESTED_SHA: ${{ inputs.commit_sha }}
+        run: |
+          set -euo pipefail
+          operation="${OPERATION:-deploy}"
+          [[ "$operation" == "deploy" || "$operation" == "rollback" ]] || {
+            echo "::error::operation must be deploy or rollback"; exit 1;
+          }
+          if [[ "$operation" == "rollback" ]]; then
+            echo "operation=rollback" >> "$GITHUB_OUTPUT"
+            echo "sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          requested="$REQUESTED_SHA"
+          [[ -n "$requested" || "$GITHUB_EVENT_NAME" != "workflow_call" ]] || requested="$GITHUB_SHA"
+          [[ -n "$requested" ]] || { echo "::error::commit_sha is required for a manual deploy"; exit 1; }
+          git fetch origin main
+          sha=$(git rev-parse "${requested}^{commit}")
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Invalid commit SHA"; exit 1; }
+          git merge-base --is-ancestor "$sha" origin/main || {
+            echo "::error::$sha is not reachable from origin/main"; exit 1;
+          }
+          echo "operation=deploy" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: Require successful CI for exact deploy SHA
+        if: steps.resolve.outputs.operation == 'deploy'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ steps.resolve.outputs.sha }}
+        run: |
+          checks=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/commits/${TARGET_SHA}/check-runs" -f per_page=100)
+          count=$(jq '[.check_runs[] | select(.name == "build-and-test" and .conclusion == "success")] | length' <<< "$checks")
+          [[ "$count" -gt 0 ]] || { echo "::error::$TARGET_SHA has no successful build-and-test check"; exit 1; }
+          blockers=$(jq '[.check_runs[] | select(.status == "completed" and (.conclusion | IN("failure", "cancelled", "timed_out", "action_required")))] | length' <<< "$checks")
+          [[ "$blockers" -eq 0 ]] || { echo "::error::$TARGET_SHA has failed required checks"; exit 1; }
 
-      - name: Set image tag
-        id: meta
-        run: echo "version=$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_OUTPUT
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+  build-release:
+    if: needs.validate-entry.outputs.operation == 'deploy'
+    needs: validate-entry
+    runs-on: ubuntu-latest
+    env:
+      NuGetPackageSourceCredentials_efreeman518-github: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
+    outputs:
+      gateway-image: ${{ steps.images.outputs.gateway }}
+      api-image: ${{ steps.images.outputs.api }}
+      scheduler-image: ${{ steps.images.outputs.scheduler }}
+      migrator-image: ${{ steps.images.outputs.migrator }}
+      blazor-image: ${{ steps.images.outputs.blazor }}
+      functions-id: ${{ steps.functions.outputs.artifact-id }}
+      functions-digest: ${{ steps.functions.outputs.artifact-digest }}
+      uno-id: ${{ steps.uno.outputs.artifact-id }}
+      uno-digest: ${{ steps.uno.outputs.artifact-digest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-entry.outputs.sha }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet workload install wasm-tools
+      - name: Require private NuGet feed credential
+        env:
+          NUGET_PAT: ${{ secrets.NUGET_PAT }}
+        run: |
+          [[ -n "$NUGET_PAT" ]] || { echo "::error::NUGET_PAT is required"; exit 1; }
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build & push Gateway
-        uses: docker/build-push-action@v6
+      - name: Build each image once and record registry digest
+        id: images
+        env:
+          TARGET_SHA: ${{ needs.validate-entry.outputs.sha }}
+        run: |
+          set -euo pipefail
+          build_image() {
+            local key="$1" image="$2" dockerfile="$3"
+            local tag="${REGISTRY}/${GITHUB_REPOSITORY_OWNER}/${image}:${TARGET_SHA}"
+            docker buildx build . --file "$dockerfile" --push --tag "$tag" \
+              --secret id=nuget_credentials,env=NuGetPackageSourceCredentials_efreeman518-github
+            digest=$(docker buildx imagetools inspect "$tag" --format '{{json .Manifest.Digest}}' | tr -d '"')
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::Missing digest for $image"; exit 1; }
+            echo "$key=${REGISTRY}/${GITHUB_REPOSITORY_OWNER}/${image}@${digest}" >> "$GITHUB_OUTPUT"
+          }
+          build_image gateway taskflow-gateway ./src/Host/TaskFlow.Gateway/Dockerfile
+          build_image api taskflow-api ./src/Host/TaskFlow.Api/Dockerfile
+          build_image scheduler taskflow-scheduler ./src/Host/TaskFlow.Scheduler/Dockerfile
+          build_image migrator taskflow-db-migrator ./src/Host/TaskFlow.DatabaseMigrator/Dockerfile
+          build_image blazor taskflow-blazor ./src/UI/TaskFlow.Blazor/Dockerfile
+      - name: Publish Functions once
+        run: dotnet publish src/Host/TaskFlow.Functions/TaskFlow.Functions.csproj -c Release -o ./release/functions
+      - name: Publish Uno WASM Release once
+        run: >
+          dotnet publish src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj
+          -f net10.0-browserwasm -p:TargetFrameworkOverride=net10.0-browserwasm
+          -p:EnableUnoWasm=true -c Release
+          -p:PublishDir=${{ github.workspace }}/release/uno -m:1
+      - name: Verify Uno publish contract
+        shell: pwsh
+        run: |
+          if (-not (Test-Path './release/uno/wwwroot/index.html')) { throw 'Missing Uno index.html.' }
+          $apps = @(Get-ChildItem './release/uno/wwwroot/_framework' -File | Where-Object Name -Match '^TaskFlow\.Uno\.[A-Za-z0-9]+\.wasm$')
+          if ($apps.Count -ne 1) { throw "Expected one current Uno app assembly; found $($apps.Count)." }
+      - id: functions
+        uses: actions/upload-artifact@v4
         with:
-          context: ./src
-          file: ./src/Host/TaskFlow.Gateway/Dockerfile
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/taskflow-gateway:${{ steps.meta.outputs.version }}
-          build-args: NUGET_TOKEN=${{ secrets.NUGET_PAT }}
-
-      - name: Build & push API
-        uses: docker/build-push-action@v6
+          name: taskflow-functions-${{ needs.validate-entry.outputs.sha }}
+          path: ./release/functions
+          if-no-files-found: error
+          retention-days: 90
+      - id: uno
+        uses: actions/upload-artifact@v4
         with:
-          context: ./src
-          file: ./src/Host/TaskFlow.Api/Dockerfile
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/taskflow-api:${{ steps.meta.outputs.version }}
-          build-args: NUGET_TOKEN=${{ secrets.NUGET_PAT }}
+          name: taskflow-uno-${{ needs.validate-entry.outputs.sha }}
+          path: ./release/uno/wwwroot
+          if-no-files-found: error
+          retention-days: 90
 
-      - name: Build & push Scheduler
-        uses: docker/build-push-action@v6
-        with:
-          context: ./src
-          file: ./src/Host/TaskFlow.Scheduler/Dockerfile
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/taskflow-scheduler:${{ steps.meta.outputs.version }}
-          build-args: NUGET_TOKEN=${{ secrets.NUGET_PAT }}
-
-      - name: Build & push Database Migrator
-        uses: docker/build-push-action@v6
-        with:
-          context: ./src
-          file: ./src/Host/TaskFlow.DatabaseMigrator/Dockerfile
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/taskflow-db-migrator:${{ steps.meta.outputs.version }}
-          build-args: NUGET_TOKEN=${{ secrets.NUGET_PAT }}
-
-      - name: Build & push Blazor
-        uses: docker/build-push-action@v6
-        with:
-          context: ./src
-          file: ./src/UI/TaskFlow.Blazor/Dockerfile
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/taskflow-blazor:${{ steps.meta.outputs.version }}
-          build-args: NUGET_TOKEN=${{ secrets.NUGET_PAT }}
-
-  deploy-infra:
-    name: Deploy Infrastructure
+  deploy-infrastructure:
+    if: needs.validate-entry.outputs.operation == 'deploy'
+    needs: [validate-entry, build-release]
     runs-on: ubuntu-latest
-    needs: build-and-push
     environment: dev
     outputs:
       resource-group: ${{ steps.deploy.outputs.resourceGroupName }}
-      function-app-name: ${{ steps.deploy.outputs.functionAppName }}
+      gateway-fqdn: ${{ steps.deploy.outputs.gatewayFqdn }}
+      function-name: ${{ steps.deploy.outputs.functionAppName }}
       swa-name: ${{ steps.deploy.outputs.staticWebAppName }}
-      migration-job-name: ${{ steps.deploy.outputs.migrationJobName }}
+      migration-job: ${{ steps.deploy.outputs.migrationJobName }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Azure Login (OIDC)
-        uses: azure/login@v2
+        with:
+          ref: ${{ needs.validate-entry.outputs.sha }}
+      - uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Deploy Bicep
-        id: deploy
+      - name: Keep current runtime images during provisioning
+        id: stable
+        run: |
+          set -euo pipefail
+          rg="${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-rg"
+          inert="mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
+          current() { az containerapp show -g "$rg" -n "$1" --query 'properties.template.containers[0].image' -o tsv 2>/dev/null || printf '%s' "$inert"; }
+          echo "gateway=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-gateway")" >> "$GITHUB_OUTPUT"
+          echo "api=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-api")" >> "$GITHUB_OUTPUT"
+          echo "scheduler=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-scheduler")" >> "$GITHUB_OUTPUT"
+          echo "blazor=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-blazor")" >> "$GITHUB_OUTPUT"
+      - id: deploy
         uses: azure/arm-deploy@v2
         with:
           scope: subscription
-          region: eastus2
+          region: ${{ env.AZURE_LOCATION }}
           template: ./infra/main.bicep
           parameters: >-
-            resourcePrefix=${{ env.RESOURCE_PREFIX }}
-            environmentName=${{ env.ENVIRONMENT_NAME }}
-            location=eastus2
-            sqlAdminPrincipalId=${{ secrets.SQL_ADMIN_PRINCIPAL_ID }}
-            sqlAdminPrincipalName=${{ secrets.SQL_ADMIN_PRINCIPAL_NAME }}
-            sqlAdminPrincipalType=User
-            gatewayImage=${{ env.REGISTRY }}/${{ github.repository_owner }}/taskflow-gateway:${{ needs.build-and-push.outputs.image-tag }}
-            apiImage=${{ env.REGISTRY }}/${{ github.repository_owner }}/taskflow-api:${{ needs.build-and-push.outputs.image-tag }}
-            schedulerImage=${{ env.REGISTRY }}/${{ github.repository_owner }}/taskflow-scheduler:${{ needs.build-and-push.outputs.image-tag }}
-            migratorImage=${{ env.REGISTRY }}/${{ github.repository_owner }}/taskflow-db-migrator:${{ needs.build-and-push.outputs.image-tag }}
-            blazorImage=${{ env.REGISTRY }}/${{ github.repository_owner }}/taskflow-blazor:${{ needs.build-and-push.outputs.image-tag }}
+            resourcePrefix=${{ env.RESOURCE_PREFIX }} environmentName=${{ env.ENVIRONMENT_NAME }} location=${{ env.AZURE_LOCATION }}
+            sqlAdminPrincipalId=${{ secrets.SQL_ADMIN_PRINCIPAL_ID }} sqlAdminPrincipalName=${{ secrets.SQL_ADMIN_PRINCIPAL_NAME }} sqlAdminPrincipalType=User
+            gatewayImage=${{ steps.stable.outputs.gateway }} apiImage=${{ steps.stable.outputs.api }} schedulerImage=${{ steps.stable.outputs.scheduler }}
+            migratorImage=${{ needs.build-release.outputs.migrator-image }} blazorImage=${{ steps.stable.outputs.blazor }}
 
   run-migrations:
-    name: Run Database Migrations
+    if: needs.validate-entry.outputs.operation == 'deploy'
+    needs: [validate-entry, build-release, deploy-infrastructure]
     runs-on: ubuntu-latest
-    needs: [build-and-push, deploy-infra]
     environment: dev
     steps:
-      - name: Azure Login (OIDC)
-        uses: azure/login@v2
+      - uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Start migrator job
+      - name: Require successful migration execution
+        env:
+          JOB: ${{ needs.deploy-infrastructure.outputs.migration-job }}
+          RG: ${{ needs.deploy-infrastructure.outputs.resource-group }}
         run: |
-          execution=$(az containerapp job start \
-            --name ${{ needs.deploy-infra.outputs.migration-job-name }} \
-            --resource-group ${{ needs.deploy-infra.outputs.resource-group }} \
-            --query name -o tsv)
-
-          echo "Started migration execution: $execution"
-
+          execution=$(az containerapp job start -n "$JOB" -g "$RG" --query name -o tsv)
           for attempt in {1..180}; do
-            status=$(az containerapp job execution show \
-              --name ${{ needs.deploy-infra.outputs.migration-job-name }} \
-              --resource-group ${{ needs.deploy-infra.outputs.resource-group }} \
-              --job-execution-name "$execution" \
-              --query properties.status -o tsv)
-
-            if [ "$status" = "Succeeded" ]; then
-              echo "Migration execution succeeded"
-              exit 0
-            fi
-
-            if [ "$status" = "Failed" ] || [ "$status" = "Canceled" ]; then
-              echo "Migration execution ended with status: $status"
-              exit 1
-            fi
-
-            echo "Migration execution status: $status"
+            status=$(az containerapp job execution show -n "$JOB" -g "$RG" --job-execution-name "$execution" --query properties.status -o tsv)
+            [[ "$status" == "Succeeded" ]] && exit 0
+            [[ "$status" != "Failed" && "$status" != "Canceled" ]] || { echo "::error::Migration $status"; exit 1; }
             sleep 10
           done
+          echo "::error::Migration timed out"; exit 1
 
-          echo "Migration execution timed out"
-          exit 1
-
-  deploy-functions:
-    name: Deploy Functions
+  activate-release:
+    if: needs.validate-entry.outputs.operation == 'deploy'
+    needs: [validate-entry, build-release, deploy-infrastructure, run-migrations]
     runs-on: ubuntu-latest
-    needs: [build-and-push, deploy-infra, run-migrations]
     environment: dev
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
-
-      - name: Configure private NuGet feed
-        env:
-          NUGET_PAT: ${{ secrets.NUGET_PAT }}
-        if: env.NUGET_PAT != ''
-        run: |
-          dotnet nuget update source efreeman518-github \
-            --configfile src/nuget.config \
-            --username github-actions \
-            --password "$NUGET_PAT" \
-            --store-password-in-clear-text
-
-      - name: Azure Login (OIDC)
-        uses: azure/login@v2
+          ref: ${{ needs.validate-entry.outputs.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: taskflow-functions-${{ needs.validate-entry.outputs.sha }}
+          path: ./release/functions
+      - uses: actions/download-artifact@v4
+        with:
+          name: taskflow-uno-${{ needs.validate-entry.outputs.sha }}
+          path: ./release/uno
+      - uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Build Functions
-        run: |
-          dotnet publish src/Host/TaskFlow.Functions/TaskFlow.Functions.csproj \
-            --configuration Release \
-            --output ./functions-output
-
-      - name: Deploy to Azure Functions
-        uses: azure/functions-action@v1
-        with:
-          app-name: ${{ needs.deploy-infra.outputs.function-app-name }}
-          package: ./functions-output
-
-  deploy-uno:
-    name: Deploy Uno WASM (Static Web App)
-    runs-on: ubuntu-latest
-    needs: [deploy-infra, run-migrations]
-    environment: dev
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Install wasm-tools workload
-        run: dotnet workload install wasm-tools
-
-      - name: Configure private NuGet feed
+      - name: Activate digest-pinned revisions after migrations
         env:
-          NUGET_PAT: ${{ secrets.NUGET_PAT }}
-        if: env.NUGET_PAT != ''
+          RG: ${{ needs.deploy-infrastructure.outputs.resource-group }}
+          API: ${{ needs.build-release.outputs.api-image }}
+          SCHEDULER: ${{ needs.build-release.outputs.scheduler-image }}
+          BLAZOR: ${{ needs.build-release.outputs.blazor-image }}
+          GATEWAY: ${{ needs.build-release.outputs.gateway-image }}
         run: |
-          dotnet nuget update source efreeman518-github \
-            --configfile src/nuget.config \
-            --username github-actions \
-            --password "$NUGET_PAT" \
-            --store-password-in-clear-text
-
-      - name: Build Uno WASM
-        run: |
-          dotnet publish src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj \
-            -f net10.0-browserwasm \
-            -c Release \
-            -o ./uno-output
-
-      - name: Azure Login (OIDC)
-        uses: azure/login@v2
+          set -euo pipefail
+          wait_healthy() {
+            for attempt in {1..60}; do
+              rev=$(az containerapp show -n "$1" -g "$RG" --query properties.latestRevisionName -o tsv)
+              state=$(az containerapp revision show -n "$1" -g "$RG" --revision "$rev" --query properties.healthState -o tsv)
+              [[ "$state" == "Healthy" ]] && return 0
+              sleep 10
+            done
+            echo "::error::$1 revision did not become healthy"; return 1
+          }
+          for pair in "api|$API" "scheduler|$SCHEDULER" "blazor|$BLAZOR" "gateway|$GATEWAY"; do
+            app="${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-${pair%%|*}"; image="${pair#*|}"
+            az containerapp update -n "$app" -g "$RG" --image "$image" --output none
+            wait_healthy "$app"
+          done
+      - uses: azure/functions-action@v1
         with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Get SWA deployment token
-        id: swa-token
+          app-name: ${{ needs.deploy-infrastructure.outputs.function-name }}
+          package: ./release/functions
+      - name: Resolve Static Web App token
+        id: swa
+        env:
+          SWA: ${{ needs.deploy-infrastructure.outputs.swa-name }}
+          RG: ${{ needs.deploy-infrastructure.outputs.resource-group }}
         run: |
-          TOKEN=$(az staticwebapp secrets list \
-            --name ${{ needs.deploy-infra.outputs.swa-name }} \
-            --resource-group ${{ needs.deploy-infra.outputs.resource-group }} \
-            --query "properties.apiKey" -o tsv)
-          echo "::add-mask::$TOKEN"
-          echo "token=$TOKEN" >> $GITHUB_OUTPUT
-
-      - name: Deploy to Static Web App
-        uses: Azure/static-web-apps-deploy@v1
+          token=$(az staticwebapp secrets list -n "$SWA" -g "$RG" --query properties.apiKey -o tsv)
+          echo "::add-mask::$token"; echo "token=$token" >> "$GITHUB_OUTPUT"
+      - uses: Azure/static-web-apps-deploy@v1
         with:
-          azure_static_web_apps_api_token: ${{ steps.swa-token.outputs.token }}
+          azure_static_web_apps_api_token: ${{ steps.swa.outputs.token }}
           action: upload
-          app_location: ./uno-output/wwwroot
+          app_location: ./release/uno
           skip_app_build: true
           skip_api_build: true
+      - name: Verify public health and functional CRUD
+        shell: pwsh
+        run: ./infra/scripts/Invoke-DeploymentSmoke.ps1 -GatewayUrl 'https://${{ needs.deploy-infrastructure.outputs.gateway-fqdn }}' -CommitSha '${{ needs.validate-entry.outputs.sha }}'
 
-  summary:
-    name: Deployment Summary
+  record-release:
+    if: needs.validate-entry.outputs.operation == 'deploy'
+    needs: [validate-entry, build-release, activate-release]
     runs-on: ubuntu-latest
-    needs: [deploy-infra, run-migrations, deploy-functions, deploy-uno]
-    if: always()
     steps:
-      - name: Print summary
+      - uses: actions/checkout@v4
+      - name: Create validated current release manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.validate-entry.outputs.sha }}
+          GATEWAY: ${{ needs.build-release.outputs.gateway-image }}
+          API: ${{ needs.build-release.outputs.api-image }}
+          SCHEDULER: ${{ needs.build-release.outputs.scheduler-image }}
+          MIGRATOR: ${{ needs.build-release.outputs.migrator-image }}
+          BLAZOR: ${{ needs.build-release.outputs.blazor-image }}
+          FUNCTIONS_ID: ${{ needs.build-release.outputs.functions-id }}
+          FUNCTIONS_DIGEST: ${{ needs.build-release.outputs.functions-digest }}
+          UNO_ID: ${{ needs.build-release.outputs.uno-id }}
+          UNO_DIGEST: ${{ needs.build-release.outputs.uno-digest }}
         run: |
-          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Infrastructure | ${{ needs.deploy-infra.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Database migrations | ${{ needs.run-migrations.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Functions | ${{ needs.deploy-functions.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Uno WASM (SWA) | ${{ needs.deploy-uno.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Resource Group: \`${{ needs.deploy-infra.outputs.resource-group }}\`" >> $GITHUB_STEP_SUMMARY
+          previous=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/artifacts" -f name=taskflow-release-manifest-dev -f per_page=100 \
+            --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .id // empty')
+          jq -n --arg sha "$SHA" --arg gateway "$GATEWAY" --arg api "$API" --arg scheduler "$SCHEDULER" --arg migrator "$MIGRATOR" --arg blazor "$BLAZOR" \
+            --argjson fid "$FUNCTIONS_ID" --arg fd "$FUNCTIONS_DIGEST" --argjson uid "$UNO_ID" --arg ud "$UNO_DIGEST" --argjson previous "${previous:-null}" \
+            '{schemaVersion:1,operation:"deploy",commitSha:$sha,images:{gateway:$gateway,api:$api,scheduler:$scheduler,migrator:$migrator,blazor:$blazor},artifacts:{functions:{id:$fid,digest:$fd},uno:{id:$uid,digest:$ud}},previousManifestArtifactId:$previous}' > release-manifest.json
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path release-manifest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: taskflow-release-manifest-dev
+          path: release-manifest.json
+          if-no-files-found: error
+          retention-days: 90
+
+  resolve-rollback:
+    if: needs.validate-entry.outputs.operation == 'rollback'
+    needs: validate-entry
+    runs-on: ubuntu-latest
+    outputs:
+      current-id: ${{ steps.release.outputs.current-id }}
+      sha: ${{ steps.release.outputs.sha }}
+      gateway: ${{ steps.release.outputs.gateway }}
+      api: ${{ steps.release.outputs.api }}
+      scheduler: ${{ steps.release.outputs.scheduler }}
+      migrator: ${{ steps.release.outputs.migrator }}
+      blazor: ${{ steps.release.outputs.blazor }}
+      functions-id: ${{ steps.release.outputs.functions-id }}
+      functions-digest: ${{ steps.release.outputs.functions-digest }}
+      uno-id: ${{ steps.release.outputs.uno-id }}
+      uno-digest: ${{ steps.release.outputs.uno-digest }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: release
+        name: Resolve authoritative previous manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          current=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/artifacts" -f name=taskflow-release-manifest-dev -f per_page=100 \
+            --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .id // empty')
+          [[ -n "$current" ]] || { echo "::error::No current release manifest"; exit 1; }
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${current}/zip" > current.zip
+          unzip -q current.zip -d current
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path current/release-manifest.json
+          previous=$(jq -r '.previousManifestArtifactId // empty' current/release-manifest.json)
+          [[ -n "$previous" ]] || { echo "::error::No previous release manifest"; exit 1; }
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${previous}/zip" > previous.zip
+          unzip -q previous.zip -d previous
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path previous/release-manifest.json
+          m=previous/release-manifest.json
+          echo "current-id=$current" >> "$GITHUB_OUTPUT"
+          echo "sha=$(jq -r .commitSha "$m")" >> "$GITHUB_OUTPUT"
+          for key in gateway api scheduler migrator blazor; do echo "$key=$(jq -r ".images.$key" "$m")" >> "$GITHUB_OUTPUT"; done
+          echo "functions-id=$(jq -r .artifacts.functions.id "$m")" >> "$GITHUB_OUTPUT"
+          echo "functions-digest=$(jq -r .artifacts.functions.digest "$m")" >> "$GITHUB_OUTPUT"
+          echo "uno-id=$(jq -r .artifacts.uno.id "$m")" >> "$GITHUB_OUTPUT"
+          echo "uno-digest=$(jq -r .artifacts.uno.digest "$m")" >> "$GITHUB_OUTPUT"
+
+  rollback:
+    if: needs.validate-entry.outputs.operation == 'rollback'
+    needs: [validate-entry, resolve-rollback]
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Resolve Azure resources and download immutable artifacts
+        id: resources
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FUNCTIONS_ID: ${{ needs.resolve-rollback.outputs.functions-id }}
+          UNO_ID: ${{ needs.resolve-rollback.outputs.uno-id }}
+        run: |
+          set -euo pipefail
+          rg="${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-rg"
+          function_prefix="${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-func-"
+          mapfile -t functions < <(az functionapp list -g "$rg" \
+            --query "[?starts_with(name, '${function_prefix}')].name" -o tsv)
+          [[ "${#functions[@]}" -eq 1 ]] || {
+            echo "::error::Expected exactly one Function App matching ${function_prefix}*, found ${#functions[@]}"
+            exit 1
+          }
+          function="${functions[0]}"
+          expected_swa="${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-uno"
+          swa=$(az staticwebapp show -g "$rg" -n "$expected_swa" --query name -o tsv)
+          fqdn=$(az containerapp show -n "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-gateway" -g "$rg" --query properties.configuration.ingress.fqdn -o tsv)
+          [[ "$swa" == "$expected_swa" && -n "$fqdn" ]]
+          echo "rg=$rg" >> "$GITHUB_OUTPUT"; echo "function=$function" >> "$GITHUB_OUTPUT"; echo "swa=$swa" >> "$GITHUB_OUTPUT"; echo "fqdn=$fqdn" >> "$GITHUB_OUTPUT"
+          mkdir -p rollback/functions rollback/uno
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${FUNCTIONS_ID}/zip" > functions.zip
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${UNO_ID}/zip" > uno.zip
+          echo "${{ needs.resolve-rollback.outputs.functions-digest }}  functions.zip" | sha256sum --check --status
+          echo "${{ needs.resolve-rollback.outputs.uno-digest }}  uno.zip" | sha256sum --check --status
+          unzip -q functions.zip -d rollback/functions; unzip -q uno.zip -d rollback/uno
+      - name: Activate recorded images without rebuilding or migrating
+        env:
+          RG: ${{ steps.resources.outputs.rg }}
+          API: ${{ needs.resolve-rollback.outputs.api }}
+          SCHEDULER: ${{ needs.resolve-rollback.outputs.scheduler }}
+          BLAZOR: ${{ needs.resolve-rollback.outputs.blazor }}
+          GATEWAY: ${{ needs.resolve-rollback.outputs.gateway }}
+          MIGRATOR: ${{ needs.resolve-rollback.outputs.migrator }}
+        run: |
+          set -euo pipefail
+          # Application-only rollback. Database migrations remain forward-applied and must be backward compatible.
+          wait_healthy() {
+            for attempt in {1..60}; do
+              rev=$(az containerapp show -n "$1" -g "$RG" --query properties.latestRevisionName -o tsv)
+              state=$(az containerapp revision show -n "$1" -g "$RG" --revision "$rev" --query properties.healthState -o tsv)
+              [[ "$state" == "Healthy" ]] && return 0
+              sleep 10
+            done
+            echo "::error::$1 rollback revision did not become healthy"; return 1
+          }
+          for pair in "api|$API" "scheduler|$SCHEDULER" "blazor|$BLAZOR" "gateway|$GATEWAY"; do
+            app="${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-${pair%%|*}"; image="${pair#*|}"
+            az containerapp update -n "$app" -g "$RG" --image "$image" --output none
+            wait_healthy "$app"
+          done
+          az containerapp job update -n "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-dbmigrator" -g "$RG" --image "$MIGRATOR" --output none
+      - uses: azure/functions-action@v1
+        with:
+          app-name: ${{ steps.resources.outputs.function }}
+          package: ./rollback/functions
+      - id: swa
+        env:
+          SWA: ${{ steps.resources.outputs.swa }}
+          RG: ${{ steps.resources.outputs.rg }}
+        run: |
+          token=$(az staticwebapp secrets list -n "$SWA" -g "$RG" --query properties.apiKey -o tsv)
+          echo "::add-mask::$token"; echo "token=$token" >> "$GITHUB_OUTPUT"
+      - uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ steps.swa.outputs.token }}
+          action: upload
+          app_location: ./rollback/uno
+          skip_app_build: true
+          skip_api_build: true
+      - name: Verify rollback health and functional CRUD
+        shell: pwsh
+        run: ./infra/scripts/Invoke-DeploymentSmoke.ps1 -GatewayUrl 'https://${{ steps.resources.outputs.fqdn }}' -CommitSha '${{ needs.resolve-rollback.outputs.sha }}'
+
+  record-rollback:
+    if: needs.validate-entry.outputs.operation == 'rollback'
+    needs: [validate-entry, resolve-rollback, rollback]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record rollback as current manifest
+        env:
+          SHA: ${{ needs.resolve-rollback.outputs.sha }}
+          GATEWAY: ${{ needs.resolve-rollback.outputs.gateway }}
+          API: ${{ needs.resolve-rollback.outputs.api }}
+          SCHEDULER: ${{ needs.resolve-rollback.outputs.scheduler }}
+          MIGRATOR: ${{ needs.resolve-rollback.outputs.migrator }}
+          BLAZOR: ${{ needs.resolve-rollback.outputs.blazor }}
+          FUNCTIONS_ID: ${{ needs.resolve-rollback.outputs.functions-id }}
+          FUNCTIONS_DIGEST: ${{ needs.resolve-rollback.outputs.functions-digest }}
+          UNO_ID: ${{ needs.resolve-rollback.outputs.uno-id }}
+          UNO_DIGEST: ${{ needs.resolve-rollback.outputs.uno-digest }}
+          PREVIOUS_ID: ${{ needs.resolve-rollback.outputs.current-id }}
+        run: |
+          jq -n --arg sha "$SHA" --arg gateway "$GATEWAY" --arg api "$API" --arg scheduler "$SCHEDULER" --arg migrator "$MIGRATOR" --arg blazor "$BLAZOR" \
+            --argjson fid "$FUNCTIONS_ID" --arg fd "$FUNCTIONS_DIGEST" --argjson uid "$UNO_ID" --arg ud "$UNO_DIGEST" --argjson previous "$PREVIOUS_ID" \
+            '{schemaVersion:1,operation:"rollback",commitSha:$sha,images:{gateway:$gateway,api:$api,scheduler:$scheduler,migrator:$migrator,blazor:$blazor},artifacts:{functions:{id:$fid,digest:$fd},uno:{id:$uid,digest:$ud}},previousManifestArtifactId:$previous}' > release-manifest.json
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path release-manifest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: taskflow-release-manifest-dev
+          path: release-manifest.json
+          if-no-files-found: error
+          retention-days: 90

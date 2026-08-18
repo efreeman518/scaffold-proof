@@ -91,6 +91,22 @@ public class ProblemDetailsDelegatingHandlerTests
         Assert.IsEmpty(svc.Items);
     }
 
+    /// <summary>Verifies cancellation while reading problem JSON is never converted into a fallback response.</summary>
+    [TestMethod]
+    public async Task Cancelled_ProblemJson_Read_Propagates_Cancellation()
+    {
+        var svc = new NotificationService();
+        var stub = new StubHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new CancelledProblemContent()
+        }));
+
+        await Assert.ThrowsExactlyAsync<TaskCanceledException>(async () =>
+            await Invoke(stub, svc));
+
+        Assert.IsEmpty(svc.Items);
+    }
+
     /// <summary>Verifies problem JSON dedupes on concurrent duplicates behavior and protects the expected test contract.</summary>
     [TestMethod]
     public async Task ProblemJson_Dedupes_On_Concurrent_Duplicates()
@@ -137,5 +153,20 @@ public class ProblemDetailsDelegatingHandlerTests
         /// <summary>Verifies send behavior and protects the expected test contract.</summary>
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
             respond(request);
+    }
+
+    private sealed class CancelledProblemContent : HttpContent
+    {
+        internal CancelledProblemContent() =>
+            Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/problem+json");
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            Task.FromCanceled(new CancellationToken(canceled: true));
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
     }
 }

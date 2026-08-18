@@ -104,54 +104,36 @@ The solution references private packages (`EF.*`) from the `efreeman518-github` 
 
 | Secret | Value |
 |--------|-------|
-| `NUGET_AUTH_TOKEN` | Package read token supplied by the CI secret store |
+| `NUGET_PAT` | Package read token supplied by the CI secret store |
 
-This secret is used in **three places** during deployment:
+The workflow injects this secret without modifying `nuget.config`:
 
-1. **Docker container builds** (Gateway, API, Scheduler, Blazor) - passed as `NUGET_TOKEN` build-arg to the Dockerfile
-2. **Functions publish** - `dotnet nuget update source` before `dotnet publish`
-3. **Uno WASM publish** - `dotnet nuget update source` before `dotnet publish`
+1. **Container restores** - passed as a BuildKit secret and exposed only to the restore process through `NuGetPackageSourceCredentials_efreeman518-github`.
+2. **Functions and Uno publishes** - exposed to NuGet through the same process environment convention.
+
+The credential is never passed as a Docker build argument, written into a NuGet config file, or included in an image layer or deployment artifact.
 
 To create the PAT: **GitHub -> Settings -> Developer settings -> Personal access tokens -> Fine-grained tokens** -> grant `read:packages` on the `efreeman518` account.
 
-> All NuGet auth steps are guarded - if `NUGET_PAT` is not set, builds proceed but will fail on any project that references `EF.*` packages.
+> `NUGET_PAT` is required. The release build fails at entry when it is absent.
 
 ## Step 3: Trigger Deployment
 
-The deploy workflow triggers **automatically** when CI passes on the `main` branch:
+The deploy workflow currently runs manually through `workflow_dispatch`. Supply `operation=deploy` and a full green `main` commit SHA, or select `operation=rollback` to activate the recorded previous release. It also preserves a `workflow_call` interface for CI, but the caller in `ci.yml` remains disabled until Azure bootstrap and repository variables are configured.
 
-1. Push code to `main` (or merge a PR)
-2. **CI workflow** (`ci.yml`) runs build + tests
-3. On CI success -> CI calls **Deploy workflow** (`deploy.yml`) as a reusable workflow via `workflow_call`
-4. Deploy jobs: builds container images -> pushes to ghcr.io -> deploys Bicep -> deploys Functions -> deploys Uno SWA
-
-Deploy jobs appear **inside the CI run** - no separate workflow run entry. Deploy can also be triggered independently via `workflow_dispatch`.
+For deploy, the workflow validates the exact green commit, builds each image and Functions/Uno bundle once, records immutable digests and artifact IDs, provisions with the existing runtime images, runs migrations, activates the recorded release, verifies readiness and functional CRUD, then records current and previous release manifests. Rollback downloads the recorded prior artifacts and images without rebuilding or reversing database migrations.
 
 ## CI/CD Pipeline Flow
 
 ```
-push to main
-    -
-    
------------
--   CI   - build + unit/arch/endpoint tests
------------
-     - success
-     
-------------------------------------------------
--           Deploy TaskFlow                     -
--                                               -
--  build-and-push -- 4 container images         -
--      -                                      -
--                                              -
--  deploy-infra ---- Bicep (subscription scope) -
--      -                                      -
--       --- deploy-functions (zip deploy)      -
--      -                                      -
--       --- deploy-uno (SWA static files)      -
--                                               -
--  summary ---- deployment status table         -
-------------------------------------------------
+validate exact green SHA
+  -> build immutable images and bundles once
+  -> provision infrastructure with current runtime images
+  -> run database migrations
+  -> activate digest-pinned runtime and recorded bundles
+  -> check API database readiness and public health
+  -> create/read/delete functional smoke with cleanup
+  -> record current and previous release manifests
 ```
 
 ## File Structure
@@ -177,6 +159,8 @@ infra/
 -   --- storage.bicep
 --- scripts/
 -   --- bootstrap.ps1       # One-time setup script
+-   --- Invoke-DeploymentSmoke.ps1 # Post-deploy health and CRUD smoke
+-   --- Test-ReleaseManifest.ps1   # Immutable release manifest validation
 --- README.md               # This file
 ```
 

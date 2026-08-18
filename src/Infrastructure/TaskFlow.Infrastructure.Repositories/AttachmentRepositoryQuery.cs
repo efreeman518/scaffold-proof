@@ -34,11 +34,11 @@ public class AttachmentRepositoryQuery(TaskFlowDbContextQuery db)
         // ordering
         if (request.Sorts?.Any() ?? false)
         {
-            q = q.OrderBy(request.Sorts);
+            q = ((IOrderedQueryable<Attachment>)q.OrderBy(request.Sorts)).ThenBy(e => e.Id);
         }
         else
         {
-            q = q.OrderBy(e => e.FileName);
+            q = q.OrderBy(e => e.FileName).ThenBy(e => e.Id);
         }
 
         // filtering

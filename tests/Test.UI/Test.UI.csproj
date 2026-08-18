@@ -19,6 +19,12 @@
     <Content Include="..\..\src\UI\TaskFlow.Uno\Views\MainPage.xaml"
              Link="Presentation\MainPage.xaml"
              CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\src\UI\TaskFlow.Uno\Views\CategoryTreePage.xaml"
+             Link="Presentation\CategoryTreePage.xaml"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\src\UI\TaskFlow.Uno\Views\TagManagementPage.xaml"
+             Link="Presentation\TagManagementPage.xaml"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

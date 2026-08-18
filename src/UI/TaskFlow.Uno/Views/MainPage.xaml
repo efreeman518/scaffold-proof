@@ -120,11 +120,10 @@
                 </Button>
             </utu:AutoLayout>
 
-            <Grid Grid.Row="1"
-                  Grid.Column="1"
-                  x:Name="RootGrid"
-                  uen:Region.Attached="True"
-                  uen:Region.Navigator="Visibility" />
+            <ContentControl Grid.Row="1"
+                            Grid.Column="1"
+                            x:Name="RootContent"
+                            uen:Region.Attached="True" />
 
             <utu:TabBar Grid.Row="2"
                         Grid.Column="1"

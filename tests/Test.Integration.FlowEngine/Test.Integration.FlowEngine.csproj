@@ -9,6 +9,7 @@
     <PackageReference Include="Moq" />
     <PackageReference Include="EF.FlowEngine" />
     <PackageReference Include="EF.FlowEngine.Testing" />
+    <PackageReference Include="System.Security.Cryptography.Xml" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>

@@ -239,8 +239,11 @@ module gateway 'modules/container-app.bicep' = {
     targetPort: 8080
     minReplicas: 0
     maxReplicas: 2
+    readinessPath: '/healthz'
     envVars: union(commonEnvVars, [
       { name: 'ReverseProxy__Clusters__api__Destinations__default__Address', value: 'https://${api.outputs.fqdn}' }
+      { name: 'AggregateHealthCheck__TaskFlowApiHealthUrl', value: 'https://${api.outputs.fqdn}/health/full' }
+      { name: 'AggregateHealthCheck__TaskFlowApiClusterId', value: '' }
     ])
     tags: tags
   }
@@ -260,6 +263,7 @@ module api 'modules/container-app.bicep' = {
     targetPort: 8080
     minReplicas: 0
     maxReplicas: 3
+    readinessPath: '/health/db'
     envVars: union(commonEnvVars, [
       { name: 'ConnectionStrings__TaskFlowDbContextTrxn', value: sqlDatabase.outputs.connectionString }
       { name: 'ConnectionStrings__TaskFlowDbContextQuery', value: sqlDatabase.outputs.connectionString }
@@ -583,3 +587,4 @@ output deployIdentityPrincipalId string = deployIdentity.outputs.principalId
 output keyVaultName string = keyVault.outputs.name
 output appConfigName string = appConfig.outputs.name
 output sqlServerName string = sqlDatabase.outputs.serverName
+output appStorageName string = storage.outputs.appStorageName

@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>TaskFlow.Uno.WasmHost</RootNamespace>
-    <UnoWasmProject>$(MSBuildProjectDirectory)\..\..\UI\TaskFlow.Uno\TaskFlow.Uno.csproj</UnoWasmProject>
+    <UnoWasmProject>$(MSBuildProjectDirectory)/../../UI/TaskFlow.Uno/TaskFlow.Uno.csproj</UnoWasmProject>
     <UnoWasmTargetFramework>net10.0-browserwasm</UnoWasmTargetFramework>
     <UnoWasmRestoreTimeoutMilliseconds Condition="'$(UnoWasmRestoreTimeoutMilliseconds)'==''">600000</UnoWasmRestoreTimeoutMilliseconds>
     <UnoWasmBuildTimeoutMilliseconds Condition="'$(UnoWasmBuildTimeoutMilliseconds)'==''">1200000</UnoWasmBuildTimeoutMilliseconds>
@@ -16,10 +16,13 @@
           Condition="'$(SkipUnoWasmBuild)'!='true' and ('$(SolutionDir)'=='' or '$(SolutionDir)'=='*Undefined*')">
     <PropertyGroup>
       <_UseMocksProperty Condition="'$(UseMocks)'!=''"> -p:UseMocks=$(UseMocks)</_UseMocksProperty>
+      <_UnoWasmCommand Condition="'$(Configuration)'=='Release'">publish</_UnoWasmCommand>
+      <_UnoWasmCommand Condition="'$(_UnoWasmCommand)'==''">build</_UnoWasmCommand>
+      <_UnoWasmPublishProperty Condition="'$(Configuration)'=='Release'"> -p:PublishDir=$(MSBuildProjectDirectory)/../../UI/TaskFlow.Uno/bin/Release/$(UnoWasmTargetFramework)/publish</_UnoWasmPublishProperty>
     </PropertyGroup>
     <Exec Command="dotnet restore &quot;$(UnoWasmProject)&quot; -p:BuildAllUnoTargets=true -p:EnableUnoWasm=true -p:Configuration=$(Configuration)$(_UseMocksProperty)"
           Timeout="$(UnoWasmRestoreTimeoutMilliseconds)" />
-    <Exec Command="dotnet build &quot;$(UnoWasmProject)&quot; -p:TargetFrameworkOverride=$(UnoWasmTargetFramework) -p:EnableUnoWasm=true -p:Configuration=$(Configuration)$(_UseMocksProperty) --no-restore -m:1"
+    <Exec Command="dotnet $(_UnoWasmCommand) &quot;$(UnoWasmProject)&quot; -p:TargetFrameworkOverride=$(UnoWasmTargetFramework) -p:EnableUnoWasm=true -p:Configuration=$(Configuration)$(_UseMocksProperty)$(_UnoWasmPublishProperty) --no-restore -m:1"
           Timeout="$(UnoWasmBuildTimeoutMilliseconds)" />
   </Target>
 

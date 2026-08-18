@@ -259,9 +259,9 @@ public class TaskItemsRequestBuilder
     public async Task<TaskItemDto?> PostAsync(TaskItemDto dto, CancellationToken cancellationToken = default)
     {
         NormalizeChildTaskItemIds(dto, dto.Id ?? Guid.Empty);
-        var response = await _http.PostAsJsonAsync("/api/v1/task-items", new DefaultRequest<TaskItemDto> { Item = dto }, cancellationToken);
+        var response = await TaskFlowApiJson.PostAsync(_http, "/api/v1/task-items", new DefaultRequest<TaskItemDto> { Item = dto }, cancellationToken);
         response.EnsureSuccessStatusCode();
-        var wrapper = await response.Content.ReadFromJsonAsync<DefaultResponse<TaskItemDto>>(cancellationToken);
+        var wrapper = await TaskFlowApiJson.ReadAsync<DefaultResponse<TaskItemDto>>(response.Content, cancellationToken);
         return wrapper?.Item;
     }
 
@@ -300,9 +300,9 @@ public class TaskItemsSearchRequestBuilder
     public async Task<PagedResponse<TaskItemDto>?> PostAsync(SearchRequest<TaskItemSearchFilter> request,
         CancellationToken cancellationToken = default)
     {
-        var response = await _http.PostAsJsonAsync("/api/v1/task-items/search", request, cancellationToken);
+        var response = await TaskFlowApiJson.PostAsync(_http, "/api/v1/task-items/search", request, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<PagedResponse<TaskItemDto>>(cancellationToken);
+        return await TaskFlowApiJson.ReadAsync<PagedResponse<TaskItemDto>>(response.Content, cancellationToken);
     }
 }
 
@@ -317,7 +317,7 @@ public class TaskItemByIdRequestBuilder
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<TaskItemDto?> GetAsync(CancellationToken cancellationToken = default)
     {
-        var wrapper = await _http.GetFromJsonAsync<DefaultResponse<TaskItemDto>>($"/api/v1/task-items/{_id}", cancellationToken);
+        var wrapper = await TaskFlowApiJson.GetAsync<DefaultResponse<TaskItemDto>>(_http, $"/api/v1/task-items/{_id}", cancellationToken);
         return wrapper?.Item;
     }
 
@@ -325,9 +325,9 @@ public class TaskItemByIdRequestBuilder
     public async Task<TaskItemDto?> PutAsync(TaskItemDto dto, CancellationToken cancellationToken = default)
     {
         TaskItemsRequestBuilder.NormalizeChildTaskItemIds(dto, _id);
-        var response = await _http.PutAsJsonAsync($"/api/v1/task-items/{_id}", new DefaultRequest<TaskItemDto> { Item = dto }, cancellationToken);
+        var response = await TaskFlowApiJson.PutAsync(_http, $"/api/v1/task-items/{_id}", new DefaultRequest<TaskItemDto> { Item = dto }, cancellationToken);
         response.EnsureSuccessStatusCode();
-        var wrapper = await response.Content.ReadFromJsonAsync<DefaultResponse<TaskItemDto>>(cancellationToken);
+        var wrapper = await TaskFlowApiJson.ReadAsync<DefaultResponse<TaskItemDto>>(response.Content, cancellationToken);
         return wrapper?.Item;
     }
 
@@ -352,9 +352,9 @@ public class CategoriesRequestBuilder
     /// <summary>Sends a POST request through categories request builder and returns the typed response.</summary>
     public async Task<CategoryDto?> PostAsync(CategoryDto dto, CancellationToken cancellationToken = default)
     {
-        var response = await _http.PostAsJsonAsync("/api/v1/categories", new DefaultRequest<CategoryDto> { Item = dto }, cancellationToken);
+        var response = await TaskFlowApiJson.PostAsync(_http, "/api/v1/categories", new DefaultRequest<CategoryDto> { Item = dto }, cancellationToken);
         response.EnsureSuccessStatusCode();
-        var wrapper = await response.Content.ReadFromJsonAsync<DefaultResponse<CategoryDto>>(cancellationToken);
+        var wrapper = await TaskFlowApiJson.ReadAsync<DefaultResponse<CategoryDto>>(response.Content, cancellationToken);
         return wrapper?.Item;
     }
 }
@@ -370,9 +370,9 @@ public class CategoriesSearchRequestBuilder
     public async Task<PagedResponse<CategoryDto>?> PostAsync(SearchRequest<CategorySearchFilter> request,
         CancellationToken cancellationToken = default)
     {
-        var response = await _http.PostAsJsonAsync("/api/v1/categories/search", request, cancellationToken);
+        var response = await TaskFlowApiJson.PostAsync(_http, "/api/v1/categories/search", request, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<PagedResponse<CategoryDto>>(cancellationToken);
+        return await TaskFlowApiJson.ReadAsync<PagedResponse<CategoryDto>>(response.Content, cancellationToken);
     }
 }
 
@@ -387,16 +387,16 @@ public class CategoryByIdRequestBuilder
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<CategoryDto?> GetAsync(CancellationToken cancellationToken = default)
     {
-        var wrapper = await _http.GetFromJsonAsync<DefaultResponse<CategoryDto>>($"/api/v1/categories/{_id}", cancellationToken);
+        var wrapper = await TaskFlowApiJson.GetAsync<DefaultResponse<CategoryDto>>(_http, $"/api/v1/categories/{_id}", cancellationToken);
         return wrapper?.Item;
     }
 
     /// <summary>Sends a PUT request through category by ID request builder and returns the typed response.</summary>
     public async Task<CategoryDto?> PutAsync(CategoryDto dto, CancellationToken cancellationToken = default)
     {
-        var response = await _http.PutAsJsonAsync($"/api/v1/categories/{_id}", new DefaultRequest<CategoryDto> { Item = dto }, cancellationToken);
+        var response = await TaskFlowApiJson.PutAsync(_http, $"/api/v1/categories/{_id}", new DefaultRequest<CategoryDto> { Item = dto }, cancellationToken);
         response.EnsureSuccessStatusCode();
-        var wrapper = await response.Content.ReadFromJsonAsync<DefaultResponse<CategoryDto>>(cancellationToken);
+        var wrapper = await TaskFlowApiJson.ReadAsync<DefaultResponse<CategoryDto>>(response.Content, cancellationToken);
         return wrapper?.Item;
     }
 
@@ -421,9 +421,9 @@ public class TagsRequestBuilder
     /// <summary>Sends a POST request through tags request builder and returns the typed response.</summary>
     public async Task<TagDto?> PostAsync(TagDto dto, CancellationToken cancellationToken = default)
     {
-        var response = await _http.PostAsJsonAsync("/api/v1/tags", new DefaultRequest<TagDto> { Item = dto }, cancellationToken);
+        var response = await TaskFlowApiJson.PostAsync(_http, "/api/v1/tags", new DefaultRequest<TagDto> { Item = dto }, cancellationToken);
         response.EnsureSuccessStatusCode();
-        var wrapper = await response.Content.ReadFromJsonAsync<DefaultResponse<TagDto>>(cancellationToken);
+        var wrapper = await TaskFlowApiJson.ReadAsync<DefaultResponse<TagDto>>(response.Content, cancellationToken);
         return wrapper?.Item;
     }
 }
@@ -439,9 +439,9 @@ public class TagsSearchRequestBuilder
     public async Task<PagedResponse<TagDto>?> PostAsync(SearchRequest<TagSearchFilter> request,
         CancellationToken cancellationToken = default)
     {
-        var response = await _http.PostAsJsonAsync("/api/v1/tags/search", request, cancellationToken);
+        var response = await TaskFlowApiJson.PostAsync(_http, "/api/v1/tags/search", request, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<PagedResponse<TagDto>>(cancellationToken);
+        return await TaskFlowApiJson.ReadAsync<PagedResponse<TagDto>>(response.Content, cancellationToken);
     }
 }
 
@@ -456,16 +456,16 @@ public class TagByIdRequestBuilder
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<TagDto?> GetAsync(CancellationToken cancellationToken = default)
     {
-        var wrapper = await _http.GetFromJsonAsync<DefaultResponse<TagDto>>($"/api/v1/tags/{_id}", cancellationToken);
+        var wrapper = await TaskFlowApiJson.GetAsync<DefaultResponse<TagDto>>(_http, $"/api/v1/tags/{_id}", cancellationToken);
         return wrapper?.Item;
     }
 
     /// <summary>Sends a PUT request through tag by ID request builder and returns the typed response.</summary>
     public async Task<TagDto?> PutAsync(TagDto dto, CancellationToken cancellationToken = default)
     {
-        var response = await _http.PutAsJsonAsync($"/api/v1/tags/{_id}", new DefaultRequest<TagDto> { Item = dto }, cancellationToken);
+        var response = await TaskFlowApiJson.PutAsync(_http, $"/api/v1/tags/{_id}", new DefaultRequest<TagDto> { Item = dto }, cancellationToken);
         response.EnsureSuccessStatusCode();
-        var wrapper = await response.Content.ReadFromJsonAsync<DefaultResponse<TagDto>>(cancellationToken);
+        var wrapper = await TaskFlowApiJson.ReadAsync<DefaultResponse<TagDto>>(response.Content, cancellationToken);
         return wrapper?.Item;
     }
 
@@ -490,9 +490,9 @@ public class CommentsRequestBuilder
     /// <summary>Sends a POST request through comments request builder and returns the typed response.</summary>
     public async Task<CommentDto?> PostAsync(CommentDto dto, CancellationToken cancellationToken = default)
     {
-        var response = await _http.PostAsJsonAsync("/api/v1/comments", new DefaultRequest<CommentDto> { Item = dto }, cancellationToken);
+        var response = await TaskFlowApiJson.PostAsync(_http, "/api/v1/comments", new DefaultRequest<CommentDto> { Item = dto }, cancellationToken);
         response.EnsureSuccessStatusCode();
-        var wrapper = await response.Content.ReadFromJsonAsync<DefaultResponse<CommentDto>>(cancellationToken);
+        var wrapper = await TaskFlowApiJson.ReadAsync<DefaultResponse<CommentDto>>(response.Content, cancellationToken);
         return wrapper?.Item;
     }
 }
@@ -508,9 +508,9 @@ public class CommentsSearchRequestBuilder
     public async Task<PagedResponse<CommentDto>?> PostAsync(SearchRequest<CommentSearchFilter> request,
         CancellationToken cancellationToken = default)
     {
-        var response = await _http.PostAsJsonAsync("/api/v1/comments/search", request, cancellationToken);
+        var response = await TaskFlowApiJson.PostAsync(_http, "/api/v1/comments/search", request, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<PagedResponse<CommentDto>>(cancellationToken);
+        return await TaskFlowApiJson.ReadAsync<PagedResponse<CommentDto>>(response.Content, cancellationToken);
     }
 }
 
@@ -525,16 +525,16 @@ public class CommentByIdRequestBuilder
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<CommentDto?> GetAsync(CancellationToken cancellationToken = default)
     {
-        var wrapper = await _http.GetFromJsonAsync<DefaultResponse<CommentDto>>($"/api/v1/comments/{_id}", cancellationToken);
+        var wrapper = await TaskFlowApiJson.GetAsync<DefaultResponse<CommentDto>>(_http, $"/api/v1/comments/{_id}", cancellationToken);
         return wrapper?.Item;
     }
 
     /// <summary>Sends a PUT request through comment by ID request builder and returns the typed response.</summary>
     public async Task<CommentDto?> PutAsync(CommentDto dto, CancellationToken cancellationToken = default)
     {
-        var response = await _http.PutAsJsonAsync($"/api/v1/comments/{_id}", new DefaultRequest<CommentDto> { Item = dto }, cancellationToken);
+        var response = await TaskFlowApiJson.PutAsync(_http, $"/api/v1/comments/{_id}", new DefaultRequest<CommentDto> { Item = dto }, cancellationToken);
         response.EnsureSuccessStatusCode();
-        var wrapper = await response.Content.ReadFromJsonAsync<DefaultResponse<CommentDto>>(cancellationToken);
+        var wrapper = await TaskFlowApiJson.ReadAsync<DefaultResponse<CommentDto>>(response.Content, cancellationToken);
         return wrapper?.Item;
     }
 
@@ -559,9 +559,9 @@ public class ChecklistItemsRequestBuilder
     /// <summary>Sends a POST request through checklist items request builder and returns the typed response.</summary>
     public async Task<ChecklistItemDto?> PostAsync(ChecklistItemDto dto, CancellationToken cancellationToken = default)
     {
-        var response = await _http.PostAsJsonAsync("/api/v1/checklist-items", new DefaultRequest<ChecklistItemDto> { Item = dto }, cancellationToken);
+        var response = await TaskFlowApiJson.PostAsync(_http, "/api/v1/checklist-items", new DefaultRequest<ChecklistItemDto> { Item = dto }, cancellationToken);
         response.EnsureSuccessStatusCode();
-        var wrapper = await response.Content.ReadFromJsonAsync<DefaultResponse<ChecklistItemDto>>(cancellationToken);
+        var wrapper = await TaskFlowApiJson.ReadAsync<DefaultResponse<ChecklistItemDto>>(response.Content, cancellationToken);
         return wrapper?.Item;
     }
 }
@@ -577,9 +577,9 @@ public class ChecklistItemsSearchRequestBuilder
     public async Task<PagedResponse<ChecklistItemDto>?> PostAsync(SearchRequest<ChecklistItemSearchFilter> request,
         CancellationToken cancellationToken = default)
     {
-        var response = await _http.PostAsJsonAsync("/api/v1/checklist-items/search", request, cancellationToken);
+        var response = await TaskFlowApiJson.PostAsync(_http, "/api/v1/checklist-items/search", request, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<PagedResponse<ChecklistItemDto>>(cancellationToken);
+        return await TaskFlowApiJson.ReadAsync<PagedResponse<ChecklistItemDto>>(response.Content, cancellationToken);
     }
 }
 
@@ -594,16 +594,16 @@ public class ChecklistItemByIdRequestBuilder
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<ChecklistItemDto?> GetAsync(CancellationToken cancellationToken = default)
     {
-        var wrapper = await _http.GetFromJsonAsync<DefaultResponse<ChecklistItemDto>>($"/api/v1/checklist-items/{_id}", cancellationToken);
+        var wrapper = await TaskFlowApiJson.GetAsync<DefaultResponse<ChecklistItemDto>>(_http, $"/api/v1/checklist-items/{_id}", cancellationToken);
         return wrapper?.Item;
     }
 
     /// <summary>Sends a PUT request through checklist item by ID request builder and returns the typed response.</summary>
     public async Task<ChecklistItemDto?> PutAsync(ChecklistItemDto dto, CancellationToken cancellationToken = default)
     {
-        var response = await _http.PutAsJsonAsync($"/api/v1/checklist-items/{_id}", new DefaultRequest<ChecklistItemDto> { Item = dto }, cancellationToken);
+        var response = await TaskFlowApiJson.PutAsync(_http, $"/api/v1/checklist-items/{_id}", new DefaultRequest<ChecklistItemDto> { Item = dto }, cancellationToken);
         response.EnsureSuccessStatusCode();
-        var wrapper = await response.Content.ReadFromJsonAsync<DefaultResponse<ChecklistItemDto>>(cancellationToken);
+        var wrapper = await TaskFlowApiJson.ReadAsync<DefaultResponse<ChecklistItemDto>>(response.Content, cancellationToken);
         return wrapper?.Item;
     }
 
@@ -628,9 +628,9 @@ public class AttachmentsRequestBuilder
     /// <summary>Sends a POST request through attachments request builder and returns the typed response.</summary>
     public async Task<AttachmentDto?> PostAsync(AttachmentDto dto, CancellationToken cancellationToken = default)
     {
-        var response = await _http.PostAsJsonAsync("/api/v1/attachments", new DefaultRequest<AttachmentDto> { Item = dto }, cancellationToken);
+        var response = await TaskFlowApiJson.PostAsync(_http, "/api/v1/attachments", new DefaultRequest<AttachmentDto> { Item = dto }, cancellationToken);
         response.EnsureSuccessStatusCode();
-        var wrapper = await response.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(cancellationToken);
+        var wrapper = await TaskFlowApiJson.ReadAsync<DefaultResponse<AttachmentDto>>(response.Content, cancellationToken);
         return wrapper?.Item;
     }
 }
@@ -646,9 +646,9 @@ public class AttachmentsSearchRequestBuilder
     public async Task<PagedResponse<AttachmentDto>?> PostAsync(SearchRequest<AttachmentSearchFilter> request,
         CancellationToken cancellationToken = default)
     {
-        var response = await _http.PostAsJsonAsync("/api/v1/attachments/search", request, cancellationToken);
+        var response = await TaskFlowApiJson.PostAsync(_http, "/api/v1/attachments/search", request, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<PagedResponse<AttachmentDto>>(cancellationToken);
+        return await TaskFlowApiJson.ReadAsync<PagedResponse<AttachmentDto>>(response.Content, cancellationToken);
     }
 }
 
@@ -663,7 +663,7 @@ public class AttachmentByIdRequestBuilder
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<AttachmentDto?> GetAsync(CancellationToken cancellationToken = default)
     {
-        var wrapper = await _http.GetFromJsonAsync<DefaultResponse<AttachmentDto>>($"/api/v1/attachments/{_id}", cancellationToken);
+        var wrapper = await TaskFlowApiJson.GetAsync<DefaultResponse<AttachmentDto>>(_http, $"/api/v1/attachments/{_id}", cancellationToken);
         return wrapper?.Item;
     }
 

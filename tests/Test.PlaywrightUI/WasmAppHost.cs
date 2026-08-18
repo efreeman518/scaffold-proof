@@ -3,6 +3,7 @@ using Aspire.Hosting.Testing;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
+using TaskFlow.Uno.WasmHost;
 using Test.Support.Aspire;
 
 namespace Test.PlaywrightUI.Hosting;
@@ -124,11 +125,7 @@ internal static class WasmAppHost
             Environment.SetEnvironmentVariable(PublishedDistPathVariable, null);
         }
 
-        var publishedIndex = Path.Combine(outputPath, "wwwroot", "index.html");
-        if (!File.Exists(publishedIndex))
-        {
-            throw new InvalidOperationException($"Uno WASM output is missing {publishedIndex}.");
-        }
+        _ = PublishedAssetContract.Validate(outputPath);
 
         File.WriteAllText(
             Path.Combine(outputPath, StampFileName),

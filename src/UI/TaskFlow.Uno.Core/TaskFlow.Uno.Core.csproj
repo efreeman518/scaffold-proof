@@ -6,6 +6,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Test.UI" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="System.Net.Http.Json" />
   </ItemGroup>
 

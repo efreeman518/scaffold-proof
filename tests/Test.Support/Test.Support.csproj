@@ -6,6 +6,9 @@
     <PackageReference Include="EF.IntegrationTesting" />
     <PackageReference Include="Aspire.Hosting.Testing" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
+    <!-- Flow patched transitive versions to every test project that consumes this shared harness. -->
+    <PackageReference Include="SSH.NET" />
+    <PackageReference Include="System.Security.Cryptography.Xml" />
   </ItemGroup>
 
   <ItemGroup>

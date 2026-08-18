@@ -67,7 +67,7 @@ jobs:
       - name: Install required workloads
         run: dotnet workload install wasm-tools aspire
 
-      - name: Configure private NuGet feed
+      - name: Require private NuGet feed credential
         env:
           NUGET_PAT: ${{ secrets.NUGET_PAT }}
         run: |
@@ -76,13 +76,9 @@ jobs:
             exit 1
           fi
 
-          dotnet nuget update source efreeman518-github \
-            --configfile nuget.config \
-            --username github-actions \
-            --password "$NUGET_PAT" \
-            --store-password-in-clear-text
-
       - name: Restore
+        env:
+          NuGetPackageSourceCredentials_efreeman518-github: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
         run: dotnet restore TaskFlow.slnx
 
       - name: Build
@@ -199,6 +195,22 @@ jobs:
           --logger "trx;LogFileName=playwrightui-results.trx"
           --results-directory ./TestResults
 
+      - name: Migration model drift gate
+        run: >
+          dotnet test tests/Test.Unit/Test.Unit.csproj
+          --no-build --configuration Release
+          --filter FullyQualifiedName~MigrationModelContractTests
+          --logger "trx;LogFileName=migration-model-results.trx"
+          --results-directory ./TestResults
+
+      - name: Deployment workflow contract gate
+        run: >
+          dotnet test tests/Test.Unit/Test.Unit.csproj
+          --no-build --configuration Release
+          --filter FullyQualifiedName~DeploymentWorkflowContractTests
+          --logger "trx;LogFileName=deployment-contract-results.trx"
+          --results-directory ./TestResults
+
       - name: Full serial solution acceptance (manual, unfiltered)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeFullAcceptance == true }}
         timeout-minutes: 90
@@ -229,6 +241,8 @@ jobs:
   #   uses: ./.github/workflows/deploy.yml
   #   secrets: inherit
   #   permissions:
+  #     actions: read
+  #     checks: read
   #     id-token: write
   #     contents: read
   #     packages: write

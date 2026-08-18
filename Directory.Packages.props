@@ -148,7 +148,10 @@
     <PackageVersion Include="Microsoft.OpenApi" Version="2.9.0" />
     <!-- Temporary direct pin: lifts a vulnerable transitive of the Uno toolchain above the version
          it resolves. Remove when the parent ships a fixed dependency and the audit is clean. -->
-    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.9" />
+    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.11" />
+    <!-- Temporary direct pin: lifts vulnerable SSH.NET transitives used by the shared test harness.
+         Remove when the parent packages require SSH.NET 2026.0.0 or later. -->
+    <PackageVersion Include="SSH.NET" Version="2026.0.0" />
   </ItemGroup>
   <ItemGroup Label="Azure Storage">
     <PackageVersion Include="Azure.Data.Tables" Version="12.11.0" />

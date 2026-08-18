@@ -31,6 +31,9 @@ param minReplicas int = 0
 @description('Maximum replicas')
 param maxReplicas int = 1
 
+@description('HTTP readiness path. The revision receives traffic only after this endpoint succeeds.')
+param readinessPath string = '/readyz'
+
 @description('Environment variables')
 param envVars array = []
 
@@ -64,6 +67,21 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             memory: memory
           }
           env: envVars
+          probes: [
+            {
+              type: 'Readiness'
+              httpGet: {
+                path: readinessPath
+                port: targetPort
+                scheme: 'HTTP'
+              }
+              initialDelaySeconds: 10
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 18
+              successThreshold: 1
+            }
+          ]
         }
       ]
       scale: {
@@ -78,3 +96,4 @@ output id string = containerApp.id
 output name string = containerApp.name
 output fqdn string = ingressEnabled && containerApp.properties.configuration.ingress != null ? containerApp.properties.configuration.ingress.fqdn : ''
 output principalId string = containerApp.identity.principalId
+output latestRevisionName string = containerApp.properties.latestRevisionName

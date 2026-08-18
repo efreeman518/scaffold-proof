@@ -136,6 +136,17 @@
                                Style="{StaticResource EmptyStateTextStyle}" />
                 </DataTemplate>
             </uer:FeedView.NoneTemplate>
+            <uer:FeedView.ErrorTemplate>
+                <DataTemplate>
+                    <StackPanel HorizontalAlignment="Center" Spacing="4">
+                        <TextBlock Text="Unable to load categories."
+                                   Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock Text="{Binding Message}"
+                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </DataTemplate>
+            </uer:FeedView.ErrorTemplate>
         </uer:FeedView>
     </Grid>
 </Page>

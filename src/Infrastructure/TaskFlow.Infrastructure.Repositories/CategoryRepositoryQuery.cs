@@ -42,11 +42,11 @@ public class CategoryRepositoryQuery(TaskFlowDbContextQuery db)
         // ordering
         if (request.Sorts?.Any() ?? false)
         {
-            q = q.OrderBy(request.Sorts);
+            q = ((IOrderedQueryable<Category>)q.OrderBy(request.Sorts)).ThenBy(e => e.Id);
         }
         else
         {
-            q = q.OrderBy(e => e.SortOrder).ThenBy(e => e.Name);
+            q = q.OrderBy(e => e.SortOrder).ThenBy(e => e.Name).ThenBy(e => e.Id);
         }
 
         // filtering
