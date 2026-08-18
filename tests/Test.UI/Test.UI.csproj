@@ -25,6 +25,9 @@
     <Content Include="..\..\src\UI\TaskFlow.Uno\Views\TagManagementPage.xaml"
              Link="Presentation\TagManagementPage.xaml"
              CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\src\UI\TaskFlow.Blazor\Components\Pages\*.razor"
+             Link="Presentation\BlazorPages\%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

@@ -10,7 +10,7 @@
 
 <div class="d-flex align-center mb-4">
     <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" OnClick="@(() => SafeNavigateTo("/tasks"))" />
-    <MudText Typo="Typo.h4" Class="ml-2">@(IsNew ? "New Task" : "Edit Task")</MudText>
+    <MudText Typo="Typo.h4" HtmlTag="h1" data-testid="page-title" Class="ml-2">@(IsNew ? "New Task" : "Edit Task")</MudText>
     <MudSpacer />
     @if (!IsNew)
     {
