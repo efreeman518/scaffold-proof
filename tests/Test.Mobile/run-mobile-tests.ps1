@@ -96,12 +96,11 @@ function Wait-Until {
     throw $FailureMessage
 }
 
-$sourceRoot = Get-SourceRoot
-$repoRoot = Split-Path $sourceRoot -Parent
-$testProject = Join-Path $sourceRoot "Test\Test.Mobile\Test.Mobile.csproj"
-$unoProject = Join-Path $sourceRoot "UI\TaskFlow.Uno\TaskFlow.Uno.csproj"
-$apkPath = Join-Path $sourceRoot "UI\TaskFlow.Uno\bin\Debug\net10.0-android\com.taskflow.uno-Signed.apk"
-$resultDir = Join-Path $sourceRoot "Test\Test.Mobile\TestResults"
+$repoRoot = Get-SourceRoot
+$testProject = Join-Path $repoRoot "tests\Test.Mobile\Test.Mobile.csproj"
+$unoProject = Join-Path $repoRoot "src\UI\TaskFlow.Uno\TaskFlow.Uno.csproj"
+$apkPath = Join-Path $repoRoot "src\UI\TaskFlow.Uno\bin\Debug\net10.0-android\com.taskflow.uno-Signed.apk"
+$resultDir = Join-Path $repoRoot "tests\Test.Mobile\TestResults"
 
 New-Item -ItemType Directory -Force -Path $resultDir | Out-Null
 

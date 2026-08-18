@@ -8,7 +8,7 @@ Current verified status of the TaskFlow reference application. Used by the proof
 
 | Field | Value |
 |---|---|
-| Last verified | 2026-08-17 |
+| Last verified | 2026-08-18 |
 | Solution | `TaskFlow.slnx` |
 | Target framework | .NET 10 |
 | Projects | 44 |
@@ -27,18 +27,18 @@ Current verified status of the TaskFlow reference application. Used by the proof
 | Test.E2E | `TestCategory=E2E` | 7 | WebApplicationFactory + Testcontainers SQL workflow chains; verified 2026-07-16 |
 | Test.Integration | `TestCategory=Integration` | 28 | service-level tests against real SQL and Azurite Testcontainers, including stable multi-page membership under duplicate business sort keys, schema-pinned EF history, and legacy `dbo` relocation; verified 2026-08-17 |
 | Test.Integration.FlowEngine | `TestCategory=Integration` | 16 | workflow JSON validity (deserialize, validator, in-memory registry round-trip, builder, file-presence guard); no Aspire/Docker; verified 2026-07-16 |
-| Test.Aspire | multiple (`Aspire`, `Foundry`, `Integration`, `LiveAI`) | 20 | 15 passed; 5 inconclusive because Azure Foundry was not configured. Shared RID-free Aspire mesh covered API, Gateway, Blazor, React, Uno, Functions, audit, and provider topology; verified 2026-07-16 |
-| Test.FoundryLocal | `FoundryLocal`, `LiveAI` | 3 | live run: 2 passed, 1 slow generation inconclusive; serial acceptance explicitly opted out this dedicated external-resource lane |
-| Test.PlaywrightUI | `PlaywrightUI`, `WasmUI`, `Unit` | 9 | published-Release Uno browser coverage plus static-host contracts for required assets, compression quality, MIME preservation, caching, and asset 404 behavior; verified 2026-08-17 |
-| Test.UI | `UI`, `Presentation` | 61 | headless presentation and client-contract tests, including source-generated reflection-disabled JSON coverage, Uno navigation/error markup, and the no-login surface; verified 2026-08-17 |
-| Test.Mobile | `MobileUI` | 3 | explicitly disabled for serial acceptance; dedicated runner remains the enabled-lane gate |
+| Test.Aspire | multiple (`Aspire`, `Foundry`, `Integration`, `LiveAI`) | 20 | 15 passed; 5 inconclusive because Azure Foundry was not configured. Shared RID-free Aspire mesh covered API, Gateway, Blazor, React, Uno, Functions, audit, and provider topology; verified 2026-08-18 |
+| Test.FoundryLocal | `FoundryLocal`, `LiveAI` | 3 | live run: 3 passed against the local model; serial acceptance explicitly opted out this dedicated external-resource lane; verified 2026-08-18 |
+| Test.PlaywrightUI | `PlaywrightUI`, `WasmUI`, `Unit` | 9 | published-Release Uno browser coverage plus static-host contracts for required assets, compression quality, MIME preservation, caching, and asset 404 behavior; verified 2026-08-18 |
+| Test.UI | `UI`, `Presentation` | 62 | headless presentation and client-contract tests, including source-generated reflection-disabled JSON coverage, Uno navigation/error markup, and the no-login surface; verified 2026-08-18 |
+| Test.Mobile | `MobileUI` | 3 | explicitly disabled for serial acceptance; dedicated runner is the enabled-lane gate - 3/3 passed via `run-mobile-tests.ps1` on a live emulator; verified 2026-08-18 |
 | Test.Load | `TestCategory=Load` | 2 | NBomber; `[Ignore]` by default; manual run |
 | Test.Mutation | n/a | 33 | mutation-target contract tests; verified 2026-07-16 |
 | Test.Benchmarks | n/a | - | BenchmarkDotNet console runner; `dotnet run -c Release` |
 
-**Current automated verification:** `dotnet build TaskFlow.slnx --no-restore -m:1` passed across 44 projects with 0 warnings/errors, and the separate Uno build passed across 3 projects with 0 warnings/errors. Unfiltered serial `dotnet test TaskFlow.slnx --no-build -m:1` passed in 901.3 s with 461 passed and 10 skipped/inconclusive; optional Azure Foundry, Foundry Local, and mobile gates remained unavailable/inconclusive, and load tests stayed ignored by default. The dedicated enabled `UnoWasmCanvasSmoke_Passes` run passed in 270.8 s after a clean Release publish. Deployment Dockerfiles use non-root .NET 10 noble-chiseled runtime stages; SDK images are build-stage only. Verified 2026-08-17.
+**Current automated verification:** `dotnet build TaskFlow.slnx --no-restore -m:1` passed across 44 projects with 0 warnings/errors, and the separate Uno build passed across 3 projects with 0 warnings/errors. Unfiltered serial `dotnet test TaskFlow.slnx --no-build -m:1` passed with 462 passed, 0 failed, 10 skipped (5 Azure Foundry-gated, 2 load ignored by default, 3 mobile gated to the dedicated runner); Foundry Local ran live inside acceptance (3 passed) and the suite now includes `UnoWasmCanvasSmoke_Passes` against a fresh stable Uno.Sdk 6.6.42 Release publish. The dedicated mobile runner passed 3/3 against a live Android emulator + Appium. Deployment Dockerfiles use non-root .NET 10 noble-chiseled runtime stages; SDK images are build-stage only. Toolchain: .NET SDK 10.0.400 (global.json), all NuGet pins at latest (EF core packages 1.0.95, EF.FlowEngine/FilterBuilder family 1.0.162, EFCore 10.0.11, MSTest 4.3.3); Refit 15 requires the source-generated client path (`AddRefitGeneratedClient`), which TaskFlow.Blazor now uses. Verified 2026-08-18.
 
-**Uno published-Release proof:** Uno.Sdk 6.5.36 reproduced `Arg_NullReferenceException` in `IXamlRootHost.get_RootElement` -> `BrowserRenderer.RenderFrame` -> `BrowserRenderer.requestRender`. Upstream confirms the fix beginning in Uno.Sdk 6.6.0-dev.166; that exact temporary pin passed the published `Release` first-visit and normal Uno Playwright projects from empty browser state without refresh, retry, sleep, or exception suppression. Replace it with the first stable Uno.Sdk 6.6+ release when available. Browser-WASM `Release` temporarily uses `PublishTrimmed=false` because the current Navigation/Toolkit/WinUI package set emits upstream `IL2104` trim-analysis failures under warnings-as-errors.
+**Uno published-Release proof:** the WASM RootElement startup race (`Arg_NullReferenceException` in `IXamlRootHost.get_RootElement`) fixed upstream in Uno.Sdk 6.6.0-dev.166 is now covered by the stable **Uno.Sdk 6.6.42** pin, which passed the published `Release` first-visit and normal Uno Playwright projects from empty browser state without refresh, retry, sleep, or exception suppression (verified 2026-08-18 with Uno.Extensions 7.2.3). Browser-WASM `Release` temporarily uses `PublishTrimmed=false` because the Navigation/Toolkit/WinUI package set emits upstream `IL2104` trim-analysis failures under warnings-as-errors.
 
 ### Playwright (`tests/Test.PlaywrightUI/`)
 
@@ -111,4 +111,4 @@ Validate locally: `az bicep build --file infra/main.bicep`.
 Tracked here so the next instruction-set or reference-app PR knows what's pending:
 
 1. **Authenticated AI side effects.** D4/D5/D6/D9 persistence/enqueue side effects still require normal tenant/auth context before they can be verified end-to-end.
-2. **Uno dependency stabilization.** Replace temporary Uno.Sdk 6.6.0-dev.166 with the first stable 6.6+ release, rerun the first-visit gate from empty browser state, and re-enable trimming when the dependency graph is trim-clean under warnings-as-errors.
+2. **Uno WASM trimming.** Uno.Sdk is on stable 6.6.42 and first-party code is trim-clean (mock JSON now routes through the source-generated `TaskFlowApiJsonContext`), but Uno.Extensions.Navigation 7.2.3, Uno.Toolkit.WinUI 9.0.3, and Uno.UI (WinUI 6.6.184) still emit IL2104 under warnings-as-errors (verified 2026-08-18). Re-enable `PublishTrimmed` for browser-WASM Release when those packages publish trim-clean annotations.

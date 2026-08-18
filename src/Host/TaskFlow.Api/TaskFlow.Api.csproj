@@ -18,8 +18,6 @@
     <PackageReference Include="Microsoft.AI.Foundry.Local" PrivateAssets="all" />
     <PackageReference Include="Microsoft.AspNetCore.HeaderPropagation" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
-    <!-- Temporary direct reference lifting a vulnerable Microsoft.AspNetCore.OpenApi transitive - see Directory.Packages.props. -->
-    <PackageReference Include="Microsoft.OpenApi" />
     <PackageReference Include="Aspire.Azure.AI.Inference" />
     <PackageReference Include="Microsoft.Extensions.AI" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" PrivateAssets="all" />

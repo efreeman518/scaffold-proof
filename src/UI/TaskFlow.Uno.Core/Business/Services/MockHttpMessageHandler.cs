@@ -44,7 +44,6 @@ public class MockHttpMessageHandler : HttpMessageHandler
 
     private readonly List<TaskItemDto> _tasks = CreateSeedTasks();
 
-    private static readonly JsonSerializerOptions _jsonOpts = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true };
 
     /// <summary>Creates requested data after validation and maps the result to the caller contract.</summary>
     private static List<TaskItemDto> CreateSeedTasks()
@@ -225,7 +224,7 @@ public class MockHttpMessageHandler : HttpMessageHandler
         System.Diagnostics.Debug.WriteLine($"[Mock.SearchTasks] raw body: {rawBody}");
         Console.WriteLine($"[Mock.SearchTasks] raw body: {rawBody}");
 
-        var searchRequest = JsonSerializer.Deserialize<SearchRequest<TaskItemSearchFilter>>(rawBody, _jsonOpts) ?? new SearchRequest<TaskItemSearchFilter>();
+        var searchRequest = JsonSerializer.Deserialize(rawBody, TaskFlowApiJson.TypeInfo<SearchRequest<TaskItemSearchFilter>>()) ?? new SearchRequest<TaskItemSearchFilter>();
         var filter = searchRequest.Filter ?? new TaskItemSearchFilter();
 
         System.Diagnostics.Debug.WriteLine($"[Mock.SearchTasks] parsed PageNumber={searchRequest.PageNumber} PageSize={searchRequest.PageSize}");
@@ -432,10 +431,10 @@ public class MockHttpMessageHandler : HttpMessageHandler
     {
         if (request.Content is null) return default;
         var json = request.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-        return JsonSerializer.Deserialize<T>(json, _jsonOpts);
+        return JsonSerializer.Deserialize(json, TaskFlowApiJson.TypeInfo<T>());
     }
 
     /// <summary>Provides the JSON response operation for mock HTTP message handler.</summary>
     private static HttpResponseMessage JsonResponse<T>(T data, HttpStatusCode status = HttpStatusCode.OK) =>
-        new(status) { Content = JsonContent.Create(data, options: _jsonOpts) };
+        new(status) { Content = JsonContent.Create(data, TaskFlowApiJson.TypeInfo<T>()) };
 }

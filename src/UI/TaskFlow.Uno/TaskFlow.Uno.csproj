@@ -1,7 +1,5 @@
-<Project Sdk="Uno.Sdk/6.6.0-dev.166">
+<Project Sdk="Uno.Sdk/6.6.42">
 
-  <!-- shortcut: this prerelease contains the upstream WASM RootElement startup-race fix;
-       move to the first stable Uno.Sdk 6.6+ release when available. -->
   <PropertyGroup>
     <!-- Clear singular TargetFramework inherited from Directory.Build.props -->
     <TargetFramework />
@@ -9,6 +7,12 @@
          package builds, restore once with BuildAllUnoTargets=true so platform
          Skia runtime packages are present in the NuGet asset graph. -->
     <TaskFlowUnoTargetFrameworks>net10.0-browserwasm;net10.0-android;net10.0-ios</TaskFlowUnoTargetFrameworks>
+
+    <!-- shortcut: Uno.Extensions.Navigation 7.2.3, Uno.Toolkit.WinUI 9.0.3, and Uno.UI (WinUI 6.6.184)
+         still emit upstream IL2104 trim warnings under repository-wide TreatWarningsAsErrors
+         (first-party code is trim-clean; verified 2026-08-18). Re-enable trimming when those
+         dependencies publish trim-clean annotations; keep Release publishing unblocked meanwhile. -->
+    <PublishTrimmed Condition="'$(Configuration)'=='Release' AND '$(TargetFramework)'!='' AND $(TargetFramework.Contains('-browserwasm'))">false</PublishTrimmed>
     <TargetFrameworks Condition="'$(TargetFrameworkOverride)'!=''">$(TargetFrameworkOverride)</TargetFrameworks>
     <TargetFrameworks Condition="'$(TargetFrameworkOverride)'=='' and '$(BuildAllUnoTargets)'=='true'">$(TaskFlowUnoTargetFrameworks)</TargetFrameworks>
     <TargetFrameworks Condition="'$(TargetFrameworkOverride)'=='' and '$(BuildAllUnoTargets)'!='true'">net10.0-browserwasm</TargetFrameworks>
@@ -45,11 +49,6 @@
     <!-- Release artifacts must not carry interactive design/MCP tooling. -->
     <UnoDisableHotDesign Condition="'$(Configuration)'=='Release'">true</UnoDisableHotDesign>
     <UnoDisableMCPSupport Condition="'$(Configuration)'=='Release'">true</UnoDisableMCPSupport>
-
-    <!-- shortcut: current stable Uno Navigation/Toolkit/WinUI packages emit upstream IL2104
-         analysis failures under repository-wide TreatWarningsAsErrors. Re-enable trimming when
-         those dependencies publish trim-clean annotations; keep Release publishing unblocked meanwhile. -->
-    <PublishTrimmed Condition="'$(Configuration)'=='Release' AND '$(TargetFramework)'!='' AND $(TargetFramework.Contains('-browserwasm'))">false</PublishTrimmed>
   </PropertyGroup>
 
   <ItemGroup>

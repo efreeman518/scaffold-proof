@@ -49,7 +49,7 @@ var gatewayBaseUrl = builder.Configuration["Gateway:BaseUrl"]
 // navigates). Clear the inherited additional handlers and add a single clean resilience handler instead.
 // No auth handler yet - gateway dev mode accepts unauthenticated requests.
 builder.Services
-    .AddRefitClient<ITaskFlowApiClient>(new RefitSettings
+    .AddRefitGeneratedClient<ITaskFlowApiClient>(new RefitSettings
     {
         ContentSerializer = new SystemTextJsonContentSerializer(jsonOptions)
     })
