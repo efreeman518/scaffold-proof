@@ -52,7 +52,10 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.11" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.11" />
   </ItemGroup>
-  <ItemGroup Label="Roslyn (pinned to 5.6.0: EF.FlowEngine 1.0.162 -> Microsoft.CodeAnalysis.CSharp.Scripting 5.6.0 requires the exact-match family; bump alongside FlowEngine)">
+  <!-- Temporary exception: FlowEngine's scripting dependency requires one exact Roslyn family and mixed families fail migration tooling at runtime.
+       Reason: align every direct Roslyn package to the family selected by current FlowEngine. Remove when FlowEngine permits the latest stable Roslyn family.
+       Validate with restore plus the migration pending-model gate for every DbContext before and after removal. -->
+  <ItemGroup Label="Roslyn exact-family alignment">
     <PackageVersion Include="Microsoft.CodeAnalysis.Common" Version="5.6.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.6.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="5.6.0" />
@@ -139,14 +142,17 @@
     <PackageVersion Include="Uno.Extensions.Reactive" Version="7.2.3" />
   </ItemGroup>
   <ItemGroup Label="Security transitive overrides">
-    <!-- Temporary direct pin: lifts a vulnerable transitive of NBomber (NU1903) above the version
-         it resolves. Remove when NBomber ships a fixed dependency and the audit is clean. -->
+    <!-- Temporary exception: NBomber resolves a transitive with a high-severity advisory.
+         Reason: direct reference lifts the vulnerable transitive. Remove when NBomber resolves a non-vulnerable release.
+         Validate with the transitive vulnerability audit and the Test.Load build. -->
     <PackageVersion Include="MessagePack" Version="3.1.8" />
-    <!-- Temporary direct pin: lifts a vulnerable transitive of the Uno toolchain above the version
-         it resolves. Remove when the parent ships a fixed dependency and the audit is clean. -->
+    <!-- Temporary exception: the Uno toolchain resolves a vulnerable cryptography transitive.
+         Reason: direct reference lifts the vulnerable transitive. Remove when the parent resolves a non-vulnerable release.
+         Validate with the transitive vulnerability audit and the separate Uno build. -->
     <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.11" />
-    <!-- Temporary direct pin: lifts vulnerable SSH.NET transitives used by the shared test harness.
-         Remove when the parent packages require SSH.NET 2026.0.0 or later. -->
+    <!-- Temporary exception: shared test packages resolve vulnerable SSH.NET transitives.
+         Reason: direct reference lifts every affected transitive. Remove when the parents resolve a non-vulnerable release.
+         Validate with the transitive vulnerability audit and the Test.Support consumers. -->
     <PackageVersion Include="SSH.NET" Version="2026.0.0" />
   </ItemGroup>
   <ItemGroup Label="Azure Storage">
@@ -171,21 +177,29 @@
   <ItemGroup Label="AI Services">
     <PackageVersion Include="Azure.AI.OpenAI" Version="2.9.0-beta.1" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
-    <!-- Always Encrypted CMK provider (D-019); pinned to match EF.Data 1.0.88's transitive dependency. -->
+    <!-- Temporary exception: EF.Data owns the Always Encrypted provider family and a mismatched direct version can break provider registration.
+         Reason: match the family selected by EF.Data. Remove when EF.Data permits the latest stable provider independently.
+         Validate with restore, full build, and the deployment-only Key Vault/CMK acceptance gate. -->
     <PackageVersion Include="Microsoft.Data.SqlClient.AlwaysEncrypted.AzureKeyVaultProvider" Version="7.0.2" />
     <PackageVersion Include="Azure.Search.Documents" Version="12.0.0" />
     <PackageVersion Include="Microsoft.Agents.AI" Version="1.17.0" />
     <PackageVersion Include="Microsoft.Agents.AI.OpenAI" Version="1.17.0" />
     <PackageVersion Include="Microsoft.Extensions.AI" Version="10.9.0" />
     <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.9.0" />
-    <!-- Pinned: workaround for Aspire.Hosting.Foundry using an older Foundry Local SDK that cannot discover the GA 1.x runtime. Remove with API-host SDK-direct workaround. -->
+    <!-- Temporary exception: Aspire Foundry hosting cannot discover the current Foundry Local runtime.
+         Reason: the API host uses the current SDK directly. Remove when Aspire hosting supports the runtime and the direct path is deleted.
+         Validate with Test.FoundryLocal plus provider-status and Aspire topology tests. -->
     <PackageVersion Include="Microsoft.AI.Foundry.Local" Version="1.2.4" />
-    <!-- Pinned below latest (2.13.0): Microsoft.Extensions.AI.OpenAI 10.9.0 constrains OpenAI to [2.12.0, 2.13.0). Bump when Extensions.AI.OpenAI widens the range. -->
+    <!-- Temporary exception: Microsoft.Extensions.AI.OpenAI constrains the OpenAI dependency below its latest stable release.
+         Reason: select the newest release inside that declared range. Remove when the parent widens the range.
+         Validate with restore and the Unit AI provider/agent contract tests. -->
     <PackageVersion Include="OpenAI" Version="2.12.0" />
     <PackageVersion Include="Aspire.Hosting.Azure.CognitiveServices" Version="13.4.6" />
     <PackageVersion Include="Aspire.Hosting.Azure.Search" Version="13.4.6" />
     <PackageVersion Include="Aspire.Hosting.Testing" Version="13.4.6" />
-    <!-- Foundry hosting + Azure AI Inference client are preview-only; keep them on the latest 13.4.5 Aspire train with the other Aspire packages. -->
+    <!-- Temporary exception: Foundry hosting and Azure AI Inference have no stable package release.
+         Reason: use their latest compatible preview releases for the enabled AI proof. Remove when stable releases exist.
+         Validate with restore, full build, Test.Aspire AI topology, and dedicated live-provider lanes. -->
     <PackageVersion Include="Aspire.Hosting.Foundry" Version="13.4.6-preview.1.26319.6" />
     <PackageVersion Include="Aspire.Azure.AI.Inference" Version="13.4.6-preview.1.26319.6" />
   </ItemGroup>

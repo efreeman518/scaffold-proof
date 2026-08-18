@@ -1,5 +1,7 @@
 # Implementation Plan - TaskFlow
 
+Historical Phase 3 execution plan. `.scaffold/resource-implementation.yaml` owns current declared capabilities and `.scaffold/REFERENCE-STATUS.md` owns current evidence.
+
 ## Inputs Summary
 
 - Domain specification: `.scaffold/domain-specification.yaml`
@@ -9,8 +11,8 @@
 - Mode: full | Testing: comprehensive
 - scaffoldMode: full
 - testingProfile: comprehensive
-- Enabled hosts: API, Gateway, Scheduler, FunctionApp, UnoUI
-- Enabled flags: includeApi, includeGateway, includeFunctionApp, includeScheduler, includeUnoUI, includeIaC, includeAiServices, includeArchitectureTests, includeE2ETests, includeLoadTests, includeBenchmarkTests
+- Enabled hosts: API, Gateway, Scheduler, FunctionApp, UnoUI, BlazorUI, ReactUI
+- Enabled concerns: IaC, GitHub Actions, AI services, Key Vault, FlowEngine, comprehensive test tiers
 
 ## Vertical Slice Order
 
@@ -210,7 +212,7 @@ flowchart TD
 | 3 | Blob storage for attachments | Binary content -> blob; SAS URI for direct client upload/download |
 | 4 | Service Bus for domain events | At-least-once delivery, outbox pattern, topic/subscription model |
 | 5 | FusionCache + Redis | L1 memory + L2 distributed cache with fail-safe; named instances per entity |
-| 6 | .NET 10 | Latest framework; all packages at latest versions |
+| 6 | .NET SDK | Resolve latest stable at generation; concrete project files remain reproducible |
 | 7 | TaskItem self-referencing max 3 levels | Domain rule enforced; keeps queries/UI manageable |
 | 8 | Category self-referencing max 5 levels | Business requirement for organizational hierarchy depth |
 | 9 | Comprehensive testing profile | Reference app demonstrates all test types |

@@ -45,7 +45,7 @@ jobs:
       operation: ${{ steps.resolve.outputs.operation }}
       sha: ${{ steps.resolve.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Resolve operation and exact commit
@@ -104,10 +104,10 @@ jobs:
       uno-id: ${{ steps.uno.outputs.artifact-id }}
       uno-digest: ${{ steps.uno.outputs.artifact-digest }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.validate-entry.outputs.sha }}
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: global.json
       - run: dotnet workload install wasm-tools
@@ -116,8 +116,8 @@ jobs:
           NUGET_PAT: ${{ secrets.NUGET_PAT }}
         run: |
           [[ -n "$NUGET_PAT" ]] || { echo "::error::NUGET_PAT is required"; exit 1; }
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -157,14 +157,14 @@ jobs:
           $apps = @(Get-ChildItem './release/uno/wwwroot/_framework' -File | Where-Object Name -Match '^TaskFlow\.Uno\.[A-Za-z0-9]+\.wasm$')
           if ($apps.Count -ne 1) { throw "Expected one current Uno app assembly; found $($apps.Count)." }
       - id: functions
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: taskflow-functions-${{ needs.validate-entry.outputs.sha }}
           path: ./release/functions
           if-no-files-found: error
           retention-days: 90
       - id: uno
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: taskflow-uno-${{ needs.validate-entry.outputs.sha }}
           path: ./release/uno/wwwroot
@@ -183,10 +183,10 @@ jobs:
       swa-name: ${{ steps.deploy.outputs.staticWebAppName }}
       migration-job: ${{ steps.deploy.outputs.migrationJobName }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.validate-entry.outputs.sha }}
-      - uses: azure/login@v2
+      - uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
@@ -203,7 +203,7 @@ jobs:
           echo "scheduler=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-scheduler")" >> "$GITHUB_OUTPUT"
           echo "blazor=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-blazor")" >> "$GITHUB_OUTPUT"
       - id: deploy
-        uses: azure/arm-deploy@v2
+        uses: azure/arm-deploy@a1361c2c2cd398621955b16ca32e01c65ea340f5 # v2
         with:
           scope: subscription
           region: ${{ env.AZURE_LOCATION }}
@@ -220,7 +220,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: dev
     steps:
-      - uses: azure/login@v2
+      - uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
@@ -245,18 +245,18 @@ jobs:
     runs-on: ubuntu-latest
     environment: dev
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.validate-entry.outputs.sha }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: taskflow-functions-${{ needs.validate-entry.outputs.sha }}
           path: ./release/functions
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: taskflow-uno-${{ needs.validate-entry.outputs.sha }}
           path: ./release/uno
-      - uses: azure/login@v2
+      - uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
@@ -284,7 +284,7 @@ jobs:
             az containerapp update -n "$app" -g "$RG" --image "$image" --output none
             wait_healthy "$app"
           done
-      - uses: azure/functions-action@v1
+      - uses: azure/functions-action@c5060b3b8bb1ebbcb531abd00c822ecbaa8ea656 # v1.5.7
         with:
           app-name: ${{ needs.deploy-infrastructure.outputs.function-name }}
           package: ./release/functions
@@ -296,7 +296,7 @@ jobs:
         run: |
           token=$(az staticwebapp secrets list -n "$SWA" -g "$RG" --query properties.apiKey -o tsv)
           echo "::add-mask::$token"; echo "token=$token" >> "$GITHUB_OUTPUT"
-      - uses: Azure/static-web-apps-deploy@v1
+      - uses: Azure/static-web-apps-deploy@1a947af9992250f3bc2e68ad0754c0b0c11566c9 # v1
         with:
           azure_static_web_apps_api_token: ${{ steps.swa.outputs.token }}
           action: upload
@@ -312,7 +312,7 @@ jobs:
     needs: [validate-entry, build-release, activate-release]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Create validated current release manifest
         env:
           GH_TOKEN: ${{ github.token }}
@@ -333,7 +333,7 @@ jobs:
             --argjson fid "$FUNCTIONS_ID" --arg fd "$FUNCTIONS_DIGEST" --argjson uid "$UNO_ID" --arg ud "$UNO_DIGEST" --argjson previous "${previous:-null}" \
             '{schemaVersion:1,operation:"deploy",commitSha:$sha,images:{gateway:$gateway,api:$api,scheduler:$scheduler,migrator:$migrator,blazor:$blazor},artifacts:{functions:{id:$fid,digest:$fd},uno:{id:$uid,digest:$ud}},previousManifestArtifactId:$previous}' > release-manifest.json
           pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path release-manifest.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: taskflow-release-manifest-dev
           path: release-manifest.json
@@ -357,7 +357,7 @@ jobs:
       uno-id: ${{ steps.release.outputs.uno-id }}
       uno-digest: ${{ steps.release.outputs.uno-digest }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: release
         name: Resolve authoritative previous manifest
         env:
@@ -390,8 +390,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: dev
     steps:
-      - uses: actions/checkout@v4
-      - uses: azure/login@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
@@ -450,7 +450,7 @@ jobs:
             wait_healthy "$app"
           done
           az containerapp job update -n "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-dbmigrator" -g "$RG" --image "$MIGRATOR" --output none
-      - uses: azure/functions-action@v1
+      - uses: azure/functions-action@c5060b3b8bb1ebbcb531abd00c822ecbaa8ea656 # v1.5.7
         with:
           app-name: ${{ steps.resources.outputs.function }}
           package: ./rollback/functions
@@ -461,7 +461,7 @@ jobs:
         run: |
           token=$(az staticwebapp secrets list -n "$SWA" -g "$RG" --query properties.apiKey -o tsv)
           echo "::add-mask::$token"; echo "token=$token" >> "$GITHUB_OUTPUT"
-      - uses: Azure/static-web-apps-deploy@v1
+      - uses: Azure/static-web-apps-deploy@1a947af9992250f3bc2e68ad0754c0b0c11566c9 # v1
         with:
           azure_static_web_apps_api_token: ${{ steps.swa.outputs.token }}
           action: upload
@@ -477,7 +477,7 @@ jobs:
     needs: [validate-entry, resolve-rollback, rollback]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Record rollback as current manifest
         env:
           SHA: ${{ needs.resolve-rollback.outputs.sha }}
@@ -496,7 +496,7 @@ jobs:
             --argjson fid "$FUNCTIONS_ID" --arg fd "$FUNCTIONS_DIGEST" --argjson uid "$UNO_ID" --arg ud "$UNO_DIGEST" --argjson previous "$PREVIOUS_ID" \
             '{schemaVersion:1,operation:"rollback",commitSha:$sha,images:{gateway:$gateway,api:$api,scheduler:$scheduler,migrator:$migrator,blazor:$blazor},artifacts:{functions:{id:$fid,digest:$fd},uno:{id:$uid,digest:$ud}},previousManifestArtifactId:$previous}' > release-manifest.json
           pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path release-manifest.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: taskflow-release-manifest-dev
           path: release-manifest.json

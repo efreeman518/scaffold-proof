@@ -1,8 +1,8 @@
 # REFERENCE-STATUS - TaskFlow
 
-Current verified status of the TaskFlow reference application. Used by the proof map ([../AI-Instructions-Scaffold/support/taskflow-proof-map.md](../AI-Instructions-Scaffold/support/taskflow-proof-map.md)) and consumers who need an authoritative snapshot of build/test/vulnerability state.
+Canonical current evidence for the TaskFlow reference application. Historical phase narrative belongs in Git history; root `HANDOFF.md` contains only terminal routing state.
 
-> **Update protocol:** when you commit reference-app changes that move build/test counts or vulnerability state, refresh this file in the same commit. HANDOFF.md narrates session history; this file is the current truth.
+> Update this file only from observed results. TaskFlow CI records the scaffold checkout commit used for cross-repository validation so failures remain diagnosable without creating a compatibility pin.
 
 ## Build Status
 
@@ -11,104 +11,88 @@ Current verified status of the TaskFlow reference application. Used by the proof
 | Last verified | 2026-08-18 |
 | Solution | `TaskFlow.slnx` |
 | Target framework | .NET 10 |
-| Projects | 44 |
+| Solution projects | 44 |
 | Errors | 0 |
 | Warnings | 0 |
 
-> Note: `src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj` builds separately because Uno.Sdk requires explicit invocation: `dotnet build src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj`.
+`src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj` builds separately because the Uno SDK requires explicit invocation.
 
 ## Test Status
 
 | Project | Category filter | Verified count | Notes |
 |---|---|---:|---|
-| Test.Unit | `TestCategory=Unit` | 224 | includes scaffold-auth, deployment/release-manifest contracts, non-destructive migration-model checks, proxy-forwarding, migration-history registration, and shared Aspire deadline-policy tests; verified 2026-08-17 |
-| Test.Architecture | `TestCategory=Architecture` | 22 | NetArchTest layering rules; verified 2026-07-16 |
-| Test.Endpoints | `TestCategory=Endpoint` | 43 | WebApplicationFactory in-memory contract tests; verified 2026-07-17 |
-| Test.E2E | `TestCategory=E2E` | 7 | WebApplicationFactory + Testcontainers SQL workflow chains; verified 2026-07-16 |
-| Test.Integration | `TestCategory=Integration` | 28 | service-level tests against real SQL and Azurite Testcontainers, including stable multi-page membership under duplicate business sort keys, schema-pinned EF history, and legacy `dbo` relocation; verified 2026-08-17 |
-| Test.Integration.FlowEngine | `TestCategory=Integration` | 16 | workflow JSON validity (deserialize, validator, in-memory registry round-trip, builder, file-presence guard); no Aspire/Docker; verified 2026-07-16 |
-| Test.Aspire | multiple (`Aspire`, `Foundry`, `Integration`, `LiveAI`) | 20 | 15 passed; 5 inconclusive because Azure Foundry was not configured. Shared RID-free Aspire mesh covered API, Gateway, Blazor, React, Uno, Functions, audit, and provider topology; verified 2026-08-18 |
-| Test.FoundryLocal | `FoundryLocal`, `LiveAI` | 3 | live run: 3 passed against the local model; serial acceptance explicitly opted out this dedicated external-resource lane; verified 2026-08-18 |
-| Test.PlaywrightUI | `PlaywrightUI`, `WasmUI`, `Unit` | 9 | published-Release Uno browser coverage plus static-host contracts for required assets, compression quality, MIME preservation, caching, and asset 404 behavior; verified 2026-08-18 |
-| Test.UI | `UI`, `Presentation` | 62 | headless presentation and client-contract tests, including source-generated reflection-disabled JSON coverage, Uno navigation/error markup, and the no-login surface; verified 2026-08-18 |
-| Test.Mobile | `MobileUI` | 3 | explicitly disabled for serial acceptance; dedicated runner is the enabled-lane gate - 3/3 passed via `run-mobile-tests.ps1` on a live emulator; verified 2026-08-18 |
-| Test.Load | `TestCategory=Load` | 2 | NBomber; `[Ignore]` by default; manual run |
-| Test.Mutation | n/a | 33 | mutation-target contract tests; verified 2026-07-16 |
-| Test.Benchmarks | n/a | - | BenchmarkDotNet console runner; `dotnet run -c Release` |
+| Test.Unit | `TestCategory=Unit` | 224 | Includes scaffold auth, deployment and Bicep contracts, application-style switching, AI contracts, middleware, caching, FlowEngine, functions, scheduler, repositories, mappers, and services |
+| Test.Architecture | `TestCategory=Architecture` | 22 | Layering, naming, generated-code, endpoint-route, and project coverage checks |
+| Test.Endpoints | `TestCategory=Endpoint` | 43 | In-memory WebApplicationFactory coverage for service and CQRS styles |
+| Test.E2E | `TestCategory=E2E` | 7 | SQL Testcontainers multi-endpoint workflows for both application styles |
+| Test.Integration | `TestCategory=Integration` | 28 | Real SQL and Azurite component coverage |
+| Test.Integration.FlowEngine | `TestCategory=Integration` | 16 | Workflow JSON validity and engine integration contracts |
+| Test.Aspire | `Aspire`, `Foundry`, `Integration`, `LiveAI` | 20 | Shared Aspire mesh; five Azure Foundry cases are inconclusive without deployed configuration |
+| Test.FoundryLocal | `FoundryLocal`, `LiveAI` | 3 | Dedicated live local-model lane; intentionally outside serial acceptance |
+| Test.PlaywrightUI | `PlaywrightUI`, `WasmUI`, `Unit` | 9 | Blazor, React, and published Release Uno browser and static-host contracts |
+| Test.UI | `UI`, `Presentation` | 62 | Headless UI and presentation contracts, including source-generated JSON coverage |
+| Test.Mobile | `MobileUI` | 3 | Dedicated Android emulator and Appium runner; gated outside serial acceptance |
+| Test.Load | `TestCategory=Load` | 2 | NBomber; ignored by default and run manually |
+| Test.Mutation | n/a | 33 | Mutation-target contract tests |
+| Test.Benchmarks | n/a | - | BenchmarkDotNet console runner; build-verified |
 
-**Current automated verification:** `dotnet build TaskFlow.slnx --no-restore -m:1` passed across 44 projects with 0 warnings/errors, and the separate Uno build passed across 3 projects with 0 warnings/errors. Unfiltered serial `dotnet test TaskFlow.slnx --no-build -m:1` passed with 462 passed, 0 failed, 10 skipped (5 Azure Foundry-gated, 2 load ignored by default, 3 mobile gated to the dedicated runner); Foundry Local ran live inside acceptance (3 passed) and the suite now includes `UnoWasmCanvasSmoke_Passes` against a fresh stable Uno.Sdk 6.6.42 Release publish. The dedicated mobile runner passed 3/3 against a live Android emulator + Appium. Deployment Dockerfiles use non-root .NET 10 noble-chiseled runtime stages; SDK images are build-stage only. Toolchain: .NET SDK 10.0.400 (global.json), all NuGet pins at latest (EF core packages 1.0.95, EF.FlowEngine/FilterBuilder family 1.0.162, EFCore 10.0.11, MSTest 4.3.3); Refit 15 requires the source-generated client path (`AddRefitGeneratedClient`), which TaskFlow.Blazor now uses. Verified 2026-08-18.
+Current automated evidence: the solution build passed across 44 projects with zero warnings or errors, and the separate Uno build passed across three projects with zero warnings or errors. Unfiltered serial acceptance passed with 462 passed, zero failed, and 10 skipped: five Azure Foundry-gated, two load ignored by default, and three mobile gated to the dedicated runner. Dedicated Foundry Local passed 3/3 separately. The dedicated mobile runner passed 3/3 separately. Deployment Dockerfiles use non-root chiseled runtime stages; SDK images remain build-stage only.
 
-**Uno published-Release proof:** the WASM RootElement startup race (`Arg_NullReferenceException` in `IXamlRootHost.get_RootElement`) fixed upstream in Uno.Sdk 6.6.0-dev.166 is now covered by the stable **Uno.Sdk 6.6.42** pin, which passed the published `Release` first-visit and normal Uno Playwright projects from empty browser state without refresh, retry, sleep, or exception suppression (verified 2026-08-18 with Uno.Extensions 7.2.3). Browser-WASM `Release` temporarily uses `PublishTrimmed=false` because the Navigation/Toolkit/WinUI package set emits upstream `IL2104` trim-analysis failures under warnings-as-errors.
-
-### Playwright (`tests/Test.PlaywrightUI/`)
-
-C# MSTest adapter owns the Aspire graph through `AspireTestHostContext`, resolves named endpoints, and runs C# plus installed TypeScript Playwright projects. It uses one cumulative startup deadline across Docker preflight, Uno restore/build, AppHost startup/readiness, and browser launch. Run `npm ci` inside the folder before first use; endpoint override variables are optional targets, not enable flags.
+Published Release Uno cold-start and normal browser projects pass from empty browser state without refresh, retry, sleep, or exception suppression. Browser WASM Release temporarily sets `PublishTrimmed=false` because the current Navigation, Toolkit, and WinUI package set emits upstream `IL2104` under warnings-as-errors. Removal condition: those packages become trim-clean. Validation gate: rerun clean Release publish plus the Uno cold-start and normal Playwright projects before removing the workaround.
 
 ## Vulnerability Status
 
-Run `dotnet list package --vulnerable --include-transitive` and capture findings here. Severity policy from [../AI-Instructions-Scaffold/support/execution-gates.md](../AI-Instructions-Scaffold/support/execution-gates.md) Section  Vulnerability Audit:
+Run `dotnet list package --vulnerable --include-transitive` and capture findings here. Severity policy: [scaffold execution gates](https://github.com/efreeman518/AI-Instructions-Scaffold/blob/main/support/execution-gates.md#vulnerability-audit).
 
-- **High/Critical:** must be fixed or recorded with owner + target resolution date
-- **Moderate:** logged here, tracked but not blocking
-- **Low:** team discretion
+Last audit used `dotnet list TaskFlow.slnx package --vulnerable --include-transitive --no-restore` and reported no vulnerable packages or package vulnerability warnings.
 
-Last audited: 2026-08-17 with `dotnet list TaskFlow.slnx package --vulnerable --include-transitive --no-restore`; no vulnerable packages reported for any project. `MessagePack` remains pinned to `3.1.7` for `Test.Load`; `System.Security.Cryptography.Xml` is pinned to `10.0.11` and `SSH.NET` to `2026.0.0` through `Test.Support`.
+| Package | Severity | Direct/Transitive | Advisory | Notes |
+|---|---|---|---|---|
+| _None_ | - | - | - | Full solution audit reported no vulnerable packages |
 
-| Package | Version | Severity | Direct/Transitive | Advisory | Notes |
-|---|---|---|---|---|---|
-| _None_ | - | - | - | - | Full solution audit reported no vulnerable packages. |
+## Capability Coverage
 
-The solution build currently emits no package vulnerability warnings.
+Status meanings:
+
+- `proven`: implemented and covered by executable build, test, or smoke evidence.
+- `deployment-only`: generated or wired, but live acceptance requires deployed external resources or identity.
+- `documented-only`: example or opt-in documentation exists without active runtime wiring.
+- `not enabled`: intentionally absent from the TaskFlow configuration.
+
+| Capability | Status | Evidence boundary |
+|---|---|---|
+| Service and CQRS application-style switch | proven | Shared Endpoint and SQL E2E suites run both styles; `ApplicationStyleResolver` owns selection |
+| SQL persistence, migrations, stable paging | proven | Unit, Integration, E2E, and migrator contracts |
+| Aspire, Gateway, Scheduler, Functions | proven | Build, topology, unit, endpoint, and shared-mesh coverage |
+| Uno, Blazor, React | proven | Build, Test.UI, Playwright, and dedicated mobile evidence |
+| FlowEngine | proven | Runtime wiring, separate-schema migration, 16 definition/integration cases, unit and mesh coverage |
+| Foundry Local inference | proven | Dedicated live 3/3 lane and provider-status contract |
+| GitHub Actions and deployment workflow shape | proven | Workflow contract tests and CI execution |
+| Bicep module shape | proven | Bicep build and unit contract tests |
+| Live Entra or CIAM sign-in | deployment-only | Scaffold auth is the local proof; live app registrations, consent, roles, and redirect URIs require deployment |
+| Azure Foundry and Azure AI Search | deployment-only | Provider wiring and gated smoke tests exist; live resources are not required for local acceptance |
+| Key Vault backed encryption and data-protection keys | deployment-only | AppHost and Bicep wiring exist; live vault, CMK, identity, and RBAC require deployment |
+| Production infrastructure rollout | deployment-only | Deployment workflow and Bicep are validated without asserting a live environment rollout |
+| Existing Foundry account, prompt agent, and pre-existing agent opt-ins | documented-only | Commented examples only; not active runtime branches |
+| Notifications | not enabled | `includeNotifications: false`; no notification definitions |
+| `azd` orchestration | not enabled | `includeAzd: false` |
+| Private endpoints | not enabled | `usePrivateEndpoints: false` |
+
+The declared flags and matrix must agree with `.scaffold/resource-implementation.yaml`. Proof paths are validated against the scaffold-owned [TaskFlow proof map](https://github.com/efreeman518/AI-Instructions-Scaffold/blob/main/support/taskflow-proof-map.md).
 
 ## Phase Completion
 
-Per the consolidated 5-sub-phase taxonomy:
+Phases 1 through 5e and the FlowEngine extension are complete. Root `HANDOFF.md` records `workflowStatus: complete`, `currentPhase: 5`, and `currentSubPhase: complete`; future work uses ordinary maintenance.
 
-| Phase | Status |
-|---|---|
-| 1 - Domain Discovery | complete |
-| 2 - Resource Definition | complete |
-| 3 - Implementation Plan | complete |
-| 4 - Contract Scaffolding | complete |
-| 5a - Foundation (TDD) | complete |
-| 5b - App Core + Runtime/Edge | complete |
-| 5c - Optional Hosts | complete (Gateway, Scheduler, Functions, Uno UI, Blazor) |
-| 5d - Quality + Delivery | complete (architecture/load/benchmark tests, non-root chiseled Docker runtimes, immutable release manifests, deploy/rollback CI/CD, IaC Bicep) |
-| 5e - Integration (Auth + AI) | complete (scaffold mode; live Entra/Foundry deployment-only) |
-| 5e+ - Workflow Orchestration | complete (EF.FlowEngine, three shipped workflows, Blazor dashboard, admin API at `/api/flowengine/*`; agent nodes use the Aspire `IChatClient`, with no-op fallback when AI is disabled) |
+## Infrastructure as Code
 
-## AI Runtime Status
+`infra/` contains the Bicep deployment baseline: top-level `main.bicep`, resource modules, deployment scripts, and rollback contracts.
 
-Foundry Local verified on 2026-06-13 with:
+Deployment plan: [`.azure/deployment-plan.md`](../.azure/deployment-plan.md).
 
-- Foundry Local `0.8.119`
-- Aspire CLI `13.4.3`
-- .NET SDK `10.0.300`
-- local model `qwen2.5-0.5b` / `FoundryModel.Local.Qwen2505b` (`chat, tools`)
-
-Verified through the Aspire Gateway: D1 basic chat, D2 streaming chat, D3 code-hosted agent, D7 read-only advisor. The Aspire graph now also starts `TaskFlow.Blazor`; `/ai-chat` rendered against the live Gateway URL. D4/D5/D6/D9 side effects still require an authenticated tenant context before they can persist changes.
-
-## Infrastructure as Code (IaC)
-
-`infra/` contains the Bicep deployment baseline:
-
-- `main.bicep` - top-level entry
-- `modules/` - SQL, Cosmos DB, Service Bus, Storage, Key Vault (incl. the D-019 Always Encrypted CMK RSA key `taskflow-cmk`, gated by `enableAlwaysEncrypted`), App Configuration, Functions, Container Apps + environment, Static Web App, Log Analytics, deploy identity, role assignment, Cosmos RBAC
-
-Deployment plan: [.azure/deployment-plan.md](.azure/deployment-plan.md).
-
-Validate locally: `az bicep build --file infra/main.bicep`.
-
-## Test Harness Architecture
-
-`Test.Endpoints` and `Test.E2E` derive from a shared `WebApplicationFactoryBase<TProgram, TTrxnContext, TQueryContext>` in `Test.Support` (see `tests/Test.Support/WebApplicationFactoryBase.cs`). The base handles the standard EF.Packages plumbing swap (interceptor removal, pooled-factory removal, scoped-factory removal, reflection-based `DbContext` creation). Derived classes only specify the test-mode store:
-
-- `Test.Endpoints/CustomApiFactory.cs` - InMemoryDatabase per factory instance
-- `Test.E2E/SqlApiFactory.cs` - Testcontainers SQL Server, container managed at the class level
+Validate locally with `az bicep build --file infra/main.bicep`.
 
 ## Outstanding Follow-Ups
 
-Tracked here so the next instruction-set or reference-app PR knows what's pending:
-
-1. **Authenticated AI side effects.** D4/D5/D6/D9 persistence/enqueue side effects still require normal tenant/auth context before they can be verified end-to-end.
-2. **Uno WASM trimming.** Uno.Sdk is on stable 6.6.42 and first-party code is trim-clean (mock JSON now routes through the source-generated `TaskFlowApiJsonContext`), but Uno.Extensions.Navigation 7.2.3, Uno.Toolkit.WinUI 9.0.3, and Uno.UI (WinUI 6.6.184) still emit IL2104 under warnings-as-errors (verified 2026-08-18). Re-enable `PublishTrimmed` for browser-WASM Release when those packages publish trim-clean annotations.
+1. Authenticated Azure AI persistence and enqueue scenarios remain deployment-only. Close them with a provisioned Azure Foundry and AI Search environment plus real authenticated side-effect assertions; prompt-only model responses are insufficient.
+2. Browser WASM trimming remains disabled for Release because upstream Uno dependencies emit `IL2104` under warnings-as-errors. Remove only after a trim-clean dependency update and a clean published cold-start plus normal Uno Playwright run.

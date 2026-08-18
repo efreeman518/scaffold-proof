@@ -17,6 +17,7 @@ unoProfile: full
 # Package strategy: TaskFlow consumes the EF.* layers from the private feed.
 packageStrategy: feed
 packagePrefix: "EF"
+applicationStyle: switch
 customNugetFeeds:
   - "https://nuget.pkg.github.com/efreeman518/index.json"
 localPackageLayers: []
@@ -31,15 +32,20 @@ includeScheduler: true
 includeUnoUI: true
 includeBlazorUI: true
 includeReactUI: true   # Vite SPA via AddViteApp - see DESIGN-DECISIONS D-018
+includeNotifications: false
+includeFlowEngine: true
+flowEngineDbStrategy: same-db-separate-schema
 
 includeIaC: true
-includeGitHubActions: false
+includeGitHubActions: true
 includeAzd: false
 includeAiServices: true
 
 database: SQLServer
+migrationLifecycle: preserved-append-only
+databaseProviders: [SqlServer]
 caching: FusionCache+Redis
-includeKeyVault: false
+includeKeyVault: true
 deployTarget: ContainerApps
 useAspire: true
 
@@ -65,6 +71,10 @@ includeArchitectureTests: true
 includeE2ETests: true
 includeLoadTests: true
 includeBenchmarkTests: true
+includeMutationTests: true
+includeAspireTests: true
+includePlaywrightUITests: true
+includeMobileTests: true
 
 # ---------------------------------------------------------------------------
 # Entity-to-Store Mapping
@@ -190,28 +200,6 @@ messagingSemantics:
   - { channel: TaskCommands, deliveryMode: at-least-once, outboxEnabled: false, idempotencyKey: CorrelationId, deduplicationWindow: "PT30M" }
 
 # ---------------------------------------------------------------------------
-# Notifications
-# ---------------------------------------------------------------------------
-notifications:
-  - name: TaskOverdueNotification
-    trigger: TaskItemOverdueSuspected
-    channel: in-app
-    template: "task-overdue"
-    recipients: [AssignedUser]
-
-  - name: TaskCompletedNotification
-    trigger: TaskItemCompleted
-    channel: in-app
-    template: "task-completed"
-    recipients: [Creator]
-
-  - name: CommentAddedNotification
-    trigger: CommentAdded
-    channel: in-app
-    template: "comment-added"
-    recipients: [TaskOwner]
-
-# ---------------------------------------------------------------------------
 # Scheduled Jobs
 # ---------------------------------------------------------------------------
 scheduledJobs:
@@ -241,7 +229,7 @@ functionDefinitions:
     trigger: serviceBusTopic
     channel: DomainEvents
     subscription: task-events
-    description: "Process domain events for task lifecycle changes (update Cosmos projection, trigger notifications)"
+    description: "Process domain events for task lifecycle changes (update Cosmos projection, trigger workflows)"
 
   - name: StaleTaskCleanup
     trigger: timerTrigger

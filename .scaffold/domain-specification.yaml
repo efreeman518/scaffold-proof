@@ -8,12 +8,12 @@
 
 ProjectName: TaskFlow
 ProjectDescription: >-
-  A multi-tenant task management application demonstrating all architectural
-  patterns in the AI-Instructions-Scaffold instruction set. TaskFlow covers
+  A multi-tenant task management application used as broad reference proof for
+  selected AI-Instructions-Scaffold patterns. TaskFlow covers
   hierarchical categories, self-referencing sub-tasks, tagging, comments,
   checklists, file attachments, state machines, domain events, caching,
-  messaging, AI search, and agent workflows - all running locally via
-  Aspire emulators with no remote Azure resources required.
+  messaging, AI-assisted search, and agent workflows. Current proof boundaries
+  and deployment-only capabilities live in .scaffold/REFERENCE-STATUS.md.
 
 # ---------------------------------------------------------------------------
 # Tenancy & Auth Model

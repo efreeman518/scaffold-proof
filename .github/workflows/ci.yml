@@ -42,7 +42,27 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check out latest scaffold
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: efreeman518/AI-Instructions-Scaffold
+          ref: main
+          path: .scaffold-source
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.x"
+
+      - name: Validate against latest scaffold
+        run: |
+          python -m pip install pyyaml jsonschema
+          scaffold_commit=$(git -C .scaffold-source rev-parse HEAD)
+          echo "Scaffold validation commit: $scaffold_commit"
+          echo "Scaffold validation commit: \`$scaffold_commit\`" >> "$GITHUB_STEP_SUMMARY"
+          python .scaffold-source/scripts/validate-reference.py --reference-root .
 
       # Aspire/Integration tests pull several large container images (two SQL Server tags, azurite,
       # service bus emulator, redis). The hosted runner's ~14 GB free disk overflows mid-pull
@@ -51,7 +71,7 @@ jobs:
       # Keep dotnet and the tool cache - the build depends on them.
       - name: Free disk space
         if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.includeE2E || inputs.includeIntegration || inputs.includeAspireMesh || inputs.includeFoundryLocal || inputs.includePlaywrightUI || inputs.includeFullAcceptance)) || github.event_name == 'schedule' }}
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
           dotnet: false
@@ -60,7 +80,7 @@ jobs:
           large-packages: true
           swap-storage: false
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: global.json
 
@@ -163,7 +183,7 @@ jobs:
           --logger "trx;LogFileName=foundrylocal-results.trx"
           --results-directory ./TestResults
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         if: ${{ github.event_name == 'workflow_dispatch' && (inputs.includePlaywrightUI == true || inputs.includeFullAcceptance == true) }}
         with:
           node-version: 24
@@ -228,7 +248,7 @@ jobs:
 
       - name: Upload Test Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-results
           path: ./TestResults/*.trx

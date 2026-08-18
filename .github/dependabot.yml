@@ -1,0 +1,26 @@
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: /src/UI/TaskFlow.React
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: /src/UI/TaskFlow.Uno
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: /tests/Test.PlaywrightUI
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
