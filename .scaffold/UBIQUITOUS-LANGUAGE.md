@@ -34,6 +34,21 @@ This file records the shared domain language used by the TaskFlow reference app.
 | `EntraID` | external-system | Enterprise identity provider for API authentication. | Use in auth configuration. |
 | `EntraExternal` | external-system | External identity provider for gateway/user-facing auth. | Use for gateway auth configuration. |
 | `enterprise` | auth scenario | Internal workforce authentication scenario. | Use in domain spec auth scenario. |
+| `ETag` | concept | HTTP entity tag identifying a specific version of an aggregate; used for optimistic concurrency via `If-Match`. | `ETag: "<Version>"` (strong). See `Version`, `Aggregate Version`. |
+| `Version` | concept | App-managed monotonic `long` concurrency token on every entity; the raw value behind an ETag. | `long Version` column, `IsConcurrencyToken()`. See D-021. |
+| `Aggregate Version` | concept | The root entity's `Version`; the single concurrency currency for an aggregate, bumped whenever a child is mutated. | Child PUT/DELETE use the root's `Version` as If-Match currency, not their own. See D-031. |
+| `Cursor` | concept | Opaque, tamper-protected token encoding the last-seen sort key and id for keyset (seek) pagination. | `CursorToken`, `ICursorProtector`; Base64Url encoded. |
+| `SortMode` | concept | Named, enumerated sort order for a cursor-paged list (e.g. `DueDateAsc`, `ModifiedDesc`). | `TaskItemSortMode` enum; part of the cursor's tamper check. |
+| `Export` | concept | Bulk, unpaged NDJSON stream of an entity's flat scalar fields for downstream/offline consumption. | `TaskItemExportDto`; `StreamTaskItemExportAsync(afterId, batchSize)`. |
+| `Idempotent Create` | concept | A create request carrying a caller-supplied UUIDv7 id; replay with an equivalent payload returns the existing entity, a divergent payload conflicts. | See GR-17, D-033. |
+| `Outbox` | concept | TaskFlow-owned transactional table of staged domain events/messages, written in the same transaction as the domain change and drained by the scheduler host. | `OutboxMessage`; provider-neutral lease-based claim. See D-026. |
+| `Consumer Inbox` | concept | Table recording which messages a given consumer has already processed, enforcing at-least-once-safe idempotent consumption. | `ConsumerInbox (Consumer, MessageId, ProcessedAtUtc)`. See D-029. |
+| `Work Table` | concept | A staging table holding units of deferred work for a background worker (e.g. blob deletes) that is not itself the domain entity. | `BlobDeleteWork`; drained by a dedicated worker. |
+| `Lease` | concept | A time-bounded claim (`LeaseOwner`, `LeaseExpiresUtc`) a scheduler/worker replica takes on a batch of rows so other replicas skip them until it expires. | Conditional `ExecuteUpdateAsync` claim. See D-026. |
+| `Recurrence Template` | concept | The Recurring `TaskItem` definition (`RecurrencePattern`, `NextOccurrenceAtUtc`) that a scheduled job expands into cloned occurrence tasks. | `RecurrenceTemplateId` on the generated occurrence. |
+| `Occurrence` | concept | One cloned instance of a Recurrence Template for a specific point in time, unique per tenant on `(RecurrenceTemplateId, OccurrenceUtc)`. | `OccurrenceUtc`; upserted via FlexLabs Upsert. |
+| `Provider` (database provider) | concept | The relational database engine backing a DbContext for a given deployment: SQL Server or PostgreSQL, selected by config. | `Database:Provider`; `TaskFlowDbProvider` enum. See D-020. |
+| `Blind Index` | concept | An indexed HMAC-SHA256 hash sibling column enabling equality lookup on a deterministically-encrypted value without decrypting it. | `SecureDeterministicHash`. See D-023. |
 
 ## Rejected Synonyms
 

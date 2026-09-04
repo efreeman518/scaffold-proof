@@ -42,6 +42,7 @@ entities:
       - { name: Description, required: false, description: "Optional description of the category" }
       - { name: SortOrder, kind: number, required: false, description: "Display order among siblings" }
       - { name: IsActive, kind: boolean, required: false, description: "Whether the category is available for new task assignment" }
+      - { name: Version, kind: number, description: "App-managed monotonic version number; incremented on each write, exposed as the ETag for optimistic concurrency (If-Match). See D-021." }
     children:
       - { name: SubCategories, entity: Category, relationship: self-referencing, selfReferenceKey: ParentCategoryId }
       - { name: TaskItems, entity: TaskItem, relationship: one-to-many, cascadeDelete: false }
@@ -61,6 +62,7 @@ entities:
     properties:
       - { name: Name, required: true, description: "Tag display name" }
       - { name: Color, required: false, description: "Hex color code for UI display (e.g., #FF5733)" }
+      - { name: Version, kind: number, description: "App-managed monotonic version number; incremented on each write, exposed as the ETag for optimistic concurrency (If-Match). See D-021." }
     rules:
       - { name: NameRequired, condition: "Name must not be empty", errorMessage: "Tag name is required." }
       - { name: UniqueNamePerTenant, condition: "Tag name must be unique within a tenant", errorMessage: "A tag with this name already exists." }
@@ -81,13 +83,23 @@ entities:
       - { name: Priority, kind: enum, values: [None, Low, Medium, High, Critical], description: "Task priority level" }
       - { name: Status, kind: enum, values: [None, Open, InProgress, Blocked, Completed, Cancelled], description: "Current lifecycle status (state machine)" }
       - { name: Features, kind: flags_enum, values: [None, Recurring, Reminder, SharedLink], description: "Optional feature flags applied to this task" }
-      - { name: DateRange, kind: string, required: false, description: "Value object - StartDate and DueDate pair" }
+      - { name: StartDate, kind: date, required: false, description: "First-class task start date-time (UTC). DateRange is a domain value object composed from StartDate and DueDate; promoted to first-class columns because an index spanning owner and owned-type properties is not expressible in EF (D-020)." }
+      - { name: DueDate, kind: date, required: false, description: "First-class task due date-time (UTC). DateRange is a domain value object composed from StartDate and DueDate; promoted to first-class columns because an index spanning owner and owned-type properties is not expressible in EF (D-020)." }
+      - { name: DateRange, kind: string, required: false, description: "Domain value object composed from the first-class StartDate and DueDate properties; not itself a persisted column." }
       - { name: RecurrencePattern, kind: string, required: false, description: "Value object - recurrence interval, frequency, and end date" }
       - { name: EstimatedEffort, kind: number, required: false, description: "Estimated hours of effort" }
       - { name: ActualEffort, kind: number, required: false, description: "Actual hours spent" }
       - { name: CompletedDate, kind: date, required: false, description: "Date-time when the task was marked completed" }
-      - { name: SecureDeterministic, kind: string, required: false, sensitive: true, encryption: always-encrypted-deterministic, description: "Contrived sensitive value protected with SQL Always Encrypted DETERMINISTIC encryption (equality-queryable). Persisted as varbinary(200) via a UTF8 value converter. See D-019." }
-      - { name: SecureRandom, kind: string, required: false, sensitive: true, encryption: always-encrypted-randomized, description: "Contrived sensitive value protected with SQL Always Encrypted RANDOMIZED encryption (not queryable). Persisted as varbinary(200) via a UTF8 value converter. See D-019." }
+      - { name: SecureDeterministic, kind: string, required: false, sensitive: true, encryption: app-layer-aes-gcm-blind-index, description: "AES-256-GCM ciphertext stored randomized plus an HMAC-SHA256 blind-index sibling column for equality queries; 200-byte plaintext budget; see D-023." }
+      - { name: SecureRandom, kind: string, required: false, sensitive: true, encryption: app-layer-aes-gcm, description: "AES-256-GCM ciphertext, not queryable; 200-byte plaintext budget; see D-023." }
+      - { name: CreatedAtUtc, kind: date, description: "UTC timestamp when the task was created (set by the timestamp interceptor)." }
+      - { name: ModifiedAtUtc, kind: date, description: "UTC timestamp of the last modification to the task or any of its children; touching this bumps the aggregate Version (D-031)." }
+      - { name: TerminalAtUtc, kind: date, required: false, description: "UTC timestamp when the task entered a terminal state (Completed or Cancelled); cleared on Reopen. Stale cleanup targets Cancelled tasks with TerminalAtUtc older than 90 days." }
+      - { name: NextOccurrenceAtUtc, kind: date, required: false, description: "UTC timestamp of the next scheduled occurrence for a Recurring template task." }
+      - { name: OverdueNotifiedForDueDate, kind: date, required: false, description: "The DueDate value for which the overdue notification was already raised; marked atomically so re-running the overdue check yields zero candidates." }
+      - { name: RecurrenceTemplateId, kind: identifier, required: false, description: "Identifies the recurrence template that generated this occurrence; unique together with OccurrenceUtc per tenant." }
+      - { name: OccurrenceUtc, kind: date, required: false, description: "UTC timestamp identifying this specific occurrence of a recurrence template; unique together with RecurrenceTemplateId per tenant." }
+      - { name: Version, kind: number, description: "App-managed monotonic aggregate version number; incremented on each write, exposed as the ETag for optimistic concurrency (If-Match). See D-021." }
     children:
       - { name: SubTasks, entity: TaskItem, relationship: self-referencing, selfReferenceKey: ParentTaskItemId }
       - { name: Comments, entity: Comment, relationship: one-to-many, cascadeDelete: true }
@@ -132,6 +144,7 @@ entities:
     isTenantEntity: true
     properties:
       - { name: Body, kind: text, required: true, description: "Comment content (plain text or markdown)" }
+      - { name: Version, kind: number, description: "App-managed monotonic version number; incremented on each write, exposed as the ETag for optimistic concurrency (If-Match). See D-021." }
     children:
       - { name: Attachments, entity: Attachment, relationship: polymorphic-join, polymorphicEntityTypes: [TaskItem, Comment] }
     rules:
@@ -151,6 +164,7 @@ entities:
       - { name: IsCompleted, kind: boolean, required: false, description: "Whether the step is done" }
       - { name: SortOrder, kind: number, required: false, description: "Display order within the parent task" }
       - { name: CompletedDate, kind: date, required: false, description: "Date-time when the step was completed" }
+      - { name: Version, kind: number, description: "App-managed monotonic version number; incremented on each write, exposed as the ETag for optimistic concurrency (If-Match). See D-021." }
     rules:
       - { name: TitleRequired, condition: "Title must not be empty", errorMessage: "Checklist item title is required." }
       - { name: CompletedDateOnlyWhenCompleted, condition: "CompletedDate is set only when IsCompleted is true", errorMessage: "CompletedDate can only be set on completed checklist items." }
@@ -170,6 +184,7 @@ entities:
       - { name: FileSizeBytes, kind: number, required: false, description: "File size in bytes" }
       - { name: StorageUri, required: false, description: "Blob storage URI or external link" }
       - { name: OwnerType, kind: enum, values: [TaskItem, Comment], description: "Polymorphic discriminator - which entity type owns this attachment" }
+      - { name: Version, kind: number, description: "App-managed monotonic version number; incremented on each write, exposed as the ETag for optimistic concurrency (If-Match). See D-021." }
     rules:
       - { name: FileNameRequired, condition: "FileName must not be empty", errorMessage: "File name is required." }
       - { name: ValidOwnerType, condition: "OwnerType must be TaskItem or Comment", errorMessage: "Invalid attachment owner type." }
@@ -186,6 +201,7 @@ entities:
     properties:
       - { name: TaskItemId, kind: identifier, required: true, description: "Task item side of the tag association" }
       - { name: TagId, kind: identifier, required: true, description: "Tag side of the task association" }
+      - { name: Version, kind: number, description: "App-managed monotonic version number; incremented on each write, exposed as the ETag for optimistic concurrency (If-Match). See D-021." }
 
 # ---------------------------------------------------------------------------
 # Domain-Level Rules (cross-entity)
@@ -210,6 +226,25 @@ domainRules:
     appliesTo: [TaskItem]
     dependsOn: []
     errorMessage: "Task is past its due date."
+
+# ---------------------------------------------------------------------------
+# Global Rules (cross-cutting, not tied to a single entity or aggregate)
+# ---------------------------------------------------------------------------
+globalRules:
+  - id: GR-16
+    name: IfMatchRequiredOnWrite
+    condition: "Every aggregate root or child write (PUT/PATCH/DELETE) must carry an If-Match header naming the aggregate Version; If-Match: * is an explicit trusted-automation override and is logged"
+    errorMessage: "If-Match header is required for this write."
+
+  - id: GR-17
+    name: IdempotentCreateByCallerId
+    condition: "Create accepts an optional caller-supplied UUIDv7 id; a replay request with an equivalent payload returns the existing entity, a divergent payload is a conflict"
+    errorMessage: "A different entity already exists with this id."
+
+  - id: GR-18
+    name: KeysetPagedListReads
+    condition: "List reads are keyset (cursor) paged with page size constrained to [1,100]; totals are computed only when explicitly requested (opt-in)"
+    errorMessage: "Page size must be between 1 and 100."
 
 # ---------------------------------------------------------------------------
 # Events
@@ -268,18 +303,28 @@ workflows:
       rules:
         - { onFailureOfStep: "Notify assigned user", compensationAction: "Cancel queued notification" }
         - { onFailureOfStep: "Mark task as Blocked", compensationAction: "Revert status to InProgress" }
-    notes: "Escalation thresholds configurable per tenant. Runs as a scheduled background job."
+    notes: "Escalation thresholds configurable per tenant. Runs as a scheduled background job. Marks OverdueNotifiedForDueDate atomically (per-tenant transaction re-asserting the predicate) so re-running the check yields zero candidates for an already-notified due date."
 
   - name: RecurringTaskGeneration
     pattern: orchestrator
     involvedEntities: [TaskItem]
     steps:
-      - "Find tasks with Recurring feature flag and active RecurrencePattern"
+      - "Find tasks with Recurring feature flag and active RecurrencePattern whose NextOccurrenceAtUtc is due"
       - "Check if next occurrence is due"
-      - "Clone task with new DateRange based on recurrence"
+      - "Clone task as a new occurrence keyed by (RecurrenceTemplateId, OccurrenceUtc), unique per tenant"
       - "Link new task as sibling (same parent) or standalone"
     compensationRequired: false
-    notes: "Runs on a scheduled cadence. Idempotent - deduplicates by recurrence key."
+    notes: "Runs on a scheduled cadence. Idempotent - occurrences are upserted on (TenantId, RecurrenceTemplateId, OccurrenceUtc) so a re-run does not duplicate an occurrence."
+
+  - name: StaleTaskCleanup
+    pattern: orchestrator
+    involvedEntities: [TaskItem, Attachment]
+    steps:
+      - "Find Cancelled tasks with TerminalAtUtc older than 90 days"
+      - "Stage attachment blobs for deletion"
+      - "Delete attachment and task rows (children cascade)"
+    compensationRequired: false
+    notes: "Runs on a scheduled cadence per tenant batch. Targets Status == Cancelled with TerminalAtUtc older than 90 days; blobs are deleted only by a separate worker (404 = success)."
 
 # ---------------------------------------------------------------------------
 # Policy Matrices
