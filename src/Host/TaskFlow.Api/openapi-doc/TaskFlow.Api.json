@@ -3025,6 +3025,13 @@
               ],
               "format": "int32"
             }
+          },
+          {
+            "name": "continuationToken",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3038,6 +3045,45 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/outbox/{id}/retry": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Resets a dead-lettered outbox message so the dispatcher retries it.",
+        "operationId": "RetryOutboxMessage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "ETag": {
+                "description": "Strong entity tag - the aggregate version to send back as If-Match.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -4907,6 +4953,9 @@
     },
     {
       "name": "TaskViews"
+    },
+    {
+      "name": "Admin"
     }
   ]
 }
