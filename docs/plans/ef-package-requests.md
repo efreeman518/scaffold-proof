@@ -32,3 +32,5 @@ NICE-TO-HAVE:
 21. EF.Common.Contracts: promote `CursorPage<T>`/`CursorSearchRequest<TFilter,TSortMode>`/`PageSizeLimits` next to `SearchRequest`/`PagedResponse` after the shape settles (keep app-local this release).
 22. EF.Data.Contracts: `WherePropertyIn` overload over a navigation collection (`Any(Contains)` shape).
 
+
+23. REQUIRED-LATER: new `EF.Messaging.RabbitMq` (connection multiplexer with publisher-confirm channel pool, topology declaration, consumer hosted service with per-queue prefetch and x-death based DLX) extracted from `TaskFlow.Infrastructure.Messaging.RabbitMq` once the shape settles in scaffold-proof.
