@@ -7,7 +7,7 @@ using DomainTenantId = TaskFlow.Domain.Shared.TenantId;
 namespace TaskFlow.Domain.Model;
 
 /// <summary>Models comment domain behavior and invariants.</summary>
-public class Comment : EntityBase<DomainCommentId>, ITenantEntity<DomainTenantId>
+public class Comment : TaskFlowEntityBase<DomainCommentId>, ITenantEntity<DomainTenantId>
 {
     public DomainTenantId TenantId { get; init; }
     public string Body { get; private set; } = null!;

@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Contracts.Storage;
@@ -55,11 +55,11 @@ public class TaskViewProjectionService : ITaskViewProjectionService
             Status = entity.Status.ToString(),
             Priority = entity.Priority.ToString(),
             CategoryName = entity.Category?.Name,
-            StartDate = entity.DateRange.StartDate,
-            DueDate = entity.DateRange.DueDate,
+            StartDate = entity.StartDate,
+            DueDate = entity.DueDate,
             CompletedDate = entity.CompletedDate,
-            IsOverdue = entity.DateRange.DueDate.HasValue
-                        && entity.DateRange.DueDate < DateTimeOffset.UtcNow
+            IsOverdue = entity.DueDate.HasValue
+                        && entity.DueDate < DateTimeOffset.UtcNow
                         && entity.CompletedDate is null,
             Tags = entity.TaskItemTags.Select(tt => tt.Tag?.Name ?? "").Where(n => n.Length > 0).ToList(),
             CommentCount = entity.Comments.Count,

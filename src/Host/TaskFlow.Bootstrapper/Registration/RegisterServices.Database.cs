@@ -1,4 +1,4 @@
-using EF.Data;
+﻿using EF.Data;
 using EF.Data.Contracts;
 using EF.Data.Interceptors;
 using Microsoft.EntityFrameworkCore;
@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Infrastructure.Data;
+using TaskFlow.Infrastructure.Data.Interceptors;
 using TaskFlow.Infrastructure.Data.Provider;
 using TaskFlow.Infrastructure.Repositories;
 
@@ -21,6 +22,7 @@ public static partial class RegisterServices
     private static void AddDatabaseServices(IServiceCollection services, IConfiguration config)
     {
         services.AddTransient<AuditInterceptor<string, Guid?>>();
+        services.AddSingleton<VersionTimestampInterceptor>();
         services.AddTransient<ConnectionNoLockInterceptor>();
 
         var dbConnectionStringTrxn = config.GetConnectionString("TaskFlowDbContextTrxn") ?? "";
@@ -35,8 +37,9 @@ public static partial class RegisterServices
         {
             UseTaskFlowProviderIfConfigured(options, config, dbConnectionStringTrxn,
                 TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName);
-            var auditInterceptor = sp.GetRequiredService<AuditInterceptor<string, Guid?>>();
-            options.AddInterceptors(auditInterceptor);
+            options.AddInterceptors(
+                sp.GetRequiredService<AuditInterceptor<string, Guid?>>(),
+                sp.GetRequiredService<VersionTimestampInterceptor>());
         });
         services.AddScoped<DbContextScopedFactory<TaskFlowDbContextTrxn, string, Guid?>>();
         services.AddScoped(sp => sp.GetRequiredService<DbContextScopedFactory<TaskFlowDbContextTrxn, string, Guid?>>()

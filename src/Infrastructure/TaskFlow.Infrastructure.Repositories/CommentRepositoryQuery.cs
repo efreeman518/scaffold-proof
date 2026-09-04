@@ -1,4 +1,4 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using EF.Data;
 using EF.Data.Contracts;
 using TaskFlow.Application.Contracts.Repositories;
@@ -12,7 +12,7 @@ namespace TaskFlow.Infrastructure.Repositories;
 
 /// <summary>Persists and queries comment data through infrastructure storage contracts.</summary>
 public class CommentRepositoryQuery(TaskFlowDbContextQuery db)
-    : RepositoryQuery<Comment, CommentId, TaskFlowDbContextQuery>(db), ICommentRepositoryQuery
+    : TaskFlowRepositoryQuery<Comment, CommentId>(db), ICommentRepositoryQuery
 {
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<Comment?> GetCommentAsync(CommentId id, CancellationToken ct = default)

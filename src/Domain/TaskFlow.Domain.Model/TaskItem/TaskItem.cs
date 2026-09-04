@@ -14,7 +14,7 @@ namespace TaskFlow.Domain.Model;
 /// Task aggregate root. Owns task lifecycle rules, value-object updates, and local child
 /// collection mutations before repositories persist the graph.
 /// </summary>
-public class TaskItem : EntityBase<DomainTaskItemId>, ITenantEntity<DomainTenantId>
+public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<DomainTenantId>
 {
     public DomainTenantId TenantId { get; init; }
     public string Title { get; private set; } = null!;
@@ -26,17 +26,31 @@ public class TaskItem : EntityBase<DomainTaskItemId>, ITenantEntity<DomainTenant
     public decimal? ActualEffort { get; private set; }
     public DateTimeOffset? CompletedDate { get; private set; }
 
-    // Sensitive properties - persisted with SQL Always Encrypted (varbinary(200)). See D-019.
-    // Deterministic: equality-queryable; Randomized: not queryable.
+    // Sensitive properties - persisted through the application-layer column encryptor (D-023):
+    // both are stored randomized (AES-GCM); SecureDeterministic is additionally equality-queryable
+    // through an HMAC blind-index sibling column populated by the persistence layer.
     public string? SecureDeterministic { get; private set; }
     public string? SecureRandom { get; private set; }
+
+    // First-class scheduling dates (UTC). DateRange below is composed from them and is not mapped:
+    // an index spanning owner and owned-type properties is not expressible in EF.
+    public DateTimeOffset? StartDate { get; private set; }
+    public DateTimeOffset? DueDate { get; private set; }
+
+    // Scale columns (D-020 plan, Phase 3 jobs own the behavior). TerminalAtUtc is maintained here because
+    // it is a pure consequence of the status state machine.
+    public DateTimeOffset? TerminalAtUtc { get; private set; }
+    public DateTimeOffset? NextOccurrenceAtUtc { get; private set; }
+    public DateTimeOffset? OverdueNotifiedForDueDate { get; private set; }
+    public DomainTaskItemId? RecurrenceTemplateId { get; private set; }
+    public DateTimeOffset? OccurrenceUtc { get; private set; }
 
     // Foreign keys
     public DomainCategoryId? CategoryId { get; private set; }
     public DomainTaskItemId? ParentTaskItemId { get; private set; }
 
-    // Value objects (owned types)
-    public DateRange DateRange { get; private set; } = new();
+    // Value objects
+    public DateRange DateRange => new() { StartDate = StartDate, DueDate = DueDate };
     public RecurrencePattern? RecurrencePattern { get; private set; }
 
     // Navigation
@@ -103,8 +117,8 @@ public class TaskItem : EntityBase<DomainTaskItemId>, ITenantEntity<DomainTenant
     }
 
     /// <summary>
-    /// Moves the task through the allowed status state machine and keeps CompletedDate aligned
-    /// with Completed status. TaskItemStatus.None is a reset escape hatch for seed/test data.
+    /// Moves the task through the allowed status state machine and keeps CompletedDate and TerminalAtUtc
+    /// aligned with the terminal statuses. TaskItemStatus.None is a reset escape hatch for seed/test data.
     /// </summary>
     public DomainResult<TaskItem> TransitionStatus(TaskItemStatus newStatus)
     {
@@ -112,6 +126,7 @@ public class TaskItem : EntityBase<DomainTaskItemId>, ITenantEntity<DomainTenant
         {
             Status = TaskItemStatus.None;
             CompletedDate = null;
+            TerminalAtUtc = null;
             return DomainResult<TaskItem>.Success(this);
         }
 
@@ -119,12 +134,16 @@ public class TaskItem : EntityBase<DomainTaskItemId>, ITenantEntity<DomainTenant
             return DomainResult<TaskItem>.Failure($"Cannot transition from {Status} to {newStatus}.");
 
         var previousStatus = Status;
+        var now = DateTimeOffset.UtcNow;
         Status = newStatus;
 
         if (newStatus == TaskItemStatus.Completed)
-            CompletedDate = DateTimeOffset.UtcNow;
+            CompletedDate = now;
         else if (previousStatus == TaskItemStatus.Completed)
             CompletedDate = null;
+
+        // Terminal statuses stamp TerminalAtUtc (stale cleanup key); reopening clears it.
+        TerminalAtUtc = newStatus is TaskItemStatus.Completed or TaskItemStatus.Cancelled ? now : null;
 
         return DomainResult<TaskItem>.Success(this);
     }
@@ -224,12 +243,13 @@ public class TaskItem : EntityBase<DomainTaskItemId>, ITenantEntity<DomainTenant
     #endregion
 
     /// <summary>
-    /// Replaces the owned DateRange value object. Validation is intentionally outside the
-    /// value object so services can decide whether incomplete dates are allowed.
+    /// Replaces the scheduling dates. Validation is intentionally outside the value object so
+    /// services can decide whether incomplete dates are allowed.
     /// </summary>
     public void UpdateDateRange(DateTimeOffset? startDate, DateTimeOffset? dueDate)
     {
-        DateRange = new DateRange { StartDate = startDate, DueDate = dueDate };
+        StartDate = startDate;
+        DueDate = dueDate;
     }
 
     /// <summary>
@@ -272,7 +292,7 @@ public class TaskItem : EntityBase<DomainTaskItemId>, ITenantEntity<DomainTenant
             : DomainResult<TaskItem>.Success(this);
     }
 
-    /// <summary>True when a secure property's UTF8 encoding exceeds the Always Encrypted varbinary(200) budget.</summary>
+    /// <summary>True when a secure property's UTF8 encoding exceeds the plaintext budget (ciphertext column is 256 bytes: 200 + 12 nonce + 16 tag + headroom).</summary>
     private static bool ExceedsSecureBudget(string? value) =>
         value is not null
         && System.Text.Encoding.UTF8.GetByteCount(value) > DomainConstants.RULE_SECURE_PROPERTY_MAX_BYTES;

@@ -6,7 +6,7 @@ using DomainTenantId = TaskFlow.Domain.Shared.TenantId;
 namespace TaskFlow.Domain.Model;
 
 /// <summary>Models category domain behavior and invariants.</summary>
-public class Category : EntityBase<DomainCategoryId>, ITenantEntity<DomainTenantId>
+public class Category : TaskFlowEntityBase<DomainCategoryId>, ITenantEntity<DomainTenantId>
 {
     public DomainTenantId TenantId { get; init; }
     public string Name { get; private set; } = null!;

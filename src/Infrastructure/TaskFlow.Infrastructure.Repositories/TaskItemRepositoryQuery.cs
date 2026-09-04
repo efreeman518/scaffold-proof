@@ -1,4 +1,4 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using EF.Data;
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
@@ -18,7 +18,7 @@ namespace TaskFlow.Infrastructure.Repositories;
 /// results server-side so list endpoints avoid hydrating child collections.
 /// </summary>
 public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db)
-    : RepositoryQuery<TaskItem, TaskItemId, TaskFlowDbContextQuery>(db), ITaskItemRepositoryQuery
+    : TaskFlowRepositoryQuery<TaskItem, TaskItemId>(db), ITaskItemRepositoryQuery
 {
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<TaskItem?> GetTaskItemAsync(TaskItemId id, CancellationToken ct = default)
@@ -100,17 +100,17 @@ public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db)
             if (filter.DueBefore.HasValue)
             {
                 var dueBefore = filter.DueBefore.Value;
-                q = q.Where(e => e.DateRange.DueDate != null && e.DateRange.DueDate <= dueBefore);
+                q = q.Where(e => e.DueDate != null && e.DueDate <= dueBefore);
             }
 
             if (filter.DueAfter.HasValue)
             {
                 var dueAfter = filter.DueAfter.Value;
-                q = q.Where(e => e.DateRange.DueDate != null && e.DateRange.DueDate >= dueAfter);
+                q = q.Where(e => e.DueDate != null && e.DueDate >= dueAfter);
             }
 
             if (filter.IsOverdue.HasValue && filter.IsOverdue.Value)
-                q = q.Where(e => e.DateRange.DueDate != null && e.DateRange.DueDate < DateTimeOffset.UtcNow && e.CompletedDate == null);
+                q = q.Where(e => e.DueDate != null && e.DueDate < DateTimeOffset.UtcNow && e.CompletedDate == null);
         }
 
         // includes for SplitQuery

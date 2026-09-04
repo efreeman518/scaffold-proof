@@ -1,4 +1,4 @@
-namespace Test.Unit.Infrastructure;
+﻿namespace Test.Unit.Infrastructure;
 
 /// <summary>Locks the checked deployment ordering and immutable rollback contract.</summary>
 [TestClass]
@@ -73,7 +73,8 @@ public sealed class DeploymentWorkflowContractTests
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null)
         {
-            if (Directory.Exists(Path.Combine(directory.FullName, ".git")))
+            // .git is a directory in a primary checkout and a file in a linked worktree.
+            if (Path.Exists(Path.Combine(directory.FullName, ".git")))
             {
                 return directory.FullName;
             }
