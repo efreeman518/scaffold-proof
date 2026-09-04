@@ -31,4 +31,10 @@ public sealed class InboxStore(TaskFlowDbContextTrxn db, TimeProvider? timeProvi
 
         return inserted > 0;
     }
+
+    /// <inheritdoc />
+    public Task ReleaseAsync(string consumer, Guid messageId, CancellationToken ct = default) =>
+        db.ConsumerInbox
+            .Where(x => x.Consumer == consumer && x.MessageId == messageId)
+            .ExecuteDeleteAsync(ct);
 }

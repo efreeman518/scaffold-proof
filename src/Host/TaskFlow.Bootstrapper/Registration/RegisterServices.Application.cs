@@ -1,15 +1,18 @@
-using EF.BackgroundServices.InternalMessageBus;
+﻿using EF.BackgroundServices.InternalMessageBus;
 using EF.Common.Contracts;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using TaskFlow.Application.Contracts.Paging;
 using TaskFlow.Bootstrapper.Paging;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Cqrs.Registration;
 using TaskFlow.Application.MessageHandlers;
+using TaskFlow.Application.MessageHandlers.Consumers;
 using TaskFlow.Application.Services;
+using TaskFlow.Observability.Meters;
 
 namespace TaskFlow.Bootstrapper;
 
@@ -29,6 +32,7 @@ public static partial class RegisterServices
         }
 
         services.AddScoped<ITaskViewProjectionService, TaskViewProjectionService>();
+        services.TryAddSingleton<MessagingMetrics>();
     }
 
     /// <summary>Registers shared application services dependencies in the service container.</summary>
@@ -63,5 +67,10 @@ public static partial class RegisterServices
         services.AddScoped<IMessageHandler<AuditEntry<string, Guid>>, AuditHandler>();
         services.AddScoped<IMessageHandler<AuditEntry<string, Guid?>>, AuditHandler>();
         services.AddScoped<IWorkflowTrigger, WorkflowTriggerHandler>();
+
+        // D-034: one consumer set behind both transports. Functions triggers and RabbitMQ handlers resolve these.
+        services.AddScoped<TaskProjectionConsumer>();
+        services.AddScoped<TaskAiReviewConsumer>();
+        services.AddScoped<TaskWorkflowConsumer>();
     }
 }

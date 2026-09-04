@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using TaskFlow.Observability;
 
 namespace TaskFlow.Scheduler;
@@ -28,4 +28,24 @@ internal static partial class LogMessages
     /// <summary>Logs the number of stale tasks found.</summary>
     [LoggerMessage(EventId = LogEventIds.SchedulerBase + 5, Level = LogLevel.Information, Message = "Found {Count} stale tasks (cancelled > {StaleDays} days ago)")]
     public static partial void StaleTasksFound(this ILogger logger, int count, int staleDays);
+
+    /// <summary>Logs a failure inside a leased worker poll; the loop backs off and retries.</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 6, Level = LogLevel.Error, Message = "Leased worker poll for {WorkType} failed")]
+    public static partial void LeasedWorkerPollFailed(this ILogger logger, string workType, Exception exception);
+
+    /// <summary>Logs that the outbox dispatcher did not start because no broker is configured.</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 7, Level = LogLevel.Warning, Message = "No messaging transport configured: outbox dispatcher not started, staged rows remain pending")]
+    public static partial void OutboxDispatcherDisabled(this ILogger logger);
+
+    /// <summary>Logs that one destination batch failed and its rows were released.</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 8, Level = LogLevel.Warning, Message = "Outbox dispatch to {Destination} failed for {Count} message(s); rows released for retry")]
+    public static partial void OutboxDispatchFailed(this ILogger logger, string destination, int count, Exception exception);
+
+    /// <summary>Logs that blob-delete work was claimed with no blob storage configured.</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 9, Level = LogLevel.Warning, Message = "Blob storage is not configured: {Count} blob-delete row(s) left pending")]
+    public static partial void BlobDeleteWorkerDisabled(this ILogger logger, int count);
+
+    /// <summary>Logs a blob delete that failed and will be retried.</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 10, Level = LogLevel.Warning, Message = "Deferred delete of {Container}/{BlobName} failed; row released for retry")]
+    public static partial void BlobDeleteFailed(this ILogger logger, string container, string blobName, Exception exception);
 }

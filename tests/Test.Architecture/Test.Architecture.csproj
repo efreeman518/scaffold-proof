@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <IsTestProject>true</IsTestProject>
@@ -8,6 +8,7 @@
     <PackageReference Include="MSTest" />
     <PackageReference Include="NetArchTest.Rules" />
     <PackageReference Include="EF.CQRS" />
+    <PackageReference Include="EF.BackgroundServices" />
   </ItemGroup>
 
   <ItemGroup>
@@ -19,6 +20,7 @@
     <ProjectReference Include="..\..\src\Application\TaskFlow.Application.Contracts\TaskFlow.Application.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Application\TaskFlow.Application.Services\TaskFlow.Application.Services.csproj" />
     <ProjectReference Include="..\..\src\Application\TaskFlow.Application.Cqrs\TaskFlow.Application.Cqrs.csproj" />
+    <ProjectReference Include="..\..\src\Application\TaskFlow.Application.MessageHandlers\TaskFlow.Application.MessageHandlers.csproj" />
     <ProjectReference Include="..\..\src\Infrastructure\TaskFlow.Infrastructure.Data\TaskFlow.Infrastructure.Data.csproj" />
     <ProjectReference Include="..\..\src\Infrastructure\TaskFlow.Infrastructure.Repositories\TaskFlow.Infrastructure.Repositories.csproj" />
   </ItemGroup>

@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "2539913962902168157"
+      "templateHash": "10470177501437926774"
     }
   },
   "parameters": {
@@ -99,6 +99,24 @@
       ],
       "metadata": {
         "description": "Active database provider"
+      }
+    },
+    "messagingProvider": {
+      "type": "string",
+      "defaultValue": "ServiceBus",
+      "allowedValues": [
+        "ServiceBus",
+        "RabbitMq"
+      ],
+      "metadata": {
+        "description": "Messaging transport: Azure Service Bus (default) or a single-node RabbitMQ container app (D-034)"
+      }
+    },
+    "rabbitMqPassword": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "RabbitMQ broker password, used only when messagingProvider is RabbitMq"
       }
     },
     "dbMaxPoolSize": {
@@ -1599,6 +1617,7 @@
       ]
     },
     "serviceBus": {
+      "condition": "[equals(parameters('messagingProvider'), 'ServiceBus')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "serviceBus",
@@ -1794,6 +1813,271 @@
       },
       "dependsOn": [
         "rg"
+      ]
+    },
+    "rabbitMq": {
+      "condition": "[equals(parameters('messagingProvider'), 'RabbitMq')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "rabbitMq",
+      "resourceGroup": "[format('{0}-rg', variables('prefix'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "resourcePrefix": {
+            "value": "[variables('prefix')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "environmentId": {
+            "value": "[reference('containerAppsEnv').outputs.id.value]"
+          },
+          "environmentName": {
+            "value": "[reference('containerAppsEnv').outputs.name.value]"
+          },
+          "storageAccountName": {
+            "value": "[reference('storage').outputs.appStorageName.value]"
+          },
+          "brokerPassword": {
+            "value": "[parameters('rabbitMqPassword')]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "4817523154133430326"
+            }
+          },
+          "parameters": {
+            "resourcePrefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource name prefix"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "environmentId": {
+              "type": "string",
+              "metadata": {
+                "description": "Container Apps Environment ID"
+              }
+            },
+            "environmentName": {
+              "type": "string",
+              "metadata": {
+                "description": "Container Apps Environment name, needed to attach the Azure Files storage mount"
+              }
+            },
+            "storageAccountName": {
+              "type": "string",
+              "metadata": {
+                "description": "Storage account that hosts the file share backing the broker volume"
+              }
+            },
+            "containerImage": {
+              "type": "string",
+              "defaultValue": "rabbitmq:4.1-management",
+              "metadata": {
+                "description": "RabbitMQ container image, pinned so a broker restart cannot pick up a new major version"
+              }
+            },
+            "brokerUser": {
+              "type": "string",
+              "defaultValue": "taskflow",
+              "metadata": {
+                "description": "Broker user name"
+              }
+            },
+            "brokerPassword": {
+              "type": "securestring",
+              "metadata": {
+                "description": "Broker password"
+              }
+            },
+            "cpu": {
+              "type": "string",
+              "defaultValue": "1.0",
+              "metadata": {
+                "description": "CPU cores"
+              }
+            },
+            "memory": {
+              "type": "string",
+              "defaultValue": "2Gi",
+              "metadata": {
+                "description": "Memory"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags"
+              }
+            }
+          },
+          "variables": {
+            "fileShareName": "rabbitmq-data",
+            "storageMountName": "rabbitmq-storage"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Storage/storageAccounts/fileServices",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('storageAccountName'), 'default')]"
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/fileServices/shares",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('storageAccountName'), 'default', variables('fileShareName'))]",
+              "properties": {
+                "shareQuota": 100
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/fileServices', parameters('storageAccountName'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.App/managedEnvironments/storages",
+              "apiVersion": "2024-03-01",
+              "name": "[format('{0}/{1}', parameters('environmentName'), variables('storageMountName'))]",
+              "properties": {
+                "azureFile": {
+                  "accountName": "[parameters('storageAccountName')]",
+                  "accountKey": "[listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-05-01').keys[0].value]",
+                  "shareName": "[variables('fileShareName')]",
+                  "accessMode": "ReadWrite"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/fileServices/shares', parameters('storageAccountName'), 'default', variables('fileShareName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.App/containerApps",
+              "apiVersion": "2024-03-01",
+              "name": "[format('{0}-rabbitmq', parameters('resourcePrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "environmentId": "[parameters('environmentId')]",
+                "configuration": {
+                  "secrets": [
+                    {
+                      "name": "broker-password",
+                      "value": "[parameters('brokerPassword')]"
+                    }
+                  ],
+                  "ingress": {
+                    "external": false,
+                    "targetPort": 5672,
+                    "exposedPort": 5672,
+                    "transport": "tcp",
+                    "additionalPortMappings": [
+                      {
+                        "external": false,
+                        "targetPort": 15672,
+                        "exposedPort": 15672
+                      }
+                    ]
+                  }
+                },
+                "template": {
+                  "containers": [
+                    {
+                      "name": "rabbitmq",
+                      "image": "[parameters('containerImage')]",
+                      "resources": {
+                        "cpu": "[json(parameters('cpu'))]",
+                        "memory": "[parameters('memory')]"
+                      },
+                      "env": [
+                        {
+                          "name": "RABBITMQ_DEFAULT_USER",
+                          "value": "[parameters('brokerUser')]"
+                        },
+                        {
+                          "name": "RABBITMQ_DEFAULT_PASS",
+                          "secretRef": "broker-password"
+                        }
+                      ],
+                      "volumeMounts": [
+                        {
+                          "volumeName": "[variables('storageMountName')]",
+                          "mountPath": "/var/lib/rabbitmq/mnesia"
+                        }
+                      ],
+                      "probes": [
+                        {
+                          "type": "Readiness",
+                          "tcpSocket": {
+                            "port": 5672
+                          },
+                          "initialDelaySeconds": 15,
+                          "periodSeconds": 10,
+                          "timeoutSeconds": 5,
+                          "failureThreshold": 12
+                        }
+                      ]
+                    }
+                  ],
+                  "volumes": [
+                    {
+                      "name": "[variables('storageMountName')]",
+                      "storageType": "AzureFile",
+                      "storageName": "[variables('storageMountName')]"
+                    }
+                  ],
+                  "scale": {
+                    "minReplicas": 1,
+                    "maxReplicas": 1
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.App/managedEnvironments/storages', parameters('environmentName'), variables('storageMountName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "name": {
+              "type": "string",
+              "value": "[format('{0}-rabbitmq', parameters('resourcePrefix'))]"
+            },
+            "host": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.App/containerApps', format('{0}-rabbitmq', parameters('resourcePrefix'))), '2024-03-01').configuration.ingress.fqdn]"
+            },
+            "managementPort": {
+              "type": "int",
+              "value": 15672
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "containerAppsEnv",
+        "rg",
+        "storage"
       ]
     },
     "storage": {
@@ -2417,7 +2701,7 @@
             "value": "/health/db"
           },
           "envVars": {
-            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value), createObject('name', 'Database__Provider', 'value', parameters('databaseProvider'))), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), format('{0}ApplicationIntent=ReadOnly;', coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), '')), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'readConnectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__CosmosDb1', 'value', reference('cosmosDb').outputs.accountEndpoint.value), createObject('name', 'ConnectionStrings__BlobStorage1', 'value', reference('storage').outputs.appStorageBlobEndpoint.value), createObject('name', 'ConnectionStrings__TableStorage1', 'value', reference('storage').outputs.appStorageTableEndpoint.value), createObject('name', 'ConnectionStrings__Redis1', 'value', listOutputsWithSecureValues('redis', '2025-04-01').connectionString), createObject('name', 'SERVICEBUS__fullyQualifiedNamespace', 'value', reference('serviceBus').outputs.namespaceEndpoint.value)))]"
+            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value), createObject('name', 'Database__Provider', 'value', parameters('databaseProvider'))), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), format('{0}ApplicationIntent=ReadOnly;', coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), '')), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'readConnectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__CosmosDb1', 'value', reference('cosmosDb').outputs.accountEndpoint.value), createObject('name', 'ConnectionStrings__BlobStorage1', 'value', reference('storage').outputs.appStorageBlobEndpoint.value), createObject('name', 'ConnectionStrings__TableStorage1', 'value', reference('storage').outputs.appStorageTableEndpoint.value), createObject('name', 'ConnectionStrings__Redis1', 'value', listOutputsWithSecureValues('redis', '2025-04-01').connectionString)), if(equals(parameters('messagingProvider'), 'RabbitMq'), createArray(createObject('name', 'Messaging__Provider', 'value', parameters('messagingProvider')), createObject('name', 'ConnectionStrings__RabbitMq1', 'value', if(equals(parameters('messagingProvider'), 'RabbitMq'), format('amqp://taskflow:{0}@{1}:5672/', parameters('rabbitMqPassword'), reference('rabbitMq').outputs.host.value), '')), createObject('name', 'Messaging__RabbitMq__ConnectionString', 'value', if(equals(parameters('messagingProvider'), 'RabbitMq'), format('amqp://taskflow:{0}@{1}:5672/', parameters('rabbitMqPassword'), reference('rabbitMq').outputs.host.value), ''))), createArray(createObject('name', 'Messaging__Provider', 'value', parameters('messagingProvider')), createObject('name', 'SERVICEBUS__fullyQualifiedNamespace', 'value', reference('serviceBus').outputs.namespaceEndpoint.value))))]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -2615,6 +2899,7 @@
         "cosmosDb",
         "keyVault",
         "postgres",
+        "rabbitMq",
         "redis",
         "rg",
         "serviceBus",
@@ -2664,7 +2949,7 @@
             "value": "[parameters('schedulerProfile').maxReplicas]"
           },
           "envVars": {
-            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value), createObject('name', 'Database__Provider', 'value', parameters('databaseProvider'))), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), format('{0}ApplicationIntent=ReadOnly;', coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), '')), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'readConnectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TickerQDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__Redis1', 'value', listOutputsWithSecureValues('redis', '2025-04-01').connectionString), createObject('name', 'SERVICEBUS__fullyQualifiedNamespace', 'value', reference('serviceBus').outputs.namespaceEndpoint.value)))]"
+            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value), createObject('name', 'Database__Provider', 'value', parameters('databaseProvider'))), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), format('{0}ApplicationIntent=ReadOnly;', coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), '')), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'readConnectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TickerQDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__Redis1', 'value', listOutputsWithSecureValues('redis', '2025-04-01').connectionString)), if(equals(parameters('messagingProvider'), 'RabbitMq'), createArray(createObject('name', 'Messaging__Provider', 'value', parameters('messagingProvider')), createObject('name', 'ConnectionStrings__RabbitMq1', 'value', if(equals(parameters('messagingProvider'), 'RabbitMq'), format('amqp://taskflow:{0}@{1}:5672/', parameters('rabbitMqPassword'), reference('rabbitMq').outputs.host.value), '')), createObject('name', 'Messaging__RabbitMq__ConnectionString', 'value', if(equals(parameters('messagingProvider'), 'RabbitMq'), format('amqp://taskflow:{0}@{1}:5672/', parameters('rabbitMqPassword'), reference('rabbitMq').outputs.host.value), ''))), createArray(createObject('name', 'Messaging__Provider', 'value', parameters('messagingProvider')), createObject('name', 'SERVICEBUS__fullyQualifiedNamespace', 'value', reference('serviceBus').outputs.namespaceEndpoint.value))))]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -2861,6 +3146,7 @@
         "containerAppsEnv",
         "keyVault",
         "postgres",
+        "rabbitMq",
         "redis",
         "rg",
         "serviceBus",
@@ -3976,6 +4262,7 @@
       ]
     },
     "apiServiceBusSender": {
+      "condition": "[equals(parameters('messagingProvider'), 'ServiceBus')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "apiServiceBusSender",
@@ -4311,6 +4598,7 @@
       ]
     },
     "schedulerServiceBusSender": {
+      "condition": "[equals(parameters('messagingProvider'), 'ServiceBus')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "schedulerServiceBusSender",
@@ -4378,6 +4666,7 @@
       ]
     },
     "funcServiceBusReceiver": {
+      "condition": "[equals(parameters('messagingProvider'), 'ServiceBus')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "funcServiceBusReceiver",

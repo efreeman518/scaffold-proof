@@ -1,4 +1,4 @@
-﻿namespace Test.Integration.Infrastructure;
+namespace Test.Integration.Infrastructure;
 
 using Test.Support.Hosting;
 
@@ -37,7 +37,9 @@ public static class IntegrationTestSetup
         {
             await Task.WhenAll(
                 DbContainerFixture.StopAsync(),
-                AzuriteContainerFixture.StopAsync());
+                AzuriteContainerFixture.StopAsync(),
+                // Started lazily by the D-034 transport tests; a no-op when they did not run.
+                RabbitMqBrokerFixture.StopAsync());
         }
     }
 

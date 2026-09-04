@@ -25,11 +25,7 @@ internal static partial class LogMessages
     [LoggerMessage(EventId = LogEventIds.FunctionsBase + 4, Level = LogLevel.Information, Message = "TaskApiProxy invoked at {UtcNow}")]
     public static partial void TaskApiProxyInvoked(this ILogger logger, DateTime utcNow);
 
-    /// <summary>Logs that a Service Bus message was received by the projection trigger.</summary>
-    [LoggerMessage(EventId = LogEventIds.FunctionsBase + 5, Level = LogLevel.Information, Message = "Service Bus trigger: received {EventType}, length {Length}")]
-    public static partial void ServiceBusReceived(this ILogger logger, string eventType, int length);
-
-    /// <summary>Logs that the stale-task-cleanup timer fired.</summary>
-    [LoggerMessage(EventId = LogEventIds.FunctionsBase + 6, Level = LogLevel.Information, Message = "StaleTaskCleanup timer fired at {UtcNow}. Next: {NextRun}")]
-    public static partial void StaleTaskCleanupTimerFired(this ILogger logger, DateTime utcNow, DateTimeOffset? nextRun);
+    /// <summary>Logs a delivery that was dead-lettered because it could not be understood.</summary>
+    [LoggerMessage(EventId = LogEventIds.FunctionsBase + 5, Level = LogLevel.Warning, Message = "Consumer {Consumer} dead-lettered message {MessageId}: {Reason}")]
+    public static partial void EnvelopeRejected(this ILogger logger, string consumer, string? messageId, string reason);
 }

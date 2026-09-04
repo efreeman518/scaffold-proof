@@ -49,6 +49,9 @@ This file records the shared domain language used by the TaskFlow reference app.
 | `Occurrence` | concept | One cloned instance of a Recurrence Template for a specific point in time, unique per tenant on `(RecurrenceTemplateId, OccurrenceUtc)`. | `OccurrenceUtc`; upserted via FlexLabs Upsert. |
 | `Provider` (database provider) | concept | The relational database engine backing a DbContext for a given deployment: SQL Server or PostgreSQL, selected by config. | `Database:Provider`; `TaskFlowDbProvider` enum. See D-020. |
 | `Blind Index` | concept | An indexed HMAC-SHA256 hash sibling column enabling equality lookup on a deterministically-encrypted value without decrypting it. | `SecureDeterministicHash`. See D-023. |
+| `Connection Multiplexer` | concept | One long-lived broker connection shared process-wide, over which channels are rented per publish and dedicated per consumer. | `RabbitMqConnectionMultiplexer`; analogous to StackExchange.Redis `ConnectionMultiplexer`. See D-034. |
+| `Prefetch Count` | concept | The number of unacknowledged deliveries a broker may have outstanding on one consumer channel; also that consumer's dispatch concurrency. | `Messaging:RabbitMq:Consumers:{queue}:PrefetchCount`; `BasicQosAsync(0, n, global: false)`. See D-034. |
+| `Dead-Letter Exchange` | concept | The RabbitMQ exchange a queue routes rejected or expired messages to; the broker-side equivalent of a Service Bus dead-letter queue. | `taskflow.domain-events.dlx` -> `taskflow.dead-letter`; `x-dead-letter-exchange` queue argument. See D-034. |
 
 ## Rejected Synonyms
 
@@ -166,7 +169,8 @@ Terms used by the workflow orchestration layer. These are FlowEngine-runtime con
 
 - Use `TaskItem` everywhere source-level naming needs the aggregate; do not shorten it to `Task`.
 - Use `Attachment` for metadata and blob reference. Do not model file bytes on the domain entity.
-- Use integration event records in `Application.Contracts.Events`; do not publish domain namespace events over transport.
+- Use the shared lifecycle event records in `Domain.Shared.Events` as both the raised domain event and the integration-event payload (one record, wrapped by `IntegrationEventEnvelope`); do not define a second parallel set.
+- Use integration event records raised by the aggregate; do not publish domain namespace events over transport.
 - Use `OwnerType` and `OwnerId` for polymorphic attachment ownership; do not add EF navigation collections to owners.
 - Use `WorkflowDefinition` for the persisted FlowEngine document; reserve unqualified `Workflow` for prose, never as a C# type name.
 - Use `HumanTask` (not `Task`) for FlowEngine human-approval records - collides with both `System.Threading.Tasks.Task` and `TaskItem`.

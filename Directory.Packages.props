@@ -94,6 +94,10 @@
   </ItemGroup>
   <ItemGroup Label="RabbitMQ (EF.Messaging.RabbitMq package project)">
     <PackageVersion Include="RabbitMQ.Client" Version="7.2.2" />
+    <!-- D-034: Aspire hosting declares the local broker; the client integration registers the singleton
+         IConnection that the package multiplexer reuses instead of opening a second one. -->
+    <PackageVersion Include="Aspire.Hosting.RabbitMQ" Version="13.5.3" />
+    <PackageVersion Include="Aspire.RabbitMQ.Client" Version="13.5.3" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.11" />

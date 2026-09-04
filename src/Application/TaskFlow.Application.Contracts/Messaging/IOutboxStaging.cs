@@ -1,35 +1,19 @@
-using System.Text.Json;
-
 namespace TaskFlow.Application.Contracts.Messaging;
 
-// temporary: S6 owns the real IOutboxStaging and IntegrationEventEnvelope; delete on merge.
-// Shape copied verbatim from the plan (3.1 staging, 3.2 envelope) so the scheduler jobs below compile
-// and behave identically once the messaging slice lands.
-
 /// <summary>
-/// Transport-neutral integration event envelope. <c>Id</c> is the broker MessageId and the outbox row id,
-/// so a deterministic id makes a replayed producer a no-op instead of a duplicate publish.
-/// </summary>
-public sealed record IntegrationEventEnvelope(
-    Guid Id,
-    string Type,
-    int Version,
-    Guid TenantId,
-    DateTimeOffset OccurredAtUtc,
-    string? CorrelationId,
-    JsonElement Payload);
-
-/// <summary>
-/// Stages an integration event on the current unit of work for callers that have no tracked aggregate to
-/// hang a domain event on - the <c>ExecuteUpdate</c> paths in the scheduler jobs. The row is written by the
-/// same <c>SaveChanges</c> as the data change, so an event can never escape a rolled-back transaction.
+/// Stages an integration event on the current unit of work for paths that have no tracked aggregate to raise it
+/// (bulk <c>ExecuteUpdate</c> jobs). The row is written by the caller's own <c>SaveChangesAsync</c>, so it is
+/// still transactional with the change it describes (D-026).
 /// </summary>
 public interface IOutboxStaging
 {
     /// <summary>
-    /// Stages one event. <paramref name="deterministicId"/> is the outbox row id when the caller can derive a
-    /// stable one (UUIDv5 over the natural key); a repeat of the same logical event then collapses onto the
-    /// same row instead of producing a second copy.
+    /// Adds one outbox row to the write context without saving.
     /// </summary>
+    /// <param name="envelope">The envelope to persist; its <c>Id</c> becomes the outbox row id and the MessageId.</param>
+    /// <param name="deterministicId">
+    /// Overrides the envelope id so a job that re-runs stages the same MessageId (for example a UUIDv5 of
+    /// tenant + entity + occurrence), which the ConsumerInbox then rejects as a duplicate.
+    /// </param>
     void Stage(IntegrationEventEnvelope envelope, Guid? deterministicId = null);
 }

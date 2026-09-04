@@ -6,6 +6,9 @@ namespace TaskFlow.Infrastructure.Data.Operational;
 /// </summary>
 public abstract class OperationalWorkBase
 {
+    /// <summary>Delivery attempts after which a row is dead-lettered instead of retried.</summary>
+    public const int MaxAttempts = 10;
+
     public Guid Id { get; set; }
     public Guid TenantId { get; set; }
     public DateTimeOffset AvailableAtUtc { get; set; }
