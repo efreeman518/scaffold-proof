@@ -13,17 +13,25 @@ public static class DomainId
         => value.HasValue ? TId.From(value.Value) : null;
 }
 
-public readonly record struct TenantId(Guid Value) : IDomainId<TenantId>
+// TenantId carries the same ordering operators for the cross-tenant system scans: those page by the
+// clustered (TenantId, Id) key, so the resume predicate needs a TenantId comparison EF can push into SQL.
+public readonly record struct TenantId(Guid Value) : IDomainId<TenantId>, IComparable<TenantId>
 {
     public static TenantId From(Guid value) => new(value);
     public static implicit operator Guid(TenantId id) => id.Value;
     public override string ToString() => Value.ToString();
+
+    public int CompareTo(TenantId other) => Value.CompareTo(other.Value);
+    public static bool operator <(TenantId left, TenantId right) => left.CompareTo(right) < 0;
+    public static bool operator >(TenantId left, TenantId right) => left.CompareTo(right) > 0;
+    public static bool operator <=(TenantId left, TenantId right) => left.CompareTo(right) <= 0;
+    public static bool operator >=(TenantId left, TenantId right) => left.CompareTo(right) >= 0;
 }
 
-// Ordering operators exist only on TaskItemId: it is the keyset tiebreaker of the TaskItem cursor
-// search, and EF needs a comparison node it can push into SQL. The database performs the comparison,
-// so the provider's own uniqueidentifier collation orders both the WHERE and the ORDER BY - they
-// agree with each other, which is all keyset paging requires.
+// Ordering operators exist only on TenantId and TaskItemId: they are the keyset keys of the TaskItem
+// cursor search and the system scans, and EF needs a comparison node it can push into SQL. The database
+// performs the comparison, so the provider's own uniqueidentifier collation orders both the WHERE and the
+// ORDER BY - they agree with each other, which is all keyset paging requires.
 public readonly record struct TaskItemId(Guid Value) : IDomainId<TaskItemId>, IComparable<TaskItemId>
 {
     public static TaskItemId From(Guid value) => new(value);

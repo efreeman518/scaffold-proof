@@ -81,6 +81,11 @@ public static partial class RegisterServices
         services.AddScoped<IChecklistItemRepositoryQuery, ChecklistItemRepositoryQuery>();
 
         services.AddScoped<IInboxStore, InboxStore>();
+        // Cross-tenant system access for the scheduler jobs (IgnoreQueryFilters), so background work no
+        // longer leans on the request context defaulting to global admin.
+        services.AddScoped<ITaskItemSystemRepository, TaskItemSystemRepository>();
+        // temporary: S6 owns the real IOutboxStaging registration; delete on merge.
+        services.AddScoped<IOutboxStaging, OutboxStaging>();
     }
 
     // An empty connection string leaves the context unconfigured so test hosts can replace it (InMemory).
