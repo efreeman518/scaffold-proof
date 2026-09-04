@@ -26,7 +26,7 @@ public static class RabbitMqServiceCollectionExtensions
         ArgumentException.ThrowIfNullOrWhiteSpace(sectionName);
 
         services.AddOptions<RabbitMqOptions>().Bind(configuration.GetSection(sectionName)).ValidateOnStart();
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<RabbitMqOptions>>(CreateOptionsValidator));
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<RabbitMqOptions>, RabbitMqOptionsValidator>(CreateOptionsValidator));
 
         services.TryAddSingleton<RabbitMqMetrics>();
         services.TryAddSingleton<IRabbitMqConnectionMultiplexer, RabbitMqConnectionMultiplexer>();
