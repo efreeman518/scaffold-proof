@@ -2,6 +2,8 @@ using EF.AspNetCore;
 using EF.Common.Contracts;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
+using TaskFlow.Api.Endpoints.Shared;
+using TaskFlow.Api.Filters;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models;
@@ -18,10 +20,12 @@ public static class TagEndpoints
     {
         _problemDetailsIncludeStackTrace = problemDetailsIncludeStackTrace;
 
-        var g = group.MapGroup("/tags").WithTags("Tags");
+        var g = group.MapGroup("/tags").WithTags("Tags")
+            .AddEndpointFilter<ETagEndpointFilter>();
 
         g.MapPost("/search", Search)
             .Produces<PagedResponse<TagDto>>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
             .WithSummary("Search Tags with paging, filters, and sorts");
 
         g.MapGet("/{id:guid}", GetById)
@@ -31,16 +35,20 @@ public static class TagEndpoints
 
         g.MapPost("/", Create)
             .Produces<DefaultResponse<TagDto>>(StatusCodes.Status201Created)
+            .Produces<DefaultResponse<TagDto>>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status409Conflict)
             .WithSummary("Create a new Tag");
 
         g.MapPut("/{id:guid}", Update)
+            .RequireIfMatch()
             .Produces<DefaultResponse<TagDto>>()
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status404NotFound)
             .WithSummary("Update an existing Tag");
 
         g.MapDelete("/{id:guid}", Delete)
+            .RequireIfMatch()
             .Produces(StatusCodes.Status204NoContent)
             .ProducesValidationProblem()
             .WithSummary("Delete a Tag");
@@ -52,10 +60,14 @@ public static class TagEndpoints
     private static async Task<IResult> Search(
         [FromServices] ITagService service,
         [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] SearchRequest<TagSearchFilter>? request,
-        CancellationToken ct)
+        CancellationToken ct,
+        [FromQuery] bool includeTotal = false)
     {
-        var items = await service.SearchAsync(request ?? new SearchRequest<TagSearchFilter>(), ct);
-        return TypedResults.Ok(items);
+        var search = request ?? new SearchRequest<TagSearchFilter>();
+        var guard = SearchRequestGuard.Validate(search.PageSize);
+        if (guard is not null) return guard;
+
+        return TypedResults.Ok(await service.SearchAsync(search, includeTotal, ct));
     }
 
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
@@ -79,7 +91,9 @@ public static class TagEndpoints
     {
         var result = await service.CreateAsync(request, ct);
         return result.Match<IResult>(
-            response => TypedResults.Created(httpContext.Request.Path, response),
+            response => response.IsReplay
+                ? TypedResults.Ok(response)
+                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
                 errors: errors, traceId: httpContext.TraceIdentifier,
                 includeStackTrace: _problemDetailsIncludeStackTrace)));
@@ -90,6 +104,7 @@ public static class TagEndpoints
         HttpContext httpContext,
         [FromServices] ITagService service,
         Guid id,
+        IfMatch ifMatch,
         [FromBody] DefaultRequest<TagDto> request,
         CancellationToken ct)
     {
@@ -98,7 +113,7 @@ public static class TagEndpoints
                 statusCodeOverride: StatusCodes.Status400BadRequest,
                 message: $"{ErrorConstants.ERROR_URL_BODY_ID_MISMATCH}: {id} <> {request.Item.Id}"));
 
-        var result = await service.UpdateAsync(request, ct);
+        var result = await service.UpdateAsync(request, ifMatch.ExpectedVersion, ct);
         return result.Match(
             response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
@@ -109,9 +124,9 @@ public static class TagEndpoints
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
     private static async Task<IResult> Delete(
         HttpContext httpContext,
-        [FromServices] ITagService service, Guid id, CancellationToken ct)
+        [FromServices] ITagService service, Guid id, IfMatch ifMatch, CancellationToken ct)
     {
-        var result = await service.DeleteAsync(id, ct);
+        var result = await service.DeleteAsync(id, ifMatch.ExpectedVersion, ct);
         return result.Match<IResult>(
             () => TypedResults.NoContent(),
             errors => TypedResults.Problem(

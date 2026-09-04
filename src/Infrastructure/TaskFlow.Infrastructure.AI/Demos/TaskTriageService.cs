@@ -63,7 +63,7 @@ public sealed class TaskTriageService(
         if (apply && Enum.TryParse<Priority>(triage.SuggestedPriority, ignoreCase: true, out var priority))
         {
             task.Priority = priority;
-            var update = await taskItemService.UpdateAsync(new DefaultRequest<TaskItemDto> { Item = task }, ct);
+            var update = await taskItemService.UpdateAsync(new DefaultRequest<TaskItemDto> { Item = task }, task.Version, ct);
             applied = !update.IsFailure;
             if (!applied)
                 logger.LogWarning("Failed to apply triage priority to {TaskId}: {Error}", taskId, update.ErrorMessage);

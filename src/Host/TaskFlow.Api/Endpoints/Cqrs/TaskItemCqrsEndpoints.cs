@@ -3,9 +3,12 @@ using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
+using TaskFlow.Api.Endpoints.Shared;
+using TaskFlow.Api.Filters;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Cqrs.Features.TaskItems;
 using TaskFlow.Application.Models;
+using TaskFlow.Application.Models.Paging;
 
 namespace TaskFlow.Api.Endpoints.Cqrs;
 
@@ -19,11 +22,13 @@ public static class TaskItemCqrsEndpoints
     {
         _problemDetailsIncludeStackTrace = problemDetailsIncludeStackTrace;
 
-        var g = group.MapGroup("/task-items").WithTags("TaskItems");
+        var g = group.MapGroup("/task-items").WithTags("TaskItems")
+            .AddEndpointFilter<ETagEndpointFilter>();
 
         g.MapPost("/search", Search)
-            .Produces<PagedResponse<TaskItemDto>>(StatusCodes.Status200OK)
-            .WithSummary("Search TaskItems with paging, filters, and sorts");
+            .Produces<CursorPage<TaskItemDto>>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .WithSummary("Search TaskItems with keyset (cursor) paging, filters, and a sort mode");
 
         g.MapGet("/{id:guid}", GetById)
             .Produces<DefaultResponse<TaskItemDto>>(StatusCodes.Status200OK)
@@ -32,16 +37,29 @@ public static class TaskItemCqrsEndpoints
 
         g.MapPost("/", Create)
             .Produces<DefaultResponse<TaskItemDto>>(StatusCodes.Status201Created)
+            .Produces<DefaultResponse<TaskItemDto>>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
-            .WithSummary("Create a new TaskItem");
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .WithSummary("Create a new TaskItem (optional caller-supplied UUIDv7 id makes it idempotent)");
 
         g.MapPut("/{id:guid}", Update)
+            .RequireIfMatch()
             .Produces<DefaultResponse<TaskItemDto>>()
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status404NotFound)
             .WithSummary("Update an existing TaskItem");
 
+        // PATCH exists in both styles now; its absence here previously 404'd the AI triage workflow
+        // whenever the app ran in CQRS mode.
+        g.MapPatch("/{id:guid}", Patch)
+            .RequireIfMatch()
+            .Produces<DefaultResponse<TaskItemDto>>()
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .WithSummary("Partially update a TaskItem (JSON merge patch - omitted fields are unchanged)");
+
         g.MapDelete("/{id:guid}", Delete)
+            .RequireIfMatch()
             .Produces(StatusCodes.Status204NoContent)
             .ProducesValidationProblem()
             .WithSummary("Delete a TaskItem");
@@ -52,45 +70,55 @@ public static class TaskItemCqrsEndpoints
         // routes. Reads for comments/checklist-items still live on their own query endpoints.
         g.MapPost("/{id:guid}/comments", AddComment)
             .Produces<DefaultResponse<CommentDto>>(StatusCodes.Status201Created)
+            .Produces<DefaultResponse<CommentDto>>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
             .WithSummary("Add a Comment to a TaskItem");
 
         g.MapPut("/{id:guid}/comments/{commentId:guid}", UpdateComment)
+            .RequireIfMatch()
             .Produces<DefaultResponse<CommentDto>>()
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status404NotFound)
             .WithSummary("Update a Comment on a TaskItem");
 
         g.MapDelete("/{id:guid}/comments/{commentId:guid}", RemoveComment)
+            .RequireIfMatch()
             .Produces(StatusCodes.Status204NoContent)
             .ProducesValidationProblem()
             .WithSummary("Remove a Comment from a TaskItem");
 
         g.MapPost("/{id:guid}/checklist-items", AddChecklistItem)
             .Produces<DefaultResponse<ChecklistItemDto>>(StatusCodes.Status201Created)
+            .Produces<DefaultResponse<ChecklistItemDto>>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
             .WithSummary("Add a ChecklistItem to a TaskItem");
 
         g.MapPut("/{id:guid}/checklist-items/{checklistItemId:guid}", UpdateChecklistItem)
+            .RequireIfMatch()
             .Produces<DefaultResponse<ChecklistItemDto>>()
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status404NotFound)
             .WithSummary("Update a ChecklistItem on a TaskItem");
 
         g.MapDelete("/{id:guid}/checklist-items/{checklistItemId:guid}", RemoveChecklistItem)
+            .RequireIfMatch()
             .Produces(StatusCodes.Status204NoContent)
             .ProducesValidationProblem()
             .WithSummary("Remove a ChecklistItem from a TaskItem");
 
         g.MapPost("/{id:guid}/tags/{tagId:guid}", AssociateTag)
             .Produces<DefaultResponse<TaskItemTagDto>>(StatusCodes.Status201Created)
+            .Produces<DefaultResponse<TaskItemTagDto>>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status404NotFound)
             .WithSummary("Associate a Tag with a TaskItem");
 
         g.MapDelete("/{id:guid}/tags/{tagId:guid}", RemoveTag)
+            .RequireIfMatch()
             .Produces(StatusCodes.Status204NoContent)
             .ProducesValidationProblem()
             .WithSummary("Remove a Tag association from a TaskItem");
@@ -98,14 +126,17 @@ public static class TaskItemCqrsEndpoints
         return group;
     }
 
-    /// <summary>Handles search requests and returns a paged application response.</summary>
+    /// <summary>Handles search requests and returns a keyset page.</summary>
     private static async Task<IResult> Search(
-        [FromServices] IRequestHandler<SearchTaskItemsQuery, PagedResponse<TaskItemDto>> handler,
-        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] SearchRequest<TaskItemSearchFilter>? request,
+        [FromServices] IRequestHandler<SearchTaskItemsQuery, CursorPage<TaskItemDto>> handler,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] TaskItemCursorSearchRequest? request,
         CancellationToken ct)
     {
-        var items = await handler.HandleAsync(new SearchTaskItemsQuery(request ?? new SearchRequest<TaskItemSearchFilter>()), ct);
-        return TypedResults.Ok(items);
+        var search = request ?? new TaskItemCursorSearchRequest();
+        var guard = SearchRequestGuard.Validate(search.PageSize);
+        if (guard is not null) return guard;
+
+        return TypedResults.Ok(await handler.HandleAsync(new SearchTaskItemsQuery(search), ct));
     }
 
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
@@ -131,7 +162,9 @@ public static class TaskItemCqrsEndpoints
     {
         var result = await handler.HandleAsync(new CreateTaskItemCommand(request), ct);
         return result.Match<IResult>(
-            response => TypedResults.Created(httpContext.Request.Path, response),
+            response => response.IsReplay
+                ? TypedResults.Ok(response)
+                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
                 errors: errors, traceId: httpContext.TraceIdentifier,
                 includeStackTrace: _problemDetailsIncludeStackTrace)));
@@ -142,6 +175,7 @@ public static class TaskItemCqrsEndpoints
         HttpContext httpContext,
         [FromServices] IRequestHandler<UpdateTaskItemCommand, Result<DefaultResponse<TaskItemDto>>> handler,
         Guid id,
+        IfMatch ifMatch,
         [FromBody] DefaultRequest<TaskItemDto> request,
         CancellationToken ct)
     {
@@ -150,7 +184,24 @@ public static class TaskItemCqrsEndpoints
                 statusCodeOverride: StatusCodes.Status400BadRequest,
                 message: $"{ErrorConstants.ERROR_URL_BODY_ID_MISMATCH}: {id} <> {request.Item.Id}"));
 
-        var result = await handler.HandleAsync(new UpdateTaskItemCommand(request), ct);
+        var result = await handler.HandleAsync(new UpdateTaskItemCommand(request, ifMatch.ExpectedVersion), ct);
+        return result.Match(
+            response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response),
+            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
+                errors: errors, traceId: httpContext.TraceIdentifier,
+                includeStackTrace: _problemDetailsIncludeStackTrace)));
+    }
+
+    /// <summary>Applies a sparse partial update (JSON merge patch) to a TaskItem through the aggregate root.</summary>
+    private static async Task<IResult> Patch(
+        HttpContext httpContext,
+        [FromServices] IRequestHandler<PatchTaskItemCommand, Result<DefaultResponse<TaskItemDto>>> handler,
+        Guid id,
+        IfMatch ifMatch,
+        [FromBody] DefaultRequest<TaskItemPatchDto> request,
+        CancellationToken ct)
+    {
+        var result = await handler.HandleAsync(new PatchTaskItemCommand(id, request.Item, ifMatch.ExpectedVersion), ct);
         return result.Match(
             response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
@@ -163,9 +214,10 @@ public static class TaskItemCqrsEndpoints
         HttpContext httpContext,
         [FromServices] IRequestHandler<DeleteTaskItemCommand, Result> handler,
         Guid id,
+        IfMatch ifMatch,
         CancellationToken ct)
     {
-        var result = await handler.HandleAsync(new DeleteTaskItemCommand(id), ct);
+        var result = await handler.HandleAsync(new DeleteTaskItemCommand(id, ifMatch.ExpectedVersion), ct);
         return result.Match<IResult>(
             () => TypedResults.NoContent(),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
@@ -185,7 +237,9 @@ public static class TaskItemCqrsEndpoints
         return result.Match(
             response => response.Item is null
                 ? Results.NotFound(id)
-                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item.Id}", response),
+                : response.IsReplay
+                    ? TypedResults.Ok(response)
+                    : TypedResults.Created($"{httpContext.Request.Path}/{response.Item.Id}", response),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
                 errors: errors, traceId: httpContext.TraceIdentifier,
                 includeStackTrace: _problemDetailsIncludeStackTrace)));
@@ -197,10 +251,12 @@ public static class TaskItemCqrsEndpoints
         [FromServices] IRequestHandler<UpdateTaskItemCommentCommand, Result<DefaultResponse<CommentDto>>> handler,
         Guid id,
         Guid commentId,
+        IfMatch ifMatch,
         [FromBody] DefaultRequest<CommentDto> request,
         CancellationToken ct)
     {
-        var result = await handler.HandleAsync(new UpdateTaskItemCommentCommand(id, commentId, request.Item), ct);
+        var result = await handler.HandleAsync(
+            new UpdateTaskItemCommentCommand(id, commentId, request.Item, ifMatch.ExpectedVersion), ct);
         return result.Match(
             response => response.Item is null ? Results.NotFound(commentId) : TypedResults.Ok(response),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
@@ -214,9 +270,11 @@ public static class TaskItemCqrsEndpoints
         [FromServices] IRequestHandler<RemoveTaskItemCommentCommand, Result> handler,
         Guid id,
         Guid commentId,
+        IfMatch ifMatch,
         CancellationToken ct)
     {
-        var result = await handler.HandleAsync(new RemoveTaskItemCommentCommand(id, commentId), ct);
+        var result = await handler.HandleAsync(
+            new RemoveTaskItemCommentCommand(id, commentId, ifMatch.ExpectedVersion), ct);
         return result.Match<IResult>(
             () => TypedResults.NoContent(),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
@@ -236,7 +294,9 @@ public static class TaskItemCqrsEndpoints
         return result.Match(
             response => response.Item is null
                 ? Results.NotFound(id)
-                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item.Id}", response),
+                : response.IsReplay
+                    ? TypedResults.Ok(response)
+                    : TypedResults.Created($"{httpContext.Request.Path}/{response.Item.Id}", response),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
                 errors: errors, traceId: httpContext.TraceIdentifier,
                 includeStackTrace: _problemDetailsIncludeStackTrace)));
@@ -248,10 +308,12 @@ public static class TaskItemCqrsEndpoints
         [FromServices] IRequestHandler<UpdateTaskItemChecklistItemCommand, Result<DefaultResponse<ChecklistItemDto>>> handler,
         Guid id,
         Guid checklistItemId,
+        IfMatch ifMatch,
         [FromBody] DefaultRequest<ChecklistItemDto> request,
         CancellationToken ct)
     {
-        var result = await handler.HandleAsync(new UpdateTaskItemChecklistItemCommand(id, checklistItemId, request.Item), ct);
+        var result = await handler.HandleAsync(
+            new UpdateTaskItemChecklistItemCommand(id, checklistItemId, request.Item, ifMatch.ExpectedVersion), ct);
         return result.Match(
             response => response.Item is null ? Results.NotFound(checklistItemId) : TypedResults.Ok(response),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
@@ -265,9 +327,11 @@ public static class TaskItemCqrsEndpoints
         [FromServices] IRequestHandler<RemoveTaskItemChecklistItemCommand, Result> handler,
         Guid id,
         Guid checklistItemId,
+        IfMatch ifMatch,
         CancellationToken ct)
     {
-        var result = await handler.HandleAsync(new RemoveTaskItemChecklistItemCommand(id, checklistItemId), ct);
+        var result = await handler.HandleAsync(
+            new RemoveTaskItemChecklistItemCommand(id, checklistItemId, ifMatch.ExpectedVersion), ct);
         return result.Match<IResult>(
             () => TypedResults.NoContent(),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
@@ -287,7 +351,9 @@ public static class TaskItemCqrsEndpoints
         return result.Match(
             response => response.Item is null
                 ? Results.NotFound(id)
-                : TypedResults.Created($"{httpContext.Request.Path}", response),
+                : response.IsReplay
+                    ? TypedResults.Ok(response)
+                    : TypedResults.Created($"{httpContext.Request.Path}", response),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
                 errors: errors, traceId: httpContext.TraceIdentifier,
                 includeStackTrace: _problemDetailsIncludeStackTrace)));
@@ -299,9 +365,10 @@ public static class TaskItemCqrsEndpoints
         [FromServices] IRequestHandler<RemoveTaskItemTagCommand, Result> handler,
         Guid id,
         Guid tagId,
+        IfMatch ifMatch,
         CancellationToken ct)
     {
-        var result = await handler.HandleAsync(new RemoveTaskItemTagCommand(id, tagId), ct);
+        var result = await handler.HandleAsync(new RemoveTaskItemTagCommand(id, tagId, ifMatch.ExpectedVersion), ct);
         return result.Match<IResult>(
             () => TypedResults.NoContent(),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(

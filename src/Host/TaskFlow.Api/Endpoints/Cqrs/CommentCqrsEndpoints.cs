@@ -3,6 +3,8 @@ using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
+using TaskFlow.Api.Endpoints.Shared;
+using TaskFlow.Api.Filters;
 using TaskFlow.Application.Cqrs.Features.Comments;
 using TaskFlow.Application.Models;
 
@@ -18,10 +20,12 @@ public static class CommentCqrsEndpoints
     {
         _problemDetailsIncludeStackTrace = problemDetailsIncludeStackTrace;
 
-        var g = group.MapGroup("/comments").WithTags("Comments");
+        var g = group.MapGroup("/comments").WithTags("Comments")
+            .AddEndpointFilter<ETagEndpointFilter>();
 
         g.MapPost("/search", Search)
             .Produces<PagedResponse<CommentDto>>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
             .WithSummary("Search Comments with paging, filters, and sorts");
 
         g.MapGet("/{id:guid}", GetById)
@@ -36,10 +40,14 @@ public static class CommentCqrsEndpoints
     private static async Task<IResult> Search(
         [FromServices] IRequestHandler<SearchCommentsQuery, PagedResponse<CommentDto>> handler,
         [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] SearchRequest<CommentSearchFilter>? request,
-        CancellationToken ct)
+        CancellationToken ct,
+        [FromQuery] bool includeTotal = false)
     {
-        var items = await handler.HandleAsync(new SearchCommentsQuery(request ?? new SearchRequest<CommentSearchFilter>()), ct);
-        return TypedResults.Ok(items);
+        var search = request ?? new SearchRequest<CommentSearchFilter>();
+        var guard = SearchRequestGuard.Validate(search.PageSize);
+        if (guard is not null) return guard;
+
+        return TypedResults.Ok(await handler.HandleAsync(new SearchCommentsQuery(search, includeTotal), ct));
     }
 
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>

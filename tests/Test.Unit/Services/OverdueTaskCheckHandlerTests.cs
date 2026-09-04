@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models;
+using TaskFlow.Application.Models.Paging;
 using TaskFlow.Domain.Shared.Enums;
 using TaskFlow.Scheduler.Handlers;
 
@@ -40,14 +41,14 @@ public class OverdueTaskCheckHandlerTests
         };
 
         _serviceMock.Setup(s => s.SearchAsync(
-                It.Is<SearchRequest<TaskItemSearchFilter>>(r => r.Filter!.IsOverdue == true),
+                It.Is<TaskItemCursorSearchRequest>(r => r.Filter!.IsOverdue == true),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagedResponse<TaskItemDto> { Data = overdueTasks, Total = 2 });
+            .ReturnsAsync(new CursorPage<TaskItemDto> { Data = overdueTasks });
 
         await _handler.HandleAsync(CancellationToken.None);
 
         _serviceMock.Verify(s => s.SearchAsync(
-            It.Is<SearchRequest<TaskItemSearchFilter>>(r => r.Filter!.IsOverdue == true),
+            It.Is<TaskItemCursorSearchRequest>(r => r.Filter!.IsOverdue == true),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -57,14 +58,14 @@ public class OverdueTaskCheckHandlerTests
     public async Task HandleAsync_NoOverdueItems_CompletesWithZeroCount()
     {
         _serviceMock.Setup(s => s.SearchAsync(
-                It.IsAny<SearchRequest<TaskItemSearchFilter>>(),
+                It.IsAny<TaskItemCursorSearchRequest>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagedResponse<TaskItemDto> { Data = [], Total = 0 });
+            .ReturnsAsync(new CursorPage<TaskItemDto> { Data = [] });
 
         await _handler.HandleAsync(CancellationToken.None);
 
         _serviceMock.Verify(s => s.SearchAsync(
-            It.IsAny<SearchRequest<TaskItemSearchFilter>>(),
+            It.IsAny<TaskItemCursorSearchRequest>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -81,15 +82,15 @@ public class OverdueTaskCheckHandlerTests
         };
 
         _serviceMock.Setup(s => s.SearchAsync(
-                It.IsAny<SearchRequest<TaskItemSearchFilter>>(),
+                It.IsAny<TaskItemCursorSearchRequest>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagedResponse<TaskItemDto> { Data = mixedTasks, Total = 3 });
+            .ReturnsAsync(new CursorPage<TaskItemDto> { Data = mixedTasks });
 
         // Handler filters out Completed and Cancelled internally
         await _handler.HandleAsync(CancellationToken.None);
 
         _serviceMock.Verify(s => s.SearchAsync(
-            It.IsAny<SearchRequest<TaskItemSearchFilter>>(),
+            It.IsAny<TaskItemCursorSearchRequest>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -99,14 +100,14 @@ public class OverdueTaskCheckHandlerTests
     public async Task HandleAsync_NullData_TreatsAsEmpty()
     {
         _serviceMock.Setup(s => s.SearchAsync(
-                It.IsAny<SearchRequest<TaskItemSearchFilter>>(),
+                It.IsAny<TaskItemCursorSearchRequest>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagedResponse<TaskItemDto> { Data = null!, Total = 0 });
+            .ReturnsAsync(new CursorPage<TaskItemDto> { Data = null! });
 
         await _handler.HandleAsync(CancellationToken.None);
 
         _serviceMock.Verify(s => s.SearchAsync(
-            It.IsAny<SearchRequest<TaskItemSearchFilter>>(),
+            It.IsAny<TaskItemCursorSearchRequest>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 }

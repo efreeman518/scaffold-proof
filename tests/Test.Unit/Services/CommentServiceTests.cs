@@ -83,11 +83,11 @@ public class CommentServiceTests
     {
         var dtos = new List<CommentDto> { new() { Body = "Test" } };
         var pagedResponse = new PagedResponse<CommentDto> { Data = dtos, Total = 1, PageSize = 10, PageIndex = 0 };
-        _repoQueryMock.Setup(r => r.SearchCommentsAsync(It.IsAny<SearchRequest<CommentSearchFilter>>(), It.IsAny<CancellationToken>()))
+        _repoQueryMock.Setup(r => r.SearchCommentsAsync(It.IsAny<SearchRequest<CommentSearchFilter>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(pagedResponse);
 
         var request = new SearchRequest<CommentSearchFilter> { PageSize = 10, PageIndex = 0 };
-        var response = await CreateService().SearchAsync(request, TestContext.CancellationToken);
+        var response = await CreateService().SearchAsync(request, false, TestContext.CancellationToken);
 
         Assert.AreEqual(1, response.Total);
     }

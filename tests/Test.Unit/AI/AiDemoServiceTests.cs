@@ -41,7 +41,7 @@ public class AiDemoServiceTests
         Assert.IsFalse(result.IsConfigured);
         Assert.IsFalse(result.Applied);
         Assert.AreEqual("AI model not configured.", result.Error);
-        taskItemService.Verify(x => x.UpdateAsync(It.IsAny<DefaultRequest<TaskItemDto>>(), It.IsAny<CancellationToken>()), Times.Never);
+        taskItemService.Verify(x => x.UpdateAsync(It.IsAny<DefaultRequest<TaskItemDto>>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     /// <summary>D4 accepts model JSON embedded in extra text and applies the parsed priority.</summary>
@@ -61,7 +61,7 @@ public class AiDemoServiceTests
             .Setup(x => x.GetAsync(taskId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<DefaultResponse<TaskItemDto>>.Success(new DefaultResponse<TaskItemDto> { Item = task }));
         taskItemService
-            .Setup(x => x.UpdateAsync(It.IsAny<DefaultRequest<TaskItemDto>>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.UpdateAsync(It.IsAny<DefaultRequest<TaskItemDto>>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((DefaultRequest<TaskItemDto> request, CancellationToken _) =>
                 Result<DefaultResponse<TaskItemDto>>.Success(new DefaultResponse<TaskItemDto> { Item = request.Item }));
 
@@ -84,6 +84,7 @@ public class AiDemoServiceTests
         Assert.AreEqual(128, chatClient.LastOptions.MaxOutputTokens);
         taskItemService.Verify(x => x.UpdateAsync(
             It.Is<DefaultRequest<TaskItemDto>>(request => request.Item.Priority == Priority.Critical),
+            It.IsAny<long?>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -111,7 +112,7 @@ public class AiDemoServiceTests
         Assert.IsFalse(result.Applied);
         Assert.IsNull(result.Triage);
         Assert.AreEqual("Could not parse model output as triage JSON.", result.Error);
-        taskItemService.Verify(x => x.UpdateAsync(It.IsAny<DefaultRequest<TaskItemDto>>(), It.IsAny<CancellationToken>()), Times.Never);
+        taskItemService.Verify(x => x.UpdateAsync(It.IsAny<DefaultRequest<TaskItemDto>>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     /// <summary>D5 turns parseable model output into a normal task create request.</summary>

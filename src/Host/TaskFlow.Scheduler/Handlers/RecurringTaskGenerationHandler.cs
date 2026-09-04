@@ -1,6 +1,7 @@
 using EF.Common.Contracts;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models;
+using TaskFlow.Application.Models.Paging;
 using TaskFlow.Scheduler.Abstractions;
 
 namespace TaskFlow.Scheduler.Handlers;
@@ -23,10 +24,12 @@ public class RecurringTaskGenerationHandler : IScheduledJobHandler
     {
         _logger.LogInformation("Generating recurring tasks...");
 
-        var request = new SearchRequest<TaskItemSearchFilter>
+        // Compile-level pass-through to the cursor contract: the placeholder job reads one page and
+        // PageSize 500 is now outside the enforced [1,100] range. Real paging belongs with the job
+        // implementations themselves.
+        var request = new TaskItemCursorSearchRequest
         {
-            PageSize = 500,
-            PageIndex = 0,
+            PageSize = PageSizeLimits.Max,
             Filter = new TaskItemSearchFilter()
         };
 
