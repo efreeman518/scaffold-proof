@@ -2,6 +2,9 @@
   <Folder Name="/Shared/">
     <Project Path="src/Shared/TaskFlow.Observability/TaskFlow.Observability.csproj" />
   </Folder>
+  <Folder Name="/Packages/">
+    <Project Path="src/Packages/EF.Messaging.RabbitMq/EF.Messaging.RabbitMq.csproj" />
+  </Folder>
   <Folder Name="/Domain/">
     <Project Path="src/Domain/TaskFlow.Domain.Shared/TaskFlow.Domain.Shared.csproj" />
     <Project Path="src/Domain/TaskFlow.Domain.Model/TaskFlow.Domain.Model.csproj" />
@@ -40,6 +43,7 @@
     <Project Path="src/UI/TaskFlow.Blazor/TaskFlow.Blazor.csproj" />
   </Folder>
   <Folder Name="/Tests/">
+    <Project Path="tests/EF.Messaging.RabbitMq.Tests/EF.Messaging.RabbitMq.Tests.csproj" />
     <Project Path="tests/Test.Support/Test.Support.csproj" />
     <Project Path="tests/Test.Unit/Test.Unit.csproj" />
     <Project Path="tests/Test.UI/Test.UI.csproj" />
