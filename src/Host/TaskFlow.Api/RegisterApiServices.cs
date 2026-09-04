@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using TaskFlow.Api.Auth;
 using TaskFlow.Api.Middleware;
+using TaskFlow.Api.OpenApi;
 
 namespace TaskFlow.Api;
 
@@ -185,5 +186,13 @@ public static class RegisterApiServices
                 });
             }
         });
+
+        // The versioned OpenAPI helper owns AddOpenApi per document, so the concurrency transformer is
+        // attached to the same named options rather than by re-registering the document.
+        foreach (var apiDocument in ApiContract.SupportedDocuments)
+        {
+            services.Configure<Microsoft.AspNetCore.OpenApi.OpenApiOptions>(
+                apiDocument.GroupName, options => options.AddOperationTransformer<ConcurrencyOperationTransformer>());
+        }
     }
 }

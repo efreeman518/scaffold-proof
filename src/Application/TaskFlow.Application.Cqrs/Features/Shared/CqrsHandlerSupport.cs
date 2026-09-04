@@ -2,6 +2,8 @@
 using EF.CQRS.Validation;
 using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
+using TaskFlow.Application.Contracts.Concurrency;
+using TaskFlow.Application.Models.Paging;
 
 namespace TaskFlow.Application.Cqrs.Shared;
 
@@ -30,7 +32,29 @@ internal static class CqrsHandlerSupport
         }
     }
 
-    /// <summary>Provides the try save operation for CQRS handler support.</summary>
+    /// <summary>Keyset variant of <see cref="SearchAsync{TDto}"/> for the cursor-paged TaskItem list.</summary>
+    public static async Task<CursorPage<TDto>> SearchCursorAsync<TDto>(
+        Func<CancellationToken, Task<CursorPage<TDto>>> search,
+        ILogger logger,
+        string operation,
+        CancellationToken ct)
+    {
+        try
+        {
+            return await search(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            logger.SearchCancelled(operation);
+            return new CursorPage<TDto>();
+        }
+    }
+
+    /// <summary>
+    /// Saves with the throwing concurrency policy and maps non-concurrency failures to a Result. The
+    /// exception filter is load-bearing: without it a lost-update failure would be caught here and
+    /// returned as a generic 400 instead of reaching the handler as a 412.
+    /// </summary>
     public static async Task<Result> TrySaveAsync(
         IRepositoryBase repository,
         ILogger logger,
@@ -40,10 +64,10 @@ internal static class CqrsHandlerSupport
     {
         try
         {
-            await repository.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, ct);
+            await ConcurrencyGuard.SaveAsync(repository, ct);
             return Result.Success();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
             logger.LogError(ex, "{ErrorMessage} {@Args}", errorMessage, args);
             return Result.Failure(ex.GetBaseException().Message);

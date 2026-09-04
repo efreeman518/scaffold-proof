@@ -16,7 +16,7 @@ namespace Test.Endpoints;
 [TestClass]
 public class ChecklistItemEndpointTests
 {
-    private static CustomApiFactory _factory = null!;
+    private static EndpointStyleFixture _fixture = null!;
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -25,14 +25,14 @@ public class ChecklistItemEndpointTests
 
     /// <summary>Initializes shared test fixtures before the class-level test run begins.</summary>
     [ClassInitialize]
-    public static void ClassInit(TestContext _) => _factory = new CustomApiFactory();
+    public static void ClassInit(TestContext _) => _fixture = new EndpointStyleFixture();
 
     /// <summary>Disposes shared test fixtures after the class-level test run finishes.</summary>
     [ClassCleanup]
-    public static void ClassCleanup() => _factory?.Dispose();
+    public static void ClassCleanup() => _fixture?.Dispose();
 
     /// <summary>Creates client used by the surrounding test cases.</summary>
-    private static HttpClient CreateClient() => _factory.CreateClient();
+    private static HttpClient CreateClient(string style) => _fixture.CreateClient(style);
 
     /// <summary>Creates parent task item used by the surrounding test cases.</summary>
     private async Task<Guid> CreateParentTaskItem(HttpClient client)
@@ -49,10 +49,13 @@ public class ChecklistItemEndpointTests
 
     /// <summary>Verifies that given non existent ID, when get checklist item, then returns 404.</summary>
     [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
     [TestMethod]
-    public async Task Given_NonExistentId_When_GetChecklistItem_Then_Returns404()
+    public async Task Given_NonExistentId_When_GetChecklistItem_Then_Returns404(string style)
     {
-        using var client = CreateClient();
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
 
         var response = await client.GetAsync($"/api/v1/checklist-items/{Guid.NewGuid()}", TestContext.CancellationToken);
 
@@ -61,10 +64,13 @@ public class ChecklistItemEndpointTests
 
     /// <summary>Verifies that adding a checklist item through the TaskItem root returns 201 and is readable.</summary>
     [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
     [TestMethod]
-    public async Task Given_ValidPayload_When_AddChecklistItemToTaskItem_Then_Returns201AndReadable()
+    public async Task Given_ValidPayload_When_AddChecklistItemToTaskItem_Then_Returns201AndReadable(string style)
     {
-        using var client = CreateClient();
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
         var taskId = await CreateParentTaskItem(client);
 
         var dto = new ChecklistItemDto { Title = "Nested step", SortOrder = 1, IsCompleted = false, TaskItemId = taskId };
@@ -83,23 +89,30 @@ public class ChecklistItemEndpointTests
 
     /// <summary>Verifies the add/update/remove checklist-item lifecycle through the TaskItem root.</summary>
     [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
     [TestMethod]
-    public async Task Given_ChecklistItem_When_UpdatedAndRemovedThroughRoot_Then_ReflectsState()
+    public async Task Given_ChecklistItem_When_UpdatedAndRemovedThroughRoot_Then_ReflectsState(string style)
     {
-        using var client = CreateClient();
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
         var taskId = await CreateParentTaskItem(client);
 
         var addResp = await client.PostAsJsonAsync($"/api/v1/task-items/{taskId}/checklist-items",
             new DefaultRequest<ChecklistItemDto> { Item = new ChecklistItemDto { Title = "Step", SortOrder = 1, TaskItemId = taskId } }, cancellationToken: TestContext.CancellationToken);
         var itemId = (await addResp.Content.ReadFromJsonAsync<DefaultResponse<ChecklistItemDto>>(_jsonOptions, TestContext.CancellationToken))!.Item!.Id!.Value;
 
-        var updResp = await client.PutAsJsonAsync($"/api/v1/task-items/{taskId}/checklist-items/{itemId}",
-            new DefaultRequest<ChecklistItemDto> { Item = new ChecklistItemDto { Title = "Step done", IsCompleted = true, SortOrder = 1, TaskItemId = taskId } }, cancellationToken: TestContext.CancellationToken);
+        // Child writes carry the ROOT ETag (D-031).
+        var rootETag = addResp.ETagValue();
+        Assert.IsNotNull(rootETag, "A child add must return the new root aggregate ETag.");
+
+        var updResp = await client.PutWithIfMatchAsync($"/api/v1/task-items/{taskId}/checklist-items/{itemId}",
+            new DefaultRequest<ChecklistItemDto> { Item = new ChecklistItemDto { Title = "Step done", IsCompleted = true, SortOrder = 1, TaskItemId = taskId } }, $"\"{rootETag}\"", TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.OK, updResp.StatusCode);
         var updated = (await updResp.Content.ReadFromJsonAsync<DefaultResponse<ChecklistItemDto>>(_jsonOptions, TestContext.CancellationToken))!.Item;
         Assert.IsTrue(updated!.IsCompleted);
 
-        var delResp = await client.DeleteAsync($"/api/v1/task-items/{taskId}/checklist-items/{itemId}", TestContext.CancellationToken);
+        var delResp = await client.DeleteWithIfMatchAsync($"/api/v1/task-items/{taskId}/checklist-items/{itemId}", $"\"{updResp.ETagValue()}\"", TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.NoContent, delResp.StatusCode);
 
         var getResp = await client.GetAsync($"/api/v1/checklist-items/{itemId}", TestContext.CancellationToken);

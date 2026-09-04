@@ -302,9 +302,9 @@ builder.AddProject<Projects.TaskFlow_Blazor>("taskflowblazor")
     .WaitFor(gateway)
     .WithExternalHttpEndpoints();
 
-if (!isTesting)
 {
-    // Scheduler host
+    // Scheduler host. Present in the test graph too: it owns the outbox dispatcher, so without it nothing
+    // staged is ever delivered and the mesh tests would assert on a pipeline that never ran.
     var scheduler = builder.AddProject<Projects.TaskFlow_Scheduler>("taskflowscheduler")
         .WithReference(taskflowDb, connectionName: "TaskFlowDbContextTrxn")
         .WithReference(taskflowDb, connectionName: "TaskFlowDbContextQuery")
@@ -316,8 +316,9 @@ if (!isTesting)
         .WithEnvironment("Messaging__Provider", messagingProviderName)
         .WithEnvironment("Database__Encryption__LocalKeyBase64", columnEncryptionKey)
         .WithEnvironment("Database__Encryption__BlindIndexKeyBase64", blindIndexKey)
-        // Two replicas so the outbox/blob lease path is exercised locally (D-026): both drain, neither doubles up.
-        .WithReplicas(2)
+        // Two replicas so the outbox/blob lease path is exercised locally (D-026): both drain, neither doubles
+        // up. One replica under test so the graph boot stays inside the mesh startup budget.
+        .WithReplicas(isTesting ? 1 : 2)
         .WaitForCompletion(migrator)
         .WaitFor(dbServer);
     scheduler = WithBroker(scheduler);

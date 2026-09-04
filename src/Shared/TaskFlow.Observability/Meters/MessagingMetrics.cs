@@ -22,6 +22,12 @@ public sealed class MessagingMetrics : IDisposable
     private readonly Counter<long> _rabbitConfirmed;
     private readonly Counter<long> _rabbitNacked;
 
+    // Backlog is a level, not an event: gauges read the last snapshot the health check took, so the meter
+    // never opens its own database connection on a scrape.
+    private int _outboxPending;
+    private double _outboxLagSeconds;
+    private int _blobDeletePending;
+
     /// <summary>Creates the instruments. Registered as a singleton and exported by meter name.</summary>
     public MessagingMetrics()
     {
@@ -34,6 +40,18 @@ public sealed class MessagingMetrics : IDisposable
         _consumerDuration = _meter.CreateHistogram<double>("taskflow.consumer.duration", "ms", "Time to handle one consumed message.");
         _rabbitConfirmed = _meter.CreateCounter<long>("taskflow.rabbitmq.publish.confirmed", "{message}", "Messages confirmed by the RabbitMQ broker.");
         _rabbitNacked = _meter.CreateCounter<long>("taskflow.rabbitmq.publish.nacked", "{message}", "Messages nacked, returned or unconfirmed by RabbitMQ.");
+
+        _meter.CreateObservableGauge("taskflow.outbox.pending", () => Volatile.Read(ref _outboxPending), "{row}", "Live outbox rows awaiting dispatch.");
+        _meter.CreateObservableGauge("taskflow.outbox.lag", () => Volatile.Read(ref _outboxLagSeconds), "s", "Age of the oldest due outbox row.");
+        _meter.CreateObservableGauge("taskflow.blobdelete.pending", () => Volatile.Read(ref _blobDeletePending), "{row}", "Blob-delete work rows awaiting a worker.");
+    }
+
+    /// <summary>Publishes the latest backlog snapshot to the gauges. Called by the outbox health check.</summary>
+    public void RecordBacklog(int outboxPending, TimeSpan outboxLag, int blobDeletePending)
+    {
+        Volatile.Write(ref _outboxPending, outboxPending);
+        Volatile.Write(ref _outboxLagSeconds, outboxLag.TotalSeconds);
+        Volatile.Write(ref _blobDeletePending, blobDeletePending);
     }
 
     /// <summary>Records rows staged in one SaveChanges.</summary>

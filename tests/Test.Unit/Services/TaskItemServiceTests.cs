@@ -5,8 +5,10 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using TaskFlow.Application.Contracts;
+using TaskFlow.Application.Contracts.Paging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Models;
+using TaskFlow.Application.Models.Paging;
 using TaskFlow.Application.Services;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
@@ -32,6 +34,7 @@ public class TaskItemServiceTests
     private readonly Mock<IRequestContext<string, Guid?>> _requestContextMock = new();
     private readonly Mock<ITenantBoundaryValidator> _tenantBoundaryValidatorMock = new();
     private readonly Mock<IEntityCacheProvider> _cacheMock = new();
+    private readonly Mock<ICursorProtector> _cursorProtectorMock = new();
 
     /// <summary>Prepares per-test fixtures so each test starts from a predictable state.</summary>
     [TestInitialize]
@@ -54,7 +57,8 @@ public class TaskItemServiceTests
         _repoTrxnMock.Object,
         _repoQueryMock.Object,
         _tenantBoundaryValidatorMock.Object,
-        _cacheMock.Object);
+        _cacheMock.Object,
+        _cursorProtectorMock.Object);
 
     /// <summary>Verifies that given valid DTO, when create, then returns success.</summary>
     [TestMethod]
@@ -123,7 +127,7 @@ public class TaskItemServiceTests
         _repoTrxnMock.Setup(r => r.SaveChangesAsync(It.IsAny<OptimisticConcurrencyWinner>(), It.IsAny<CancellationToken>())).ReturnsAsync(0);
 
         var dto = new TaskItemDto { Id = entity.Id, Title = "Updated Title", Status = TaskItemStatus.Open };
-        var result = await CreateService().UpdateAsync(new DefaultRequest<TaskItemDto> { Item = dto }, TestContext.CancellationToken);
+        var result = await CreateService().UpdateAsync(new DefaultRequest<TaskItemDto> { Item = dto }, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual("Updated Title", result.Value!.Item!.Title);
@@ -141,7 +145,7 @@ public class TaskItemServiceTests
         _repoTrxnMock.Setup(r => r.SaveChangesAsync(It.IsAny<OptimisticConcurrencyWinner>(), It.IsAny<CancellationToken>())).ReturnsAsync(0);
 
         var dto = new TaskItemDto { Id = entity.Id, Title = entity.Title, Status = TaskItemStatus.InProgress };
-        var result = await CreateService().UpdateAsync(new DefaultRequest<TaskItemDto> { Item = dto }, TestContext.CancellationToken);
+        var result = await CreateService().UpdateAsync(new DefaultRequest<TaskItemDto> { Item = dto }, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual(TaskItemStatus.InProgress, result.Value!.Item!.Status);
@@ -156,7 +160,7 @@ public class TaskItemServiceTests
         _repoTrxnMock.Setup(r => r.GetTaskItemAsync(entity.Id, It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync(entity);
 
         var dto = new TaskItemDto { Id = entity.Id, Title = entity.Title, Status = TaskItemStatus.Completed };
-        var result = await CreateService().UpdateAsync(new DefaultRequest<TaskItemDto> { Item = dto }, TestContext.CancellationToken);
+        var result = await CreateService().UpdateAsync(new DefaultRequest<TaskItemDto> { Item = dto }, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsFailure);
     }
@@ -169,7 +173,7 @@ public class TaskItemServiceTests
         _repoTrxnMock.Setup(r => r.GetTaskItemAsync(It.IsAny<TaskItemId>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync((TaskItem?)null);
 
         var dto = new TaskItemDto { Id = Guid.NewGuid(), Title = "Updated" };
-        var result = await CreateService().UpdateAsync(new DefaultRequest<TaskItemDto> { Item = dto }, TestContext.CancellationToken);
+        var result = await CreateService().UpdateAsync(new DefaultRequest<TaskItemDto> { Item = dto }, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
         Assert.IsNull(result.Value?.Item);
@@ -184,7 +188,7 @@ public class TaskItemServiceTests
         _repoTrxnMock.Setup(r => r.GetTaskItemAsync(entity.Id, It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync(entity);
         _repoTrxnMock.Setup(r => r.SaveChangesAsync(It.IsAny<OptimisticConcurrencyWinner>(), It.IsAny<CancellationToken>())).ReturnsAsync(0);
 
-        var result = await CreateService().DeleteAsync(entity.Id, TestContext.CancellationToken);
+        var result = await CreateService().DeleteAsync(entity.Id, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
         _repoTrxnMock.Verify(r => r.Delete(entity), Times.Once);
@@ -197,25 +201,27 @@ public class TaskItemServiceTests
     {
         _repoTrxnMock.Setup(r => r.GetTaskItemAsync(It.IsAny<TaskItemId>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync((TaskItem?)null);
 
-        var result = await CreateService().DeleteAsync(Guid.NewGuid(), TestContext.CancellationToken);
+        var result = await CreateService().DeleteAsync(Guid.NewGuid(), null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
     }
 
-    /// <summary>Verifies that given search request, when search, then returns paged response.</summary>
+    /// <summary>Verifies that given search request, when search, then returns a keyset page.</summary>
     [TestMethod]
     [TestCategory("Unit")]
-    public async Task Given_SearchRequest_When_SearchAsync_Then_ReturnsPagedResponse()
+    public async Task Given_SearchRequest_When_SearchAsync_Then_ReturnsCursorPage()
     {
-        var dto = new TaskItemDto { Title = "Test" };
-        var pagedResponse = new PagedResponse<TaskItemDto> { Data = [dto], Total = 1, PageSize = 10, PageIndex = 0 };
-        _repoQueryMock.Setup(r => r.SearchTaskItemsAsync(It.IsAny<SearchRequest<TaskItemSearchFilter>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(pagedResponse);
+        var dto = new TaskItemDto { Id = Guid.CreateVersion7(), Title = "Test" };
+        _repoQueryMock.Setup(r => r.SearchTaskItemsAsync(
+                It.IsAny<TaskItemCursorSearchRequest>(), It.IsAny<CursorToken?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(((IReadOnlyList<TaskItemDto>)[dto], false));
 
-        var request = new SearchRequest<TaskItemSearchFilter> { PageSize = 10, PageIndex = 0 };
+        var request = new TaskItemCursorSearchRequest { PageSize = 10 };
         var response = await CreateService().SearchAsync(request, TestContext.CancellationToken);
 
-        Assert.AreEqual(1, response.Total);
+        Assert.HasCount(1, response.Data);
+        Assert.IsFalse(response.HasMore);
+        Assert.IsNull(response.NextCursor);
     }
 
     public TestContext TestContext { get; set; } = null!;

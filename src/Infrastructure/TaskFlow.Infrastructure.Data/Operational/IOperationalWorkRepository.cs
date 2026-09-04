@@ -15,7 +15,8 @@ public sealed record LeasedBatch<TWork>(Guid LeaseToken, IReadOnlyList<TWork> It
 /// <param name="Pending">Live rows not yet dispatched.</param>
 /// <param name="DeadLettered">Rows parked after the attempt ceiling.</param>
 /// <param name="Lag">Age of the oldest due row, or zero when nothing is due.</param>
-public sealed record OutboxBacklog(int Pending, int DeadLettered, TimeSpan Lag);
+/// <param name="BlobDeletePending">Deferred blob deletions still waiting for a worker.</param>
+public sealed record OutboxBacklog(int Pending, int DeadLettered, TimeSpan Lag, int BlobDeletePending);
 
 /// <summary>
 /// Provider-neutral lease claim over the operational work tables (D-026). No provider branch: the single-statement

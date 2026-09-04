@@ -144,7 +144,11 @@ public sealed class OperationalWorkRepository(TaskFlowDbContextTrxn db, TimeProv
         var oldest = await live.Where(w => w.AvailableAtUtc <= now)
             .MinAsync(w => (DateTimeOffset?)w.AvailableAtUtc, ct).ConfigureAwait(ConfigureAwaitOptions.None);
 
-        return new OutboxBacklog(pending, deadLettered, oldest is null ? TimeSpan.Zero : now - oldest.Value);
+        var blobDeletePending = await db.BlobDeleteWork.AsNoTracking()
+            .CountAsync(w => w.DeadLetteredAtUtc == null, ct).ConfigureAwait(ConfigureAwaitOptions.None);
+
+        return new OutboxBacklog(
+            pending, deadLettered, oldest is null ? TimeSpan.Zero : now - oldest.Value, blobDeletePending);
     }
 
     /// <summary>Rows that are due and whose lease is free or expired. One expression, used by both claim steps.</summary>

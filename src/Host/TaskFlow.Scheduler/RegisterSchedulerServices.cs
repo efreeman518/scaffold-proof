@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Provider;
 using TaskFlow.Infrastructure.Messaging.RabbitMq;
@@ -32,7 +33,8 @@ public static class RegisterSchedulerServices
         services.AddScoped<StaleTaskCleanupHandler>();
         services.AddScoped<TaskMaintenanceJobs>();
         services.AddSingleton<SchedulingMetrics>();
-        services.AddSingleton<MessagingMetrics>();
+        // Already added by the shared application registration; TryAdd keeps one meter per process.
+        services.TryAddSingleton<MessagingMetrics>();
 
         // D-026: both drains run on every replica; the lease, not a leader election, keeps them apart.
         services.AddHostedService<OutboxDispatcherService>();

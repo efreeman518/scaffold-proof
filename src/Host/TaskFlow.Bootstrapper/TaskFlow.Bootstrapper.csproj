@@ -9,6 +9,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Test.Unit" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Azure.Data.Tables" />
     <PackageReference Include="EF.Host" />
     <PackageReference Include="EF.Common" />

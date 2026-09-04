@@ -18,7 +18,7 @@ namespace Test.Endpoints;
 [TestClass]
 public class AttachmentEndpointTests
 {
-    private static CustomApiFactory _factory = null!;
+    private static EndpointStyleFixture _fixture = null!;
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -27,14 +27,14 @@ public class AttachmentEndpointTests
 
     /// <summary>Initializes shared test fixtures before the class-level test run begins.</summary>
     [ClassInitialize]
-    public static void ClassInit(TestContext _) => _factory = new CustomApiFactory();
+    public static void ClassInit(TestContext _) => _fixture = new EndpointStyleFixture();
 
     /// <summary>Disposes shared test fixtures after the class-level test run finishes.</summary>
     [ClassCleanup]
-    public static void ClassCleanup() => _factory?.Dispose();
+    public static void ClassCleanup() => _fixture?.Dispose();
 
     /// <summary>Creates client used by the surrounding test cases.</summary>
-    private static HttpClient CreateClient() => _factory.CreateClient();
+    private static HttpClient CreateClient(string style) => _fixture.CreateClient(style);
 
     /// <summary>Creates parent task item used by the surrounding test cases.</summary>
     private async Task<Guid> CreateParentTaskItem(HttpClient client)
@@ -47,10 +47,13 @@ public class AttachmentEndpointTests
 
     /// <summary>Verifies that given valid payload, when post attachment, then returns 201.</summary>
     [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
     [TestMethod]
-    public async Task Given_ValidPayload_When_PostAttachment_Then_Returns201()
+    public async Task Given_ValidPayload_When_PostAttachment_Then_Returns201(string style)
     {
-        using var client = CreateClient();
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
         var taskId = await CreateParentTaskItem(client);
         var dto = new AttachmentDto
         {
@@ -72,10 +75,13 @@ public class AttachmentEndpointTests
 
     /// <summary>Verifies that given existing attachment, when get by ID, then returns 200.</summary>
     [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
     [TestMethod]
-    public async Task Given_ExistingAttachment_When_GetById_Then_Returns200()
+    public async Task Given_ExistingAttachment_When_GetById_Then_Returns200(string style)
     {
-        using var client = CreateClient();
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
         var taskId = await CreateParentTaskItem(client);
         var dto = new AttachmentDto
         {
@@ -99,10 +105,13 @@ public class AttachmentEndpointTests
 
     /// <summary>Verifies that given non existent ID, when get attachment, then returns 404.</summary>
     [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
     [TestMethod]
-    public async Task Given_NonExistentId_When_GetAttachment_Then_Returns404()
+    public async Task Given_NonExistentId_When_GetAttachment_Then_Returns404(string style)
     {
-        using var client = CreateClient();
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
 
         var response = await client.GetAsync($"/api/v1/attachments/{Guid.NewGuid()}", TestContext.CancellationToken);
 
@@ -111,10 +120,13 @@ public class AttachmentEndpointTests
 
     /// <summary>Verifies that given existing attachment, when put update, then returns 200.</summary>
     [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
     [TestMethod]
-    public async Task Given_ExistingAttachment_When_PutUpdate_Then_Returns200()
+    public async Task Given_ExistingAttachment_When_PutUpdate_Then_Returns200(string style)
     {
-        using var client = CreateClient();
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
         var taskId = await CreateParentTaskItem(client);
         var dto = new AttachmentDto
         {
@@ -138,7 +150,7 @@ public class AttachmentEndpointTests
             OwnerType = AttachmentOwnerType.TaskItem,
             OwnerId = taskId
         };
-        var response = await client.PutAsJsonAsync($"/api/v1/attachments/{created.Id}", new DefaultRequest<AttachmentDto> { Item = updateDto }, cancellationToken: TestContext.CancellationToken);
+        var response = await client.PutWithIfMatchAsync($"/api/v1/attachments/{created.Id}", new DefaultRequest<AttachmentDto> { Item = updateDto }, ConcurrencyHttpExtensions.IfMatch(created.Version!.Value), TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
         var updated = (await response.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item;
@@ -147,10 +159,13 @@ public class AttachmentEndpointTests
 
     /// <summary>Verifies that given existing attachment, when delete, then returns 204.</summary>
     [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
     [TestMethod]
-    public async Task Given_ExistingAttachment_When_Delete_Then_Returns204()
+    public async Task Given_ExistingAttachment_When_Delete_Then_Returns204(string style)
     {
-        using var client = CreateClient();
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
         var taskId = await CreateParentTaskItem(client);
         var dto = new AttachmentDto
         {
@@ -164,7 +179,7 @@ public class AttachmentEndpointTests
         var createResponse = await client.PostAsJsonAsync("/api/v1/attachments", new DefaultRequest<AttachmentDto> { Item = dto }, cancellationToken: TestContext.CancellationToken);
         var created = (await createResponse.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item;
 
-        var response = await client.DeleteAsync($"/api/v1/attachments/{created!.Id}", TestContext.CancellationToken);
+        var response = await client.DeleteWithIfMatchAsync($"/api/v1/attachments/{created!.Id}", ConcurrencyHttpExtensions.IfMatch(created.Version!.Value), TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.NoContent, response.StatusCode);
 
@@ -174,11 +189,14 @@ public class AttachmentEndpointTests
 
     /// <summary>Verifies that given file upload, when post upload, then returns 201 with blob uri.</summary>
     [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
     [TestMethod]
-    public async Task Given_FileUpload_When_PostUpload_Then_Returns201WithBlobUri()
+    public async Task Given_FileUpload_When_PostUpload_Then_Returns201WithBlobUri(string style)
     {
+        EndpointStyles.SkipWhenStyleForced();
         // Create factory with in-memory blob storage
-        using var uploadFactory = new CustomApiFactory().WithWebHostBuilder(builder =>
+        using var uploadFactory = new CustomApiFactory(style).WithWebHostBuilder(builder =>
         {
             builder.ConfigureServices(services =>
             {

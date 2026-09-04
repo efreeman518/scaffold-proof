@@ -2,6 +2,7 @@ using EF.Common.Contracts;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models;
+using TaskFlow.Application.Models.Paging;
 using TaskFlow.Infrastructure.AI.Search;
 
 namespace TaskFlow.Infrastructure.AI.Agents.Tools;
@@ -107,7 +108,9 @@ public class TaskItemTools(
         var dto = getResult.Value!.Item!;
         dto.Status = status;
 
-        var updateResult = await taskItemService.UpdateAsync(new DefaultRequest<TaskItemDto> { Item = dto });
+        // The loaded version is the If-Match currency; the tool retries nothing itself, so a
+        // ConcurrencyMismatchException surfacing here is the correct signal that the task moved.
+        var updateResult = await taskItemService.UpdateAsync(new DefaultRequest<TaskItemDto> { Item = dto }, dto.Version);
         if (updateResult.IsFailure) return $"Failed to update status: {updateResult.ErrorMessage}";
 
         return $"Updated task '{dto.Title}' status to {newStatus}.";
@@ -121,10 +124,9 @@ public class TaskItemTools(
     {
         logger.LogDebug("Agent tool: SummarizeBacklog");
 
-        var request = new SearchRequest<TaskItemSearchFilter>
+        var request = new TaskItemCursorSearchRequest
         {
-            PageSize = 100,
-            PageIndex = 0
+            PageSize = 100
         };
 
         var page = await taskItemService.SearchAsync(request);

@@ -23,7 +23,7 @@ internal sealed class SearchChecklistItemsHandler(
     {
         var request = query.Request;
         HandlerHelpers.EnforceTenantFilter(request, requestContext.TenantId, requestContext.Roles, logger, "ChecklistItemSearch");
-        return await CqrsHandlerSupport.SearchAsync(token => repoQuery.SearchChecklistItemsAsync(request, token), logger, "ChecklistItem", ct);
+        return await CqrsHandlerSupport.SearchAsync(token => repoQuery.SearchChecklistItemsAsync(request, query.IncludeTotal, token), logger, "ChecklistItem", ct);
     }
 }
 

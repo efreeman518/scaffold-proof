@@ -12,6 +12,7 @@ public static class TaskItemTagMapper
     public static TaskItemTagDto ToDto(this TaskItemTag entity) => new()
     {
         Id = entity.Id.Value,
+        Version = entity.Version,
         TenantId = entity.TenantId.Value,
         TaskItemId = entity.TaskItemId.Value,
         TagId = entity.TagId.Value

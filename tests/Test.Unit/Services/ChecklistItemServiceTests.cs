@@ -83,11 +83,11 @@ public class ChecklistItemServiceTests
     {
         var dtos = new List<ChecklistItemDto> { new() { Title = "Test" } };
         var pagedResponse = new PagedResponse<ChecklistItemDto> { Data = dtos, Total = 1, PageSize = 10, PageIndex = 0 };
-        _repoQueryMock.Setup(r => r.SearchChecklistItemsAsync(It.IsAny<SearchRequest<ChecklistItemSearchFilter>>(), It.IsAny<CancellationToken>()))
+        _repoQueryMock.Setup(r => r.SearchChecklistItemsAsync(It.IsAny<SearchRequest<ChecklistItemSearchFilter>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(pagedResponse);
 
         var request = new SearchRequest<ChecklistItemSearchFilter> { PageSize = 10, PageIndex = 0 };
-        var response = await CreateService().SearchAsync(request, TestContext.CancellationToken);
+        var response = await CreateService().SearchAsync(request, false, TestContext.CancellationToken);
 
         Assert.AreEqual(1, response.Total);
     }

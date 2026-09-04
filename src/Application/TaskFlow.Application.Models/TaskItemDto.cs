@@ -15,6 +15,9 @@ public record TaskItemDto : EntityBaseDto, ITenantEntityDto
     public decimal? EstimatedEffort { get; set; }
     public decimal? ActualEffort { get; set; }
     public DateTimeOffset? CompletedDate { get; set; }
+
+    /// <summary>Last write timestamp. Read-only projection; also the keyset sort key of TaskItemSortMode.ModifiedDesc.</summary>
+    public DateTimeOffset? ModifiedAtUtc { get; set; }
     public Guid? CategoryId { get; set; }
     public Guid? ParentTaskItemId { get; set; }
 

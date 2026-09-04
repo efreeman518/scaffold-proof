@@ -1,7 +1,8 @@
-﻿using EF.Common.Contracts;
+using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
+using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Cqrs.Shared;
 using TaskFlow.Application.Mappers;
@@ -23,7 +24,7 @@ internal sealed class SearchCategoriesHandler(
     {
         var request = query.Request;
         HandlerHelpers.EnforceTenantFilter(request, requestContext.TenantId, requestContext.Roles, logger, "CategorySearch");
-        return await CqrsHandlerSupport.SearchAsync(token => repoQuery.SearchCategoriesAsync(request, token), logger, "Category", ct);
+        return await CqrsHandlerSupport.SearchAsync(token => repoQuery.SearchCategoriesAsync(request, query.IncludeTotal, token), logger, "Category", ct);
     }
 }
 
@@ -72,6 +73,21 @@ internal sealed class CreateCategoryHandler(
             "Category:Create", nameof(Category));
         if (boundary.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(boundary.ErrorMessage!);
 
+        // D-033: the row itself is the idempotency record for a caller-supplied UUIDv7 id.
+        if (dto.Id is Guid callerId && callerId != Guid.Empty)
+        {
+            var existing = await repoTrxn.GetCategoryAsync(DomainId.From<CategoryId>(callerId), ct);
+            if (existing is not null)
+            {
+                var existingDto = existing.ToDto();
+                if (!IdempotentCreateGuard.IsEquivalent(existingDto, dto))
+                    throw new IdempotentCreateConflictException(nameof(Category), callerId);
+
+                return Result<DefaultResponse<CategoryDto>>.Success(
+                    new DefaultResponse<CategoryDto> { Item = existingDto, IsReplay = true });
+            }
+        }
+
         var entityResult = dto.ToEntity(dto.TenantId);
         if (entityResult.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(entityResult.ErrorMessage!);
 
@@ -113,6 +129,8 @@ internal sealed class UpdateCategoryHandler(
             "Category:Update", nameof(Category), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(boundary.ErrorMessage!);
 
+        ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(Category), entity.Id.Value);
+
         var tenantChangeCheck = tenantBoundaryValidator.PreventTenantChange(
             logger, entity.TenantId.Value, dto.TenantId, nameof(Category), entity.Id.Value);
         if (tenantChangeCheck.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(tenantChangeCheck.ErrorMessage!);
@@ -148,6 +166,8 @@ internal sealed class DeleteCategoryHandler(
             logger, requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "Category:Delete", nameof(Category), entity.Id.Value);
         if (boundary.IsFailure) return Result.Failure(boundary.ErrorMessage!);
+
+        ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(Category), entity.Id.Value);
 
         // Composite FK (TenantId, CategoryId) cannot cascade to SetNull; detach the tenant's tasks first (D-022).
         await repoTrxn.ClearCategoryFromTaskItemsAsync(entity.Id, ct);

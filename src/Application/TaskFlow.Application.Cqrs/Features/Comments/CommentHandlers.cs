@@ -23,7 +23,7 @@ internal sealed class SearchCommentsHandler(
     {
         var request = query.Request;
         HandlerHelpers.EnforceTenantFilter(request, requestContext.TenantId, requestContext.Roles, logger, "CommentSearch");
-        return await CqrsHandlerSupport.SearchAsync(token => repoQuery.SearchCommentsAsync(request, token), logger, "Comment", ct);
+        return await CqrsHandlerSupport.SearchAsync(token => repoQuery.SearchCommentsAsync(request, query.IncludeTotal, token), logger, "Comment", ct);
     }
 }
 

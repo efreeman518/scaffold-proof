@@ -13,6 +13,7 @@ public static class CommentMapper
         entity => new CommentDto
         {
             Id = entity.Id.Value,
+            Version = entity.Version,
             TenantId = entity.TenantId.Value,
             Body = entity.Body,
             TaskItemId = entity.TaskItemId.Value
@@ -25,5 +26,6 @@ public static class CommentMapper
 
     /// <summary>Converts the current value to entity.</summary>
     public static DomainResult<Comment> ToEntity(this CommentDto dto, Guid tenantId)
-        => Comment.Create(DomainId.From<TenantId>(tenantId), DomainId.From<TaskItemId>(dto.TaskItemId), dto.Body);
+        => Comment.Create(DomainId.From<TenantId>(tenantId), DomainId.From<TaskItemId>(dto.TaskItemId), dto.Body,
+            DomainId.FromNullable<CommentId>(dto.Id));
 }

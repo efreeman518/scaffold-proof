@@ -15,25 +15,28 @@ namespace Test.Endpoints;
 [TestClass]
 public class CategoryEndpointTests
 {
-    private static CustomApiFactory _factory = null!;
+    private static EndpointStyleFixture _fixture = null!;
 
     /// <summary>Initializes shared test fixtures before the class-level test run begins.</summary>
     [ClassInitialize]
-    public static void ClassInit(TestContext _) => _factory = new CustomApiFactory();
+    public static void ClassInit(TestContext _) => _fixture = new EndpointStyleFixture();
 
     /// <summary>Disposes shared test fixtures after the class-level test run finishes.</summary>
     [ClassCleanup]
-    public static void ClassCleanup() => _factory?.Dispose();
+    public static void ClassCleanup() => _fixture?.Dispose();
 
     /// <summary>Creates client used by the surrounding test cases.</summary>
-    private static HttpClient CreateClient() => _factory.CreateClient();
+    private static HttpClient CreateClient(string style) => _fixture.CreateClient(style);
 
     /// <summary>Verifies that given valid payload, when post category, then returns 201.</summary>
     [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
     [TestMethod]
-    public async Task Given_ValidPayload_When_PostCategory_Then_Returns201()
+    public async Task Given_ValidPayload_When_PostCategory_Then_Returns201(string style)
     {
-        using var client = CreateClient();
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
         var dto = new CategoryDto { Name = "Test Category", SortOrder = 1, IsActive = true };
 
         var response = await client.PostAsJsonAsync("/api/v1/categories", new DefaultRequest<CategoryDto> { Item = dto }, cancellationToken: TestContext.CancellationToken);
@@ -47,10 +50,13 @@ public class CategoryEndpointTests
 
     /// <summary>Verifies that given existing category, when get by ID, then returns 200.</summary>
     [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
     [TestMethod]
-    public async Task Given_ExistingCategory_When_GetById_Then_Returns200()
+    public async Task Given_ExistingCategory_When_GetById_Then_Returns200(string style)
     {
-        using var client = CreateClient();
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
         var dto = new CategoryDto { Name = "GetTest Category", SortOrder = 1, IsActive = true };
         var createResponse = await client.PostAsJsonAsync("/api/v1/categories", new DefaultRequest<CategoryDto> { Item = dto }, cancellationToken: TestContext.CancellationToken);
         var created = (await createResponse.Content.ReadFromJsonAsync<DefaultResponse<CategoryDto>>(TestContext.CancellationToken))!.Item;
@@ -65,10 +71,13 @@ public class CategoryEndpointTests
 
     /// <summary>Verifies that given non existent ID, when get category, then returns 404.</summary>
     [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
     [TestMethod]
-    public async Task Given_NonExistentId_When_GetCategory_Then_Returns404()
+    public async Task Given_NonExistentId_When_GetCategory_Then_Returns404(string style)
     {
-        using var client = CreateClient();
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
 
         var response = await client.GetAsync($"/api/v1/categories/{Guid.NewGuid()}", TestContext.CancellationToken);
 
@@ -77,10 +86,13 @@ public class CategoryEndpointTests
 
     /// <summary>Verifies that given existing category, when put update, then returns 200.</summary>
     [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
     [TestMethod]
-    public async Task Given_ExistingCategory_When_PutUpdate_Then_Returns200()
+    public async Task Given_ExistingCategory_When_PutUpdate_Then_Returns200(string style)
     {
-        using var client = CreateClient();
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
         var dto = new CategoryDto { Name = "Before", SortOrder = 1, IsActive = true };
         var createResponse = await client.PostAsJsonAsync("/api/v1/categories", new DefaultRequest<CategoryDto> { Item = dto }, cancellationToken: TestContext.CancellationToken);
         var created = (await createResponse.Content.ReadFromJsonAsync<DefaultResponse<CategoryDto>>(TestContext.CancellationToken))!.Item;
@@ -92,7 +104,7 @@ public class CategoryEndpointTests
             SortOrder = 2,
             IsActive = true
         };
-        var response = await client.PutAsJsonAsync($"/api/v1/categories/{created.Id}", new DefaultRequest<CategoryDto> { Item = updateDto }, cancellationToken: TestContext.CancellationToken);
+        var response = await client.PutWithIfMatchAsync($"/api/v1/categories/{created.Id}", new DefaultRequest<CategoryDto> { Item = updateDto }, ConcurrencyHttpExtensions.IfMatch(created.Version!.Value), TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
         var updated = (await response.Content.ReadFromJsonAsync<DefaultResponse<CategoryDto>>(TestContext.CancellationToken))!.Item;
@@ -101,15 +113,18 @@ public class CategoryEndpointTests
 
     /// <summary>Verifies that given existing category, when delete, then returns 204.</summary>
     [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
     [TestMethod]
-    public async Task Given_ExistingCategory_When_Delete_Then_Returns204()
+    public async Task Given_ExistingCategory_When_Delete_Then_Returns204(string style)
     {
-        using var client = CreateClient();
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
         var dto = new CategoryDto { Name = "ToDelete Category", SortOrder = 1, IsActive = true };
         var createResponse = await client.PostAsJsonAsync("/api/v1/categories", new DefaultRequest<CategoryDto> { Item = dto }, cancellationToken: TestContext.CancellationToken);
         var created = (await createResponse.Content.ReadFromJsonAsync<DefaultResponse<CategoryDto>>(TestContext.CancellationToken))!.Item;
 
-        var response = await client.DeleteAsync($"/api/v1/categories/{created!.Id}", TestContext.CancellationToken);
+        var response = await client.DeleteWithIfMatchAsync($"/api/v1/categories/{created!.Id}", ConcurrencyHttpExtensions.IfMatch(created.Version!.Value), TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.NoContent, response.StatusCode);
 
@@ -119,10 +134,13 @@ public class CategoryEndpointTests
 
     /// <summary>Verifies that given existing categories, when search, then returns filtered page.</summary>
     [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
     [TestMethod]
-    public async Task Given_ExistingCategories_When_Search_Then_ReturnsFilteredPage()
+    public async Task Given_ExistingCategories_When_Search_Then_ReturnsFilteredPage(string style)
     {
-        using var client = CreateClient();
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
 
         await client.PostAsJsonAsync("/api/v1/categories",
             new DefaultRequest<CategoryDto> { Item = new CategoryDto { Name = "SearchMe Cat", SortOrder = 1, IsActive = true } }, cancellationToken: TestContext.CancellationToken);
@@ -148,10 +166,13 @@ public class CategoryEndpointTests
 
     /// <summary>Verifies that given full CRUD cycle, when all operations executed, then all succeed.</summary>
     [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
     [TestMethod]
-    public async Task Given_FullCrudCycle_When_AllOperationsExecuted_Then_AllSucceed()
+    public async Task Given_FullCrudCycle_When_AllOperationsExecuted_Then_AllSucceed(string style)
     {
-        using var client = CreateClient();
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
 
         // Create
         var dto = new CategoryDto { Name = "CrudCycle Cat", SortOrder = 1, IsActive = true };
@@ -171,11 +192,12 @@ public class CategoryEndpointTests
             SortOrder = 5,
             IsActive = false
         };
-        var updateResponse = await client.PutAsJsonAsync($"/api/v1/categories/{created.Id}", new DefaultRequest<CategoryDto> { Item = updateDto }, cancellationToken: TestContext.CancellationToken);
+        var updateResponse = await client.PutWithIfMatchAsync($"/api/v1/categories/{created.Id}", new DefaultRequest<CategoryDto> { Item = updateDto }, ConcurrencyHttpExtensions.IfMatch(created.Version!.Value), TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.OK, updateResponse.StatusCode);
 
         // Delete
-        var deleteResponse = await client.DeleteAsync($"/api/v1/categories/{created.Id}", TestContext.CancellationToken);
+        var updatedItem = (await updateResponse.Content.ReadFromJsonAsync<DefaultResponse<CategoryDto>>(TestContext.CancellationToken))!.Item;
+        var deleteResponse = await client.DeleteWithIfMatchAsync($"/api/v1/categories/{created.Id}", ConcurrencyHttpExtensions.IfMatch(updatedItem!.Version!.Value), TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.NoContent, deleteResponse.StatusCode);
 
         // Verify deleted

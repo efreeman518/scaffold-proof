@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models;
+using TaskFlow.Application.Models.Paging;
 using TaskFlow.Scheduler.Handlers;
 
 namespace Test.Unit.Services;
@@ -40,14 +41,14 @@ public class RecurringTaskGenerationHandlerTests
         };
 
         _serviceMock.Setup(s => s.SearchAsync(
-                It.IsAny<SearchRequest<TaskItemSearchFilter>>(),
+                It.IsAny<TaskItemCursorSearchRequest>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagedResponse<TaskItemDto> { Data = tasks, Total = 3 });
+            .ReturnsAsync(new CursorPage<TaskItemDto> { Data = tasks });
 
         await _handler.HandleAsync(CancellationToken.None);
 
         _serviceMock.Verify(s => s.SearchAsync(
-            It.IsAny<SearchRequest<TaskItemSearchFilter>>(),
+            It.IsAny<TaskItemCursorSearchRequest>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -63,14 +64,14 @@ public class RecurringTaskGenerationHandlerTests
         };
 
         _serviceMock.Setup(s => s.SearchAsync(
-                It.IsAny<SearchRequest<TaskItemSearchFilter>>(),
+                It.IsAny<TaskItemCursorSearchRequest>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagedResponse<TaskItemDto> { Data = tasks, Total = 2 });
+            .ReturnsAsync(new CursorPage<TaskItemDto> { Data = tasks });
 
         await _handler.HandleAsync(CancellationToken.None);
 
         _serviceMock.Verify(s => s.SearchAsync(
-            It.IsAny<SearchRequest<TaskItemSearchFilter>>(),
+            It.IsAny<TaskItemCursorSearchRequest>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -80,14 +81,14 @@ public class RecurringTaskGenerationHandlerTests
     public async Task HandleAsync_NullData_TreatsAsEmpty()
     {
         _serviceMock.Setup(s => s.SearchAsync(
-                It.IsAny<SearchRequest<TaskItemSearchFilter>>(),
+                It.IsAny<TaskItemCursorSearchRequest>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagedResponse<TaskItemDto> { Data = null!, Total = 0 });
+            .ReturnsAsync(new CursorPage<TaskItemDto> { Data = null! });
 
         await _handler.HandleAsync(CancellationToken.None);
 
         _serviceMock.Verify(s => s.SearchAsync(
-            It.IsAny<SearchRequest<TaskItemSearchFilter>>(),
+            It.IsAny<TaskItemCursorSearchRequest>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -103,15 +104,15 @@ public class RecurringTaskGenerationHandlerTests
         };
 
         _serviceMock.Setup(s => s.SearchAsync(
-                It.IsAny<SearchRequest<TaskItemSearchFilter>>(),
+                It.IsAny<TaskItemCursorSearchRequest>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagedResponse<TaskItemDto> { Data = tasks, Total = 2 });
+            .ReturnsAsync(new CursorPage<TaskItemDto> { Data = tasks });
 
         // Empty and null both filtered out - handler considers neither as recurring
         await _handler.HandleAsync(CancellationToken.None);
 
         _serviceMock.Verify(s => s.SearchAsync(
-            It.IsAny<SearchRequest<TaskItemSearchFilter>>(),
+            It.IsAny<TaskItemCursorSearchRequest>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 }

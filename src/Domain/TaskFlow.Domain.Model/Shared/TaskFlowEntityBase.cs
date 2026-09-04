@@ -27,4 +27,12 @@ public abstract class TaskFlowEntityBase<TId> : EntityBase<TId>, IVersionedEntit
     public long Version { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public DateTimeOffset ModifiedAtUtc { get; private set; }
+
+    /// <summary>
+    /// Marks the aggregate root as changed so EF puts it in the Modified state and
+    /// <c>VersionTimestampInterceptor</c> bumps <see cref="Version"/> (D-031: one ETag per aggregate).
+    /// The written value is overwritten by the interceptor; the point is the entry state, which is the
+    /// only way a child-only mutation can move the root's concurrency token.
+    /// </summary>
+    protected void Touch() => ModifiedAtUtc = DateTimeOffset.UtcNow;
 }

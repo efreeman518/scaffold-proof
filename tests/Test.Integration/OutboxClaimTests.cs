@@ -105,8 +105,11 @@ public class OutboxClaimTests
 
         await using var db = DbContainerFixture.CreateTrxnContext(connString);
 
-        await using (var transaction = await db.Database.BeginTransactionAsync(ct))
+        // The retrying execution strategy refuses a user-initiated transaction unless the whole unit runs
+        // through it; that is the same rule production code follows.
+        await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
         {
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
             var task = TaskItem.Create(DomainId.From<TenantId>(TestConstants.TenantId), "rolled back").Value!;
             db.TaskItems.Add(task);
             await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: ct);
@@ -114,7 +117,7 @@ public class OutboxClaimTests
             // The row exists inside the transaction: staging really did join this unit of work.
             Assert.AreEqual(1, await db.OutboxMessages.CountAsync(ct));
             await transaction.RollbackAsync(ct);
-        }
+        });
 
         await using var verify = DbContainerFixture.CreateTrxnContext(connString);
         Assert.AreEqual(0, await verify.OutboxMessages.CountAsync(ct),

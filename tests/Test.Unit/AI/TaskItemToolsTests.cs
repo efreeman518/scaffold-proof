@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models;
+using TaskFlow.Application.Models.Paging;
 using TaskFlow.Domain.Shared.Enums;
 using TaskFlow.Infrastructure.AI.Agents.Tools;
 using TaskFlow.Infrastructure.AI.Search;
@@ -149,8 +150,8 @@ public class TaskItemToolsTests
         };
 
         _taskItemServiceMock
-            .Setup(x => x.SearchAsync(It.IsAny<SearchRequest<TaskItemSearchFilter>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagedResponse<TaskItemDto> { Data = tasks, Total = 4, PageSize = 100, PageIndex = 0 });
+            .Setup(x => x.SearchAsync(It.IsAny<TaskItemCursorSearchRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CursorPage<TaskItemDto> { Data = tasks });
 
         var result = await _tools.SummarizeBacklog();
 

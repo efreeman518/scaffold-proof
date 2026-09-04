@@ -1,7 +1,8 @@
-﻿using EF.Common.Contracts;
+using EF.Common.Contracts;
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Application.Models;
+using TaskFlow.Application.Models.Paging;
 using TaskFlow.Domain.Shared.Enums;
 using TaskFlow.Infrastructure.Repositories;
 using Test.Integration.Infrastructure;
@@ -73,7 +74,7 @@ public class RepositorySearchTranslationTests
                     ParentCategoryId = parent.Id,
                     IsActive = true
                 }
-            }, TestContext.CancellationToken);
+            }, includeTotal: true, TestContext.CancellationToken);
 
             Assert.HasCount(1, page.Data);
             Assert.AreEqual(1, page.Total);
@@ -101,7 +102,7 @@ public class RepositorySearchTranslationTests
             PageIndex = 1,
             PageSize = 10,
             Filter = new TagSearchFilter { SearchTerm = marker, TenantId = TenantId }
-        }, TestContext.CancellationToken);
+        }, includeTotal: true, TestContext.CancellationToken);
 
         Assert.HasCount(1, page.Data);
         Assert.AreEqual(1, page.Total);
@@ -132,7 +133,7 @@ public class RepositorySearchTranslationTests
             PageIndex = 1,
             PageSize = 10,
             Filter = new CommentSearchFilter { SearchTerm = marker, TenantId = TenantId, TaskItemId = taskId }
-        }, TestContext.CancellationToken);
+        }, includeTotal: true, TestContext.CancellationToken);
 
         Assert.HasCount(1, page.Data);
         Assert.AreEqual(1, page.Total);
@@ -173,7 +174,7 @@ public class RepositorySearchTranslationTests
                 TaskItemId = taskId,
                 IsCompleted = false
             }
-        }, TestContext.CancellationToken);
+        }, includeTotal: true, TestContext.CancellationToken);
 
         Assert.HasCount(1, page.Data);
         Assert.AreEqual(1, page.Total);
@@ -215,9 +216,8 @@ public class RepositorySearchTranslationTests
 
         await using var queryDb = DbContainerFixture.CreateQueryContext();
         var repo = new TaskItemRepositoryQuery(queryDb, TestColumnEncryption.Keys);
-        var page = await repo.SearchTaskItemsAsync(new SearchRequest<TaskItemSearchFilter>
+        var page = await repo.SearchTaskItemsAsync(new TaskItemCursorSearchRequest
         {
-            PageIndex = 1,
             PageSize = 10,
             Filter = new TaskItemSearchFilter
             {
@@ -230,10 +230,10 @@ public class RepositorySearchTranslationTests
                 DueAfter = dueDate.AddDays(-2),
                 DueBefore = dueDate.AddDays(1)
             }
-        }, TestContext.CancellationToken);
+        }, after: null, TestContext.CancellationToken);
 
         Assert.HasCount(1, page.Data);
-        Assert.AreEqual(1, page.Total);
+        Assert.IsFalse(page.HasMore);
         Assert.AreEqual($"{marker}-Child", page.Data[0].Title);
         Assert.AreEqual(categoryId, page.Data[0].CategoryId);
         Assert.AreEqual(dueDate, page.Data[0].DueDate);
@@ -262,19 +262,17 @@ public class RepositorySearchTranslationTests
         var repo = new TaskItemRepositoryQuery(queryDb, TestColumnEncryption.Keys);
 
         // 18:00 +05:00 is 13:00Z: one hour after the due instant, so the task is due before it.
-        var matching = await repo.SearchTaskItemsAsync(new SearchRequest<TaskItemSearchFilter>
+        var matching = await repo.SearchTaskItemsAsync(new TaskItemCursorSearchRequest
         {
-            PageIndex = 1,
             PageSize = 10,
             Filter = new TaskItemSearchFilter { SearchTerm = marker, TenantId = TenantId, DueBefore = new DateTimeOffset(2026, 6, 1, 18, 0, 0, TimeSpan.FromHours(5)) }
-        }, TestContext.CancellationToken);
+        }, after: null, TestContext.CancellationToken);
         // 16:00 +05:00 is 11:00Z: one hour before the due instant, so nothing matches.
-        var none = await repo.SearchTaskItemsAsync(new SearchRequest<TaskItemSearchFilter>
+        var none = await repo.SearchTaskItemsAsync(new TaskItemCursorSearchRequest
         {
-            PageIndex = 1,
             PageSize = 10,
             Filter = new TaskItemSearchFilter { SearchTerm = marker, TenantId = TenantId, DueBefore = new DateTimeOffset(2026, 6, 1, 16, 0, 0, TimeSpan.FromHours(5)) }
-        }, TestContext.CancellationToken);
+        }, after: null, TestContext.CancellationToken);
 
         Assert.HasCount(1, matching.Data);
         Assert.AreEqual(dueUtc, matching.Data[0].DueDate);
@@ -313,7 +311,7 @@ public class RepositorySearchTranslationTests
                 OwnerType = AttachmentOwnerType.TaskItem,
                 OwnerId = ownerId
             }
-        }, TestContext.CancellationToken);
+        }, includeTotal: true, TestContext.CancellationToken);
 
         Assert.HasCount(1, page.Data);
         Assert.AreEqual(1, page.Total);

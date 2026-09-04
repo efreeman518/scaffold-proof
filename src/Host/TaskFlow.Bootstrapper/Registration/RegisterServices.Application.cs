@@ -1,8 +1,11 @@
-using EF.BackgroundServices.InternalMessageBus;
+﻿using EF.BackgroundServices.InternalMessageBus;
 using EF.Common.Contracts;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using TaskFlow.Application.Contracts.Paging;
+using TaskFlow.Bootstrapper.Paging;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Cqrs.Registration;
@@ -37,6 +40,14 @@ public static partial class RegisterServices
     {
         services.AddScoped<ITenantBoundaryValidator, TenantBoundaryValidator>();
         services.AddSingleton<IEntityCacheProvider, NoOpEntityCacheProvider>();
+
+        // Documented exception to the Service/CQRS split: the aggregate read model (summary, metadata,
+        // export) is a pure projection with no domain behavior to duplicate, so both styles share it.
+        services.AddScoped<ITaskFlowReadService, TaskFlowReadService>();
+
+        // Idempotent - the web host may already have configured a persisted key ring (Program.cs).
+        services.AddDataProtection();
+        services.AddSingleton<ICursorProtector, DataProtectionCursorProtector>();
     }
 
     /// <summary>Registers service application services dependencies in the service container.</summary>
