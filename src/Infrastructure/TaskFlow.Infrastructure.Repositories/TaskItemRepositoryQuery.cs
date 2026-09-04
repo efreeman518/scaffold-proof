@@ -23,25 +23,20 @@ public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryption
     : TaskFlowRepositoryQuery<TaskItem, TaskItemId>(db), ITaskItemRepositoryQuery
 {
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
-    public async Task<TaskItem?> GetTaskItemAsync(TaskItemId id, CancellationToken ct = default)
-    {
-        var includesList = new List<Expression<Func<IQueryable<TaskItem>, IIncludableQueryable<TaskItem, object?>>>>
-        {
-            q => q.Include(t => t.Category),
-            q => q.Include(t => t.Comments),
-            q => q.Include(t => t.ChecklistItems),
-            q => q.Include(t => t.TaskItemTags).ThenInclude(tt => tt.Tag),
-            q => q.Include(t => t.SubTasks)
-        };
-
-        return await GetEntityAsync(
-            false,
-            filter: t => t.Id == id,
-            splitQueryThresholdOptions: SplitQueryThresholdOptions.Default,
-            includes: [.. includesList],
-            cancellationToken: ct
-        ).ConfigureAwait(ConfigureAwaitOptions.None);
-    }
+    // Plain AsNoTracking rather than the package GetEntityAsync(tracking: false): that path uses
+    // NoTrackingWithIdentityResolution, which EF Core 10 rejects when a JSON-mapped owned type
+    // (RecurrencePattern) is loaded together with collection includes.
+    public async Task<TaskItem?> GetTaskItemAsync(TaskItemId id, CancellationToken ct = default) =>
+        await DB.Set<TaskItem>()
+            .AsNoTracking()
+            .AsSplitQuery()
+            .Include(t => t.Category)
+            .Include(t => t.Comments)
+            .Include(t => t.ChecklistItems)
+            .Include(t => t.TaskItemTags).ThenInclude(tt => tt.Tag)
+            .Include(t => t.SubTasks)
+            .FirstOrDefaultAsync(t => t.Id == id, ct)
+            .ConfigureAwait(ConfigureAwaitOptions.None);
 
     /// <inheritdoc />
     public async Task<TaskItem?> FindBySecureTokenAsync(string secureDeterministic, CancellationToken ct = default)

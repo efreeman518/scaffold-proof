@@ -14,7 +14,6 @@
     <PackageReference Include="EF.Common" />
     <PackageReference Include="EF.Data" />
     <PackageReference Include="EF.BackgroundServices" />
-    <!-- Always Encrypted runtime provider registration (D-019). -->
     <PackageReference Include="Newtonsoft.Json" />
     <PackageReference Include="ZiggyCreatures.FusionCache" />
     <PackageReference Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" />

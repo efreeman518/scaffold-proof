@@ -1,4 +1,4 @@
-using TaskFlow.Domain.Model;
+﻿using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
 using TaskFlow.Domain.Shared.Constants;
 using TaskFlow.Domain.Shared.Enums;
@@ -149,7 +149,7 @@ public class TaskItemTests
         Assert.AreEqual(parentId, result.Value!.ParentTaskItemId!.Value);
     }
 
-    /// <summary>Verifies that secure properties (Always Encrypted, D-019) round-trip through Create.</summary>
+    /// <summary>Verifies that secure properties (column encryption, D-023) round-trip through Create.</summary>
     [TestMethod]
     [TestCategory("Unit")]
     public void Given_SecureValues_When_TaskItemCreated_Then_SecurePropertiesSet()
@@ -173,7 +173,7 @@ public class TaskItemTests
         Assert.AreEqual("added", result.Value.SecureRandom);
     }
 
-    /// <summary>Verifies that a secure value exceeding the varbinary(200) UTF8 budget fails validation.</summary>
+    /// <summary>Verifies that a secure value exceeding the 200-byte UTF8 plaintext budget fails validation.</summary>
     [TestMethod]
     [TestCategory("Unit")]
     public void Given_OversizedSecureValue_When_TaskItemCreated_Then_ReturnsDomainFailure()

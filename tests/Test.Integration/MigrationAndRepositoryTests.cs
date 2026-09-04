@@ -68,7 +68,7 @@ public class MigrationAndRepositoryTests
         Assert.AreNotEqual(Guid.Empty, id);
 
         // Read
-        var fetched = await db.Categories.FindAsync([id], TestContext.CancellationToken);
+        var fetched = await db.Categories.FindAsync([TenantAId, DomainId.From<CategoryId>(id)], TestContext.CancellationToken);
         Assert.IsNotNull(fetched);
         Assert.AreEqual("Integration Cat", fetched.Name);
 
@@ -76,14 +76,14 @@ public class MigrationAndRepositoryTests
         fetched.Update(name: "Updated Cat");
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 
-        var updated = await db.Categories.FindAsync([id], TestContext.CancellationToken);
+        var updated = await db.Categories.FindAsync([TenantAId, DomainId.From<CategoryId>(id)], TestContext.CancellationToken);
         Assert.AreEqual("Updated Cat", updated!.Name);
 
         // Delete
         db.Categories.Remove(updated);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 
-        var deleted = await db.Categories.FindAsync([id], TestContext.CancellationToken);
+        var deleted = await db.Categories.FindAsync([TenantAId, DomainId.From<CategoryId>(id)], TestContext.CancellationToken);
         Assert.IsNull(deleted);
     }
 
@@ -102,7 +102,7 @@ public class MigrationAndRepositoryTests
         var id = task.Id;
 
         // Read
-        var fetched = await db.TaskItems.FindAsync([id], TestContext.CancellationToken);
+        var fetched = await db.TaskItems.FindAsync([TenantAId, DomainId.From<TaskItemId>(id)], TestContext.CancellationToken);
         Assert.IsNotNull(fetched);
         Assert.AreEqual("Integration Task", fetched.Title);
         Assert.AreEqual(Priority.High, fetched.Priority);
@@ -112,14 +112,14 @@ public class MigrationAndRepositoryTests
         fetched.Update(title: "Updated Task");
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 
-        var updated = await db.TaskItems.FindAsync([id], TestContext.CancellationToken);
+        var updated = await db.TaskItems.FindAsync([TenantAId, DomainId.From<TaskItemId>(id)], TestContext.CancellationToken);
         Assert.AreEqual("Updated Task", updated!.Title);
 
         // Delete
         db.TaskItems.Remove(updated);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 
-        var deleted = await db.TaskItems.FindAsync([id], TestContext.CancellationToken);
+        var deleted = await db.TaskItems.FindAsync([TenantAId, DomainId.From<TaskItemId>(id)], TestContext.CancellationToken);
         Assert.IsNull(deleted);
     }
 
@@ -135,7 +135,7 @@ public class MigrationAndRepositoryTests
         db.Tags.Add(tag);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 
-        var fetched = await db.Tags.FindAsync([tag.Id], TestContext.CancellationToken);
+        var fetched = await db.Tags.FindAsync([TenantAId, tag.Id], TestContext.CancellationToken);
         Assert.IsNotNull(fetched);
         Assert.AreEqual("IntegrationTag", fetched.Name);
         Assert.AreEqual("#00FF00", fetched.Color);
@@ -293,7 +293,7 @@ public class MigrationAndRepositoryTests
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT COUNT(*) FROM taskflow.\"Category\" WHERE \"Name\" LIKE 'Tenant%Cat'";
         var rawCount = Convert.ToInt32(await cmd.ExecuteScalarAsync(TestContext.CancellationToken));
-        Assert.IsGreaterThanOrEqualTo(rawCount, 2, $"Expected at least 2 categories in raw query, found {rawCount}");
+        Assert.IsGreaterThanOrEqualTo(2, rawCount, $"Expected at least 2 categories in raw query, found {rawCount}");
 
         // When query filter is active, only matching tenant data is visible.
         // The DbContextBase sets TenantId - we need to check if it applies.
@@ -303,7 +303,7 @@ public class MigrationAndRepositoryTests
         var allViaEf = await db.Categories.IgnoreQueryFilters()
             .Where(c => c.Name.EndsWith("Cat"))
             .ToListAsync(TestContext.CancellationToken);
-        Assert.IsGreaterThanOrEqualTo(allViaEf.Count, 2);
+        Assert.IsGreaterThanOrEqualTo(2, allViaEf.Count);
 
         // With query filters active (default), filtered count should differ based on context TenantId
         var filteredCount = await db.Categories

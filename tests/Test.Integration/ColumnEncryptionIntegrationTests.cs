@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Text;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
+using TaskFlow.Infrastructure.Data.Encryption;
 using TaskFlow.Infrastructure.Repositories;
 using Test.Integration.Infrastructure;
 using Test.Support;
@@ -41,22 +42,24 @@ public sealed class ColumnEncryptionIntegrationTests
             Assert.AreEqual(1, task.Version);
         }
 
-        // Raw bytes: neither column may contain the UTF-8 plaintext; the blind index is a 32-byte HMAC.
+        // Raw bytes (standard SQL, quoted identifiers, bypassing the model converters): neither column may
+        // contain the UTF-8 plaintext; the blind index is a 32-byte HMAC.
         await using (var db = DbContainerFixture.CreateQueryContext())
         {
-            var row = await db.TaskItems.IgnoreQueryFilters()
-                .Where(t => t.Id == DomainId.From<TaskItemId>(taskId))
-                .Select(t => new
-                {
-                    Deterministic = Microsoft.EntityFrameworkCore.EF.Property<byte[]?>(t, "SecureDeterministic"),
-                    Random = Microsoft.EntityFrameworkCore.EF.Property<byte[]?>(t, "SecureRandom"),
-                    BlindIndex = Microsoft.EntityFrameworkCore.EF.Property<byte[]?>(t, "SecureDeterministicBlindIndex")
-                })
+            var deterministic = await db.Database
+                .SqlQuery<byte[]>($"""SELECT "SecureDeterministic" AS "Value" FROM taskflow."TaskItem" WHERE "Id" = {taskId}""")
+                .SingleAsync(TestContext.CancellationToken);
+            var random = await db.Database
+                .SqlQuery<byte[]>($"""SELECT "SecureRandom" AS "Value" FROM taskflow."TaskItem" WHERE "Id" = {taskId}""")
+                .SingleAsync(TestContext.CancellationToken);
+            var blindIndex = await db.Database
+                .SqlQuery<byte[]>($"""SELECT "SecureDeterministicBlindIndex" AS "Value" FROM taskflow."TaskItem" WHERE "Id" = {taskId}""")
                 .SingleAsync(TestContext.CancellationToken);
 
-            CollectionAssert.AreNotEqual(Encoding.UTF8.GetBytes(token), row.Deterministic);
-            CollectionAssert.AreNotEqual(Encoding.UTF8.GetBytes(secret), row.Random);
-            Assert.HasCount(32, row.BlindIndex!);
+            CollectionAssert.AreNotEqual(Encoding.UTF8.GetBytes(token), deterministic);
+            CollectionAssert.AreNotEqual(Encoding.UTF8.GetBytes(secret), random);
+            Assert.AreEqual(AesGcmColumnEncryptor.NonceSizeBytes + Encoding.UTF8.GetByteCount(token) + AesGcmColumnEncryptor.TagSizeBytes, deterministic.Length);
+            Assert.HasCount(BlindIndex.SizeBytes, blindIndex);
         }
 
         // Decrypted through the model, and found through the blind index.
