@@ -31,6 +31,9 @@ param minReplicas int = 0
 @description('Maximum replicas')
 param maxReplicas int = 1
 
+@description('HTTP concurrent request scale rule threshold. 0 omits the rule (falls back to the platform default).')
+param concurrentRequests int = 0
+
 @description('HTTP readiness path. The revision receives traffic only after this endpoint succeeds.')
 param readinessPath string = '/readyz'
 
@@ -84,10 +87,24 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           ]
         }
       ]
-      scale: {
-        minReplicas: minReplicas
-        maxReplicas: maxReplicas
-      }
+      scale: union(
+        {
+          minReplicas: minReplicas
+          maxReplicas: maxReplicas
+        },
+        concurrentRequests > 0 ? {
+          rules: [
+            {
+              name: 'http-concurrency'
+              http: {
+                metadata: {
+                  concurrentRequests: string(concurrentRequests)
+                }
+              }
+            }
+          ]
+        } : {}
+      )
     }
   }
 }

@@ -41,8 +41,94 @@ param migratorImage string = 'mcr.microsoft.com/azuredocs/containerapps-hellowor
 @description('Blazor container image')
 param blazorImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
-@description('Opt-in for the SQL Always Encrypted demo (D-019): grants Key Vault Crypto User to the API and migrator identities and wires the CMK key URL. Off by default to keep the baseline deploy unchanged.')
-param enableAlwaysEncrypted bool = false
+@description('Active database provider')
+@allowed(['SqlServer', 'PostgreSql'])
+param databaseProvider string = 'SqlServer'
+
+@description('Explicit connection pool ceiling emitted in every connection string')
+param dbMaxPoolSize int = 100
+
+@description('SQL Server database SKU name, e.g. Basic (dev) or HS_Gen5_2 (prod Hyperscale)')
+param sqlSkuName string = 'Basic'
+
+@description('SQL Server database SKU tier, e.g. Basic (dev) or Hyperscale (prod)')
+param sqlSkuTier string = 'Basic'
+
+@description('SQL Server database SKU family, required for Hyperscale (e.g. Gen5); empty for DTU tiers')
+param sqlSkuFamily string = ''
+
+@description('SQL Server database SKU capacity (vCores for Hyperscale); 0 leaves the ARM default')
+param sqlSkuCapacity int = 0
+
+@description('SQL Hyperscale zone redundancy (prod)')
+param sqlZoneRedundant bool = false
+
+@description('SQL Hyperscale HA secondary replica count (prod); 0 disables HA replicas')
+param sqlHighAvailabilityReplicaCount int = 0
+
+@description('SQL Hyperscale read-scale routing via ApplicationIntent=ReadOnly (prod)')
+param sqlReadScaleEnabled bool = false
+
+@description('PostgreSQL Flexible Server compute SKU name')
+param pgSkuName string = 'Standard_B1ms'
+
+@description('PostgreSQL Flexible Server compute SKU tier')
+param pgSkuTier string = 'Burstable'
+
+@description('PostgreSQL Flexible Server storage size in GB')
+param pgStorageSizeGB int = 32
+
+@description('PostgreSQL high availability mode: ZoneRedundant for prod, Disabled for dev')
+@allowed(['Disabled', 'ZoneRedundant'])
+param pgHighAvailabilityMode string = 'Disabled'
+
+@description('Deploy a PostgreSQL prod-only read replica')
+param pgDeployReadReplica bool = false
+
+@description('Redis Enterprise SKU name: small Balanced tier for dev, HA tier for prod')
+param redisSkuName string = 'Balanced_B0'
+
+@description('Redis Enterprise high availability (prod)')
+param redisHighAvailability bool = false
+
+@description('Flex Consumption Functions app maximum instance count')
+param functionAppScaleLimit int = 20
+
+@description('Gateway container app scale/sizing profile')
+param gatewayProfile object = {
+  minReplicas: 0
+  maxReplicas: 2
+  concurrentRequests: 0
+  cpu: '0.25'
+  memory: '0.5Gi'
+}
+
+@description('API container app scale/sizing profile')
+param apiProfile object = {
+  minReplicas: 0
+  maxReplicas: 3
+  concurrentRequests: 0
+  cpu: '0.5'
+  memory: '1Gi'
+}
+
+@description('Scheduler container app scale/sizing profile')
+param schedulerProfile object = {
+  minReplicas: 0
+  maxReplicas: 1
+  concurrentRequests: 0
+  cpu: '0.25'
+  memory: '0.5Gi'
+}
+
+@description('Blazor container app scale/sizing profile')
+param blazorProfile object = {
+  minReplicas: 0
+  maxReplicas: 1
+  concurrentRequests: 0
+  cpu: '0.25'
+  memory: '0.5Gi'
+}
 
 // ---- Variables ----
 
@@ -65,7 +151,6 @@ var roles = {
   serviceBusDataReceiver: '4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0'
   // Key Vault
   keyVaultSecretsUser: '4633458b-17de-408a-b874-0445c86b69e6'
-  keyVaultCryptoUser: '14b46e9e-c2b7-41b4-b07b-48a6ebf60603' // Always Encrypted CMK sign/wrap/unwrap (D-019)
   // App Configuration
   appConfigDataReader: '516239f1-63e1-4d78-a4de-a74fb236a071'
   // Contributor (for deploy identity)
@@ -139,7 +224,7 @@ module appConfig 'modules/app-configuration.bicep' = {
 
 // ---- Data Modules ----
 
-module sqlDatabase 'modules/sql-database.bicep' = {
+module sqlDatabase 'modules/sql-database.bicep' = if (databaseProvider == 'SqlServer') {
   name: 'sqlDatabase'
   scope: rg
   params: {
@@ -148,6 +233,49 @@ module sqlDatabase 'modules/sql-database.bicep' = {
     sqlAdminPrincipalId: sqlAdminPrincipalId
     sqlAdminPrincipalName: sqlAdminPrincipalName
     sqlAdminPrincipalType: sqlAdminPrincipalType
+    skuName: sqlSkuName
+    skuTier: sqlSkuTier
+    skuFamily: sqlSkuFamily
+    skuCapacity: sqlSkuCapacity
+    zoneRedundant: sqlZoneRedundant
+    highAvailabilityReplicaCount: sqlHighAvailabilityReplicaCount
+    readScaleEnabled: sqlReadScaleEnabled
+    maxPoolSize: dbMaxPoolSize
+    tags: tags
+  }
+}
+
+// Postgres Entra admin/principal params reuse the SQL admin params (one DB admin identity regardless of engine).
+// 'Application' (SQL's term) maps to Postgres' 'ServicePrincipal'.
+module postgres 'modules/postgres-flexible-server.bicep' = if (databaseProvider == 'PostgreSql') {
+  name: 'postgres'
+  scope: rg
+  params: {
+    resourcePrefix: prefix
+    location: location
+    pgAdminPrincipalId: sqlAdminPrincipalId
+    pgAdminPrincipalName: sqlAdminPrincipalName
+    pgAdminPrincipalType: any(sqlAdminPrincipalType == 'Application' ? 'ServicePrincipal' : sqlAdminPrincipalType)
+    skuName: pgSkuName
+    skuTier: pgSkuTier
+    storageSizeGB: pgStorageSizeGB
+    highAvailabilityMode: pgHighAvailabilityMode
+    deployReadReplica: pgDeployReadReplica
+    maxPoolSize: dbMaxPoolSize
+    // Deterministic name, not a module output - avoids a circular dependency with the api container app module.
+    entraConnectingPrincipalName: '${prefix}-api'
+    tags: tags
+  }
+}
+
+module redis 'modules/redis.bicep' = {
+  name: 'redis'
+  scope: rg
+  params: {
+    resourcePrefix: prefix
+    location: location
+    skuName: redisSkuName
+    highAvailability: redisHighAvailability
     tags: tags
   }
 }
@@ -189,21 +317,21 @@ var commonEnvVars = [
   { name: 'KeyVault__Uri', value: keyVault.outputs.uri }
   { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
   { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.outputs.connectionString }
+  { name: 'Database__Provider', value: databaseProvider }
 ]
 
-// Always Encrypted (D-019) env wiring. Migrator creates the CMK/CEK and alters columns (runs setup);
-// API registers the AKV provider and turns on column encryption. Both need the CMK key URL.
-var alwaysEncryptedMigratorEnvVars = enableAlwaysEncrypted ? [
-  { name: 'SKIP_ALWAYS_ENCRYPTED_SETUP', value: 'false' }
-  { name: 'AKVCMKURL', value: keyVault.outputs.cmkKeyUri }
-] : []
-var alwaysEncryptedApiEnvVars = enableAlwaysEncrypted ? [
-  { name: 'TASKFLOW_ENABLE_ALWAYS_ENCRYPTED', value: 'true' }
-  { name: 'AKVCMKURL', value: keyVault.outputs.cmkKeyUri }
-] : []
+// Resolved from whichever database module deployed for the selected provider. SQL Hyperscale routes read
+// traffic to a secondary replica via ApplicationIntent=ReadOnly on the same server; Postgres uses a distinct
+// replica server/FQDN (see the postgres module's readConnectionString output).
+var dbConnectionString = databaseProvider == 'SqlServer'
+  ? (sqlDatabase.?outputs.?connectionString ?? '')
+  : (postgres.?outputs.?connectionString ?? '')
+var dbReadConnectionString = databaseProvider == 'SqlServer'
+  ? '${sqlDatabase.?outputs.?connectionString ?? ''}ApplicationIntent=ReadOnly;'
+  : (postgres.?outputs.?readConnectionString ?? '')
 
-// SQL auth gap: these apps use Entra auth connection strings, but this template does not yet
-// create database users or grants. Add a SQL data-plane step before production: migrator
+// Auth gap: these apps use Entra auth connection strings, but this template does not yet create
+// database users/roles or grants for either provider. Add a data-plane step before production: migrator
 // identity gets schema DDL plus migration history rights; API, Scheduler, and Functions get
 // runtime DML only on taskflow, flowengine, and Scheduler schemas. Do not grant DDL to runtime apps.
 module migrator 'modules/container-app-job.bicep' = {
@@ -217,10 +345,10 @@ module migrator 'modules/container-app-job.bicep' = {
     cpu: '0.25'
     memory: '0.5Gi'
     envVars: union(commonEnvVars, [
-      { name: 'ConnectionStrings__TaskFlowDbContextTrxn', value: sqlDatabase.outputs.connectionString }
-      { name: 'ConnectionStrings__TaskFlowFlowEngineDbContext', value: sqlDatabase.outputs.connectionString }
-      { name: 'ConnectionStrings__TickerQDbContext', value: sqlDatabase.outputs.connectionString }
-    ], alwaysEncryptedMigratorEnvVars)
+      { name: 'ConnectionStrings__TaskFlowDbContextTrxn', value: dbConnectionString }
+      { name: 'ConnectionStrings__TaskFlowFlowEngineDbContext', value: dbConnectionString }
+      { name: 'ConnectionStrings__TickerQDbContext', value: dbConnectionString }
+    ])
     tags: tags
   }
 }
@@ -233,12 +361,13 @@ module gateway 'modules/container-app.bicep' = {
     location: location
     environmentId: containerAppsEnv.outputs.id
     containerImage: gatewayImage
-    cpu: '0.25'
-    memory: '0.5Gi'
+    cpu: gatewayProfile.cpu
+    memory: gatewayProfile.memory
     externalIngress: true // Only public endpoint
     targetPort: 8080
-    minReplicas: 0
-    maxReplicas: 2
+    minReplicas: gatewayProfile.minReplicas
+    maxReplicas: gatewayProfile.maxReplicas
+    concurrentRequests: gatewayProfile.concurrentRequests
     readinessPath: '/healthz'
     envVars: union(commonEnvVars, [
       { name: 'ReverseProxy__Clusters__api__Destinations__default__Address', value: 'https://${api.outputs.fqdn}' }
@@ -257,22 +386,24 @@ module api 'modules/container-app.bicep' = {
     location: location
     environmentId: containerAppsEnv.outputs.id
     containerImage: apiImage
-    cpu: '0.5'
-    memory: '1Gi'
+    cpu: apiProfile.cpu
+    memory: apiProfile.memory
     externalIngress: false // Internal only
     targetPort: 8080
-    minReplicas: 0
-    maxReplicas: 3
+    minReplicas: apiProfile.minReplicas
+    maxReplicas: apiProfile.maxReplicas
+    concurrentRequests: apiProfile.concurrentRequests
     readinessPath: '/health/db'
     envVars: union(commonEnvVars, [
-      { name: 'ConnectionStrings__TaskFlowDbContextTrxn', value: sqlDatabase.outputs.connectionString }
-      { name: 'ConnectionStrings__TaskFlowDbContextQuery', value: sqlDatabase.outputs.connectionString }
-      { name: 'ConnectionStrings__TaskFlowFlowEngineDbContext', value: sqlDatabase.outputs.connectionString }
+      { name: 'ConnectionStrings__TaskFlowDbContextTrxn', value: dbConnectionString }
+      { name: 'ConnectionStrings__TaskFlowDbContextQuery', value: dbReadConnectionString }
+      { name: 'ConnectionStrings__TaskFlowFlowEngineDbContext', value: dbConnectionString }
       { name: 'ConnectionStrings__CosmosDb1', value: cosmosDb.outputs.accountEndpoint }
       { name: 'ConnectionStrings__BlobStorage1', value: storage.outputs.appStorageBlobEndpoint }
       { name: 'ConnectionStrings__TableStorage1', value: storage.outputs.appStorageTableEndpoint }
+      { name: 'ConnectionStrings__Redis1', value: redis.outputs.connectionString }
       { name: 'SERVICEBUS__fullyQualifiedNamespace', value: serviceBus.outputs.namespaceEndpoint }
-    ], alwaysEncryptedApiEnvVars)
+    ])
     tags: tags
   }
 }
@@ -285,17 +416,18 @@ module scheduler 'modules/container-app.bicep' = {
     location: location
     environmentId: containerAppsEnv.outputs.id
     containerImage: schedulerImage
-    cpu: '0.25'
-    memory: '0.5Gi'
+    cpu: schedulerProfile.cpu
+    memory: schedulerProfile.memory
     ingressEnabled: false // No ingress needed
     targetPort: 8080
-    minReplicas: 0
-    maxReplicas: 1
+    minReplicas: schedulerProfile.minReplicas
+    maxReplicas: schedulerProfile.maxReplicas
     envVars: union(commonEnvVars, [
-      { name: 'ConnectionStrings__TaskFlowDbContextTrxn', value: sqlDatabase.outputs.connectionString }
-      { name: 'ConnectionStrings__TaskFlowDbContextQuery', value: sqlDatabase.outputs.connectionString }
-      { name: 'ConnectionStrings__TaskFlowFlowEngineDbContext', value: sqlDatabase.outputs.connectionString }
-      { name: 'ConnectionStrings__TickerQDbContext', value: sqlDatabase.outputs.connectionString }
+      { name: 'ConnectionStrings__TaskFlowDbContextTrxn', value: dbConnectionString }
+      { name: 'ConnectionStrings__TaskFlowDbContextQuery', value: dbReadConnectionString }
+      { name: 'ConnectionStrings__TaskFlowFlowEngineDbContext', value: dbConnectionString }
+      { name: 'ConnectionStrings__TickerQDbContext', value: dbConnectionString }
+      { name: 'ConnectionStrings__Redis1', value: redis.outputs.connectionString }
       { name: 'SERVICEBUS__fullyQualifiedNamespace', value: serviceBus.outputs.namespaceEndpoint }
     ])
     tags: tags
@@ -310,12 +442,13 @@ module blazor 'modules/container-app.bicep' = {
     location: location
     environmentId: containerAppsEnv.outputs.id
     containerImage: blazorImage
-    cpu: '0.25'
-    memory: '0.5Gi'
+    cpu: blazorProfile.cpu
+    memory: blazorProfile.memory
     externalIngress: true
     targetPort: 8080
-    minReplicas: 0
-    maxReplicas: 1
+    minReplicas: blazorProfile.minReplicas
+    maxReplicas: blazorProfile.maxReplicas
+    concurrentRequests: blazorProfile.concurrentRequests
     envVars: [
       { name: 'ApiBaseUrl', value: 'https://${gateway.outputs.fqdn}' }
       { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
@@ -347,10 +480,13 @@ module functions 'modules/functions.bicep' = {
     serviceBusNamespace: serviceBus.outputs.namespaceEndpoint
     appConfigEndpoint: appConfig.outputs.endpoint
     keyVaultUri: keyVault.outputs.uri
-    sqlConnectionString: sqlDatabase.outputs.connectionString
+    databaseProvider: databaseProvider
+    dbConnectionString: dbConnectionString
+    dbReadConnectionString: dbReadConnectionString
     cosmosEndpoint: cosmosDb.outputs.accountEndpoint
     storageBlobEndpoint: storage.outputs.appStorageBlobEndpoint
     appInsightsConnectionString: appInsights.outputs.connectionString
+    functionAppScaleLimit: functionAppScaleLimit
     tags: tags
   }
 }
@@ -440,27 +576,6 @@ module apiServiceBusSender 'modules/role-assignment.bicep' = {
     principalId: api.outputs.principalId
     roleDefinitionId: roles.serviceBusDataSender
     roleDescription: 'API: Service Bus Data Sender'
-  }
-}
-
-// Always Encrypted (D-019): API decrypts (unwrapKey) at runtime; migrator creates the CMK/CEK (sign + wrapKey).
-module apiKvCryptoUser 'modules/role-assignment.bicep' = if (enableAlwaysEncrypted) {
-  name: 'apiKvCryptoUser'
-  scope: rg
-  params: {
-    principalId: api.outputs.principalId
-    roleDefinitionId: roles.keyVaultCryptoUser
-    roleDescription: 'API: Key Vault Crypto User (Always Encrypted)'
-  }
-}
-
-module migratorKvCryptoUser 'modules/role-assignment.bicep' = if (enableAlwaysEncrypted) {
-  name: 'migratorKvCryptoUser'
-  scope: rg
-  params: {
-    principalId: migrator.outputs.principalId
-    roleDefinitionId: roles.keyVaultCryptoUser
-    roleDescription: 'Migrator: Key Vault Crypto User (Always Encrypted)'
   }
 }
 
@@ -572,6 +687,20 @@ module cosmosRbac 'modules/cosmos-rbac.bicep' = {
   }
 }
 
+// ---- Redis RBAC (data plane - separate module, avoids a circular dependency with api/scheduler) ----
+
+module redisRbac 'modules/redis-rbac.bicep' = {
+  name: 'redisRbac'
+  scope: rg
+  params: {
+    redisEnterpriseName: redis.outputs.redisEnterpriseName
+    principalIds: [
+      api.outputs.principalId
+      scheduler.outputs.principalId
+    ]
+  }
+}
+
 // ---- Outputs ----
 
 output resourceGroupName string = rg.name
@@ -586,5 +715,8 @@ output deployIdentityClientId string = deployIdentity.outputs.clientId
 output deployIdentityPrincipalId string = deployIdentity.outputs.principalId
 output keyVaultName string = keyVault.outputs.name
 output appConfigName string = appConfig.outputs.name
-output sqlServerName string = sqlDatabase.outputs.serverName
+output databaseProviderName string = databaseProvider
+output sqlServerName string = databaseProvider == 'SqlServer' ? (sqlDatabase.?outputs.?serverName ?? '') : ''
+output postgresServerName string = databaseProvider == 'PostgreSql' ? (postgres.?outputs.?serverName ?? '') : ''
+output redisHostName string = redis.outputs.hostName
 output appStorageName string = storage.outputs.appStorageName

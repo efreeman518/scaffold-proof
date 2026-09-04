@@ -27,16 +27,77 @@ resource domainEventsTopic 'Microsoft.ServiceBus/namespaces/topics@2024-01-01' =
   properties: {
     maxSizeInMegabytes: 1024
     defaultMessageTimeToLive: 'P14D'
+    requiresDuplicateDetection: true
+    duplicateDetectionHistoryTimeWindow: 'PT1H'
   }
 }
 
-resource functionProcessorSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2024-01-01' = {
+// Three per-consumer subscriptions replace the single function-processor subscription, each filtered to the
+// EventType application property set by the envelope. Creating a named SQL filter rule below removes the
+// subscription's implicit $Default rule (match-all), so only messages matching the named rule are delivered.
+resource projectionSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2024-01-01' = {
   parent: domainEventsTopic
-  name: 'function-processor'
+  name: 'projection'
   properties: {
-    maxDeliveryCount: 10
-    lockDuration: 'PT1M'
+    maxDeliveryCount: 5
+    lockDuration: 'PT5M'
     deadLetteringOnMessageExpiration: true
+    deadLetteringOnFilterEvaluationExceptions: true
+  }
+}
+
+resource projectionRule 'Microsoft.ServiceBus/namespaces/topics/subscriptions/rules@2024-01-01' = {
+  parent: projectionSubscription
+  name: 'EventTypeFilter'
+  properties: {
+    filterType: 'SqlFilter'
+    sqlFilter: {
+      sqlExpression: 'EventType IN (\'TaskItemCreatedEvent\', \'TaskItemStatusChangedEvent\', \'TaskItemCompletedEvent\')'
+    }
+  }
+}
+
+resource aiReviewSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2024-01-01' = {
+  parent: domainEventsTopic
+  name: 'ai-review'
+  properties: {
+    maxDeliveryCount: 5
+    lockDuration: 'PT5M'
+    deadLetteringOnMessageExpiration: true
+    deadLetteringOnFilterEvaluationExceptions: true
+  }
+}
+
+resource aiReviewRule 'Microsoft.ServiceBus/namespaces/topics/subscriptions/rules@2024-01-01' = {
+  parent: aiReviewSubscription
+  name: 'EventTypeFilter'
+  properties: {
+    filterType: 'SqlFilter'
+    sqlFilter: {
+      sqlExpression: 'EventType = \'TaskItemCreatedEvent\''
+    }
+  }
+}
+
+resource workflowSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2024-01-01' = {
+  parent: domainEventsTopic
+  name: 'workflow'
+  properties: {
+    maxDeliveryCount: 5
+    lockDuration: 'PT5M'
+    deadLetteringOnMessageExpiration: true
+    deadLetteringOnFilterEvaluationExceptions: true
+  }
+}
+
+resource workflowRule 'Microsoft.ServiceBus/namespaces/topics/subscriptions/rules@2024-01-01' = {
+  parent: workflowSubscription
+  name: 'EventTypeFilter'
+  properties: {
+    filterType: 'SqlFilter'
+    sqlFilter: {
+      sqlExpression: 'EventType = \'TaskItemCreatedEvent\''
+    }
   }
 }
 

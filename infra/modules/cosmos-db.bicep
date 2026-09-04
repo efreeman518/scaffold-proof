@@ -34,22 +34,23 @@ resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' = {
   }
 }
 
+// Names must match src/Host/TaskFlow.Api/appsettings.json Cosmos:TaskViews:DatabaseName/ContainerName.
 resource cosmosDatabase 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024-05-15' = {
   parent: cosmosAccount
-  name: 'TaskFlowViews'
+  name: 'taskflow-db'
   properties: {
     resource: {
-      id: 'TaskFlowViews'
+      id: 'taskflow-db'
     }
   }
 }
 
 resource cosmosContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
   parent: cosmosDatabase
-  name: 'TaskItemViews'
+  name: 'task-views'
   properties: {
     resource: {
-      id: 'TaskItemViews'
+      id: 'task-views'
       partitionKey: {
         paths: ['/tenantId']
         kind: 'Hash'

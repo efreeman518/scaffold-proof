@@ -57,23 +57,23 @@ Generated: 2026-04-23
 
 ### Compute Service Mapping
 
-| Component | Azure Service | SKU/Tier | Ingress |
-|-----------|---------------|----------|---------|
-| TaskFlow.Gateway | Container App | Consumption (0.25 vCPU, 0.5Gi) | External (only public endpoint) |
-| TaskFlow.Api | Container App | Consumption (0.5 vCPU, 1Gi) | Internal only |
-| TaskFlow.Scheduler | Container App | Consumption (0.25 vCPU, 0.5Gi) | Internal only (no ingress) |
-| TaskFlow.Functions | Functions Flex Consumption | Flex Consumption | Internal (Service Bus trigger) |
-| TaskFlow.Blazor | Container App | Consumption (0.25 vCPU, 0.5Gi) | External |
-| TaskFlow.Uno | Container App (static serve) | Consumption (0.25 vCPU, 0.5Gi) | External |
+| Component | Azure Service | Dev scale (`main.dev.bicepparam`) | Prod scale (`main.prod.bicepparam`) | Ingress |
+|-----------|---------------|------------------------------------|---------------------------------------|---------|
+| TaskFlow.Gateway | Container App | min 0 / max 2, 0.25 vCPU, 0.5Gi | min 2 / max 100, 50 concurrent requests, 0.5 vCPU, 1Gi | External (only public endpoint) |
+| TaskFlow.Api | Container App | min 0 / max 3, 0.5 vCPU, 1Gi | min 2 / max 100, 50 concurrent requests, 1.0 vCPU, 2Gi | Internal only |
+| TaskFlow.Scheduler | Container App | min 0 / max 1, 0.25 vCPU, 0.5Gi | min 2 / max 2 (always-on, no concurrency rule), 0.5 vCPU, 1Gi | Internal only (no ingress) |
+| TaskFlow.Functions | Functions Flex Consumption | `functionAppScaleLimit` 20 | `functionAppScaleLimit` 20 | Internal (Service Bus trigger) |
+| TaskFlow.Blazor | Container App | min 0 / max 1, 0.25 vCPU, 0.5Gi | min 2 / max 30, 0.5 vCPU, 1Gi | External |
+| TaskFlow.Uno | Container App (static serve) | Consumption (0.25 vCPU, 0.5Gi) | Consumption (0.25 vCPU, 0.5Gi) | External |
 
 ### Data & Messaging Service Mapping
 
 | Service | Azure Resource | SKU/Tier | Est. $/mo |
 |---------|---------------|----------|-----------|
-| SQL Database | Azure SQL Database | Basic DTU (5 DTU, 2GB) | ~$5 |
-| Cache | FusionCache L1 only (no Redis) | N/A | $0 |
+| Database (`databaseProvider`) | Azure SQL Database (default) or PostgreSQL Flexible Server 17 | Dev: Basic DTU (5 DTU) / Postgres `Standard_B1ms` Burstable. Prod: SQL Hyperscale `HS_Gen5_2` zone-redundant + HA/read-scale replica, or Postgres `GeneralPurpose` zone-redundant + read replica | Dev ~$5; prod materially higher (Hyperscale/HA priced per vCore + replica) |
+| Cache | Azure Managed Redis (`Microsoft.Cache/redisEnterprise`), FusionCache L2 (`ConnectionStrings__Redis1`) | Dev `Balanced_B0`, no HA. Prod `Balanced_B5`+, HA | Dev ~$0 (~small Balanced tier); prod higher with HA |
 | Document Store | Cosmos DB | Serverless | ~$0-5 |
-| Messaging | Service Bus | Standard | ~$10 |
+| Messaging | Service Bus | Standard (3 filtered subscriptions: `projection`, `ai-review`, `workflow`) | ~$10 |
 | Blob Storage | Storage Account (Blob + Tables) | Standard LRS | ~$1 |
 | Functions Storage | Storage Account | Standard LRS | ~$1 |
 
@@ -97,10 +97,16 @@ The baseline deployment keeps end-user `AuthMode: Scaffold` so the reference app
 | Identity | Assigned To | Roles |
 |----------|------------|-------|
 | System MI (Gateway) | Gateway Container App | App Configuration Data Reader, Key Vault Secrets User |
-| System MI (API) | API Container App | SQL DB Contributor (Entra auth), Service Bus Data Sender, Storage Blob Data Contributor, Cosmos DB Data Contributor, App Configuration Data Reader, Key Vault Secrets User |
-| System MI (Scheduler) | Scheduler Container App | SQL DB Contributor, Service Bus Data Sender, App Configuration Data Reader, Key Vault Secrets User |
-| System MI (Functions) | Functions App | Service Bus Data Receiver, Storage Blob Data Contributor, Cosmos DB Data Contributor, SQL DB Contributor |
+| System MI (API) | API Container App | Database Contributor (Entra auth, provider-dependent), Service Bus Data Sender, Storage Blob Data Contributor, Cosmos DB Data Contributor, App Configuration Data Reader, Key Vault Secrets User, Redis Entra access policy assignment |
+| System MI (Scheduler) | Scheduler Container App | Database Contributor, Service Bus Data Sender, App Configuration Data Reader, Key Vault Secrets User, Redis Entra access policy assignment |
+| System MI (Functions) | Functions App | Service Bus Data Receiver, Storage Blob Data Contributor, Cosmos DB Data Contributor, Database Contributor |
 | User-Assigned MI | GitHub Actions | Contributor (RG scope), User Access Administrator (RG scope) |
+
+Redis access policy assignments grant the API/Scheduler managed identities Entra data-plane permission on the
+default database, but `ConnectionStrings__Redis1` still authenticates with the access key today: StackExchange.Redis
+needs the `Microsoft.Azure.StackExchangeRedis` token-provider package wired in application code to use the Entra
+grant, which is out of scope for this infra-only change. Same pre-existing gap as SQL/Postgres: no per-identity
+database user/role provisioning yet - see the module comments in `sql-database.bicep`/`postgres-flexible-server.bicep`.
 
 ### Networking
 
@@ -127,10 +133,11 @@ The baseline deployment keeps end-user `AuthMode: Scaffold` so the reference app
 |---------------|-------|-------|
 | Microsoft.App/managedEnvironments | 1 | Consumption tier |
 | Microsoft.App/containerApps | 5 | Gateway, API, Scheduler, Blazor, Uno |
-| Microsoft.Sql/servers | 1 | Entra-only auth |
-| Microsoft.Sql/servers/databases | 1 | Basic DTU |
+| Microsoft.Sql/servers or Microsoft.DBforPostgreSQL/flexibleServers | 1 | Entra-only auth; whichever `databaseProvider` is selected (mutually exclusive) |
+| Microsoft.Sql/servers/databases or .../flexibleServers/databases | 1 (+1 read replica in prod) | Dev Basic DTU / Postgres Burstable; prod Hyperscale HA replica or Postgres read replica |
+| Microsoft.Cache/redisEnterprise + /databases | 1 + 1 | Azure Managed Redis (FusionCache L2) |
 | Microsoft.DocumentDB/databaseAccounts | 1 | Serverless |
-| Microsoft.ServiceBus/namespaces | 1 | Standard |
+| Microsoft.ServiceBus/namespaces | 1 | Standard, 3 topic subscriptions (`projection`, `ai-review`, `workflow`) |
 | Microsoft.Storage/storageAccounts | 2 | App data + Functions runtime |
 | Microsoft.Web/sites (Function App) | 1 | Flex Consumption |
 | Microsoft.KeyVault/vaults | 1 | Standard |
