@@ -1,6 +1,6 @@
-# AI-Instructions-ReferenceApp
+# Scaffold Proof
 
-Reference implementation for [AI-Instructions-Scaffold](https://github.com/efreeman518/AI-Instructions-Scaffold).
+Reference implementation for [Scaffold AI](https://github.com/efreeman518/scaffold-ai).
 
 ## Description
 
@@ -52,7 +52,7 @@ Live Entra ID or Entra External ID remains deployment-only. Before public use, i
 
 ## AI Coding Instructions
 
-This repo is the compiled proof for the [AI-Instructions-Scaffold](https://github.com/efreeman518/AI-Instructions-Scaffold) instruction payload, so its agent-facing conventions are part of the reference surface:
+This repo is the compiled proof for the [scaffold-ai](https://github.com/efreeman518/scaffold-ai) instruction payload, so its agent-facing conventions are part of the reference surface:
 
 - [`AGENTS.md`](AGENTS.md) - single source of maintainer-session instructions, read natively by CLI agents and GitHub Copilot (including VS Code).
 - [`CLAUDE.md`](CLAUDE.md) - thin Claude Code entry point that imports `AGENTS.md`.

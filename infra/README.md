@@ -57,7 +57,7 @@ cd infra/scripts
 
 ./bootstrap.ps1 `
     -SubscriptionId "db98b283-631e-4f24-bd77-321332820725" `
-    -GitHubRepo "efreeman518/AI-Instructions-ReferenceApp"
+    -GitHubRepo "efreeman518/scaffold-proof"
 ```
 
 Optional parameters (shown with defaults):

@@ -1,6 +1,6 @@
 # AGENTS - TaskFlow Reference App (maintainer sessions)
 
-TaskFlow is the compiled proof for the [AI-Instructions-Scaffold](https://github.com/efreeman518/AI-Instructions-Scaffold) instruction payload. Scaffolding is complete (Phases 1-5e); sessions here are maintenance: keep the app building, tests green, and the proof surface current.
+TaskFlow is the compiled proof for the [scaffold-ai](https://github.com/efreeman518/scaffold-ai) instruction payload. Scaffolding is complete (Phases 1-5e); sessions here are maintenance: keep the app building, tests green, and the proof surface current.
 
 This file is the single source of maintainer-session instructions: CLI agents and GitHub Copilot agent surfaces (including VS Code) read root `AGENTS.md` natively; Claude Code loads it through the `@AGENTS.md` import in `CLAUDE.md`.
 

@@ -42,7 +42,7 @@ Published Release Uno cold-start and normal browser projects pass from empty bro
 
 ## Vulnerability Status
 
-Run `dotnet list package --vulnerable --include-transitive` and capture findings here. Severity policy: [scaffold execution gates](https://github.com/efreeman518/AI-Instructions-Scaffold/blob/main/support/execution-gates.md#vulnerability-audit).
+Run `dotnet list package --vulnerable --include-transitive` and capture findings here. Severity policy: [scaffold execution gates](https://github.com/efreeman518/scaffold-ai/blob/main/support/execution-gates.md#vulnerability-audit).
 
 Last audit used `dotnet list TaskFlow.slnx package --vulnerable --include-transitive --no-restore` and reported no vulnerable packages or package vulnerability warnings.
 
@@ -78,7 +78,7 @@ Status meanings:
 | `azd` orchestration | not enabled | `includeAzd: false` |
 | Private endpoints | not enabled | `usePrivateEndpoints: false` |
 
-The declared flags and matrix must agree with `.scaffold/resource-implementation.yaml`. Proof paths are validated against the scaffold-owned [TaskFlow proof map](https://github.com/efreeman518/AI-Instructions-Scaffold/blob/main/support/taskflow-proof-map.md).
+The declared flags and matrix must agree with `.scaffold/resource-implementation.yaml`. Proof paths are validated against the scaffold-owned [TaskFlow proof map](https://github.com/efreeman518/scaffold-ai/blob/main/support/taskflow-proof-map.md).
 
 ## Phase Completion
 
