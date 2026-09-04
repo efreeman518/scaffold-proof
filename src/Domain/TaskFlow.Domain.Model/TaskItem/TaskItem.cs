@@ -65,8 +65,9 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
     private TaskItem() { }
 
     /// <summary>Initializes task item with required dependencies and default state.</summary>
-    private TaskItem(DomainTenantId tenantId, string title, string? description, Priority priority, DomainCategoryId? categoryId, DomainTaskItemId? parentTaskItemId)
+    private TaskItem(DomainTenantId tenantId, string title, string? description, Priority priority, DomainCategoryId? categoryId, DomainTaskItemId? parentTaskItemId, DomainTaskItemId? id)
     {
+        if (id.HasValue) Id = id.Value; // D-033: caller-supplied UUIDv7 id makes create idempotent.
         TenantId = tenantId;
         Title = title;
         Description = description;
@@ -82,9 +83,10 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
         DomainTenantId tenantId, string title, string? description = null,
         Priority priority = Priority.None, DomainCategoryId? categoryId = null,
         DomainTaskItemId? parentTaskItemId = null,
-        string? secureDeterministic = null, string? secureRandom = null)
+        string? secureDeterministic = null, string? secureRandom = null,
+        DomainTaskItemId? id = null)
     {
-        var entity = new TaskItem(tenantId, title, description, priority, categoryId, parentTaskItemId)
+        var entity = new TaskItem(tenantId, title, description, priority, categoryId, parentTaskItemId, id)
         {
             SecureDeterministic = secureDeterministic,
             SecureRandom = secureRandom
@@ -148,17 +150,21 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
         return DomainResult<TaskItem>.Success(this);
     }
 
+    // D-031 (aggregate-level ETag): every child mutation below calls the base Touch() so EF marks the
+    // root Modified and VersionTimestampInterceptor bumps the root Version. Child PUT/DELETE therefore
+    // use the root ETag as the If-Match currency; child DTO Version values are display-only.
     #region Child Collection Methods
 
     /// <summary>
     /// Add a new comment to this task item.
     /// </summary>
-    public DomainResult<Comment> AddComment(string body)
+    public DomainResult<Comment> AddComment(string body, CommentId? commentId = null)
     {
-        var result = Comment.Create(TenantId, Id, body);
+        var result = Comment.Create(TenantId, Id, body, commentId);
         if (result.IsFailure) return result;
 
         Comments.Add(result.Value!);
+        Touch();
         return result;
     }
 
@@ -166,6 +172,7 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
     public DomainResult RemoveComment(Comment comment)
     {
         Comments.Remove(comment);
+        Touch();
         return DomainResult.Success();
     }
 
@@ -176,18 +183,20 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
     {
         var toRemove = Comments.FirstOrDefault(c => c.Id == commentId);
         if (toRemove != null) Comments.Remove(toRemove);
+        Touch();
         return DomainResult.Success(); // Always return success - desired state (comment removed) is achieved
     }
 
     /// <summary>
     /// Add a new checklist item to this task item.
     /// </summary>
-    public DomainResult<ChecklistItem> AddChecklistItem(string title, int sortOrder = 0)
+    public DomainResult<ChecklistItem> AddChecklistItem(string title, int sortOrder = 0, ChecklistItemId? checklistItemId = null)
     {
-        var result = ChecklistItem.Create(TenantId, Id, title, sortOrder);
+        var result = ChecklistItem.Create(TenantId, Id, title, sortOrder, checklistItemId);
         if (result.IsFailure) return result;
 
         ChecklistItems.Add(result.Value!);
+        Touch();
         return result;
     }
 
@@ -195,6 +204,7 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
     public DomainResult RemoveChecklistItem(ChecklistItem checklistItem)
     {
         ChecklistItems.Remove(checklistItem);
+        Touch();
         return DomainResult.Success();
     }
 
@@ -205,6 +215,7 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
     {
         var toRemove = ChecklistItems.FirstOrDefault(ci => ci.Id == checklistItemId);
         if (toRemove != null) ChecklistItems.Remove(toRemove);
+        Touch();
         return DomainResult.Success(); // Always return success - desired state is achieved
     }
 
@@ -220,6 +231,7 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
         if (result.IsFailure) return result;
 
         TaskItemTags.Add(result.Value!);
+        Touch();
         return result;
     }
 
@@ -227,6 +239,7 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
     public DomainResult RemoveTag(TaskItemTag taskItemTag)
     {
         TaskItemTags.Remove(taskItemTag);
+        Touch();
         return DomainResult.Success();
     }
 
@@ -237,6 +250,7 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
     {
         var toRemove = TaskItemTags.FirstOrDefault(t => t.TagId == tagId);
         if (toRemove != null) TaskItemTags.Remove(toRemove);
+        Touch();
         return DomainResult.Success(); // Always return success - desired state (tag not assigned) is achieved
     }
 

@@ -13,6 +13,7 @@ public static class AttachmentMapper
         entity => new AttachmentDto
         {
             Id = entity.Id.Value,
+            Version = entity.Version,
             TenantId = entity.TenantId.Value,
             FileName = entity.FileName,
             ContentType = entity.ContentType,
@@ -29,5 +30,6 @@ public static class AttachmentMapper
 
     /// <summary>Converts the current value to entity.</summary>
     public static DomainResult<Attachment> ToEntity(this AttachmentDto dto, Guid tenantId)
-        => Attachment.Create(DomainId.From<TenantId>(tenantId), dto.FileName, dto.ContentType, dto.FileSizeBytes, dto.StorageUri, dto.OwnerType, dto.OwnerId);
+        => Attachment.Create(DomainId.From<TenantId>(tenantId), dto.FileName, dto.ContentType, dto.FileSizeBytes, dto.StorageUri, dto.OwnerType, dto.OwnerId,
+            DomainId.FromNullable<AttachmentId>(dto.Id));
 }

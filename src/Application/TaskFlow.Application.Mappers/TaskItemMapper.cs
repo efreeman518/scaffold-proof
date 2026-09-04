@@ -1,4 +1,4 @@
-﻿using EF.Domain.Contracts;
+using EF.Domain.Contracts;
 using System.Linq.Expressions;
 using TaskFlow.Application.Models;
 using TaskFlow.Domain.Model;
@@ -24,6 +24,7 @@ public static class TaskItemMapper
         entity => new TaskItemDto
         {
             Id = entity.Id.Value,
+            Version = entity.Version,
             TenantId = entity.TenantId.Value,
             Title = entity.Title,
             Description = entity.Description,
@@ -33,6 +34,7 @@ public static class TaskItemMapper
             EstimatedEffort = entity.EstimatedEffort,
             ActualEffort = entity.ActualEffort,
             CompletedDate = entity.CompletedDate,
+            ModifiedAtUtc = entity.ModifiedAtUtc,
             CategoryId = entity.CategoryId.HasValue ? entity.CategoryId.Value.Value : null,
             ParentTaskItemId = entity.ParentTaskItemId.HasValue ? entity.ParentTaskItemId.Value.Value : null,
             CategoryName = entity.Category != null ? entity.Category.Name : null,
@@ -44,6 +46,7 @@ public static class TaskItemMapper
             Comments = entity.Comments.Select(c => new CommentDto
             {
                 Id = c.Id.Value,
+                Version = c.Version,
                 TenantId = c.TenantId.Value,
                 Body = c.Body,
                 TaskItemId = c.TaskItemId.Value
@@ -51,6 +54,7 @@ public static class TaskItemMapper
             ChecklistItems = entity.ChecklistItems.Select(ci => new ChecklistItemDto
             {
                 Id = ci.Id.Value,
+                Version = ci.Version,
                 TenantId = ci.TenantId.Value,
                 Title = ci.Title,
                 IsCompleted = ci.IsCompleted,
@@ -61,6 +65,7 @@ public static class TaskItemMapper
             Tags = entity.TaskItemTags.Select(tt => new TagDto
             {
                 Id = tt.Tag!.Id.Value,
+                Version = tt.Tag.Version,
                 TenantId = tt.Tag.TenantId.Value,
                 Name = tt.Tag.Name,
                 Color = tt.Tag.Color
@@ -68,6 +73,7 @@ public static class TaskItemMapper
             SubTasks = entity.SubTasks.Select(s => new TaskItemDto
             {
                 Id = s.Id.Value,
+                Version = s.Version,
                 TenantId = s.TenantId.Value,
                 Title = s.Title,
                 Status = s.Status,
@@ -85,7 +91,8 @@ public static class TaskItemMapper
     {
         var categoryId = DomainId.FromNullable<CategoryId>(dto.CategoryId);
         var parentTaskItemId = DomainId.FromNullable<TaskItemId>(dto.ParentTaskItemId);
-        var result = TaskItem.Create(DomainId.From<TenantId>(tenantId), dto.Title, dto.Description, dto.Priority, categoryId, parentTaskItemId);
+        var result = TaskItem.Create(DomainId.From<TenantId>(tenantId), dto.Title, dto.Description, dto.Priority, categoryId, parentTaskItemId,
+            id: DomainId.FromNullable<TaskItemId>(dto.Id));
         if (result.IsFailure) return result;
 
         var entity = result.Value!;
@@ -111,6 +118,7 @@ public static class TaskItemMapper
         entity => new TaskItemDto
         {
             Id = entity.Id.Value,
+            Version = entity.Version,
             TenantId = entity.TenantId.Value,
             Title = entity.Title,
             Description = entity.Description,
@@ -122,6 +130,7 @@ public static class TaskItemMapper
             CategoryName = entity.Category != null ? entity.Category.Name : null,
             StartDate = entity.StartDate,
             DueDate = entity.DueDate,
-            CompletedDate = entity.CompletedDate
+            CompletedDate = entity.CompletedDate,
+            ModifiedAtUtc = entity.ModifiedAtUtc
         };
 }
