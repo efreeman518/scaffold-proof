@@ -71,6 +71,9 @@
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.11" />
     <PackageVersion Include="Microsoft.AspNetCore.HeaderPropagation" Version="10.0.11" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.11" />
+    <!-- Build-time OpenAPI document generation so the committed src/Host/TaskFlow.Api/openapi/TaskFlow.Api.json
+         stays in sync with the runtime document without a running server (client codegen goes offline). -->
+    <PackageVersion Include="Microsoft.Extensions.ApiDescription.Server" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.11" />
