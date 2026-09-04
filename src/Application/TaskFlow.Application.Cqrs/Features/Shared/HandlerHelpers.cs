@@ -2,6 +2,7 @@ using EF.Common.Contracts;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Models;
+using TaskFlow.Application.Models.Paging;
 
 namespace TaskFlow.Application.Cqrs.Shared;
 
@@ -35,6 +36,30 @@ internal static class HandlerHelpers
         ILogger logger,
         string operation)
         where TFilter : DefaultSearchFilter, new()
+    {
+        if (roles.Contains(AppConstants.ROLE_GLOBAL_ADMIN))
+        {
+            return;
+        }
+
+        request.Filter ??= new TFilter();
+        if (request.Filter.TenantId is Guid supplied && supplied != requestTenantId)
+        {
+            logger.LogTenantFilterManipulation(operation, requestTenantId, supplied);
+        }
+
+        request.Filter.TenantId = requestTenantId;
+    }
+
+    /// <summary>Cursor-request twin of <see cref="EnforceTenantFilter{TFilter}"/>.</summary>
+    public static void EnforceCursorTenantFilter<TFilter, TSortMode>(
+        CursorSearchRequest<TFilter, TSortMode> request,
+        Guid? requestTenantId,
+        IReadOnlyCollection<string> roles,
+        ILogger logger,
+        string operation)
+        where TFilter : DefaultSearchFilter, new()
+        where TSortMode : struct, Enum
     {
         if (roles.Contains(AppConstants.ROLE_GLOBAL_ADMIN))
         {

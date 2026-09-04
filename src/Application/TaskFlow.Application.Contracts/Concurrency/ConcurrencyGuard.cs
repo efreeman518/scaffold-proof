@@ -29,4 +29,16 @@ public static class ConcurrencyGuard
     /// </summary>
     public static Task<int> SaveAsync(IRepositoryBase repository, CancellationToken ct) =>
         repository.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
+
+    /// <summary>
+    /// True when an exception raised by a save is a lost-update failure that must reach the caller as
+    /// 412. Every catch-all around a save filters on this; without the filter a stale write would be
+    /// converted into a generic 400 and the ETag contract would silently stop working.
+    ///
+    /// Matched by type name rather than by type: the Application layer must not reference
+    /// Microsoft.EntityFrameworkCore (Test.Architecture enforces that boundary), and introducing the
+    /// reference only to name one exception would trade a real architectural rule for a keystroke.
+    /// </summary>
+    public static bool IsConcurrencyFailure(Exception ex) =>
+        ex.GetType().FullName == "Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException";
 }

@@ -2,6 +2,7 @@ using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
+using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Application.Cqrs.Shared;
@@ -24,7 +25,7 @@ internal sealed class SearchAttachmentsHandler(
     {
         var request = query.Request;
         HandlerHelpers.EnforceTenantFilter(request, requestContext.TenantId, requestContext.Roles, logger, "AttachmentSearch");
-        return await CqrsHandlerSupport.SearchAsync(token => repoQuery.SearchAttachmentsAsync(request, token), logger, "Attachment", ct);
+        return await CqrsHandlerSupport.SearchAsync(token => repoQuery.SearchAttachmentsAsync(request, query.IncludeTotal, token), logger, "Attachment", ct);
     }
 }
 
@@ -127,7 +128,8 @@ internal sealed class UploadAttachmentHandler(
             command.FileSizeBytes,
             storageUri,
             command.OwnerType,
-            command.OwnerId);
+            command.OwnerId,
+            DomainId.FromNullable<AttachmentId>(command.Id));
         if (entityResult.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(entityResult.ErrorMessage!);
 
         var entity = entityResult.Value!;
@@ -168,6 +170,8 @@ internal sealed class UpdateAttachmentHandler(
             "Attachment:Update", nameof(Attachment), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(boundary.ErrorMessage!);
 
+        ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(Attachment), entity.Id.Value);
+
         var tenantChangeCheck = tenantBoundaryValidator.PreventTenantChange(
             logger, entity.TenantId.Value, dto.TenantId, nameof(Attachment), entity.Id.Value);
         if (tenantChangeCheck.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(tenantChangeCheck.ErrorMessage!);
@@ -202,6 +206,8 @@ internal sealed class DeleteAttachmentHandler(
             logger, requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "Attachment:Delete", nameof(Attachment), entity.Id.Value);
         if (boundary.IsFailure) return Result.Failure(boundary.ErrorMessage!);
+
+        ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(Attachment), entity.Id.Value);
 
         repoTrxn.Delete(entity);
 

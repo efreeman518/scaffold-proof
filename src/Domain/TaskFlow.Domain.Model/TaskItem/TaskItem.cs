@@ -254,6 +254,13 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
         return DomainResult.Success(); // Always return success - desired state (tag not assigned) is achieved
     }
 
+    /// <summary>
+    /// Marks the aggregate changed for a child field update. Add and remove already Touch() through
+    /// the methods above; an in-place child edit (comment body, checklist item title) never passes
+    /// through the root, so the application layer states it explicitly and the root Version still moves.
+    /// </summary>
+    public void MarkChildMutated() => Touch();
+
     #endregion
 
     /// <summary>

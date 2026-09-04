@@ -62,6 +62,9 @@ public class TaskItemRepositoryTrxn(TaskFlowDbContextTrxn db)
     public Task<TaskItemTag?> GetTaskItemTagAsync(TaskItemId taskItemId, TagId tagId, CancellationToken ct = default) =>
         DB.Set<TaskItemTag>().FirstOrDefaultAsync(t => t.TaskItemId == taskItemId && t.TagId == tagId, ct);
 
+    /// <inheritdoc />
+    public void DeleteChild<TChild>(TChild child) where TChild : class => DB.Remove(child);
+
     /// <summary>
     /// Delegates DTO graph sync to the DbContext updater so EF change tracking and related deletes
     /// happen inside the same unit of work.
