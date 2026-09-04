@@ -1,9 +1,8 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
-using TaskFlow.Application.Contracts.Events;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Cqrs.Shared;
@@ -61,8 +60,7 @@ internal sealed class CreateTaskItemHandler(
     ILogger<CreateTaskItemHandler> logger,
     IRequestContext<string, Guid?> requestContext,
     ITaskItemRepositoryTrxn repoTrxn,
-    ITenantBoundaryValidator tenantBoundaryValidator,
-    IIntegrationEventPublisher eventPublisher)
+    ITenantBoundaryValidator tenantBoundaryValidator)
     : IRequestHandler<CreateTaskItemCommand, Result<DefaultResponse<TaskItemDto>>>
 {
     /// <summary>Handles create task item requests and returns the application result.</summary>
@@ -89,14 +87,6 @@ internal sealed class CreateTaskItemHandler(
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error creating TaskItem", ct);
         if (save.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(save.ErrorMessage!);
 
-        await CqrsHandlerSupport.TryPublishAsync(
-            eventPublisher,
-            new TaskItemCreatedEvent(entity.Id.Value, entity.TenantId.Value, entity.Title),
-            requestContext.CorrelationId,
-            logger,
-            "TaskItem:Create",
-            ct);
-
         return HandlerHelpers.Success(entity.ToDto());
     }
 }
@@ -106,8 +96,7 @@ internal sealed class UpdateTaskItemHandler(
     ILogger<UpdateTaskItemHandler> logger,
     IRequestContext<string, Guid?> requestContext,
     ITaskItemRepositoryTrxn repoTrxn,
-    ITenantBoundaryValidator tenantBoundaryValidator,
-    IIntegrationEventPublisher eventPublisher)
+    ITenantBoundaryValidator tenantBoundaryValidator)
     : IRequestHandler<UpdateTaskItemCommand, Result<DefaultResponse<TaskItemDto>>>
 {
     /// <summary>Handles update task item requests and returns the application result.</summary>
@@ -134,10 +123,9 @@ internal sealed class UpdateTaskItemHandler(
             logger, entity.TenantId.Value, dto.TenantId, nameof(TaskItem), entity.Id.Value);
         if (tenantChangeCheck.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(tenantChangeCheck.ErrorMessage!);
 
-        TaskItemStatus? oldStatus = null;
+        // The aggregate raises the status/completed events; the staging interceptor writes them (D-026).
         if (dto.Status != entity.Status)
         {
-            oldStatus = entity.Status;
             var transitionResult = entity.TransitionStatus(dto.Status);
             if (transitionResult.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(transitionResult.ErrorMessage!);
         }
@@ -170,17 +158,6 @@ internal sealed class UpdateTaskItemHandler(
 
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error updating TaskItem {Id}", ct, dto.Id);
         if (save.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(save.ErrorMessage!);
-
-        if (oldStatus.HasValue)
-        {
-            await CqrsHandlerSupport.TryPublishAsync(
-                eventPublisher,
-                new TaskItemStatusChangedEvent(entity.Id.Value, entity.TenantId.Value, oldStatus.Value, entity.Status),
-                requestContext.CorrelationId,
-                logger,
-                "TaskItem:Update",
-                ct);
-        }
 
         return HandlerHelpers.Success(entity.ToDto());
     }

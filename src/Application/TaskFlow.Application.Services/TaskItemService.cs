@@ -1,9 +1,7 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
-using TaskFlow.Application.Contracts.Events;
-using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Mappers;
@@ -18,8 +16,8 @@ namespace TaskFlow.Application.Services;
 
 /// <summary>
 /// Service-style TaskItem application boundary. It enforces tenant scope, delegates rules to the
-/// aggregate, persists through transaction repositories, and publishes integration events after
-/// successful saves without rolling back the saved entity if publishing fails.
+/// aggregate, and persists through transaction repositories. Integration events are raised by the
+/// aggregate and staged as outbox rows by the persistence interceptor (D-026); nothing is published here.
 /// </summary>
 internal class TaskItemService(
     ILogger<TaskItemService> logger,
@@ -27,8 +25,7 @@ internal class TaskItemService(
     ITaskItemRepositoryTrxn repoTrxn,
     ITaskItemRepositoryQuery repoQuery,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    IEntityCacheProvider cache,
-    IIntegrationEventPublisher eventPublisher) : ITaskItemService
+    IEntityCacheProvider cache) : ITaskItemService
 {
     private Guid? RequestTenantId => requestContext.TenantId;
     private IReadOnlyCollection<string> RequestRoles => requestContext.Roles;
@@ -117,17 +114,6 @@ internal class TaskItemService(
 
         var resultDto = entity.ToDto();
 
-        try
-        {
-            await eventPublisher.PublishAsync(
-                new TaskItemCreatedEvent(entity.Id.Value, entity.TenantId.Value, entity.Title),
-                requestContext.CorrelationId, ct);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to publish TaskItemCreatedEvent for {Id}; entity was saved successfully", entity.Id.Value);
-        }
-
         return Result<DefaultResponse<TaskItemDto>>.Success(BuildResponse(resultDto));
     }
 
@@ -157,11 +143,9 @@ internal class TaskItemService(
             logger, entity.TenantId.Value, dto.TenantId, nameof(TaskItem), entity.Id.Value);
         if (tenantChangeCheck.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(tenantChangeCheck.ErrorMessage!);
 
-        // Handle status transition if changed
-        TaskItemStatus? oldStatus = null;
+        // Handle status transition if changed. The aggregate raises the status/completed events (D-026).
         if (dto.Status != entity.Status)
         {
-            oldStatus = entity.Status;
             var transitionResult = entity.TransitionStatus(dto.Status);
             if (transitionResult.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(transitionResult.ErrorMessage!);
         }
@@ -207,20 +191,6 @@ internal class TaskItemService(
         }
 
         var resultDto = entity.ToDto();
-
-        if (oldStatus.HasValue)
-        {
-            try
-            {
-                await eventPublisher.PublishAsync(
-                    new TaskItemStatusChangedEvent(entity.Id.Value, entity.TenantId.Value, oldStatus.Value, entity.Status),
-                    requestContext.CorrelationId, ct);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to publish TaskItemStatusChangedEvent for {Id}; entity was saved successfully", entity.Id.Value);
-            }
-        }
 
         return Result<DefaultResponse<TaskItemDto>>.Success(BuildResponse(resultDto));
     }

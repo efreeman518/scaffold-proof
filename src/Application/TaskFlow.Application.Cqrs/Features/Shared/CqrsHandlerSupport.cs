@@ -1,14 +1,14 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using EF.CQRS.Validation;
 using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
-using TaskFlow.Application.Contracts.Messaging;
 
 namespace TaskFlow.Application.Cqrs.Shared;
 
 /// <summary>
 /// Shared CQRS handler helpers for behavior that must match service-style handlers:
-/// cancellation handling, optimistic save policy, best-effort event publishing, and validator bridging.
+/// cancellation handling, optimistic save policy, and validator bridging. Integration events are staged
+/// by the persistence interceptor (D-026), never published from a handler.
 /// </summary>
 internal static class CqrsHandlerSupport
 {
@@ -47,30 +47,6 @@ internal static class CqrsHandlerSupport
         {
             logger.LogError(ex, "{ErrorMessage} {@Args}", errorMessage, args);
             return Result.Failure(ex.GetBaseException().Message);
-        }
-    }
-
-    /// <summary>Provides the try publish operation for CQRS handler support.</summary>
-    public static async Task TryPublishAsync<TEvent>(
-        IIntegrationEventPublisher eventPublisher,
-        TEvent integrationEvent,
-        string? correlationId,
-        ILogger logger,
-        string path,
-        CancellationToken ct)
-        where TEvent : class
-    {
-        try
-        {
-            await eventPublisher.PublishAsync(integrationEvent, correlationId, ct);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(
-                ex,
-                "Failed to publish {Event} for {Path} CQRS path; persistence succeeded.",
-                typeof(TEvent).Name,
-                path);
         }
     }
 
