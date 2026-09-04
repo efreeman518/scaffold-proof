@@ -20,7 +20,7 @@ namespace Test.Integration;
 /// document with correct counts (comments, attachments, checklist totals/completed).
 /// Component tier: only SQL is exercised here (the Service Bus -> Function -> projection hop is covered
 /// by the mesh tier in <c>Test.Aspire</c>); contexts are built against a standalone SQL Testcontainer via
-/// <c>SqlContainerFixture</c> (started by <c>IntegrationTestSetup</c>) - no Aspire graph. The TaskView
+/// <c>DbContainerFixture</c> (started by <c>IntegrationTestSetup</c>) - no Aspire graph. The TaskView
 /// store is in-memory (<c>InMemoryTaskViewRepository</c>) - real Cosmos behavior is out of scope.
 /// </summary>
 [TestClass]
@@ -33,9 +33,9 @@ public class DomainEventPipelineTests
     [ClassInitialize]
     public static async Task ClassInit(TestContext _)
     {
-        if (IntegrationTestSetup.IsUnavailable(SqlContainerFixture.StartupError))
+        if (IntegrationTestSetup.IsUnavailable(DbContainerFixture.StartupError))
             return;
-        await using var db = SqlContainerFixture.CreateTrxnContext();
+        await using var db = DbContainerFixture.CreateTrxnContext();
         await db.Database.MigrateAsync(_.CancellationToken);
     }
 
@@ -43,7 +43,7 @@ public class DomainEventPipelineTests
     [TestInitialize]
     public void TestSetup()
     {
-        IntegrationTestSetup.AssertAvailable("SQL", SqlContainerFixture.StartupError);
+        IntegrationTestSetup.AssertAvailable("SQL", DbContainerFixture.StartupError);
     }
 
     /// <summary>Verifies that given task item created, when projection runs, then task view produced.</summary>
@@ -53,8 +53,8 @@ public class DomainEventPipelineTests
     public async Task Given_TaskItemCreated_When_ProjectionRuns_Then_TaskViewProduced()
     {
         // Arrange - real SQL via TestContainers
-        var connStr = SqlContainerFixture.ConnectionString;
-        var ctx = SqlContainerFixture.CreateTrxnContext(connStr);
+        var connStr = DbContainerFixture.ConnectionString;
+        var ctx = DbContainerFixture.CreateTrxnContext(connStr);
 
         var category = Category.Create(TenantId, "Work").Value!;
         ctx.Categories.Add(category);
@@ -68,7 +68,7 @@ public class DomainEventPipelineTests
         await ctx.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 
         // Create a query context for the repo
-        var queryCtx = SqlContainerFixture.CreateQueryContext(connStr);
+        var queryCtx = DbContainerFixture.CreateQueryContext(connStr);
         var taskItemRepo = new TaskItemRepositoryQuery(queryCtx, TestColumnEncryption.Keys);
         var attachmentRepo = new AttachmentRepositoryQuery(queryCtx);
 
@@ -100,8 +100,8 @@ public class DomainEventPipelineTests
     [Timeout(120000, CooperativeCancellation = true)]
     public async Task Given_TaskItemWithChildren_When_ProjectionRuns_Then_CountsIncluded()
     {
-        var connStr = SqlContainerFixture.ConnectionString;
-        var ctx = SqlContainerFixture.CreateTrxnContext(connStr);
+        var connStr = DbContainerFixture.ConnectionString;
+        var ctx = DbContainerFixture.CreateTrxnContext(connStr);
 
         var taskResult = TaskItem.Create(TenantId, "Task With Children");
         var task = taskResult.Value!;
@@ -123,7 +123,7 @@ public class DomainEventPipelineTests
 
         await ctx.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 
-        var queryCtx = SqlContainerFixture.CreateQueryContext(connStr);
+        var queryCtx = DbContainerFixture.CreateQueryContext(connStr);
         var taskViewRepo = new InMemoryTaskViewRepository();
         var projectionService = new TaskViewProjectionService(
             new TaskItemRepositoryQuery(queryCtx, TestColumnEncryption.Keys),

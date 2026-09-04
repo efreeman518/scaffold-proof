@@ -1,9 +1,7 @@
-﻿using EF.IntegrationTesting.Testcontainers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Infrastructure.Data;
-using TaskFlow.Infrastructure.Data.Encryption;
 using TaskFlow.Infrastructure.Data.Provider;
 using Test.Support;
 using Test.Support.Hosting;
@@ -11,13 +9,14 @@ using Test.Support.Hosting;
 namespace Test.E2E;
 
 /// <summary>
-/// Real-SQL-Server WebApplicationFactory backed by Testcontainers.
-/// Exercises the full stack: HTTP -> endpoint style -> application layer -> EF -> SQL.
+/// Real-database WebApplicationFactory backed by a Testcontainer for the provider selected by
+/// <c>TASKFLOW_TEST_DB_PROVIDER</c> (SQL Server default, PostgreSQL lane). Exercises the full stack:
+/// HTTP -> endpoint style -> application layer -> EF -> database.
 /// Set TASKFLOW_APPLICATION_STYLE=Cqrs to run the same workflow tests against CQRS endpoint mappings.
 /// </summary>
-public sealed class SqlApiFactory : WebApplicationFactoryBase<Program, TaskFlowDbContextTrxn, TaskFlowDbContextQuery>
+public sealed class DbApiFactory : WebApplicationFactoryBase<Program, TaskFlowDbContextTrxn, TaskFlowDbContextQuery>
 {
-    private static readonly MsSqlContainerFixture Sql = new();
+    private static readonly TestDatabaseContainer Db = new(TestDbProvider.Current);
     private static bool _started;
 
     private readonly string _applicationStyle;
@@ -26,15 +25,15 @@ public sealed class SqlApiFactory : WebApplicationFactoryBase<Program, TaskFlowD
 
     public static Exception? StartupError { get; private set; }
 
-    /// <summary>Initializes SQL API factory with required dependencies and default state.</summary>
-    public SqlApiFactory(string? applicationStyle = null)
+    /// <summary>Initializes the API factory with required dependencies and default state.</summary>
+    public DbApiFactory(string? applicationStyle = null)
     {
         _applicationStyle = applicationStyle
             ?? Environment.GetEnvironmentVariable(ApplicationStyleResolver.EnvironmentVariable)
             ?? ApplicationStyle.Service.ToString();
     }
 
-    /// <summary>Verifies start container behavior and protects the expected test contract.</summary>
+    /// <summary>Starts the database container once per test run.</summary>
     public static async Task StartContainerAsync(CancellationToken cancellationToken)
     {
         if (_started || DockerUnavailableReason is not null || StartupError is not null)
@@ -48,7 +47,7 @@ public sealed class SqlApiFactory : WebApplicationFactoryBase<Program, TaskFlowD
 
         try
         {
-            await Sql.StartAsync();
+            await Db.StartAsync();
             _started = true;
         }
         catch (Exception ex)
@@ -57,44 +56,33 @@ public sealed class SqlApiFactory : WebApplicationFactoryBase<Program, TaskFlowD
         }
     }
 
-    /// <summary>Verifies stop container behavior and protects the expected test contract.</summary>
+    /// <summary>Stops the database container.</summary>
     public static async Task StopContainerAsync()
     {
         if (!_started)
             return;
 
-        await Sql.DisposeAsync();
+        await Db.DisposeAsync();
         _started = false;
     }
 
-    /// <summary>Verifies configure test configuration behavior and protects the expected test contract.</summary>
+    /// <summary>Points the host at the container and selects the lane's provider (Database:Provider).</summary>
     protected override void ConfigureTestConfiguration(IConfigurationBuilder config)
     {
         AddFoundryLocalDisabled(config);
         config.AddInMemoryCollection(new Dictionary<string, string?>
         {
-            [ApplicationStyleResolver.ConfigKey] = _applicationStyle
+            [ApplicationStyleResolver.ConfigKey] = _applicationStyle,
+            [TaskFlowDbProviderSelector.ConfigurationKey] = Db.Provider.ToString()
         });
         config.AddInMemoryCollection(TestColumnEncryption.Configuration);
     }
 
     /// <summary>Builds trxn options used by focused test cases.</summary>
     protected override DbContextOptions BuildTrxnOptions() =>
-        BuildSqlServerOptions<TaskFlowDbContextTrxn>(Sql.ConnectionString);
+        Db.BuildOptions<TaskFlowDbContextTrxn>(null, TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName);
 
     /// <summary>Builds query options used by focused test cases.</summary>
     protected override DbContextOptions BuildQueryOptions() =>
-        BuildSqlServerOptions<TaskFlowDbContextQuery>(Sql.ConnectionString);
-
-    /// <summary>Builds provider options used by focused test cases.</summary>
-    private static DbContextOptions<TContext> BuildSqlServerOptions<TContext>(string connectionString)
-        where TContext : DbContext =>
-        new DbContextOptionsBuilder<TContext>()
-            .UseTaskFlowProvider(new TaskFlowProviderOptions(
-                TaskFlowDbProvider.SqlServer,
-                connectionString,
-                TaskFlowDbContextBase.MigrationHistoryTable,
-                TaskFlowDbContextBase.SchemaName))
-            .UseColumnEncryption(TestColumnEncryption.Encryptor)
-            .Options;
+        Db.BuildOptions<TaskFlowDbContextQuery>(null, TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName);
 }

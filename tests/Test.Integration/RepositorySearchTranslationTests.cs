@@ -27,10 +27,10 @@ public class RepositorySearchTranslationTests
     [ClassInitialize]
     public static async Task ClassInit(TestContext _)
     {
-        if (IntegrationTestSetup.IsUnavailable(SqlContainerFixture.StartupError))
+        if (IntegrationTestSetup.IsUnavailable(DbContainerFixture.StartupError))
             return;
 
-        await using var db = SqlContainerFixture.CreateTrxnContext();
+        await using var db = DbContainerFixture.CreateTrxnContext();
         await db.Database.MigrateAsync(_.CancellationToken);
     }
 
@@ -38,7 +38,7 @@ public class RepositorySearchTranslationTests
     [TestInitialize]
     public void TestSetup()
     {
-        IntegrationTestSetup.AssertAvailable("SQL", SqlContainerFixture.StartupError);
+        IntegrationTestSetup.AssertAvailable("SQL", DbContainerFixture.StartupError);
     }
 
     /// <summary>Verifies category search translates tenant, parent, bool, and string filters against SQL.</summary>
@@ -48,7 +48,7 @@ public class RepositorySearchTranslationTests
     {
         var marker = $"SearchCategory-{Guid.NewGuid():N}";
 
-        await using (var db = SqlContainerFixture.CreateTrxnContext())
+        await using (var db = DbContainerFixture.CreateTrxnContext())
         {
             var parent = new CategoryBuilder().WithTenantId(TenantId).WithName($"{marker}-Parent").Build();
             var child = new CategoryBuilder()
@@ -60,7 +60,7 @@ public class RepositorySearchTranslationTests
             db.Categories.AddRange(parent, child);
             await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 
-            await using var queryDb = SqlContainerFixture.CreateQueryContext();
+            await using var queryDb = DbContainerFixture.CreateQueryContext();
             var repo = new CategoryRepositoryQuery(queryDb);
             var page = await repo.SearchCategoriesAsync(new SearchRequest<CategorySearchFilter>
             {
@@ -88,13 +88,13 @@ public class RepositorySearchTranslationTests
     {
         var marker = $"SearchTag-{Guid.NewGuid():N}";
 
-        await using (var db = SqlContainerFixture.CreateTrxnContext())
+        await using (var db = DbContainerFixture.CreateTrxnContext())
         {
             db.Tags.Add(new TagBuilder().WithTenantId(TenantId).WithName(marker).Build());
             await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
         }
 
-        await using var queryDb = SqlContainerFixture.CreateQueryContext();
+        await using var queryDb = DbContainerFixture.CreateQueryContext();
         var repo = new TagRepositoryQuery(queryDb);
         var page = await repo.SearchTagsAsync(new SearchRequest<TagSearchFilter>
         {
@@ -116,7 +116,7 @@ public class RepositorySearchTranslationTests
         var marker = $"SearchComment-{Guid.NewGuid():N}";
         Guid taskId;
 
-        await using (var db = SqlContainerFixture.CreateTrxnContext())
+        await using (var db = DbContainerFixture.CreateTrxnContext())
         {
             var task = new TaskItemBuilder().WithTenantId(TenantId).WithTitle($"{marker}-Task").Build();
             db.TaskItems.Add(task);
@@ -125,7 +125,7 @@ public class RepositorySearchTranslationTests
             taskId = task.Id;
         }
 
-        await using var queryDb = SqlContainerFixture.CreateQueryContext();
+        await using var queryDb = DbContainerFixture.CreateQueryContext();
         var repo = new CommentRepositoryQuery(queryDb);
         var page = await repo.SearchCommentsAsync(new SearchRequest<CommentSearchFilter>
         {
@@ -147,7 +147,7 @@ public class RepositorySearchTranslationTests
         var marker = $"SearchChecklist-{Guid.NewGuid():N}";
         Guid taskId;
 
-        await using (var db = SqlContainerFixture.CreateTrxnContext())
+        await using (var db = DbContainerFixture.CreateTrxnContext())
         {
             var task = new TaskItemBuilder().WithTenantId(TenantId).WithTitle($"{marker}-Task").Build();
             db.TaskItems.Add(task);
@@ -160,7 +160,7 @@ public class RepositorySearchTranslationTests
             taskId = task.Id;
         }
 
-        await using var queryDb = SqlContainerFixture.CreateQueryContext();
+        await using var queryDb = DbContainerFixture.CreateQueryContext();
         var repo = new ChecklistItemRepositoryQuery(queryDb);
         var page = await repo.SearchChecklistItemsAsync(new SearchRequest<ChecklistItemSearchFilter>
         {
@@ -190,7 +190,7 @@ public class RepositorySearchTranslationTests
         Guid categoryId;
         Guid parentTaskItemId;
 
-        await using (var db = SqlContainerFixture.CreateTrxnContext())
+        await using (var db = DbContainerFixture.CreateTrxnContext())
         {
             var category = new CategoryBuilder().WithTenantId(TenantId).WithName($"{marker}-Category").Build();
             var parent = new TaskItemBuilder().WithTenantId(TenantId).WithTitle($"{marker}-Parent").Build();
@@ -211,7 +211,7 @@ public class RepositorySearchTranslationTests
             parentTaskItemId = parent.Id;
         }
 
-        await using var queryDb = SqlContainerFixture.CreateQueryContext();
+        await using var queryDb = DbContainerFixture.CreateQueryContext();
         var repo = new TaskItemRepositoryQuery(queryDb, TestColumnEncryption.Keys);
         var page = await repo.SearchTaskItemsAsync(new SearchRequest<TaskItemSearchFilter>
         {
@@ -237,6 +237,48 @@ public class RepositorySearchTranslationTests
         Assert.AreEqual(dueDate, page.Data[0].DueDate);
     }
 
+    /// <summary>
+    /// D-024: a caller-supplied DueBefore with a non-zero offset must translate on both providers (Npgsql rejects
+    /// non-UTC DateTimeOffset parameters unless the UTC converter normalizes them) and compare by instant.
+    /// </summary>
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task TaskItemSearch_DueBeforeWithNonUtcOffset_ComparesByInstant()
+    {
+        var marker = $"SearchOffset-{Guid.NewGuid():N}";
+        var dueUtc = new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
+
+        await using (var db = DbContainerFixture.CreateTrxnContext())
+        {
+            var task = new TaskItemBuilder().WithTenantId(TenantId).WithTitle($"{marker}-Due").Build();
+            task.UpdateDateRange(null, dueUtc);
+            db.TaskItems.Add(task);
+            await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
+        }
+
+        await using var queryDb = DbContainerFixture.CreateQueryContext();
+        var repo = new TaskItemRepositoryQuery(queryDb, TestColumnEncryption.Keys);
+
+        // 18:00 +05:00 is 13:00Z: one hour after the due instant, so the task is due before it.
+        var matching = await repo.SearchTaskItemsAsync(new SearchRequest<TaskItemSearchFilter>
+        {
+            PageIndex = 1,
+            PageSize = 10,
+            Filter = new TaskItemSearchFilter { SearchTerm = marker, TenantId = TenantId, DueBefore = new DateTimeOffset(2026, 6, 1, 18, 0, 0, TimeSpan.FromHours(5)) }
+        }, TestContext.CancellationToken);
+        // 16:00 +05:00 is 11:00Z: one hour before the due instant, so nothing matches.
+        var none = await repo.SearchTaskItemsAsync(new SearchRequest<TaskItemSearchFilter>
+        {
+            PageIndex = 1,
+            PageSize = 10,
+            Filter = new TaskItemSearchFilter { SearchTerm = marker, TenantId = TenantId, DueBefore = new DateTimeOffset(2026, 6, 1, 16, 0, 0, TimeSpan.FromHours(5)) }
+        }, TestContext.CancellationToken);
+
+        Assert.HasCount(1, matching.Data);
+        Assert.AreEqual(dueUtc, matching.Data[0].DueDate);
+        Assert.IsEmpty(none.Data);
+    }
+
     /// <summary>Verifies attachment search translates tenant, enum, owner ID, and string filters against SQL.</summary>
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
@@ -245,7 +287,7 @@ public class RepositorySearchTranslationTests
         var marker = $"SearchAttachment-{Guid.NewGuid():N}";
         var ownerId = Guid.NewGuid();
 
-        await using (var db = SqlContainerFixture.CreateTrxnContext())
+        await using (var db = DbContainerFixture.CreateTrxnContext())
         {
             db.Attachments.Add(new AttachmentBuilder()
                 .WithTenantId(TenantId)
@@ -256,7 +298,7 @@ public class RepositorySearchTranslationTests
             await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
         }
 
-        await using var queryDb = SqlContainerFixture.CreateQueryContext();
+        await using var queryDb = DbContainerFixture.CreateQueryContext();
         var repo = new AttachmentRepositoryQuery(queryDb);
         var page = await repo.SearchAttachmentsAsync(new SearchRequest<AttachmentSearchFilter>
         {

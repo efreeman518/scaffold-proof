@@ -11,6 +11,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 
 using Test.Support;
+using Test.Support.Hosting;
 
 namespace Test.Integration;
 
@@ -44,6 +45,7 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
         "RateLimiting__PerTenant__PermitLimit",
         "Database__Encryption__LocalKeyBase64",
         "Database__Encryption__BlindIndexKeyBase64",
+        "Database__Provider",
     ];
 
     private readonly Func<string, string> _chatReply;
@@ -72,6 +74,8 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
         {
             Environment.SetEnvironmentVariable(key, value);
         }
+        // The host must open the same provider as the container the test created the database on.
+        Environment.SetEnvironmentVariable("Database__Provider", TestDbProvider.Current.ToString());
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)

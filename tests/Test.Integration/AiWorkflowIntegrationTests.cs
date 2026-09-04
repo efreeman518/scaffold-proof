@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -93,18 +93,18 @@ public sealed class AiWorkflowIntegrationTests
 
     private static void SkipIfNoSql()
     {
-        IntegrationTestSetup.AssertAvailable("SQL", SqlContainerFixture.StartupError);
+        IntegrationTestSetup.AssertAvailable("SQL", DbContainerFixture.StartupError);
     }
 
     // Runtime hosts do not migrate. Component test owns schema prep before API factory starts.
     private static async Task<string> IsolatedMigratedConnectionStringAsync(CancellationToken ct)
     {
-        var connectionString = await SqlContainerFixture.CreateEmptyDatabaseConnectionStringAsync("TaskFlow_FlowEngineWorkflowTests");
+        var connectionString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("TaskFlow_FlowEngineWorkflowTests");
 
-        await using var trxn = SqlContainerFixture.CreateTrxnContext(connectionString);
+        await using var trxn = DbContainerFixture.CreateTrxnContext(connectionString);
         await trxn.Database.MigrateAsync(ct);
 
-        await using var flowEngine = SqlContainerFixture.CreateFlowEngineContext(connectionString);
+        await using var flowEngine = DbContainerFixture.CreateFlowEngineContext(connectionString);
         await flowEngine.Database.MigrateAsync(ct);
 
         return connectionString;

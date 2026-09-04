@@ -1,4 +1,4 @@
-using EF.Data.Contracts;
+﻿using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Application.Models;
 using TaskFlow.Domain.Model;
@@ -16,7 +16,7 @@ namespace Test.Integration;
 /// (CRUD, includes, many-to-many bridges, the tenant query filter, polymorphic-attachment indexing) work
 /// against the migrated schema.
 /// Component tier: instantiates contexts directly against a standalone SQL Testcontainer via
-/// <c>SqlContainerFixture</c> (started by <c>IntegrationTestSetup</c>) - no Aspire graph, no HTTP.
+/// <c>DbContainerFixture</c> (started by <c>IntegrationTestSetup</c>) - no Aspire graph, no HTTP.
 /// </summary>
 [TestClass]
 [TestCategory("Integration")]
@@ -30,7 +30,7 @@ public class MigrationAndRepositoryTests
     [TestInitialize]
     public void TestSetup()
     {
-        IntegrationTestSetup.AssertAvailable("SQL", SqlContainerFixture.StartupError);
+        IntegrationTestSetup.AssertAvailable("SQL", DbContainerFixture.StartupError);
     }
 
     /// <summary>Verifies migrations apply cleanly to SQL container behavior and protects the expected test contract.</summary>
@@ -38,7 +38,7 @@ public class MigrationAndRepositoryTests
     [Timeout(120000, CooperativeCancellation = true)]
     public async Task Migrations_ApplyCleanly_ToSqlContainer()
     {
-        await using var db = SqlContainerFixture.CreateTrxnContext();
+        await using var db = DbContainerFixture.CreateTrxnContext();
         await db.Database.MigrateAsync(TestContext.CancellationToken);
 
         Assert.IsTrue(await db.Database.CanConnectAsync(TestContext.CancellationToken));
@@ -48,7 +48,7 @@ public class MigrationAndRepositoryTests
         await conn.OpenAsync(TestContext.CancellationToken);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'taskflow'";
-        var tableCount = (int)(await cmd.ExecuteScalarAsync(TestContext.CancellationToken))!;
+        var tableCount = Convert.ToInt32(await cmd.ExecuteScalarAsync(TestContext.CancellationToken));
         Assert.IsGreaterThanOrEqualTo(7, tableCount, $"Expected >= 7 tables in taskflow schema, found {tableCount}");
     }
 
@@ -57,7 +57,7 @@ public class MigrationAndRepositoryTests
     [Timeout(120000, CooperativeCancellation = true)]
     public async Task Category_CrudOperations_WorkAgainstRealSql()
     {
-        await using var db = SqlContainerFixture.CreateTrxnContext();
+        await using var db = DbContainerFixture.CreateTrxnContext();
         await db.Database.MigrateAsync(TestContext.CancellationToken);
 
         // Create
@@ -92,7 +92,7 @@ public class MigrationAndRepositoryTests
     [Timeout(120000, CooperativeCancellation = true)]
     public async Task TaskItem_CrudOperations_WorkAgainstRealSql()
     {
-        await using var db = SqlContainerFixture.CreateTrxnContext();
+        await using var db = DbContainerFixture.CreateTrxnContext();
         await db.Database.MigrateAsync(TestContext.CancellationToken);
 
         // Create
@@ -128,7 +128,7 @@ public class MigrationAndRepositoryTests
     [Timeout(120000, CooperativeCancellation = true)]
     public async Task Tag_CrudOperations_WorkAgainstRealSql()
     {
-        await using var db = SqlContainerFixture.CreateTrxnContext();
+        await using var db = DbContainerFixture.CreateTrxnContext();
         await db.Database.MigrateAsync(TestContext.CancellationToken);
 
         var tag = new TagBuilder().WithName("IntegrationTag").WithColor("#00FF00").Build();
@@ -146,7 +146,7 @@ public class MigrationAndRepositoryTests
     [Timeout(120000, CooperativeCancellation = true)]
     public async Task TaskItem_WithChildren_PersistsCorrectly()
     {
-        await using var db = SqlContainerFixture.CreateTrxnContext();
+        await using var db = DbContainerFixture.CreateTrxnContext();
         await db.Database.MigrateAsync(TestContext.CancellationToken);
 
         // Create parent task
@@ -192,7 +192,7 @@ public class MigrationAndRepositoryTests
         Guid parentId;
 
         // Seed a bare parent task.
-        await using (var seed = SqlContainerFixture.CreateTrxnContext())
+        await using (var seed = DbContainerFixture.CreateTrxnContext())
         {
             await seed.Database.MigrateAsync(TestContext.CancellationToken);
             var seeded = new TaskItemBuilder().WithTenantId(TenantA).WithTitle("Updater Parent").Build();
@@ -202,7 +202,7 @@ public class MigrationAndRepositoryTests
         }
 
         // Reload the parent (tracked, with children) in a fresh context - mirrors the handler/service path.
-        await using var db = SqlContainerFixture.CreateTrxnContext();
+        await using var db = DbContainerFixture.CreateTrxnContext();
         var typedParentId = DomainId.From<TaskItemId>(parentId);
         var loaded = await db.TaskItems
             .IgnoreQueryFilters()
@@ -228,7 +228,7 @@ public class MigrationAndRepositoryTests
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 
         // Verify the children actually persisted via a clean reload.
-        await using var verify = SqlContainerFixture.CreateTrxnContext();
+        await using var verify = DbContainerFixture.CreateTrxnContext();
         var reloaded = await verify.TaskItems
             .IgnoreQueryFilters()
             .Include(t => t.Comments)
@@ -246,7 +246,7 @@ public class MigrationAndRepositoryTests
     [Timeout(120000, CooperativeCancellation = true)]
     public async Task TaskItemTag_ManyToMany_WorksCorrectly()
     {
-        await using var db = SqlContainerFixture.CreateTrxnContext();
+        await using var db = DbContainerFixture.CreateTrxnContext();
         await db.Database.MigrateAsync(TestContext.CancellationToken);
 
         var task = new TaskItemBuilder().WithTitle("Tagged Task").Build();
@@ -276,7 +276,7 @@ public class MigrationAndRepositoryTests
     [Timeout(120000, CooperativeCancellation = true)]
     public async Task TenantQueryFilter_FiltersByTenant_WhenTenantIdSet()
     {
-        await using var db = SqlContainerFixture.CreateTrxnContext();
+        await using var db = DbContainerFixture.CreateTrxnContext();
         await db.Database.MigrateAsync(TestContext.CancellationToken);
 
         // Insert categories for two different tenants
@@ -291,8 +291,8 @@ public class MigrationAndRepositoryTests
         var conn = db.Database.GetDbConnection();
         if (conn.State != System.Data.ConnectionState.Open) await conn.OpenAsync(TestContext.CancellationToken);
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT COUNT(*) FROM taskflow.Category WHERE Name LIKE 'Tenant%Cat'";
-        var rawCount = (int)(await cmd.ExecuteScalarAsync(TestContext.CancellationToken))!;
+        cmd.CommandText = "SELECT COUNT(*) FROM taskflow.\"Category\" WHERE \"Name\" LIKE 'Tenant%Cat'";
+        var rawCount = Convert.ToInt32(await cmd.ExecuteScalarAsync(TestContext.CancellationToken));
         Assert.IsGreaterThanOrEqualTo(rawCount, 2, $"Expected at least 2 categories in raw query, found {rawCount}");
 
         // When query filter is active, only matching tenant data is visible.
@@ -321,7 +321,7 @@ public class MigrationAndRepositoryTests
     [Timeout(120000, CooperativeCancellation = true)]
     public async Task Attachment_TableAndConstraints_ExistCorrectly()
     {
-        await using var db = SqlContainerFixture.CreateTrxnContext();
+        await using var db = DbContainerFixture.CreateTrxnContext();
         await db.Database.MigrateAsync(TestContext.CancellationToken);
 
         // Verify Attachments table exists with expected columns
@@ -333,18 +333,18 @@ public class MigrationAndRepositoryTests
             SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
             WHERE TABLE_SCHEMA = 'taskflow' AND TABLE_NAME = 'Attachment'
             AND COLUMN_NAME IN ('Id','TenantId','FileName','ContentType','FileSizeBytes','StorageUri','OwnerType','OwnerId')";
-        var colCount = (int)(await cmd.ExecuteScalarAsync(TestContext.CancellationToken))!;
+        var colCount = Convert.ToInt32(await cmd.ExecuteScalarAsync(TestContext.CancellationToken));
         Assert.AreEqual(8, colCount, "Attachments table should have 8 expected columns");
 
-        // Verify polymorphic index exists
-        await using var idxCmd = conn.CreateCommand();
-        idxCmd.CommandText = @"
-            SELECT COUNT(*) FROM sys.indexes i
-            JOIN sys.tables t ON i.object_id = t.object_id
-            JOIN sys.schemas s ON t.schema_id = s.schema_id
-            WHERE s.name = 'taskflow' AND t.name = 'Attachment' AND i.name LIKE '%OwnerType_OwnerId%'";
-        var idxCount = (int)(await idxCmd.ExecuteScalarAsync(TestContext.CancellationToken))!;
-        Assert.AreEqual(1, idxCount, "Expected composite index on OwnerType+OwnerId");
+        // D-022 shape, asserted on the EF model (provider-neutral): composite tenant-first PK and the polymorphic owner index.
+        var entityType = db.Model.FindEntityType(typeof(Attachment))!;
+        CollectionAssert.AreEqual(
+            new[] { nameof(Attachment.TenantId), nameof(Attachment.Id) },
+            entityType.FindPrimaryKey()!.Properties.Select(p => p.Name).ToArray());
+        var ownerIndex = entityType.GetIndexes().Single(i => i.GetDatabaseName() == "IX_Attachment_TenantId_OwnerType_OwnerId_Id");
+        CollectionAssert.AreEqual(
+            new[] { nameof(Attachment.TenantId), nameof(Attachment.OwnerType), nameof(Attachment.OwnerId), nameof(Attachment.Id) },
+            ownerIndex.Properties.Select(p => p.Name).ToArray());
     }
 
     public TestContext TestContext { get; set; } = null!;

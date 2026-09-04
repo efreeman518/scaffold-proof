@@ -1,28 +1,31 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TaskFlow.Bootstrapper;
 using TaskFlow.Infrastructure.Data;
+using TaskFlow.Infrastructure.Data.Provider;
 using Test.Support;
 
 namespace Test.Unit.Infrastructure;
 
-/// <summary>Verifies runtime database registration preserves schema-owned migration history.</summary>
+/// <summary>Verifies runtime database registration selects the configured provider and pins the schema-owned migration history.</summary>
 [TestClass]
 public sealed class DatabaseRegistrationTests
 {
     [TestMethod]
-    public void RegisterInfrastructureServices_PinsPrimaryMigrationHistoryToTaskFlowSchema()
+    [DataRow(TaskFlowDbProvider.SqlServer, "Server=localhost;Database=TaskFlowRegistration;User Id=sa;Password=NotARealPassword1!;TrustServerCertificate=true", "[taskflow].[__EFMigrationsHistory]")]
+    [DataRow(TaskFlowDbProvider.PostgreSql, "Host=localhost;Database=TaskFlowRegistration;Username=postgres;Password=NotARealPassword1!", "taskflow.\"__EFMigrationsHistory\"")]
+    public void RegisterInfrastructureServices_PinsPrimaryMigrationHistoryToTaskFlowSchema(
+        TaskFlowDbProvider provider, string connectionString, string expectedHistoryTable)
     {
-        const string connectionString =
-            "Server=localhost;Database=TaskFlowRegistration;User Id=sa;Password=NotARealPassword1!;TrustServerCertificate=true";
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:TaskFlowDbContextTrxn"] = connectionString,
-                ["ConnectionStrings:TaskFlowDbContextQuery"] = connectionString
+                ["ConnectionStrings:TaskFlowDbContextQuery"] = connectionString,
+                [TaskFlowDbProviderSelector.ConfigurationKey] = provider.ToString()
             })
             .AddInMemoryCollection(TestColumnEncryption.Configuration)
             .Build();
@@ -30,14 +33,14 @@ public sealed class DatabaseRegistrationTests
         services.AddLogging();
         services.RegisterInfrastructureServices(configuration);
 
-        using var provider = services.BuildServiceProvider();
-        using var scope = provider.CreateScope();
+        using var serviceProvider = services.BuildServiceProvider();
+        using var scope = serviceProvider.CreateScope();
         var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TaskFlowDbContextTrxn>>();
         using var db = factory.CreateDbContext();
         var createScript = db.GetService<IHistoryRepository>().GetCreateScript();
 
-        StringAssert.Contains(
-            createScript,
-            $"[{TaskFlowDbContextBase.SchemaName}].[{TaskFlowDbContextBase.MigrationHistoryTable}]");
+        Assert.AreEqual(provider == TaskFlowDbProvider.SqlServer, db.Database.IsSqlServer());
+        Assert.AreEqual(provider == TaskFlowDbProvider.PostgreSql, db.Database.IsNpgsql());
+        StringAssert.Contains(createScript, expectedHistoryTable);
     }
 }
