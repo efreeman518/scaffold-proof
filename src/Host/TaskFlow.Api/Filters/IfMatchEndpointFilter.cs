@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
+using System.Globalization;
 using TaskFlow.Application.Contracts;
+using TaskFlow.Application.Contracts.Concurrency;
 
 namespace TaskFlow.Api.Filters;
 
@@ -43,7 +45,29 @@ internal sealed class IfMatchEndpointFilter(ILogger<IfMatchEndpointFilter> logge
                 "If-Match wildcard override on {Method} {Path}", httpContext.Request.Method, httpContext.Request.Path);
         }
 
-        return await next(context);
+        try
+        {
+            return await next(context);
+        }
+        catch (ConcurrencyMismatchException mismatch)
+        {
+            // Answered here rather than by the global handler because ASP.NET Core's exception
+            // middleware clears caching headers - the ETag included - on its way out, and the current
+            // version is the whole point of this 412: without it the caller must issue an extra GET
+            // before it can retry.
+            httpContext.Response.Headers.ETag =
+                $"\"{mismatch.Current.ToString(CultureInfo.InvariantCulture)}\"";
+
+            logger.LogWarning(
+                "Precondition failed on {Method} {Path}: expected version {Expected}, current {Current}",
+                httpContext.Request.Method, httpContext.Request.Path, mismatch.Expected, mismatch.Current);
+
+            return Results.Problem(
+                title: "Precondition failed",
+                detail: mismatch.Message,
+                statusCode: StatusCodes.Status412PreconditionFailed,
+                instance: $"{httpContext.Request.Method} {httpContext.Request.Path}");
+        }
     }
 }
 

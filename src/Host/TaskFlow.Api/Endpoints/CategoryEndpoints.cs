@@ -20,7 +20,8 @@ public static class CategoryEndpoints
     {
         _problemDetailsIncludeStackTrace = problemDetailsIncludeStackTrace;
 
-        var g = group.MapGroup("/categories").WithTags("Categories");
+        var g = group.MapGroup("/categories").WithTags("Categories")
+            .AddEndpointFilter<ETagEndpointFilter>();
 
         g.MapPost("/search", Search)
             .Produces<PagedResponse<CategoryDto>>(StatusCodes.Status200OK)
@@ -93,8 +94,11 @@ public static class CategoryEndpoints
             response => response.IsReplay
                 ? TypedResults.Ok(response)
                 : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response),
+            // Create rejections are caller-input failures (a bad payload, a non-v7 id): 400, not the
+            // 500 the untyped helper defaults to.
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, traceId: httpContext.TraceIdentifier,
+                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
+                traceId: httpContext.TraceIdentifier,
                 includeStackTrace: _problemDetailsIncludeStackTrace)));
     }
 

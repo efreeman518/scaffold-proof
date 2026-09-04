@@ -62,7 +62,7 @@ public class AiDemoServiceTests
             .ReturnsAsync(Result<DefaultResponse<TaskItemDto>>.Success(new DefaultResponse<TaskItemDto> { Item = task }));
         taskItemService
             .Setup(x => x.UpdateAsync(It.IsAny<DefaultRequest<TaskItemDto>>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((DefaultRequest<TaskItemDto> request, CancellationToken _) =>
+            .ReturnsAsync((DefaultRequest<TaskItemDto> request, long? _, CancellationToken _) =>
                 Result<DefaultResponse<TaskItemDto>>.Success(new DefaultResponse<TaskItemDto> { Item = request.Item }));
 
         var chatClient = new StaticChatClient("""

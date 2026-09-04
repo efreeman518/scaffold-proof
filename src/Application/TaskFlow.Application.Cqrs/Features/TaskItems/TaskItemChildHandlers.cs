@@ -51,7 +51,7 @@ internal sealed class AddTaskItemCommentHandler(
                     throw new IdempotentCreateConflictException(nameof(Comment), callerId);
 
                 return Result<DefaultResponse<CommentDto>>.Success(
-                    new DefaultResponse<CommentDto> { Item = existingDto, IsReplay = true });
+                    new DefaultResponse<CommentDto> { Item = existingDto, IsReplay = true, AggregateVersion = entity.Version });
             }
         }
 
@@ -61,7 +61,7 @@ internal sealed class AddTaskItemCommentHandler(
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error adding Comment to TaskItem {Id}", ct, command.TaskItemId);
         if (save.IsFailure) return Result<DefaultResponse<CommentDto>>.Failure(save.ErrorMessage!);
 
-        return HandlerHelpers.Success(addResult.Value!.ToDto());
+        return HandlerHelpers.SuccessForChild(addResult.Value!.ToDto(), entity.Version);
     }
 }
 
@@ -94,7 +94,7 @@ internal sealed class UpdateTaskItemCommentHandler(
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error updating Comment {CommentId} on TaskItem {Id}", ct, command.CommentId, command.TaskItemId);
         if (save.IsFailure) return Result<DefaultResponse<CommentDto>>.Failure(save.ErrorMessage!);
 
-        return HandlerHelpers.Success(comment.ToDto());
+        return HandlerHelpers.SuccessForChild(comment.ToDto(), entity.Version);
     }
 }
 
@@ -160,7 +160,7 @@ internal sealed class AddTaskItemChecklistItemHandler(
                     throw new IdempotentCreateConflictException(nameof(ChecklistItem), callerId);
 
                 return Result<DefaultResponse<ChecklistItemDto>>.Success(
-                    new DefaultResponse<ChecklistItemDto> { Item = existingDto, IsReplay = true });
+                    new DefaultResponse<ChecklistItemDto> { Item = existingDto, IsReplay = true, AggregateVersion = entity.Version });
             }
         }
 
@@ -176,7 +176,7 @@ internal sealed class AddTaskItemChecklistItemHandler(
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error adding ChecklistItem to TaskItem {Id}", ct, command.TaskItemId);
         if (save.IsFailure) return Result<DefaultResponse<ChecklistItemDto>>.Failure(save.ErrorMessage!);
 
-        return HandlerHelpers.Success(addResult.Value!.ToDto());
+        return HandlerHelpers.SuccessForChild(addResult.Value!.ToDto(), entity.Version);
     }
 }
 
@@ -209,7 +209,7 @@ internal sealed class UpdateTaskItemChecklistItemHandler(
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error updating ChecklistItem {ChecklistItemId} on TaskItem {Id}", ct, command.ChecklistItemId, command.TaskItemId);
         if (save.IsFailure) return Result<DefaultResponse<ChecklistItemDto>>.Failure(save.ErrorMessage!);
 
-        return HandlerHelpers.Success(item.ToDto());
+        return HandlerHelpers.SuccessForChild(item.ToDto(), entity.Version);
     }
 }
 
@@ -264,7 +264,7 @@ internal sealed class AssociateTaskItemTagHandler(
         var existing = await TaskItemChildLoader.LoadTaskItemTagAsync(repoTrxn, command.TaskItemId, command.TagId, ct);
         if (existing is not null)
             return Result<DefaultResponse<TaskItemTagDto>>.Success(
-                new DefaultResponse<TaskItemTagDto> { Item = existing.ToDto(), IsReplay = true });
+                new DefaultResponse<TaskItemTagDto> { Item = existing.ToDto(), IsReplay = true, AggregateVersion = entity.Version });
 
         var associateResult = entity.AssociateTag(DomainId.From<TagId>(command.TagId));
         if (associateResult.IsFailure) return Result<DefaultResponse<TaskItemTagDto>>.Failure(associateResult.ErrorMessage!);
@@ -272,7 +272,7 @@ internal sealed class AssociateTaskItemTagHandler(
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error associating Tag {TagId} with TaskItem {Id}", ct, command.TagId, command.TaskItemId);
         if (save.IsFailure) return Result<DefaultResponse<TaskItemTagDto>>.Failure(save.ErrorMessage!);
 
-        return HandlerHelpers.Success(associateResult.Value!.ToDto());
+        return HandlerHelpers.SuccessForChild(associateResult.Value!.ToDto(), entity.Version);
     }
 }
 

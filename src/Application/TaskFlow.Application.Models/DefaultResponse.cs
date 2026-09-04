@@ -16,7 +16,15 @@ public record DefaultResponse<T> : IETagCarrier
     [JsonIgnore]
     public bool IsReplay { get; init; }
 
-    /// <summary>ETag currency for this response - the aggregate version carried by the item.</summary>
+    /// <summary>
+    /// Root aggregate version, set by child responses (D-031). A comment or checklist item carries its
+    /// own row Version for display, but the ETag currency of the whole aggregate is the root's, so
+    /// this wins when present.
+    /// </summary>
     [JsonIgnore]
-    public long? ETagVersion => Item is EntityBaseDto dto ? dto.Version : null;
+    public long? AggregateVersion { get; init; }
+
+    /// <summary>ETag currency for this response.</summary>
+    [JsonIgnore]
+    public long? ETagVersion => AggregateVersion ?? (Item is EntityBaseDto dto ? dto.Version : null);
 }

@@ -20,6 +20,11 @@ internal static class HandlerHelpers
     public static Result<DefaultResponse<TDto>> Success<TDto>(TDto? dto) =>
         Result<DefaultResponse<TDto>>.Success(BuildResponse(dto));
 
+    /// <summary>Success envelope for a child of the TaskItem aggregate, tagged with the root version (D-031).</summary>
+    public static Result<DefaultResponse<TDto>> SuccessForChild<TDto>(TDto? dto, long aggregateVersion) =>
+        Result<DefaultResponse<TDto>>.Success(
+            new DefaultResponse<TDto> { Item = dto, TenantInfo = null, AggregateVersion = aggregateVersion });
+
     /// <summary>Provides the not found response operation for handler helpers.</summary>
     public static Result<DefaultResponse<TDto>> NotFoundResponse<TDto>() =>
         Success<TDto>(default);

@@ -94,8 +94,11 @@ public static class TagEndpoints
             response => response.IsReplay
                 ? TypedResults.Ok(response)
                 : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response),
+            // Create rejections are caller-input failures (a bad payload, a non-v7 id): 400, not the
+            // 500 the untyped helper defaults to.
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, traceId: httpContext.TraceIdentifier,
+                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
+                traceId: httpContext.TraceIdentifier,
                 includeStackTrace: _problemDetailsIncludeStackTrace)));
     }
 

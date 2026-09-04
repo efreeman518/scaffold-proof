@@ -394,7 +394,7 @@ internal class TaskItemService(
                     throw new IdempotentCreateConflictException(nameof(Comment), callerId);
 
                 return Result<DefaultResponse<CommentDto>>.Success(
-                    new DefaultResponse<CommentDto> { Item = existingDto, IsReplay = true });
+                    new DefaultResponse<CommentDto> { Item = existingDto, IsReplay = true, AggregateVersion = entity.Version });
             }
         }
 
@@ -404,7 +404,8 @@ internal class TaskItemService(
         var save = await SaveAggregateAsync("Error adding Comment to TaskItem {Id}", ct, taskItemId);
         if (save.IsFailure) return Result<DefaultResponse<CommentDto>>.Failure(save.ErrorMessage!);
 
-        return Result<DefaultResponse<CommentDto>>.Success(new DefaultResponse<CommentDto> { Item = addResult.Value!.ToDto() });
+        return Result<DefaultResponse<CommentDto>>.Success(
+            new DefaultResponse<CommentDto> { Item = addResult.Value!.ToDto(), AggregateVersion = entity.Version });
     }
 
     /// <summary>Updates a comment owned by a TaskItem through the aggregate root.</summary>
@@ -427,7 +428,8 @@ internal class TaskItemService(
         var save = await SaveAggregateAsync("Error updating Comment {CommentId} on TaskItem {Id}", ct, commentId, taskItemId);
         if (save.IsFailure) return Result<DefaultResponse<CommentDto>>.Failure(save.ErrorMessage!);
 
-        return Result<DefaultResponse<CommentDto>>.Success(new DefaultResponse<CommentDto> { Item = target.ToDto() });
+        return Result<DefaultResponse<CommentDto>>.Success(
+            new DefaultResponse<CommentDto> { Item = target.ToDto(), AggregateVersion = entity.Version });
     }
 
     /// <summary>Removes a comment from a TaskItem through the aggregate root.</summary>
@@ -471,7 +473,7 @@ internal class TaskItemService(
                     throw new IdempotentCreateConflictException(nameof(ChecklistItem), callerId);
 
                 return Result<DefaultResponse<ChecklistItemDto>>.Success(
-                    new DefaultResponse<ChecklistItemDto> { Item = existingDto, IsReplay = true });
+                    new DefaultResponse<ChecklistItemDto> { Item = existingDto, IsReplay = true, AggregateVersion = entity.Version });
             }
         }
 
@@ -483,7 +485,8 @@ internal class TaskItemService(
         var save = await SaveAggregateAsync("Error adding ChecklistItem to TaskItem {Id}", ct, taskItemId);
         if (save.IsFailure) return Result<DefaultResponse<ChecklistItemDto>>.Failure(save.ErrorMessage!);
 
-        return Result<DefaultResponse<ChecklistItemDto>>.Success(new DefaultResponse<ChecklistItemDto> { Item = addResult.Value!.ToDto() });
+        return Result<DefaultResponse<ChecklistItemDto>>.Success(
+            new DefaultResponse<ChecklistItemDto> { Item = addResult.Value!.ToDto(), AggregateVersion = entity.Version });
     }
 
     /// <summary>Updates a checklist item owned by a TaskItem through the aggregate root.</summary>
@@ -505,7 +508,8 @@ internal class TaskItemService(
         var save = await SaveAggregateAsync("Error updating ChecklistItem {ChecklistItemId} on TaskItem {Id}", ct, checklistItemId, taskItemId);
         if (save.IsFailure) return Result<DefaultResponse<ChecklistItemDto>>.Failure(save.ErrorMessage!);
 
-        return Result<DefaultResponse<ChecklistItemDto>>.Success(new DefaultResponse<ChecklistItemDto> { Item = target.ToDto() });
+        return Result<DefaultResponse<ChecklistItemDto>>.Success(
+            new DefaultResponse<ChecklistItemDto> { Item = target.ToDto(), AggregateVersion = entity.Version });
     }
 
     /// <summary>Removes a checklist item from a TaskItem through the aggregate root.</summary>
@@ -538,7 +542,7 @@ internal class TaskItemService(
         var existing = await TaskItemChildLoader.LoadTaskItemTagAsync(repoTrxn, taskItemId, tagId, ct);
         if (existing is not null)
             return Result<DefaultResponse<TaskItemTagDto>>.Success(
-                new DefaultResponse<TaskItemTagDto> { Item = existing.ToDto(), IsReplay = true });
+                new DefaultResponse<TaskItemTagDto> { Item = existing.ToDto(), IsReplay = true, AggregateVersion = entity.Version });
 
         var associateResult = entity.AssociateTag(DomainId.From<TagId>(tagId));
         if (associateResult.IsFailure) return Result<DefaultResponse<TaskItemTagDto>>.Failure(associateResult.ErrorMessage!);
@@ -546,7 +550,8 @@ internal class TaskItemService(
         var save = await SaveAggregateAsync("Error associating Tag {TagId} with TaskItem {Id}", ct, tagId, taskItemId);
         if (save.IsFailure) return Result<DefaultResponse<TaskItemTagDto>>.Failure(save.ErrorMessage!);
 
-        return Result<DefaultResponse<TaskItemTagDto>>.Success(new DefaultResponse<TaskItemTagDto> { Item = associateResult.Value!.ToDto() });
+        return Result<DefaultResponse<TaskItemTagDto>>.Success(
+            new DefaultResponse<TaskItemTagDto> { Item = associateResult.Value!.ToDto(), AggregateVersion = entity.Version });
     }
 
     /// <summary>Removes a Tag association from a TaskItem through the aggregate root.</summary>
