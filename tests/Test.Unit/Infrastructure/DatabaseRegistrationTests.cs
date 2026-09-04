@@ -1,10 +1,11 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TaskFlow.Bootstrapper;
 using TaskFlow.Infrastructure.Data;
+using Test.Support;
 
 namespace Test.Unit.Infrastructure;
 
@@ -23,6 +24,7 @@ public sealed class DatabaseRegistrationTests
                 ["ConnectionStrings:TaskFlowDbContextTrxn"] = connectionString,
                 ["ConnectionStrings:TaskFlowDbContextQuery"] = connectionString
             })
+            .AddInMemoryCollection(TestColumnEncryption.Configuration)
             .Build();
         var services = new ServiceCollection();
         services.AddLogging();

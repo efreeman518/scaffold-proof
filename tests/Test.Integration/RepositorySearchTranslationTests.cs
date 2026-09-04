@@ -1,4 +1,4 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Application.Models;
@@ -212,7 +212,7 @@ public class RepositorySearchTranslationTests
         }
 
         await using var queryDb = SqlContainerFixture.CreateQueryContext();
-        var repo = new TaskItemRepositoryQuery(queryDb);
+        var repo = new TaskItemRepositoryQuery(queryDb, TestColumnEncryption.Keys);
         var page = await repo.SearchTaskItemsAsync(new SearchRequest<TaskItemSearchFilter>
         {
             PageIndex = 1,

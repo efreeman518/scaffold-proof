@@ -1,4 +1,4 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Application.Models;
@@ -6,6 +6,8 @@ using TaskFlow.Domain.Model;
 using TaskFlow.Infrastructure.Repositories;
 using Test.Integration.Infrastructure;
 using Test.Support.Builders;
+
+using Test.Support;
 
 namespace Test.Integration;
 
@@ -75,7 +77,7 @@ public sealed class StablePaginationIntegrationTests
                 .ToArrayAsync(TestContext.CancellationToken);
 
             await using var queryDb = SqlContainerFixture.CreateQueryContext();
-            var repository = new TaskItemRepositoryQuery(queryDb);
+            var repository = new TaskItemRepositoryQuery(queryDb, TestColumnEncryption.Keys);
             var actual = new List<Guid>();
 
             for (var pageIndex = 1; pageIndex <= 3; pageIndex++)

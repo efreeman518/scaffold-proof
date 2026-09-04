@@ -2,6 +2,9 @@
 
   <ItemGroup>
     <PackageReference Include="EF.Data" />
+    <!-- D-023 Key Vault RSA-OAEP unwrap of the column data-encryption key (KeyVaultDekProvider). -->
+    <PackageReference Include="Azure.Identity" />
+    <PackageReference Include="Azure.Security.KeyVault.Keys" />
     <PackageReference Include="EF.Common.Contracts" />
     <PackageReference Include="EF.Domain.Contracts" />
     <PackageReference Include="EF.FlowEngine.StateStore.Sql" />

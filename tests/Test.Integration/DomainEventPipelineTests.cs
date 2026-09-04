@@ -1,4 +1,4 @@
-using EF.Data.Contracts;
+﻿using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Text.Json;
@@ -9,6 +9,8 @@ using TaskFlow.Domain.Shared;
 using TaskFlow.Domain.Shared.Enums;
 using TaskFlow.Infrastructure.Repositories;
 using Test.Integration.Infrastructure;
+
+using Test.Support;
 
 namespace Test.Integration;
 
@@ -67,7 +69,7 @@ public class DomainEventPipelineTests
 
         // Create a query context for the repo
         var queryCtx = SqlContainerFixture.CreateQueryContext(connStr);
-        var taskItemRepo = new TaskItemRepositoryQuery(queryCtx);
+        var taskItemRepo = new TaskItemRepositoryQuery(queryCtx, TestColumnEncryption.Keys);
         var attachmentRepo = new AttachmentRepositoryQuery(queryCtx);
 
         // In-memory task view store (simulates Cosmos)
@@ -124,7 +126,7 @@ public class DomainEventPipelineTests
         var queryCtx = SqlContainerFixture.CreateQueryContext(connStr);
         var taskViewRepo = new InMemoryTaskViewRepository();
         var projectionService = new TaskViewProjectionService(
-            new TaskItemRepositoryQuery(queryCtx),
+            new TaskItemRepositoryQuery(queryCtx, TestColumnEncryption.Keys),
             new AttachmentRepositoryQuery(queryCtx),
             taskViewRepo,
             NullLogger<TaskViewProjectionService>.Instance);

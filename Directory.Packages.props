@@ -186,10 +186,8 @@
   <ItemGroup Label="AI Services">
     <PackageVersion Include="Azure.AI.OpenAI" Version="2.9.0-beta.1" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
-    <!-- Temporary exception: EF.Data owns the Always Encrypted provider family and a mismatched direct version can break provider registration.
-         Reason: match the family selected by EF.Data. Remove when EF.Data permits the latest stable provider independently.
-         Validate with restore, full build, and the deployment-only Key Vault/CMK acceptance gate. -->
-    <PackageVersion Include="Microsoft.Data.SqlClient.AlwaysEncrypted.AzureKeyVaultProvider" Version="7.0.2" />
+    <!-- D-023 column encryption: Key Vault RSA-OAEP unwrap of the data-encryption key. -->
+    <PackageVersion Include="Azure.Security.KeyVault.Keys" Version="4.10.0" />
     <PackageVersion Include="Azure.Search.Documents" Version="12.0.0" />
     <PackageVersion Include="Microsoft.Agents.AI" Version="1.20.0" />
     <PackageVersion Include="Microsoft.Agents.AI.OpenAI" Version="1.20.0" />

@@ -2,7 +2,10 @@
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Infrastructure.Data;
+using TaskFlow.Infrastructure.Data.Encryption;
+using TaskFlow.Infrastructure.Data.Interceptors;
 using TaskFlow.Infrastructure.Data.Provider;
+using Test.Support;
 
 namespace Test.Integration.Infrastructure;
 
@@ -85,5 +88,7 @@ internal static class SqlContainerFixture
                 connString ?? Sql.ConnectionString,
                 historyTable,
                 historySchema))
+            .UseColumnEncryption(TestColumnEncryption.Encryptor)
+            .AddInterceptors(new VersionTimestampInterceptor(), new BlindIndexInterceptor(TestColumnEncryption.Keys.BlindIndexKey))
             .Options;
 }

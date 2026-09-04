@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Infrastructure.Data;
+using TaskFlow.Infrastructure.Data.Encryption;
 using TaskFlow.Infrastructure.Data.Provider;
 using Test.Support;
 using Test.Support.Hosting;
@@ -74,6 +75,7 @@ public sealed class SqlApiFactory : WebApplicationFactoryBase<Program, TaskFlowD
         {
             [ApplicationStyleResolver.ConfigKey] = _applicationStyle
         });
+        config.AddInMemoryCollection(TestColumnEncryption.Configuration);
     }
 
     /// <summary>Builds trxn options used by focused test cases.</summary>
@@ -93,5 +95,6 @@ public sealed class SqlApiFactory : WebApplicationFactoryBase<Program, TaskFlowD
                 connectionString,
                 TaskFlowDbContextBase.MigrationHistoryTable,
                 TaskFlowDbContextBase.SchemaName))
+            .UseColumnEncryption(TestColumnEncryption.Encryptor)
             .Options;
 }

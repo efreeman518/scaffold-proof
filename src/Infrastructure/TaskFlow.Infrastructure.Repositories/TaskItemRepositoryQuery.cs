@@ -10,6 +10,8 @@ using TaskFlow.Application.Models;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
 using TaskFlow.Infrastructure.Data;
+using TaskFlow.Infrastructure.Data.Configurations;
+using TaskFlow.Infrastructure.Data.Encryption;
 
 namespace TaskFlow.Infrastructure.Repositories;
 
@@ -17,7 +19,7 @@ namespace TaskFlow.Infrastructure.Repositories;
 /// Read-side TaskItem repository. It uses the no-tracking query DbContext and projects search
 /// results server-side so list endpoints avoid hydrating child collections.
 /// </summary>
-public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db)
+public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryptionKeys encryptionKeys)
     : TaskFlowRepositoryQuery<TaskItem, TaskItemId>(db), ITaskItemRepositoryQuery
 {
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
@@ -39,6 +41,18 @@ public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db)
             includes: [.. includesList],
             cancellationToken: ct
         ).ConfigureAwait(ConfigureAwaitOptions.None);
+    }
+
+    /// <inheritdoc />
+    public async Task<TaskItem?> FindBySecureTokenAsync(string secureDeterministic, CancellationToken ct = default)
+    {
+        // Equality on the keyed HMAC shadow column (IX_TaskItem_TenantId_SecureDeterministicBlindIndex); the
+        // ciphertext column is randomized and can never be compared directly.
+        var blindIndex = BlindIndex.Compute(secureDeterministic, encryptionKeys.BlindIndexKey);
+        return await DB.Set<TaskItem>()
+            .Where(t => Microsoft.EntityFrameworkCore.EF.Property<byte[]>(t, TaskItemConfiguration.SecureDeterministicBlindIndex) == blindIndex)
+            .FirstOrDefaultAsync(ct)
+            .ConfigureAwait(ConfigureAwaitOptions.None);
     }
 
     /// <summary>

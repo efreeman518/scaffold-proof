@@ -1,4 +1,4 @@
-using EF.FlowEngine.Abstractions;
+﻿using EF.FlowEngine.Abstractions;
 using EF.FlowEngine.Clients;
 using EF.FlowEngine.Model;
 using Microsoft.AspNetCore.Hosting;
@@ -9,6 +9,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
+
+using Test.Support;
 
 namespace Test.Integration;
 
@@ -40,6 +42,8 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
         "AiServices__DisableFoundryLocal",
         "FlowEngine__TaskFlowApiBaseUrl",
         "RateLimiting__PerTenant__PermitLimit",
+        "Database__Encryption__LocalKeyBase64",
+        "Database__Encryption__BlindIndexKeyBase64",
     ];
 
     private readonly Func<string, string> _chatReply;
@@ -64,6 +68,10 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
         // Polling the instance plus the workflow's own self-calls share the per-tenant budget; raise it so
         // the rate limiter never trips during a test (the production default stays 100/min via appsettings).
         Environment.SetEnvironmentVariable("RateLimiting__PerTenant__PermitLimit", "1000000");
+        foreach (var (key, value) in TestColumnEncryption.EnvironmentVariables)
+        {
+            Environment.SetEnvironmentVariable(key, value);
+        }
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)

@@ -3,7 +3,9 @@ using EF.Domain.Contracts;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
+using TaskFlow.Infrastructure.Data.Configurations;
 using TaskFlow.Infrastructure.Data.Conventions;
+using TaskFlow.Infrastructure.Data.Encryption;
 
 namespace TaskFlow.Infrastructure.Data;
 
@@ -38,6 +40,9 @@ public abstract class TaskFlowDbContextBase(DbContextOptions options) : DbContex
         base.OnModelCreating(modelBuilder);
         modelBuilder.HasDefaultSchema(SchemaName);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(TaskFlowDbContextBase).Assembly);
+        // TaskItemConfiguration has no parameterless constructor (the assembly scan skips it): it binds the
+        // secure-column converters to the process encryptor carried by the options (D-023).
+        modelBuilder.ApplyConfiguration(new TaskItemConfiguration(this.GetColumnEncryptor()));
         SetTableNames(modelBuilder);
         ConfigureTenantQueryFilters(modelBuilder);
     }

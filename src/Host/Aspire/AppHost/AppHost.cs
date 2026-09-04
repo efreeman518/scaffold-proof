@@ -113,20 +113,11 @@ if (azureFoundryConfigured)
     //     .AddDeployment("chat", FoundryModel.OpenAI.Gpt4oMini);
 }
 
-// Always Encrypted (D-019) full demo - opt-in. No Key Vault emulator exists, so this needs a real Azure
-// Key Vault RSA key (the CMK); the local SQL container is fine because encryption is client-side. When the
-// gate is unset everything stays local: the migrator skips CMK/CEK setup and columns remain plain varbinary.
-var enableAlwaysEncrypted =
-    Environment.GetEnvironmentVariable("TASKFLOW_ENABLE_ALWAYS_ENCRYPTED") == "true";
-IResourceBuilder<ParameterResource>? akvCmkUrl = null;
-if (enableAlwaysEncrypted)
-{
-    // Full CMK key URL, e.g. https://<vault>.vault.azure.net/keys/<name>/<version>. Supplied via
-    // Parameters:akv-cmk-url (config/user-secrets). AddAzureKeyVault emits the vault in the resource graph
-    // for publish/provisioning parity.
-    akvCmkUrl = builder.AddParameter("akv-cmk-url");
-    builder.AddAzureKeyVault("keyvault");
-}
+// D-023 column encryption keys for every host that maps TaskItem. Generated once and persisted to user secrets
+// (Base64KeyParameterDefault) so the persistent local database stays decryptable across restarts; tests get a
+// fresh key per run. Override with Parameters__column-encryption-key / Parameters__blind-index-key.
+var columnEncryptionKey = builder.AddParameter("column-encryption-key", new Base64KeyParameterDefault(), secret: true, persist: !isTesting);
+var blindIndexKey = builder.AddParameter("blind-index-key", new Base64KeyParameterDefault(), secret: true, persist: !isTesting);
 
 // Single migration owner. Runtime hosts wait for this project and never mutate schema on startup.
 // Connection names stay separate even when local Aspire maps them to the same taskflowdb database.
@@ -134,6 +125,8 @@ var migrator = builder.AddProject<Projects.TaskFlow_DatabaseMigrator>("taskflowm
     .WithReference(taskflowDb, connectionName: "TaskFlowDbContextTrxn")
     .WithReference(taskflowDb, connectionName: "TaskFlowFlowEngineDbContext")
     .WithReference(taskflowDb, connectionName: "TickerQDbContext")
+    .WithEnvironment("Database__Encryption__LocalKeyBase64", columnEncryptionKey)
+    .WithEnvironment("Database__Encryption__BlindIndexKeyBase64", blindIndexKey)
     .WaitFor(sql);
 
 // API host
@@ -145,6 +138,8 @@ var api = builder.AddProject<Projects.TaskFlow_Api>("taskflowapi")
     .WithReference(tables)
     .WithReference(blobs)
     .WithReference(serviceBus)
+    .WithEnvironment("Database__Encryption__LocalKeyBase64", columnEncryptionKey)
+    .WithEnvironment("Database__Encryption__BlindIndexKeyBase64", blindIndexKey)
     .WaitForCompletion(migrator)
     .WaitFor(sql)
     .WaitFor(redis)
@@ -155,18 +150,6 @@ var api = builder.AddProject<Projects.TaskFlow_Api>("taskflowapi")
 if (chat is not null)
 {
     api = api.WithReference(chat);
-}
-
-// Enable the Always Encrypted path (D-019): the migrator creates the CMK/CEK and alters the columns; the API
-// registers the AKV provider and turns on column encryption for its connection. Both need the CMK key URL.
-if (enableAlwaysEncrypted)
-{
-    migrator = migrator
-        .WithEnvironment("SKIP_ALWAYS_ENCRYPTED_SETUP", "false")
-        .WithEnvironment("AKVCMKURL", akvCmkUrl!);
-    api = api
-        .WithEnvironment("TASKFLOW_ENABLE_ALWAYS_ENCRYPTED", "true")
-        .WithEnvironment("AKVCMKURL", akvCmkUrl!);
 }
 
 // OPT-IN (Azure-only): Foundry project + server-hosted prompt agent.
@@ -244,6 +227,8 @@ if (!isTesting)
         .WithReference(redis, connectionName: "Redis1")
         .WithReference(tables)
         .WithReference(serviceBus)
+        .WithEnvironment("Database__Encryption__LocalKeyBase64", columnEncryptionKey)
+        .WithEnvironment("Database__Encryption__BlindIndexKeyBase64", blindIndexKey)
         .WithReplicas(1)
         .WaitForCompletion(migrator)
         .WaitFor(sql)
@@ -292,6 +277,8 @@ if (!isTesting || functionsAvailableInTesting)
         .WithReference(tables)
         .WithReference(blobs)
         .WithReference(serviceBus)
+        .WithEnvironment("Database__Encryption__LocalKeyBase64", columnEncryptionKey)
+        .WithEnvironment("Database__Encryption__BlindIndexKeyBase64", blindIndexKey)
         .WaitForCompletion(migrator)
         .WaitFor(sql)
         .WaitFor(storage)

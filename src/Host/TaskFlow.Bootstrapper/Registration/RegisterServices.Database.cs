@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Infrastructure.Data;
+using TaskFlow.Infrastructure.Data.Encryption;
 using TaskFlow.Infrastructure.Data.Interceptors;
 using TaskFlow.Infrastructure.Data.Provider;
 using TaskFlow.Infrastructure.Repositories;
@@ -24,6 +25,8 @@ public static partial class RegisterServices
         services.AddTransient<AuditInterceptor<string, Guid?>>();
         services.AddSingleton<VersionTimestampInterceptor>();
         services.AddTransient<ConnectionNoLockInterceptor>();
+        // D-023: one AES-GCM column encryptor per process, bound from Database:Encryption (fails fast without a key).
+        services.AddColumnEncryption(config);
 
         var dbConnectionStringTrxn = config.GetConnectionString("TaskFlowDbContextTrxn") ?? "";
         // D-027: the Query context is an independently authored connection string on both providers.
@@ -37,9 +40,11 @@ public static partial class RegisterServices
         {
             UseTaskFlowProviderIfConfigured(options, config, dbConnectionStringTrxn,
                 TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName);
+            options.UseColumnEncryption(sp.GetRequiredService<IColumnEncryptor>());
             options.AddInterceptors(
                 sp.GetRequiredService<AuditInterceptor<string, Guid?>>(),
-                sp.GetRequiredService<VersionTimestampInterceptor>());
+                sp.GetRequiredService<VersionTimestampInterceptor>(),
+                sp.GetRequiredService<BlindIndexInterceptor>());
         });
         services.AddScoped<DbContextScopedFactory<TaskFlowDbContextTrxn, string, Guid?>>();
         services.AddScoped(sp => sp.GetRequiredService<DbContextScopedFactory<TaskFlowDbContextTrxn, string, Guid?>>()
@@ -50,6 +55,7 @@ public static partial class RegisterServices
             options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
             UseTaskFlowProviderIfConfigured(options, config, dbConnectionStringQuery,
                 TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName);
+            options.UseColumnEncryption(sp.GetRequiredService<IColumnEncryptor>());
         });
         services.AddScoped<DbContextScopedFactory<TaskFlowDbContextQuery, string, Guid?>>();
         services.AddScoped(sp => sp.GetRequiredService<DbContextScopedFactory<TaskFlowDbContextQuery, string, Guid?>>()
