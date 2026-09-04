@@ -90,8 +90,8 @@ entities:
       - { name: EstimatedEffort, kind: number, required: false, description: "Estimated hours of effort" }
       - { name: ActualEffort, kind: number, required: false, description: "Actual hours spent" }
       - { name: CompletedDate, kind: date, required: false, description: "Date-time when the task was marked completed" }
-      - { name: SecureDeterministic, kind: string, required: false, sensitive: true, encryption: always-encrypted-deterministic, description: "Contrived sensitive value protected with SQL Always Encrypted DETERMINISTIC encryption (equality-queryable). Persisted as varbinary(200) via a UTF8 value converter. See D-019 (superseded by D-023)." }
-      - { name: SecureRandom, kind: string, required: false, sensitive: true, encryption: always-encrypted-randomized, description: "Contrived sensitive value protected with SQL Always Encrypted RANDOMIZED encryption (not queryable). Persisted as varbinary(200) via a UTF8 value converter. See D-019 (superseded by D-023)." }
+      - { name: SecureDeterministic, kind: string, required: false, sensitive: true, encryption: app-layer-aes-gcm-blind-index, description: "AES-256-GCM ciphertext stored randomized plus an HMAC-SHA256 blind-index sibling column for equality queries; 200-byte plaintext budget; see D-023." }
+      - { name: SecureRandom, kind: string, required: false, sensitive: true, encryption: app-layer-aes-gcm, description: "AES-256-GCM ciphertext, not queryable; 200-byte plaintext budget; see D-023." }
       - { name: CreatedAtUtc, kind: date, description: "UTC timestamp when the task was created (set by the timestamp interceptor)." }
       - { name: ModifiedAtUtc, kind: date, description: "UTC timestamp of the last modification to the task or any of its children; touching this bumps the aggregate Version (D-031)." }
       - { name: TerminalAtUtc, kind: date, required: false, description: "UTC timestamp when the task entered a terminal state (Completed or Cancelled); cleared on Reopen. Stale cleanup targets Cancelled tasks with TerminalAtUtc older than 90 days." }
