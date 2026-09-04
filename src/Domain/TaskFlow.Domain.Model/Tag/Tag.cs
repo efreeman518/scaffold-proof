@@ -6,7 +6,7 @@ using DomainTenantId = TaskFlow.Domain.Shared.TenantId;
 namespace TaskFlow.Domain.Model;
 
 /// <summary>Models tag domain behavior and invariants.</summary>
-public sealed class Tag : EntityBase<DomainTagId>, ITenantEntity<DomainTenantId>, IEquatable<Tag>
+public sealed class Tag : TaskFlowEntityBase<DomainTagId>, ITenantEntity<DomainTenantId>, IEquatable<Tag>
 {
     public DomainTenantId TenantId { get; init; }
     public string Name { get; private set; } = null!;

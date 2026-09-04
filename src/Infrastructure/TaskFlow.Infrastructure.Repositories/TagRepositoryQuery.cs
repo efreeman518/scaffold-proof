@@ -1,4 +1,4 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using EF.Data;
 using EF.Data.Contracts;
 using TaskFlow.Application.Contracts.Repositories;
@@ -12,7 +12,7 @@ namespace TaskFlow.Infrastructure.Repositories;
 
 /// <summary>Persists and queries tag data through infrastructure storage contracts.</summary>
 public class TagRepositoryQuery(TaskFlowDbContextQuery db)
-    : RepositoryQuery<Tag, TagId, TaskFlowDbContextQuery>(db), ITagRepositoryQuery
+    : TaskFlowRepositoryQuery<Tag, TagId>(db), ITagRepositoryQuery
 {
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<Tag?> GetTagAsync(TagId id, CancellationToken ct = default)

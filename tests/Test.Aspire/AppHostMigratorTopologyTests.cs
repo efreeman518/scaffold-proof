@@ -1,4 +1,4 @@
-namespace Test.Aspire;
+﻿namespace Test.Aspire;
 
 [TestClass]
 [TestCategory("Aspire")]
@@ -10,6 +10,10 @@ public sealed class AppHostMigratorTopologyTests
         var appHostSource = ReadAppHostSource();
 
         Assert.Contains("TaskFlow_DatabaseMigrator", appHostSource);
+        // D-020: both providers are declared, one is selected per run, and every host learns the choice.
+        Assert.Contains("AddSqlServer(\"sql\"", appHostSource);
+        Assert.Contains("AddPostgres(\"postgres\"", appHostSource);
+        Assert.Contains(".WithEnvironment(\"Database__Provider\", dbProviderName)", appHostSource);
         Assert.Contains("connectionName: \"TaskFlowDbContextTrxn\"", appHostSource);
         Assert.Contains("connectionName: \"TaskFlowFlowEngineDbContext\"", appHostSource);
         Assert.Contains("connectionName: \"TickerQDbContext\"", appHostSource);

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- D-025: SQL Server migration set for TaskFlow (Trxn/Query), FlowEngine and TickerQ contexts.
+       Selected at runtime through TaskFlowDbProviderSelector.MigrationsAssembly; never referenced by Infrastructure.Data. -->
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TaskFlow.Infrastructure.Data\TaskFlow.Infrastructure.Data.csproj" />
+  </ItemGroup>
+
+</Project>

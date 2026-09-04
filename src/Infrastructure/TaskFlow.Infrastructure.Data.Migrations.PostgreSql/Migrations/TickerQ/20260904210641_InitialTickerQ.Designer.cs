@@ -2,17 +2,17 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using TaskFlow.Infrastructure.Data;
 
 #nullable disable
 
-namespace TaskFlow.Infrastructure.Data.Migrations.TickerQ
+namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.TickerQ
 {
     [DbContext(typeof(TaskFlowTickerQDbContext))]
-    [Migration("20260630200924_InitialTickerQ")]
+    [Migration("20260904210641_InitialTickerQ")]
     partial class InitialTickerQ
     {
         /// <inheritdoc />
@@ -20,50 +20,50 @@ namespace TaskFlow.Infrastructure.Data.Migrations.TickerQ
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.9")
-                .HasAnnotation("Relational:MaxIdentifierLength", 128);
+                .HasAnnotation("ProductVersion", "10.0.11")
+                .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
-            SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+            NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("TickerQ.Utilities.Entities.CronTickerEntity", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Description")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.Property<string>("Expression")
-                        .HasColumnType("nvarchar(450)");
+                        .HasColumnType("text");
 
                     b.Property<string>("Function")
-                        .HasColumnType("nvarchar(450)");
+                        .HasColumnType("text");
 
                     b.Property<string>("InitIdentifier")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.Property<bool>("IsEnabled")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<bool>("IsSystemPaused")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
+                        .HasColumnType("boolean")
                         .HasDefaultValue(false);
 
                     b.Property<byte[]>("Request")
-                        .HasColumnType("varbinary(max)");
+                        .HasColumnType("bytea");
 
                     b.Property<int>("Retries")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
-                    b.PrimitiveCollection<string>("RetryIntervals")
-                        .HasColumnType("json");
+                    b.PrimitiveCollection<int[]>("RetryIntervals")
+                        .HasColumnType("integer[]");
 
                     b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
@@ -73,49 +73,49 @@ namespace TaskFlow.Infrastructure.Data.Migrations.TickerQ
                     b.HasIndex("Function", "Expression")
                         .HasDatabaseName("IX_Function_Expression");
 
-                    b.ToTable("CronTickers", "Scheduler");
+                    b.ToTable("CronTickers", "scheduler");
                 });
 
             modelBuilder.Entity("TickerQ.Utilities.Entities.CronTickerOccurrenceEntity<TickerQ.Utilities.Entities.CronTickerEntity>", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("CronTickerId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<long>("ElapsedTime")
                         .HasColumnType("bigint");
 
                     b.Property<string>("ExceptionMessage")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.Property<DateTime?>("ExecutedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("ExecutionTime")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("LockHolder")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.Property<DateTime?>("LockedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("RetryCount")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("SkippedReason")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.Property<int>("Status")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
@@ -132,71 +132,71 @@ namespace TaskFlow.Infrastructure.Data.Migrations.TickerQ
                     b.HasIndex("Status", "ExecutionTime")
                         .HasDatabaseName("IX_CronTickerOccurrence_Status_ExecutionTime");
 
-                    b.ToTable("CronTickerOccurrences", "Scheduler");
+                    b.ToTable("CronTickerOccurrences", "scheduler");
                 });
 
             modelBuilder.Entity("TickerQ.Utilities.Entities.TimeTickerEntity", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Description")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.Property<long>("ElapsedTime")
                         .HasColumnType("bigint");
 
                     b.Property<string>("ExceptionMessage")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.Property<DateTime?>("ExecutedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("ExecutionTime")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Function")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.Property<string>("InitIdentifier")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.Property<string>("LockHolder")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.Property<DateTime?>("LockedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid?>("ParentId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<byte[]>("Request")
-                        .HasColumnType("varbinary(max)");
+                        .HasColumnType("bytea");
 
                     b.Property<int>("Retries")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("RetryCount")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
-                    b.PrimitiveCollection<string>("RetryIntervals")
-                        .HasColumnType("json");
+                    b.PrimitiveCollection<int[]>("RetryIntervals")
+                        .HasColumnType("integer[]");
 
                     b.Property<int?>("RunCondition")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("SkippedReason")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.Property<int>("Status")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
@@ -208,7 +208,7 @@ namespace TaskFlow.Infrastructure.Data.Migrations.TickerQ
                     b.HasIndex("Status", "ExecutionTime")
                         .HasDatabaseName("IX_TimeTicker_Status_ExecutionTime");
 
-                    b.ToTable("TimeTickers", "Scheduler");
+                    b.ToTable("TimeTickers", "scheduler");
                 });
 
             modelBuilder.Entity("TickerQ.Utilities.Entities.CronTickerOccurrenceEntity<TickerQ.Utilities.Entities.CronTickerEntity>", b =>

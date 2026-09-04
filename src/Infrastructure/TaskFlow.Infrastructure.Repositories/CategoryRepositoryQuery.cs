@@ -1,4 +1,4 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using EF.Data;
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
@@ -15,7 +15,7 @@ namespace TaskFlow.Infrastructure.Repositories;
 
 /// <summary>Persists and queries category data through infrastructure storage contracts.</summary>
 public class CategoryRepositoryQuery(TaskFlowDbContextQuery db)
-    : RepositoryQuery<Category, CategoryId, TaskFlowDbContextQuery>(db), ICategoryRepositoryQuery
+    : TaskFlowRepositoryQuery<Category, CategoryId>(db), ICategoryRepositoryQuery
 {
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<Category?> GetCategoryAsync(CategoryId id, CancellationToken ct = default)

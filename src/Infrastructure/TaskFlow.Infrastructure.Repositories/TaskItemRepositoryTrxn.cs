@@ -1,4 +1,4 @@
-using EF.Data;
+﻿using EF.Data;
 using EF.Data.Contracts;
 using EF.Domain.Contracts;
 using Microsoft.EntityFrameworkCore;
@@ -18,7 +18,7 @@ namespace TaskFlow.Infrastructure.Repositories;
 /// child collections when the application service needs to sync a full task graph.
 /// </summary>
 public class TaskItemRepositoryTrxn(TaskFlowDbContextTrxn db)
-    : RepositoryTrxn<TaskItem, TaskItemId, TaskFlowDbContextTrxn>(db), ITaskItemRepositoryTrxn
+    : TaskFlowRepositoryTrxn<TaskItem, TaskItemId>(db), ITaskItemRepositoryTrxn
 {
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<TaskItem?> GetTaskItemAsync(TaskItemId id, bool inclChildren = true, CancellationToken ct = default)

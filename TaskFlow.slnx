@@ -19,6 +19,8 @@
   </Folder>
   <Folder Name="/Infrastructure/">
     <Project Path="src/Infrastructure/TaskFlow.Infrastructure.Data/TaskFlow.Infrastructure.Data.csproj" />
+    <Project Path="src/Infrastructure/TaskFlow.Infrastructure.Data.Migrations.SqlServer/TaskFlow.Infrastructure.Data.Migrations.SqlServer.csproj" />
+    <Project Path="src/Infrastructure/TaskFlow.Infrastructure.Data.Migrations.PostgreSql/TaskFlow.Infrastructure.Data.Migrations.PostgreSql.csproj" />
     <Project Path="src/Infrastructure/TaskFlow.Infrastructure.Repositories/TaskFlow.Infrastructure.Repositories.csproj" />
     <Project Path="src/Infrastructure/TaskFlow.Infrastructure.AI/TaskFlow.Infrastructure.AI.csproj" />
     <Project Path="src/Infrastructure/TaskFlow.Infrastructure.Storage/TaskFlow.Infrastructure.Storage.csproj" />

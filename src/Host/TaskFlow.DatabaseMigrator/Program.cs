@@ -1,10 +1,10 @@
 using EF.Data.Migrations;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using TaskFlow.Infrastructure.Data;
+using TaskFlow.Infrastructure.Data.Provider;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -20,8 +20,6 @@ builder.Services
 
 using var host = builder.Build();
 using var scope = host.Services.CreateScope();
-var trxnFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TaskFlowDbContextTrxn>>();
-await TaskFlowMigrationHistoryCompatibility.RelocateLegacyHistoryTableAsync(trxnFactory);
 var runner = scope.ServiceProvider.GetRequiredService<DatabaseMigrationRunner>();
 await runner.RunAsync();
 
@@ -36,41 +34,19 @@ static class DatabaseMigratorRegistration
         // distinct logical connection names so Azure can split them later through configuration.
         var flowEngine = config.GetConnectionString("TaskFlowFlowEngineDbContext") ?? trxn;
         var tickerQ = RequireConnectionString(config, "TickerQDbContext");
-
-        var retryCount = config.GetValue<int?>("Database:Retry:MaxRetryCount") ?? 5;
-        var retryDelaySeconds = config.GetValue<int?>("Database:Retry:MaxRetryDelaySeconds") ?? 30;
         var commandTimeoutSeconds = config.GetValue<int?>("Database:MigrationCommandTimeoutSeconds") ?? 1800;
 
         services.AddDbContextFactory<TaskFlowDbContextTrxn>(options =>
-            ConfigureSqlServer(
-                options,
-                trxn,
-                retryCount,
-                retryDelaySeconds,
-                commandTimeoutSeconds,
-                TaskFlowDbContextBase.MigrationHistoryTable,
-                TaskFlowDbContextBase.SchemaName));
+            options.UseTaskFlowProvider(TaskFlowProviderOptions.FromConfiguration(
+                config, trxn, TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName, commandTimeoutSeconds)));
 
         services.AddDbContextFactory<TaskFlowFlowEngineDbContext>(options =>
-            ConfigureSqlServer(
-                options,
-                flowEngine,
-                retryCount,
-                retryDelaySeconds,
-                commandTimeoutSeconds,
-                TaskFlowFlowEngineDbContext.MigrationHistoryTable,
-                TaskFlowFlowEngineDbContext.SchemaName));
+            options.UseTaskFlowProvider(TaskFlowProviderOptions.FromConfiguration(
+                config, flowEngine, TaskFlowFlowEngineDbContext.MigrationHistoryTable, TaskFlowFlowEngineDbContext.SchemaName, commandTimeoutSeconds)));
 
         services.AddDbContextFactory<TaskFlowTickerQDbContext>(options =>
-            ConfigureSqlServer(
-                options,
-                tickerQ,
-                retryCount,
-                retryDelaySeconds,
-                commandTimeoutSeconds,
-                TaskFlowTickerQDbContext.MigrationHistoryTable,
-                TaskFlowTickerQDbContext.SchemaName,
-                typeof(TaskFlowTickerQDbContext).Assembly.GetName().Name));
+            options.UseTaskFlowProvider(TaskFlowProviderOptions.FromConfiguration(
+                config, tickerQ, TaskFlowTickerQDbContext.MigrationHistoryTable, TaskFlowTickerQDbContext.SchemaName, commandTimeoutSeconds)));
 
         return services;
     }
@@ -79,58 +55,5 @@ static class DatabaseMigratorRegistration
     {
         return config.GetConnectionString(name)
             ?? throw new InvalidOperationException($"Connection string '{name}' is required.");
-    }
-
-    private static void ConfigureSqlServer(
-        DbContextOptionsBuilder options,
-        string connectionString,
-        int retryCount,
-        int retryDelaySeconds,
-        int commandTimeoutSeconds,
-        string? migrationsHistoryTable = null,
-        string? migrationsHistorySchema = null,
-        string? migrationsAssembly = null)
-    {
-        var retryDelay = TimeSpan.FromSeconds(retryDelaySeconds);
-
-        void Configure(SqlServerDbContextOptionsBuilder sql)
-        {
-            sql.UseLatestCompatibilityLevel();
-            sql.CommandTimeout(commandTimeoutSeconds);
-            sql.EnableRetryOnFailure(retryCount, retryDelay, null);
-
-            if (!string.IsNullOrWhiteSpace(migrationsHistoryTable))
-            {
-                sql.MigrationsHistoryTable(migrationsHistoryTable, migrationsHistorySchema);
-            }
-
-            if (!string.IsNullOrWhiteSpace(migrationsAssembly))
-            {
-                sql.MigrationsAssembly(migrationsAssembly);
-            }
-        }
-
-        if (connectionString.Contains("database.windows.net", StringComparison.OrdinalIgnoreCase))
-        {
-            options.UseAzureSql(connectionString, sql =>
-            {
-                sql.UseLatestCompatibilityLevel();
-                sql.CommandTimeout(commandTimeoutSeconds);
-                sql.EnableRetryOnFailure(retryCount, retryDelay, null);
-
-                if (!string.IsNullOrWhiteSpace(migrationsHistoryTable))
-                {
-                    sql.MigrationsHistoryTable(migrationsHistoryTable, migrationsHistorySchema);
-                }
-
-                if (!string.IsNullOrWhiteSpace(migrationsAssembly))
-                {
-                    sql.MigrationsAssembly(migrationsAssembly);
-                }
-            });
-            return;
-        }
-
-        options.UseSqlServer(connectionString, Configure);
     }
 }

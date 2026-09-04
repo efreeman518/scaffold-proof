@@ -11,7 +11,8 @@ namespace TaskFlow.Infrastructure.Data;
 public sealed class TaskFlowTickerQDbContext(DbContextOptions<TaskFlowTickerQDbContext> options)
     : TickerQDbContext<TimeTickerEntity, CronTickerEntity>(options)
 {
-    public const string SchemaName = "Scheduler";
+    // Lower-case so the identifier round-trips unquoted on PostgreSQL (folds to lower case) and SQL Server alike.
+    public const string SchemaName = "scheduler";
     public const string MigrationHistoryTable = "__EFMigrationsHistory_TickerQ";
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

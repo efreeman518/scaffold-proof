@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Infrastructure.Data;
@@ -33,6 +33,7 @@ public sealed class CustomApiFactory : WebApplicationFactoryBase<Program, TaskFl
         {
             [ApplicationStyleResolver.ConfigKey] = _applicationStyle
         });
+        config.AddInMemoryCollection(TestColumnEncryption.Configuration);
     }
 
     /// <summary>Builds trxn options used by focused test cases.</summary>

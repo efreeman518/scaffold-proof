@@ -1,9 +1,9 @@
-namespace Test.Integration.Infrastructure;
+﻿namespace Test.Integration.Infrastructure;
 
 using Test.Support.Hosting;
 
 /// <summary>
-/// Assembly-scoped lifecycle for the component tier. Starts the standalone SQL and Azurite
+/// Assembly-scoped lifecycle for the component tier. Starts the standalone database (SQL Server or PostgreSQL, TASKFLOW_TEST_DB_PROVIDER) and Azurite
 /// Testcontainers in parallel via <c>[AssemblyInitialize]</c> and disposes them via
 /// <c>[AssemblyCleanup]</c>. A bounded Docker preflight is the only inconclusive path. Each fixture captures
 /// its own <c>StartupError</c> so dependent tests fail with diagnostics without aborting assembly discovery.
@@ -25,7 +25,7 @@ public static class IntegrationTestSetup
             return;
 
         await Task.WhenAll(
-            SqlContainerFixture.StartAsync(),
+            DbContainerFixture.StartAsync(),
             AzuriteContainerFixture.StartAsync());
     }
 
@@ -36,7 +36,7 @@ public static class IntegrationTestSetup
         if (DockerUnavailableReason is null)
         {
             await Task.WhenAll(
-                SqlContainerFixture.StopAsync(),
+                DbContainerFixture.StopAsync(),
                 AzuriteContainerFixture.StopAsync());
         }
     }

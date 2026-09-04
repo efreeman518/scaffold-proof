@@ -1,4 +1,4 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using System.Net;
@@ -14,7 +14,7 @@ namespace Test.E2E;
 /// Multi-endpoint workflow tests over the full HTTP->Endpoint->Service->EF->SQL stack: TaskItem/Category/Tag
 /// CRUD round-trips, server-side paged search across distinct pages, and child-aggregate (Comment,
 /// ChecklistItem) lifecycles.
-/// SQL tier (WebApplicationFactory + Testcontainers SQL via <c>SqlApiFactory</c>): real SQL is required
+/// SQL tier (WebApplicationFactory + Testcontainers SQL via <c>DbApiFactory</c>): real SQL is required
 /// for paging plans, FK constraints applied by EF migrations, and projection behavior - InMemory
 /// (Test.Endpoints tier) would silently mask these. The Aspire tier is unnecessary because only one
 /// backing service (SQL) participates.
@@ -23,18 +23,18 @@ namespace Test.E2E;
 [TestCategory("E2E")]
 public class TaskItemCrudE2ETests
 {
-    private static SqlApiFactory _factory = null!;
+    private static DbApiFactory _factory = null!;
     private static readonly JsonSerializerOptions _json = JsonTestOptions.Default;
 
     /// <summary>Initializes shared test fixtures before the class-level test run begins.</summary>
     [ClassInitialize]
     public static async Task ClassInit(TestContext _)
     {
-        await SqlApiFactory.StartContainerAsync(_.CancellationToken);
-        if (SqlApiFactory.DockerUnavailableReason is not null || SqlApiFactory.StartupError is not null)
+        await DbApiFactory.StartContainerAsync(_.CancellationToken);
+        if (DbApiFactory.DockerUnavailableReason is not null || DbApiFactory.StartupError is not null)
             return;
 
-        _factory = new SqlApiFactory();
+        _factory = new DbApiFactory();
 
         // Apply EF migrations against the real SQL container
         using var scope = _factory.Services.CreateScope();
@@ -47,7 +47,7 @@ public class TaskItemCrudE2ETests
     public static async Task ClassCleanup()
     {
         _factory?.Dispose();
-        await SqlApiFactory.StopContainerAsync();
+        await DbApiFactory.StopContainerAsync();
     }
 
     /// <summary>Creates client used by the surrounding test cases.</summary>
@@ -326,14 +326,14 @@ public class TaskItemCrudE2ETests
     [TestInitialize]
     public void TestSetup()
     {
-        if (SqlApiFactory.DockerUnavailableReason is not null)
+        if (DbApiFactory.DockerUnavailableReason is not null)
         {
-            Assert.Inconclusive(SqlApiFactory.DockerUnavailableReason);
+            Assert.Inconclusive(DbApiFactory.DockerUnavailableReason);
             return;
         }
 
-        if (SqlApiFactory.StartupError is not null)
-            Assert.Fail($"SQL container startup failed after Docker preflight succeeded:{Environment.NewLine}{SqlApiFactory.StartupError}");
+        if (DbApiFactory.StartupError is not null)
+            Assert.Fail($"SQL container startup failed after Docker preflight succeeded:{Environment.NewLine}{DbApiFactory.StartupError}");
     }
 
     public TestContext TestContext { get; set; } = null!;

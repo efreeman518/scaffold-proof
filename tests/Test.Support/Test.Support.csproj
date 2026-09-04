@@ -4,6 +4,8 @@
     <PackageReference Include="EF.Common.Contracts" />
     <PackageReference Include="EF.Domain" />
     <PackageReference Include="EF.IntegrationTesting" />
+    <!-- fallback: drop when EF.IntegrationTesting ships PostgreSqlContainerFixture (package request 8). -->
+    <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Aspire.Hosting.Testing" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <!-- Flow patched transitive versions to every test project that consumes this shared harness. -->
@@ -17,6 +19,9 @@
     <ProjectReference Include="..\..\src\Application\TaskFlow.Application.Models\TaskFlow.Application.Models.csproj" />
     <ProjectReference Include="..\..\src\Application\TaskFlow.Application.Contracts\TaskFlow.Application.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Infrastructure\TaskFlow.Infrastructure.Data\TaskFlow.Infrastructure.Data.csproj" />
+    <!-- Migration assemblies must be loadable wherever a test migrates or checks pending model changes. -->
+    <ProjectReference Include="..\..\src\Infrastructure\TaskFlow.Infrastructure.Data.Migrations.SqlServer\TaskFlow.Infrastructure.Data.Migrations.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\Infrastructure\TaskFlow.Infrastructure.Data.Migrations.PostgreSql\TaskFlow.Infrastructure.Data.Migrations.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Infrastructure\TaskFlow.Infrastructure.Repositories\TaskFlow.Infrastructure.Repositories.csproj" />
   </ItemGroup>
 

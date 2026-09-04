@@ -1,4 +1,4 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Application.Models;
@@ -6,6 +6,8 @@ using TaskFlow.Domain.Model;
 using TaskFlow.Infrastructure.Repositories;
 using Test.Integration.Infrastructure;
 using Test.Support.Builders;
+
+using Test.Support;
 
 namespace Test.Integration;
 
@@ -20,17 +22,17 @@ public sealed class StablePaginationIntegrationTests
     [ClassInitialize]
     public static async Task ClassInit(TestContext context)
     {
-        if (IntegrationTestSetup.IsUnavailable(SqlContainerFixture.StartupError))
+        if (IntegrationTestSetup.IsUnavailable(DbContainerFixture.StartupError))
             return;
 
-        await using var db = SqlContainerFixture.CreateTrxnContext();
+        await using var db = DbContainerFixture.CreateTrxnContext();
         await db.Database.MigrateAsync(context.CancellationToken);
     }
 
     /// <summary>Marks the test inconclusive when the SQL container is unavailable.</summary>
     [TestInitialize]
     public void TestSetup() =>
-        IntegrationTestSetup.AssertAvailable("SQL", SqlContainerFixture.StartupError);
+        IntegrationTestSetup.AssertAvailable("SQL", DbContainerFixture.StartupError);
 
     /// <summary>Verifies duplicate default sort keys remain stable across every page.</summary>
     [TestMethod]
@@ -58,7 +60,7 @@ public sealed class StablePaginationIntegrationTests
                 .Build())
             .ToArray();
 
-        await using var writeDb = SqlContainerFixture.CreateTrxnContext();
+        await using var writeDb = DbContainerFixture.CreateTrxnContext();
         writeDb.TaskItems.AddRange(seeded);
         await writeDb.SaveChangesAsync(
             OptimisticConcurrencyWinner.ClientWins,
@@ -74,8 +76,8 @@ public sealed class StablePaginationIntegrationTests
                 .Select(task => task.Id.Value)
                 .ToArrayAsync(TestContext.CancellationToken);
 
-            await using var queryDb = SqlContainerFixture.CreateQueryContext();
-            var repository = new TaskItemRepositoryQuery(queryDb);
+            await using var queryDb = DbContainerFixture.CreateQueryContext();
+            var repository = new TaskItemRepositoryQuery(queryDb, TestColumnEncryption.Keys);
             var actual = new List<Guid>();
 
             for (var pageIndex = 1; pageIndex <= 3; pageIndex++)

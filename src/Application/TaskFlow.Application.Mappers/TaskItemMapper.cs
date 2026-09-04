@@ -1,4 +1,4 @@
-using EF.Domain.Contracts;
+﻿using EF.Domain.Contracts;
 using System.Linq.Expressions;
 using TaskFlow.Application.Models;
 using TaskFlow.Domain.Model;
@@ -17,7 +17,7 @@ public static class TaskItemMapper
     // so the Expression form must construct child DTOs directly. The MapperTests parity check
     // verifies the compiled result still agrees with each child mapper's ToDto.
     //
-    // Owned-type flattening (DateRange / RecurrencePattern -> scalar columns) must stay
+    // Owned-type flattening (RecurrencePattern JSON -> scalar columns) must stay
     // EF-translatable AND evaluate correctly in-memory - keep these to property access and
     // null-conditional checks only.
     public static readonly Expression<Func<TaskItem, TaskItemDto>> Projection =
@@ -36,8 +36,8 @@ public static class TaskItemMapper
             CategoryId = entity.CategoryId.HasValue ? entity.CategoryId.Value.Value : null,
             ParentTaskItemId = entity.ParentTaskItemId.HasValue ? entity.ParentTaskItemId.Value.Value : null,
             CategoryName = entity.Category != null ? entity.Category.Name : null,
-            StartDate = entity.DateRange.StartDate,
-            DueDate = entity.DateRange.DueDate,
+            StartDate = entity.StartDate,
+            DueDate = entity.DueDate,
             RecurrenceInterval = entity.RecurrencePattern != null ? entity.RecurrencePattern.Interval : null,
             RecurrenceFrequency = entity.RecurrencePattern != null ? entity.RecurrencePattern.Frequency : null,
             RecurrenceEndDate = entity.RecurrencePattern != null ? entity.RecurrencePattern.EndDate : null,
@@ -120,8 +120,8 @@ public static class TaskItemMapper
             EstimatedEffort = entity.EstimatedEffort,
             CategoryId = entity.CategoryId.HasValue ? entity.CategoryId.Value.Value : null,
             CategoryName = entity.Category != null ? entity.Category.Name : null,
-            StartDate = entity.DateRange.StartDate,
-            DueDate = entity.DateRange.DueDate,
+            StartDate = entity.StartDate,
+            DueDate = entity.DueDate,
             CompletedDate = entity.CompletedDate
         };
 }

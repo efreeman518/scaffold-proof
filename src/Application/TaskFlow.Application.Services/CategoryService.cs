@@ -1,4 +1,4 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
@@ -149,10 +149,11 @@ internal class CategoryService(
             "Category:Delete", nameof(Category), entity.Id.Value);
         if (boundary.IsFailure) return Result.Failure(boundary.ErrorMessage!);
 
-        repoTrxn.Delete(entity);
-
         try
         {
+            // Composite FK (TenantId, CategoryId) cannot cascade to SetNull; detach the tenant's tasks first (D-022).
+            await repoTrxn.ClearCategoryFromTaskItemsAsync(entity.Id, ct);
+            repoTrxn.Delete(entity);
             await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, ct);
         }
         catch (Exception ex)

@@ -8,7 +8,7 @@ using TaskFlow.Infrastructure.Data;
 
 #nullable disable
 
-namespace TaskFlow.Infrastructure.Data.Migrations.TickerQ
+namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TickerQ
 {
     [DbContext(typeof(TaskFlowTickerQDbContext))]
     partial class TaskFlowTickerQDbContextModelSnapshot : ModelSnapshot
@@ -17,7 +17,7 @@ namespace TaskFlow.Infrastructure.Data.Migrations.TickerQ
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.9")
+                .HasAnnotation("ProductVersion", "10.0.11")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -70,7 +70,7 @@ namespace TaskFlow.Infrastructure.Data.Migrations.TickerQ
                     b.HasIndex("Function", "Expression")
                         .HasDatabaseName("IX_Function_Expression");
 
-                    b.ToTable("CronTickers", "Scheduler");
+                    b.ToTable("CronTickers", "scheduler");
                 });
 
             modelBuilder.Entity("TickerQ.Utilities.Entities.CronTickerOccurrenceEntity<TickerQ.Utilities.Entities.CronTickerEntity>", b =>
@@ -129,7 +129,7 @@ namespace TaskFlow.Infrastructure.Data.Migrations.TickerQ
                     b.HasIndex("Status", "ExecutionTime")
                         .HasDatabaseName("IX_CronTickerOccurrence_Status_ExecutionTime");
 
-                    b.ToTable("CronTickerOccurrences", "Scheduler");
+                    b.ToTable("CronTickerOccurrences", "scheduler");
                 });
 
             modelBuilder.Entity("TickerQ.Utilities.Entities.TimeTickerEntity", b =>
@@ -205,7 +205,7 @@ namespace TaskFlow.Infrastructure.Data.Migrations.TickerQ
                     b.HasIndex("Status", "ExecutionTime")
                         .HasDatabaseName("IX_TimeTicker_Status_ExecutionTime");
 
-                    b.ToTable("TimeTickers", "Scheduler");
+                    b.ToTable("TimeTickers", "scheduler");
                 });
 
             modelBuilder.Entity("TickerQ.Utilities.Entities.CronTickerOccurrenceEntity<TickerQ.Utilities.Entities.CronTickerEntity>", b =>

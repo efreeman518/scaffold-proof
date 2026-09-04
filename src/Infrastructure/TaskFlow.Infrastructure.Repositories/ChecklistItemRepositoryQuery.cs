@@ -1,4 +1,4 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using EF.Data;
 using EF.Data.Contracts;
 using TaskFlow.Application.Contracts.Repositories;
@@ -12,7 +12,7 @@ namespace TaskFlow.Infrastructure.Repositories;
 
 /// <summary>Persists and queries checklist item data through infrastructure storage contracts.</summary>
 public class ChecklistItemRepositoryQuery(TaskFlowDbContextQuery db)
-    : RepositoryQuery<ChecklistItem, ChecklistItemId, TaskFlowDbContextQuery>(db), IChecklistItemRepositoryQuery
+    : TaskFlowRepositoryQuery<ChecklistItem, ChecklistItemId>(db), IChecklistItemRepositoryQuery
 {
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<ChecklistItem?> GetChecklistItemAsync(ChecklistItemId id, CancellationToken ct = default)

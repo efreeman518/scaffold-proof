@@ -1,4 +1,4 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using EF.Data;
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
@@ -14,7 +14,7 @@ namespace TaskFlow.Infrastructure.Repositories;
 
 /// <summary>Persists and queries attachment data through infrastructure storage contracts.</summary>
 public class AttachmentRepositoryQuery(TaskFlowDbContextQuery db)
-    : RepositoryQuery<Attachment, AttachmentId, TaskFlowDbContextQuery>(db), IAttachmentRepositoryQuery
+    : TaskFlowRepositoryQuery<Attachment, AttachmentId>(db), IAttachmentRepositoryQuery
 {
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<Attachment?> GetAttachmentAsync(AttachmentId id, CancellationToken ct = default)

@@ -7,7 +7,7 @@ using DomainTenantId = TaskFlow.Domain.Shared.TenantId;
 namespace TaskFlow.Domain.Model;
 
 /// <summary>Models checklist item domain behavior and invariants.</summary>
-public class ChecklistItem : EntityBase<DomainChecklistItemId>, ITenantEntity<DomainTenantId>
+public class ChecklistItem : TaskFlowEntityBase<DomainChecklistItemId>, ITenantEntity<DomainTenantId>
 {
     public DomainTenantId TenantId { get; init; }
     public string Title { get; private set; } = null!;

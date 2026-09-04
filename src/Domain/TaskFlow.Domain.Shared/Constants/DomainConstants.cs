@@ -1,4 +1,4 @@
-namespace TaskFlow.Domain.Shared.Constants;
+﻿namespace TaskFlow.Domain.Shared.Constants;
 
 /// <summary>Models domain constants domain behavior and invariants.</summary>
 public static class DomainConstants
@@ -16,6 +16,6 @@ public static class DomainConstants
     public const int RULE_ATTACHMENT_CONTENTTYPE_LENGTH_MAX = 100;
     public const int RULE_ATTACHMENT_STORAGEURI_LENGTH_MAX = 2000;
 
-    // Max UTF8 byte length for Always Encrypted secure properties (varbinary(200) column budget). See D-019.
+    // Max UTF8 plaintext bytes for the encrypted secure properties (D-023): ciphertext = 12 nonce + plaintext + 16 tag <= 256.
     public const int RULE_SECURE_PROPERTY_MAX_BYTES = 200;
 }

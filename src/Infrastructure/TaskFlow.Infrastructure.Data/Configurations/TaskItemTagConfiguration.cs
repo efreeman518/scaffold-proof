@@ -6,7 +6,7 @@ using TaskFlow.Domain.Shared;
 namespace TaskFlow.Infrastructure.Data.Configurations;
 
 /// <summary>Provides task item tag behavior for the Infrastructure Configurations layer.</summary>
-public class TaskItemTagConfiguration() : EntityBaseConfiguration<TaskItemTag, TaskItemTagId>(false)
+public class TaskItemTagConfiguration : EntityBaseConfiguration<TaskItemTag, TaskItemTagId>
 {
     /// <summary>Configures runtime behavior for this component.</summary>
     public override void Configure(EntityTypeBuilder<TaskItemTag> builder)
@@ -14,26 +14,22 @@ public class TaskItemTagConfiguration() : EntityBaseConfiguration<TaskItemTag, T
         base.Configure(builder);
         builder.ToTable("TaskItemTag");
 
-        builder.Property(e => e.TenantId).IsRequired();
-
-        builder.HasIndex(e => new { e.TaskItemId, e.TagId })
-            .HasDatabaseName("IX_TaskItemTag_TaskItemId_TagId")
-            .IsUnique();
-
         builder.HasOne(e => e.TaskItem)
             .WithMany(e => e.TaskItemTags)
-            .HasForeignKey(e => e.TaskItemId)
+            .HasForeignKey(e => new { e.TenantId, e.TaskItemId })
+            .HasPrincipalKey(p => new { p.TenantId, p.Id })
             .IsRequired()
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.HasOne(e => e.Tag)
             .WithMany(e => e.TaskItemTags)
-            .HasForeignKey(e => e.TagId)
+            .HasForeignKey(e => new { e.TenantId, e.TagId })
+            .HasPrincipalKey(p => new { p.TenantId, p.Id })
             .IsRequired()
             .OnDelete(DeleteBehavior.Cascade);
 
-        builder.HasIndex(e => new { e.TenantId, e.TaskItemId })
-            .HasDatabaseName("CIX_TaskItemTag_TenantId_TaskItemId")
-            .IsClustered();
+        builder.HasIndex(e => new { e.TenantId, e.TaskItemId, e.TagId })
+            .HasDatabaseName("IX_TaskItemTag_TenantId_TaskItemId_TagId")
+            .IsUnique();
     }
 }

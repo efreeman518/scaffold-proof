@@ -7,7 +7,7 @@ using DomainTenantId = TaskFlow.Domain.Shared.TenantId;
 namespace TaskFlow.Domain.Model;
 
 /// <summary>Models attachment domain behavior and invariants.</summary>
-public class Attachment : EntityBase<DomainAttachmentId>, ITenantEntity<DomainTenantId>
+public class Attachment : TaskFlowEntityBase<DomainAttachmentId>, ITenantEntity<DomainTenantId>
 {
     public DomainTenantId TenantId { get; init; }
     public string FileName { get; private set; } = null!;

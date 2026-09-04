@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Infrastructure.Data;
+using TaskFlow.Infrastructure.Data.Provider;
 using TaskFlow.Scheduler.Handlers;
 using TaskFlow.Scheduler.Infrastructure;
 using TaskFlow.Scheduler.Jobs;
@@ -62,9 +63,15 @@ public static class RegisterSchedulerServices
                     throw new InvalidOperationException("Connection string 'TickerQDbContext' is required.");
                 }
 
+                // shortcut: TickerQ keeps a scoped (non-pooled) context because UseTickerQDbContext only accepts
+                // Action<DbContextOptionsBuilder>; upgrade path is an upstream factory/pooled overload in TickerQ.EntityFrameworkCore.
                 options.AddOperationalStore(efOptions =>
                     efOptions.UseTickerQDbContext<TaskFlowTickerQDbContext>(
-                        dbOptions => ConfigureTickerQSqlOptions(dbOptions, connStr),
+                        dbOptions => dbOptions.UseTaskFlowProvider(TaskFlowProviderOptions.FromConfiguration(
+                            config,
+                            connStr,
+                            TaskFlowTickerQDbContext.MigrationHistoryTable,
+                            TaskFlowTickerQDbContext.SchemaName)),
                         schema: TaskFlowTickerQDbContext.SchemaName));
             }
 
@@ -151,18 +158,4 @@ public static class RegisterSchedulerServices
 
         app.Logger.LogInformation("TickerQ cron jobs seeded successfully");
     }
-
-    private static void ConfigureTickerQSqlOptions(DbContextOptionsBuilder options, string connectionString)
-    {
-        options.UseSqlServer(connectionString, sqlOptions =>
-        {
-            sqlOptions.UseLatestCompatibilityLevel();
-            sqlOptions.EnableRetryOnFailure(3, TimeSpan.FromSeconds(10), null);
-            sqlOptions.MigrationsAssembly(typeof(TaskFlowTickerQDbContext).Assembly.GetName().Name);
-            sqlOptions.MigrationsHistoryTable(
-                TaskFlowTickerQDbContext.MigrationHistoryTable,
-                TaskFlowTickerQDbContext.SchemaName);
-        });
-    }
-
 }

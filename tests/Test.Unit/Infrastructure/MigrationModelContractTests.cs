@@ -1,54 +1,46 @@
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Infrastructure.Data;
+using TaskFlow.Infrastructure.Data.Provider;
 
 namespace Test.Unit.Infrastructure;
 
-/// <summary>Guards every TaskFlow database model without changing tracked migrations.</summary>
+/// <summary>
+/// Guards every TaskFlow database model on both providers without touching a database: pending-model-change
+/// detection and create-script generation need only the provider's type mapping and the migrations assembly.
+/// </summary>
 [TestClass]
 public sealed class MigrationModelContractTests
 {
-    private const string ConnectionString =
+    private const string SqlServerConnectionString =
         "Server=localhost;Database=TaskFlowMigrationContract;User Id=sa;Password=NotARealPassword1!;TrustServerCertificate=true";
 
-    [TestMethod]
-    public void MigrationOwners_HaveNoPendingModelChanges()
-    {
-        using var transactional = CreateTransactionalContext();
-        using var flowEngine = new TaskFlowFlowEngineDbContext(
-            new DbContextOptionsBuilder<TaskFlowFlowEngineDbContext>()
-                .UseSqlServer(ConnectionString, sql =>
-                {
-                    sql.UseLatestCompatibilityLevel();
-                    sql.MigrationsHistoryTable(
-                        TaskFlowFlowEngineDbContext.MigrationHistoryTable,
-                        TaskFlowFlowEngineDbContext.SchemaName);
-                })
-                .Options);
-        using var tickerQ = new TaskFlowTickerQDbContext(
-            new DbContextOptionsBuilder<TaskFlowTickerQDbContext>()
-                .UseSqlServer(ConnectionString, sql =>
-                {
-                    sql.UseLatestCompatibilityLevel();
-                    sql.MigrationsAssembly(typeof(TaskFlowTickerQDbContext).Assembly.GetName().Name);
-                    sql.MigrationsHistoryTable(
-                        TaskFlowTickerQDbContext.MigrationHistoryTable,
-                        TaskFlowTickerQDbContext.SchemaName);
-                })
-                .Options);
+    private const string PostgreSqlConnectionString =
+        "Host=localhost;Database=TaskFlowMigrationContract;Username=postgres;Password=NotARealPassword1!";
 
-        Assert.IsFalse(transactional.Database.HasPendingModelChanges(), nameof(TaskFlowDbContextTrxn));
-        Assert.IsFalse(flowEngine.Database.HasPendingModelChanges(), nameof(TaskFlowFlowEngineDbContext));
-        Assert.IsFalse(tickerQ.Database.HasPendingModelChanges(), nameof(TaskFlowTickerQDbContext));
+    [TestMethod]
+    [DataRow(TaskFlowDbProvider.SqlServer)]
+    [DataRow(TaskFlowDbProvider.PostgreSql)]
+    public void MigrationOwners_HaveNoPendingModelChanges(TaskFlowDbProvider provider)
+    {
+        using var transactional = CreateTransactionalContext(provider);
+        using var flowEngine = new TaskFlowFlowEngineDbContext(Build<TaskFlowFlowEngineDbContext>(
+            provider, TaskFlowFlowEngineDbContext.MigrationHistoryTable, TaskFlowFlowEngineDbContext.SchemaName));
+        using var tickerQ = new TaskFlowTickerQDbContext(Build<TaskFlowTickerQDbContext>(
+            provider, TaskFlowTickerQDbContext.MigrationHistoryTable, TaskFlowTickerQDbContext.SchemaName));
+
+        Assert.IsFalse(transactional.Database.HasPendingModelChanges(), $"{nameof(TaskFlowDbContextTrxn)} on {provider}");
+        Assert.IsFalse(flowEngine.Database.HasPendingModelChanges(), $"{nameof(TaskFlowFlowEngineDbContext)} on {provider}");
+        Assert.IsFalse(tickerQ.Database.HasPendingModelChanges(), $"{nameof(TaskFlowTickerQDbContext)} on {provider}");
     }
 
     [TestMethod]
-    public void QueryContext_SharesTransactionalMigrationModel()
+    [DataRow(TaskFlowDbProvider.SqlServer)]
+    [DataRow(TaskFlowDbProvider.PostgreSql)]
+    public void QueryContext_SharesTransactionalMigrationModel(TaskFlowDbProvider provider)
     {
-        using var transactional = CreateTransactionalContext();
-        using var query = new TaskFlowDbContextQuery(
-            new DbContextOptionsBuilder<TaskFlowDbContextQuery>()
-                .UseSqlServer(ConnectionString, ConfigurePrimarySql)
-                .Options)
+        using var transactional = CreateTransactionalContext(provider);
+        using var query = new TaskFlowDbContextQuery(Build<TaskFlowDbContextQuery>(
+            provider, TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName))
         {
             AuditId = "MigrationModelContract",
             TenantId = Guid.Parse("00000000-0000-0000-0000-000000000001")
@@ -57,23 +49,23 @@ public sealed class MigrationModelContractTests
         Assert.AreEqual(
             transactional.Database.GenerateCreateScript(),
             query.Database.GenerateCreateScript(),
-            "The query context is covered by the transactional migration chain and must keep the same relational model.");
+            $"The query context is covered by the transactional migration chain and must keep the same relational model on {provider}.");
     }
 
-    private static TaskFlowDbContextTrxn CreateTransactionalContext() =>
-        new(new DbContextOptionsBuilder<TaskFlowDbContextTrxn>()
-            .UseSqlServer(ConnectionString, ConfigurePrimarySql)
-            .Options)
+    private static TaskFlowDbContextTrxn CreateTransactionalContext(TaskFlowDbProvider provider) =>
+        new(Build<TaskFlowDbContextTrxn>(provider, TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName))
         {
             AuditId = "MigrationModelContract",
             TenantId = Guid.Parse("00000000-0000-0000-0000-000000000001")
         };
 
-    private static void ConfigurePrimarySql(Microsoft.EntityFrameworkCore.Infrastructure.SqlServerDbContextOptionsBuilder sql)
-    {
-        sql.UseLatestCompatibilityLevel();
-        sql.MigrationsHistoryTable(
-            TaskFlowDbContextBase.MigrationHistoryTable,
-            TaskFlowDbContextBase.SchemaName);
-    }
+    private static DbContextOptions<TContext> Build<TContext>(TaskFlowDbProvider provider, string historyTable, string historySchema)
+        where TContext : DbContext =>
+        new DbContextOptionsBuilder<TContext>()
+            .UseTaskFlowProvider(new TaskFlowProviderOptions(
+                provider,
+                provider == TaskFlowDbProvider.SqlServer ? SqlServerConnectionString : PostgreSqlConnectionString,
+                historyTable,
+                historySchema))
+            .Options;
 }
