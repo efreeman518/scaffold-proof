@@ -2,6 +2,9 @@
   <Folder Name="/Shared/">
     <Project Path="src/Shared/TaskFlow.Observability/TaskFlow.Observability.csproj" />
   </Folder>
+  <Folder Name="/Packages/">
+    <Project Path="src/Packages/EF.Messaging.RabbitMq/EF.Messaging.RabbitMq.csproj" />
+  </Folder>
   <Folder Name="/Domain/">
     <Project Path="src/Domain/TaskFlow.Domain.Shared/TaskFlow.Domain.Shared.csproj" />
     <Project Path="src/Domain/TaskFlow.Domain.Model/TaskFlow.Domain.Model.csproj" />
