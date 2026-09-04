@@ -19,21 +19,46 @@ var unoWasmAvailableInTesting =
 var foundryLocalAvailableInTesting =
     Environment.GetEnvironmentVariable("TASKFLOW_ASPIRE_ENABLE_FOUNDRY_LOCAL") == "true";
 
-// Keep SQL password stable across restarts so persistent SQL volumes remain usable.
-// Tests can still override via Parameters__sql-password.
+// Keep the database password stable across restarts so persistent volumes remain usable.
+// Tests can still override via Parameters__sql-password / Parameters__postgres-password.
 var defaultSqlPassword = LocalSqlSettings.SharedSaPassword;
 var sqlServerImageTag = "2025-latest";
 
+// D-020: exactly one relational server runs locally, chosen by TASKFLOW_DB_PROVIDER / Database:Provider
+// (default SqlServer). Every host receives the same choice as Database__Provider so UseTaskFlowProvider agrees.
+var dbProviderName = Environment.GetEnvironmentVariable("TASKFLOW_DB_PROVIDER")
+    ?? builder.Configuration["Database:Provider"]
+    ?? "SqlServer";
+var usePostgres = string.Equals(dbProviderName, "PostgreSql", StringComparison.OrdinalIgnoreCase);
+
 // Infrastructure resources
-var sqlPassword = builder.AddParameter("sql-password", defaultSqlPassword, secret: true);
 // In Testing mode: non-persistent, no named volume, random port - ensures fresh container with known password.
 // In dev/prod: persistent with named volume on fixed port.
-var sql = builder.AddSqlServer("sql", sqlPassword, port: isTesting ? null : 38433)
-    .WithImageTag(sqlServerImageTag);
-if (!isTesting)
-    sql = sql.WithLifetime(ContainerLifetime.Persistent)
-             .WithDataVolume("taskflow-sql-data");
-var taskflowDb = sql.AddDatabase("taskflowdb");
+IResourceBuilder<IResourceWithConnectionString> taskflowDb;
+IResourceBuilder<IResource> dbServer;
+if (usePostgres)
+{
+    var postgresPassword = builder.AddParameter("postgres-password", defaultSqlPassword, secret: true);
+    var postgres = builder.AddPostgres("postgres", password: postgresPassword, port: isTesting ? null : 35432)
+        .WithImage("pgvector/pgvector")
+        .WithImageTag("pg17");
+    if (!isTesting)
+        postgres = postgres.WithLifetime(ContainerLifetime.Persistent)
+                           .WithDataVolume("taskflow-postgres-data");
+    taskflowDb = postgres.AddDatabase("taskflowdb");
+    dbServer = postgres;
+}
+else
+{
+    var sqlPassword = builder.AddParameter("sql-password", defaultSqlPassword, secret: true);
+    var sql = builder.AddSqlServer("sql", sqlPassword, port: isTesting ? null : 38433)
+        .WithImageTag(sqlServerImageTag);
+    if (!isTesting)
+        sql = sql.WithLifetime(ContainerLifetime.Persistent)
+                 .WithDataVolume("taskflow-sql-data");
+    taskflowDb = sql.AddDatabase("taskflowdb");
+    dbServer = sql;
+}
 
 var redis = builder.AddRedis("redis")
     .WithImageTag("latest");
@@ -125,9 +150,10 @@ var migrator = builder.AddProject<Projects.TaskFlow_DatabaseMigrator>("taskflowm
     .WithReference(taskflowDb, connectionName: "TaskFlowDbContextTrxn")
     .WithReference(taskflowDb, connectionName: "TaskFlowFlowEngineDbContext")
     .WithReference(taskflowDb, connectionName: "TickerQDbContext")
+    .WithEnvironment("Database__Provider", dbProviderName)
     .WithEnvironment("Database__Encryption__LocalKeyBase64", columnEncryptionKey)
     .WithEnvironment("Database__Encryption__BlindIndexKeyBase64", blindIndexKey)
-    .WaitFor(sql);
+    .WaitFor(dbServer);
 
 // API host
 var api = builder.AddProject<Projects.TaskFlow_Api>("taskflowapi")
@@ -138,10 +164,11 @@ var api = builder.AddProject<Projects.TaskFlow_Api>("taskflowapi")
     .WithReference(tables)
     .WithReference(blobs)
     .WithReference(serviceBus)
+    .WithEnvironment("Database__Provider", dbProviderName)
     .WithEnvironment("Database__Encryption__LocalKeyBase64", columnEncryptionKey)
     .WithEnvironment("Database__Encryption__BlindIndexKeyBase64", blindIndexKey)
     .WaitForCompletion(migrator)
-    .WaitFor(sql)
+    .WaitFor(dbServer)
     .WaitFor(redis)
     .WaitFor(serviceBus);
 
@@ -227,11 +254,12 @@ if (!isTesting)
         .WithReference(redis, connectionName: "Redis1")
         .WithReference(tables)
         .WithReference(serviceBus)
+        .WithEnvironment("Database__Provider", dbProviderName)
         .WithEnvironment("Database__Encryption__LocalKeyBase64", columnEncryptionKey)
         .WithEnvironment("Database__Encryption__BlindIndexKeyBase64", blindIndexKey)
         .WithReplicas(1)
         .WaitForCompletion(migrator)
-        .WaitFor(sql)
+        .WaitFor(dbServer)
         .WaitFor(serviceBus);
 
     if (!string.IsNullOrWhiteSpace(applicationStyle))
@@ -277,10 +305,11 @@ if (!isTesting || functionsAvailableInTesting)
         .WithReference(tables)
         .WithReference(blobs)
         .WithReference(serviceBus)
+        .WithEnvironment("Database__Provider", dbProviderName)
         .WithEnvironment("Database__Encryption__LocalKeyBase64", columnEncryptionKey)
         .WithEnvironment("Database__Encryption__BlindIndexKeyBase64", blindIndexKey)
         .WaitForCompletion(migrator)
-        .WaitFor(sql)
+        .WaitFor(dbServer)
         .WaitFor(storage)
         .WaitFor(serviceBus);
 
