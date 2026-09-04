@@ -17,4 +17,8 @@ internal static partial class LogMessages
     /// <summary>Logs that a workflow was started for a task item.</summary>
     [LoggerMessage(EventId = LogEventIds.ApplicationMessageHandlersBase + 2, Level = LogLevel.Information, Message = "Started workflow {WorkflowId} instance {InstanceId} for TaskItem {TaskId}")]
     public static partial void WorkflowStarted(this ILogger logger, string workflowId, string instanceId, Guid taskId);
+
+    /// <summary>Logs that a redelivery was skipped because the consumer inbox already had the message.</summary>
+    [LoggerMessage(EventId = LogEventIds.ApplicationMessageHandlersBase + 3, Level = LogLevel.Debug, Message = "Consumer {Consumer} skipped duplicate {EventType} {MessageId}")]
+    public static partial void ConsumerDuplicateSkipped(this ILogger logger, string consumer, string eventType, Guid messageId);
 }

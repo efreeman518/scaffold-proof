@@ -1,4 +1,5 @@
-﻿using AppHost;
+using AppHost;
+using Aspire.Hosting.Azure;
 using Aspire.Hosting.Foundry;
 
 var builder = DistributedApplication.CreateBuilder(args);
@@ -78,8 +79,40 @@ var tables = storage.AddTables("TableStorage1");
 var serviceBus = builder.AddAzureServiceBus("ServiceBus1")
     .RunAsEmulator(emulator => emulator.WithImageTag("latest"));
 var domainEventsTopic = serviceBus.AddServiceBusTopic("DomainEvents");
-domainEventsTopic.AddServiceBusSubscription("function-processor");
+
+// One subscription per consumer, each filtered on the EventType application property the envelope sets, so a
+// slow AI review cannot delay projection and each consumer owns its own delivery count and dead-letter queue.
+// A correlation filter matches one value, so the projection subscription needs one rule per event type.
+// The emulator implements no duplicate detection (the deployed namespace does, see service-bus.bicep), so the
+// D-029 ConsumerInbox is what proves replay safety locally - and it is the only dedup on RabbitMQ (D-034).
+AddEventTypeSubscription(domainEventsTopic, "projection",
+    ["TaskItemCreatedEvent", "TaskItemStatusChangedEvent", "TaskItemCompletedEvent"]);
+AddEventTypeSubscription(domainEventsTopic, "ai-review", ["TaskItemCreatedEvent"]);
+AddEventTypeSubscription(domainEventsTopic, "workflow", ["TaskItemCreatedEvent"]);
+
 serviceBus.AddServiceBusQueue("TaskCommands");
+
+static void AddEventTypeSubscription(
+    IResourceBuilder<AzureServiceBusTopicResource> topic, string name, string[] eventTypes)
+{
+    topic.AddServiceBusSubscription(name)
+        .WithProperties(subscription =>
+        {
+            subscription.MaxDeliveryCount = 5;
+            subscription.LockDuration = TimeSpan.FromMinutes(5);
+            subscription.DeadLetteringOnMessageExpiration = true;
+            foreach (var eventType in eventTypes)
+            {
+                subscription.Rules.Add(new AzureServiceBusRule($"EventType-{eventType}")
+                {
+                    CorrelationFilter = new AzureServiceBusCorrelationFilter
+                    {
+                        Properties = { ["EventType"] = eventType }
+                    }
+                });
+            }
+        });
+}
 
 // The Service Bus emulator bundles its own SQL Server sidecar (ServiceBus1-mssql); the Aspire package
 // hardcodes that image, and RunAsEmulator's callback cannot reach it. Override it here so it matches

@@ -5,18 +5,6 @@ using TaskFlow.Application.Models;
 
 namespace TaskFlow.Infrastructure.AI.Demos;
 
-/// <summary>
-/// D6 - Asynchronous, event-driven inference. Invoked from the Functions Service Bus pipeline after a
-/// task is created: the model reviews the new task and posts clarifying questions / missing-detail
-/// notes as a comment. The inference happens off the request path and produces a side effect on a
-/// different surface (a comment), distinct from the synchronous triage (D4) and draft (D5) demos.
-/// </summary>
-public interface IAiTaskReviewer
-{
-    /// <summary>Reviews a newly created task and, if it is not already clear, posts a comment.</summary>
-    Task ReviewNewTaskAsync(Guid taskId, Guid tenantId, CancellationToken ct = default);
-}
-
 /// <inheritdoc />
 public sealed class AiTaskReviewer(
     ILogger<AiTaskReviewer> logger,

@@ -8,4 +8,10 @@ public interface IInboxStore
 {
     /// <summary>True when this call inserted the inbox row (first delivery); false when it already existed.</summary>
     Task<bool> TryClaimAsync(string consumer, Guid messageId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a claim whose work then failed, so the redelivery is processed instead of skipped. Without this
+    /// compensation a claim taken before the work would swallow the retry and lose the effect.
+    /// </summary>
+    Task ReleaseAsync(string consumer, Guid messageId, CancellationToken ct = default);
 }

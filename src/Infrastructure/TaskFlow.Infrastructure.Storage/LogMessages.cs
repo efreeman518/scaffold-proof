@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using TaskFlow.Observability;
 
 namespace TaskFlow.Infrastructure.Storage;
@@ -16,6 +16,10 @@ internal static partial class LogMessages
     /// <summary>Logs that a TaskView read model was upserted.</summary>
     [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 2, Level = LogLevel.Debug, Message = "Upserted TaskView {Id} for tenant {TenantId}")]
     public static partial void TaskViewUpserted(this ILogger logger, string id, string tenantId);
+
+    /// <summary>Logs that a TaskView was not there to patch; the create projection will build it.</summary>
+    [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 9, Level = LogLevel.Debug, Message = "TaskView {Id} not found for counter patch")]
+    public static partial void TaskViewNotFoundForPatch(this ILogger logger, string id);
 
     /// <summary>Logs that a TaskView was not found during deletion.</summary>
     [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 3, Level = LogLevel.Debug, Message = "TaskView {Id} not found for deletion")]
