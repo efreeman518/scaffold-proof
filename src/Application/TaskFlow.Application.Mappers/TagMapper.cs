@@ -13,6 +13,7 @@ public static class TagMapper
         entity => new TagDto
         {
             Id = entity.Id.Value,
+            Version = entity.Version,
             TenantId = entity.TenantId.Value,
             Name = entity.Name,
             Color = entity.Color
@@ -25,5 +26,5 @@ public static class TagMapper
 
     /// <summary>Converts the current value to entity.</summary>
     public static DomainResult<Tag> ToEntity(this TagDto dto, Guid tenantId)
-        => Tag.Create(DomainId.From<TenantId>(tenantId), dto.Name, dto.Color);
+        => Tag.Create(DomainId.From<TenantId>(tenantId), dto.Name, dto.Color, DomainId.FromNullable<TagId>(dto.Id));
 }

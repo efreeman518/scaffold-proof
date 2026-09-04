@@ -32,7 +32,7 @@ internal class CommentService(
 
     /// <summary>Searches search and returns filtered results for callers.</summary>
     public async Task<PagedResponse<CommentDto>> SearchAsync(
-        SearchRequest<CommentSearchFilter> request, CancellationToken ct = default)
+        SearchRequest<CommentSearchFilter> request, bool includeTotal = false, CancellationToken ct = default)
     {
         if (!IsGlobalAdmin)
         {
@@ -43,7 +43,7 @@ internal class CommentService(
             }
             request.Filter.TenantId = RequestTenantId;
         }
-        return await repoQuery.SearchCommentsAsync(request, ct);
+        return await repoQuery.SearchCommentsAsync(request, includeTotal, ct);
     }
 
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>

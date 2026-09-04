@@ -23,8 +23,9 @@ public class Attachment : TaskFlowEntityBase<DomainAttachmentId>, ITenantEntity<
     private Attachment() { }
 
     /// <summary>Initializes attachment with required dependencies and default state.</summary>
-    private Attachment(DomainTenantId tenantId, string fileName, string contentType, long fileSizeBytes, string storageUri, AttachmentOwnerType ownerType, Guid ownerId)
+    private Attachment(DomainTenantId tenantId, string fileName, string contentType, long fileSizeBytes, string storageUri, AttachmentOwnerType ownerType, Guid ownerId, DomainAttachmentId? id)
     {
+        if (id.HasValue) Id = id.Value; // D-033: caller-supplied UUIDv7 id makes create idempotent.
         TenantId = tenantId;
         FileName = fileName;
         ContentType = contentType;
@@ -38,9 +39,9 @@ public class Attachment : TaskFlowEntityBase<DomainAttachmentId>, ITenantEntity<
     public static DomainResult<Attachment> Create(
         DomainTenantId tenantId, string fileName, string contentType,
         long fileSizeBytes, string storageUri,
-        AttachmentOwnerType ownerType, Guid ownerId)
+        AttachmentOwnerType ownerType, Guid ownerId, DomainAttachmentId? id = null)
     {
-        var entity = new Attachment(tenantId, fileName, contentType, fileSizeBytes, storageUri, ownerType, ownerId);
+        var entity = new Attachment(tenantId, fileName, contentType, fileSizeBytes, storageUri, ownerType, ownerId, id);
         return entity.Valid();
     }
 

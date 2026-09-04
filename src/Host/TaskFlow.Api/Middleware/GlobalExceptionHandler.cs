@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Diagnostics;
+using System.Globalization;
+using TaskFlow.Application.Contracts.Concurrency;
 
 namespace TaskFlow.Api.Middleware;
 
@@ -19,8 +21,16 @@ internal sealed class DefaultExceptionHandler(
     {
         var (statusCode, title) = exception switch
         {
+            // D-032: a stale If-Match and a lost update between load and save are the same failure to
+            // the caller - 412, not the 409 this used to answer (which no client could act on).
+            // These arms must stay above the ArgumentException/InvalidOperationException arm below,
+            // which would otherwise swallow them into a 400.
+            ConcurrencyMismatchException
+                => (StatusCodes.Status412PreconditionFailed, "Precondition failed"),
             DbUpdateConcurrencyException
-                => (StatusCodes.Status409Conflict, "Concurrency conflict"),
+                => (StatusCodes.Status412PreconditionFailed, "Precondition failed"),
+            IdempotentCreateConflictException
+                => (StatusCodes.Status409Conflict, "Conflict"),
             UnauthorizedAccessException
                 => (StatusCodes.Status403Forbidden, "Forbidden"),
             KeyNotFoundException
@@ -65,6 +75,14 @@ internal sealed class DefaultExceptionHandler(
             return true;
 
         httpContext.Response.StatusCode = statusCode;
+
+        // Hand the caller the version it needs to retry with, so a 412 is self-correcting instead of
+        // forcing an extra GET.
+        if (exception is ConcurrencyMismatchException mismatch)
+        {
+            httpContext.Response.Headers.ETag =
+                $"\"{mismatch.Current.ToString(CultureInfo.InvariantCulture)}\"";
+        }
 
         try
         {

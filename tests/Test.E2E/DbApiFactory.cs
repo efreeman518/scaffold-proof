@@ -17,6 +17,11 @@ namespace Test.E2E;
 public sealed class DbApiFactory : WebApplicationFactoryBase<Program, TaskFlowDbContextTrxn, TaskFlowDbContextQuery>
 {
     private static readonly TestDatabaseContainer Db = new(TestDbProvider.Current);
+
+    // The container is shared by every test class in this assembly and cannot be restarted once
+    // disposed, so it is started on first use and torn down once from [AssemblyCleanup]. Disposing it
+    // from a class cleanup pulled it out from under the classes that ran afterwards.
+    private static readonly SemaphoreSlim Gate = new(1, 1);
     private static bool _started;
 
     private readonly string _applicationStyle;
@@ -36,34 +41,49 @@ public sealed class DbApiFactory : WebApplicationFactoryBase<Program, TaskFlowDb
     /// <summary>Starts the database container once per test run.</summary>
     public static async Task StartContainerAsync(CancellationToken cancellationToken)
     {
-        if (_started || DockerUnavailableReason is not null || StartupError is not null)
-            return;
-
-        DockerUnavailableReason = await DockerRuntimePreflight.GetUnavailableReasonAsync(
-            TimeSpan.FromSeconds(10),
-            cancellationToken);
-        if (DockerUnavailableReason is not null)
-            return;
-
+        await Gate.WaitAsync(cancellationToken);
         try
         {
-            await Db.StartAsync();
-            _started = true;
+            if (_started || DockerUnavailableReason is not null || StartupError is not null)
+                return;
+
+            DockerUnavailableReason = await DockerRuntimePreflight.GetUnavailableReasonAsync(
+                TimeSpan.FromSeconds(10),
+                cancellationToken);
+            if (DockerUnavailableReason is not null)
+                return;
+
+            try
+            {
+                await Db.StartAsync();
+                _started = true;
+            }
+            catch (Exception ex)
+            {
+                StartupError = ex;
+            }
         }
-        catch (Exception ex)
+        finally
         {
-            StartupError = ex;
+            Gate.Release();
         }
     }
 
-    /// <summary>Stops the database container.</summary>
+    /// <summary>Stops the shared container. Called once per assembly, never from a class cleanup.</summary>
     public static async Task StopContainerAsync()
     {
-        if (!_started)
-            return;
+        await Gate.WaitAsync();
+        try
+        {
+            if (!_started) return;
 
-        await Db.DisposeAsync();
-        _started = false;
+            await Db.DisposeAsync();
+            _started = false;
+        }
+        finally
+        {
+            Gate.Release();
+        }
     }
 
     /// <summary>Points the host at the container and selects the lane's provider (Database:Provider).</summary>

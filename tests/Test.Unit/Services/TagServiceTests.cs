@@ -114,7 +114,7 @@ public class TagServiceTests
         _repoTrxnMock.Setup(r => r.SaveChangesAsync(It.IsAny<OptimisticConcurrencyWinner>(), It.IsAny<CancellationToken>())).ReturnsAsync(0);
 
         var dto = new TagDto { Id = entity.Id, Name = "Updated", Color = "#00FF00" };
-        var result = await CreateService().UpdateAsync(new DefaultRequest<TagDto> { Item = dto }, TestContext.CancellationToken);
+        var result = await CreateService().UpdateAsync(new DefaultRequest<TagDto> { Item = dto }, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual("Updated", result.Value!.Item!.Name);
@@ -128,7 +128,7 @@ public class TagServiceTests
         _repoTrxnMock.Setup(r => r.GetAsync(It.IsAny<TagId>(), It.IsAny<CancellationToken>())).ReturnsAsync((Tag?)null);
 
         var dto = new TagDto { Id = Guid.NewGuid(), Name = "Updated" };
-        var result = await CreateService().UpdateAsync(new DefaultRequest<TagDto> { Item = dto }, TestContext.CancellationToken);
+        var result = await CreateService().UpdateAsync(new DefaultRequest<TagDto> { Item = dto }, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
         Assert.IsNull(result.Value?.Item);
@@ -143,7 +143,7 @@ public class TagServiceTests
         _repoTrxnMock.Setup(r => r.GetAsync(entity.Id, It.IsAny<CancellationToken>())).ReturnsAsync(entity);
         _repoTrxnMock.Setup(r => r.SaveChangesAsync(It.IsAny<OptimisticConcurrencyWinner>(), It.IsAny<CancellationToken>())).ReturnsAsync(0);
 
-        var result = await CreateService().DeleteAsync(entity.Id, TestContext.CancellationToken);
+        var result = await CreateService().DeleteAsync(entity.Id, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
         _repoTrxnMock.Verify(r => r.Delete(entity), Times.Once);
@@ -156,7 +156,7 @@ public class TagServiceTests
     {
         _repoTrxnMock.Setup(r => r.GetAsync(It.IsAny<TagId>(), It.IsAny<CancellationToken>())).ReturnsAsync((Tag?)null);
 
-        var result = await CreateService().DeleteAsync(Guid.NewGuid(), TestContext.CancellationToken);
+        var result = await CreateService().DeleteAsync(Guid.NewGuid(), null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
     }
@@ -168,11 +168,11 @@ public class TagServiceTests
     {
         var dtos = new List<TagDto> { new() { Name = "Test" } };
         var pagedResponse = new PagedResponse<TagDto> { Data = dtos, Total = 1, PageSize = 10, PageIndex = 0 };
-        _repoQueryMock.Setup(r => r.SearchTagsAsync(It.IsAny<SearchRequest<TagSearchFilter>>(), It.IsAny<CancellationToken>()))
+        _repoQueryMock.Setup(r => r.SearchTagsAsync(It.IsAny<SearchRequest<TagSearchFilter>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(pagedResponse);
 
         var request = new SearchRequest<TagSearchFilter> { PageSize = 10, PageIndex = 0 };
-        var response = await CreateService().SearchAsync(request, TestContext.CancellationToken);
+        var response = await CreateService().SearchAsync(request, false, TestContext.CancellationToken);
 
         Assert.AreEqual(1, response.Total);
     }

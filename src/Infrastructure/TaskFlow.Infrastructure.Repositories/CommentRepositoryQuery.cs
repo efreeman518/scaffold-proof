@@ -1,4 +1,4 @@
-﻿using EF.Common.Contracts;
+using EF.Common.Contracts;
 using EF.Data;
 using EF.Data.Contracts;
 using TaskFlow.Application.Contracts.Repositories;
@@ -25,7 +25,7 @@ public class CommentRepositoryQuery(TaskFlowDbContextQuery db)
     }
 
     /// <summary>Searches search comments and returns filtered results for callers.</summary>
-    public async Task<PagedResponse<CommentDto>> SearchCommentsAsync(SearchRequest<CommentSearchFilter> request, CancellationToken ct = default)
+    public async Task<PagedResponse<CommentDto>> SearchCommentsAsync(SearchRequest<CommentSearchFilter> request, bool includeTotal = false, CancellationToken ct = default)
     {
         var q = DB.Set<Comment>().ComposeIQueryable(false);
 
@@ -62,7 +62,7 @@ public class CommentRepositoryQuery(TaskFlowDbContextQuery db)
 
         (var data, var total) = await q.QueryPageProjectionAsync(CommentMapper.Projection,
             pageSize: request.PageSize, pageIndex: Math.Max(1, request.PageIndex),
-            includeTotal: true, splitQueryOptions: SplitQueryThresholdOptions.Default,
+            includeTotal: includeTotal, splitQueryOptions: SplitQueryThresholdOptions.Default,
             cancellationToken: ct).ConfigureAwait(ConfigureAwaitOptions.None);
 
         return new PagedResponse<CommentDto>

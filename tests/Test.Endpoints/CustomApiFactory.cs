@@ -1,7 +1,9 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Infrastructure.Data;
+using TaskFlow.Infrastructure.Data.Interceptors;
 using Test.Support;
 
 namespace Test.Endpoints;
@@ -25,6 +27,18 @@ public sealed class CustomApiFactory : WebApplicationFactoryBase<Program, TaskFl
             ?? ApplicationStyle.Service.ToString();
     }
 
+    /// <summary>
+    /// The application style must be visible while Program.cs registers services, not only after the
+    /// host is built: ConfigureAppConfiguration sources land too late for that, so the style goes in as
+    /// a host setting. Without this the endpoint map would select CQRS routes while the container still
+    /// held only the Service-style registrations.
+    /// </summary>
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.UseSetting(ApplicationStyleResolver.ConfigKey, _applicationStyle);
+        base.ConfigureWebHost(builder);
+    }
+
     /// <summary>Verifies configure test configuration behavior and protects the expected test contract.</summary>
     protected override void ConfigureTestConfiguration(IConfigurationBuilder config)
     {
@@ -36,11 +50,20 @@ public sealed class CustomApiFactory : WebApplicationFactoryBase<Program, TaskFl
         config.AddInMemoryCollection(TestColumnEncryption.Configuration);
     }
 
+    // The version/timestamp interceptor is part of the concurrency contract (D-021), not of the SQL
+    // provider: without it here every entity would report Version 0 and the whole ETag surface would
+    // pass the tests while being inert.
     /// <summary>Builds trxn options used by focused test cases.</summary>
     protected override DbContextOptions BuildTrxnOptions() =>
-        new DbContextOptionsBuilder<TaskFlowDbContextTrxn>().UseInMemoryDatabase(_dbName).Options;
+        new DbContextOptionsBuilder<TaskFlowDbContextTrxn>()
+            .UseInMemoryDatabase(_dbName)
+            .AddInterceptors(new VersionTimestampInterceptor())
+            .Options;
 
     /// <summary>Builds query options used by focused test cases.</summary>
     protected override DbContextOptions BuildQueryOptions() =>
-        new DbContextOptionsBuilder<TaskFlowDbContextQuery>().UseInMemoryDatabase(_dbName).Options;
+        new DbContextOptionsBuilder<TaskFlowDbContextQuery>()
+            .UseInMemoryDatabase(_dbName)
+            .AddInterceptors(new VersionTimestampInterceptor())
+            .Options;
 }

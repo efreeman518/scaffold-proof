@@ -143,6 +143,8 @@ public static class WebApplicationBuilderExtensions
             api.MapAttachmentEndpoints(ProblemDetailsIncludeStackTrace);
         }
 
+        // Style-agnostic reads (summary, metadata, export) - one registration for both styles.
+        api.MapTaskFlowReadEndpoints();
         api.MapSearchEndpoints();
         api.MapAgentEndpoints();
         api.MapAiDemoEndpoints();

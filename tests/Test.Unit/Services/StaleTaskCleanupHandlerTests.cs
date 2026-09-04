@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models;
+using TaskFlow.Application.Models.Paging;
 using TaskFlow.Domain.Shared.Enums;
 using TaskFlow.Scheduler.Handlers;
 
@@ -40,14 +41,14 @@ public class StaleTaskCleanupHandlerTests
         };
 
         _serviceMock.Setup(s => s.SearchAsync(
-                It.Is<SearchRequest<TaskItemSearchFilter>>(r => r.Filter!.Status == TaskItemStatus.Cancelled),
+                It.Is<TaskItemCursorSearchRequest>(r => r.Filter!.Status == TaskItemStatus.Cancelled),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagedResponse<TaskItemDto> { Data = staleTasks, Total = 2 });
+            .ReturnsAsync(new CursorPage<TaskItemDto> { Data = staleTasks });
 
         await _handler.HandleAsync(CancellationToken.None);
 
         _serviceMock.Verify(s => s.SearchAsync(
-            It.Is<SearchRequest<TaskItemSearchFilter>>(r => r.Filter!.Status == TaskItemStatus.Cancelled),
+            It.Is<TaskItemCursorSearchRequest>(r => r.Filter!.Status == TaskItemStatus.Cancelled),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -57,14 +58,14 @@ public class StaleTaskCleanupHandlerTests
     public async Task HandleAsync_NoStaleTasks_CompletesWithZeroCount()
     {
         _serviceMock.Setup(s => s.SearchAsync(
-                It.IsAny<SearchRequest<TaskItemSearchFilter>>(),
+                It.IsAny<TaskItemCursorSearchRequest>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagedResponse<TaskItemDto> { Data = [], Total = 0 });
+            .ReturnsAsync(new CursorPage<TaskItemDto> { Data = [] });
 
         await _handler.HandleAsync(CancellationToken.None);
 
         _serviceMock.Verify(s => s.SearchAsync(
-            It.IsAny<SearchRequest<TaskItemSearchFilter>>(),
+            It.IsAny<TaskItemCursorSearchRequest>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -80,15 +81,15 @@ public class StaleTaskCleanupHandlerTests
         };
 
         _serviceMock.Setup(s => s.SearchAsync(
-                It.IsAny<SearchRequest<TaskItemSearchFilter>>(),
+                It.IsAny<TaskItemCursorSearchRequest>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagedResponse<TaskItemDto> { Data = recentCancelled, Total = 2 });
+            .ReturnsAsync(new CursorPage<TaskItemDto> { Data = recentCancelled });
 
         // Handler filters to DueDate < 90 days ago - these are recent, so staleTasks count = 0
         await _handler.HandleAsync(CancellationToken.None);
 
         _serviceMock.Verify(s => s.SearchAsync(
-            It.IsAny<SearchRequest<TaskItemSearchFilter>>(),
+            It.IsAny<TaskItemCursorSearchRequest>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -103,15 +104,15 @@ public class StaleTaskCleanupHandlerTests
         };
 
         _serviceMock.Setup(s => s.SearchAsync(
-                It.IsAny<SearchRequest<TaskItemSearchFilter>>(),
+                It.IsAny<TaskItemCursorSearchRequest>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagedResponse<TaskItemDto> { Data = noDueDate, Total = 1 });
+            .ReturnsAsync(new CursorPage<TaskItemDto> { Data = noDueDate });
 
         // Null DueDate -> not stale (DueDate.HasValue is false)
         await _handler.HandleAsync(CancellationToken.None);
 
         _serviceMock.Verify(s => s.SearchAsync(
-            It.IsAny<SearchRequest<TaskItemSearchFilter>>(),
+            It.IsAny<TaskItemCursorSearchRequest>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -121,14 +122,14 @@ public class StaleTaskCleanupHandlerTests
     public async Task HandleAsync_NullData_TreatsAsEmpty()
     {
         _serviceMock.Setup(s => s.SearchAsync(
-                It.IsAny<SearchRequest<TaskItemSearchFilter>>(),
+                It.IsAny<TaskItemCursorSearchRequest>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagedResponse<TaskItemDto> { Data = null!, Total = 0 });
+            .ReturnsAsync(new CursorPage<TaskItemDto> { Data = null! });
 
         await _handler.HandleAsync(CancellationToken.None);
 
         _serviceMock.Verify(s => s.SearchAsync(
-            It.IsAny<SearchRequest<TaskItemSearchFilter>>(),
+            It.IsAny<TaskItemCursorSearchRequest>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 }

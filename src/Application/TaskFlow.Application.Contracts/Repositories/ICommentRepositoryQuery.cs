@@ -12,5 +12,5 @@ public interface ICommentRepositoryQuery : IRepositoryQuery<Comment, CommentId>
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     Task<Comment?> GetCommentAsync(CommentId id, CancellationToken ct = default);
     /// <summary>Searches search comments and returns filtered results for callers.</summary>
-    Task<PagedResponse<CommentDto>> SearchCommentsAsync(SearchRequest<CommentSearchFilter> request, CancellationToken ct = default);
+    Task<PagedResponse<CommentDto>> SearchCommentsAsync(SearchRequest<CommentSearchFilter> request, bool includeTotal = false, CancellationToken ct = default);
 }

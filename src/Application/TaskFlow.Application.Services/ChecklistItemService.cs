@@ -32,7 +32,7 @@ internal class ChecklistItemService(
 
     /// <summary>Searches search and returns filtered results for callers.</summary>
     public async Task<PagedResponse<ChecklistItemDto>> SearchAsync(
-        SearchRequest<ChecklistItemSearchFilter> request, CancellationToken ct = default)
+        SearchRequest<ChecklistItemSearchFilter> request, bool includeTotal = false, CancellationToken ct = default)
     {
         if (!IsGlobalAdmin)
         {
@@ -43,7 +43,7 @@ internal class ChecklistItemService(
             }
             request.Filter.TenantId = RequestTenantId;
         }
-        return await repoQuery.SearchChecklistItemsAsync(request, ct);
+        return await repoQuery.SearchChecklistItemsAsync(request, includeTotal, ct);
     }
 
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>

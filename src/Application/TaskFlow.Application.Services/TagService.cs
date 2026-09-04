@@ -2,6 +2,7 @@ using EF.Common.Contracts;
 using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
+using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Mappers;
@@ -35,7 +36,7 @@ internal class TagService(
 
     /// <summary>Searches search and returns filtered results for callers.</summary>
     public async Task<PagedResponse<TagDto>> SearchAsync(
-        SearchRequest<TagSearchFilter> request, CancellationToken ct = default)
+        SearchRequest<TagSearchFilter> request, bool includeTotal = false, CancellationToken ct = default)
     {
         if (!IsGlobalAdmin)
         {
@@ -46,7 +47,7 @@ internal class TagService(
             }
             request.Filter.TenantId = RequestTenantId;
         }
-        return await repoQuery.SearchTagsAsync(request, ct);
+        return await repoQuery.SearchTagsAsync(request, includeTotal, ct);
     }
 
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
@@ -78,6 +79,21 @@ internal class TagService(
             "Tag:Create", nameof(Tag));
         if (boundary.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(boundary.ErrorMessage!);
 
+        // D-033: the row itself is the idempotency record for a caller-supplied UUIDv7 id.
+        if (dto.Id is Guid callerId && callerId != Guid.Empty)
+        {
+            var existing = await repoTrxn.GetAsync(DomainId.From<TagId>(callerId), ct);
+            if (existing is not null)
+            {
+                var existingDto = existing.ToDto();
+                if (!IdempotentCreateGuard.IsEquivalent(existingDto, dto))
+                    throw new IdempotentCreateConflictException(nameof(Tag), callerId);
+
+                return Result<DefaultResponse<TagDto>>.Success(
+                    new DefaultResponse<TagDto> { Item = existingDto, IsReplay = true });
+            }
+        }
+
         var entityResult = dto.ToEntity(dto.TenantId);
         if (entityResult.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(entityResult.ErrorMessage!);
 
@@ -86,9 +102,9 @@ internal class TagService(
 
         try
         {
-            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, ct);
+            await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
             logger.LogError(ex, "Error creating Tag");
             return Result<DefaultResponse<TagDto>>.Failure(ex.GetBaseException().Message);
@@ -99,7 +115,7 @@ internal class TagService(
 
     /// <summary>Updates existing data after validation and preserves domain invariants.</summary>
     public async Task<Result<DefaultResponse<TagDto>>> UpdateAsync(
-        DefaultRequest<TagDto> request, CancellationToken ct = default)
+        DefaultRequest<TagDto> request, long? expectedVersion, CancellationToken ct = default)
     {
         var dto = request.Item;
         dto.TenantId = RequestTenantId ?? Guid.Empty;
@@ -116,6 +132,8 @@ internal class TagService(
             "Tag:Update", nameof(Tag), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(boundary.ErrorMessage!);
 
+        ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(Tag), entity.Id.Value);
+
         var tenantChangeCheck = tenantBoundaryValidator.PreventTenantChange(
             logger, entity.TenantId.Value, dto.TenantId, nameof(Tag), entity.Id.Value);
         if (tenantChangeCheck.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(tenantChangeCheck.ErrorMessage!);
@@ -125,9 +143,9 @@ internal class TagService(
 
         try
         {
-            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, ct);
+            await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
             logger.LogError(ex, "Error updating Tag {Id}", dto.Id);
             return Result<DefaultResponse<TagDto>>.Failure(ex.GetBaseException().Message);
@@ -137,7 +155,7 @@ internal class TagService(
     }
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
-    public async Task<Result> DeleteAsync(Guid id, CancellationToken ct = default)
+    public async Task<Result> DeleteAsync(Guid id, long? expectedVersion, CancellationToken ct = default)
     {
         var entity = await repoTrxn.GetAsync(DomainId.From<TagId>(id), ct);
         if (entity == null) return Result.Success();
@@ -147,13 +165,15 @@ internal class TagService(
             "Tag:Delete", nameof(Tag), entity.Id.Value);
         if (boundary.IsFailure) return Result.Failure(boundary.ErrorMessage!);
 
+        ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(Tag), entity.Id.Value);
+
         repoTrxn.Delete(entity);
 
         try
         {
-            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, ct);
+            await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
             logger.LogError(ex, "Error deleting Tag {Id}", id);
             return Result.Failure(ex.GetBaseException().Message);

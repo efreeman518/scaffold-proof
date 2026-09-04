@@ -2,6 +2,8 @@ using EF.AspNetCore;
 using EF.Common.Contracts;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
+using TaskFlow.Api.Endpoints.Shared;
+using TaskFlow.Api.Filters;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models;
 
@@ -17,10 +19,12 @@ public static class CommentEndpoints
     {
         _problemDetailsIncludeStackTrace = problemDetailsIncludeStackTrace;
 
-        var g = group.MapGroup("/comments").WithTags("Comments");
+        var g = group.MapGroup("/comments").WithTags("Comments")
+            .AddEndpointFilter<ETagEndpointFilter>();
 
         g.MapPost("/search", Search)
             .Produces<PagedResponse<CommentDto>>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
             .WithSummary("Search Comments with paging, filters, and sorts");
 
         g.MapGet("/{id:guid}", GetById)
@@ -35,10 +39,14 @@ public static class CommentEndpoints
     private static async Task<IResult> Search(
         [FromServices] ICommentService service,
         [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] SearchRequest<CommentSearchFilter>? request,
-        CancellationToken ct)
+        CancellationToken ct,
+        [FromQuery] bool includeTotal = false)
     {
-        var items = await service.SearchAsync(request ?? new SearchRequest<CommentSearchFilter>(), ct);
-        return TypedResults.Ok(items);
+        var search = request ?? new SearchRequest<CommentSearchFilter>();
+        var guard = SearchRequestGuard.Validate(search.PageSize);
+        if (guard is not null) return guard;
+
+        return TypedResults.Ok(await service.SearchAsync(search, includeTotal, ct));
     }
 
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>

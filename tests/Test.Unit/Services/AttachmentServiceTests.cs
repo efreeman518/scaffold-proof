@@ -132,7 +132,7 @@ public class AttachmentServiceTests
             OwnerType = entity.OwnerType,
             OwnerId = entity.OwnerId
         };
-        var result = await CreateService().UpdateAsync(new DefaultRequest<AttachmentDto> { Item = dto }, TestContext.CancellationToken);
+        var result = await CreateService().UpdateAsync(new DefaultRequest<AttachmentDto> { Item = dto }, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual("updated.pdf", result.Value!.Item!.FileName);
@@ -154,7 +154,7 @@ public class AttachmentServiceTests
             StorageUri = "https://storage.example.com/x.pdf",
             OwnerId = Guid.NewGuid()
         };
-        var result = await CreateService().UpdateAsync(new DefaultRequest<AttachmentDto> { Item = dto }, TestContext.CancellationToken);
+        var result = await CreateService().UpdateAsync(new DefaultRequest<AttachmentDto> { Item = dto }, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
         Assert.IsNull(result.Value?.Item);
@@ -169,7 +169,7 @@ public class AttachmentServiceTests
         _repoTrxnMock.Setup(r => r.GetAttachmentAsync(entity.Id, It.IsAny<CancellationToken>())).ReturnsAsync(entity);
         _repoTrxnMock.Setup(r => r.SaveChangesAsync(It.IsAny<OptimisticConcurrencyWinner>(), It.IsAny<CancellationToken>())).ReturnsAsync(0);
 
-        var result = await CreateService().DeleteAsync(entity.Id, TestContext.CancellationToken);
+        var result = await CreateService().DeleteAsync(entity.Id, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
         _repoTrxnMock.Verify(r => r.Delete(entity), Times.Once);
@@ -182,7 +182,7 @@ public class AttachmentServiceTests
     {
         _repoTrxnMock.Setup(r => r.GetAttachmentAsync(It.IsAny<AttachmentId>(), It.IsAny<CancellationToken>())).ReturnsAsync((Attachment?)null);
 
-        var result = await CreateService().DeleteAsync(Guid.NewGuid(), TestContext.CancellationToken);
+        var result = await CreateService().DeleteAsync(Guid.NewGuid(), null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
     }
@@ -194,11 +194,11 @@ public class AttachmentServiceTests
     {
         var dtos = new List<AttachmentDto> { new() { FileName = "Test" } };
         var pagedResponse = new PagedResponse<AttachmentDto> { Data = dtos, Total = 1, PageSize = 10, PageIndex = 0 };
-        _repoQueryMock.Setup(r => r.SearchAttachmentsAsync(It.IsAny<SearchRequest<AttachmentSearchFilter>>(), It.IsAny<CancellationToken>()))
+        _repoQueryMock.Setup(r => r.SearchAttachmentsAsync(It.IsAny<SearchRequest<AttachmentSearchFilter>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(pagedResponse);
 
         var request = new SearchRequest<AttachmentSearchFilter> { PageSize = 10, PageIndex = 0 };
-        var response = await CreateService().SearchAsync(request, TestContext.CancellationToken);
+        var response = await CreateService().SearchAsync(request, false, TestContext.CancellationToken);
 
         Assert.AreEqual(1, response.Total);
     }
