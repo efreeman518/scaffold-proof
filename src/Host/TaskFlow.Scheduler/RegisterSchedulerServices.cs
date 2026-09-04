@@ -4,6 +4,7 @@ using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Provider;
 using TaskFlow.Infrastructure.Messaging.RabbitMq;
 using TaskFlow.Scheduler.Handlers;
+using TaskFlow.Scheduler.Handlers.Retention;
 using TaskFlow.Scheduler.Infrastructure;
 using TaskFlow.Scheduler.Jobs;
 using TaskFlow.Bootstrapper;
@@ -31,8 +32,13 @@ public static class RegisterSchedulerServices
         services.AddScoped<OverdueTaskCheckHandler>();
         services.AddScoped<RecurringTaskGenerationHandler>();
         services.AddScoped<StaleTaskCleanupHandler>();
+        services.AddScoped<OutboxRetentionHandler>();
+        services.AddScoped<ConsumerInboxRetentionHandler>();
+        services.AddScoped<TickerQOccurrenceRetentionHandler>();
+        services.AddScoped<AuditRetentionHandler>();
         services.AddScoped<TaskMaintenanceJobs>();
         services.AddSingleton<SchedulingMetrics>();
+        services.AddSingleton<SchedulerJobMeter>();
         // Already added by the shared application registration; TryAdd keeps one meter per process.
         services.TryAddSingleton<MessagingMetrics>();
 
@@ -70,7 +76,10 @@ public static class RegisterSchedulerServices
                 scheduler.SchedulerTimeZone = TimeZoneInfo.Utc;
                 scheduler.IdleWorkerTimeOut = TimeSpan.FromMinutes(2);
                 scheduler.FallbackIntervalChecker = TimeSpan.FromSeconds(pollIntervalSeconds);
-                scheduler.NodeIdentifier = Environment.MachineName;
+                // Machine name alone collides when two replicas share a host (Aspire runs the Scheduler with
+                // WithReplicas(2)); TickerQ leases cron occurrences by node identity, so two nodes claiming the
+                // same name would each believe they hold the other's lease.
+                scheduler.NodeIdentifier = $"{Environment.MachineName}:{Environment.ProcessId}";
             });
 
             if (usePersistence)
@@ -156,23 +165,27 @@ public static class RegisterSchedulerServices
             return;
         }
 
-        await cronManager.AddAsync(new CronTickerEntity
-        {
-            Function = "OverdueTaskCheck",
-            Expression = "0 0 */6 * * *"
-        });
+        // Retention sweeps are staggered off the hour and off each other: they all delete, and running them
+        // together would concentrate the lock and log pressure they exist to spread out.
+        (string Function, string Expression)[] jobs =
+        [
+            (OverdueTaskCheckHandler.JobName, "0 0 */6 * * *"),
+            (RecurringTaskGenerationHandler.JobName, "0 0 2 * * *"),
+            (StaleTaskCleanupHandler.JobName, "0 0 3 * * 0"),
+            (OutboxRetentionHandler.JobName, "0 15 * * * *"),
+            (ConsumerInboxRetentionHandler.JobName, "0 20 * * * *"),
+            (TickerQOccurrenceRetentionHandler.JobName, "0 30 4 * * *"),
+            (AuditRetentionHandler.JobName, "0 40 4 * * *")
+        ];
 
-        await cronManager.AddAsync(new CronTickerEntity
+        foreach (var (function, expression) in jobs)
         {
-            Function = "RecurringTaskGeneration",
-            Expression = "0 0 2 * * *"
-        });
-
-        await cronManager.AddAsync(new CronTickerEntity
-        {
-            Function = "StaleTaskCleanup",
-            Expression = "0 0 3 * * 0"
-        });
+            await cronManager.AddAsync(new CronTickerEntity
+            {
+                Function = function,
+                Expression = expression
+            });
+        }
 
         app.Logger.LogInformation("TickerQ cron jobs seeded successfully");
     }

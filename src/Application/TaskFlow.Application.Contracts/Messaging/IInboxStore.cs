@@ -14,4 +14,10 @@ public interface IInboxStore
     /// compensation a claim taken before the work would swallow the retry and lose the effect.
     /// </summary>
     Task ReleaseAsync(string consumer, Guid messageId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Retention sweep: hard-deletes claims processed before <paramref name="cutoffUtc"/>. The window has to
+    /// outlive the broker's maximum redelivery age, or a late redelivery would find no claim and be processed twice.
+    /// </summary>
+    Task<int> PurgeProcessedAsync(DateTimeOffset cutoffUtc, CancellationToken ct = default);
 }

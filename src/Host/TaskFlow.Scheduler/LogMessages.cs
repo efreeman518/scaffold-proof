@@ -48,4 +48,12 @@ internal static partial class LogMessages
     /// <summary>Logs a blob delete that failed and will be retried.</summary>
     [LoggerMessage(EventId = LogEventIds.SchedulerBase + 10, Level = LogLevel.Warning, Message = "Deferred delete of {Container}/{BlobName} failed; row released for retry")]
     public static partial void BlobDeleteFailed(this ILogger logger, string container, string blobName, Exception exception);
+
+    /// <summary>Logs a recurrence template the generator cannot advance; its schedule pointer is cleared.</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 11, Level = LogLevel.Warning, Message = "Recurrence template {TemplateId} has unusable frequency '{Frequency}'; removed from the due set until its pattern is re-saved")]
+    public static partial void RecurrenceTemplateUnusable(this ILogger logger, Guid templateId, string frequency);
+
+    /// <summary>Logs a generated occurrence rejected by domain validation.</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 12, Level = LogLevel.Error, Message = "Occurrence {OccurrenceUtc} of template {TemplateId} was rejected: {Reason}")]
+    public static partial void RecurrenceOccurrenceRejected(this ILogger logger, Guid templateId, DateTimeOffset occurrenceUtc, string reason);
 }
