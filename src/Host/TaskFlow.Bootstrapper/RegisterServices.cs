@@ -29,7 +29,7 @@ public static partial class RegisterServices
         AddCachingServices(services, config);
         AddTableStorageServices(services, config);
         AddBlobStorageServices(services, config);
-        AddServiceBusServices(services, config);
+        AddMessagingServices(services, config);
         AddCosmosDbServices(services, config);
         AddHealthChecks(services, config);
         AddStartupTasks(services);

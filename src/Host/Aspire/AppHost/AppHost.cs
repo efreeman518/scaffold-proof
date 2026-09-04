@@ -32,6 +32,13 @@ var dbProviderName = Environment.GetEnvironmentVariable("TASKFLOW_DB_PROVIDER")
     ?? "SqlServer";
 var usePostgres = string.Equals(dbProviderName, "PostgreSql", StringComparison.OrdinalIgnoreCase);
 
+// D-034: exactly one broker runs locally, chosen by TASKFLOW_MESSAGING_PROVIDER / Messaging:Provider
+// (default ServiceBus). Every host receives the same choice as Messaging__Provider.
+var messagingProviderName = Environment.GetEnvironmentVariable("TASKFLOW_MESSAGING_PROVIDER")
+    ?? builder.Configuration["Messaging:Provider"]
+    ?? "ServiceBus";
+var useRabbitMq = string.Equals(messagingProviderName, "RabbitMq", StringComparison.OrdinalIgnoreCase);
+
 // Infrastructure resources
 // In Testing mode: non-persistent, no named volume, random port - ensures fresh container with known password.
 // In dev/prod: persistent with named volume on fixed port.
@@ -75,22 +82,48 @@ var storage = builder.AddAzureStorage("AzureStorage")
 var blobs = storage.AddBlobs("BlobStorage1");
 var tables = storage.AddTables("TableStorage1");
 
-// Azure Service Bus - emulator
-var serviceBus = builder.AddAzureServiceBus("ServiceBus1")
-    .RunAsEmulator(emulator => emulator.WithImageTag("latest"));
-var domainEventsTopic = serviceBus.AddServiceBusTopic("DomainEvents");
+// Broker: exactly one of the two is declared. The Service Bus emulator brings its own SQL Server sidecar, so
+// nothing about it is free; declaring it under RabbitMq would burn a container the run never touches.
+IResourceBuilder<AzureServiceBusResource>? serviceBus = null;
+IResourceBuilder<RabbitMQServerResource>? rabbitMq = null;
 
-// One subscription per consumer, each filtered on the EventType application property the envelope sets, so a
-// slow AI review cannot delay projection and each consumer owns its own delivery count and dead-letter queue.
-// A correlation filter matches one value, so the projection subscription needs one rule per event type.
-// The emulator implements no duplicate detection (the deployed namespace does, see service-bus.bicep), so the
-// D-029 ConsumerInbox is what proves replay safety locally - and it is the only dedup on RabbitMQ (D-034).
-AddEventTypeSubscription(domainEventsTopic, "projection",
-    ["TaskItemCreatedEvent", "TaskItemStatusChangedEvent", "TaskItemCompletedEvent"]);
-AddEventTypeSubscription(domainEventsTopic, "ai-review", ["TaskItemCreatedEvent"]);
-AddEventTypeSubscription(domainEventsTopic, "workflow", ["TaskItemCreatedEvent"]);
+if (useRabbitMq)
+{
+    // Single node with the management plugin: enough for the dev/staging proof. Production wants a managed
+    // broker or a cluster (see infra/README.md).
+    rabbitMq = builder.AddRabbitMQ("rabbitmq").WithManagementPlugin();
+    if (!isTesting)
+        rabbitMq = rabbitMq.WithLifetime(ContainerLifetime.Persistent)
+                           .WithDataVolume("taskflow-rabbitmq-data");
+}
+else
+{
+    // Azure Service Bus - emulator
+    var sb = builder.AddAzureServiceBus("ServiceBus1")
+        .RunAsEmulator(emulator => emulator.WithImageTag("latest"));
+    var domainEventsTopic = sb.AddServiceBusTopic("DomainEvents");
 
-serviceBus.AddServiceBusQueue("TaskCommands");
+    // One subscription per consumer, each filtered on the EventType application property the envelope sets, so a
+    // slow AI review cannot delay projection and each consumer owns its own delivery count and dead-letter queue.
+    // A correlation filter matches one value, so the projection subscription needs one rule per event type.
+    // The emulator implements no duplicate detection (the deployed namespace does, see service-bus.bicep), so the
+    // D-029 ConsumerInbox is what proves replay safety locally - and it is the only dedup on RabbitMQ (D-034).
+    AddEventTypeSubscription(domainEventsTopic, "projection",
+        ["TaskItemCreatedEvent", "TaskItemStatusChangedEvent", "TaskItemCompletedEvent"]);
+    AddEventTypeSubscription(domainEventsTopic, "ai-review", ["TaskItemCreatedEvent"]);
+    AddEventTypeSubscription(domainEventsTopic, "workflow", ["TaskItemCreatedEvent"]);
+
+    sb.AddServiceBusQueue("TaskCommands");
+
+    // The Service Bus emulator bundles its own SQL Server sidecar (ServiceBus1-mssql); the Aspire package
+    // hardcodes that image, and RunAsEmulator's callback cannot reach it. Override it here so it matches
+    // the `sql` container tag and lets Docker share layers instead of pulling a second SQL Server major version.
+    builder.CreateResourceBuilder(
+            (ContainerResource)builder.Resources.Single(r => r.Name == "ServiceBus1-mssql"))
+        .WithImageTag(sqlServerImageTag);
+
+    serviceBus = sb;
+}
 
 static void AddEventTypeSubscription(
     IResourceBuilder<AzureServiceBusTopicResource> topic, string name, string[] eventTypes)
@@ -113,13 +146,6 @@ static void AddEventTypeSubscription(
             }
         });
 }
-
-// The Service Bus emulator bundles its own SQL Server sidecar (ServiceBus1-mssql); the Aspire package
-// hardcodes that image, and RunAsEmulator's callback cannot reach it. Override it here so it matches
-// the `sql` container tag and lets Docker share layers instead of pulling a second SQL Server major version.
-builder.CreateResourceBuilder(
-        (ContainerResource)builder.Resources.Single(r => r.Name == "ServiceBus1-mssql"))
-    .WithImageTag(sqlServerImageTag);
 
 // Azure Cosmos DB - emulator (see AzureStorage comment re: Persistent lifetime)
 // Skipped in Testing: the emulator is heavy (~1.3 GB) and not needed for audit pipeline tests.
@@ -196,14 +222,14 @@ var api = builder.AddProject<Projects.TaskFlow_Api>("taskflowapi")
     .WithReference(redis, connectionName: "Redis1")
     .WithReference(tables)
     .WithReference(blobs)
-    .WithReference(serviceBus)
     .WithEnvironment("Database__Provider", dbProviderName)
+    .WithEnvironment("Messaging__Provider", messagingProviderName)
     .WithEnvironment("Database__Encryption__LocalKeyBase64", columnEncryptionKey)
     .WithEnvironment("Database__Encryption__BlindIndexKeyBase64", blindIndexKey)
     .WaitForCompletion(migrator)
     .WaitFor(dbServer)
-    .WaitFor(redis)
-    .WaitFor(serviceBus);
+    .WaitFor(redis);
+api = WithBroker(api);
 
 // Wire the Azure Foundry chat model into the API when a deployment was created. Local mode wires no
 // chat resource; the bootstrapper owns the temporary SDK-direct Foundry Local fallback.
@@ -286,15 +312,15 @@ if (!isTesting)
         .WithReference(taskflowDb, connectionName: "TickerQDbContext")
         .WithReference(redis, connectionName: "Redis1")
         .WithReference(tables)
-        .WithReference(serviceBus)
         .WithEnvironment("Database__Provider", dbProviderName)
+        .WithEnvironment("Messaging__Provider", messagingProviderName)
         .WithEnvironment("Database__Encryption__LocalKeyBase64", columnEncryptionKey)
         .WithEnvironment("Database__Encryption__BlindIndexKeyBase64", blindIndexKey)
         // Two replicas so the outbox/blob lease path is exercised locally (D-026): both drain, neither doubles up.
         .WithReplicas(2)
         .WaitForCompletion(migrator)
-        .WaitFor(dbServer)
-        .WaitFor(serviceBus);
+        .WaitFor(dbServer);
+    scheduler = WithBroker(scheduler);
 
     if (!string.IsNullOrWhiteSpace(applicationStyle))
     {
@@ -338,14 +364,24 @@ if (!isTesting || functionsAvailableInTesting)
         .WithReference(taskflowDb, connectionName: "TaskFlowFlowEngineDbContext")
         .WithReference(tables)
         .WithReference(blobs)
-        .WithReference(serviceBus)
         .WithEnvironment("Database__Provider", dbProviderName)
+        .WithEnvironment("Messaging__Provider", messagingProviderName)
         .WithEnvironment("Database__Encryption__LocalKeyBase64", columnEncryptionKey)
         .WithEnvironment("Database__Encryption__BlindIndexKeyBase64", blindIndexKey)
         .WaitForCompletion(migrator)
         .WaitFor(dbServer)
-        .WaitFor(storage)
-        .WaitFor(serviceBus);
+        .WaitFor(storage);
+    functions = WithBroker(functions);
+
+    if (useRabbitMq)
+    {
+        // D-034: the Service Bus triggers stay compiled in but inert; the Scheduler consumes from RabbitMQ.
+        // Disabling by name beats deleting them, so one deployment can flip providers.
+        functions = functions
+            .WithEnvironment("AzureWebJobs.ProcessTaskProjection.Disabled", "true")
+            .WithEnvironment("AzureWebJobs.ProcessTaskAiReview.Disabled", "true")
+            .WithEnvironment("AzureWebJobs.ProcessTaskWorkflowStart.Disabled", "true");
+    }
 
     if (!string.IsNullOrWhiteSpace(applicationStyle))
     {
@@ -363,6 +399,16 @@ if (!isTesting || functionsAvailableInTesting)
     {
         functions.WithEnvironment("AiServices__DisableFoundryLocal", "true");
     }
+}
+
+// One place decides how a host reaches the broker, so adding a host cannot forget the reference or the wait.
+IResourceBuilder<T> WithBroker<T>(IResourceBuilder<T> host)
+    where T : IResourceWithEnvironment, IResourceWithWaitSupport
+{
+    if (rabbitMq is not null)
+        return host.WithReference(rabbitMq, connectionName: "RabbitMq1").WaitFor(rabbitMq);
+
+    return host.WithReference(serviceBus!).WaitFor(serviceBus!);
 }
 
 await builder.Build().RunAsync();

@@ -1,9 +1,11 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Provider;
+using TaskFlow.Infrastructure.Messaging.RabbitMq;
 using TaskFlow.Scheduler.Handlers;
 using TaskFlow.Scheduler.Infrastructure;
 using TaskFlow.Scheduler.Jobs;
+using TaskFlow.Bootstrapper;
 using TaskFlow.Observability.Meters;
 using TaskFlow.Scheduler.Telemetry;
 using TaskFlow.Scheduler.Workers;
@@ -35,6 +37,12 @@ public static class RegisterSchedulerServices
         // D-026: both drains run on every replica; the lease, not a leader election, keeps them apart.
         services.AddHostedService<OutboxDispatcherService>();
         services.AddHostedService<BlobDeleteWorkerService>();
+
+        // D-034: the Scheduler is the RabbitMQ consumer host; the Functions runtime has no RabbitMQ trigger.
+        if (RegisterServices.ResolveMessagingProvider(config) == MessagingProvider.RabbitMq)
+        {
+            services.AddTaskFlowRabbitMqConsumers(config);
+        }
 
         services.AddHealthChecks()
             .AddCheck<SchedulerHealthCheck>("scheduler", tags: ["ready", "memory"])
