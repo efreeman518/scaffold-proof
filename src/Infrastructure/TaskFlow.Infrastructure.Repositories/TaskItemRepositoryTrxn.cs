@@ -1,4 +1,4 @@
-﻿using EF.Data;
+using EF.Data;
 using EF.Data.Contracts;
 using EF.Domain.Contracts;
 using Microsoft.EntityFrameworkCore;
@@ -44,6 +44,23 @@ public class TaskItemRepositoryTrxn(TaskFlowDbContextTrxn db)
             cancellationToken: ct
         ).ConfigureAwait(ConfigureAwaitOptions.None);
     }
+
+    // Single-child tracked loads for the lean child-mutation path. Each filters on the owning
+    // TaskItemId as well as the child id, so a child id belonging to another task returns null instead
+    // of being mutated through the wrong root. These replace the five-include aggregate load that the
+    // eight child endpoints previously paid for just to touch one row.
+
+    /// <inheritdoc />
+    public Task<Comment?> GetCommentAsync(TaskItemId taskItemId, CommentId commentId, CancellationToken ct = default) =>
+        DB.Set<Comment>().FirstOrDefaultAsync(c => c.TaskItemId == taskItemId && c.Id == commentId, ct);
+
+    /// <inheritdoc />
+    public Task<ChecklistItem?> GetChecklistItemAsync(TaskItemId taskItemId, ChecklistItemId checklistItemId, CancellationToken ct = default) =>
+        DB.Set<ChecklistItem>().FirstOrDefaultAsync(c => c.TaskItemId == taskItemId && c.Id == checklistItemId, ct);
+
+    /// <inheritdoc />
+    public Task<TaskItemTag?> GetTaskItemTagAsync(TaskItemId taskItemId, TagId tagId, CancellationToken ct = default) =>
+        DB.Set<TaskItemTag>().FirstOrDefaultAsync(t => t.TaskItemId == taskItemId && t.TagId == tagId, ct);
 
     /// <summary>
     /// Delegates DTO graph sync to the DbContext updater so EF change tracking and related deletes

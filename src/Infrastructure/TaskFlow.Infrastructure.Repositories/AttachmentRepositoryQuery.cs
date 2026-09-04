@@ -1,4 +1,4 @@
-﻿using EF.Common.Contracts;
+using EF.Common.Contracts;
 using EF.Data;
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
@@ -27,7 +27,7 @@ public class AttachmentRepositoryQuery(TaskFlowDbContextQuery db)
     }
 
     /// <summary>Searches search attachments and returns filtered results for callers.</summary>
-    public async Task<PagedResponse<AttachmentDto>> SearchAttachmentsAsync(SearchRequest<AttachmentSearchFilter> request, CancellationToken ct = default)
+    public async Task<PagedResponse<AttachmentDto>> SearchAttachmentsAsync(SearchRequest<AttachmentSearchFilter> request, bool includeTotal = false, CancellationToken ct = default)
     {
         var q = DB.Set<Attachment>().ComposeIQueryable(false);
 
@@ -70,7 +70,7 @@ public class AttachmentRepositoryQuery(TaskFlowDbContextQuery db)
 
         (var data, var total) = await q.QueryPageProjectionAsync(AttachmentMapper.Projection,
             pageSize: request.PageSize, pageIndex: Math.Max(1, request.PageIndex),
-            includeTotal: true, splitQueryOptions: SplitQueryThresholdOptions.Default,
+            includeTotal: includeTotal, splitQueryOptions: SplitQueryThresholdOptions.Default,
             cancellationToken: ct).ConfigureAwait(ConfigureAwaitOptions.None);
 
         return new PagedResponse<AttachmentDto>
