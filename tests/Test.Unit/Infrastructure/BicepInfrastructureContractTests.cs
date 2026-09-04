@@ -79,6 +79,34 @@ public sealed class BicepInfrastructureContractTests
     }
 
     [TestMethod]
+    public void RabbitMqModule_IsSingleNodeWithVolumeAndManagementPlugin()
+    {
+        var module = ReadInfraFile(Path.Combine("modules", "rabbitmq-container-app.bicep"));
+
+        // Single node is load-bearing: a second replica would be an independent broker on the same file share.
+        StringAssert.Contains(module, "minReplicas: 1");
+        StringAssert.Contains(module, "maxReplicas: 1");
+        StringAssert.Contains(module, "rabbitmq:4.1-management");
+        StringAssert.Contains(module, "storageType: 'AzureFile'");
+        StringAssert.Contains(module, "targetPort: 15672");
+        StringAssert.Contains(module, "mountPath: '/var/lib/rabbitmq/mnesia'");
+    }
+
+    [TestMethod]
+    public void MainTemplate_DeploysExactlyOneBrokerAndWiresTheProvider()
+    {
+        var main = ReadInfraFile("main.bicep");
+
+        StringAssert.Contains(main, "param messagingProvider string = 'ServiceBus'");
+        StringAssert.Contains(main, "modules/service-bus.bicep' = if (messagingProvider == 'ServiceBus')");
+        StringAssert.Contains(main, "modules/rabbitmq-container-app.bicep' = if (messagingProvider == 'RabbitMq')");
+        StringAssert.Contains(main, "ConnectionStrings__RabbitMq1");
+        StringAssert.Contains(main, "name: 'Messaging__Provider', value: messagingProvider");
+        StringAssert.Contains(main, "envVars: union(commonEnvVars, [");
+        StringAssert.Contains(main, "], messagingEnvVars)");
+    }
+
+    [TestMethod]
     public void CosmosDbModule_NamesMatchApiAppSettings()
     {
         var module = ReadInfraFile(Path.Combine("modules", "cosmos-db.bicep"));

@@ -1,11 +1,10 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using EF.Data.Contracts;
 using EF.Domain.Contracts;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using TaskFlow.Application.Contracts;
-using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Paging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Models;
@@ -35,7 +34,6 @@ public class TaskItemServiceTests
     private readonly Mock<IRequestContext<string, Guid?>> _requestContextMock = new();
     private readonly Mock<ITenantBoundaryValidator> _tenantBoundaryValidatorMock = new();
     private readonly Mock<IEntityCacheProvider> _cacheMock = new();
-    private readonly Mock<IIntegrationEventPublisher> _eventPublisherMock = new();
     private readonly Mock<ICursorProtector> _cursorProtectorMock = new();
 
     /// <summary>Prepares per-test fixtures so each test starts from a predictable state.</summary>
@@ -60,8 +58,7 @@ public class TaskItemServiceTests
         _repoQueryMock.Object,
         _tenantBoundaryValidatorMock.Object,
         _cacheMock.Object,
-        _cursorProtectorMock.Object,
-        _eventPublisherMock.Object);
+        _cursorProtectorMock.Object);
 
     /// <summary>Verifies that given valid DTO, when create, then returns success.</summary>
     [TestMethod]

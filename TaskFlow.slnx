@@ -24,6 +24,7 @@
     <Project Path="src/Infrastructure/TaskFlow.Infrastructure.Repositories/TaskFlow.Infrastructure.Repositories.csproj" />
     <Project Path="src/Infrastructure/TaskFlow.Infrastructure.AI/TaskFlow.Infrastructure.AI.csproj" />
     <Project Path="src/Infrastructure/TaskFlow.Infrastructure.Storage/TaskFlow.Infrastructure.Storage.csproj" />
+    <Project Path="src/Infrastructure/TaskFlow.Infrastructure.Messaging.RabbitMq/TaskFlow.Infrastructure.Messaging.RabbitMq.csproj" />
   </Folder>
   <Folder Name="/Host/">
     <Project Path="src/Host/TaskFlow.Bootstrapper/TaskFlow.Bootstrapper.csproj" />

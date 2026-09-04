@@ -34,3 +34,5 @@ NICE-TO-HAVE:
 
 
 23. REQUIRED-LATER: new `EF.Messaging.RabbitMq` (connection multiplexer with publisher-confirm channel pool, topology declaration, consumer hosted service with per-queue prefetch and x-death based DLX) extracted from `TaskFlow.Infrastructure.Messaging.RabbitMq` once the shape settles in scaffold-proof.
+
+24. NICE-TO-HAVE: EF.Messaging.RabbitMq - make `RabbitMqHeaders.AsString` (UTF-8 header decoding) public; every consumer currently re-implements it.

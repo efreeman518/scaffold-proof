@@ -1,4 +1,4 @@
-﻿using EF.Data.Contracts;
+using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Text.Json;
@@ -80,7 +80,7 @@ public class DomainEventPipelineTests
             NullLogger<TaskViewProjectionService>.Instance);
 
         // Act - run projection (same as what Function trigger calls)
-        await projectionService.ProjectTaskItemAsync(task.Id.Value, TestContext.CancellationToken);
+        await projectionService.ProjectTaskItemAsync(task.Id.Value, DateTimeOffset.UtcNow, TestContext.CancellationToken);
 
         // Assert - TaskView was produced with correct data
         var taskView = await taskViewRepo.GetAsync(task.Id.Value.ToString(), TenantGuid.ToString(), TestContext.CancellationToken);
@@ -131,7 +131,7 @@ public class DomainEventPipelineTests
             taskViewRepo,
             NullLogger<TaskViewProjectionService>.Instance);
 
-        await projectionService.ProjectTaskItemAsync(task.Id.Value, TestContext.CancellationToken);
+        await projectionService.ProjectTaskItemAsync(task.Id.Value, DateTimeOffset.UtcNow, TestContext.CancellationToken);
 
         var taskView = await taskViewRepo.GetAsync(task.Id.Value.ToString(), TenantGuid.ToString(), TestContext.CancellationToken);
         Assert.IsNotNull(taskView);
@@ -187,7 +187,7 @@ internal class InMemoryTaskViewRepository : ITaskViewRepository
     }
 
     /// <summary>Verifies query by tenant behavior and protects the expected test contract.</summary>
-    public Task<IReadOnlyList<TaskViewDto>> QueryByTenantAsync(string tenantId,
+    public Task<TaskViewPage> QueryByTenantAsync(string tenantId,
         int pageSize = 20, string? continuationToken = null, CancellationToken ct = default)
     {
         var results = _store.Values
@@ -195,7 +195,21 @@ internal class InMemoryTaskViewRepository : ITaskViewRepository
             .OrderByDescending(v => v.LastModifiedUtc)
             .Take(pageSize)
             .ToList();
-        return Task.FromResult<IReadOnlyList<TaskViewDto>>(results);
+        return Task.FromResult(new TaskViewPage(results, null));
+    }
+
+    /// <summary>Verifies counter patching behavior and protects the expected test contract.</summary>
+    public Task PatchCountersAsync(string id, string tenantId,
+        IReadOnlyDictionary<string, int> increments, DateTimeOffset lastModifiedUtc, CancellationToken ct = default)
+    {
+        if (!_store.TryGetValue($"{tenantId}:{id}", out var view)) return Task.CompletedTask;
+
+        view.CommentCount += increments.GetValueOrDefault("commentCount");
+        view.AttachmentCount += increments.GetValueOrDefault("attachmentCount");
+        view.ChecklistTotal += increments.GetValueOrDefault("checklistTotal");
+        view.ChecklistCompleted += increments.GetValueOrDefault("checklistCompleted");
+        view.LastModifiedUtc = lastModifiedUtc;
+        return Task.CompletedTask;
     }
 
     /// <summary>Verifies delete behavior and protects the expected test contract.</summary>

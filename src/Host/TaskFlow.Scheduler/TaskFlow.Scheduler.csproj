@@ -5,6 +5,8 @@
     <PackageReference Include="TickerQ.EntityFrameworkCore" />
     <PackageReference Include="TickerQ.Dashboard" />
     <PackageReference Include="Newtonsoft.Json" />
+    <!-- D-034: registers the singleton IConnection the RabbitMQ multiplexer reuses when RabbitMq is selected. -->
+    <PackageReference Include="Aspire.RabbitMQ.Client" />
   </ItemGroup>
 
   <ItemGroup>
