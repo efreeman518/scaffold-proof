@@ -8,7 +8,7 @@ Canonical current evidence for the TaskFlow reference application. Historical ph
 
 | Field | Value |
 |---|---|
-| Last verified | 2026-08-18 |
+| Last verified | 2026-09-04 |
 | Solution | `TaskFlow.slnx` |
 | Target framework | .NET 10 |
 | Solution projects | 44 |
@@ -38,7 +38,7 @@ Canonical current evidence for the TaskFlow reference application. Historical ph
 
 Current automated evidence: the solution build passed across 44 projects with zero warnings or errors, and the separate Uno build passed across three projects with zero warnings or errors. Unfiltered serial acceptance passed with 462 passed, zero failed, and 10 skipped: five Azure Foundry-gated, two load ignored by default, and three mobile gated to the dedicated runner. Dedicated Foundry Local passed 3/3 separately. The dedicated mobile runner passed 3/3 separately. Deployment Dockerfiles use non-root chiseled runtime stages; SDK images remain build-stage only.
 
-Published Release Uno cold-start and normal browser projects pass from empty browser state without refresh, retry, sleep, or exception suppression. Browser WASM Release temporarily sets `PublishTrimmed=false` because the current Navigation, Toolkit, and WinUI package set emits upstream `IL2104` under warnings-as-errors. Removal condition: those packages become trim-clean. Validation gate: rerun clean Release publish plus the Uno cold-start and normal Playwright projects before removing the workaround.
+Published Release Uno cold-start and normal browser projects pass from empty browser state without refresh, retry, sleep, or exception suppression. Browser WASM Release temporarily sets `PublishTrimmed=false` because the current Navigation, Toolkit, and WinUI package set emits upstream `IL2104` under warnings-as-errors. Removal condition: those packages become trim-clean. Validation gate: rerun clean Release publish plus the Uno cold-start and normal Playwright projects before removing the workaround. Re-verified 2026-09-04 after the Phase 0 package bump (Uno.Extensions.Navigation/.WinUI 7.3.6, Uno.Sdk 6.7.22): a forced `PublishTrimmed=true` Release publish still fails with `IL2104` from `Uno.Extensions.Navigation`, `Uno.Extensions.Navigation.UI`, and `Uno.Toolkit.WinUI` 9.1.3; the workaround remains necessary.
 
 ## Vulnerability Status
 

@@ -4,46 +4,47 @@
   </PropertyGroup>
   <ItemGroup Label="EF.Packages (Private Feed - github.com/efreeman518/EF.Packages)">
     <!-- Core packages - always available -->
-    <PackageVersion Include="EF.CQRS" Version="1.0.95" />
-    <PackageVersion Include="EF.Domain" Version="1.0.95" />
-    <PackageVersion Include="EF.Domain.Contracts" Version="1.0.95" />
-    <PackageVersion Include="EF.Data" Version="1.0.95" />
-    <PackageVersion Include="EF.Data.Contracts" Version="1.0.95" />
-    <PackageVersion Include="EF.Common" Version="1.0.95" />
-    <PackageVersion Include="EF.Common.Contracts" Version="1.0.95" />
-    <PackageVersion Include="EF.Host" Version="1.0.95" />
-    <PackageVersion Include="EF.AspNetCore" Version="1.0.95" />
-    <PackageVersion Include="EF.BackgroundServices" Version="1.0.95" />
+    <PackageVersion Include="EF.CQRS" Version="1.1.98" />
+    <PackageVersion Include="EF.Domain" Version="1.1.98" />
+    <PackageVersion Include="EF.Domain.Contracts" Version="1.1.98" />
+    <PackageVersion Include="EF.Data" Version="1.1.98" />
+    <PackageVersion Include="EF.Data.Contracts" Version="1.1.98" />
+    <PackageVersion Include="EF.Common" Version="1.1.98" />
+    <PackageVersion Include="EF.Common.Contracts" Version="1.1.98" />
+    <PackageVersion Include="EF.Host" Version="1.1.98" />
+    <PackageVersion Include="EF.AspNetCore" Version="1.1.98" />
+    <PackageVersion Include="EF.BackgroundServices" Version="1.1.98" />
     <PackageVersion Include="EF.Cache" Version="1.0.88" />
-    <PackageVersion Include="EF.IntegrationTesting" Version="1.0.95" />
+    <PackageVersion Include="EF.IntegrationTesting" Version="1.1.98" />
     <!-- Extended packages - add to individual .csproj when needed -->
     <PackageVersion Include="EF.Auth" Version="1.0.88" />
-    <PackageVersion Include="EF.Messaging" Version="1.0.95" />
-    <PackageVersion Include="EF.Storage" Version="1.0.95" />
-    <PackageVersion Include="EF.Table" Version="1.0.95" />
+    <PackageVersion Include="EF.Messaging" Version="1.1.98" />
+    <PackageVersion Include="EF.Storage" Version="1.1.98" />
+    <PackageVersion Include="EF.Table" Version="1.1.98" />
     <PackageVersion Include="EF.CosmosDb" Version="1.0.88" />
     <PackageVersion Include="EF.KeyVault" Version="1.0.88" />
     <PackageVersion Include="EF.Grpc" Version="1.0.88" />
     <PackageVersion Include="EF.AI" Version="1.0.88" />
     <PackageVersion Include="EF.MSGraph" Version="1.0.88" />
     <PackageVersion Include="Testcontainers.MsSql" Version="4.14.0" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.14.0" />
     <PackageVersion Include="Testcontainers.Azurite" Version="4.14.0" />
   </ItemGroup>
   <ItemGroup Label="EF.Packages.Enterprise (Private Feed)">
-    <PackageVersion Include="EF.FilterBuilder" Version="1.0.162" />
-    <PackageVersion Include="EF.FlowEngine" Version="1.0.162" />
-    <PackageVersion Include="EF.FlowEngine.StateStore.Sql" Version="1.0.162" />
-    <PackageVersion Include="EF.FlowEngine.Locks.Sql" Version="1.0.162" />
-    <PackageVersion Include="EF.FlowEngine.WorkflowRegistry.Sql" Version="1.0.162" />
-    <PackageVersion Include="EF.FlowEngine.HumanTaskStore.Sql" Version="1.0.162" />
-    <PackageVersion Include="EF.FlowEngine.Outbox.Sql" Version="1.0.162" />
-    <PackageVersion Include="EF.FlowEngine.CircuitBreaker.Sql" Version="1.0.162" />
-    <PackageVersion Include="EF.FlowEngine.Clients.AI" Version="1.0.162" />
-    <PackageVersion Include="EF.FlowEngine.Clients.Http" Version="1.0.162" />
-    <PackageVersion Include="EF.FlowEngine.Clients.ServiceBus" Version="1.0.162" />
-    <PackageVersion Include="EF.FlowEngine.AdminApi" Version="1.0.162" />
-    <PackageVersion Include="EF.FlowEngine.Dashboard" Version="1.0.162" />
-    <PackageVersion Include="EF.FlowEngine.Testing" Version="1.0.162" />
+    <PackageVersion Include="EF.FilterBuilder" Version="1.0.163" />
+    <PackageVersion Include="EF.FlowEngine" Version="1.0.163" />
+    <PackageVersion Include="EF.FlowEngine.StateStore.Sql" Version="1.0.163" />
+    <PackageVersion Include="EF.FlowEngine.Locks.Sql" Version="1.0.163" />
+    <PackageVersion Include="EF.FlowEngine.WorkflowRegistry.Sql" Version="1.0.163" />
+    <PackageVersion Include="EF.FlowEngine.HumanTaskStore.Sql" Version="1.0.163" />
+    <PackageVersion Include="EF.FlowEngine.Outbox.Sql" Version="1.0.163" />
+    <PackageVersion Include="EF.FlowEngine.CircuitBreaker.Sql" Version="1.0.163" />
+    <PackageVersion Include="EF.FlowEngine.Clients.AI" Version="1.0.163" />
+    <PackageVersion Include="EF.FlowEngine.Clients.Http" Version="1.0.163" />
+    <PackageVersion Include="EF.FlowEngine.Clients.ServiceBus" Version="1.0.163" />
+    <PackageVersion Include="EF.FlowEngine.AdminApi" Version="1.0.163" />
+    <PackageVersion Include="EF.FlowEngine.Dashboard" Version="1.0.163" />
+    <PackageVersion Include="EF.FlowEngine.Testing" Version="1.0.163" />
   </ItemGroup>
   <ItemGroup Label="Microsoft Entity Framework Core">
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.11" />
@@ -51,19 +52,21 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.11" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.11" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.11" />
+    <!-- Dual-provider dependency (Phase 0 pin, no PackageReference yet) -->
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
   </ItemGroup>
   <!-- Temporary exception: FlowEngine's scripting dependency requires one exact Roslyn family and mixed families fail migration tooling at runtime.
        Reason: align every direct Roslyn package to the family selected by current FlowEngine. Remove when FlowEngine permits the latest stable Roslyn family.
        Validate with restore plus the migration pending-model gate for every DbContext before and after removal. -->
   <ItemGroup Label="Roslyn exact-family alignment">
-    <PackageVersion Include="Microsoft.CodeAnalysis.Common" Version="5.6.0" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.6.0" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="5.6.0" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.6.0" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="5.6.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Common" Version="5.9.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="5.9.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.9.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="5.9.0" />
   </ItemGroup>
   <ItemGroup Label="Microsoft ASP.NET Core">
-    <PackageVersion Include="Asp.Versioning.Http" Version="10.2.2" />
+    <PackageVersion Include="Asp.Versioning.Http" Version="10.2.3" />
     <PackageVersion Include="Asp.Versioning.Mvc.ApiExplorer" Version="10.2.1" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.11" />
     <PackageVersion Include="Microsoft.AspNetCore.HeaderPropagation" Version="10.0.11" />
@@ -78,16 +81,19 @@
     <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.9.0" />
   </ItemGroup>
   <ItemGroup Label="Aspire">
-    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.4.6" />
-    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.4.6" />
-    <PackageVersion Include="Aspire.Hosting.SqlServer" Version="13.4.6" />
-    <PackageVersion Include="Aspire.Hosting.Redis" Version="13.4.6" />
-    <PackageVersion Include="Aspire.Hosting.Azure.Functions" Version="13.4.6" />
-    <PackageVersion Include="Aspire.Hosting.Azure.KeyVault" Version="13.4.6" />
+    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.5.3" />
+    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.5.3" />
+    <PackageVersion Include="Aspire.Hosting.SqlServer" Version="13.5.3" />
+    <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="13.5.3" />
+    <!-- Dual-provider dependency (Phase 0 pin, no PackageReference yet) -->
+    <PackageVersion Include="Aspire.Npgsql.EntityFrameworkCore.PostgreSQL" Version="13.5.3" />
+    <PackageVersion Include="Aspire.Hosting.Redis" Version="13.5.3" />
+    <PackageVersion Include="Aspire.Hosting.Azure.Functions" Version="13.5.3" />
+    <PackageVersion Include="Aspire.Hosting.Azure.KeyVault" Version="13.5.3" />
     <PackageVersion Include="KubernetesClient" Version="19.0.2" />
   </ItemGroup>
   <ItemGroup Label="YARP">
-    <PackageVersion Include="Scalar.AspNetCore" Version="2.16.20" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="2.17.2" />
     <PackageVersion Include="Yarp.ReverseProxy" Version="2.3.0" />
     <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery.Yarp" Version="10.9.0" />
   </ItemGroup>
@@ -104,24 +110,27 @@
     <PackageVersion Include="TickerQ" Version="10.4.0" />
     <PackageVersion Include="TickerQ.EntityFrameworkCore" Version="10.4.0" />
     <PackageVersion Include="TickerQ.Dashboard" Version="10.4.0" />
+    <!-- Promoted transitive from TickerQ.EntityFrameworkCore (range [10.0.0, 11.0.0)); pin to the resolved version, no bump -->
+    <PackageVersion Include="FlexLabs.EntityFrameworkCore.Upsert" Version="10.0.0" />
   </ItemGroup>
   <ItemGroup Label="OpenTelemetry">
     <PackageVersion Include="OpenTelemetry.Api" Version="1.11.2" />
-    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.17.0" />
-    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.17.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.17.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.17.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.18.0" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.18.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.18.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.18.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.18.0" />
     <PackageVersion Include="Azure.Monitor.OpenTelemetry.AspNetCore" Version="1.6.0" />
   </ItemGroup>
   <ItemGroup Label="Caching">
-    <PackageVersion Include="ZiggyCreatures.FusionCache" Version="2.6.0" />
-    <PackageVersion Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" Version="2.6.0" />
-    <PackageVersion Include="ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis" Version="2.6.0" />
+    <PackageVersion Include="ZiggyCreatures.FusionCache" Version="2.7.2" />
+    <PackageVersion Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" Version="2.7.2" />
+    <PackageVersion Include="ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis" Version="2.7.2" />
+    <PackageVersion Include="ZiggyCreatures.FusionCache.OpenTelemetry" Version="2.7.2" />
     <PackageVersion Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.11" />
   </ItemGroup>
   <ItemGroup Label="Testing">
-    <PackageVersion Include="MSTest" Version="4.3.3" />
+    <PackageVersion Include="MSTest" Version="4.4.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
     <PackageVersion Include="Microsoft.Playwright" Version="1.62.0" />
     <PackageVersion Include="Appium.WebDriver" Version="8.3.2" />
@@ -133,13 +142,13 @@
   </ItemGroup>
   <ItemGroup Label="UI">
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-    <PackageVersion Include="MudBlazor" Version="9.8.0" />
-    <PackageVersion Include="Refit" Version="15.1.0" />
-    <PackageVersion Include="Refit.HttpClientFactory" Version="15.1.0" />
-    <PackageVersion Include="Microsoft.Kiota.Abstractions" Version="2.0.0" />
-    <PackageVersion Include="Uno.Extensions.Navigation" Version="7.2.3" />
-    <PackageVersion Include="Uno.Extensions.Navigation.WinUI" Version="7.2.3" />
-    <PackageVersion Include="Uno.Extensions.Reactive" Version="7.2.3" />
+    <PackageVersion Include="MudBlazor" Version="9.9.0" />
+    <PackageVersion Include="Refit" Version="15.2.0" />
+    <PackageVersion Include="Refit.HttpClientFactory" Version="15.2.0" />
+    <PackageVersion Include="Microsoft.Kiota.Abstractions" Version="2.1.1" />
+    <PackageVersion Include="Uno.Extensions.Navigation" Version="7.3.6" />
+    <PackageVersion Include="Uno.Extensions.Navigation.WinUI" Version="7.3.6" />
+    <PackageVersion Include="Uno.Extensions.Reactive" Version="7.3.6" />
   </ItemGroup>
   <ItemGroup Label="Security transitive overrides">
     <!-- Temporary exception: NBomber resolves a transitive with a high-severity advisory.
@@ -156,23 +165,23 @@
     <PackageVersion Include="SSH.NET" Version="2026.0.0" />
   </ItemGroup>
   <ItemGroup Label="Azure Storage">
-    <PackageVersion Include="Azure.Data.Tables" Version="12.11.0" />
-    <PackageVersion Include="Azure.Storage.Blobs" Version="12.29.1" />
+    <PackageVersion Include="Azure.Data.Tables" Version="12.12.0" />
+    <PackageVersion Include="Azure.Storage.Blobs" Version="12.29.2" />
     <PackageVersion Include="Microsoft.Extensions.Azure" Version="1.14.1" />
-    <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.4.6" />
+    <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.5.3" />
   </ItemGroup>
   <ItemGroup Label="Azure Service Bus">
     <PackageVersion Include="Azure.Messaging.ServiceBus" Version="7.20.2" />
-    <PackageVersion Include="Aspire.Hosting.Azure.ServiceBus" Version="13.4.6" />
+    <PackageVersion Include="Aspire.Hosting.Azure.ServiceBus" Version="13.5.3" />
   </ItemGroup>
   <ItemGroup Label="Azure Cosmos DB">
     <PackageVersion Include="Microsoft.Azure.Cosmos" Version="3.62.1" />
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.4.6" />
+    <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.5.3" />
   </ItemGroup>
   <ItemGroup Label="Data Protection">
-    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.3" />
-    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Keys" Version="1.6.3" />
+    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.4" />
+    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Keys" Version="1.6.4" />
   </ItemGroup>
   <ItemGroup Label="AI Services">
     <PackageVersion Include="Azure.AI.OpenAI" Version="2.9.0-beta.1" />
@@ -182,25 +191,25 @@
          Validate with restore, full build, and the deployment-only Key Vault/CMK acceptance gate. -->
     <PackageVersion Include="Microsoft.Data.SqlClient.AlwaysEncrypted.AzureKeyVaultProvider" Version="7.0.2" />
     <PackageVersion Include="Azure.Search.Documents" Version="12.0.0" />
-    <PackageVersion Include="Microsoft.Agents.AI" Version="1.17.0" />
-    <PackageVersion Include="Microsoft.Agents.AI.OpenAI" Version="1.17.0" />
+    <PackageVersion Include="Microsoft.Agents.AI" Version="1.20.0" />
+    <PackageVersion Include="Microsoft.Agents.AI.OpenAI" Version="1.20.0" />
     <PackageVersion Include="Microsoft.Extensions.AI" Version="10.9.0" />
     <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.9.0" />
     <!-- Temporary exception: Aspire Foundry hosting cannot discover the current Foundry Local runtime.
          Reason: the API host uses the current SDK directly. Remove when Aspire hosting supports the runtime and the direct path is deleted.
          Validate with Test.FoundryLocal plus provider-status and Aspire topology tests. -->
-    <PackageVersion Include="Microsoft.AI.Foundry.Local" Version="1.2.4" />
+    <PackageVersion Include="Microsoft.AI.Foundry.Local" Version="2.0.1" />
     <!-- Temporary exception: Microsoft.Extensions.AI.OpenAI constrains the OpenAI dependency below its latest stable release.
          Reason: select the newest release inside that declared range. Remove when the parent widens the range.
          Validate with restore and the Unit AI provider/agent contract tests. -->
     <PackageVersion Include="OpenAI" Version="2.12.0" />
-    <PackageVersion Include="Aspire.Hosting.Azure.CognitiveServices" Version="13.4.6" />
-    <PackageVersion Include="Aspire.Hosting.Azure.Search" Version="13.4.6" />
-    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.4.6" />
+    <PackageVersion Include="Aspire.Hosting.Azure.CognitiveServices" Version="13.5.3" />
+    <PackageVersion Include="Aspire.Hosting.Azure.Search" Version="13.5.3" />
+    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.5.3" />
     <!-- Temporary exception: Foundry hosting and Azure AI Inference have no stable package release.
          Reason: use their latest compatible preview releases for the enabled AI proof. Remove when stable releases exist.
          Validate with restore, full build, Test.Aspire AI topology, and dedicated live-provider lanes. -->
-    <PackageVersion Include="Aspire.Hosting.Foundry" Version="13.4.6-preview.1.26319.6" />
-    <PackageVersion Include="Aspire.Azure.AI.Inference" Version="13.4.6-preview.1.26319.6" />
+    <PackageVersion Include="Aspire.Hosting.Foundry" Version="13.5.3-preview.1.26425.3" />
+    <PackageVersion Include="Aspire.Azure.AI.Inference" Version="13.5.3-preview.1.26425.3" />
   </ItemGroup>
 </Project>

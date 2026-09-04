@@ -5,6 +5,12 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <UserSecretsId>1ff79f7a-4df8-4442-a9ed-762565d2e039</UserSecretsId>
+    <!-- Temporary exception: Aspire.Hosting.AppHost 13.5.3 added ASPIRE010, a new build warning fired whenever
+         AspireUseCliBundle stays at its default false.
+         Reason: adopting the Aspire CLI bundle is a tooling/workflow change out of scope for a package-only bump.
+         Remove when the repo adopts AspireUseCliBundle=true (Aspire CLI installed) or the SDK stops warning for CLI-less builds.
+         Validate with a clean build after either change. -->
+    <NoWarn>$(NoWarn);ASPIRE010</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
