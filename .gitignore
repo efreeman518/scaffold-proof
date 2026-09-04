@@ -435,3 +435,6 @@ playwright-screenshots/
 
 # Playwright test output
 test-results/
+
+# Harness-created agent worktrees (orchestrated refactor)
+.claude/worktrees/
