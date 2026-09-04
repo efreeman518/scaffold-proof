@@ -28,7 +28,7 @@ Worktrees live in `C:\Users\EbenFreeman\source\repos\scaffold-proof-wt\<slice>` 
 | id | scope (plan sections) | model | status | branch | worktree | agent id |
 |---|---|---|---|---|---|---|
 | S0 | Phase 0: all packages to latest, add Npgsql/Testcontainers.PostgreSql/Aspire.Hosting.PostgreSQL/FusionCache.OpenTelemetry, fix compile breaks, gates | sonnet | running | feature/sb-s0-packages | harness worktree | a6e49b17ab33322b8 |
-| S1 | Artifacts: DESIGN-DECISIONS D-020..D-030 + supersede D-019, domain-specification, UBIQUITOUS-LANGUAGE, resource-implementation, INSTRUCTION-GAPS | sonnet | running | feature/sb-s1-artifacts | ../scaffold-proof-wt/s1 | a1a7f7c9204ac78a9 |
+| S1 | Artifacts: DESIGN-DECISIONS D-020..D-030 + supersede D-019, domain-specification, UBIQUITOUS-LANGUAGE, resource-implementation, INSTRUCTION-GAPS | sonnet | done (merged 27897bc) | feature/sb-s1-artifacts | removed | a1a7f7c9204ac78a9 |
 | S2 | Phase 1.1-1.4 + 1.6 data layer: provider switch, model (composite PK, Version, UTC, encryption, inbox/outbox/work entities + configs), 6 migration sets, migrator, validator, AppHost, test fixtures both providers | fable | blocked on S0 | feature/sb-s2-data-layer | ../scaffold-proof-wt/s2 | - |
 | S3 | Phase 1.5 + Phase 4 + 3.2 Bicep: postgres module, provider param, Hyperscale prod profile, Redis, Container Apps scale rules, Service Bus dup detection + 3 subscriptions, Functions scale limit, dev/prod bicepparam, infra docs reconciled | sonnet | running | feature/sb-s3-infra | ../scaffold-proof-wt/s3 | a07e88a63d209ca71 |
 | S4 | Phase 2.1-2.5 contract: DTO Version, concurrency guard, cursor paging, idempotent create, read service + endpoints, filters, exception mapping, OpenAPI transformer, both styles, repository keyset/summary/export, Test.Endpoints dual-style harness, Test.Architecture rules | opus | blocked on S2 | feature/sb-s4-contract | ../scaffold-proof-wt/s4 | - |
@@ -46,3 +46,4 @@ Diff reviewed by the orchestrator in the agent's worktree; `dotnet build TaskFlo
 ## Session log
 
 - 2026-09-04: plan approved; integration branch created from main 86908b6; handoff, plan copy, package requests committed. Next action: spawn wave 1 (S0 with harness worktree, S1 and S3 with in-prompt worktrees).
+- 2026-09-04: S1 merged (27897bc). Retention job targetService/method names in resource-implementation.yaml are inferred placeholders; S7 reconciles them against real interfaces.
