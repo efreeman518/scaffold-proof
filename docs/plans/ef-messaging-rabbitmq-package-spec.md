@@ -96,11 +96,12 @@ public interface IRabbitMqMessageHandler
 
 // One hosted service per queue. Concurrency == PrefetchCount. Each delivery runs the handler inside a new
 // IServiceScope so scoped handlers are safe. Ack after the handler returns Ack.
-// Retry: BasicNack(requeue: DeathCount < MaxDeliveryCount); once the threshold is reached the service rejects instead
-// (requeue: false) so the broker routes the message to the queue's DLX.
-// Reject: BasicNack(requeue: false); the broker routes to the DLX. Because a nack cannot add headers, the service
-// first publishes a copy carrying x-ef-reject-reason to the DLX ONLY when the queue has no DLX configured (documented edge);
-// with a DLX configured it relies on the broker's x-death entry and logs the reason.
+// Retry: the attempt number is max(DeathCount + 1, in-process attempts observed for this MessageId), because the broker
+// writes x-death only when a message is actually dead-lettered (a plain requeue never increments it). While attempts <
+// MaxDeliveryCount: BasicNack(requeue: true); at the threshold: BasicNack(requeue: false) so the broker routes to the DLX.
+// Reject: BasicNack(requeue: false); the broker routes to the queue DLX. A nack cannot add headers and the service has no
+// publisher, so no copy is published; the reason is logged with queue, delivery tag and MessageId and counted in
+// ef.rabbitmq.deadlettered.
 // Handler exceptions count as Retry with the exception type as reason; never swallowed (Warning log with delivery tag and MessageId).
 public sealed class RabbitMqConsumerHostedService<THandler> : BackgroundService where THandler : class, IRabbitMqMessageHandler
 {
@@ -144,7 +145,7 @@ public sealed class RabbitMqPublishException : Exception
 1. Multiplexer: exactly one `IConnection` per process per options instance; creation is lazy and serialized; `AutomaticRecoveryEnabled` and `TopologyRecoveryEnabled` default true; connection shutdown events are logged at Warning and counted. Publisher channels are created with confirms enabled (`CreateChannelOptions(publisherConfirmationsEnabled: true, publisherConfirmationTrackingEnabled: true)`); a channel closed by the broker is disposed and replaced, never returned to the pool.
 2. Publisher: a batch is published on one channel, then confirms are awaited once for the batch within `PublisherConfirmTimeout`; any nack or timeout throws `RabbitMqPublishException` with the unconfirmed indices. Properties set: `MessageId`, `CorrelationId`, `ContentType`, `Persistent` (delivery mode 2), `Timestamp` (UTC now); headers copied verbatim (string, int, long, bool, byte[] supported; other types throw `ArgumentException` before any publish).
 3. Topology: idempotent declares; a mismatch with an existing declaration surfaces the broker's `PRECONDITION_FAILED` as an exception (never caught). Queue `DeadLetterExchange` maps to argument `x-dead-letter-exchange`.
-4. Consumer: `BasicQosAsync(0, PrefetchCount, false)` before `BasicConsumeAsync(autoAck: false)`; `DeathCount` is the sum of `count` entries in the `x-death` header for this queue; outcomes as commented above; on cancellation the service stops consuming, waits for in-flight handlers up to `HostOptions.ShutdownTimeout`, then closes the channel. `IOptionsMonitor` changes to `PrefetchCount` apply on the next channel creation only (documented).
+4. Consumer: `BasicQosAsync(0, PrefetchCount, false)` before `BasicConsumeAsync(autoAck: false)`; `DeathCount` is the sum of `count` entries in the `x-death` header for this queue; the retry bound is `max(DeathCount + 1, in-process attempts for this MessageId)` because the broker records `x-death` only on actual dead-lettering; outcomes as commented above; consumer channels use `consumerDispatchConcurrency = PrefetchCount`; on cancellation the service stops consuming, waits for in-flight handlers up to `HostOptions.ShutdownTimeout`, then closes the channel. `IOptionsMonitor` changes to `PrefetchCount` apply on the next channel creation only (documented).
 5. Options validation with `ValidateOnStart`: `PublisherChannelPoolSize >= 1`, every `PrefetchCount >= 1`, every `MaxDeliveryCount >= 1`, a connection source present (registered `IConnection` or `ConnectionString`).
 6. No silent failure anywhere: every dropped, nacked, or dead-lettered message produces a log line with MessageId and a metric.
 
@@ -167,3 +168,5 @@ public sealed class RabbitMqPublishException : Exception
 ## Out of scope for the package
 
 Outbox and inbox tables (EF.Data requests), envelope and versioning (EF.Messaging core request 14), Azure Service Bus (existing EF.Messaging), delayed retry via TTL wait queues (document as an extension point: a `RetryExchange` option publishing to a per-queue wait queue with `x-message-ttl`; not in v1).
+
+Implementation status: built in scaffold-proof as `src/Packages/EF.Messaging.RabbitMq` + `tests/EF.Messaging.RabbitMq.Tests` (RabbitMQ.Client 7.2.2; 15 unit + 16 container tests green). Port = move both projects, publish, swap TaskFlow to PackageReference. Contract 4 and the Reject comment above were corrected from the first draft to match RabbitMQ semantics.
