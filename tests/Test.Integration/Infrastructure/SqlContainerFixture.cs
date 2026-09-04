@@ -1,7 +1,8 @@
-using EF.IntegrationTesting.Testcontainers;
+﻿using EF.IntegrationTesting.Testcontainers;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Infrastructure.Data;
+using TaskFlow.Infrastructure.Data.Provider;
 
 namespace Test.Integration.Infrastructure;
 
@@ -60,72 +61,29 @@ internal static class SqlContainerFixture
 
     /// <summary>Builds a trxn context against the standalone SQL container.</summary>
     internal static TaskFlowDbContextTrxn CreateTrxnContext(string? connString = null) =>
-        new(BuildSqlServerOptions<TaskFlowDbContextTrxn>(connString ?? Sql.ConnectionString)) { AuditId = "integration-test" };
-
-    /// <summary>Builds a trxn context using the pre-schema-pinning dbo migration history location.</summary>
-    internal static TaskFlowDbContextTrxn CreateLegacyTrxnContext(string connectionString)
-    {
-        var options = new DbContextOptionsBuilder<TaskFlowDbContextTrxn>()
-            .UseSqlServer(connectionString, sql =>
-            {
-                sql.UseLatestCompatibilityLevel();
-                sql.EnableRetryOnFailure();
-            })
-            .Options;
-
-        return new TaskFlowDbContextTrxn(options) { AuditId = "integration-test" };
-    }
+        new(Build<TaskFlowDbContextTrxn>(connString, TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName))
+        { AuditId = "integration-test" };
 
     /// <summary>Builds a query context against the standalone SQL container.</summary>
     internal static TaskFlowDbContextQuery CreateQueryContext(string? connString = null) =>
-        new(BuildSqlServerOptions<TaskFlowDbContextQuery>(connString ?? Sql.ConnectionString)) { AuditId = "integration-test" };
+        new(Build<TaskFlowDbContextQuery>(connString, TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName))
+        { AuditId = "integration-test" };
 
     /// <summary>Builds a FlowEngine context against the standalone SQL container.</summary>
-    internal static TaskFlowFlowEngineDbContext CreateFlowEngineContext(string? connString = null)
-    {
-        var options = new DbContextOptionsBuilder<TaskFlowFlowEngineDbContext>()
-            .UseSqlServer(connString ?? Sql.ConnectionString, sql =>
-            {
-                sql.UseLatestCompatibilityLevel();
-                sql.EnableRetryOnFailure();
-                sql.MigrationsHistoryTable(
-                    TaskFlowFlowEngineDbContext.MigrationHistoryTable,
-                    TaskFlowFlowEngineDbContext.SchemaName);
-            })
-            .Options;
-
-        return new TaskFlowFlowEngineDbContext(options);
-    }
+    internal static TaskFlowFlowEngineDbContext CreateFlowEngineContext(string? connString = null) =>
+        new(Build<TaskFlowFlowEngineDbContext>(connString, TaskFlowFlowEngineDbContext.MigrationHistoryTable, TaskFlowFlowEngineDbContext.SchemaName));
 
     /// <summary>Builds a TickerQ context against the standalone SQL container.</summary>
-    internal static TaskFlowTickerQDbContext CreateTickerQContext(string? connString = null)
-    {
-        var options = new DbContextOptionsBuilder<TaskFlowTickerQDbContext>()
-            .UseSqlServer(connString ?? Sql.ConnectionString, sql =>
-            {
-                sql.UseLatestCompatibilityLevel();
-                sql.EnableRetryOnFailure();
-                sql.MigrationsAssembly(typeof(TaskFlowTickerQDbContext).Assembly.GetName().Name);
-                sql.MigrationsHistoryTable(
-                    TaskFlowTickerQDbContext.MigrationHistoryTable,
-                    TaskFlowTickerQDbContext.SchemaName);
-            })
-            .Options;
+    internal static TaskFlowTickerQDbContext CreateTickerQContext(string? connString = null) =>
+        new(Build<TaskFlowTickerQDbContext>(connString, TaskFlowTickerQDbContext.MigrationHistoryTable, TaskFlowTickerQDbContext.SchemaName));
 
-        return new TaskFlowTickerQDbContext(options);
-    }
-
-    /// <summary>Builds SQL Server options used by focused test cases.</summary>
-    private static DbContextOptions<TContext> BuildSqlServerOptions<TContext>(string connectionString)
+    private static DbContextOptions<TContext> Build<TContext>(string? connString, string historyTable, string historySchema)
         where TContext : DbContext =>
         new DbContextOptionsBuilder<TContext>()
-            .UseSqlServer(connectionString, sql =>
-            {
-                sql.UseLatestCompatibilityLevel();
-                sql.EnableRetryOnFailure();
-                sql.MigrationsHistoryTable(
-                    TaskFlowDbContextBase.MigrationHistoryTable,
-                    TaskFlowDbContextBase.SchemaName);
-            })
+            .UseTaskFlowProvider(new TaskFlowProviderOptions(
+                TaskFlowDbProvider.SqlServer,
+                connString ?? Sql.ConnectionString,
+                historyTable,
+                historySchema))
             .Options;
 }

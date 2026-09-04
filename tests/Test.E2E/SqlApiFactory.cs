@@ -1,8 +1,9 @@
-using EF.IntegrationTesting.Testcontainers;
+﻿using EF.IntegrationTesting.Testcontainers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Infrastructure.Data;
+using TaskFlow.Infrastructure.Data.Provider;
 using Test.Support;
 using Test.Support.Hosting;
 
@@ -83,17 +84,14 @@ public sealed class SqlApiFactory : WebApplicationFactoryBase<Program, TaskFlowD
     protected override DbContextOptions BuildQueryOptions() =>
         BuildSqlServerOptions<TaskFlowDbContextQuery>(Sql.ConnectionString);
 
-    /// <summary>Builds SQL server options used by focused test cases.</summary>
+    /// <summary>Builds provider options used by focused test cases.</summary>
     private static DbContextOptions<TContext> BuildSqlServerOptions<TContext>(string connectionString)
         where TContext : DbContext =>
         new DbContextOptionsBuilder<TContext>()
-            .UseSqlServer(connectionString, sql =>
-            {
-                sql.UseLatestCompatibilityLevel();
-                sql.EnableRetryOnFailure();
-                sql.MigrationsHistoryTable(
-                    TaskFlowDbContextBase.MigrationHistoryTable,
-                    TaskFlowDbContextBase.SchemaName);
-            })
+            .UseTaskFlowProvider(new TaskFlowProviderOptions(
+                TaskFlowDbProvider.SqlServer,
+                connectionString,
+                TaskFlowDbContextBase.MigrationHistoryTable,
+                TaskFlowDbContextBase.SchemaName))
             .Options;
 }
