@@ -6,6 +6,7 @@ using TaskFlow.Domain.Shared;
 using TaskFlow.Infrastructure.Data.Configurations;
 using TaskFlow.Infrastructure.Data.Conventions;
 using TaskFlow.Infrastructure.Data.Encryption;
+using TaskFlow.Infrastructure.Data.Operational;
 
 namespace TaskFlow.Infrastructure.Data;
 
@@ -85,4 +86,9 @@ public abstract class TaskFlowDbContextBase(DbContextOptions options) : DbContex
     public DbSet<ChecklistItem> ChecklistItems { get; set; } = null!;
     public DbSet<Attachment> Attachments { get; set; } = null!;
     public DbSet<TaskItemTag> TaskItemTags { get; set; } = null!;
+
+    // Operational work tables (D-026, D-029): not tenant entities, no query filter, no Version.
+    public DbSet<OutboxMessage> OutboxMessages { get; set; } = null!;
+    public DbSet<BlobDeleteWork> BlobDeleteWork { get; set; } = null!;
+    public DbSet<ConsumerInbox> ConsumerInbox { get; set; } = null!;
 }

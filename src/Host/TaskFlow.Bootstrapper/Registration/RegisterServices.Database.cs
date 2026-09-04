@@ -4,6 +4,7 @@ using EF.Data.Interceptors;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Encryption;
@@ -78,6 +79,8 @@ public static partial class RegisterServices
         services.AddScoped<ITagRepositoryQuery, TagRepositoryQuery>();
         services.AddScoped<ICommentRepositoryQuery, CommentRepositoryQuery>();
         services.AddScoped<IChecklistItemRepositoryQuery, ChecklistItemRepositoryQuery>();
+
+        services.AddScoped<IInboxStore, InboxStore>();
     }
 
     // An empty connection string leaves the context unconfigured so test hosts can replace it (InMemory).
