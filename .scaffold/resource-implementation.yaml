@@ -190,6 +190,7 @@ entities:
 # ---------------------------------------------------------------------------
 messagingProviders:
   - { name: ServiceBus, type: AzureServiceBus }
+  - { name: RabbitMq, type: RabbitMQ }
 
 messagingChannels:
   - { name: DomainEvents, provider: ServiceBus, pattern: topic }
@@ -283,6 +284,7 @@ externalDependencyModes:
   postgres: emulator
   redis: emulator
   serviceBus: emulator
+  rabbitMq: emulator
   keyVault: lazy-optional
   blobStorage: emulator
   cosmosDb: emulator
