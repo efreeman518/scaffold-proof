@@ -47,7 +47,7 @@ jobs:
       - name: Check out latest scaffold
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: efreeman518/AI-Instructions-Scaffold
+          repository: efreeman518/scaffold-ai
           ref: main
           path: .scaffold-source
           persist-credentials: false

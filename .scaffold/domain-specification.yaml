@@ -9,7 +9,7 @@
 ProjectName: TaskFlow
 ProjectDescription: >-
   A multi-tenant task management application used as broad reference proof for
-  selected AI-Instructions-Scaffold patterns. TaskFlow covers
+  selected scaffold-ai patterns. TaskFlow covers
   hierarchical categories, self-referencing sub-tasks, tagging, comments,
   checklists, file attachments, state machines, domain events, caching,
   messaging, AI-assisted search, and agent workflows. Current proof boundaries
