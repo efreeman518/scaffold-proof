@@ -43,6 +43,7 @@
     <Project Path="src/UI/TaskFlow.Blazor/TaskFlow.Blazor.csproj" />
   </Folder>
   <Folder Name="/Tests/">
+    <Project Path="tests/EF.Messaging.RabbitMq.Tests/EF.Messaging.RabbitMq.Tests.csproj" />
     <Project Path="tests/Test.Support/Test.Support.csproj" />
     <Project Path="tests/Test.Unit/Test.Unit.csproj" />
     <Project Path="tests/Test.UI/Test.UI.csproj" />
