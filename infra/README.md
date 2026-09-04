@@ -4,22 +4,30 @@ Azure infrastructure for the TaskFlow dev environment. All resources deploy to a
 
 ## Architecture
 
-| Resource | SKU | Purpose |
-|----------|-----|---------|
-| Container Apps Environment | Consumption | Hosts Gateway, API, Scheduler, Blazor |
-| Azure SQL | Basic (5 DTU) | Transactional + query databases |
-| Cosmos DB | Serverless | Read projections (TaskItemViews) |
-| Service Bus | Standard | Domain events + command queue |
-| Azure Functions | Flex Consumption (FC1) | Event-driven processing |
-| Static Web App | Free | Uno WASM frontend |
-| Redis Cache | Basic C0 | FusionCache L2 |
-| Storage Accounts | Standard LRS (x2) | App blobs/tables + Functions runtime |
-| Key Vault | Standard | Secrets management |
-| App Configuration | Free | Centralized config |
-| Log Analytics | PerGB2018 (30d) | Logging + Application Insights |
-| User-Assigned Identity | - | GitHub Actions OIDC deploy identity |
+| Resource | Dev SKU | Prod SKU | Purpose |
+|----------|---------|----------|---------|
+| Container Apps Environment | Consumption | Consumption | Hosts Gateway, API, Scheduler, Blazor |
+| Database (`databaseProvider`) | SQL Basic (5 DTU) | SQL Hyperscale `HS_Gen5_2`, zone-redundant, 1 HA/read-scale replica | Transactional + query databases. `PostgreSql` (Flexible Server 17, pgvector) is a selectable alternative to `SqlServer` on both profiles - see the commented block in `main.prod.bicepparam`. |
+| Cosmos DB | Serverless | Serverless | Read projections (`taskflow-db`/`task-views`, matching `TaskFlow.Api` appsettings) |
+| Service Bus | Standard | Standard | Domain events (3 filtered subscriptions: `projection`, `ai-review`, `workflow`) + command queue |
+| Azure Functions | Flex Consumption (FC1) | Flex Consumption (FC1) | Event-driven processing, `functionAppScaleLimit` param |
+| Static Web App | Free | Free | Uno WASM frontend |
+| Redis | Azure Managed Redis `Balanced_B0`, no HA | Azure Managed Redis `Balanced_B5`+, HA | FusionCache L2 (`ConnectionStrings__Redis1`), API + Scheduler |
+| Storage Accounts | Standard LRS (x2) | Standard LRS (x2) | App blobs/tables + Functions runtime |
+| Key Vault | Standard | Standard | Secrets management |
+| App Configuration | Free | Free | Centralized config |
+| Log Analytics | PerGB2018 (30d) | PerGB2018 (30d) | Logging + Application Insights |
+| User-Assigned Identity | - | - | GitHub Actions OIDC deploy identity |
 
-Azure resource access uses **managed identities and Entra authentication** where supported (no shared application keys except Functions storage, which requires one). End-user application auth is separate: this reference deployment defaults to `AuthMode: Scaffold`, supplies an automatic principal, and does not require a login.
+Azure resource access uses **managed identities and Entra authentication** where supported (no shared application keys except Functions storage and Redis, which require one - see the redis module comments on the Entra data-plane gap). End-user application auth is separate: this reference deployment defaults to `AuthMode: Scaffold`, supplies an automatic principal, and does not require a login.
+
+### Container Apps scale profiles
+
+Gateway, API, Scheduler, and Blazor each take a `<host>Profile` object param (`minReplicas`, `maxReplicas`, `concurrentRequests`, `cpu`, `memory`). `main.dev.bicepparam` keeps dev scale-to-zero with small ceilings and no HTTP concurrency rule; `main.prod.bicepparam` sets Gateway/API to min 2 / max 100 / 50 concurrent requests, Blazor to min 2 / max 30, and Scheduler to two always-on replicas (min 2 / max 2, no ingress so no concurrency rule).
+
+### Connection strings
+
+Every emitted connection string carries an explicit pool size (`Max Pool Size` for SqlClient, `Maximum Pool Size` for Npgsql). `ConnectionStrings__TaskFlowDbContextQuery` (API, Scheduler, Functions) resolves to the read/replica connection string; today all other contexts share the primary read-write string, same as before this change.
 
 ## Prerequisites
 
@@ -141,7 +149,9 @@ validate exact green SHA
 ```
 infra/
 --- main.bicep              # Orchestration (subscription-scoped)
---- main.bicepparam         # Parameter defaults
+--- main.bicepparam         # Parameter defaults (dev)
+--- main.dev.bicepparam     # Explicit dev profile
+--- main.prod.bicepparam    # Prod profile (Hyperscale, HA, scale rules)
 --- modules/
 -   --- app-configuration.bicep
 -   --- container-app.bicep
@@ -152,6 +162,9 @@ infra/
 -   --- functions.bicep
 -   --- key-vault.bicep
 -   --- log-analytics.bicep
+-   --- postgres-flexible-server.bicep
+-   --- redis.bicep
+-   --- redis-rbac.bicep
 -   --- role-assignment.bicep
 -   --- service-bus.bicep
 -   --- sql-database.bicep

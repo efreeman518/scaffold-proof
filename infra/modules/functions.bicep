@@ -16,8 +16,15 @@ param appConfigEndpoint string
 @description('Key Vault URI')
 param keyVaultUri string
 
-@description('SQL connection string')
-param sqlConnectionString string
+@description('Active database provider (SqlServer or PostgreSql)')
+@allowed(['SqlServer', 'PostgreSql'])
+param databaseProvider string = 'SqlServer'
+
+@description('Primary (read-write) database connection string')
+param dbConnectionString string
+
+@description('Read-replica database connection string; falls back to the primary string when no replica exists')
+param dbReadConnectionString string
 
 @description('Cosmos DB endpoint')
 param cosmosEndpoint string
@@ -27,6 +34,9 @@ param storageBlobEndpoint string
 
 @description('Shared Application Insights connection string')
 param appInsightsConnectionString string
+
+@description('Maximum function app instance count (Flex Consumption scale-out ceiling); pair with host.json serviceBus.maxConcurrentCalls')
+param functionAppScaleLimit int = 20
 
 @description('Tags')
 param tags object = {}
@@ -72,9 +82,10 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'SERVICEBUS__fullyQualifiedNamespace', value: serviceBusNamespace }
         { name: 'AppConfig__Endpoint', value: appConfigEndpoint }
         { name: 'KeyVault__Uri', value: keyVaultUri }
-        { name: 'ConnectionStrings__TaskFlowDbContextTrxn', value: sqlConnectionString }
-        { name: 'ConnectionStrings__TaskFlowDbContextQuery', value: sqlConnectionString }
-        { name: 'ConnectionStrings__TaskFlowFlowEngineDbContext', value: sqlConnectionString }
+        { name: 'Database__Provider', value: databaseProvider }
+        { name: 'ConnectionStrings__TaskFlowDbContextTrxn', value: dbConnectionString }
+        { name: 'ConnectionStrings__TaskFlowDbContextQuery', value: dbReadConnectionString }
+        { name: 'ConnectionStrings__TaskFlowFlowEngineDbContext', value: dbConnectionString }
         { name: 'ConnectionStrings__CosmosDb1', value: cosmosEndpoint }
         { name: 'ConnectionStrings__BlobStorage1', value: storageBlobEndpoint }
         {
@@ -87,6 +98,7 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
       ]
       minTlsVersion: '1.2'
       ftpsState: 'Disabled'
+      functionAppScaleLimit: functionAppScaleLimit
     }
   }
 }
