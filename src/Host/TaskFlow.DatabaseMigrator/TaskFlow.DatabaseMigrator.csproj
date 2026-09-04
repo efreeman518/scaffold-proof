@@ -6,7 +6,6 @@
 
   <ItemGroup>
     <PackageReference Include="EF.Data" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
     <PackageReference Include="Microsoft.CodeAnalysis.Common" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.Common" />
@@ -21,6 +20,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Infrastructure\TaskFlow.Infrastructure.Data\TaskFlow.Infrastructure.Data.csproj" />
+    <!-- Both provider migration sets ship with the migrator; UseTaskFlowProvider picks one by MigrationsAssembly (D-025). -->
+    <ProjectReference Include="..\..\Infrastructure\TaskFlow.Infrastructure.Data.Migrations.SqlServer\TaskFlow.Infrastructure.Data.Migrations.SqlServer.csproj" />
+    <ProjectReference Include="..\..\Infrastructure\TaskFlow.Infrastructure.Data.Migrations.PostgreSql\TaskFlow.Infrastructure.Data.Migrations.PostgreSql.csproj" />
     <ProjectReference Include="..\Aspire\ServiceDefaults\ServiceDefaults.csproj" />
   </ItemGroup>
 

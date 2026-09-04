@@ -1,30 +1,28 @@
+﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace TaskFlow.Infrastructure.Data.Migrations.TickerQ
+namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TickerQ
 {
     /// <inheritdoc />
     public partial class InitialTickerQ : Migration
     {
-        private static readonly string[] columns = new[] { "Status", "ExecutionTime" };
-
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.EnsureSchema(
-                name: "Scheduler");
+                name: "scheduler");
 
             migrationBuilder.CreateTable(
                 name: "CronTickers",
-                schema: "Scheduler",
+                schema: "scheduler",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Expression = table.Column<string>(type: "nvarchar(450)", nullable: true),
                     Request = table.Column<byte[]>(type: "varbinary(max)", nullable: true),
                     Retries = table.Column<int>(type: "int", nullable: false),
-                    // SQL Server 2025 native json type. Keep this aligned with TickerQ's EF model.
                     RetryIntervals = table.Column<string>(type: "json", nullable: true),
                     IsEnabled = table.Column<bool>(type: "bit", nullable: false),
                     IsSystemPaused = table.Column<bool>(type: "bit", nullable: false, defaultValue: false),
@@ -41,7 +39,7 @@ namespace TaskFlow.Infrastructure.Data.Migrations.TickerQ
 
             migrationBuilder.CreateTable(
                 name: "TimeTickers",
-                schema: "Scheduler",
+                schema: "scheduler",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
@@ -71,14 +69,14 @@ namespace TaskFlow.Infrastructure.Data.Migrations.TickerQ
                     table.ForeignKey(
                         name: "FK_TimeTickers_TimeTickers_ParentId",
                         column: x => x.ParentId,
-                        principalSchema: "Scheduler",
+                        principalSchema: "scheduler",
                         principalTable: "TimeTickers",
                         principalColumn: "Id");
                 });
 
             migrationBuilder.CreateTable(
                 name: "CronTickerOccurrences",
-                schema: "Scheduler",
+                schema: "scheduler",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
@@ -101,7 +99,7 @@ namespace TaskFlow.Infrastructure.Data.Migrations.TickerQ
                     table.ForeignKey(
                         name: "FK_CronTickerOccurrences_CronTickers_CronTickerId",
                         column: x => x.CronTickerId,
-                        principalSchema: "Scheduler",
+                        principalSchema: "scheduler",
                         principalTable: "CronTickers",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
@@ -109,56 +107,56 @@ namespace TaskFlow.Infrastructure.Data.Migrations.TickerQ
 
             migrationBuilder.CreateIndex(
                 name: "IX_CronTickerOccurrence_CronTickerId",
-                schema: "Scheduler",
+                schema: "scheduler",
                 table: "CronTickerOccurrences",
                 column: "CronTickerId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_CronTickerOccurrence_ExecutionTime",
-                schema: "Scheduler",
+                schema: "scheduler",
                 table: "CronTickerOccurrences",
                 column: "ExecutionTime");
 
             migrationBuilder.CreateIndex(
                 name: "IX_CronTickerOccurrence_Status_ExecutionTime",
-                schema: "Scheduler",
+                schema: "scheduler",
                 table: "CronTickerOccurrences",
-                columns: columns);
+                columns: new[] { "Status", "ExecutionTime" });
 
             migrationBuilder.CreateIndex(
                 name: "UQ_CronTickerId_ExecutionTime",
-                schema: "Scheduler",
+                schema: "scheduler",
                 table: "CronTickerOccurrences",
                 columns: new[] { "CronTickerId", "ExecutionTime" },
                 unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_CronTickers_Expression",
-                schema: "Scheduler",
+                schema: "scheduler",
                 table: "CronTickers",
                 column: "Expression");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Function_Expression",
-                schema: "Scheduler",
+                schema: "scheduler",
                 table: "CronTickers",
                 columns: new[] { "Function", "Expression" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_TimeTicker_ExecutionTime",
-                schema: "Scheduler",
+                schema: "scheduler",
                 table: "TimeTickers",
                 column: "ExecutionTime");
 
             migrationBuilder.CreateIndex(
                 name: "IX_TimeTicker_Status_ExecutionTime",
-                schema: "Scheduler",
+                schema: "scheduler",
                 table: "TimeTickers",
-                columns: columns);
+                columns: new[] { "Status", "ExecutionTime" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_TimeTickers_ParentId",
-                schema: "Scheduler",
+                schema: "scheduler",
                 table: "TimeTickers",
                 column: "ParentId");
         }
@@ -168,15 +166,15 @@ namespace TaskFlow.Infrastructure.Data.Migrations.TickerQ
         {
             migrationBuilder.DropTable(
                 name: "CronTickerOccurrences",
-                schema: "Scheduler");
+                schema: "scheduler");
 
             migrationBuilder.DropTable(
                 name: "TimeTickers",
-                schema: "Scheduler");
+                schema: "scheduler");
 
             migrationBuilder.DropTable(
                 name: "CronTickers",
-                schema: "Scheduler");
+                schema: "scheduler");
         }
     }
 }
