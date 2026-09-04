@@ -41,9 +41,9 @@ includeGitHubActions: true
 includeAzd: false
 includeAiServices: true
 
-database: SQLServer
-migrationLifecycle: preserved-append-only
-databaseProviders: [SqlServer]
+database: SQLServer+PostgreSQL
+migrationLifecycle: reset-baseline
+databaseProviders: [SqlServer, PostgreSql]
 caching: FusionCache+Redis
 includeKeyVault: true
 deployTarget: ContainerApps
@@ -196,7 +196,7 @@ messagingChannels:
   - { name: TaskCommands, provider: ServiceBus, pattern: queue }
 
 messagingSemantics:
-  - { channel: DomainEvents, deliveryMode: at-least-once, outboxEnabled: true, idempotencyKey: MessageId, deduplicationWindow: "PT1H" }
+  - { channel: DomainEvents, deliveryMode: at-least-once, outboxEnabled: true, idempotencyKey: MessageId, deduplicationWindow: "PT1H", subscriptions: [projection, ai-review, workflow], inboxTable: ConsumerInbox }
   - { channel: TaskCommands, deliveryMode: at-least-once, outboxEnabled: false, idempotencyKey: CorrelationId, deduplicationWindow: "PT30M" }
 
 # ---------------------------------------------------------------------------
@@ -206,35 +206,66 @@ scheduledJobs:
   - name: OverdueTaskCheck
     schedule: "0 */6 * * *"
     description: "Check for overdue tasks and raise TaskItemOverdueSuspected events"
-    targetService: TaskItemService
-    method: CheckOverdueItemsAsync
+    targetService: ITaskItemSystemRepository
+    method: StreamOverdueAsync
 
   - name: RecurringTaskGeneration
     schedule: "0 0 * * *"
     description: "Generate next occurrences for tasks with active recurrence patterns"
-    targetService: TaskItemService
-    method: GenerateRecurringTasksAsync
+    targetService: ITaskItemSystemRepository
+    method: StreamDueTemplatesAsync
 
   - name: StaleTaskCleanup
     schedule: "0 2 * * 0"
     description: "Archive or remove cancelled tasks older than 90 days"
-    targetService: TaskItemService
-    method: CleanupStaleTasksAsync
+    targetService: ITaskItemSystemRepository
+    method: GetStaleBatchAsync
+
+  - name: OutboxRetention
+    schedule: "15 * * * *"
+    description: "Hard-delete dead-lettered outbox messages older than 7 days"
+    targetService: IOutboxRepository
+    method: PurgeDeadLetteredAsync
+
+  - name: ConsumerInboxRetention
+    schedule: "20 * * * *"
+    description: "Hard-delete ConsumerInbox rows older than 7 days"
+    targetService: IInboxStore
+    method: PurgeProcessedAsync
+
+  - name: TickerQOccurrenceRetention
+    schedule: "30 4 * * *"
+    description: "Purge TickerQ cron occurrence rows executed more than 24 hours ago"
+    targetService: ITickerQMaintenanceService
+    method: PurgeExecutedOccurrencesAsync
+
+  - name: AuditRetention
+    schedule: "40 4 * * *"
+    description: "Batch-delete audit log entries older than 30 days (100-row batches, PartitionKey = tenantId|yyyyMMdd)"
+    targetService: IAuditLogRepository
+    method: PurgeOlderThanAsync
 
 # ---------------------------------------------------------------------------
 # Function Definitions
 # ---------------------------------------------------------------------------
 functionDefinitions:
-  - name: ProcessTaskEvent
+  - name: ProcessTaskProjection
     trigger: serviceBusTopic
     channel: DomainEvents
-    subscription: task-events
-    description: "Process domain events for task lifecycle changes (update Cosmos projection, trigger workflows)"
+    subscription: projection
+    description: "Update the Cosmos DB TaskView read-model projection from domain events"
 
-  - name: StaleTaskCleanup
-    trigger: timerTrigger
-    schedule: "0 0 3 * * 0"
-    description: "Weekly cleanup of cancelled tasks older than 90 days"
+  - name: ProcessTaskAiReview
+    trigger: serviceBusTopic
+    channel: DomainEvents
+    subscription: ai-review
+    description: "AI-assisted review of task domain events (e.g. triage suggestions)"
+
+  - name: ProcessTaskWorkflowStart
+    trigger: serviceBusTopic
+    channel: DomainEvents
+    subscription: workflow
+    description: "Start or advance FlowEngine workflows triggered by domain events"
 
   - name: ProcessAttachment
     trigger: blobTrigger
@@ -249,6 +280,7 @@ functionDefinitions:
 # ---------------------------------------------------------------------------
 externalDependencyModes:
   sql: emulator
+  postgres: emulator
   redis: emulator
   serviceBus: emulator
   keyVault: lazy-optional
