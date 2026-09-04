@@ -4,6 +4,7 @@ using System.Diagnostics;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Domain.Shared;
 using TaskFlow.Infrastructure.Data.Operational;
+using TaskFlow.Observability.Meters;
 
 namespace TaskFlow.Infrastructure.Data.Interceptors;
 
@@ -12,7 +13,7 @@ namespace TaskFlow.Infrastructure.Data.Interceptors;
 /// same <c>SaveChanges</c>, so the event and the domain change commit or roll back together and no call site
 /// publishes anything. Rows added here are part of the change tracker EF is already saving.
 /// </summary>
-public sealed class OutboxStagingInterceptor(TimeProvider? timeProvider = null) : SaveChangesInterceptor
+public sealed class OutboxStagingInterceptor(TimeProvider? timeProvider = null, MessagingMetrics? metrics = null) : SaveChangesInterceptor
 {
     /// <summary>Logical channel every TaskFlow integration event goes to; the transport maps it to a topic or exchange.</summary>
     public const string DefaultDestination = "DomainEvents";
@@ -45,6 +46,7 @@ public sealed class OutboxStagingInterceptor(TimeProvider? timeProvider = null) 
         if (raisers.Count == 0) return;
 
         var now = _timeProvider.GetUtcNow();
+        var staged = 0;
         // No request context is reachable from a pooled-factory interceptor; the ambient Activity is the same
         // correlation the rest of the pipeline emits, and is null outside a traced operation.
         var correlationId = Activity.Current?.Id;
@@ -55,10 +57,13 @@ public sealed class OutboxStagingInterceptor(TimeProvider? timeProvider = null) 
             {
                 var envelope = IntegrationEventEnvelope.From(domainEvent, now, correlationId);
                 context.Add(ToRow(envelope, now));
+                staged++;
             }
 
             raiser.ClearDomainEvents();
         }
+
+        metrics?.RecordStaged(staged);
     }
 
     /// <summary>Maps an envelope to its outbox row; the row id IS the MessageId so replay is detectable.</summary>

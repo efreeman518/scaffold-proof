@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\Application\TaskFlow.Application.Contracts\TaskFlow.Application.Contracts.csproj" />
     <ProjectReference Include="..\..\Domain\TaskFlow.Domain.Model\TaskFlow.Domain.Model.csproj" />
     <ProjectReference Include="..\..\Domain\TaskFlow.Domain.Shared\TaskFlow.Domain.Shared.csproj" />
+    <ProjectReference Include="..\..\Shared\TaskFlow.Observability\TaskFlow.Observability.csproj" />
   </ItemGroup>
 
 </Project>
