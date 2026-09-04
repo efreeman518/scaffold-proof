@@ -20,7 +20,12 @@ on:
       includeIntegration:
         type: boolean
         default: false
-        description: "Run Test.Integration component tests (standalone Testcontainers SQL + Azurite; requires Docker)"
+        description: "Run Test.Integration component tests (standalone Testcontainers database + Azurite; requires Docker)"
+      dbProvider:
+        type: choice
+        default: both
+        options: [both, SqlServer, PostgreSql]
+        description: "Database provider lane(s) for the Docker-backed E2E and Integration jobs (TASKFLOW_TEST_DB_PROVIDER)"
       includeAspireMesh:
         type: boolean
         default: false
@@ -37,6 +42,10 @@ on:
         type: boolean
         default: false
         description: "Run unfiltered serial solution acceptance, including Aspire, Playwright, and WASM"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-test:
@@ -70,7 +79,7 @@ jobs:
       # Reclaim ~20+ GB (Android SDK, Haskell, large apt packages) before the Docker-backed steps run.
       # Keep dotnet and the tool cache - the build depends on them.
       - name: Free disk space
-        if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.includeE2E || inputs.includeIntegration || inputs.includeAspireMesh || inputs.includeFoundryLocal || inputs.includePlaywrightUI || inputs.includeFullAcceptance)) || github.event_name == 'schedule' }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.includeAspireMesh || inputs.includeFoundryLocal || inputs.includePlaywrightUI || inputs.includeFullAcceptance)) || github.event_name == 'schedule' }}
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
@@ -138,24 +147,6 @@ jobs:
           dotnet test tests/Test.Integration.FlowEngine/Test.Integration.FlowEngine.csproj
           --no-build --configuration Release
           --logger "trx;LogFileName=flowengine-results.trx"
-          --results-directory ./TestResults
-
-      - name: E2E Tests (manual or scheduled, SQL)
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.includeE2E == true) || github.event_name == 'schedule' }}
-        timeout-minutes: 20
-        run: >
-          dotnet test tests/Test.E2E/Test.E2E.csproj
-          --no-build --configuration Release
-          --logger "trx;LogFileName=e2e-results.trx"
-          --results-directory ./TestResults
-
-      - name: Integration Tests (manual or scheduled, component)
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.includeIntegration == true) || github.event_name == 'schedule' }}
-        timeout-minutes: 20
-        run: >
-          dotnet test tests/Test.Integration/Test.Integration.csproj
-          --no-build --configuration Release
-          --logger "trx;LogFileName=integration-results.trx"
           --results-directory ./TestResults
 
       - name: Aspire Mesh Tests (manual or scheduled, full graph)
@@ -251,6 +242,80 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-results
+          path: ./TestResults/*.trx
+
+  # Docker-backed lanes run once per database provider (D-020). Same assemblies, TASKFLOW_TEST_DB_PROVIDER
+  # selects the Testcontainer and the host's Database:Provider; the matrix is filtered by the dbProvider input.
+  database-lanes:
+    needs: build-and-test
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.includeE2E == true || inputs.includeIntegration == true)) || github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        dbProvider: [SqlServer, PostgreSql]
+    env:
+      TASKFLOW_TEST_DB_PROVIDER: ${{ matrix.dbProvider }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider }}
+
+      - name: Free disk space
+        if: ${{ github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider }}
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: false
+          dotnet: false
+          android: true
+          haskell: true
+          large-packages: true
+          swap-storage: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        if: ${{ github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider }}
+        with:
+          global-json-file: global.json
+
+      - name: Install required workloads
+        if: ${{ github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider }}
+        run: dotnet workload install wasm-tools aspire
+
+      - name: Restore
+        if: ${{ github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider }}
+        env:
+          NuGetPackageSourceCredentials_efreeman518-github: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
+        run: dotnet restore TaskFlow.slnx
+
+      - name: Build test lanes
+        if: ${{ github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider }}
+        run: |
+          dotnet build tests/Test.E2E/Test.E2E.csproj --no-restore --configuration Release -m:1
+          dotnet build tests/Test.Integration/Test.Integration.csproj --no-restore --configuration Release -m:1
+
+      - name: E2E Tests (${{ matrix.dbProvider }})
+        if: ${{ (github.event_name == 'schedule' || inputs.includeE2E == true) && (github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider) }}
+        timeout-minutes: 20
+        run: >
+          dotnet test tests/Test.E2E/Test.E2E.csproj
+          --no-build --configuration Release
+          --logger "trx;LogFileName=e2e-${{ matrix.dbProvider }}-results.trx"
+          --results-directory ./TestResults
+
+      - name: Integration Tests (${{ matrix.dbProvider }}, component)
+        if: ${{ (github.event_name == 'schedule' || inputs.includeIntegration == true) && (github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider) }}
+        timeout-minutes: 20
+        run: >
+          dotnet test tests/Test.Integration/Test.Integration.csproj
+          --no-build --configuration Release
+          --logger "trx;LogFileName=integration-${{ matrix.dbProvider }}-results.trx"
+          --results-directory ./TestResults
+
+      - name: Upload Test Results
+        if: ${{ always() && (github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider) }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-results-${{ matrix.dbProvider }}
           path: ./TestResults/*.trx
 
   # TODO: Enable auto-deploy after running bootstrap.ps1 and configuring GitHub secrets/variables.
