@@ -40,10 +40,14 @@ public class OutboxMeshTests
     private static bool UsesRabbitMq => string.Equals(
         Environment.GetEnvironmentVariable("TASKFLOW_MESSAGING_PROVIDER"), "RabbitMq", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>On Service Bus the consumers are Functions, so without Core Tools nothing consumes.</summary>
+    /// <summary>The dispatcher lives in the Scheduler and the Service Bus consumers live in Functions.</summary>
     [TestInitialize]
     public void TestSetup()
     {
+        if (Environment.GetEnvironmentVariable("TASKFLOW_ASPIRE_SCHEDULER_AVAILABLE") != "true")
+            Assert.Inconclusive(
+                "TASKFLOW_ASPIRE_SCHEDULER_AVAILABLE is not set, so no outbox dispatcher runs in this graph.");
+
         if (!UsesRabbitMq && !AspireTestHost.EnsureFuncToolAvailable())
             Assert.Inconclusive("Azure Functions Core Tools are unavailable, so no consumer runs in this graph.");
     }

@@ -15,6 +15,10 @@ var reactAvailableInTesting =
     Environment.GetEnvironmentVariable("TASKFLOW_ASPIRE_REACT_AVAILABLE") == "true";
 var unoWasmAvailableInTesting =
     Environment.GetEnvironmentVariable("TASKFLOW_ASPIRE_UNO_WASM_AVAILABLE") == "true";
+// The Scheduler owns the outbox dispatcher, so the messaging mesh test needs it in the graph. It is opt-in
+// under test for the same reason Functions and the SPAs are: one more host to boot inside the startup budget.
+var schedulerAvailableInTesting =
+    Environment.GetEnvironmentVariable("TASKFLOW_ASPIRE_SCHEDULER_AVAILABLE") == "true";
 // Opt-in only: normal Aspire tests keep AI deterministic by disabling Foundry Local.
 // Set before AppHost build only for manual local-AI AppHost runs.
 var foundryLocalAvailableInTesting =
@@ -302,9 +306,10 @@ builder.AddProject<Projects.TaskFlow_Blazor>("taskflowblazor")
     .WaitFor(gateway)
     .WithExternalHttpEndpoints();
 
+if (!isTesting || schedulerAvailableInTesting)
 {
-    // Scheduler host. Present in the test graph too: it owns the outbox dispatcher, so without it nothing
-    // staged is ever delivered and the mesh tests would assert on a pipeline that never ran.
+    // Scheduler host. Opt-in under test: without it nothing staged is ever delivered, so the messaging mesh
+    // test asks for it explicitly rather than making every Aspire class pay for the extra boot.
     var scheduler = builder.AddProject<Projects.TaskFlow_Scheduler>("taskflowscheduler")
         .WithReference(taskflowDb, connectionName: "TaskFlowDbContextTrxn")
         .WithReference(taskflowDb, connectionName: "TaskFlowDbContextQuery")
