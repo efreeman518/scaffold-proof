@@ -23,11 +23,13 @@ public static class TaskViewEndpoints
         group.MapGet("/", async (
             [FromQuery] string tenantId,
             [FromQuery] int? pageSize,
+            [FromQuery] string? continuationToken,
             [FromServices] ITaskViewRepository repo,
             CancellationToken ct) =>
         {
-            var results = await repo.QueryByTenantAsync(tenantId, pageSize ?? 20, ct: ct);
-            return Results.Ok(results);
+            // The store continuation token is round-tripped; without it every request returned page one.
+            var page = await repo.QueryByTenantAsync(tenantId, pageSize ?? 20, continuationToken, ct);
+            return Results.Ok(page);
         }).WithName("GetTaskViews");
 
         return app;

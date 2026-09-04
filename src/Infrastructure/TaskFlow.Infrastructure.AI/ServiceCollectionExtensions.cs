@@ -78,7 +78,7 @@ public static class AiServiceCollectionExtensions
         // registered IChatClient - real or no-op):
         services.AddScoped<Demos.ITaskTriageService, Demos.TaskTriageService>();       // D4: structured classification
         services.AddScoped<Demos.ITaskDraftService, Demos.TaskDraftService>();         // D5: generative enrichment on create
-        services.AddScoped<Demos.IAiTaskReviewer, Demos.AiTaskReviewer>();             // D6: async event-driven inference
+        services.AddScoped<Application.Contracts.Services.IAiTaskReviewer, Demos.AiTaskReviewer>();             // D6: async event-driven inference
         services.AddScoped<Demos.INextActionAdvisor, Demos.NextActionAdvisor>();       // D7: read-only multi-tool reasoning
 
         return services;

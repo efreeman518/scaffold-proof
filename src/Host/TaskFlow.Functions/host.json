@@ -13,5 +13,13 @@
       "Function": "Information",
       "Host.Aggregator": "Trace"
     }
+  },
+  "extensions": {
+    "serviceBus": {
+      "autoCompleteMessages": false,
+      "prefetchCount": 0,
+      "maxConcurrentCalls": 16,
+      "maxAutoLockRenewalDuration": "00:05:00"
+    }
   }
 }

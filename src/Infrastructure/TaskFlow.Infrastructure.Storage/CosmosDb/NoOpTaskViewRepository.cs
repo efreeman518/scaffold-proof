@@ -18,9 +18,14 @@ public class NoOpTaskViewRepository(ILogger<NoOpTaskViewRepository> logger) : IT
         => Task.FromResult<TaskViewDto?>(null);
 
     /// <summary>Queries query by tenant from the configured read model store.</summary>
-    public Task<IReadOnlyList<TaskViewDto>> QueryByTenantAsync(string tenantId,
+    public Task<TaskViewPage> QueryByTenantAsync(string tenantId,
         int pageSize = 20, string? continuationToken = null, CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<TaskViewDto>>(Array.Empty<TaskViewDto>());
+        => Task.FromResult(new TaskViewPage([], null));
+
+    /// <summary>Applies counter deltas to the configured read model store.</summary>
+    public Task PatchCountersAsync(string id, string tenantId,
+        IReadOnlyDictionary<string, int> increments, DateTimeOffset lastModifiedUtc, CancellationToken ct = default)
+        => Task.CompletedTask;
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
     public Task DeleteAsync(string id, string tenantId, CancellationToken ct = default)

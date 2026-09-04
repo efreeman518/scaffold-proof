@@ -2,8 +2,8 @@ using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Storage;
+using TaskFlow.Infrastructure.Data.Messaging;
 using TaskFlow.Infrastructure.Storage;
 using TaskFlow.Infrastructure.Storage.CosmosDb;
 
@@ -106,8 +106,8 @@ public static partial class RegisterServices
     }
 
     /// <summary>
-    /// Registers integration-event publishing through Service Bus when available; otherwise
-    /// uses a no-op publisher so core CRUD remains usable without messaging infrastructure.
+    /// Registers the Service Bus outbox transport when a namespace is configured; otherwise a transport that
+    /// reports it cannot dispatch, so staged rows stay in the outbox instead of being dropped (D-026).
     /// </summary>
     private static void AddServiceBusServices(IServiceCollection services, IConfiguration config)
     {
@@ -118,7 +118,7 @@ public static partial class RegisterServices
             "Values:ServiceBus1");
         if (string.IsNullOrEmpty(connStr))
         {
-            services.AddSingleton<IIntegrationEventPublisher, NoOpIntegrationEventPublisher>();
+            services.AddSingleton<IIntegrationEventTransport, NoOpEventTransport>();
             return;
         }
 
@@ -128,7 +128,7 @@ public static partial class RegisterServices
                 .WithName("TaskFlowSBClient");
         });
 
-        services.AddSingleton<IIntegrationEventPublisher, ServiceBusIntegrationEventPublisher>();
+        services.AddSingleton<IIntegrationEventTransport, ServiceBusEventTransport>();
     }
 
     /// <summary>

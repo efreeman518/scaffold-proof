@@ -46,8 +46,8 @@ public class CosmosTaskViewRepository : ITaskViewRepository
         }
     }
 
-    /// <summary>Queries query by tenant from the configured read model store.</summary>
-    public async Task<IReadOnlyList<TaskViewDto>> QueryByTenantAsync(
+    /// <summary>Reads one page for a tenant and returns the continuation token that resumes the query.</summary>
+    public async Task<TaskViewPage> QueryByTenantAsync(
         string tenantId, int pageSize = 20, string? continuationToken = null,
         CancellationToken ct = default)
     {
@@ -63,16 +63,47 @@ public class CosmosTaskViewRepository : ITaskViewRepository
         var results = new List<TaskViewDto>();
         using var iterator = _container.GetItemQueryIterator<TaskViewDocument>(query, continuationToken, options);
 
-        if (iterator.HasMoreResults)
+        if (!iterator.HasMoreResults)
+            return new TaskViewPage(results, null);
+
+        var response = await iterator.ReadNextAsync(ct);
+        foreach (var doc in response)
         {
-            var response = await iterator.ReadNextAsync(ct);
-            foreach (var doc in response)
-            {
-                results.Add(MapToDto(doc));
-            }
+            results.Add(MapToDto(doc));
         }
 
-        return results;
+        // A non-null token means more pages exist; the caller passes it back verbatim.
+        return new TaskViewPage(results, response.ContinuationToken);
+    }
+
+    /// <summary>
+    /// Applies counter deltas server-side with a patch operation, so two concurrent delta events do not
+    /// overwrite each other the way a read-modify-upsert would. A document that is not there yet is ignored:
+    /// the create projection will rebuild the counters from the source.
+    /// </summary>
+    public async Task PatchCountersAsync(string id, string tenantId,
+        IReadOnlyDictionary<string, int> increments, DateTimeOffset lastModifiedUtc, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(increments);
+        if (increments.Count == 0) return;
+
+        var operations = new List<PatchOperation>(increments.Count + 1);
+        foreach (var (field, delta) in increments)
+        {
+            if (delta != 0) operations.Add(PatchOperation.Increment($"/{field}", delta));
+        }
+        if (operations.Count == 0) return;
+
+        operations.Add(PatchOperation.Set("/lastModifiedUtc", lastModifiedUtc));
+
+        try
+        {
+            await _container.PatchItemAsync<TaskViewDocument>(id, new PartitionKey(tenantId), operations, cancellationToken: ct);
+        }
+        catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            _logger.TaskViewNotFoundForPatch(id);
+        }
     }
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>

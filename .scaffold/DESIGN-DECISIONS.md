@@ -37,6 +37,7 @@ flowchart TD
     D031["D-031: Aggregate-level ETag"]
     D032["D-032: 412 for stale writes"]
     D033["D-033: No idempotency table"]
+    D034["D-034: Messaging provider switch"]
 
     D001 --> D002
     D001 --> D003
@@ -63,6 +64,8 @@ flowchart TD
     D021 --> D031
     D031 --> D032
     D021 --> D033
+    D026 --> D034
+    D029 --> D034
 ```
 
 ## Decisions
@@ -100,6 +103,7 @@ flowchart TD
 | D-031 | Data | Concurrency scope | Aggregate-level ETag: root `TaskItem.Version` is the ETag; child mutation methods call a private `MarkAggregateChanged()` that touches `ModifiedAtUtc` so the root is marked Modified and its `Version` bumps; child PUT/DELETE use the root ETag | D-021 | confirmed | One concurrency currency per aggregate avoids per-child ETag bookkeeping. Child DTOs still expose their own `Version` for display, not as If-Match currency. | Phase 2, D-032 |
 | D-032 | Data | Concurrency conflict status code | 412 (not 409) for stale writes via one shared `ConcurrencyGuard.Require`/`ConcurrencyMismatchException` mapped by `GlobalExceptionHandler`; 428 when `If-Match` is missing (HTTP endpoint filter); `If-Match: *` is the explicit, logged trusted-automation override (FlowEngine PATCH nodes) | D-031 | confirmed | 412 Precondition Failed is the correct HTTP semantics for a stale If-Match; the previously dead 409 arm is removed. | Phase 2 |
 | D-033 | Data | Idempotent create record | No idempotency table: an optional caller-supplied UUIDv7 id, the entity row itself is the idempotency record; equivalent replay returns 200 + existing entity + ETag, divergent payload is a 409 (`IdempotentCreateConflictException`) | D-021 | confirmed | Avoids a second source of truth for create idempotency. Equivalence is a scalar-field compare ignoring Id/Version/TenantId/children (documented limitation). | Phase 2 |
+| D-034 | Messaging | Messaging provider switch | Dual transport: Azure Service Bus or RabbitMQ, `Messaging:Provider = ServiceBus \| RabbitMq` (env `TASKFLOW_MESSAGING_PROVIDER` wins) selects the `IIntegrationEventTransport` implementation and the consumer host; the RabbitMQ client is our own thin in-repo package `EF.Messaging.RabbitMq` over `RabbitMQ.Client` 7.x, not a second messaging framework | D-026, D-029 | confirmed | The TaskFlow-owned outbox (D-026) and the transport port already exist, so only the port implementation and the consumer host change; SlimMessageBus/MassTransit would duplicate both. RabbitMQ has no broker-side duplicate detection, so `ConsumerInbox` (D-029) is the only dedup on both providers. RabbitMQ consumers are hosted in the Scheduler (the Functions runtime has no RabbitMQ trigger); when RabbitMq is selected the Service Bus triggers are switched off with `AzureWebJobs.<function>.Disabled=true` rather than removed, so one deployment can flip providers. Single-node RabbitMQ container app is a dev/staging proof only - production needs a managed broker or a cluster. | Phase 3.7, AppHost, `infra/modules/rabbitmq-container-app.bicep`, Scheduler |
 
 ## Deferred Decisions
 

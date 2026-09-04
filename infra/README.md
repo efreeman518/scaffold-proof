@@ -10,6 +10,7 @@ Azure infrastructure for the TaskFlow dev environment. All resources deploy to a
 | Database (`databaseProvider`) | SQL Basic (5 DTU) | SQL Hyperscale `HS_Gen5_2`, zone-redundant, 1 HA/read-scale replica | Transactional + query databases. `PostgreSql` (Flexible Server 17, pgvector) is a selectable alternative to `SqlServer` on both profiles - see the commented block in `main.prod.bicepparam`. |
 | Cosmos DB | Serverless | Serverless | Read projections (`taskflow-db`/`task-views`, matching `TaskFlow.Api` appsettings) |
 | Service Bus | Standard | Standard | Domain events (3 filtered subscriptions: `projection`, `ai-review`, `workflow`) + command queue |
+| RabbitMQ (optional) | Container App, 1 vCPU / 2 GiB | same | Alternative broker when `messagingProvider: 'RabbitMq'`; single node, Azure Files volume, management plugin |
 | Azure Functions | Flex Consumption (FC1) | Flex Consumption (FC1) | Event-driven processing, `functionAppScaleLimit` param |
 | Static Web App | Free | Free | Uno WASM frontend |
 | Redis | Azure Managed Redis `Balanced_B0`, no HA | Azure Managed Redis `Balanced_B5`+, HA | FusionCache L2 (`ConnectionStrings__Redis1`), API + Scheduler |
@@ -24,6 +25,19 @@ Azure resource access uses **managed identities and Entra authentication** where
 ### Container Apps scale profiles
 
 Gateway, API, Scheduler, and Blazor each take a `<host>Profile` object param (`minReplicas`, `maxReplicas`, `concurrentRequests`, `cpu`, `memory`). `main.dev.bicepparam` keeps dev scale-to-zero with small ceilings and no HTTP concurrency rule; `main.prod.bicepparam` sets Gateway/API to min 2 / max 100 / 50 concurrent requests, Blazor to min 2 / max 30, and Scheduler to two always-on replicas (min 2 / max 2, no ingress so no concurrency rule).
+
+### Messaging provider
+
+`messagingProvider` selects the transport (D-034). `'ServiceBus'` (default) deploys the namespace, topic and the
+three filtered subscriptions. `'RabbitMq'` deploys `modules/rabbitmq-container-app.bicep` instead: one RabbitMQ
+container app with an Azure Files volume for the mnesia directory and the management plugin on port 15672, and
+wires `Messaging__Provider` plus `ConnectionStrings__RabbitMq1` into API, Scheduler and Functions (whose Service
+Bus triggers are then disabled by name). Exactly one broker is deployed, and the Service Bus role assignments are
+skipped under RabbitMq. That single node is a dev and staging proof of the second transport, not a production
+topology: it has no clustering, no quorum queues and no failover, so a node restart pauses delivery until the
+volume remounts. A production deployment on this provider should point `ConnectionStrings__RabbitMq1` at a managed
+broker (Azure Service Bus remains the managed option here, CloudAMQP or Amazon MQ elsewhere) or at a real
+multi-node cluster with quorum queues, and leave this module to non-production environments.
 
 ### Connection strings
 
@@ -163,6 +177,7 @@ infra/
 -   --- key-vault.bicep
 -   --- log-analytics.bicep
 -   --- postgres-flexible-server.bicep
+-   --- rabbitmq-container-app.bicep
 -   --- redis.bicep
 -   --- redis-rbac.bicep
 -   --- role-assignment.bicep

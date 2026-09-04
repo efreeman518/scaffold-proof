@@ -4,6 +4,7 @@ using TaskFlow.Domain.Model.ValueObjects;
 using TaskFlow.Domain.Shared;
 using TaskFlow.Domain.Shared.Constants;
 using TaskFlow.Domain.Shared.Enums;
+using TaskFlow.Domain.Shared.Events;
 using DomainCategoryId = TaskFlow.Domain.Shared.CategoryId;
 using DomainTaskItemId = TaskFlow.Domain.Shared.TaskItemId;
 using DomainTenantId = TaskFlow.Domain.Shared.TenantId;
@@ -14,8 +15,17 @@ namespace TaskFlow.Domain.Model;
 /// Task aggregate root. Owns task lifecycle rules, value-object updates, and local child
 /// collection mutations before repositories persist the graph.
 /// </summary>
-public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<DomainTenantId>
+public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<DomainTenantId>, IHasDomainEvents
 {
+    // D-026: events raised here are staged as outbox rows by OutboxStagingInterceptor in the same SaveChanges.
+    private readonly DomainEventContainer _domainEvents = new();
+
+    /// <inheritdoc />
+    public IReadOnlyCollection<IDomainEvent> DomainEvents => _domainEvents.Events;
+
+    /// <inheritdoc />
+    public void ClearDomainEvents() => _domainEvents.Clear();
+
     public DomainTenantId TenantId { get; init; }
     public string Title { get; private set; } = null!;
     public string? Description { get; private set; }
@@ -91,7 +101,10 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
             SecureDeterministic = secureDeterministic,
             SecureRandom = secureRandom
         };
-        return entity.Valid();
+        var validated = entity.Valid();
+        if (validated.IsSuccess)
+            entity._domainEvents.Raise(new TaskItemCreatedEvent(entity.Id.Value, tenantId.Value, entity.Title));
+        return validated;
     }
 
     /// <summary>
@@ -146,6 +159,10 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
 
         // Terminal statuses stamp TerminalAtUtc (stale cleanup key); reopening clears it.
         TerminalAtUtc = newStatus is TaskItemStatus.Completed or TaskItemStatus.Cancelled ? now : null;
+
+        _domainEvents.Raise(new TaskItemStatusChangedEvent(Id.Value, TenantId.Value, previousStatus, newStatus));
+        if (newStatus == TaskItemStatus.Completed)
+            _domainEvents.Raise(new TaskItemCompletedEvent(Id.Value, TenantId.Value, CompletedDate!.Value));
 
         return DomainResult<TaskItem>.Success(this);
     }

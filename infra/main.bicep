@@ -45,6 +45,17 @@ param blazorImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld
 @allowed(['SqlServer', 'PostgreSql'])
 param databaseProvider string = 'SqlServer'
 
+@description('Messaging transport: Azure Service Bus (default) or a single-node RabbitMQ container app (D-034)')
+@allowed([
+  'ServiceBus'
+  'RabbitMq'
+])
+param messagingProvider string = 'ServiceBus'
+
+@description('RabbitMQ broker password, used only when messagingProvider is RabbitMq')
+@secure()
+param rabbitMqPassword string = ''
+
 @description('Explicit connection pool ceiling emitted in every connection string')
 param dbMaxPoolSize int = 100
 
@@ -290,7 +301,7 @@ module cosmosDb 'modules/cosmos-db.bicep' = {
   }
 }
 
-module serviceBus 'modules/service-bus.bicep' = {
+module serviceBus 'modules/service-bus.bicep' = if (messagingProvider == 'ServiceBus') {
   name: 'serviceBus'
   scope: rg
   params: {
@@ -299,6 +310,38 @@ module serviceBus 'modules/service-bus.bicep' = {
     tags: tags
   }
 }
+
+// D-034: exactly one broker is deployed. RabbitMQ here is the dev/staging proof of the second transport;
+// production would point ConnectionStrings__RabbitMq1 at a managed broker or a cluster (infra/README.md).
+module rabbitMq 'modules/rabbitmq-container-app.bicep' = if (messagingProvider == 'RabbitMq') {
+  name: 'rabbitMq'
+  scope: rg
+  params: {
+    resourcePrefix: prefix
+    location: location
+    environmentId: containerAppsEnv.outputs.id
+    environmentName: containerAppsEnv.outputs.name
+    storageAccountName: storage.outputs.appStorageName
+    brokerPassword: rabbitMqPassword
+    tags: tags
+  }
+}
+
+var rabbitMqConnectionString = messagingProvider == 'RabbitMq'
+  ? 'amqp://taskflow:${rabbitMqPassword}@${rabbitMq!.outputs.host}:5672/'
+  : ''
+
+// Every host gets the same provider choice plus the connection value the chosen transport reads.
+var messagingEnvVars = messagingProvider == 'RabbitMq'
+  ? [
+      { name: 'Messaging__Provider', value: messagingProvider }
+      { name: 'ConnectionStrings__RabbitMq1', value: rabbitMqConnectionString }
+      { name: 'Messaging__RabbitMq__ConnectionString', value: rabbitMqConnectionString }
+    ]
+  : [
+      { name: 'Messaging__Provider', value: messagingProvider }
+      { name: 'SERVICEBUS__fullyQualifiedNamespace', value: serviceBus!.outputs.namespaceEndpoint }
+    ]
 
 module storage 'modules/storage.bicep' = {
   name: 'storage'
@@ -402,8 +445,7 @@ module api 'modules/container-app.bicep' = {
       { name: 'ConnectionStrings__BlobStorage1', value: storage.outputs.appStorageBlobEndpoint }
       { name: 'ConnectionStrings__TableStorage1', value: storage.outputs.appStorageTableEndpoint }
       { name: 'ConnectionStrings__Redis1', value: redis.outputs.connectionString }
-      { name: 'SERVICEBUS__fullyQualifiedNamespace', value: serviceBus.outputs.namespaceEndpoint }
-    ])
+    ], messagingEnvVars)
     tags: tags
   }
 }
@@ -428,8 +470,7 @@ module scheduler 'modules/container-app.bicep' = {
       { name: 'ConnectionStrings__TaskFlowFlowEngineDbContext', value: dbConnectionString }
       { name: 'ConnectionStrings__TickerQDbContext', value: dbConnectionString }
       { name: 'ConnectionStrings__Redis1', value: redis.outputs.connectionString }
-      { name: 'SERVICEBUS__fullyQualifiedNamespace', value: serviceBus.outputs.namespaceEndpoint }
-    ])
+    ], messagingEnvVars)
     tags: tags
   }
 }
@@ -477,7 +518,7 @@ module functions 'modules/functions.bicep' = {
     resourcePrefix: prefix
     location: location
     funcStorageAccountName: storage.outputs.funcStorageName
-    serviceBusNamespace: serviceBus.outputs.namespaceEndpoint
+    serviceBusNamespace: serviceBus!.outputs.namespaceEndpoint
     appConfigEndpoint: appConfig.outputs.endpoint
     keyVaultUri: keyVault.outputs.uri
     databaseProvider: databaseProvider
@@ -569,7 +610,7 @@ module apiKvSecretsUser 'modules/role-assignment.bicep' = {
   }
 }
 
-module apiServiceBusSender 'modules/role-assignment.bicep' = {
+module apiServiceBusSender 'modules/role-assignment.bicep' = if (messagingProvider == 'ServiceBus') {
   name: 'apiServiceBusSender'
   scope: rg
   params: {
@@ -621,7 +662,7 @@ module schedulerKvSecretsUser 'modules/role-assignment.bicep' = {
   }
 }
 
-module schedulerServiceBusSender 'modules/role-assignment.bicep' = {
+module schedulerServiceBusSender 'modules/role-assignment.bicep' = if (messagingProvider == 'ServiceBus') {
   name: 'schedulerServiceBusSender'
   scope: rg
   params: {
@@ -633,7 +674,7 @@ module schedulerServiceBusSender 'modules/role-assignment.bicep' = {
 
 // ---- RBAC: Functions ----
 
-module funcServiceBusReceiver 'modules/role-assignment.bicep' = {
+module funcServiceBusReceiver 'modules/role-assignment.bicep' = if (messagingProvider == 'ServiceBus') {
   name: 'funcServiceBusReceiver'
   scope: rg
   params: {

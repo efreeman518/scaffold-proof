@@ -9,6 +9,7 @@ using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Encryption;
 using TaskFlow.Infrastructure.Data.Interceptors;
+using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Infrastructure.Data.Provider;
 using TaskFlow.Infrastructure.Repositories;
 
@@ -25,6 +26,8 @@ public static partial class RegisterServices
     {
         services.AddTransient<AuditInterceptor<string, Guid?>>();
         services.AddSingleton<VersionTimestampInterceptor>();
+        // D-026: stages raised domain events as outbox rows in the same SaveChanges as the domain write.
+        services.AddSingleton<OutboxStagingInterceptor>();
         services.AddTransient<ConnectionNoLockInterceptor>();
         // D-023: one AES-GCM column encryptor per process, bound from Database:Encryption (fails fast without a key).
         services.AddColumnEncryption(config);
@@ -45,6 +48,7 @@ public static partial class RegisterServices
             options.AddInterceptors(
                 sp.GetRequiredService<AuditInterceptor<string, Guid?>>(),
                 sp.GetRequiredService<VersionTimestampInterceptor>(),
+                sp.GetRequiredService<OutboxStagingInterceptor>(),
                 sp.GetRequiredService<BlindIndexInterceptor>());
         });
         services.AddScoped<DbContextScopedFactory<TaskFlowDbContextTrxn, string, Guid?>>();
@@ -81,6 +85,8 @@ public static partial class RegisterServices
         services.AddScoped<IChecklistItemRepositoryQuery, ChecklistItemRepositoryQuery>();
 
         services.AddScoped<IInboxStore, InboxStore>();
+        services.AddScoped<IOutboxStaging, OutboxStaging>();
+        services.AddScoped<IOperationalWorkRepository, OperationalWorkRepository>();
     }
 
     // An empty connection string leaves the context unconfigured so test hosts can replace it (InMemory).
