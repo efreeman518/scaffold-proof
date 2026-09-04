@@ -186,7 +186,9 @@ public class RepositorySearchTranslationTests
     public async Task TaskItemSearch_FiltersByTypedIdsEnumsDatesAndTitle_AgainstRealSql()
     {
         var marker = $"SearchTask-{Guid.NewGuid():N}";
-        var dueDate = DateTimeOffset.UtcNow.AddDays(3);
+        // Whole seconds: SQL Server keeps 100ns ticks, PostgreSQL timestamptz keeps microseconds, so an
+        // unaligned UtcNow would not round-trip equal on both providers.
+        var dueDate = new DateTimeOffset(2026, 12, 1, 9, 30, 0, TimeSpan.Zero);
         Guid categoryId;
         Guid parentTaskItemId;
 
