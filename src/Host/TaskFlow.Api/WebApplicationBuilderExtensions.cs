@@ -1,4 +1,4 @@
-using EF.AspNetCore.Correlation;
+﻿using EF.AspNetCore.Correlation;
 using EF.AspNetCore.Security;
 using EF.AspNetCore.Versioning;
 using EF.FlowEngine.AdminApi;
@@ -147,5 +147,6 @@ public static class WebApplicationBuilderExtensions
         api.MapAgentEndpoints();
         api.MapAiDemoEndpoints();
         api.MapTaskViewEndpoints();
+        api.MapOutboxAdminEndpoints();
     }
 }

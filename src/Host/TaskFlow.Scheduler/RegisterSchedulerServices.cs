@@ -1,10 +1,12 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Provider;
 using TaskFlow.Scheduler.Handlers;
 using TaskFlow.Scheduler.Infrastructure;
 using TaskFlow.Scheduler.Jobs;
+using TaskFlow.Observability.Meters;
 using TaskFlow.Scheduler.Telemetry;
+using TaskFlow.Scheduler.Workers;
 using TickerQ.Dashboard.DependencyInjection;
 using TickerQ.DependencyInjection;
 using TickerQ.EntityFrameworkCore.DependencyInjection;
@@ -28,9 +30,15 @@ public static class RegisterSchedulerServices
         services.AddScoped<StaleTaskCleanupHandler>();
         services.AddScoped<TaskMaintenanceJobs>();
         services.AddSingleton<SchedulingMetrics>();
+        services.AddSingleton<MessagingMetrics>();
+
+        // D-026: both drains run on every replica; the lease, not a leader election, keeps them apart.
+        services.AddHostedService<OutboxDispatcherService>();
+        services.AddHostedService<BlobDeleteWorkerService>();
 
         services.AddHealthChecks()
-            .AddCheck<SchedulerHealthCheck>("scheduler", tags: ["ready", "memory"]);
+            .AddCheck<SchedulerHealthCheck>("scheduler", tags: ["ready", "memory"])
+            .AddCheck<OutboxHealthCheck>("outbox", tags: ["ready", "full"]);
 
         return services;
     }

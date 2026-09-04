@@ -9,6 +9,7 @@ using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Encryption;
 using TaskFlow.Infrastructure.Data.Interceptors;
+using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Infrastructure.Data.Provider;
 using TaskFlow.Infrastructure.Repositories;
 
@@ -85,6 +86,7 @@ public static partial class RegisterServices
 
         services.AddScoped<IInboxStore, InboxStore>();
         services.AddScoped<IOutboxStaging, OutboxStaging>();
+        services.AddScoped<IOperationalWorkRepository, OperationalWorkRepository>();
     }
 
     // An empty connection string leaves the context unconfigured so test hosts can replace it (InMemory).

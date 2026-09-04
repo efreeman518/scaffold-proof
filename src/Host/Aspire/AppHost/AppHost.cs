@@ -1,4 +1,4 @@
-using AppHost;
+﻿using AppHost;
 using Aspire.Hosting.Foundry;
 
 var builder = DistributedApplication.CreateBuilder(args);
@@ -257,7 +257,8 @@ if (!isTesting)
         .WithEnvironment("Database__Provider", dbProviderName)
         .WithEnvironment("Database__Encryption__LocalKeyBase64", columnEncryptionKey)
         .WithEnvironment("Database__Encryption__BlindIndexKeyBase64", blindIndexKey)
-        .WithReplicas(1)
+        // Two replicas so the outbox/blob lease path is exercised locally (D-026): both drain, neither doubles up.
+        .WithReplicas(2)
         .WaitForCompletion(migrator)
         .WaitFor(dbServer)
         .WaitFor(serviceBus);
