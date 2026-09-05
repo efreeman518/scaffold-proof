@@ -1,3 +1,4 @@
+﻿using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using System.Runtime.CompilerServices;
 using TaskFlow.Application.Contracts.Repositories;
@@ -153,7 +154,8 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
             });
         }
 
-        await db.SaveChangesAsync(ct).ConfigureAwait(ConfigureAwaitOptions.None);
+        await db.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct)
+            .ConfigureAwait(ConfigureAwaitOptions.None);
         return attachments.Count;
     }
 
@@ -192,7 +194,10 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
         }, ct);
 
     /// <inheritdoc />
-    public Task<int> SaveChangesAsync(CancellationToken ct = default) => db.SaveChangesAsync(ct);
+    // Throw, not ClientWins: the rows saved here are operational (outbox, blob-delete work) and carry no
+    // concurrency token, so a conflict would mean the unit of work is not what this job thinks it is.
+    public Task<int> SaveChangesAsync(CancellationToken ct = default) =>
+        db.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct);
 
     /// <summary>Past due, still open, and not yet announced for this particular due date.</summary>
     private IQueryable<TaskItem> OverdueCandidates(DateTimeOffset asOfUtc) =>

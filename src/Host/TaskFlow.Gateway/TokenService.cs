@@ -1,5 +1,6 @@
 using Azure.Core;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 
 namespace TaskFlow.Gateway;
 
@@ -35,7 +36,10 @@ public sealed class TokenService
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<string> GetAccessTokenAsync(string clusterId, CancellationToken ct = default)
     {
-        while (true)
+        // Two attempts, not a loop: the first can find a cached entry inside the refresh window and replace
+        // it, the second is a fresh acquisition. An identity provider that only ever issues short-lived
+        // tokens would otherwise spin here; the second attempt's token is handed out as the best available.
+        for (var attempt = 0; attempt < 2; attempt++)
         {
             // ExecutionAndPublication: exactly one thread runs the factory, everyone else awaits its task.
             var pending = _cache.GetOrAdd(
@@ -56,13 +60,15 @@ public sealed class TokenService
                 throw;
             }
 
-            if (token.ExpiresOn > DateTimeOffset.UtcNow.Add(RefreshWindow))
+            if (attempt == 1 || token.ExpiresOn > DateTimeOffset.UtcNow.Add(RefreshWindow))
                 return token.Token;
 
-            // Near expiry: evict this entry and loop. Compare-and-remove so a refresh started by another
+            // Near expiry: evict and acquire once more. Compare-and-remove so a refresh started by another
             // thread is not discarded, which would make every caller in the window acquire its own token.
             RemoveIfSame(clusterId, pending);
         }
+
+        throw new UnreachableException();
     }
 
     /// <summary>Acquires one token, or issues a local stub when the cluster has no configured scope.</summary>

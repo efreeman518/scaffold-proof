@@ -55,7 +55,13 @@ public class RecurrencePattern
         return EndDate is not null && next > EndDate ? null : next;
     }
 
-    /// <summary>Steps one interval. Monthly uses calendar months, so the 31st clamps the way AddMonths does.</summary>
+    /// <summary>
+    /// Steps one interval from the previous occurrence. Monthly uses calendar months, so a month-end series
+    /// clamps and then keeps the clamped day: Jan 31 -> Feb 28 -> Mar 28, not back to Mar 31.
+    /// shortcut: stepping from the previous occurrence, because the scheduler only ever carries the next
+    /// occurrence pointer. Anchoring on the series start day-of-month would need the template to carry its
+    /// anchor separately; worth doing when month-end recurrence becomes a stated requirement.
+    /// </summary>
     private DateTimeOffset Advance(DateTimeOffset from)
     {
         var step = Interval < 1 ? 1 : Interval;

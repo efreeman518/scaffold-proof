@@ -26,7 +26,8 @@ public static class IntegrationTestSetup
 
         await Task.WhenAll(
             DbContainerFixture.StartAsync(),
-            AzuriteContainerFixture.StartAsync());
+            AzuriteContainerFixture.StartAsync(),
+            RedisContainerFixture.StartAsync());
     }
 
     /// <summary>Disposes the component-tier store containers after the assembly's tests complete.</summary>
@@ -38,6 +39,7 @@ public static class IntegrationTestSetup
             await Task.WhenAll(
                 DbContainerFixture.StopAsync(),
                 AzuriteContainerFixture.StopAsync(),
+                RedisContainerFixture.StopAsync(),
                 // Started lazily by the D-034 transport tests; a no-op when they did not run.
                 RabbitMqBrokerFixture.StopAsync());
         }
