@@ -43,7 +43,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/json, application/problem+json", "Content-Type: application/json")]
         [Post("/api/v1/categories/search")]
-        Task<PagedResponseOfCategoryDto> SearchCategories([Query] bool? includeTotal, [Body] SearchRequestOfCategorySearchFilter body, CancellationToken cancellationToken = default);
+        Task<PagedResponseOfCategoryDto> SearchCategoriesAsync([Query] bool? includeTotal, [Body] SearchRequestOfCategorySearchFilter body, CancellationToken cancellationToken = default);
 
         /// <summary>Get a single Category</summary>
         /// <param name="id">id parameter</param>
@@ -64,7 +64,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/json, application/problem+json")]
         [Get("/api/v1/categories/{id}")]
-        Task<DefaultResponseOfCategoryDto> GetCategory(System.Guid id, CancellationToken cancellationToken = default);
+        Task<DefaultResponseOfCategoryDto> GetCategoryAsync(System.Guid id, CancellationToken cancellationToken = default);
 
         /// <summary>Update an existing Category</summary>
         /// <param name="id">id parameter</param>
@@ -99,7 +99,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/problem+json, application/json", "Content-Type: application/json")]
         [Put("/api/v1/categories/{id}")]
-        Task<DefaultResponseOfCategoryDto> UpdateCategory(System.Guid id, [Body] DefaultRequestOfCategoryDto body, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
+        Task<DefaultResponseOfCategoryDto> UpdateCategoryAsync(System.Guid id, [Body] DefaultRequestOfCategoryDto body, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
 
         /// <summary>Delete a Category</summary>
         /// <param name="id">id parameter</param>
@@ -129,7 +129,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/problem+json")]
         [Delete("/api/v1/categories/{id}")]
-        Task DeleteCategory(System.Guid id, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
+        Task DeleteCategoryAsync(System.Guid id, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
 
         /// <summary>Create a new Category</summary>
         /// <param name="body">body parameter</param>
@@ -154,7 +154,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/json, application/problem+json", "Content-Type: application/json")]
         [Post("/api/v1/categories")]
-        Task<DefaultResponseOfCategoryDto> CreateCategory([Body] DefaultRequestOfCategoryDto body, CancellationToken cancellationToken = default);
+        Task<DefaultResponseOfCategoryDto> CreateCategoryAsync([Body] DefaultRequestOfCategoryDto body, CancellationToken cancellationToken = default);
 
         /// <summary>Search Tags with paging, filters, and sorts</summary>
         /// <param name="includeTotal">includeTotal parameter</param>
@@ -176,7 +176,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/json, application/problem+json", "Content-Type: application/json")]
         [Post("/api/v1/tags/search")]
-        Task<PagedResponseOfTagDto> SearchTags([Query] bool? includeTotal, [Body] SearchRequestOfTagSearchFilter body, CancellationToken cancellationToken = default);
+        Task<PagedResponseOfTagDto> SearchTagsAsync([Query] bool? includeTotal, [Body] SearchRequestOfTagSearchFilter body, CancellationToken cancellationToken = default);
 
         /// <summary>Get a single Tag</summary>
         /// <param name="id">id parameter</param>
@@ -197,7 +197,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/json, application/problem+json")]
         [Get("/api/v1/tags/{id}")]
-        Task<DefaultResponseOfTagDto> GetTag(System.Guid id, CancellationToken cancellationToken = default);
+        Task<DefaultResponseOfTagDto> GetTagAsync(System.Guid id, CancellationToken cancellationToken = default);
 
         /// <summary>Update an existing Tag</summary>
         /// <param name="id">id parameter</param>
@@ -232,7 +232,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/problem+json, application/json", "Content-Type: application/json")]
         [Put("/api/v1/tags/{id}")]
-        Task<DefaultResponseOfTagDto> UpdateTag(System.Guid id, [Body] DefaultRequestOfTagDto body, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
+        Task<DefaultResponseOfTagDto> UpdateTagAsync(System.Guid id, [Body] DefaultRequestOfTagDto body, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
 
         /// <summary>Delete a Tag</summary>
         /// <param name="id">id parameter</param>
@@ -262,7 +262,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/problem+json")]
         [Delete("/api/v1/tags/{id}")]
-        Task DeleteTag(System.Guid id, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
+        Task DeleteTagAsync(System.Guid id, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
 
         /// <summary>Create a new Tag</summary>
         /// <param name="body">body parameter</param>
@@ -287,7 +287,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/json, application/problem+json", "Content-Type: application/json")]
         [Post("/api/v1/tags")]
-        Task<DefaultResponseOfTagDto> CreateTag([Body] DefaultRequestOfTagDto body, CancellationToken cancellationToken = default);
+        Task<DefaultResponseOfTagDto> CreateTagAsync([Body] DefaultRequestOfTagDto body, CancellationToken cancellationToken = default);
 
         /// <summary>Search TaskItems with keyset (cursor) paging, filters, and a sort mode</summary>
         /// <param name="body">body parameter</param>
@@ -308,7 +308,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/json, application/problem+json", "Content-Type: application/json")]
         [Post("/api/v1/task-items/search")]
-        Task<CursorPageOfTaskItemDto> SearchTaskItems([Body] TaskItemCursorSearchRequest body, CancellationToken cancellationToken = default);
+        Task<CursorPageOfTaskItemDto> SearchTaskItemsAsync([Body] TaskItemCursorSearchRequest body, CancellationToken cancellationToken = default);
 
         /// <summary>Get a single TaskItem</summary>
         /// <param name="id">id parameter</param>
@@ -329,7 +329,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/json, application/problem+json")]
         [Get("/api/v1/task-items/{id}")]
-        Task<DefaultResponseOfTaskItemDto> GetTaskItem(System.Guid id, CancellationToken cancellationToken = default);
+        Task<DefaultResponseOfTaskItemDto> GetTaskItemAsync(System.Guid id, CancellationToken cancellationToken = default);
 
         /// <summary>Update an existing TaskItem</summary>
         /// <param name="id">id parameter</param>
@@ -364,7 +364,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/problem+json, application/json", "Content-Type: application/json")]
         [Put("/api/v1/task-items/{id}")]
-        Task<DefaultResponseOfTaskItemDto> UpdateTaskItem(System.Guid id, [Body] DefaultRequestOfTaskItemDto body, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
+        Task<DefaultResponseOfTaskItemDto> UpdateTaskItemAsync(System.Guid id, [Body] DefaultRequestOfTaskItemDto body, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
 
         /// <summary>Partially update a TaskItem (JSON merge patch - omitted fields are unchanged)</summary>
         /// <param name="id">id parameter</param>
@@ -399,7 +399,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/problem+json, application/json", "Content-Type: application/json")]
         [Patch("/api/v1/task-items/{id}")]
-        Task<DefaultResponseOfTaskItemDto> PatchTaskItem(System.Guid id, [Body] DefaultRequestOfTaskItemPatchDto body, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
+        Task<DefaultResponseOfTaskItemDto> PatchTaskItemAsync(System.Guid id, [Body] DefaultRequestOfTaskItemPatchDto body, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
 
         /// <summary>Delete a TaskItem</summary>
         /// <param name="id">id parameter</param>
@@ -429,7 +429,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/problem+json")]
         [Delete("/api/v1/task-items/{id}")]
-        Task DeleteTaskItem(System.Guid id, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
+        Task DeleteTaskItemAsync(System.Guid id, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
 
         /// <summary>Create a new TaskItem (optional caller-supplied UUIDv7 id makes it idempotent)</summary>
         /// <param name="body">body parameter</param>
@@ -454,7 +454,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/json, application/problem+json", "Content-Type: application/json")]
         [Post("/api/v1/task-items")]
-        Task<DefaultResponseOfTaskItemDto> CreateTaskItem([Body] DefaultRequestOfTaskItemDto body, CancellationToken cancellationToken = default);
+        Task<DefaultResponseOfTaskItemDto> CreateTaskItemAsync([Body] DefaultRequestOfTaskItemDto body, CancellationToken cancellationToken = default);
 
         /// <summary>Add a Comment to a TaskItem</summary>
         /// <param name="id">id parameter</param>
@@ -484,7 +484,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/json, application/problem+json", "Content-Type: application/json")]
         [Post("/api/v1/task-items/{id}/comments")]
-        Task<DefaultResponseOfCommentDto> AddTaskItemComment(System.Guid id, [Body] DefaultRequestOfCommentDto body, CancellationToken cancellationToken = default);
+        Task<DefaultResponseOfCommentDto> AddTaskItemCommentAsync(System.Guid id, [Body] DefaultRequestOfCommentDto body, CancellationToken cancellationToken = default);
 
         /// <summary>Update a Comment on a TaskItem</summary>
         /// <param name="id">id parameter</param>
@@ -520,7 +520,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/problem+json, application/json", "Content-Type: application/json")]
         [Put("/api/v1/task-items/{id}/comments/{commentId}")]
-        Task<DefaultResponseOfCommentDto> UpdateTaskItemComment(System.Guid id, System.Guid commentId, [Body] DefaultRequestOfCommentDto body, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
+        Task<DefaultResponseOfCommentDto> UpdateTaskItemCommentAsync(System.Guid id, System.Guid commentId, [Body] DefaultRequestOfCommentDto body, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
 
         /// <summary>Remove a Comment from a TaskItem</summary>
         /// <param name="id">id parameter</param>
@@ -551,7 +551,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/problem+json")]
         [Delete("/api/v1/task-items/{id}/comments/{commentId}")]
-        Task RemoveTaskItemComment(System.Guid id, System.Guid commentId, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
+        Task RemoveTaskItemCommentAsync(System.Guid id, System.Guid commentId, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
 
         /// <summary>Add a ChecklistItem to a TaskItem</summary>
         /// <param name="id">id parameter</param>
@@ -581,7 +581,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/json, application/problem+json", "Content-Type: application/json")]
         [Post("/api/v1/task-items/{id}/checklist-items")]
-        Task<DefaultResponseOfChecklistItemDto> AddTaskItemChecklistItem(System.Guid id, [Body] DefaultRequestOfChecklistItemDto body, CancellationToken cancellationToken = default);
+        Task<DefaultResponseOfChecklistItemDto> AddTaskItemChecklistItemAsync(System.Guid id, [Body] DefaultRequestOfChecklistItemDto body, CancellationToken cancellationToken = default);
 
         /// <summary>Update a ChecklistItem on a TaskItem</summary>
         /// <param name="id">id parameter</param>
@@ -617,7 +617,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/problem+json, application/json", "Content-Type: application/json")]
         [Put("/api/v1/task-items/{id}/checklist-items/{checklistItemId}")]
-        Task<DefaultResponseOfChecklistItemDto> UpdateTaskItemChecklistItem(System.Guid id, System.Guid checklistItemId, [Body] DefaultRequestOfChecklistItemDto body, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
+        Task<DefaultResponseOfChecklistItemDto> UpdateTaskItemChecklistItemAsync(System.Guid id, System.Guid checklistItemId, [Body] DefaultRequestOfChecklistItemDto body, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
 
         /// <summary>Remove a ChecklistItem from a TaskItem</summary>
         /// <param name="id">id parameter</param>
@@ -648,7 +648,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/problem+json")]
         [Delete("/api/v1/task-items/{id}/checklist-items/{checklistItemId}")]
-        Task RemoveTaskItemChecklistItem(System.Guid id, System.Guid checklistItemId, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
+        Task RemoveTaskItemChecklistItemAsync(System.Guid id, System.Guid checklistItemId, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
 
         /// <summary>Associate a Tag with a TaskItem</summary>
         /// <param name="id">id parameter</param>
@@ -674,7 +674,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/json, application/problem+json")]
         [Post("/api/v1/task-items/{id}/tags/{tagId}")]
-        Task<DefaultResponseOfTaskItemTagDto> AssociateTaskItemTag(System.Guid id, System.Guid tagId, CancellationToken cancellationToken = default);
+        Task<DefaultResponseOfTaskItemTagDto> AssociateTaskItemTagAsync(System.Guid id, System.Guid tagId, CancellationToken cancellationToken = default);
 
         /// <summary>Remove a Tag association from a TaskItem</summary>
         /// <param name="id">id parameter</param>
@@ -705,7 +705,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/problem+json")]
         [Delete("/api/v1/task-items/{id}/tags/{tagId}")]
-        Task RemoveTaskItemTag(System.Guid id, System.Guid tagId, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
+        Task RemoveTaskItemTagAsync(System.Guid id, System.Guid tagId, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
 
         /// <summary>Search Attachments with paging, filters, and sorts</summary>
         /// <param name="includeTotal">includeTotal parameter</param>
@@ -727,7 +727,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/json, application/problem+json", "Content-Type: application/json")]
         [Post("/api/v1/attachments/search")]
-        Task<PagedResponseOfAttachmentDto> SearchAttachments([Query] bool? includeTotal, [Body] SearchRequestOfAttachmentSearchFilter body, CancellationToken cancellationToken = default);
+        Task<PagedResponseOfAttachmentDto> SearchAttachmentsAsync([Query] bool? includeTotal, [Body] SearchRequestOfAttachmentSearchFilter body, CancellationToken cancellationToken = default);
 
         /// <summary>Get a single Attachment</summary>
         /// <param name="id">id parameter</param>
@@ -748,7 +748,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/json, application/problem+json")]
         [Get("/api/v1/attachments/{id}")]
-        Task<DefaultResponseOfAttachmentDto> GetAttachment(System.Guid id, CancellationToken cancellationToken = default);
+        Task<DefaultResponseOfAttachmentDto> GetAttachmentAsync(System.Guid id, CancellationToken cancellationToken = default);
 
         /// <summary>Update an existing Attachment</summary>
         /// <param name="id">id parameter</param>
@@ -783,7 +783,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/problem+json, application/json", "Content-Type: application/json")]
         [Put("/api/v1/attachments/{id}")]
-        Task<DefaultResponseOfAttachmentDto> UpdateAttachment(System.Guid id, [Body] DefaultRequestOfAttachmentDto body, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
+        Task<DefaultResponseOfAttachmentDto> UpdateAttachmentAsync(System.Guid id, [Body] DefaultRequestOfAttachmentDto body, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
 
         /// <summary>Delete an Attachment</summary>
         /// <param name="id">id parameter</param>
@@ -813,7 +813,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/problem+json")]
         [Delete("/api/v1/attachments/{id}")]
-        Task DeleteAttachment(System.Guid id, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
+        Task DeleteAttachmentAsync(System.Guid id, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
 
         /// <summary>Create a new Attachment</summary>
         /// <param name="body">body parameter</param>
@@ -838,7 +838,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/json, application/problem+json", "Content-Type: application/json")]
         [Post("/api/v1/attachments")]
-        Task<DefaultResponseOfAttachmentDto> CreateAttachment([Body] DefaultRequestOfAttachmentDto body, CancellationToken cancellationToken = default);
+        Task<DefaultResponseOfAttachmentDto> CreateAttachmentAsync([Body] DefaultRequestOfAttachmentDto body, CancellationToken cancellationToken = default);
 
         /// <summary>Upload a file Attachment</summary>
         /// <param name="ownerType">ownerType parameter</param>
@@ -866,7 +866,7 @@ namespace TaskFlow.ApiClient
         [Multipart]
         [Headers("Accept: application/json, application/problem+json")]
         [Post("/api/v1/attachments/upload")]
-        Task<DefaultResponseOfAttachmentDto> UploadAttachment(AttachmentOwnerType? ownerType, System.Guid? ownerId, System.Guid? id, CancellationToken cancellationToken = default);
+        Task<DefaultResponseOfAttachmentDto> UploadAttachmentAsync(AttachmentOwnerType? ownerType, System.Guid? ownerId, System.Guid? id, CancellationToken cancellationToken = default);
 
         /// <summary>Tenant task counts by status, overdue, and total in one round trip</summary>
         /// <param name="cancellationToken">The cancellation token to cancel the request.</param>
@@ -874,7 +874,7 @@ namespace TaskFlow.ApiClient
         /// <exception cref="ApiException">Thrown when the request returns a non-success status code.</exception>
         [Headers("Accept: application/json")]
         [Get("/api/v1/task-items/summary")]
-        Task<TaskItemSummaryDto> GetTaskItemSummary(CancellationToken cancellationToken = default);
+        Task<TaskItemSummaryDto> GetTaskItemSummaryAsync(CancellationToken cancellationToken = default);
 
         /// <summary>Stream the tenant's tasks as newline-delimited JSON, resumable by afterId</summary>
         /// <param name="afterId">afterId parameter</param>
@@ -896,7 +896,7 @@ namespace TaskFlow.ApiClient
         /// </exception>
         [Headers("Accept: application/x-ndjson, application/problem+json")]
         [Get("/api/v1/task-items/export")]
-        Task<TaskItemExportDto> ExportTaskItems([Query] System.Guid? afterId, [Query] int? batchSize, CancellationToken cancellationToken = default);
+        Task<TaskItemExportDto> ExportTaskItemsAsync([Query] System.Guid? afterId, [Query] int? batchSize, CancellationToken cancellationToken = default);
 
         /// <summary>Full category and tag lists for pickers</summary>
         /// <param name="cancellationToken">The cancellation token to cancel the request.</param>
@@ -904,7 +904,7 @@ namespace TaskFlow.ApiClient
         /// <exception cref="ApiException">Thrown when the request returns a non-success status code.</exception>
         [Headers("Accept: application/json")]
         [Get("/api/v1/task-metadata")]
-        Task<TaskMetadataDto> GetTaskMetadata(CancellationToken cancellationToken = default);
+        Task<TaskMetadataDto> GetTaskMetadataAsync(CancellationToken cancellationToken = default);
 
     }
 

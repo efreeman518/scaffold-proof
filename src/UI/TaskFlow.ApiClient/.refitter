@@ -40,7 +40,7 @@
     "Attachments"
   ],
   "generateDeprecatedOperations": true,
-  "operationNameTemplate": null,
+  "operationNameTemplate": "{operationName}Async",
   "optionalParameters": false,
   "outputFolder": ".",
   "contractsOutputFolder": null,
