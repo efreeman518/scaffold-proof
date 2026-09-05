@@ -443,3 +443,6 @@ test-results/
 
 # Agent scratch output (pack artifacts, local probes)
 .tmp/
+
+# Windows artifact created by shell redirections to NUL in Git Bash
+NUL
