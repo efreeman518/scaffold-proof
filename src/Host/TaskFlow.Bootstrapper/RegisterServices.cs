@@ -81,6 +81,8 @@ public static partial class RegisterServices
     private static void AddStartupTasks(IServiceCollection services)
     {
         services.AddScoped<IStartupTask, WarmupDependencies>();
+        // Provision containers and tables once here instead of on every write (see the class remarks).
+        services.AddScoped<IStartupTask, EnsureExternalResources>();
     }
 
     /// <summary>Registers support services dependencies in the service container.</summary>

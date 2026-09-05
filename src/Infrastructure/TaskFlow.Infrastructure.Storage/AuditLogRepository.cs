@@ -34,8 +34,8 @@ public class AuditLogRepository(
     /// </summary>
     public async Task AppendAsync<TTenantId>(AuditEntry<string, TTenantId> entry, CancellationToken ct = default)
     {
+        // No CreateIfNotExists here: the table is provisioned once by the EnsureExternalResources startup task.
         var table = _client.GetTableClient(_settings.TableName);
-        await table.CreateIfNotExistsAsync(ct).ConfigureAwait(false);
 
         var recordedUtc = DateTimeOffset.UtcNow;
         var tenantId = GetTenantId(entry.TenantId);
