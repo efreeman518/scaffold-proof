@@ -5,6 +5,7 @@ import {
   clickSave,
   clickSaveNewTask,
   confirmDeleteDialog,
+  expectSnackbar,
   expectTaskInTable,
   expectTaskNotInTable,
   fillTextField,
@@ -119,5 +120,43 @@ test.describe("TaskFlow Blazor - Task CRUD lifecycle", () => {
 
     // Task should vanish from the table
     await expectTaskNotInTable(page, updatedTitle);
+  });
+});
+
+test.describe("TaskFlow Blazor - two-tab optimistic concurrency (412)", () => {
+  test("editing the same task from two tabs surfaces a 412 on the second save", async ({ page, context }) => {
+    const title = uniqueTitle("E2E-Conflict");
+
+    // Tab A creates the task and stays on its edit page (holds the just-loaded Version/ETag).
+    await waitForApp(page);
+    await navigateToNewTask(page);
+    await fillTextField(page, "Title", title);
+    await clickSaveNewTask(page);
+    const taskUrl = page.url();
+
+    // Tab B loads the same task independently, capturing the same If-Match currency as tab A.
+    const pageB = await context.newPage();
+    await pageB.goto(taskUrl, { waitUntil: "networkidle" });
+    await expect(pageB.getByRole("heading", { name: /edit task/i })).toBeVisible({ timeout: 15_000 });
+
+    // Tab A saves first: succeeds and bumps the server-side Version past what tab B is holding.
+    await selectOption(page, "Priority", "High");
+    await clickSave(page);
+    await expect(page).toHaveURL(/\/tasks\/[0-9a-f-]{36}$/i, { timeout: 15_000 });
+
+    // Tab B saves against its now-stale Version: the API returns 412, and the UI reports the
+    // conflict and reloads instead of silently overwriting tab A's change.
+    await selectOption(pageB, "Priority", "Low");
+    await clickSave(pageB);
+    await expectSnackbar(pageB, "Task changed elsewhere, reloading.", 15_000);
+
+    await pageB.close();
+
+    // Cleanup.
+    await navigateToTaskList(page);
+    await searchForTask(page, title);
+    await clickDeleteOnRow(page, title);
+    await confirmDeleteDialog(page);
+    await expectTaskNotInTable(page, title);
   });
 });

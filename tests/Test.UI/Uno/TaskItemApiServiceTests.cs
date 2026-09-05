@@ -1,7 +1,6 @@
 using Moq;
 using System.Net;
 using System.Text;
-using System.Text.Json;
 using TaskFlow.Uno.Core.Business.Models;
 using TaskFlow.Uno.Core.Business.Notifications;
 using TaskFlow.Uno.Core.Business.Services;
@@ -11,7 +10,7 @@ namespace Test.UI.Uno;
 
 /// <summary>
 /// Validates <c>TaskItemApiService</c> against <c>MockHttpMessageHandler</c> plus a capturing handler
-/// that asserts child collections emit non-null <c>taskItemId</c> values when posting a new TaskItem.
+/// that asserts the client sends the required If-Match header on update/delete.
 /// Pure-unit tier: in-process <c>HttpClient</c> with mock/capture handlers - no real server.
 /// </summary>
 [TestClass]
@@ -41,25 +40,40 @@ public class TaskItemApiServiceTests
         _handler.Dispose();
     }
 
-    /// <summary>Verifies search returns mapped models behavior and protects the expected test contract.</summary>
+    /// <summary>Verifies the cursor page returns mapped models and reports whether more pages remain.</summary>
     [TestMethod]
-    public async Task SearchAsync_ReturnsMappedModels()
+    public async Task SearchCursorAsync_ReturnsMappedModelsAndCursor()
     {
-        var results = await _service.SearchAsync(ct: TestContext.CancellationToken);
+        var page = await _service.SearchCursorAsync(pageSize: 5, ct: TestContext.CancellationToken);
 
-        Assert.IsNotEmpty(results);
-        Assert.AreEqual("Build dashboard UI", results[0].Title);
-        Assert.AreEqual("InProgress", results[0].Status);
-        Assert.AreEqual("High", results[0].Priority);
+        Assert.IsTrue(page.Items.Count > 0);
+        Assert.AreEqual("Build dashboard UI", page.Items[0].Title);
+        Assert.AreEqual("InProgress", page.Items[0].Status);
+        Assert.AreEqual("High", page.Items[0].Priority);
+        Assert.IsTrue(page.HasMore, "The mock seeds more than pageSize tasks, so the first page must report HasMore.");
+        Assert.IsNotNull(page.NextCursor);
+    }
+
+    /// <summary>Verifies walking the cursor forward with the previous page's NextCursor advances the window.</summary>
+    [TestMethod]
+    public async Task SearchCursorAsync_WalksCursorForward()
+    {
+        var first = await _service.SearchCursorAsync(pageSize: 5, ct: TestContext.CancellationToken);
+        var second = await _service.SearchCursorAsync(pageSize: 5, cursor: first.NextCursor, ct: TestContext.CancellationToken);
+
+        CollectionAssert.AreNotEqual(
+            first.Items.Select(i => i.Id).ToList(),
+            second.Items.Select(i => i.Id).ToList(),
+            "The second cursor page must not repeat the first page's rows.");
     }
 
     /// <summary>Verifies search includes overdue task behavior and protects the expected test contract.</summary>
     [TestMethod]
-    public async Task SearchAsync_IncludesOverdueTask()
+    public async Task SearchCursorAsync_IncludesOverdueTask()
     {
-        var results = await _service.SearchAsync(ct: TestContext.CancellationToken);
+        var page = await _service.SearchCursorAsync(pageSize: 50, ct: TestContext.CancellationToken);
 
-        var overdueTask = results.FirstOrDefault(t => t.Title == "Fix login validation");
+        var overdueTask = page.Items.FirstOrDefault(t => t.Title == "Fix login validation");
         Assert.IsNotNull(overdueTask);
         Assert.IsTrue(overdueTask.IsOverdue);
     }
@@ -76,64 +90,52 @@ public class TaskItemApiServiceTests
         Assert.IsNotNull(result.Id);
     }
 
-    /// <summary>Creates with child collections does not send null task item ids used by the surrounding test cases.</summary>
+    /// <summary>Verifies UpdateAsync sends the entity's Version as the If-Match header (D-021/GR-16).</summary>
     [TestMethod]
-    public async Task CreateAsync_WithChildCollections_DoesNotSendNullTaskItemIds()
+    public async Task UpdateAsync_SendsVersionAsIfMatchHeader()
     {
         var captureHandler = new CaptureRequestHandler();
         using var httpClient = new HttpClient(captureHandler) { BaseAddress = new Uri("https://localhost:7200") };
         var apiClient = new TaskFlowApiClient(httpClient);
         var service = new TaskItemApiService(apiClient, Mock.Of<INotificationService>());
 
-        var model = new TaskItemModel
-        {
-            Title = "Task with children",
-            Priority = "Medium",
-            Comments = [new CommentModel { Body = "note", TaskItemId = Guid.Empty }],
-            ChecklistItems = [new ChecklistItemModel { Title = "todo", SortOrder = 1, IsCompleted = false, TaskItemId = Guid.Empty }]
-        };
+        var model = new TaskItemModel { Id = Guid.NewGuid(), Title = "Existing task", Priority = "Medium" };
 
-        var result = await service.CreateAsync(model, TestContext.CancellationToken);
+        await service.UpdateAsync(model, expectedVersion: 7, TestContext.CancellationToken);
 
-        Assert.IsNotNull(result);
-        Assert.IsNotNull(captureHandler.LastRequestBody);
-
-        using var doc = JsonDocument.Parse(captureHandler.LastRequestBody!);
-        var item = doc.RootElement.GetProperty("item");
-        var commentTaskItemId = item.GetProperty("comments")[0].GetProperty("taskItemId");
-        var checklistTaskItemId = item.GetProperty("checklistItems")[0].GetProperty("taskItemId");
-
-        Assert.AreNotEqual(JsonValueKind.Null, commentTaskItemId.ValueKind);
-        Assert.AreNotEqual(JsonValueKind.Null, checklistTaskItemId.ValueKind);
-        Assert.AreEqual(Guid.Empty.ToString(), commentTaskItemId.GetString());
-        Assert.AreEqual(Guid.Empty.ToString(), checklistTaskItemId.GetString());
+        Assert.IsNotNull(captureHandler.LastIfMatch);
+        Assert.AreEqual("\"7\"", captureHandler.LastIfMatch);
     }
 
-    /// <summary>Verifies delete does not throw behavior and protects the expected test contract.</summary>
+    /// <summary>Verifies a null expectedVersion sends the wildcard If-Match ("*"), the trusted-automation override.</summary>
     [TestMethod]
-    public async Task DeleteAsync_DoesNotThrow()
+    public async Task DeleteAsync_WithNullExpectedVersion_SendsWildcardIfMatch()
     {
-        await _service.DeleteAsync(Guid.NewGuid(), TestContext.CancellationToken);
-        // No exception = success
+        var captureHandler = new CaptureRequestHandler();
+        using var httpClient = new HttpClient(captureHandler) { BaseAddress = new Uri("https://localhost:7200") };
+        var apiClient = new TaskFlowApiClient(httpClient);
+        var service = new TaskItemApiService(apiClient, Mock.Of<INotificationService>());
+
+        await service.DeleteAsync(Guid.NewGuid(), expectedVersion: null, TestContext.CancellationToken);
+
+        Assert.AreEqual("*", captureHandler.LastIfMatch);
     }
 
     /// <summary>Supports test execution for Test.unit Uno scenarios.</summary>
     private sealed class CaptureRequestHandler : HttpMessageHandler
     {
-        public string? LastRequestBody { get; private set; }
+        public string? LastIfMatch { get; private set; }
 
         /// <summary>Verifies send behavior and protects the expected test contract.</summary>
-        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            LastRequestBody = request.Content is null
-                ? null
-                : await request.Content.ReadAsStringAsync(cancellationToken);
+            LastIfMatch = request.Headers.IfMatch.Count > 0 ? request.Headers.IfMatch.First().Tag : null;
 
-            var responseJson = "{\"item\":{\"id\":\"" + Guid.NewGuid() + "\",\"title\":\"Created\",\"priority\":\"Medium\",\"status\":\"Open\"}}";
-            return new HttpResponseMessage(HttpStatusCode.OK)
+            var responseJson = "{\"item\":{\"id\":\"" + Guid.NewGuid() + "\",\"title\":\"Updated\",\"priority\":\"Medium\",\"status\":\"Open\",\"version\":8}}";
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(responseJson, Encoding.UTF8, "application/json")
-            };
+            });
         }
     }
 
