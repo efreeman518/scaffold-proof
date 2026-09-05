@@ -8,6 +8,7 @@ using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Caching;
 using TaskFlow.Observability.Meters;
 using ZiggyCreatures.Caching.Fusion;
+using TaskFlow.Infrastructure.Caching.RateLimiting;
 using ZiggyCreatures.Caching.Fusion.Backplane.StackExchangeRedis;
 
 namespace TaskFlow.Infrastructure.Caching;
@@ -88,6 +89,18 @@ public static class RegisterCachingServices
         services.AddSingleton<CacheMeter>();
         services.AddSingleton<ITaskFlowCache, FusionTaskFlowCache>();
 
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the per-tenant rate-limiter factory. The host supplies the ASP.NET partitions; the tier
+    /// lookup, the Redis budget, and the fail-open policy live here.
+    /// </summary>
+    public static IServiceCollection AddTaskFlowRateLimiting(this IServiceCollection services, IConfiguration config)
+    {
+        services.Configure<RateLimitingSettings>(config.GetSection(RateLimitingSettings.ConfigSectionName));
+        services.AddSingleton<RateLimitingMeter>();
+        services.AddSingleton<TenantRateLimiterFactory>();
         return services;
     }
 }

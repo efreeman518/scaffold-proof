@@ -29,9 +29,10 @@ public static class TaskFlowReadEndpoints
         tasks.MapGet("/export", Export)
             .Produces<TaskItemExportDto>(StatusCodes.Status200OK, NdJsonContentType)
             .ProducesProblem(StatusCodes.Status400BadRequest)
-            // Reserved policy name for the streaming route; the limiter itself lands with the
-            // distributed rate limiting work.
+            // Own budget: an export holds a connection for as long as the tenant has rows, so it must not
+            // spend the tenant's interactive allowance.
             .WithMetadata(new ExportRateLimitPolicy())
+            .RequireRateLimiting(ExportRateLimitPolicy.PolicyName)
             .WithSummary("Stream the tenant's tasks as newline-delimited JSON, resumable by afterId");
 
         app.MapGet("/task-metadata", GetMetadata)
