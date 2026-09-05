@@ -28,4 +28,8 @@ internal static partial class LogMessages
     /// <summary>Logs that a provisioned external resource exists and is usable.</summary>
     [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 5, Level = LogLevel.Information, Message = "External resource ready: {ResourceKind} {ResourceName}")]
     public static partial void ExternalResourceReady(this ILogger logger, string resourceKind, string resourceName);
+
+    /// <summary>Logs that FlowEngineIfMatchOverrideHandler applied the D-032 trusted-automation If-Match override.</summary>
+    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 6, Level = LogLevel.Information, Message = "FlowEngine If-Match override applied: {Method} {Route}")]
+    public static partial void FlowEngineIfMatchOverrideApplied(this ILogger logger, string method, string route);
 }

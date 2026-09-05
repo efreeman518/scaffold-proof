@@ -84,7 +84,9 @@ public static partial class RegisterServices
         var apiBaseUrl = config["FlowEngine:TaskFlowApiBaseUrl"]
             ?? config["Gateway:BaseUrl"]
             ?? "https://localhost";
-        services.AddHttpClient("taskflow-api", c => c.BaseAddress = new Uri(apiBaseUrl));
+        services.AddTransient<FlowEngineIfMatchOverrideHandler>();
+        services.AddHttpClient("taskflow-api", c => c.BaseAddress = new Uri(apiBaseUrl))
+            .AddHttpMessageHandler<FlowEngineIfMatchOverrideHandler>();
         fe.AddResilientHttpClient("taskflow-api", namedClient: "taskflow-api");
 
         // Service Bus message client - uses the same connection string as the application's
