@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.Messaging;
 using TaskFlow.Uno.Core.Business.Models;
+using TaskFlow.Uno.Core.Business.Notifications;
 using TaskFlow.Uno.Core.Business.Services;
 
 namespace TaskFlow.Uno.Presentation.Presentation;
@@ -49,13 +50,21 @@ public partial record CategoryTreeModel(
             SortOrder = editing?.SortOrder ?? 0
         };
 
-        if (editing?.Id is not null)
+        try
         {
-            await CategoryService.UpdateAsync(category, ct);
+            if (editing?.Id is not null)
+            {
+                await CategoryService.UpdateAsync(category, editing.Version, ct);
+            }
+            else
+            {
+                await CategoryService.CreateAsync(category, ct);
+            }
         }
-        else
+        catch (ProblemDetailsException ex) when (ex.StatusCode == 412)
         {
-            await CategoryService.CreateAsync(category, ct);
+            // Notification already shown by ProblemDetailsDelegatingHandler; refresh the list
+            // so the stale row the user was editing reflects what changed elsewhere.
         }
 
         await ResetEditor(ct);
@@ -80,7 +89,14 @@ public partial record CategoryTreeModel(
     public async ValueTask DeleteCategory(CategoryModel category, CancellationToken ct)
     {
         if (category.Id is null) return;
-        await CategoryService.DeleteAsync(category.Id.Value, ct);
+        try
+        {
+            await CategoryService.DeleteAsync(category.Id.Value, category.Version, ct);
+        }
+        catch (ProblemDetailsException ex) when (ex.StatusCode == 412)
+        {
+            // Notification already shown by ProblemDetailsDelegatingHandler; refresh either way.
+        }
         await CategoriesVersion.UpdateAsync(version => version + 1, ct);
     }
 

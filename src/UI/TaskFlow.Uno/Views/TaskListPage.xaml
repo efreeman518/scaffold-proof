@@ -35,7 +35,6 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
             <TextBox Grid.Column="0"
@@ -45,15 +44,7 @@
                      AutomationProperties.Name="Task search input"
                      AutomationProperties.AutomationId="TaskSearchBox" />
 
-            <ComboBox Grid.Column="1"
-                      Header="Page size"
-                      ItemsSource="{Binding PageSizeOptions}"
-                      SelectedItem="{Binding SelectedPageSize, Mode=TwoWay}"
-                      MinWidth="120"
-                      HorizontalAlignment="Stretch"
-                      AutomationProperties.Name="Task page size" />
-
-            <Button Grid.Column="2"
+            <Button Grid.Column="1"
                     Command="{Binding Search}"
                     Style="{StaticResource FormActionButtonStyle}"
                     AutomationProperties.Name="Search tasks"
@@ -83,17 +74,9 @@
                 <Grid ColumnSpacing="12">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <ComboBox Grid.Column="0"
-                              Header="Page size"
-                              ItemsSource="{Binding PageSizeOptions}"
-                              SelectedItem="{Binding SelectedPageSize, Mode=TwoWay}"
-                              HorizontalAlignment="Stretch"
-                              AutomationProperties.Name="Task page size" />
-
-                    <Button Grid.Column="1"
+                    <Button Grid.Column="0"
                             Command="{Binding Search}"
                             Style="{StaticResource FormActionButtonStyle}"
                             AutomationProperties.Name="Search tasks"
@@ -113,33 +96,7 @@
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
-                        <Grid Grid.Row="0" ColumnSpacing="12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-
-                            <TextBlock Grid.Column="0"
-                                       Style="{StaticResource BodyMedium}"
-                                       Foreground="{ThemeResource OnSurfaceVariantBrush}">
-                                <Run Text="Showing " />
-                                <Run Text="{Binding StartItemNumber}" />
-                                <Run Text=" to " />
-                                <Run Text="{Binding EndItemNumber}" />
-                                <Run Text=" of " />
-                                <Run Text="{Binding TotalCount}" />
-                                <Run Text=" tasks" />
-                            </TextBlock>
-
-                            <TextBlock Grid.Column="1"
-                                       Style="{StaticResource BodyMedium}"
-                                       Foreground="{ThemeResource OnSurfaceVariantBrush}">
-                                <Run Text="Page " />
-                                <Run Text="{Binding PageNumber}" />
-                                <Run Text=" of " />
-                                <Run Text="{Binding TotalPages}" />
-                            </TextBlock>
-                        </Grid>
+                        <Grid Grid.Row="0" ColumnSpacing="12" Visibility="Collapsed" />
 
                         <Border Grid.Row="1"
                                 Style="{StaticResource ListItemCardStyle}"
@@ -362,119 +319,20 @@
                                    Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibility}}" />
 
                         <Grid Grid.Row="3" ColumnSpacing="12"
-                              Visibility="{utu:Responsive Normal=Collapsed, Wide=Visible}">
+                              Visibility="{Binding HasMore, Converter={StaticResource BoolToVisibility}}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
 
-                            <TextBlock Grid.Column="0"
-                                       Text="Choose 10, 20, or 50 above and press Search to update the list size."
-                                       Style="{StaticResource CaptionTextBlockStyle}"
-                                       Foreground="{ThemeResource OnSurfaceVariantBrush}"
-                                       VerticalAlignment="Center" />
-
-                            <StackPanel Grid.Column="1"
-                                        Orientation="Horizontal"
-                                        Spacing="8"
-                                        Visibility="{Binding ShowPager, Converter={StaticResource BoolToVisibility}}">
-                                <Button Command="{Binding DataContext.FirstPage, ElementName=TaskListRoot}"
-                                        IsEnabled="{Binding HasPreviousPage}"
-                                        Style="{StaticResource PanelNavButtonStyle}">
-                                    <TextBlock Text="First" />
-                                </Button>
-
-                                <Button Command="{Binding DataContext.PreviousPage, ElementName=TaskListRoot}"
-                                        IsEnabled="{Binding HasPreviousPage}"
-                                        Style="{StaticResource PanelNavButtonStyle}">
-                                    <TextBlock Text="Previous" />
-                                </Button>
-
-                                <ItemsControl ItemsSource="{Binding VisiblePageNumbers}">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <StackPanel Orientation="Horizontal" Spacing="8" />
-                                        </ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Button Command="{Binding DataContext.GoToPage, ElementName=TaskListRoot}"
-                                                    CommandParameter="{Binding Value}"
-                                                    Style="{StaticResource PagerNumberButtonStyle}">
-                                                <TextBlock Text="{Binding Value}" />
-                                            </Button>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-
-                                <Button Command="{Binding DataContext.NextPage, ElementName=TaskListRoot}"
-                                        IsEnabled="{Binding HasNextPage}"
-                                        Style="{StaticResource PanelNavButtonStyle}">
-                                    <TextBlock Text="Next" />
-                                </Button>
-
-                                <Button Command="{Binding DataContext.LastPage, ElementName=TaskListRoot}"
-                                        IsEnabled="{Binding HasNextPage}"
-                                        Style="{StaticResource FormActionButtonStyle}">
-                                    <TextBlock Text="Last" />
-                                </Button>
-                            </StackPanel>
+                            <Button Grid.Column="0"
+                                    Command="{Binding LoadMore}"
+                                    HorizontalAlignment="Center"
+                                    Style="{StaticResource PanelNavButtonStyle}"
+                                    AutomationProperties.Name="Load more tasks"
+                                    AutomationProperties.AutomationId="LoadMoreButton">
+                                <TextBlock Text="Load more" />
+                            </Button>
                         </Grid>
-
-                        <utu:AutoLayout Grid.Row="3" Spacing="12"
-                                        Visibility="{utu:Responsive Normal=Visible, Wide=Collapsed}">
-                            <TextBlock Text="Choose 10, 20, or 50 above and press Search to update the list size."
-                                       Style="{StaticResource CaptionTextBlockStyle}"
-                                       Foreground="{ThemeResource OnSurfaceVariantBrush}" />
-
-                            <ScrollViewer HorizontalScrollMode="Enabled"
-                                          HorizontalScrollBarVisibility="Hidden"
-                                          VerticalScrollMode="Disabled"
-                                          Visibility="{Binding ShowPager, Converter={StaticResource BoolToVisibility}}">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <Button Command="{Binding DataContext.FirstPage, ElementName=TaskListRoot}"
-                                            IsEnabled="{Binding HasPreviousPage}"
-                                            Style="{StaticResource PanelNavButtonStyle}">
-                                        <TextBlock Text="First" />
-                                    </Button>
-
-                                    <Button Command="{Binding DataContext.PreviousPage, ElementName=TaskListRoot}"
-                                            IsEnabled="{Binding HasPreviousPage}"
-                                            Style="{StaticResource PanelNavButtonStyle}">
-                                        <TextBlock Text="Previous" />
-                                    </Button>
-
-                                    <ItemsControl ItemsSource="{Binding VisiblePageNumbers}">
-                                        <ItemsControl.ItemsPanel>
-                                            <ItemsPanelTemplate>
-                                                <StackPanel Orientation="Horizontal" Spacing="8" />
-                                            </ItemsPanelTemplate>
-                                        </ItemsControl.ItemsPanel>
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Button Command="{Binding DataContext.GoToPage, ElementName=TaskListRoot}"
-                                                        CommandParameter="{Binding Value}"
-                                                        Style="{StaticResource PagerNumberButtonStyle}">
-                                                    <TextBlock Text="{Binding Value}" />
-                                                </Button>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-
-                                    <Button Command="{Binding DataContext.NextPage, ElementName=TaskListRoot}"
-                                            IsEnabled="{Binding HasNextPage}"
-                                            Style="{StaticResource PanelNavButtonStyle}">
-                                        <TextBlock Text="Next" />
-                                    </Button>
-
-                                    <Button Command="{Binding DataContext.LastPage, ElementName=TaskListRoot}"
-                                            IsEnabled="{Binding HasNextPage}"
-                                            Style="{StaticResource FormActionButtonStyle}">
-                                        <TextBlock Text="Last" />
-                                    </Button>
-                                </StackPanel>
-                            </ScrollViewer>
-                        </utu:AutoLayout>
         </Grid>
     </Grid>
 </Page>

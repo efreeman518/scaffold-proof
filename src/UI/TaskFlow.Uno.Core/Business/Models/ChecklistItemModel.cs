@@ -4,6 +4,7 @@ namespace TaskFlow.Uno.Core.Business.Models;
 public record ChecklistItemModel
 {
     public Guid? Id { get; init; }
+    public long? Version { get; init; }
     public string Title { get; init; } = string.Empty;
     public bool IsCompleted { get; init; }
     public int SortOrder { get; init; }

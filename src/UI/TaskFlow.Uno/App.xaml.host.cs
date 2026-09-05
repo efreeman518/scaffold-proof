@@ -79,8 +79,6 @@ public partial class App : Application
                         .AddSingleton<ITaskItemApiService, TaskItemApiService>()
                         .AddSingleton<ICategoryApiService, CategoryApiService>()
                         .AddSingleton<ITagApiService, TagApiService>()
-                        .AddSingleton<ICommentApiService, CommentApiService>()
-                        .AddSingleton<IChecklistItemApiService, ChecklistItemApiService>()
                         .AddSingleton<IAttachmentApiService, AttachmentApiService>()
                         .AddSingleton<IDashboardService, DashboardService>();
                 })
