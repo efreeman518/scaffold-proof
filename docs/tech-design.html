@@ -68,15 +68,15 @@
 </tr>
 <tr>
 <td><strong>Database</strong></td>
-<td>SQL Server (EF Core, dual DbContext)</td>
+<td>SQL Server or PostgreSQL (<code>Database:Provider</code>; EF Core, dual DbContext, one model - see <a href="#55-dual-provider-data-layer">Section 5.5</a>)</td>
 </tr>
 <tr>
 <td><strong>Cache</strong></td>
-<td>Redis (FusionCache with L1/L2 + backplane)</td>
+<td>Redis (FusionCache with L1/L2 + backplane; also backs the tenant rate limiter)</td>
 </tr>
 <tr>
 <td><strong>Messaging</strong></td>
-<td>Azure Service Bus (topics + queues)</td>
+<td>Azure Service Bus or RabbitMQ (<code>Messaging:Provider</code>) behind a transactional outbox + consumer inbox</td>
 </tr>
 <tr>
 <td><strong>Read Model</strong></td>
@@ -104,7 +104,7 @@
 </tr>
 <tr>
 <td><strong>Testing</strong></td>
-<td>MSTest, Moq, NetArchTest, WebApplicationFactory, Testcontainers.MsSql, Aspire.Hosting.Testing, Stryker.NET, BenchmarkDotNet, NBomber, Playwright</td>
+<td>MSTest, Moq, NetArchTest, WebApplicationFactory, Testcontainers.MsSql/PostgreSql/RabbitMq, Aspire.Hosting.Testing, Stryker.NET, BenchmarkDotNet, NBomber, Playwright</td>
 </tr>
 </tbody></table>
 <h3 id="design-principles">Design Principles</h3>
@@ -308,20 +308,20 @@
 <tr>
 <td><strong>TaskFlow API</strong></td>
 <td><code>TaskFlow.Api</code></td>
-<td>Core business logic, CRUD, integration events, FlowEngine admin REST (<code>/api/flowengine/*</code>), workflow JSON seeding</td>
-<td>SQL, Redis, Cosmos, Service Bus, Blob, FlowEngine state DB</td>
+<td>Core business logic, CRUD, ETag/If-Match concurrency, cursor paging, summary/metadata/export, idempotent create, domain events staged to the outbox, FlowEngine admin REST (<code>/api/flowengine/*</code>), workflow JSON seeding</td>
+<td>SQL Server or PostgreSQL, Redis, Cosmos, Service Bus or RabbitMQ, Blob, FlowEngine state DB</td>
 </tr>
 <tr>
 <td><strong>Azure Functions</strong></td>
 <td><code>TaskFlow.Functions</code></td>
-<td>Async event processing, blob processing, timer cleanup</td>
-<td>SQL, Cosmos, Service Bus, Blob</td>
+<td>Async event processing via three Service Bus triggers (projection, ai-review, workflow) with dead-lettering; blob processing. Disabled per-trigger when <code>Messaging:Provider=RabbitMq</code> (the Scheduler hosts the RabbitMQ consumers instead)</td>
+<td>SQL Server or PostgreSQL, Cosmos, Service Bus, Blob</td>
 </tr>
 <tr>
 <td><strong>Task Scheduler</strong></td>
 <td><code>TaskFlow.Scheduler</code></td>
-<td>Cron jobs via TickerQ (overdue checks, recurring tasks, cleanup)</td>
-<td>SQL, Redis, Service Bus</td>
+<td>Cron jobs via TickerQ (overdue checks, recurring generation, stale cleanup, retention sweeps); outbox/blob-delete lease-based dispatcher workers; RabbitMQ consumer hosted services when selected</td>
+<td>SQL Server or PostgreSQL, Redis, Service Bus or RabbitMQ</td>
 </tr>
 <tr>
 <td><strong>Uno WASM App</strong></td>
@@ -353,7 +353,7 @@
 
 
 <h3 id="52-base-entity">5.2 Base Entity</h3>
-<p>All entities inherit from <code>EntityBase&lt;TId&gt;</code> (NuGet: <code>EF.Domain</code>) with strongly typed IDs from <code>TaskFlow.Domain.Shared</code>, which provides:</p>
+<p>All entities inherit from <code>TaskFlowEntityBase&lt;TId&gt;</code> (<code>TaskFlow.Domain.Model</code>, extending <code>EntityBase&lt;TId&gt;</code> from NuGet <code>EF.Domain</code>) with strongly typed IDs from <code>TaskFlow.Domain.Shared</code>. <code>TaskFlowEntityBase&lt;TId&gt;</code> implements <code>IVersionedEntity</code>, which provides:</p>
 <table>
 <thead>
 <tr>
@@ -368,15 +368,21 @@
 <td>Strongly typed primary key implementing <code>IDomainId&lt;TId&gt;</code></td>
 </tr>
 <tr>
-<td><code>RowVersion</code></td>
-<td><code>byte[]</code></td>
-<td>Optimistic concurrency token</td>
+<td><code>Version</code></td>
+<td><code>long</code></td>
+<td>App-managed optimistic concurrency token (D-021), private setter. Identical shape on SQL Server and PostgreSQL; doubles as the HTTP <code>ETag</code> (<code>"&lt;Version&gt;"</code>) - see <a href="#61-request-flow---crud-operation">Section 6.1</a></td>
+</tr>
+<tr>
+<td><code>CreatedAtUtc</code> / <code>ModifiedAtUtc</code></td>
+<td><code>DateTimeOffset</code></td>
+<td>Written by <code>VersionTimestampInterceptor</code> on Added/Modified, private setters</td>
 </tr>
 </tbody></table>
 <div class="callout">
-<p><strong>Note:</strong> <code>EntityBase&lt;TId&gt;</code> does <strong>not</strong> define audit properties (<code>CreatedAt</code>, <code>CreatedBy</code>, <code>UpdatedAt</code>, <code>UpdatedBy</code>). Soft-delete (<code>IsDeleted</code>) is defined on individual domain entities that support it, not on <code>EntityBase&lt;TId&gt;</code>. All audit/timestamp tracking is handled by the <code>AuditInterceptor</code> - see <a href="#11-audit-strategy">Section 11: Audit Strategy</a>.</p>
+<p><strong>Concurrency token change:</strong> the former <code>RowVersion</code> (SQL <code>rowversion</code> / Postgres <code>xmin</code>) is replaced by the app-managed <code>Version</code> because a database-native token differs in type per provider, is opaque as a wire ETag, and cannot be exercised against the EF Core InMemory provider (needed for <code>Test.Unit</code> 412 coverage). <code>VersionTimestampInterceptor</code> (<code>Infrastructure.Data/Interceptors/</code>) increments <code>Version</code> from its pre-save original value and stamps both timestamps for every <code>Added</code>/<code>Modified</code> root in <code>SaveChanges</code> - this is the app-local fallback for EF.Domain/EF.Data package requests 1-2 (<code>docs/plans/ef-package-requests.md</code>).</p>
+<p><strong>Note:</strong> <code>EntityBase&lt;TId&gt;</code> still does not define audit-log properties (<code>CreatedBy</code>, <code>UpdatedAt</code>, <code>UpdatedBy</code>) - those remain separate, driven by the compliance-focused <code>AuditInterceptor</code> (see <a href="#11-audit-strategy">Section 11: Audit Strategy</a>), distinct from the concurrency-focused <code>CreatedAtUtc</code>/<code>ModifiedAtUtc</code> above. Soft-delete (<code>IsDeleted</code>) is defined on individual domain entities that support it, not on <code>EntityBase&lt;TId&gt;</code>.</p>
 </div>
-<p>All tenant entities also implement <code>ITenantEntity&lt;TenantId&gt;</code> - enforcing strongly typed <code>TenantId</code> on every row. DTOs, HTTP contracts, events, and request-context inputs remain Guid-based and wrap/unwrap at the application boundary. This split is deliberate: domain and repository code get compile-time protection against mixing entity IDs, while public contracts stay simple for JSON serialization, OpenAPI/client generation, UI code, workflow payloads, and long-term wire compatibility.</p>
+<p>All tenant entities also implement <code>ITenantEntity&lt;TenantId&gt;</code> and use a <strong>composite tenant-first primary key</strong> <code>(TenantId, Id)</code> (D-022, <code>EntityBaseConfiguration.HasKey</code>) rather than a single-column <code>Id</code> PK - this is the SQL Server clustered index by default, and on PostgreSQL it makes every table distributable by <code>TenantId</code> without a future rewrite (Citus/elastic clusters require the distribution column inside the primary key). Child entities carry matching composite foreign keys <code>(TenantId, ParentId)</code>. DTOs, HTTP contracts, events, and request-context inputs remain Guid-based and wrap/unwrap at the application boundary. This split is deliberate: domain and repository code get compile-time protection against mixing entity IDs, while public contracts stay simple for JSON serialization, OpenAPI/client generation, UI code, workflow payloads, and long-term wire compatibility.</p>
 <h3 id="53-value-objects">5.3 Value Objects</h3>
 <table>
 <thead>
@@ -398,7 +404,7 @@
 </tr>
 </tbody></table>
 <h3 id="54-integration-events">5.4 Integration Events</h3>
-<p>Events are defined in <code>Application.Contracts.Events</code> (not Domain layer). Published via <code>IIntegrationEventPublisher</code> to Service Bus.</p>
+<p>Events are defined in <code>TaskFlow.Domain.Shared.Events</code>. The aggregate raises them (<code>IHasDomainEvents</code>); they never publish directly - <code>OutboxStagingInterceptor</code> stages them as <code>OutboxMessage</code> rows in the same save, and the Scheduler&#39;s dispatcher sends them through <code>IIntegrationEventTransport</code> (Service Bus or RabbitMQ, per <code>Messaging:Provider</code>) - see <a href="#62-event-processing-flow---cosmos-projection">Section 6.2</a>.</p>
 <table>
 <thead>
 <tr>
@@ -443,6 +449,26 @@
 <td>Metadata extraction via Functions</td>
 </tr>
 </tbody></table>
+<h3 id="55-dual-provider-data-layer">5.5 Dual-Provider Data Layer</h3>
+<p>TaskFlow runs on SQL Server or PostgreSQL behind one EF Core model, with exactly one runtime branch point (D-020, D-030). <code>TaskFlowDbProviderSelector.Resolve(IConfiguration)</code> (<code>Infrastructure.Data/Provider/TaskFlowDbProvider.cs</code>) picks the provider - env var <code>TASKFLOW_DB_PROVIDER</code> wins over config key <code>Database:Provider</code>, default <code>SqlServer</code> - and <code>DbContextOptionsBuilder.UseTaskFlowProvider(TaskFlowProviderOptions)</code> is the only place that switches on it:</p>
+<pre><code>switch (options.Provider)
+{
+    case TaskFlowDbProvider.SqlServer:
+        // UseAzureSql when the connection string targets database.windows.net, else UseSqlServer
+        builder.UseSqlServer(cs, sql =&gt; sql.UseCompatibilityLevel(170)
+            .EnableRetryOnFailure().MigrationsAssembly("TaskFlow.Infrastructure.Data.Migrations.SqlServer"));
+        break;
+    case TaskFlowDbProvider.PostgreSql:
+        builder.UseNpgsql(cs, npg =&gt; npg
+            .EnableRetryOnFailure().MigrationsAssembly("TaskFlow.Infrastructure.Data.Migrations.PostgreSql"));
+        break;
+}
+</code></pre>
+<p>All four contexts (Trxn, Query, FlowEngine, TickerQ) and the four <code>DatabaseMigrator</code> design-time factories call this same extension; no other file checks the provider. <code>TaskFlowDbContextQuery</code> keeps its own connection string on both providers (D-027): SQL Server appends <code>ApplicationIntent=ReadOnly</code> for the Hyperscale HA secondary, PostgreSQL points it at the Flexible Server read replica.</p>
+<p><strong>UTC normalization</strong> (D-024): <code>UtcDateTimeOffsetConverter</code>/<code>UtcDateTimeConverter</code> (<code>Infrastructure.Data/Conventions/</code>) are registered once in <code>TaskFlowDbContextBase.ConfigureConventions</code> for every <code>DateTimeOffset</code>/<code>DateTime</code> property - required because Npgsql&#39;s <code>timestamptz</code> rejects a non-zero offset on write.</p>
+<p><strong>Column encryption and blind index</strong> (D-023, supersedes D-019 Always Encrypted): <code>Infrastructure.Data/Encryption/</code> holds a provider-neutral <code>IColumnEncryptor</code> (<code>AesGcmColumnEncryptor</code>: AES-256-GCM, <code>nonce(12) || ciphertext || tag(16)</code>) plus <code>BlindIndex</code> (HMAC-SHA256 into a shadow column, indexed, for equality search on an otherwise-randomized encrypted column) and a <code>ColumnEncryptionOptionsExtension</code> wired through <code>UseColumnEncryption</code>/<code>AddColumnEncryption(config, "Database:Encryption")</code>. Config keys: <code>Database:Encryption:{Enabled, LocalKeyBase64, BlindIndexKeyBase64, KeyVaultKeyUrl, WrappedDekBase64}</code>. SQL Server Always Encrypted (D-019) is kept only as a documented alternative in a code comment at the converter registration (<code>Configurations/TaskItemConfiguration.cs</code>) - it is not implemented, because it has no PostgreSQL equivalent.</p>
+<p><strong>Migrations</strong> (D-025): one fresh baseline migration set per (context x provider) - six sets total - lives in two migration assemblies, <code>TaskFlow.Infrastructure.Data.Migrations.SqlServer</code> and <code>...Migrations.PostgreSql</code>, each with <code>Migrations/{TaskFlow,FlowEngine,TickerQ}/</code>. <code>TaskFlow.DatabaseMigrator</code>&#39;s design-time factories resolve the provider the same way as runtime and apply targets in order Trxn -&gt; FlowEngine -&gt; TickerQ, each keeping its own migration history table even when local Aspire maps all three onto one database.</p>
+<p><strong>Provider-matrixed tests</strong>: env <code>TASKFLOW_TEST_DB_PROVIDER</code> (default <code>SqlServer</code>) selects which container a test run starts. <code>Test.Support/Hosting/TestDatabaseContainer.cs</code> wraps either an MS SQL or PostgreSQL (<code>pgvector/pgvector:pg17</code>) Testcontainers fixture behind one facade, consumed by <code>Test.Integration/Infrastructure/DbContainerFixture.cs</code> and <code>Test.E2E/DbApiFactory.cs</code>. CI and local acceptance run the same assemblies twice, once per provider value, rather than parameterizing individual test cases.</p>
 <hr>
 <h2 id="6-data-flow-diagrams">6. Data Flow Diagrams</h2>
 <h3 id="61-request-flow---crud-operation">6.1 Request Flow - CRUD Operation</h3>
@@ -453,13 +479,12 @@
 
 
 <p>The CQRS path is direct endpoint-to-handler invocation. Decorators are assembled by DI around the exact handler type; there is no central dispatch step.</p>
-<h3 id="62-event-processing-flow---cosmos-projection">6.2 Event Processing Flow - Cosmos Projection</h3>
+<p>The diagram shows <code>POST</code> (create); <code>PUT</code>/<code>PATCH</code>/<code>DELETE</code> add two endpoint filters around the same pipeline (D-021, D-031, D-032): <code>IfMatchEndpointFilter</code> runs first and requires an <code>If-Match</code> header - missing or blank returns <strong>428 Precondition Required</strong> before the handler runs, unparseable returns 400, and <code>If-Match: *</code> passes as an explicit wildcard override (used by the FlowEngine connector, see <a href="#145-connector-wiring">Section 14.5</a>). The handler loads the aggregate and calls <code>ConcurrencyGuard.Require(expectedVersion, current, ...)</code> before mutating; a mismatch throws <code>ConcurrencyMismatchException</code>, mapped to <strong>412 Precondition Failed</strong> with the current <code>ETag</code> so the caller can retry with a fresh version. All saves go through <code>ConcurrencyGuard.SaveAsync</code> (<code>OptimisticConcurrencyWinner.Throw</code>), so a stale-write race that slips past the pre-check still surfaces as 412 via <code>DbUpdateConcurrencyException</code>. <code>ETagEndpointFilter</code> runs after the handler on every route (including GET) and sets the response <code>ETag</code> header from any result implementing <code>IETagCarrier</code>.</p>
+<h3 id="62-event-processing-flow---cosmos-projection">6.2 Event Processing Flow - Outbox to Consumers</h3>
 <figure class="diagram-container">
-<img src="diagrams/diagram-09.svg" alt="6.2 Event Processing Flow - Cosmos Projection">
+<img src="diagrams/diagram-09.svg" alt="6.2 Event Processing Flow - Outbox to Consumers">
 </figure>
-
-
-
+<p>Domain events never publish directly (D-026). <code>TaskItem.Create</code>/<code>TransitionStatus</code> raise events into an in-memory buffer (<code>IHasDomainEvents</code>); <code>OutboxStagingInterceptor</code> converts pending events into <code>OutboxMessage</code> rows in the same <code>SaveChangesAsync</code> that persisted the aggregate - so a rolled-back save stages nothing. Scheduler jobs that mutate outside a tracked aggregate (overdue, recurrence) stage directly via <code>IOutboxStaging.Stage(envelope, deterministicId)</code>. The Scheduler&#39;s <code>OutboxDispatcherService</code> (every replica, lease-based, poll 1s backing off to 5s idle) claims a batch with an <code>ExecuteUpdateAsync</code> lease, groups by destination, and sends through <code>IIntegrationEventTransport</code> - <code>Messaging:Provider</code> selects <code>ServiceBusEventTransport</code> or <code>RabbitMqEventTransport</code> (D-034); a message poisoned past <code>AttemptCount &gt;= 10</code> is dead-lettered in place (row kept, admin retry endpoint) rather than lost. Three subscriptions/queues (<code>projection</code>, <code>ai-review</code>, <code>workflow</code>) fan out by <code>EventType</code>, each with its own broker dead-letter path for malformed envelopes or exhausted delivery attempts. Every consumer claims a <code>ConsumerInbox</code> row (<code>Consumer</code>, <code>MessageId</code>) before doing work (D-029), so broker at-least-once redelivery cannot double-project, double-comment, or double-start a workflow.</p>
 <h3 id="63-attachment-upload-flow">6.3 Attachment Upload Flow</h3>
 <figure class="diagram-container">
 <img src="diagrams/diagram-10.svg" alt="6.3 Attachment Upload Flow">
@@ -471,9 +496,7 @@
 <figure class="diagram-container">
 <img src="diagrams/diagram-11.svg" alt="6.4 Caching Flow - FusionCache L1/L2">
 </figure>
-
-
-
+<p>FusionCache is active behind one interface, <code>ITaskFlowCache</code> (<code>TaskFlow.Infrastructure.Caching</code>, <code>FusionTaskFlowCache</code>) - the earlier no-op <code>IEntityCacheProvider</code> is deleted. <code>GetOrSetAsync&lt;T&gt;(key, factory, profile)</code> takes a <code>CacheProfile</code> (<code>Metadata</code>: L1 5m / L2 30m / fail-safe 2h; <code>Summary</code>: L1 5s / L2 15s / fail-safe 1m, 500ms soft factory timeout) and only caches immutable snapshots - <code>/task-items/summary</code> and <code>/task-metadata</code>. Keys render as <code>{env}:{schemaVersion}:{tenantId:N}:{kind}[:{discriminator}]</code>; invalidation is tag-based (<code>RemoveByTagAsync</code>) with per-tenant and per-entity tags (<code>t:{tenant}</code>, <code>t:{tenant}:taskitem|category|tag</code>) set by every create/update/delete call site. The Redis backplane keeps L2 and invalidation consistent across API/Scheduler replicas; a degraded backplane fails safe (stale-but-served, not down) and is observed via <code>taskflow.cache.degraded</code>.</p>
 <hr>
 <h2 id="7-api-contract-summary">7. API Contract Summary</h2>
 <p><strong>Route versioning boundary:</strong> business/domain HTTP contracts are versioned under <code>/api/v1/*</code>. Operational, health, gateway, and workflow-admin surfaces are intentionally unversioned: <code>/health/*</code>, <code>/alive</code>, <code>/healthz</code>, <code>/api/flowengine/*</code>, and the Azure Functions host health route <code>/api/health</code>. Versioning applies to the API contract consumed by clients, not to host-management probes or third-party/admin surfaces with their own lifecycle.</p>
@@ -513,7 +536,8 @@
 </tr>
 </tbody></table>
 <p><strong>Entities with full CRUD</strong>: <code>task-items</code>, <code>categories</code>, <code>tags</code>, <code>comments</code>, <code>checklist-items</code>, <code>attachments</code><br><strong>Entities with partial CRUD</strong>: <code>task-item-tags</code> (create, get, delete - no search/update)</p>
-<p><code>task-items</code> additionally exposes <code>PATCH /api/v1/task-items/{id}</code> - a sparse JSON-merge update (<code>TaskItemPatchDto</code>, omitted fields left unchanged) for targeted edits without a full <code>PUT</code> replace. The AI triage workflow uses it to apply a single suggested priority via its <code>taskflow-api</code> self-call (see <a href="#145-connector-wiring">Section 14.5</a>).</p>
+<p><code>task-items</code> additionally exposes <code>PATCH /api/v1/task-items/{id}</code> - a sparse JSON-merge update (<code>TaskItemPatchDto</code>, omitted fields left unchanged) for targeted edits without a full <code>PUT</code> replace, implemented in both the Service and CQRS styles (<code>PatchTaskItemCommand</code>/<code>PatchTaskItemHandler</code> closes what was a CQRS-only gap). The AI triage workflow uses it to apply a single suggested priority via its <code>taskflow-api</code> self-call (see <a href="#145-connector-wiring">Section 14.5</a>).</p>
+<p><code>POST /api/v1/{entity}/search</code> on <code>task-items</code> is cursor-only: request body <code>TaskItemCursorSearchRequest{Filter, SortMode, PageSize<=100, Cursor?}</code>, response <code>CursorPage&lt;TaskItemDto&gt;{Data, NextCursor, HasMore}</code> - no <code>Total</code>, no page number. The other entities keep offset-style <code>SearchRequest&lt;TFilter&gt;</code>/<code>PagedResponse&lt;T&gt;</code> with <code>PageSize</code> clamped to <code>[1,100]</code> (400 outside the range, never silently clamped) and <code>Total</code> computed only when <code>?includeTotal=true</code>. <code>POST /api/v1/{entity}</code> accepts an optional caller-supplied <code>Id</code> that must be a UUIDv7 (else 400); replaying the same id with an equivalent payload returns 200 with the existing row and its <code>ETag</code> instead of creating a duplicate, and a divergent payload on the same id returns 409.</p>
 <h3 id="711-endpoint-implementation-sets">7.1.1 Endpoint Implementation Sets</h3>
 <p>HTTP routes and DTO contracts do not change when the application style changes. <code>TaskFlow.Api</code> selects one endpoint implementation set during startup:</p>
 <table>
@@ -546,6 +570,21 @@
 </tr>
 </thead>
 <tbody><tr>
+<td><code>GET</code></td>
+<td><code>/api/v1/task-items/summary</code></td>
+<td>Cached status/overdue/due-soon counts (<code>TaskItemSummaryDto</code>, <code>CacheProfile.Summary</code>)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/api/v1/task-metadata</code></td>
+<td>Cached full category/tag lists for dropdowns (<code>TaskMetadataDto</code>, <code>CacheProfile.Metadata</code>) - replaces oversized paged metadata fetches</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/api/v1/task-items/export</code></td>
+<td>NDJSON stream (<code>?afterId&amp;batchSize</code>), flushed per batch, resumable by last id, cancels cleanly on client disconnect</td>
+</tr>
+<tr>
 <td><code>POST</code></td>
 <td><code>/api/v1/attachments/upload</code></td>
 <td>Multipart file upload (file, ownerType, ownerId)</td>
@@ -576,6 +615,11 @@
 <td>FlowEngine admin API - instances, registry, circuit-breakers, human tasks. Mounted via <code>MapFlowEngineAdmin(prefix: &quot;/api/flowengine&quot;)</code>; see <a href="#14-workflow-orchestration-flowengine">Section 14 Workflow Orchestration</a></td>
 </tr>
 <tr>
+<td><code>POST</code></td>
+<td><code>/api/v1/admin/outbox/{id}/retry</code></td>
+<td>Global-admin only: clears <code>DeadLetteredAtUtc</code> on a dead-lettered <code>OutboxMessage</code> so the dispatcher re-claims it</td>
+</tr>
+<tr>
 <td><code>GET</code></td>
 <td><code>/health/memory</code></td>
 <td>Anonymous memory health probe</td>
@@ -601,18 +645,23 @@
 <p>OpenAPI is available when <code>OpenApiSettings:Enable=true</code>. The JSON document route is <code>GET /openapi/{documentName}.json</code>; the current baseline document is <code>GET /openapi/v1.json</code>.</p>
 <p><code>ApiContract.SupportedDocuments</code> is the source of truth for registered OpenAPI documents. Each document is registered separately and filtered by the API Explorer group name, so simultaneous endpoint versions can coexist: a v1-only endpoint appears in <code>/openapi/v1.json</code>, a v2-only endpoint appears in <code>/openapi/v2.json</code> once <code>v2</code> is added, and shared endpoints can opt into both versions. Scalar is mapped by <code>MapScalarApiReference()</code> when OpenAPI is enabled.</p>
 <h3 id="74-requestresponse-envelopes">7.4 Request/Response Envelopes</h3>
-<pre><code>DefaultRequest&lt;TDto&gt;         -&gt; Wraps a DTO for create/update operations
-DefaultResponse&lt;TDto&gt;        -&gt; Single entity response with metadata
-SearchRequest&lt;TFilter&gt;       -&gt; Paged search: Page, PageSize, SortBy, SortDirection, Filter
-PagedResponse&lt;TDto&gt;          -&gt; Items[] + TotalCount + pagination metadata
-Result&lt;T&gt;                    -&gt; Success | Failure(errors) | None (404)
+<pre><code>DefaultRequest&lt;TDto&gt;                       -&gt; Wraps a DTO for create/update operations
+DefaultResponse&lt;TDto&gt;                      -&gt; Single entity response; AggregateVersion is the root ETag on child responses;
+                                              IETagCarrier.ETagVersion falls back to Item.Version; IsReplay flags an idempotent-create replay
+SearchRequest&lt;TFilter&gt;                     -&gt; Offset search (non-task-item entities): Page, PageSize [1,100], SortBy, SortDirection, Filter
+PagedResponse&lt;TDto&gt;                        -&gt; Items[] + TotalCount (only when ?includeTotal=true) + pagination metadata
+CursorSearchRequest&lt;TFilter,TSortMode&gt;     -&gt; Cursor search (task-items): Filter, SortMode, PageSize [1,100] default 50, Cursor?
+CursorPage&lt;TDto&gt;                           -&gt; Data[] + NextCursor + HasMore, no Total, no page number
+EntityBaseDto.Version : long?               -&gt; every DTO carries the aggregate concurrency token used as If-Match currency
+Result&lt;T&gt;                                  -&gt; Success | Failure(errors) | None (404)
 </code></pre>
+<p>Every DTO derives from <code>EntityBaseDto</code> and now carries <code>Version</code>; all mappers project it. Mutating <code>PUT</code>/<code>PATCH</code>/<code>DELETE</code> requests carry an <code>If-Match</code> header rather than a body field - see <a href="#61-request-flow---crud-operation">Section 6.1</a> for the 412/428 pipeline.</p>
 <h3 id="75-middleware-pipeline-order-of-execution">7.5 Middleware Pipeline (Order of Execution)</h3>
 <pre><code>1. SecurityHeadersMiddleware       - Adds security response headers
 2. CorrelationIdMiddleware         - Generates/propagates X-Correlation-Id
 3. HeaderPropagation               - Captures X-Correlation-Id for outgoing HttpClient calls
 4. ExceptionHandler                - Catches exceptions -&gt; ProblemDetails with trace/activity metadata
-5. RateLimiter                     - Per-tenant API limits plus tiered health limits
+5. RateLimiter                     - Redis-backed per-tenant sliding window (fail-open) plus tiered health limits
 6. CORS                            - Policy TaskFlowUi for allowed origins
 7. Authentication                  - Scaffold (dev) or JWT Bearer (Entra ID)
 8. Authorization                   - Authenticated fallback/default policy plus named policies
@@ -694,7 +743,7 @@ API: GatewayClaimsTransformer extracts X-Orig-Request
 API: Sets IRequestContext (tenant, user, roles)
 </code></pre>
 <h3 id="85-rate-limiting">8.5 Rate Limiting</h3>
-<p>Per-tenant fixed window: <strong>100 requests per minute</strong> by default for versioned API routes. Health endpoints use separate IP-based policies: memory/alive is generous, db is tighter, and full is strict because it can include expensive dependency probes. Returns <code>429 Too Many Requests</code>.</p>
+<p>Per-tenant Redis sliding window (<code>RedisRateLimiting</code>) replaces the earlier in-process fixed window so the budget is shared across API replicas, not per-instance. Tiers come from <code>RateLimiting:Tiers:{free|standard|premium}</code> plus a per-tenant override map <code>RateLimiting:TenantTiers:{tenantId}</code>; default tier <code>standard</code> is 100 requests/60s. The streaming export route (<a href="#72-special-endpoints">Section 7.2</a>) has its own named policy, <code>Export</code>, so a slow NDJSON download does not starve interactive calls. A <code>FailOpenRateLimiter</code> wraps the Redis limiter: if the Redis backend throws, requests are admitted rather than rejected (an outage must not become an outage-shaped self-inflicted 429), and every fail-open admission increments <code>taskflow.ratelimit.backend_failure</code> for alerting. Health endpoints keep separate in-process, IP-based policies: memory/alive is generous, db is tighter, and full is strict because it can include expensive dependency probes. Limited requests return <code>429 Too Many Requests</code>.</p>
 <hr>
 <h2 id="9-deployment-topology">9. Deployment Topology</h2>
 <h3 id="91-local-development-aspire">9.1 Local Development (Aspire)</h3>
@@ -716,16 +765,15 @@ API: Sets IRequestContext (tenant, user, roles)
 <li><code>TaskFlowFlowEngineDbContext</code> - the FlowEngine schema (separate migration history table <code>__EFMigrationsHistory_FlowEngine</code>).</li>
 <li><code>TaskFlowTickerQDbContext</code> - the Scheduler/TickerQ schema.</li>
 </ol>
-<p>When Always Encrypted is enabled (D-019) the migrator also creates the CMK/CEK and alters the encrypted columns. The same migration project runs in the deployment pipeline for cloud environments.</p>
+<p>The migrator selects its provider the same way as the runtime hosts (<code>TASKFLOW_DB_PROVIDER</code>/<code>Database:Provider</code>) and applies the matching migration assembly - <code>TaskFlow.Infrastructure.Data.Migrations.SqlServer</code> or <code>...Migrations.PostgreSql</code> (D-025, <a href="#55-dual-provider-data-layer">Section 5.5</a>). Column encryption keys (<code>Database:Encryption:*</code>) are config, not a migrator step: Always Encrypted&#39;s CMK/CEK provisioning (D-019) is superseded and documented-only (D-023). The same migration project runs in the deployment pipeline for cloud environments.</p>
 <p><strong>Startup task</strong>: on boot the API runs a single <code>IStartupTask</code> from <code>TaskFlow.Bootstrapper</code>, <code>WarmupDependencies</code>, which opens the transactional and query <code>DbContext</code> instances and calls <code>CanConnectAsync</code> to warm connection pools. It logs-and-continues on failure so a slow or missing local DB does not block boot; it does not apply migrations.</p>
 <p>After migrations apply, the FlowEngine workflow-seeding hosted service (<code>AddWorkflowJsonSeeding</code>) walks <code>TaskFlow.Api/Workflows/*.json</code> and upserts each definition into the registry (idempotent - skips existing versions). See <a href="#143-shipped-workflows">Section 14.3</a> for the three workflows shipped.</p>
 <h3 id="92-cloud-deployment-azure">9.2 Cloud Deployment (Azure)</h3>
 <figure class="diagram-container">
 <img src="diagrams/diagram-14.svg" alt="9.2 Cloud Deployment (Azure)">
 </figure>
-
-
-
+<p><code>infra/main.bicep</code> takes a <code>databaseProvider</code> param (<code>SqlServer</code> default, <code>PostgreSql</code>) that conditionally deploys <code>infra/modules/sql-database.bicep</code> or the new <code>infra/modules/postgres-flexible-server.bicep</code> (API version 2025-08-01; Entra-only auth, <code>azure.extensions=VECTOR</code>, prod-only read replica via <code>createMode: 'Replica'</code>). SQL Server&#39;s prod profile is Hyperscale (<code>HS_Gen5_2</code>, zone-redundant, <code>highAvailabilityReplicaCount: 1</code>, <code>readScale: Enabled</code>); the read connection string appends <code>ApplicationIntent=ReadOnly</code> for the HA secondary rather than pointing at a separate server. A <code>messagingProvider</code> param (<code>ServiceBus</code> default, <code>RabbitMq</code>) conditionally deploys the Service Bus namespace or <code>infra/modules/rabbitmq-container-app.bicep</code> - a single-replica RabbitMQ container app with an Azure Files-backed mnesia volume and the management plugin exposed, documented as a dev/staging proof rather than a production broker (production would use a managed broker or a cluster).</p>
+<p><code>infra/modules/redis.bicep</code> provisions Azure Managed Redis (<code>Microsoft.Cache/redisEnterprise</code> + a <code>databases</code> child), wired as <code>ConnectionStrings__Redis1</code> into the API and Scheduler for FusionCache L2/backplane and the rate limiter. <code>infra/modules/service-bus.bicep</code> replaces the former single <code>function-processor</code> subscription with three - <code>projection</code>, <code>ai-review</code>, <code>workflow</code> - each with a SQL filter on <code>EventType</code>, <code>maxDeliveryCount: 5</code>, and dead-lettering on expiration/filter errors; the topic itself has duplicate detection enabled. <code>infra/modules/container-app.bicep</code> gained an HTTP concurrency <code>scale.rules</code> block; prod sets Gateway/API to min 2/max 100/50 concurrent requests, Scheduler to a fixed min 2/max 2 (lease-based workers, not HTTP-scaled), Blazor to min 2/max 30. Dev keeps every host at min 0 (scale-to-zero) with no concurrency rule. Three parameter files select the profile: <code>infra/main.bicepparam</code> (legacy default), <code>infra/main.dev.bicepparam</code>, and <code>infra/main.prod.bicepparam</code>.</p>
 <hr>
 <h2 id="10-observability">10. Observability</h2>
 <h3 id="101-opentelemetry">10.1 OpenTelemetry</h3>
@@ -941,7 +989,7 @@ API: Sets IRequestContext (tenant, user, roles)
 <h3 id="114-fallback">11.4 Fallback</h3>
 <p>When Azure Table Storage is unavailable (e.g., local dev without emulator), the DI container registers <code>NoOpAuditLogRepository</code>, which silently discards audit entries.</p>
 <div class="callout">
-<p><strong>FlowEngine outbox is a separate concern.</strong> The <code>AuditInterceptor</code> audits <strong>application</strong> entities (TaskItem, Comment, etc.) and writes to Azure Table Storage. FlowEngine has its own outbox (<code>flowengine.Outbox</code>) that stages <code>message</code> / <code>integration</code> / <code>agent</code> side effects produced by workflow nodes; it is persisted by the <strong>same</strong> <code>SaveChangesAsync</code> that writes the workflow execution row (atomic save+enqueue - see <a href="#144-state-isolation--atomic-outbox">Section 14.4</a>). The two outboxes do not overlap: app-side mutations go through the audit pipeline; workflow-side mutations go through the FE outbox.</p>
+<p><strong>FlowEngine outbox is a separate concern.</strong> The <code>AuditInterceptor</code> audits <strong>application</strong> entities (TaskItem, Comment, etc.) and writes to Azure Table Storage. FlowEngine has its own outbox (<code>flowengine.Outbox</code>) that stages <code>message</code> / <code>integration</code> / <code>agent</code> side effects produced by workflow nodes; it is persisted by the <strong>same</strong> <code>SaveChangesAsync</code> that writes the workflow execution row (atomic save+enqueue - see <a href="#144-state-isolation--atomic-outbox">Section 14.4</a>). There are now three non-overlapping pipelines: app-side compliance history goes through the audit pipeline above; app-side domain events (TaskItem created/status-changed/completed) go through TaskFlow&#39;s own <code>OutboxMessage</code> table for durable Service Bus/RabbitMQ delivery (<a href="#62-event-processing-flow---cosmos-projection">Section 6.2</a>); workflow-side mutations go through the FE outbox described here.</p>
 </div>
 <h3 id="115-key-source-files">11.5 Key Source Files</h3>
 <table>
@@ -1087,7 +1135,7 @@ API: Sets IRequestContext (tenant, user, roles)
 </tr>
 </tbody></table>
 <h3 id="1221-application-style-coverage">12.2.1 Application Style Coverage</h3>
-<p>Endpoint and E2E workflow suites run against both <code>ApplicationStyle.Service</code> and <code>ApplicationStyle.Cqrs</code> by overriding <code>Application:Style</code>/<code>TASKFLOW_APPLICATION_STYLE</code> in the test host. The same HTTP routes, request/response envelopes, ProblemDetails shapes, auth behavior, and database side effects must pass in both modes.</p>
+<p>Endpoint and E2E workflow suites run against both <code>ApplicationStyle.Service</code> and <code>ApplicationStyle.Cqrs</code> by overriding <code>Application:Style</code>/<code>TASKFLOW_APPLICATION_STYLE</code> in the test host. An <code>EndpointStyleFixture</code> drives most <code>Test.Endpoints</code> cases through both styles from one test body (<code>[DataRow("Service")]</code>/<code>[DataRow("Cqrs")]</code>), calling <code>Assert.Inconclusive</code> when <code>TASKFLOW_APPLICATION_STYLE</code> is already pinned by the environment, since the env var wins over config and a pinned run cannot exercise the other style. The same HTTP routes, request/response envelopes, ProblemDetails shapes, auth behavior, and database side effects must pass in both modes, including the concurrency contract (missing/malformed/wildcard/stale <code>If-Match</code> -&gt; 428/400/pass/412 with <code>ETag</code>), idempotent-create replay/conflict, cursor page-through (tamper, cross-tenant, sort-mode mismatch -&gt; 400), and the summary/metadata/export endpoints.</p>
 <p>CQRS-specific unit tests cover handler behavior, the custom <code>IRequestValidator&lt;TRequest&gt;</code> pattern, validation failure response mapping, and decorator order. Architecture tests guard the CQRS boundary: no central request dispatcher, no request bus, no generic <code>Send()</code> entrypoint, no Host dependency, no Infrastructure implementation dependency, and one request record per handler registration.</p>
 <p><code>ApplicationStyleBenchmarks</code> extends that parity check into performance. It creates isolated in-memory API hosts for <code>Service</code> and <code>Cqrs</code>, disables rate-limit noise through test configuration, seeds identical task data, then benchmarks search and create endpoints through the same HTTP routes.</p>
 <h3 id="1222-mutation-testing-scope">12.2.2 Mutation Testing Scope</h3>
@@ -1453,8 +1501,8 @@ cd tests/Test.PlaywrightUI &amp;&amp; npm run test
 <td>Uno&#39;s Model-View-Update-eXtended - reactive state management</td>
 </tr>
 <tr>
-<td><strong>Kiota Client</strong></td>
-<td>Auto-generated HTTP client from OpenAPI spec</td>
+<td><strong>Hand-rolled HTTP Client</strong></td>
+<td><code>Client/TaskFlowApiClient.cs</code> - deliberately not the generated <code>TaskFlow.ApiClient</code> Refit client used by Blazor. A bare <code>ProjectReference</code> to <code>TaskFlow.Application.Models</code> (or anything depending on it, Refit included) fails the Uno WASM build with <code>CS0118</code>: the XAML compiler resolves the unqualified <code>Application</code> in <code>App.xaml.cs</code> (<code>class App : Application</code>) against the <code>TaskFlow.Application</code> namespace segment instead of <code>Microsoft.UI.Xaml.Application</code> once any referenced assembly exposes that namespace path. The hand-rolled client owns cursor paging (<code>CursorPage&lt;T&gt;</code>/<code>NextCursor</code>), caller-supplied UUIDv7 ids on create, and <code>If-Match</code> headers on update/delete built from the DTO&#39;s <code>Version</code></td>
 </tr>
 <tr>
 <td><strong>Mock Mode</strong></td>
@@ -1468,6 +1516,10 @@ cd tests/Test.PlaywrightUI &amp;&amp; npm run test
 <td><strong>Navigation</strong></td>
 <td>PanelVisibilityNavigator swaps sibling panels; detail pages push onto frame stack</td>
 </tr>
+<tr>
+<td><strong>412 UX</strong></td>
+<td><code>ProblemDetailsDelegatingHandler</code> parses <code>application/problem+json</code> centrally and shows a notification for every failing call (skipping client-cancel 499); <code>TaskListModel</code> then reloads the affected row rather than the whole list</td>
+</tr>
 </tbody></table>
 <h3 id="132-blazor-wasmserver-ui">13.2 Blazor WASM/Server UI</h3>
 <figure class="diagram-container">
@@ -1476,7 +1528,7 @@ cd tests/Test.PlaywrightUI &amp;&amp; npm run test
 
 
 
-<p><code>TaskFlow.Blazor</code> is a fully-built <strong>.NET 10 Interactive Server</strong> application using <strong>MudBlazor</strong> components and a <strong>Refit</strong> HTTP client (<code>ITaskFlowApiClient</code>) with <code>AddStandardResilienceHandler()</code>. It connects to the API through the YARP Gateway.</p>
+<p><code>TaskFlow.Blazor</code> is a fully-built <strong>.NET 10 Interactive Server</strong> application using <strong>MudBlazor</strong> components and the Refitter-generated <strong>Refit</strong> client (<code>ITaskFlowApiClient</code>, project <code>src/UI/TaskFlow.ApiClient</code>; regeneration steps in <code>docs/plans/client-generation.md</code>) with <code>AddStandardResilienceHandler()</code>. It connects to the API through the YARP Gateway.</p>
 <p><strong>Layout:</strong> MudAppBar (hamburger toggle, &quot;TaskFlow&quot; title, breadcrumb via <code>FloatService.ModuleName</code>, progress spinner, dark mode toggle) + MudDrawer (nav: Dashboard, Tasks, Categories, Tags, Settings).</p>
 <p><strong>Pages:</strong></p>
 <table>
@@ -1495,7 +1547,7 @@ cd tests/Test.PlaywrightUI &amp;&amp; npm run test
 <tr>
 <td><code>/tasks</code></td>
 <td>TaskList</td>
-<td>Search, filter, sort tasks</td>
+<td>Search, filter, sort tasks; cursor-based &quot;Load more&quot; instead of page numbers</td>
 </tr>
 <tr>
 <td><code>/tasks/new</code></td>
@@ -1542,7 +1594,11 @@ cd tests/Test.PlaywrightUI &amp;&amp; npm run test
 </tr>
 <tr>
 <td><strong>HTTP Client</strong></td>
-<td>Refit-generated typed client (<code>ITaskFlowApiClient</code>)</td>
+<td>Refitter-generated typed client (<code>ITaskFlowApiClient</code>), <code>If-Match</code> header params on every update/delete method, cursor search for tasks</td>
+</tr>
+<tr>
+<td><strong>412 UX</strong></td>
+<td>A 412 response shows a &quot;changed elsewhere, reload&quot; snackbar via <code>FloatService</code> and reloads the affected entity</td>
 </tr>
 <tr>
 <td><strong>Resilience</strong></td>
@@ -1565,6 +1621,8 @@ cd tests/Test.PlaywrightUI &amp;&amp; npm run test
 <li>Injects <code>X-Orig-Request</code> with user claims for the API</li>
 <li>CORS configured for UI origins</li>
 </ul>
+<h3 id="134-react-spa">13.4 React SPA</h3>
+<p><code>src/UI/TaskFlow.React</code> is a TypeScript/React client. Wire types come from <code>openapi-typescript</code> (<code>npm run gen:api</code> regenerates <code>src/api/types.ts</code> from the committed OpenAPI document; do not hand-edit that file), with a hand-written <code>models.ts</code> alias layer and hand-written <code>client.ts</code>/<code>TasksPage.tsx</code> consuming them. Task search uses React Query&#39;s <code>useInfiniteQuery</code> with <code>getNextPageParam</code> reading <code>CursorPage.nextCursor</code>, replacing offset pagination state entirely. Mutations send <code>If-Match</code> (<code>'*'</code> if no known version); a 412 response is detected by status code and shows a warning notification plus a query invalidation so the UI reloads the current data instead of trusting its stale cache.</p>
 <hr>
 <h2 id="14-workflow-orchestration-flowengine">14. Workflow Orchestration (FlowEngine)</h2>
 <p>TaskFlow embeds <strong>EF.FlowEngine</strong> as a long-running, durable, human-in-the-loop orchestration runtime for AI-driven scenarios. It complements - does not replace - the existing CRUD API, domain events, and TickerQ scheduler:</p>
@@ -1741,7 +1799,7 @@ cd tests/Test.PlaywrightUI &amp;&amp; npm run test
 </tbody></table>
 <p>All three are validated at every build by <code>Test.Integration.FlowEngine</code> (see Section 12.2).</p>
 <h3 id="144-state-isolation-and-atomic-outbox">14.4 State Isolation &amp; Atomic Outbox</h3>
-<p>FlowEngine state lives in a <strong>separate <code>flowengine</code> schema on the same SQL Server connection</strong>, owned by <code>TaskFlowFlowEngineDbContext</code> (sealed, in <code>Infrastructure.Data</code>). This is <strong>Variant A</strong> of the deployment-layout decision (same DB, separate schema):</p>
+<p>FlowEngine state lives in a <strong>separate <code>flowengine</code> schema on the same database connection</strong> (SQL Server or PostgreSQL - <a href="#55-dual-provider-data-layer">Section 5.5</a>), owned by <code>TaskFlowFlowEngineDbContext</code> (sealed, in <code>Infrastructure.Data</code>). This is <strong>Variant A</strong> of the deployment-layout decision (same DB, separate schema):</p>
 <figure class="diagram-container">
 <img src="diagrams/diagram-22.svg" alt="14.4 State Isolation and Atomic Outbox">
 </figure>
@@ -1768,7 +1826,7 @@ cd tests/Test.PlaywrightUI &amp;&amp; npm run test
 <tbody><tr>
 <td><code>taskflow-api</code></td>
 <td>Resilient HTTP</td>
-<td>Base URL = <code>FlowEngine:TaskFlowApiBaseUrl</code> ?? <code>Gateway:BaseUrl</code>. Self-call - workflows mutate TaskItems through the public API to preserve auth, validation, audit, and event publishing. Used by <code>n-apply-priority</code>, <code>n-compensate-reject</code>, <code>n-loop-create-one</code>, <code>n-revert-priority</code>.</td>
+<td>Base URL = <code>FlowEngine:TaskFlowApiBaseUrl</code> ?? <code>Gateway:BaseUrl</code>. Self-call - workflows mutate TaskItems through the public API to preserve auth, validation, audit, and event publishing. Every mutating self-call now needs <code>If-Match</code> (<a href="#61-request-flow---crud-operation">Section 6.1</a>); <code>FlowEngineIfMatchOverrideHandler</code>, a <code>DelegatingHandler</code> registered on this client, adds <code>If-Match: *</code> to PATCH/PUT/DELETE requests that arrive without one and logs the override (D-032). Workflow JSON PATCH nodes also declare <code>&quot;headers&quot;: {&quot;If-Match&quot;: &quot;*&quot;}</code> directly, but that is a forward-compatible no-op today: <code>EF.FlowEngine</code> 1.0.163&#39;s <code>IntegrationNodeConfig</code> has no <code>Headers</code> property (package request 18, <code>docs/plans/ef-package-requests.md</code>), confirmed by a reflection test in <code>Test.Integration.FlowEngine</code> that fails the day the package adds it - the handler is what actually makes the header real until then. Used by <code>n-apply-priority</code>, <code>n-compensate-reject</code>, <code>n-loop-create-one</code>, <code>n-revert-priority</code>.</td>
 </tr>
 <tr>
 <td><code>integration-events</code></td>
@@ -1936,13 +1994,25 @@ curl -sk &quot;$GW/api/flowengine/instances/$INSTANCE_ID&quot; | jq &#39;{ statu
 <td><code>CreateCategory</code></td>
 <td>HTTP POST <code>/api/v1/categories</code></td>
 <td>Anonymous</td>
-<td>Category create endpoint used by the Functions audit pipeline test</td>
+<td>Category create endpoint used by the Functions audit pipeline test; caller-supplied id, <code>ETag</code> on the response, 409 on conflict</td>
 </tr>
 <tr>
-<td><code>ProcessTaskEvent</code></td>
+<td><code>ProcessTaskProjection</code></td>
 <td>Service Bus Topic</td>
-<td><code>DomainEvents</code> topic, <code>function-processor</code> subscription</td>
-<td>Projects task events to Cosmos DB read model</td>
+<td><code>DomainEvents</code> topic, <code>projection</code> subscription</td>
+<td>Claims a <code>ConsumerInbox</code> row, then delta-patches or fully re-projects the Cosmos DB read model (Created/StatusChanged/Completed/CommentAdded/AttachmentUploaded)</td>
+</tr>
+<tr>
+<td><code>ProcessTaskAiReview</code></td>
+<td>Service Bus Topic</td>
+<td><code>DomainEvents</code> topic, <code>ai-review</code> subscription</td>
+<td>Claims the inbox and the AI review comment in one <code>SaveChangesAsync</code> (duplicate PK = already processed); handles <code>TaskItemCreatedEvent</code> only</td>
+</tr>
+<tr>
+<td><code>ProcessTaskWorkflowStart</code></td>
+<td>Service Bus Topic</td>
+<td><code>DomainEvents</code> topic, <code>workflow</code> subscription</td>
+<td>Claims the inbox, starts <code>ai-task-triage</code> with <code>StartRequest.IdempotencyKey = "{EventType}:{EventId}"</code>; handles <code>TaskItemCreatedEvent</code> only</td>
 </tr>
 <tr>
 <td><code>ProcessAttachment</code></td>
@@ -1950,13 +2020,8 @@ curl -sk &quot;$GW/api/flowengine/instances/$INSTANCE_ID&quot; | jq &#39;{ statu
 <td>Attachment container</td>
 <td>Validates files, extracts metadata, updates Attachment record</td>
 </tr>
-<tr>
-<td><code>StaleTaskCleanup</code></td>
-<td>Timer</td>
-<td>Config-driven cron</td>
-<td>Deletes cancelled/stale tasks older than 90 days</td>
-</tr>
 </tbody></table>
+<p>All three Service Bus triggers share <code>ServiceBusEnvelopeReader</code>: malformed or unknown envelopes dead-letter with a reason, transient failures rethrow (Functions retries then dead-letters after <code>maxDeliveryCount</code>), success completes the message. The former log-only <code>StaleTaskCleanup</code> timer trigger is deleted - stale cleanup is now a real Scheduler job (below). When <code>Messaging:Provider=RabbitMq</code>, these three triggers are individually disabled (<code>AzureWebJobs.&lt;FunctionName&gt;.Disabled=true</code>) and the same handler classes run instead as RabbitMQ consumer hosted services inside <code>TaskFlow.Scheduler</code> - see <a href="#62-event-processing-flow---cosmos-projection">Section 6.2</a>.</p>
 <h3 id="scheduler-jobs-tickerq">Scheduler Jobs (TickerQ)</h3>
 <table>
 <thead>
@@ -1969,20 +2034,41 @@ curl -sk &quot;$GW/api/flowengine/instances/$INSTANCE_ID&quot; | jq &#39;{ statu
 <tbody><tr>
 <td><code>OverdueTaskCheck</code></td>
 <td>Every 6 hours</td>
-<td>Finds overdue tasks -&gt; publishes <code>TaskItemOverdueSuspectedEvent</code></td>
+<td>Streams overdue tasks (<code>IgnoreQueryFilters</code>, cross-tenant), marks each notified in a per-tenant transaction, stages <code>TaskItemOverdueSuspectedEvent</code> with a deterministic UUIDv5 id (<code>DeterministicGuid.Create("overdue", tenantId, taskId, dueDate)</code>) so a re-run finds zero candidates</td>
 </tr>
 <tr>
 <td><code>RecurringTaskGeneration</code></td>
 <td>Daily 2:00 AM UTC</td>
-<td>Generates new task instances from recurring patterns</td>
+<td>Streams due recurrence templates, expands up to 12 occurrences per run via <code>TaskItem.CreateOccurrence</code>, upserts them (FlexLabs <code>UpsertRange...NoUpdate()</code>) with deterministic occurrence ids, stages <code>TaskItemCreatedEvent</code> per occurrence, advances the template&#39;s next-occurrence pointer guarded on its expected prior value</td>
 </tr>
 <tr>
 <td><code>StaleTaskCleanup</code></td>
-<td>Weekly Sunday 3:00 AM UTC</td>
-<td>Archives/soft-deletes old cancelled tasks</td>
+<td>Weekly Sunday 3:00 AM UTC (configurable retention, default 90 days)</td>
+<td>Keyset-pages cancelled/terminal tasks past the retention cutoff, stages <code>BlobDeleteWork</code> for their attachments, then hard-deletes the tasks (children cascade); blobs are removed later by <code>BlobDeleteWorkerService</code>, so a 404 there counts as success</td>
+</tr>
+<tr>
+<td><code>OutboxRetention</code></td>
+<td>Config-driven (default: with the other retention jobs)</td>
+<td>Purges dead-lettered <code>OutboxMessage</code> and <code>BlobDeleteWork</code> rows older than <code>Scheduling:Retention:OutboxDays</code> (default 7)</td>
+</tr>
+<tr>
+<td><code>ConsumerInboxRetention</code></td>
+<td>Config-driven</td>
+<td>Purges processed <code>ConsumerInbox</code> rows older than <code>Scheduling:Retention:ConsumerInboxDays</code> (default 7)</td>
+</tr>
+<tr>
+<td><code>TickerQOccurrenceRetention</code></td>
+<td>Config-driven</td>
+<td>Deletes executed TickerQ cron occurrence rows older than <code>Scheduling:Retention:TickerQOccurrenceHours</code> (default 24)</td>
+</tr>
+<tr>
+<td><code>AuditRetention</code></td>
+<td>Config-driven</td>
+<td>Purges Table Storage audit rows older than <code>AuditLogStorageSettings:RetentionDays</code> (default 30), batched by the <code>tenantId|yyyyMMdd</code> partition key</td>
 </tr>
 </tbody></table>
-<p>TickerQ uses an EF Core operational store (<code>TickerQDbContext</code>, schema <code>&quot;Scheduler&quot;</code>) for job persistence when <code>Scheduling:UsePersistence=true</code>. Startup validates the schema, can create it for local development (<code>Scheduling:AutoCreateSchema=true</code>), and can emit a deployment script (<code>Scheduling:GenerateDeploymentScript=true</code>). Job execution records OpenTelemetry metrics through <code>TaskFlow.Scheduler</code>, and global TickerQ failures flow through <code>TaskFlowSchedulerExceptionHandler</code>.</p>
+<p>Every job above replaces a former log-only stub. Outbox and blob-delete dispatch are separate lease-based <code>BackgroundService</code> workers (<code>OutboxDispatcherService</code>, <code>BlobDeleteWorkerService</code>, both deriving from <code>LeasedWorkerBase&lt;TWork&gt;</code>: adaptive poll 1s backing off to 5s idle, lease owner <code>{MachineName}:{ProcessId}</code>), not TickerQ cron jobs, so they run continuously on every Scheduler replica. FlowEngine&#39;s own <code>UseRetentionPolicy</code> (7 day max age, 6h run interval) is enabled only when <code>Scheduling:OwnsRetention=true</code>, so exactly one deployed host owns it.</p>
+<p>TickerQ uses an EF Core operational store (<code>TickerQDbContext</code>, schema <code>&quot;scheduler&quot;</code>, lowercase) for job persistence when <code>Scheduling:UsePersistence=true</code>. Startup validates the schema, can create it for local development (<code>Scheduling:AutoCreateSchema=true</code>), and can emit a deployment script (<code>Scheduling:GenerateDeploymentScript=true</code>). <code>NodeIdentifier</code> is set to <code>{MachineName}:{ProcessId}</code> (not machine name alone) because Aspire runs the Scheduler with two replicas locally. Job execution records OpenTelemetry metrics through <code>TaskFlow.Scheduler</code>, and global TickerQ failures flow through <code>TaskFlowSchedulerExceptionHandler</code>.</p>
 
 </div>
 <script src="tech-design.js"></script>
