@@ -1,6 +1,7 @@
-using EF.IntegrationTesting.Testcontainers;
+﻿using EF.IntegrationTesting.Testcontainers;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Npgsql;
 using TaskFlow.Infrastructure.Data.Encryption;
 using TaskFlow.Infrastructure.Data.Interceptors;
@@ -92,11 +93,17 @@ public sealed class TestDatabaseContainer(TaskFlowDbProvider provider) : IAsyncD
         }
     }
 
-    /// <summary>Context options mirroring the Bootstrapper wiring for the selected provider.</summary>
+    /// <summary>
+    /// Context options mirroring the Bootstrapper wiring for the selected provider.
+    /// <paramref name="extraInterceptors"/> is for tests that observe the context itself (a command
+    /// counter, for instance): interceptors can only be supplied when the options are built, never on
+    /// a live context.
+    /// </summary>
     public DbContextOptions<TContext> BuildOptions<TContext>(
         string? connectionString,
         string migrationsHistoryTable,
-        string migrationsHistorySchema)
+        string migrationsHistorySchema,
+        params IInterceptor[] extraInterceptors)
         where TContext : DbContext =>
         new DbContextOptionsBuilder<TContext>()
             .UseTaskFlowProvider(new TaskFlowProviderOptions(
@@ -111,5 +118,6 @@ public sealed class TestDatabaseContainer(TaskFlowDbProvider provider) : IAsyncD
                 // staging path rather than a hand-inserted outbox row.
                 new OutboxStagingInterceptor(),
                 new BlindIndexInterceptor(TestColumnEncryption.Keys.BlindIndexKey))
+            .AddInterceptors(extraInterceptors)
             .Options;
 }

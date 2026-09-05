@@ -108,6 +108,31 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
     }
 
     /// <summary>
+    /// Creates one generated occurrence of a recurring template. <paramref name="id"/> is the caller's
+    /// deterministic UUIDv5 over (tenant, template, occurrence) and <c>(TenantId, RecurrenceTemplateId,
+    /// OccurrenceUtc)</c> is unique, so a replayed generation run upserts the same row instead of a second
+    /// copy. The occurrence is an ordinary task afterwards: it is not linked to the template as a subtask.
+    /// </summary>
+    public static DomainResult<TaskItem> CreateOccurrence(
+        DomainTenantId tenantId,
+        DomainTaskItemId id,
+        DomainTaskItemId templateId,
+        DateTimeOffset occurrenceUtc,
+        string title,
+        string? description = null,
+        Priority priority = Priority.None,
+        DomainCategoryId? categoryId = null)
+    {
+        var entity = new TaskItem(tenantId, title, description, priority, categoryId, null, id)
+        {
+            RecurrenceTemplateId = templateId,
+            OccurrenceUtc = occurrenceUtc,
+            DueDate = occurrenceUtc
+        };
+        return entity.Valid();
+    }
+
+    /// <summary>
     /// Applies a partial update. Null means "leave current value"; Guid.Empty clears optional
     /// category and parent links for DTO-driven updates.
     /// </summary>
@@ -293,11 +318,27 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
     /// <summary>
     /// Replaces or clears the recurrence value object. Schedulers read this as a template
     /// signal; this aggregate does not create recurring child tasks itself.
+    /// <para>
+    /// The generator scans <c>IX_TaskItem_TenantId_NextOccurrenceAtUtc</c>, so a template with no first
+    /// due point is invisible to it. Attaching a pattern seeds that point from the task's own schedule;
+    /// removing the pattern clears it. An already-scheduled series keeps its position.
+    /// </para>
     /// </summary>
     public void UpdateRecurrencePattern(RecurrencePattern? pattern)
     {
         RecurrencePattern = pattern;
+        NextOccurrenceAtUtc = pattern is null
+            ? null
+            : NextOccurrenceAtUtc ?? DueDate ?? StartDate ?? DateTimeOffset.UtcNow;
     }
+
+    /// <summary>
+    /// Moves the template to its next scheduled occurrence, or stops the series when the pattern has run
+    /// past its end date. The scheduler advances the stored column with a guarded <c>ExecuteUpdate</c>;
+    /// this overload exists for in-memory callers (tests, seed data) working with a tracked aggregate.
+    /// </summary>
+    public void AdvanceRecurrence(DateTimeOffset? nextOccurrenceAtUtc) =>
+        NextOccurrenceAtUtc = nextOccurrenceAtUtc;
 
     /// <summary>Checks whether a task status transition is allowed by the domain state machine.</summary>
     private static bool IsValidTransition(TaskItemStatus current, TaskItemStatus target) =>

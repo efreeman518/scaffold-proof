@@ -54,6 +54,10 @@ internal static partial class LogMessages
     [LoggerMessage(EventId = LogEventIds.InfrastructureAiBase + 11, Level = LogLevel.Debug, Message = "Removed task item '{Id}' from search index")]
     public static partial void SearchRemoved(this ILogger logger, string id);
 
+    /// <summary>Logs that AI Search is not configured and the query fell back to the SQL prefix search.</summary>
+    [LoggerMessage(EventId = LogEventIds.InfrastructureAiBase + 15, Level = LogLevel.Debug, Message = "AI Search not configured - answering '{Query}' ({Mode}) with the SQL title-prefix search")]
+    public static partial void SearchNotConfiguredPrefixFallback(this ILogger logger, string query, string mode);
+
     /// <summary>Logs that AI Search is not configured and indexing is skipped.</summary>
     [LoggerMessage(EventId = LogEventIds.InfrastructureAiBase + 12, Level = LogLevel.Debug, Message = "AI Search not configured - skipping index for document '{Id}'")]
     public static partial void SearchNotConfiguredIndexSkipped(this ILogger logger, string id);

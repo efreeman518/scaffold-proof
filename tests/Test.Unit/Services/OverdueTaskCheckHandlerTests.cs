@@ -1,113 +1,129 @@
-using EF.Common.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
-using Moq;
-using TaskFlow.Application.Contracts.Services;
-using TaskFlow.Application.Models;
-using TaskFlow.Application.Models.Paging;
-using TaskFlow.Domain.Shared.Enums;
+using TaskFlow.Application.Contracts.Repositories;
+using TaskFlow.Domain.Shared.Events;
+using TaskFlow.Observability.Meters;
 using TaskFlow.Scheduler.Handlers;
+using Test.Support;
 
 namespace Test.Unit.Services;
 
 /// <summary>
-/// Validates <see cref="TaskFlow.Scheduler.Handlers.OverdueTaskCheckHandler"/>: it queries
-/// <c>ITaskItemService</c> with the overdue filter, tolerates null Data and empty results, and
-/// internally filters out Completed/Cancelled tasks.
-/// Pure-unit tier (Moq only): the handler is the SUT; no scheduler host needed.
+/// Validates <see cref="OverdueTaskCheckHandler"/>: one transaction per tenant, the announcement staged only
+/// when the guarded update actually marked rows, and a message id that is a pure function of
+/// (tenant, task, due date) so a re-run or a second replica stages the same row rather than a duplicate.
+/// Pure-unit tier: the system repository and the outbox are in-memory fakes.
 /// </summary>
 [TestClass]
 public class OverdueTaskCheckHandlerTests
 {
-    private readonly Mock<ITaskItemService> _serviceMock = new();
+    private static readonly DateTimeOffset Now = new(2026, 9, 4, 12, 0, 0, TimeSpan.Zero);
+    private static readonly Guid TenantA = TestConstants.TenantId;
+    private static readonly Guid TenantB = Guid.Parse("00000000-0000-0000-0000-000000000099");
+
+    private readonly FakeTaskItemSystemRepository _repo = new();
+    private readonly FakeOutboxStaging _outbox = new();
     private readonly OverdueTaskCheckHandler _handler;
 
     /// <summary>Initializes overdue task check handler tests with required dependencies and default state.</summary>
     public OverdueTaskCheckHandlerTests()
     {
         _handler = new OverdueTaskCheckHandler(
-            _serviceMock.Object,
+            _repo,
+            _outbox,
+            new SchedulerJobMeter(),
+            new FixedTimeProvider(Now),
             NullLogger<OverdueTaskCheckHandler>.Instance);
     }
 
-    /// <summary>Verifies handle with overdue tasks logs count behavior and protects the expected test contract.</summary>
+    /// <summary>Each tenant is marked and announced inside its own transaction.</summary>
     [TestMethod]
     [TestCategory("Unit")]
-    public async Task HandleAsync_WithOverdueTasks_LogsCount()
+    public async Task HandleAsync_GroupsCandidatesByTenant_OneTransactionEach()
     {
-        var overdueTasks = new List<TaskItemDto>
-        {
-            new() { Title = "Overdue1", Status = TaskItemStatus.Open },
-            new() { Title = "Overdue2", Status = TaskItemStatus.InProgress }
-        };
+        var a1 = Guid.CreateVersion7();
+        var a2 = Guid.CreateVersion7();
+        var b1 = Guid.CreateVersion7();
+        _repo.OverdueRows.AddRange(
+        [
+            new OverdueTaskRow(TenantA, a1, Now.AddDays(-3)),
+            new OverdueTaskRow(TenantA, a2, Now.AddDays(-1)),
+            new OverdueTaskRow(TenantB, b1, Now.AddDays(-5))
+        ]);
 
-        _serviceMock.Setup(s => s.SearchAsync(
-                It.Is<TaskItemCursorSearchRequest>(r => r.Filter!.IsOverdue == true),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new CursorPage<TaskItemDto> { Data = overdueTasks });
+        await _handler.HandleAsync(TestContext.CancellationToken);
 
-        await _handler.HandleAsync(CancellationToken.None);
-
-        _serviceMock.Verify(s => s.SearchAsync(
-            It.Is<TaskItemCursorSearchRequest>(r => r.Filter!.IsOverdue == true),
-            It.IsAny<CancellationToken>()), Times.Once);
+        Assert.AreEqual(2, _repo.TransactionCount);
+        Assert.AreEqual(2, _repo.MarkedOverdue.Count);
+        CollectionAssert.AreEquivalent(new[] { a1, a2 }, _repo.MarkedOverdue[0].Ids.ToArray());
+        CollectionAssert.AreEquivalent(new[] { b1 }, _repo.MarkedOverdue[1].Ids.ToArray());
+        Assert.AreEqual(3, _outbox.Staged.Count);
+        Assert.IsTrue(_outbox.Staged.TrueForAll(s => s.Envelope.Type == nameof(TaskItemOverdueSuspectedEvent)));
     }
 
-    /// <summary>Verifies handle no overdue items completes with zero count behavior and protects the expected test contract.</summary>
+    /// <summary>The guarded update runs before staging, and the save closes the same transaction.</summary>
     [TestMethod]
     [TestCategory("Unit")]
-    public async Task HandleAsync_NoOverdueItems_CompletesWithZeroCount()
+    public async Task HandleAsync_MarksBeforeStaging_InsideOneTransaction()
     {
-        _serviceMock.Setup(s => s.SearchAsync(
-                It.IsAny<TaskItemCursorSearchRequest>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new CursorPage<TaskItemDto> { Data = [] });
+        _repo.OverdueRows.Add(new OverdueTaskRow(TenantA, Guid.CreateVersion7(), Now.AddDays(-2)));
 
-        await _handler.HandleAsync(CancellationToken.None);
+        await _handler.HandleAsync(TestContext.CancellationToken);
 
-        _serviceMock.Verify(s => s.SearchAsync(
-            It.IsAny<TaskItemCursorSearchRequest>(),
-            It.IsAny<CancellationToken>()), Times.Once);
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                nameof(FakeTaskItemSystemRepository.StreamOverdueAsync),
+                "BeginTransaction",
+                nameof(FakeTaskItemSystemRepository.MarkOverdueNotifiedAsync),
+                nameof(FakeTaskItemSystemRepository.SaveChangesAsync),
+                "Commit"
+            },
+            _repo.Calls);
     }
 
-    /// <summary>Verifies handle filters out completed and cancelled behavior and protects the expected test contract.</summary>
+    /// <summary>A batch whose rows all lost the race stages nothing: no announcement without a marked row.</summary>
     [TestMethod]
     [TestCategory("Unit")]
-    public async Task HandleAsync_FiltersOutCompletedAndCancelled()
+    public async Task HandleAsync_WhenNothingMarked_StagesNoEvent()
     {
-        var mixedTasks = new List<TaskItemDto>
-        {
-            new() { Title = "Active Overdue", Status = TaskItemStatus.Open },
-            new() { Title = "Done Overdue", Status = TaskItemStatus.Completed },
-            new() { Title = "Cancelled Overdue", Status = TaskItemStatus.Cancelled }
-        };
+        _repo.OverdueRows.Add(new OverdueTaskRow(TenantA, Guid.CreateVersion7(), Now.AddDays(-2)));
+        _repo.MarkedOverride = 0;
 
-        _serviceMock.Setup(s => s.SearchAsync(
-                It.IsAny<TaskItemCursorSearchRequest>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new CursorPage<TaskItemDto> { Data = mixedTasks });
+        await _handler.HandleAsync(TestContext.CancellationToken);
 
-        // Handler filters out Completed and Cancelled internally
-        await _handler.HandleAsync(CancellationToken.None);
-
-        _serviceMock.Verify(s => s.SearchAsync(
-            It.IsAny<TaskItemCursorSearchRequest>(),
-            It.IsAny<CancellationToken>()), Times.Once);
+        Assert.AreEqual(0, _outbox.Staged.Count);
+        Assert.AreEqual(0, _repo.SaveCount);
     }
 
-    /// <summary>Verifies handle null data treats as empty behavior and protects the expected test contract.</summary>
+    /// <summary>
+    /// Two runs over the same candidate stage the same message id, so a replayed job collapses onto one outbox
+    /// row. A different due date is a different announcement and gets a different id.
+    /// </summary>
     [TestMethod]
     [TestCategory("Unit")]
-    public async Task HandleAsync_NullData_TreatsAsEmpty()
+    public async Task HandleAsync_MessageId_IsStableForTheSameDueDate()
     {
-        _serviceMock.Setup(s => s.SearchAsync(
-                It.IsAny<TaskItemCursorSearchRequest>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new CursorPage<TaskItemDto> { Data = null! });
+        var taskId = Guid.Parse("0199e3f0-0000-7000-8000-0000000000aa");
+        _repo.OverdueRows.Add(new OverdueTaskRow(TenantA, taskId, Now.AddDays(-2)));
 
-        await _handler.HandleAsync(CancellationToken.None);
+        await _handler.HandleAsync(TestContext.CancellationToken);
+        await _handler.HandleAsync(TestContext.CancellationToken);
 
-        _serviceMock.Verify(s => s.SearchAsync(
-            It.IsAny<TaskItemCursorSearchRequest>(),
-            It.IsAny<CancellationToken>()), Times.Once);
+        Assert.AreEqual(2, _outbox.Staged.Count);
+        Assert.AreEqual(_outbox.Staged[0].DeterministicId, _outbox.Staged[1].DeterministicId);
+        Assert.AreEqual(_outbox.Staged[0].Envelope.Id, _outbox.Staged[0].DeterministicId);
+
+        var rescheduled = new FakeTaskItemSystemRepository();
+        var otherOutbox = new FakeOutboxStaging();
+        rescheduled.OverdueRows.Add(new OverdueTaskRow(TenantA, taskId, Now.AddDays(-1)));
+        var handler = new OverdueTaskCheckHandler(
+            rescheduled, otherOutbox, new SchedulerJobMeter(), new FixedTimeProvider(Now),
+            NullLogger<OverdueTaskCheckHandler>.Instance);
+
+        await handler.HandleAsync(TestContext.CancellationToken);
+
+        Assert.AreNotEqual(_outbox.Staged[0].DeterministicId, otherOutbox.Staged[0].DeterministicId);
     }
+
+    public TestContext TestContext { get; set; } = null!;
 }

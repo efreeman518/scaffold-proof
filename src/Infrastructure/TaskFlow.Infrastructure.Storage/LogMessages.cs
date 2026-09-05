@@ -40,4 +40,8 @@ internal static partial class LogMessages
     /// <summary>Logs that one claimed outbox batch was handed to the broker.</summary>
     [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 8, Level = LogLevel.Debug, Message = "Sent {Count} outbox message(s) to {Destination}")]
     public static partial void OutboxBatchSent(this ILogger logger, string destination, int count);
+
+    /// <summary>Logs the audit rows removed by one retention sweep.</summary>
+    [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 10, Level = LogLevel.Information, Message = "Purged {Count} audit entries recorded before {CutoffUtc}")]
+    public static partial void AuditEntriesPurged(this ILogger logger, int count, DateTimeOffset cutoffUtc);
 }

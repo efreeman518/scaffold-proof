@@ -133,6 +133,13 @@ public sealed class OperationalWorkRepository(TaskFlowDbContextTrxn db, TimeProv
     }
 
     /// <inheritdoc />
+    public Task<int> PurgeDeadLetteredAsync<TWork>(DateTimeOffset cutoffUtc, CancellationToken ct)
+        where TWork : OperationalWorkBase =>
+        db.Set<TWork>()
+            .Where(w => w.DeadLetteredAtUtc != null && w.DeadLetteredAtUtc < cutoffUtc)
+            .ExecuteDeleteBatchedAsync(w => w.Id, ct: ct);
+
+    /// <inheritdoc />
     public async Task<OutboxBacklog> GetOutboxBacklogAsync(CancellationToken ct)
     {
         var now = _timeProvider.GetUtcNow();

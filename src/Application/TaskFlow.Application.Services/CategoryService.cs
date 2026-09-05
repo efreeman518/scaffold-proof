@@ -1,7 +1,8 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
+using TaskFlow.Application.Contracts.Caching;
 using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Contracts.Services;
@@ -20,7 +21,7 @@ internal class CategoryService(
     ICategoryRepositoryTrxn repoTrxn,
     ICategoryRepositoryQuery repoQuery,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    IEntityCacheProvider cache) : ICategoryService
+    ITaskFlowCache cache) : ICategoryService
 {
     private Guid? RequestTenantId => requestContext.TenantId;
     private IReadOnlyCollection<string> RequestRoles => requestContext.Roles;
@@ -31,6 +32,13 @@ internal class CategoryService(
     /// <summary>Builds response from current configuration and inputs.</summary>
     private static DefaultResponse<CategoryDto> BuildResponse(CategoryDto dto) =>
         new() { Item = dto, TenantInfo = null };
+
+    /// <summary>
+    /// Evicts the tenant metadata snapshot after a successful commit. Evicting first would let a
+    /// concurrent read repopulate the entry from the pre-commit state and leave it wrong until it expires.
+    /// </summary>
+    private Task InvalidateMetadataAsync(CancellationToken ct) =>
+        cache.RemoveByTagAsync(CacheTags.Entity(RequestTenantId ?? Guid.Empty, CacheTags.Category), ct);
 
     #endregion
 
@@ -110,6 +118,7 @@ internal class CategoryService(
             return Result<DefaultResponse<CategoryDto>>.Failure(ex.GetBaseException().Message);
         }
 
+        await InvalidateMetadataAsync(ct);
         return Result<DefaultResponse<CategoryDto>>.Success(BuildResponse(entity.ToDto()));
     }
 
@@ -153,6 +162,7 @@ internal class CategoryService(
             return Result<DefaultResponse<CategoryDto>>.Failure(ex.GetBaseException().Message);
         }
 
+        await InvalidateMetadataAsync(ct);
         return Result<DefaultResponse<CategoryDto>>.Success(BuildResponse(entity.ToDto()));
     }
 
@@ -182,7 +192,7 @@ internal class CategoryService(
             return Result.Failure(ex.GetBaseException().Message);
         }
 
-        await cache.RemoveAsync($"Category:{id}", ct);
+        await InvalidateMetadataAsync(ct);
         return Result.Success();
     }
 }

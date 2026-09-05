@@ -37,4 +37,13 @@ public sealed class InboxStore(TaskFlowDbContextTrxn db, TimeProvider? timeProvi
         db.ConsumerInbox
             .Where(x => x.Consumer == consumer && x.MessageId == messageId)
             .ExecuteDeleteAsync(ct);
+
+    /// <inheritdoc />
+    // Batched so one sweep of a busy inbox cannot lock the table for the whole window. MessageId alone is the
+    // batch key (EF cannot translate a tuple IN); the cutoff predicate stays on the delete, so a second
+    // consumer's row for the same message is only removed when it is itself past the cutoff.
+    public Task<int> PurgeProcessedAsync(DateTimeOffset cutoffUtc, CancellationToken ct = default) =>
+        db.ConsumerInbox
+            .Where(x => x.ProcessedAtUtc < cutoffUtc)
+            .ExecuteDeleteBatchedAsync(x => x.MessageId, ct: ct);
 }

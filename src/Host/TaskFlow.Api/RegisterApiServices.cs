@@ -6,7 +6,11 @@ using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using TaskFlow.Api.Auth;
 using TaskFlow.Api.Middleware;
+using TaskFlow.Api.Endpoints;
 using TaskFlow.Api.OpenApi;
+using TaskFlow.Infrastructure.Caching;
+using TaskFlow.Infrastructure.Caching.RateLimiting;
+using TaskFlow.Observability.Meters;
 
 namespace TaskFlow.Api;
 
@@ -24,6 +28,9 @@ public static class RegisterApiServices
         this IServiceCollection services, IConfiguration config, ILogger startupLogger)
     {
         services.AddHttpContextAccessor();
+        // Streaming instruments: a streamed export has no meaningful ASP.NET request duration, so the export
+        // endpoint records its own row count and elapsed time.
+        services.AddSingleton<StreamingMeter>();
         AddJsonOptions(services);
         AddCors(services, config);
         AddAuthentication(services, config, startupLogger);
@@ -96,14 +103,17 @@ public static class RegisterApiServices
     /// <summary>Registers rate limiting dependencies in the service container.</summary>
     private static void AddRateLimiting(IServiceCollection services, IConfiguration config)
     {
-        var permitLimit = config.GetValue<int?>("RateLimiting:PerTenant:PermitLimit") ?? 100;
-        var windowSeconds = config.GetValue<int?>("RateLimiting:PerTenant:WindowSeconds") ?? 60;
         var healthMemoryPermitLimit = config.GetValue<int?>("RateLimiting:Health:MemoryPermitLimit") ?? 30;
         var healthDbPermitLimit = config.GetValue<int?>("RateLimiting:Health:DbPermitLimit") ?? 6;
         var healthFullPermitLimit = config.GetValue<int?>("RateLimiting:Health:FullPermitLimit") ?? 3;
 
+        services.AddTaskFlowRateLimiting(config);
+
         services.AddRateLimiter(options =>
         {
+            // Tenant budgets live in Redis so they are one allowance across replicas rather than one per
+            // replica; the health partitions stay in process because they exist to protect this instance's
+            // probes and must keep working when Redis does not.
             options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
             {
                 if (context.Request.Path.StartsWithSegments("/health")
@@ -112,27 +122,23 @@ public static class RegisterApiServices
                     || context.Request.Path.StartsWithSegments("/readyz"))
                     return RateLimitPartition.GetNoLimiter("health");
 
-                return RateLimitPartition.GetFixedWindowLimiter(
-                    context.User?.FindFirst("tenant_id")?.Value
-                    ?? context.Connection.RemoteIpAddress?.ToString()
-                    ?? "anonymous",
-                    _ => new FixedWindowRateLimiterOptions
-                    {
-                        PermitLimit = permitLimit,
-                        Window = TimeSpan.FromSeconds(windowSeconds),
-                        QueueLimit = 0
-                    });
+                var limiters = context.RequestServices.GetRequiredService<TenantRateLimiterFactory>();
+                return RateLimitPartition.Get(TenantPartitionKey(context), limiters.CreateTenantLimiter);
             });
 
             options.AddPolicy("PerTenant", context =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    context.User?.FindFirst("tenant_id")?.Value ?? "anonymous",
-                    _ => new FixedWindowRateLimiterOptions
-                    {
-                        PermitLimit = permitLimit,
-                        Window = TimeSpan.FromSeconds(windowSeconds),
-                        QueueLimit = 0
-                    }));
+            {
+                var limiters = context.RequestServices.GetRequiredService<TenantRateLimiterFactory>();
+                return RateLimitPartition.Get(TenantPartitionKey(context), limiters.CreateTenantLimiter);
+            });
+
+            // The streaming export holds a connection for as long as a tenant has rows, so it gets its own
+            // budget instead of draining the tenant's interactive allowance.
+            options.AddPolicy(ExportRateLimitPolicy.PolicyName, context =>
+            {
+                var limiters = context.RequestServices.GetRequiredService<TenantRateLimiterFactory>();
+                return RateLimitPartition.Get(TenantPartitionKey(context), limiters.CreateExportLimiter);
+            });
 
             options.AddPolicy("HealthMemory", context => RateLimitPartition.GetFixedWindowLimiter(
                 context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
@@ -165,8 +171,24 @@ public static class RegisterApiServices
                 }));
 
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.OnRejected = (context, _) =>
+            {
+                var limiters = context.HttpContext.RequestServices.GetRequiredService<TenantRateLimiterFactory>();
+                limiters.RecordRejected(context.HttpContext.User?.FindFirst("tenant_id")?.Value);
+                return ValueTask.CompletedTask;
+            };
         });
     }
+
+    /// <summary>
+    /// Partition key for a tenant budget. An unauthenticated caller has no tenant, so it falls back to the
+    /// remote address: without that every anonymous caller would share one bucket and a single client could
+    /// exhaust the allowance for all of them.
+    /// </summary>
+    private static string TenantPartitionKey(HttpContext context) =>
+        context.User?.FindFirst("tenant_id")?.Value
+        ?? context.Connection.RemoteIpAddress?.ToString()
+        ?? "anonymous";
 
     /// <summary>Registers versioned open API dependencies in the service container.</summary>
     private static void AddVersionedOpenApi(IServiceCollection services, IConfiguration config)

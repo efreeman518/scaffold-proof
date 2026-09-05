@@ -13,4 +13,8 @@ public class NoOpAuditLogRepository(ILogger<NoOpAuditLogRepository> logger) : IA
         logger.NoOpAuditPersist(entry.Id);
         return Task.CompletedTask;
     }
+
+    /// <summary>Nothing was stored, so nothing is retained.</summary>
+    public Task<int> PurgeOlderThanAsync(DateTimeOffset cutoffUtc, CancellationToken ct = default) =>
+        Task.FromResult(0);
 }

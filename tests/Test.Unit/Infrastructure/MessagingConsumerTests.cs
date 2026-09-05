@@ -135,6 +135,13 @@ public sealed class MessagingConsumerTests
             Claims.Remove((consumer, messageId));
             return Task.CompletedTask;
         }
+
+        public Task<int> PurgeProcessedAsync(DateTimeOffset cutoffUtc, CancellationToken ct = default)
+        {
+            var removed = Claims.Count;
+            Claims.Clear();
+            return Task.FromResult(removed);
+        }
     }
 
     private sealed class CountingConsumer(IInboxStore inbox)

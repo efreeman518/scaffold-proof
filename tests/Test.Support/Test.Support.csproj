@@ -6,6 +6,8 @@
     <PackageReference Include="EF.IntegrationTesting" />
     <!-- fallback: drop when EF.IntegrationTesting ships PostgreSqlContainerFixture (package request 8). -->
     <PackageReference Include="Testcontainers.PostgreSql" />
+    <!-- Cache backplane and distributed rate-limiter lanes: both behaviors only exist across processes. -->
+    <PackageReference Include="Testcontainers.Redis" />
     <PackageReference Include="Aspire.Hosting.Testing" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <!-- Flow patched transitive versions to every test project that consumes this shared harness. -->

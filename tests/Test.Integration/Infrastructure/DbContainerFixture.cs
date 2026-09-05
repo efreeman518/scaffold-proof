@@ -48,6 +48,16 @@ internal static class DbContainerFixture
         new(Container.BuildOptions<TaskFlowDbContextTrxn>(connString, TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName))
         { AuditId = "integration-test" };
 
+    /// <summary>
+    /// Builds a query context against the container with extra interceptors attached (a command counter, for
+    /// instance). Interceptors can only be supplied at options-build time, never on a live context.
+    /// </summary>
+    internal static TaskFlowDbContextQuery CreateQueryContext(
+        string? connString, params Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] interceptors) =>
+        new(Container.BuildOptions<TaskFlowDbContextQuery>(
+            connString, TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName, interceptors))
+        { AuditId = "integration-test" };
+
     /// <summary>Builds a query context against the container.</summary>
     internal static TaskFlowDbContextQuery CreateQueryContext(string? connString = null) =>
         new(Container.BuildOptions<TaskFlowDbContextQuery>(connString, TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName))

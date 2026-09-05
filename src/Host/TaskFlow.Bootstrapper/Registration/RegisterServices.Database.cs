@@ -87,6 +87,9 @@ public static partial class RegisterServices
         services.AddScoped<IInboxStore, InboxStore>();
         services.AddScoped<IOutboxStaging, OutboxStaging>();
         services.AddScoped<IOperationalWorkRepository, OperationalWorkRepository>();
+        // Cross-tenant system access for the scheduler jobs (IgnoreQueryFilters), so background work no
+        // longer leans on the request context defaulting to global admin.
+        services.AddScoped<ITaskItemSystemRepository, TaskItemSystemRepository>();
     }
 
     // An empty connection string leaves the context unconfigured so test hosts can replace it (InMemory).

@@ -3,6 +3,7 @@ using EF.CQRS.Abstractions;
 using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
+using TaskFlow.Application.Contracts.Caching;
 using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Paging;
@@ -91,7 +92,8 @@ internal sealed class CreateTaskItemHandler(
     ILogger<CreateTaskItemHandler> logger,
     IRequestContext<string, Guid?> requestContext,
     ITaskItemRepositoryTrxn repoTrxn,
-    ITenantBoundaryValidator tenantBoundaryValidator)
+    ITenantBoundaryValidator tenantBoundaryValidator,
+    ITaskFlowCache cache)
     : IRequestHandler<CreateTaskItemCommand, Result<DefaultResponse<TaskItemDto>>>
 {
     /// <summary>Handles create task item requests and returns the application result.</summary>
@@ -133,6 +135,7 @@ internal sealed class CreateTaskItemHandler(
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error creating TaskItem", ct);
         if (save.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(save.ErrorMessage!);
 
+        await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(TaskItem)), ct);
         return HandlerHelpers.Success(entity.ToDto());
     }
 }
@@ -142,7 +145,8 @@ internal sealed class UpdateTaskItemHandler(
     ILogger<UpdateTaskItemHandler> logger,
     IRequestContext<string, Guid?> requestContext,
     ITaskItemRepositoryTrxn repoTrxn,
-    ITenantBoundaryValidator tenantBoundaryValidator)
+    ITenantBoundaryValidator tenantBoundaryValidator,
+    ITaskFlowCache cache)
     : IRequestHandler<UpdateTaskItemCommand, Result<DefaultResponse<TaskItemDto>>>
 {
     /// <summary>Handles update task item requests and returns the application result.</summary>
@@ -208,6 +212,7 @@ internal sealed class UpdateTaskItemHandler(
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error updating TaskItem {Id}", ct, dto.Id);
         if (save.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(save.ErrorMessage!);
 
+        await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(TaskItem)), ct);
         return HandlerHelpers.Success(entity.ToDto());
     }
 }
@@ -218,7 +223,7 @@ internal sealed class DeleteTaskItemHandler(
     IRequestContext<string, Guid?> requestContext,
     ITaskItemRepositoryTrxn repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    IEntityCacheProvider cache)
+    ITaskFlowCache cache)
     : IRequestHandler<DeleteTaskItemCommand, Result>
 {
     /// <summary>Handles delete task item requests and returns the application result.</summary>
@@ -239,7 +244,7 @@ internal sealed class DeleteTaskItemHandler(
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error deleting TaskItem {Id}", ct, command.Id);
         if (save.IsFailure) return save;
 
-        await cache.RemoveAsync(HandlerHelpers.CacheKey(nameof(TaskItem), command.Id), ct);
+        await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(TaskItem)), ct);
         return Result.Success();
     }
 }
@@ -254,7 +259,7 @@ internal sealed class PatchTaskItemHandler(
     IRequestContext<string, Guid?> requestContext,
     ITaskItemRepositoryTrxn repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    IEntityCacheProvider cache)
+    ITaskFlowCache cache)
     : IRequestHandler<PatchTaskItemCommand, Result<DefaultResponse<TaskItemDto>>>
 {
     /// <summary>Handles patch task item requests and returns the application result.</summary>
@@ -283,7 +288,7 @@ internal sealed class PatchTaskItemHandler(
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error patching TaskItem {Id}", ct, command.Id);
         if (save.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(save.ErrorMessage!);
 
-        await cache.RemoveAsync(HandlerHelpers.CacheKey(nameof(TaskItem), command.Id), ct);
+        await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(TaskItem)), ct);
         return HandlerHelpers.Success(entity.ToDto());
     }
 }

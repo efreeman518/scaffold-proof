@@ -15,17 +15,20 @@ public class BlobStorageRepository(
     : BlobRepositoryBase(logger, Options.Create((BlobRepositorySettingsBase)settings.Value), clientFactory),
       IBlobStorageRepository
 {
+    // Containers are provisioned once by the EnsureExternalResources startup task, never per call: an
+    // exists-check on every upload, download, and delete is a round trip on the hot path guarding a
+    // condition that can only be true once.
     private readonly ContainerInfo _container = new()
     {
         ContainerName = settings.Value.ContainerName,
-        CreateContainerIfNotExist = true
+        CreateContainerIfNotExist = false
     };
 
     /// <summary>Uploads upload to the configured storage backend and returns metadata.</summary>
     public Task UploadAsync(string containerName, string blobName, Stream content,
         string? contentType = null, IDictionary<string, string>? metadata = null,
         CancellationToken ct = default) =>
-        UploadBlobStreamAsync(new ContainerInfo { ContainerName = containerName, CreateContainerIfNotExist = true },
+        UploadBlobStreamAsync(new ContainerInfo { ContainerName = containerName, CreateContainerIfNotExist = false },
             blobName, content, contentType, false, metadata, ct);
 
     /// <summary>Downloads download from the configured storage backend.</summary>
@@ -42,7 +45,7 @@ public class BlobStorageRepository(
     public async Task<bool> ExistsAsync(string containerName, string blobName,
         CancellationToken ct = default)
     {
-        var info = new ContainerInfo { ContainerName = containerName, CreateContainerIfNotExist = true };
+        var info = new ContainerInfo { ContainerName = containerName, CreateContainerIfNotExist = false };
         var (blobs, _) = await QueryPageBlobsAsync(info, prefix: blobName, cancellationToken: ct);
         return blobs.Any(b => b.Name == blobName);
     }

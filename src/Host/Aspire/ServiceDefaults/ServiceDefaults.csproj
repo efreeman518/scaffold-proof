@@ -20,4 +20,8 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Shared\TaskFlow.Observability\TaskFlow.Observability.csproj" />
+  </ItemGroup>
+
 </Project>
