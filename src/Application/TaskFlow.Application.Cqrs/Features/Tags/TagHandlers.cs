@@ -1,8 +1,9 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
+using TaskFlow.Application.Contracts.Caching;
 using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Cqrs.Shared;
@@ -57,7 +58,8 @@ internal sealed class CreateTagHandler(
     ILogger<CreateTagHandler> logger,
     IRequestContext<string, Guid?> requestContext,
     IRepositoryTrxn<Tag, TagId> repoTrxn,
-    ITenantBoundaryValidator tenantBoundaryValidator)
+    ITenantBoundaryValidator tenantBoundaryValidator,
+    ITaskFlowCache cache)
     : IRequestHandler<CreateTagCommand, Result<DefaultResponse<TagDto>>>
 {
     /// <summary>Handles create tag requests and returns the application result.</summary>
@@ -98,6 +100,7 @@ internal sealed class CreateTagHandler(
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error creating Tag", ct);
         if (save.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(save.ErrorMessage!);
 
+        await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(Tag)), ct);
         return HandlerHelpers.Success(entity.ToDto());
     }
 }
@@ -107,7 +110,8 @@ internal sealed class UpdateTagHandler(
     ILogger<UpdateTagHandler> logger,
     IRequestContext<string, Guid?> requestContext,
     IRepositoryTrxn<Tag, TagId> repoTrxn,
-    ITenantBoundaryValidator tenantBoundaryValidator)
+    ITenantBoundaryValidator tenantBoundaryValidator,
+    ITaskFlowCache cache)
     : IRequestHandler<UpdateTagCommand, Result<DefaultResponse<TagDto>>>
 {
     /// <summary>Handles update tag requests and returns the application result.</summary>
@@ -142,6 +146,7 @@ internal sealed class UpdateTagHandler(
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error updating Tag {Id}", ct, dto.Id);
         if (save.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(save.ErrorMessage!);
 
+        await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(Tag)), ct);
         return HandlerHelpers.Success(entity.ToDto());
     }
 }
@@ -152,7 +157,7 @@ internal sealed class DeleteTagHandler(
     IRequestContext<string, Guid?> requestContext,
     IRepositoryTrxn<Tag, TagId> repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    IEntityCacheProvider cache)
+    ITaskFlowCache cache)
     : IRequestHandler<DeleteTagCommand, Result>
 {
     /// <summary>Handles delete tag requests and returns the application result.</summary>
@@ -173,7 +178,7 @@ internal sealed class DeleteTagHandler(
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error deleting Tag {Id}", ct, command.Id);
         if (save.IsFailure) return save;
 
-        await cache.RemoveAsync(HandlerHelpers.CacheKey(nameof(Tag), command.Id), ct);
+        await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(Tag)), ct);
         return Result.Success();
     }
 }

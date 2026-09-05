@@ -177,5 +177,8 @@ public static partial class RegisterServices
 
         if (!string.IsNullOrWhiteSpace(config.GetConnectionString("CosmosDb1")))
             builder.AddCheck<HealthChecks.CosmosDbHealthCheck>("cosmos-db", tags: ["full", "extservice"]);
+
+        if (!string.IsNullOrWhiteSpace(config.GetConnectionString("Redis1")))
+            builder.AddCheck<HealthChecks.RedisCacheHealthCheck>("redis-cache", tags: ["full", "extservice"]);
     }
 }

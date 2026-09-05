@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TaskFlow.Bootstrapper.StartupTasks;
 using TaskFlow.Infrastructure.AI;
+using TaskFlow.Infrastructure.Caching;
 
 namespace TaskFlow.Bootstrapper;
 
@@ -26,7 +27,7 @@ public static partial class RegisterServices
 
         AddRequestContext(services);
         AddDatabaseServices(services, config);
-        AddCachingServices(services, config);
+        services.AddTaskFlowCaching(config);
         AddTableStorageServices(services, config);
         AddBlobStorageServices(services, config);
         AddMessagingServices(services, config);
@@ -80,6 +81,8 @@ public static partial class RegisterServices
     private static void AddStartupTasks(IServiceCollection services)
     {
         services.AddScoped<IStartupTask, WarmupDependencies>();
+        // Provision containers and tables once here instead of on every write (see the class remarks).
+        services.AddScoped<IStartupTask, EnsureExternalResources>();
     }
 
     /// <summary>Registers support services dependencies in the service container.</summary>

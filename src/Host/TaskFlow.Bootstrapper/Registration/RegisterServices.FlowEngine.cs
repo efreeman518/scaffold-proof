@@ -3,6 +3,7 @@ using EF.FlowEngine.AdminApi;
 using EF.FlowEngine.Clients.AI;
 using EF.FlowEngine.Clients.Http;
 using EF.FlowEngine.Clients.ServiceBus;
+using EF.FlowEngine.Model;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -37,6 +38,19 @@ public static partial class RegisterServices
             .UseHumanTaskStoreSql<TaskFlowFlowEngineDbContext>()
             .UseOutboxSql<TaskFlowFlowEngineDbContext>()
             .UseCircuitBreakerSql<TaskFlowFlowEngineDbContext>();
+
+        // Terminal workflow instances were never removed, so the FlowEngine state store grew forever.
+        // UseRetentionPolicy registers a hosted service, and every host loading this assembly would run its
+        // own copy against the same tables; Scheduling:OwnsRetention makes the Scheduler the single owner.
+        if (config.GetValue("Scheduling:OwnsRetention", false))
+        {
+            fe.UseRetentionPolicy(new RetentionPolicy
+            {
+                MaxAge = TimeSpan.FromDays(7),
+                Statuses = [ExecStatus.Completed, ExecStatus.Faulted, ExecStatus.Cancelled],
+                RunInterval = TimeSpan.FromHours(6)
+            });
+        }
 
         AddTaskFlowConnectorClients(fe, services, config);
         AddWorkflowJsonSeeding(fe);

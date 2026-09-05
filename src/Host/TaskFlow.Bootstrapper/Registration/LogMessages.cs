@@ -24,4 +24,8 @@ internal static partial class LogMessages
     /// <summary>Logs that the Foundry Local chat client is being configured.</summary>
     [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 4, Level = LogLevel.Information, Message = "{AppName} {Environment} - Configure Foundry Local chat client.")]
     public static partial void ConfigureFoundryLocalChatClient(this ILogger logger, string appName, string environment);
+
+    /// <summary>Logs that a provisioned external resource exists and is usable.</summary>
+    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 5, Level = LogLevel.Information, Message = "External resource ready: {ResourceKind} {ResourceName}")]
+    public static partial void ExternalResourceReady(this ILogger logger, string resourceKind, string resourceName);
 }

@@ -1,4 +1,4 @@
-using Azure.Data.Tables;
+﻿using Azure.Data.Tables;
 using EF.Common.Contracts;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -9,8 +9,10 @@ using Test.Integration.Infrastructure;
 namespace Test.Integration;
 
 /// <summary>
-/// Validates <c>AuditLogRepository.AppendAsync</c> against real Azurite Table Storage: partition key,
-/// row key shape (<c>..._{Id:N}</c>), and round-trip of audit metadata.
+/// Validates <c>AuditLogRepository</c> against real Azurite Table Storage: the tenant-day partition key,
+/// the row key shape (<c>..._{Id:N}</c>), the round trip of audit metadata, and the retention sweep.
+/// The table is created by the test, mirroring the EnsureExternalResources startup task: the repository
+/// deliberately no longer provisions it on every append.
 /// Component tier: exercises only Azurite via a standalone <c>AzuriteContainerFixture</c> (started by
 /// <c>IntegrationTestSetup</c>) - no API, no Function, no Aspire graph.
 /// </summary>
@@ -62,15 +64,20 @@ public class AuditLogRepositoryAzuriteTests
             Metadata = "{\"source\":\"azurite-test\"}"
         };
 
+        var tableClient = tableServiceClient.GetTableClient(tableName);
+        // Provisioned once, the way the startup task does it.
+        await tableClient.CreateIfNotExistsAsync(ct);
+
         try
         {
             await repository.AppendAsync(entry, ct);
 
-            var tableClient = tableServiceClient.GetTableClient(tableName);
-            var persisted = await ReadSingleEntityAsync(tableClient, tenantId.ToString());
+            var partitionKey = AuditLogRepository.PartitionKey(tenantId.ToString(), DateTimeOffset.UtcNow);
+            var persisted = await ReadSingleEntityAsync(tableClient, partitionKey);
 
             Assert.IsNotNull(persisted);
-            Assert.AreEqual(tenantId.ToString(), persisted.PartitionKey);
+            StringAssert.StartsWith(persisted.PartitionKey, $"{tenantId}|",
+                "the partition key carries the tenant and the day so retention can drop whole days");
             Assert.IsTrue(persisted.RowKey.EndsWith($"_{entry.Id:N}", StringComparison.Ordinal));
             Assert.AreEqual(entry.AuditId, persisted.AuditId);
             Assert.AreEqual(tenantId.ToString(), persisted.TenantId);
@@ -79,6 +86,12 @@ public class AuditLogRepositoryAzuriteTests
             Assert.AreEqual(entry.Action, persisted.Action);
             Assert.AreEqual(entry.Status.ToString(), persisted.Status);
             Assert.AreEqual(entry.Metadata, persisted.Metadata);
+
+            // Retention: an entry recorded now is outside a cutoff in the past and survives, and inside a
+            // cutoff in the future and is removed.
+            Assert.AreEqual(0, await repository.PurgeOlderThanAsync(DateTimeOffset.UtcNow.AddDays(-1), ct));
+            Assert.AreEqual(1, await repository.PurgeOlderThanAsync(DateTimeOffset.UtcNow.AddMinutes(5), ct));
+            Assert.IsFalse(await AnyEntityAsync(tableClient, partitionKey));
         }
         finally
         {
@@ -97,6 +110,15 @@ public class AuditLogRepositoryAzuriteTests
 
         Assert.Fail("Expected an audit entity to be written to Azurite.");
         throw new InvalidOperationException("Unreachable");
+    }
+
+    /// <summary>True when the partition still holds any entity.</summary>
+    private static async Task<bool> AnyEntityAsync(TableClient tableClient, string partitionKey)
+    {
+        await foreach (var _ in tableClient.QueryAsync<AuditLogTableEntity>(e => e.PartitionKey == partitionKey))
+            return true;
+
+        return false;
     }
 
     /// <summary>Builds test table service client test hosts with deterministic dependencies for repeatable test execution.</summary>

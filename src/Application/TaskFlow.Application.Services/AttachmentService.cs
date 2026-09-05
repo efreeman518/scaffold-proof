@@ -22,7 +22,8 @@ internal class AttachmentService(
     IAttachmentRepositoryTrxn repoTrxn,
     IAttachmentRepositoryQuery repoQuery,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    IEntityCacheProvider cache,
+    // No cache dependency: no cached snapshot is built from attachments, so an attachment write has nothing
+    // to invalidate. Add one here the day a snapshot starts counting them.
     IBlobStorageRepository? blobStorage = null) : IAttachmentService
 {
     private Guid? RequestTenantId => requestContext.TenantId;
@@ -130,11 +131,11 @@ internal class AttachmentService(
             return Result<DefaultResponse<AttachmentDto>>.Failure("Blob storage is not configured.");
 
         var tenantId = RequestTenantId ?? Guid.Empty;
-        var blobName = $"{tenantId}/{ownerId}/{fileName}";
+        var blobName = AttachmentBlobs.BlobName(tenantId, ownerId, fileName);
 
         try
         {
-            await blobStorage.UploadAsync("attachments", blobName, fileStream, contentType, ct: ct);
+            await blobStorage.UploadAsync(AttachmentBlobs.ContainerName, blobName, fileStream, contentType, ct: ct);
         }
         catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
@@ -142,7 +143,7 @@ internal class AttachmentService(
             return Result<DefaultResponse<AttachmentDto>>.Failure($"Blob upload failed: {ex.GetBaseException().Message}");
         }
 
-        var storageUri = (await blobStorage.GetBlobUriAsync("attachments", blobName, ct)).ToString();
+        var storageUri = (await blobStorage.GetBlobUriAsync(AttachmentBlobs.ContainerName, blobName, ct)).ToString();
         var entityResult = Domain.Model.Attachment.Create(
             DomainId.From<TenantId>(tenantId), fileName, contentType, fileSizeBytes, storageUri, ownerType, ownerId,
             DomainId.FromNullable<AttachmentId>(id));
@@ -235,8 +236,8 @@ internal class AttachmentService(
         {
             try
             {
-                var blobName = $"{entity.TenantId.Value}/{entity.OwnerId}/{entity.FileName}";
-                await blobStorage.DeleteAsync("attachments", blobName, ct);
+                var blobName = AttachmentBlobs.BlobName(entity.TenantId.Value, entity.OwnerId, entity.FileName);
+                await blobStorage.DeleteAsync(AttachmentBlobs.ContainerName, blobName, ct);
             }
             catch (Exception ex)
             {
@@ -244,7 +245,6 @@ internal class AttachmentService(
             }
         }
 
-        await cache.RemoveAsync($"Attachment:{id}", ct);
         return Result.Success();
     }
 }

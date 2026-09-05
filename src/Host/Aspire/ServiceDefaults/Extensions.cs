@@ -7,6 +7,7 @@ using Azure.Monitor.OpenTelemetry.AspNetCore;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
+using TaskFlow.Observability.Meters;
 
 namespace Microsoft.Extensions.Hosting;
 
@@ -53,6 +54,16 @@ public static class Extensions
             {
                 metrics.AddHttpClientInstrumentation()
                     .AddRuntimeInstrumentation();
+
+                // TaskFlow's own instruments, named once here rather than per host: a meter added to a
+                // shared library is then exported by every host that uses it, instead of only the host
+                // whose Program.cs happened to be updated.
+                metrics.AddMeter(
+                    SchedulerJobMeter.MeterName,
+                    CacheMeter.MeterName,
+                    RateLimitingMeter.MeterName,
+                    StreamingMeter.MeterName,
+                    MessagingMetrics.MeterName);
 
                 if (!suppressAspNetCoreInstrumentation)
                 {

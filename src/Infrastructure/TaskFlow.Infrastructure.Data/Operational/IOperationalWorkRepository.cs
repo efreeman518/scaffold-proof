@@ -43,6 +43,13 @@ public interface IOperationalWorkRepository
     Task<bool> RetryDeadLetteredAsync<TWork>(Guid id, CancellationToken ct)
         where TWork : OperationalWorkBase;
 
+    /// <summary>
+    /// Retention sweep: hard-deletes dead-lettered rows parked before <paramref name="cutoffUtc"/>, in bounded
+    /// batches. Only dead-lettered rows are eligible - a live row is still owed a dispatch however old it is.
+    /// </summary>
+    Task<int> PurgeDeadLetteredAsync<TWork>(DateTimeOffset cutoffUtc, CancellationToken ct)
+        where TWork : OperationalWorkBase;
+
     /// <summary>Backlog figures for the outbox health check.</summary>
     Task<OutboxBacklog> GetOutboxBacklogAsync(CancellationToken ct);
 }

@@ -1,7 +1,8 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
+using TaskFlow.Application.Contracts.Caching;
 using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Contracts.Storage;
@@ -207,7 +208,7 @@ internal sealed class DeleteAttachmentHandler(
     IRequestContext<string, Guid?> requestContext,
     IAttachmentRepositoryTrxn repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    IEntityCacheProvider cache,
+    ITaskFlowCache cache,
     IBlobStorageRepository? blobStorage = null)
     : IRequestHandler<DeleteAttachmentCommand, Result>
 {
@@ -242,7 +243,7 @@ internal sealed class DeleteAttachmentHandler(
             }
         }
 
-        await cache.RemoveAsync(HandlerHelpers.CacheKey(nameof(Attachment), command.Id), ct);
+        await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(Attachment)), ct);
         return Result.Success();
     }
 }

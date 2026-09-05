@@ -19,10 +19,6 @@
     <PackageReference Include="EF.Data" />
     <PackageReference Include="EF.BackgroundServices" />
     <PackageReference Include="Newtonsoft.Json" />
-    <PackageReference Include="ZiggyCreatures.FusionCache" />
-    <PackageReference Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" />
-    <PackageReference Include="ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis" />
-    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
     <PackageReference Include="Microsoft.Extensions.Azure" />
     <PackageReference Include="Azure.Storage.Blobs" />
     <PackageReference Include="Azure.Messaging.ServiceBus" />
@@ -52,6 +48,7 @@
     <ProjectReference Include="..\..\Infrastructure\TaskFlow.Infrastructure.Data\TaskFlow.Infrastructure.Data.csproj" />
     <ProjectReference Include="..\..\Infrastructure\TaskFlow.Infrastructure.Repositories\TaskFlow.Infrastructure.Repositories.csproj" />
     <ProjectReference Include="..\..\Infrastructure\TaskFlow.Infrastructure.AI\TaskFlow.Infrastructure.AI.csproj" />
+    <ProjectReference Include="..\..\Infrastructure\TaskFlow.Infrastructure.Caching\TaskFlow.Infrastructure.Caching.csproj" />
     <ProjectReference Include="..\..\Infrastructure\TaskFlow.Infrastructure.Storage\TaskFlow.Infrastructure.Storage.csproj" />
     <!-- D-034: the Messaging:Provider switch picks the transport here, so both adapters must be reachable. -->
     <ProjectReference Include="..\..\Infrastructure\TaskFlow.Infrastructure.Messaging.RabbitMq\TaskFlow.Infrastructure.Messaging.RabbitMq.csproj" />

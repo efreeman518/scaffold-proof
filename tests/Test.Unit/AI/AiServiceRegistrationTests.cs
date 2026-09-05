@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Bootstrapper;
 using TaskFlow.Infrastructure.AI;
 using TaskFlow.Infrastructure.AI.Agents;
@@ -101,6 +102,8 @@ public class AiServiceRegistrationTests
 
         var services = new ServiceCollection();
         services.AddLogging();
+        // NoOpSearchService answers from the SQL prefix search, so the repository must resolve.
+        services.AddSingleton(Mock.Of<ITaskItemRepositoryQuery>());
         services.AddAiServices(config);
 
         var provider = services.BuildServiceProvider();
@@ -129,6 +132,8 @@ public class AiServiceRegistrationTests
 
         var services = new ServiceCollection();
         services.AddLogging();
+        // NoOpSearchService answers from the SQL prefix search, so the repository must resolve.
+        services.AddSingleton(Mock.Of<ITaskItemRepositoryQuery>());
         // Simulate the host having wired a Foundry IChatClient before AddAiServices runs.
         services.AddSingleton(new Mock<IChatClient>().Object);
         services.AddSingleton(new AiProviderInfo("local"));
@@ -161,6 +166,8 @@ public class AiServiceRegistrationTests
 
         var services = new ServiceCollection();
         services.AddLogging();
+        // NoOpSearchService answers from the SQL prefix search, so the repository must resolve.
+        services.AddSingleton(Mock.Of<ITaskItemRepositoryQuery>());
         services.AddAiServices(config);
 
         var provider = services.BuildServiceProvider();
@@ -183,6 +190,8 @@ public class AiServiceRegistrationTests
 
         var services = new ServiceCollection();
         services.AddLogging();
+        // NoOpSearchService answers from the SQL prefix search, so the repository must resolve.
+        services.AddSingleton(Mock.Of<ITaskItemRepositoryQuery>());
         services.AddAiServices(config);
 
         var provider = services.BuildServiceProvider();
@@ -207,6 +216,8 @@ public class AiServiceRegistrationTests
 
         var services = new ServiceCollection();
         services.AddLogging();
+        // NoOpSearchService answers from the SQL prefix search, so the repository must resolve.
+        services.AddSingleton(Mock.Of<ITaskItemRepositoryQuery>());
         services.AddAiServices(config);
 
         var provider = services.BuildServiceProvider();
