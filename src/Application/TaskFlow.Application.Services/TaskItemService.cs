@@ -3,6 +3,7 @@ using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Aggregates;
+using TaskFlow.Application.Contracts.Caching;
 using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Contracts.Paging;
 using TaskFlow.Application.Contracts.Repositories;
@@ -29,7 +30,7 @@ internal class TaskItemService(
     ITaskItemRepositoryTrxn repoTrxn,
     ITaskItemRepositoryQuery repoQuery,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    IEntityCacheProvider cache,
+    ITaskFlowCache cache,
     ICursorProtector cursorProtector) : ITaskItemService
 {
     private Guid? RequestTenantId => requestContext.TenantId;
@@ -41,6 +42,15 @@ internal class TaskItemService(
     /// <summary>Builds response from current configuration and inputs.</summary>
     private static DefaultResponse<TaskItemDto> BuildResponse(TaskItemDto dto) =>
         new() { Item = dto, TenantInfo = null };
+
+    /// <summary>
+    /// Evicts the tenant snapshots a task write invalidates (the summary counts). Called only after a
+    /// successful commit: evicting first would let a concurrent read repopulate the entry from the pre-commit
+    /// state and leave it wrong until it expires. Child mutations do not call this - adding a comment changes
+    /// no count in any cached snapshot.
+    /// </summary>
+    private Task InvalidateTaskSnapshotsAsync(CancellationToken ct) =>
+        cache.RemoveByTagAsync(CacheTags.Entity(RequestTenantId ?? Guid.Empty, CacheTags.TaskItem), ct);
 
     #endregion
 
@@ -162,6 +172,7 @@ internal class TaskItemService(
             return Result<DefaultResponse<TaskItemDto>>.Failure(ex.GetBaseException().Message);
         }
 
+        await InvalidateTaskSnapshotsAsync(ct);
         var resultDto = entity.ToDto();
 
         return Result<DefaultResponse<TaskItemDto>>.Success(BuildResponse(resultDto));
@@ -243,6 +254,7 @@ internal class TaskItemService(
             return Result<DefaultResponse<TaskItemDto>>.Failure(ex.GetBaseException().Message);
         }
 
+        await InvalidateTaskSnapshotsAsync(ct);
         var resultDto = entity.ToDto();
 
         return Result<DefaultResponse<TaskItemDto>>.Success(BuildResponse(resultDto));
@@ -287,7 +299,7 @@ internal class TaskItemService(
             return Result<DefaultResponse<TaskItemDto>>.Failure(ex.GetBaseException().Message);
         }
 
-        await cache.RemoveAsync($"TaskItem:{id}", ct);
+        await InvalidateTaskSnapshotsAsync(ct);
         return Result<DefaultResponse<TaskItemDto>>.Success(BuildResponse(entity.ToDto()));
     }
 
@@ -318,7 +330,7 @@ internal class TaskItemService(
             return Result.Failure(ex.GetBaseException().Message);
         }
 
-        await cache.RemoveAsync($"TaskItem:{id}", ct);
+        await InvalidateTaskSnapshotsAsync(ct);
         return Result.Success();
     }
 

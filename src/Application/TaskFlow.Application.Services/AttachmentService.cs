@@ -22,7 +22,8 @@ internal class AttachmentService(
     IAttachmentRepositoryTrxn repoTrxn,
     IAttachmentRepositoryQuery repoQuery,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    IEntityCacheProvider cache,
+    // No cache dependency: no cached snapshot is built from attachments, so an attachment write has nothing
+    // to invalidate. Add one here the day a snapshot starts counting them.
     IBlobStorageRepository? blobStorage = null) : IAttachmentService
 {
     private Guid? RequestTenantId => requestContext.TenantId;
@@ -244,7 +245,6 @@ internal class AttachmentService(
             }
         }
 
-        await cache.RemoveAsync($"Attachment:{id}", ct);
         return Result.Success();
     }
 }

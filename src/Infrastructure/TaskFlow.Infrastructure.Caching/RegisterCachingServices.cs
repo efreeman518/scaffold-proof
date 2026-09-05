@@ -1,19 +1,29 @@
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using TaskFlow.Application.Contracts;
+using TaskFlow.Application.Contracts.Caching;
+using TaskFlow.Observability.Meters;
 using ZiggyCreatures.Caching.Fusion;
 using ZiggyCreatures.Caching.Fusion.Backplane.StackExchangeRedis;
 
-namespace TaskFlow.Bootstrapper;
+namespace TaskFlow.Infrastructure.Caching;
 
-/// <summary>Configures register services host behavior for TaskFlow runtime services.</summary>
-public static partial class RegisterServices
+/// <summary>
+/// Composition for the cache tier. Lives beside the implementation rather than in the Bootstrapper so the
+/// FusionCache and Redis packages stay behind this project's boundary.
+/// </summary>
+public static class RegisterCachingServices
 {
-    /// <summary>Registers caching services dependencies in the service container.</summary>
-    private static void AddCachingServices(IServiceCollection services, IConfiguration config)
+    /// <summary>
+    /// Registers every configured FusionCache instance and binds <see cref="ITaskFlowCache"/> to the default one.
+    /// Without a Redis connection string the cache is L1-only: correct on a single replica, and the reason
+    /// tag-based invalidation goes through the backplane rather than a local dictionary.
+    /// </summary>
+    public static IServiceCollection AddTaskFlowCaching(this IServiceCollection services, IConfiguration config)
     {
         List<CacheSettings> cacheSettings = [];
         config.GetSection("CacheSettings").Bind(cacheSettings);
@@ -31,6 +41,16 @@ public static partial class RegisterServices
                     ReferenceHandler = ReferenceHandler.Preserve
                 })
                 .WithCacheKeyPrefix($"{settings.Name}:")
+                // Own memory cache per named instance with a hard entry cap: a shared, unbounded L1 is how a
+                // container with a memory limit gets OOM-killed instead of evicting.
+                .WithMemoryCache(new MemoryCache(new MemoryCacheOptions { SizeLimit = settings.L1SizeLimit }))
+                .WithOptions(options =>
+                {
+                    options.DistributedCacheCircuitBreakerDuration =
+                        TimeSpan.FromSeconds(settings.DistributedCacheCircuitBreakerSeconds);
+                    options.BackplaneCircuitBreakerDuration =
+                        TimeSpan.FromSeconds(settings.DistributedCacheCircuitBreakerSeconds);
+                })
                 .WithDefaultEntryOptions(new FusionCacheEntryOptions
                 {
                     Duration = TimeSpan.FromMinutes(settings.DurationMinutes),
@@ -41,7 +61,8 @@ public static partial class RegisterServices
                     JitterMaxDuration = TimeSpan.FromSeconds(settings.JitterMaxDurationSeconds),
                     FactorySoftTimeout = TimeSpan.FromSeconds(settings.FactorySoftTimeoutSeconds),
                     FactoryHardTimeout = TimeSpan.FromSeconds(settings.FactoryHardTimeoutSeconds),
-                    EagerRefreshThreshold = settings.EagerRefreshThreshold
+                    EagerRefreshThreshold = settings.EagerRefreshThreshold,
+                    Size = 1
                 });
 
             var redisConnStr = !string.IsNullOrEmpty(settings.RedisConnectionStringName)
@@ -61,5 +82,12 @@ public static partial class RegisterServices
                     }));
             }
         }
+
+        var defaultSettings = cacheSettings.Find(s => s.Name == AppConstants.DEFAULT_CACHE) ?? cacheSettings[0];
+        services.AddSingleton(defaultSettings);
+        services.AddSingleton<CacheMeter>();
+        services.AddSingleton<ITaskFlowCache, FusionTaskFlowCache>();
+
+        return services;
     }
 }

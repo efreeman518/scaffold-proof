@@ -1,7 +1,8 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
+using TaskFlow.Application.Contracts.Caching;
 using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Cqrs.Shared;
@@ -56,7 +57,8 @@ internal sealed class CreateCategoryHandler(
     ILogger<CreateCategoryHandler> logger,
     IRequestContext<string, Guid?> requestContext,
     ICategoryRepositoryTrxn repoTrxn,
-    ITenantBoundaryValidator tenantBoundaryValidator)
+    ITenantBoundaryValidator tenantBoundaryValidator,
+    ITaskFlowCache cache)
     : IRequestHandler<CreateCategoryCommand, Result<DefaultResponse<CategoryDto>>>
 {
     /// <summary>Handles create category requests and returns the application result.</summary>
@@ -97,6 +99,7 @@ internal sealed class CreateCategoryHandler(
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error creating Category", ct);
         if (save.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(save.ErrorMessage!);
 
+        await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(Category)), ct);
         return HandlerHelpers.Success(entity.ToDto());
     }
 }
@@ -106,7 +109,8 @@ internal sealed class UpdateCategoryHandler(
     ILogger<UpdateCategoryHandler> logger,
     IRequestContext<string, Guid?> requestContext,
     ICategoryRepositoryTrxn repoTrxn,
-    ITenantBoundaryValidator tenantBoundaryValidator)
+    ITenantBoundaryValidator tenantBoundaryValidator,
+    ITaskFlowCache cache)
     : IRequestHandler<UpdateCategoryCommand, Result<DefaultResponse<CategoryDto>>>
 {
     /// <summary>Handles update category requests and returns the application result.</summary>
@@ -143,6 +147,7 @@ internal sealed class UpdateCategoryHandler(
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error updating Category {Id}", ct, dto.Id);
         if (save.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(save.ErrorMessage!);
 
+        await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(Category)), ct);
         return HandlerHelpers.Success(entity.ToDto());
     }
 }
@@ -153,7 +158,7 @@ internal sealed class DeleteCategoryHandler(
     IRequestContext<string, Guid?> requestContext,
     ICategoryRepositoryTrxn repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    IEntityCacheProvider cache)
+    ITaskFlowCache cache)
     : IRequestHandler<DeleteCategoryCommand, Result>
 {
     /// <summary>Handles delete category requests and returns the application result.</summary>
@@ -176,7 +181,7 @@ internal sealed class DeleteCategoryHandler(
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error deleting Category {Id}", ct, command.Id);
         if (save.IsFailure) return save;
 
-        await cache.RemoveAsync(HandlerHelpers.CacheKey(nameof(Category), command.Id), ct);
+        await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(Category)), ct);
         return Result.Success();
     }
 }

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TaskFlow.Bootstrapper.StartupTasks;
 using TaskFlow.Infrastructure.AI;
+using TaskFlow.Infrastructure.Caching;
 
 namespace TaskFlow.Bootstrapper;
 
@@ -26,7 +27,7 @@ public static partial class RegisterServices
 
         AddRequestContext(services);
         AddDatabaseServices(services, config);
-        AddCachingServices(services, config);
+        services.AddTaskFlowCaching(config);
         AddTableStorageServices(services, config);
         AddBlobStorageServices(services, config);
         AddMessagingServices(services, config);

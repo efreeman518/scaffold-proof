@@ -1,4 +1,4 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -28,7 +28,6 @@ public class AttachmentServiceTests
     private readonly Mock<IAttachmentRepositoryQuery> _repoQueryMock = new();
     private readonly Mock<IRequestContext<string, Guid?>> _requestContextMock = new();
     private readonly Mock<ITenantBoundaryValidator> _tenantBoundaryValidatorMock = new();
-    private readonly Mock<IEntityCacheProvider> _cacheMock = new();
 
     /// <summary>Prepares per-test fixtures so each test starts from a predictable state.</summary>
     [TestInitialize]
@@ -50,8 +49,7 @@ public class AttachmentServiceTests
         _requestContextMock.Object,
         _repoTrxnMock.Object,
         _repoQueryMock.Object,
-        _tenantBoundaryValidatorMock.Object,
-        _cacheMock.Object);
+        _tenantBoundaryValidatorMock.Object);
 
     /// <summary>Verifies that given valid DTO, when create, then returns success.</summary>
     [TestMethod]

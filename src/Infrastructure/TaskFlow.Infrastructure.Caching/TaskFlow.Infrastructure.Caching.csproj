@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="ZiggyCreatures.FusionCache" />
+    <PackageReference Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" />
+    <PackageReference Include="ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis" />
+    <PackageReference Include="ZiggyCreatures.FusionCache.OpenTelemetry" />
+    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Application\TaskFlow.Application.Contracts\TaskFlow.Application.Contracts.csproj" />
+    <ProjectReference Include="..\..\Shared\TaskFlow.Observability\TaskFlow.Observability.csproj" />
+  </ItemGroup>
+
+</Project>

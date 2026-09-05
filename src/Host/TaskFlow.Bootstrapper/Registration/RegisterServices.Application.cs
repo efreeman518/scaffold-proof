@@ -39,7 +39,6 @@ public static partial class RegisterServices
     private static void AddSharedApplicationServices(IServiceCollection services)
     {
         services.AddScoped<ITenantBoundaryValidator, TenantBoundaryValidator>();
-        services.AddSingleton<IEntityCacheProvider, NoOpEntityCacheProvider>();
 
         // Documented exception to the Service/CQRS split: the aggregate read model (summary, metadata,
         // export) is a pure projection with no domain behavior to duplicate, so both styles share it.
