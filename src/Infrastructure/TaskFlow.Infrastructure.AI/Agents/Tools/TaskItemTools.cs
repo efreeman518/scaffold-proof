@@ -1,5 +1,6 @@
 using EF.Common.Contracts;
 using Microsoft.Extensions.Logging;
+using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models;
 using TaskFlow.Application.Models.Paging;
@@ -15,7 +16,8 @@ namespace TaskFlow.Infrastructure.AI.Agents.Tools;
 public class TaskItemTools(
     ILogger<TaskItemTools> logger,
     ITaskItemService taskItemService,
-    ITaskFlowSearchService searchService)
+    ITaskFlowSearchService searchService,
+    ITaskFlowReadService readService)
 {
     /// <summary>
     /// Searches via Azure AI Search when configured, or the no-op search service in scaffold mode.
@@ -75,6 +77,9 @@ public class TaskItemTools(
 
         var dto = new TaskItemDto
         {
+            // Client-generated UUIDv7 makes the create idempotent (D-033): a retried tool call with an
+            // identical payload replays the existing task instead of creating a duplicate.
+            Id = Guid.CreateVersion7(),
             Title = title,
             Description = description,
             Priority = Enum.TryParse<TaskFlow.Domain.Shared.Enums.Priority>(priority, true, out var p)
@@ -108,43 +113,42 @@ public class TaskItemTools(
         var dto = getResult.Value!.Item!;
         dto.Status = status;
 
-        // The loaded version is the If-Match currency; the tool retries nothing itself, so a
-        // ConcurrencyMismatchException surfacing here is the correct signal that the task moved.
-        var updateResult = await taskItemService.UpdateAsync(new DefaultRequest<TaskItemDto> { Item = dto }, dto.Version);
-        if (updateResult.IsFailure) return $"Failed to update status: {updateResult.ErrorMessage}";
+        // The loaded version is the If-Match currency. The tool retries nothing itself - a
+        // ConcurrencyMismatchException means the task changed between the read above and this write,
+        // which the caller (agent or user) resolves by asking again rather than the tool silently
+        // overwriting someone else's change.
+        try
+        {
+            var updateResult = await taskItemService.UpdateAsync(new DefaultRequest<TaskItemDto> { Item = dto }, dto.Version);
+            if (updateResult.IsFailure) return $"Failed to update status: {updateResult.ErrorMessage}";
+        }
+        catch (ConcurrencyMismatchException)
+        {
+            return "Task changed while updating; retry.";
+        }
 
         return $"Updated task '{dto.Title}' status to {newStatus}.";
     }
 
     /// <summary>
-    /// Produces a lightweight backlog summary from the normal task search endpoint rather than a
-    /// separate analytics store.
+    /// Produces a backlog summary from the tenant-wide summary endpoint (one database round trip)
+    /// instead of paging every task client-side.
     /// </summary>
     public async Task<string> SummarizeBacklog()
     {
         logger.LogDebug("Agent tool: SummarizeBacklog");
 
-        var request = new TaskItemCursorSearchRequest
-        {
-            PageSize = 100
-        };
+        var summary = await readService.GetTaskItemSummaryAsync();
 
-        var page = await taskItemService.SearchAsync(request);
-        var tasks = page.Data;
-
-        var byStatus = tasks.GroupBy(t => t.Status)
-            .Select(g => $"  {g.Key}: {g.Count()}")
+        var byStatus = summary.ByStatus
+            .Select(s => $"  {s.Status}: {s.Count}")
             .ToList();
 
-        var overdue = tasks.Count(t => t.DueDate.HasValue && t.DueDate < DateTimeOffset.UtcNow
-                                      && t.Status != TaskFlow.Domain.Shared.Enums.TaskItemStatus.Completed
-                                      && t.Status != TaskFlow.Domain.Shared.Enums.TaskItemStatus.Cancelled);
-
         return $"""
-            Task Summary ({tasks.Count} total):
+            Task Summary ({summary.Total} total):
             Status breakdown:
             {string.Join("\n", byStatus)}
-            Overdue: {overdue}
+            Overdue: {summary.Overdue}
             """;
     }
 }

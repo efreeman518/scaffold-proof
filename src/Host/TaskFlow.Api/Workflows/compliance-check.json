@@ -121,7 +121,7 @@
         "clientRef": "taskflow-api",
         "method": "POST",
         "path": "/api/v1/task-items/{{$.context._loopItem.Id}}/comments",
-        "body": { "Text": "Compliance review complete: {{$.context._humanTaskResponse.notes}}" },
+        "body": { "item": { "Body": "Compliance review complete: {{$.context._humanTaskResponse.notes}}" } },
         "idempotencyKey": "$.context._loopItem.Id + '-compliance-resolved'"
       },
       "edges": [ { "on": ["Match"], "nextNodeId": "n-ok" }, { "on": ["Error"], "nextNodeId": "n-ok" } ]
@@ -135,7 +135,7 @@
         "clientRef": "taskflow-api",
         "method": "POST",
         "path": "/api/v1/task-items/{{$.context._loopItem.Id}}/comments",
-        "body": { "Text": "Compliance evidence is expiring soon - please refresh." },
+        "body": { "item": { "Body": "Compliance evidence is expiring soon - please refresh." } },
         "idempotencyKey": "$.context._loopItem.Id + '-compliance-reminder'"
       },
       "edges": [ { "on": ["Match"], "nextNodeId": "n-ok" }, { "on": ["Error"], "nextNodeId": "n-ok" } ]
