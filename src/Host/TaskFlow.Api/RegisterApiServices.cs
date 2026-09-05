@@ -10,6 +10,7 @@ using TaskFlow.Api.Endpoints;
 using TaskFlow.Api.OpenApi;
 using TaskFlow.Infrastructure.Caching;
 using TaskFlow.Infrastructure.Caching.RateLimiting;
+using TaskFlow.Observability.Meters;
 
 namespace TaskFlow.Api;
 
@@ -27,6 +28,9 @@ public static class RegisterApiServices
         this IServiceCollection services, IConfiguration config, ILogger startupLogger)
     {
         services.AddHttpContextAccessor();
+        // Streaming instruments: a streamed export has no meaningful ASP.NET request duration, so the export
+        // endpoint records its own row count and elapsed time.
+        services.AddSingleton<StreamingMeter>();
         AddJsonOptions(services);
         AddCors(services, config);
         AddAuthentication(services, config, startupLogger);

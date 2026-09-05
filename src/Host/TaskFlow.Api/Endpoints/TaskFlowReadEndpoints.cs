@@ -1,10 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using TaskFlow.Api.Endpoints.Shared;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models.Paging;
 using TaskFlow.Application.Models.Reads;
+using TaskFlow.Observability.Meters;
 
 namespace TaskFlow.Api.Endpoints;
 
@@ -61,6 +63,7 @@ public static class TaskFlowReadEndpoints
     private static async Task<IResult> Export(
         HttpContext httpContext,
         [FromServices] ITaskFlowReadService reads,
+        [FromServices] StreamingMeter meter,
         CancellationToken ct,
         [FromQuery] Guid? afterId = null,
         [FromQuery] int? batchSize = null)
@@ -75,17 +78,29 @@ public static class TaskFlowReadEndpoints
 
         httpContext.Response.ContentType = NdJsonContentType;
 
+        var stopwatch = Stopwatch.StartNew();
         var written = 0;
-        await foreach (var row in reads.StreamTaskItemExportAsync(afterId, size, ct))
+        var completed = false;
+        try
         {
-            await JsonSerializer.SerializeAsync(httpContext.Response.Body, row, jsonOptions, ct);
-            await httpContext.Response.Body.WriteAsync(NewLine, ct);
+            await foreach (var row in reads.StreamTaskItemExportAsync(afterId, size, ct))
+            {
+                await JsonSerializer.SerializeAsync(httpContext.Response.Body, row, jsonOptions, ct);
+                await httpContext.Response.Body.WriteAsync(NewLine, ct);
 
-            if (++written % size == 0)
-                await httpContext.Response.Body.FlushAsync(ct);
+                if (++written % size == 0)
+                    await httpContext.Response.Body.FlushAsync(ct);
+            }
+
+            await httpContext.Response.Body.FlushAsync(ct);
+            completed = true;
         }
-
-        await httpContext.Response.Body.FlushAsync(ct);
+        finally
+        {
+            // Recorded in a finally so a client disconnect is measured too: an abandoned export still cost
+            // the rows it produced, and a rising abandoned rate is the signal that clients are timing out.
+            meter.RecordExport(written, stopwatch.Elapsed.TotalMilliseconds, completed);
+        }
 
         // The response body is already written; Empty adds nothing further.
         return TypedResults.Empty;

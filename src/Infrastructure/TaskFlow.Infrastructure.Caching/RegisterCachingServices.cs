@@ -7,6 +7,7 @@ using System.Text.Json.Serialization;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Caching;
 using TaskFlow.Observability.Meters;
+using OpenTelemetry.Metrics;
 using ZiggyCreatures.Caching.Fusion;
 using TaskFlow.Infrastructure.Caching.RateLimiting;
 using ZiggyCreatures.Caching.Fusion.Backplane.StackExchangeRedis;
@@ -88,6 +89,10 @@ public static class RegisterCachingServices
         services.AddSingleton(defaultSettings);
         services.AddSingleton<CacheMeter>();
         services.AddSingleton<ITaskFlowCache, FusionTaskFlowCache>();
+
+        // FusionCache's own hit/miss/latency instrumentation, registered here rather than in the host's
+        // telemetry setup so it arrives with the cache and cannot be forgotten by a host that adds caching.
+        services.AddOpenTelemetry().WithMetrics(metrics => metrics.AddFusionCacheInstrumentation());
 
         return services;
     }
