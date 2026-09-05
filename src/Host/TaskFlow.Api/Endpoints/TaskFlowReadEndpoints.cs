@@ -23,10 +23,12 @@ public static class TaskFlowReadEndpoints
         var tasks = app.MapGroup("/task-items").WithTags("TaskItems");
 
         tasks.MapGet("/summary", GetSummary)
+            .WithName("GetTaskItemSummary")
             .Produces<TaskItemSummaryDto>(StatusCodes.Status200OK)
             .WithSummary("Tenant task counts by status, overdue, and total in one round trip");
 
         tasks.MapGet("/export", Export)
+            .WithName("ExportTaskItems")
             .Produces<TaskItemExportDto>(StatusCodes.Status200OK, NdJsonContentType)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             // Reserved policy name for the streaming route; the limiter itself lands with the
@@ -35,6 +37,7 @@ public static class TaskFlowReadEndpoints
             .WithSummary("Stream the tenant's tasks as newline-delimited JSON, resumable by afterId");
 
         app.MapGet("/task-metadata", GetMetadata)
+            .WithName("GetTaskMetadata")
             .WithTags("TaskItems")
             .Produces<TaskMetadataDto>(StatusCodes.Status200OK)
             .WithSummary("Full category and tag lists for pickers");

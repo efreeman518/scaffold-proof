@@ -24,16 +24,19 @@ public static class TagEndpoints
             .AddEndpointFilter<ETagEndpointFilter>();
 
         g.MapPost("/search", Search)
+            .WithName("SearchTags")
             .Produces<PagedResponse<TagDto>>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .WithSummary("Search Tags with paging, filters, and sorts");
 
         g.MapGet("/{id:guid}", GetById)
+            .WithName("GetTag")
             .Produces<DefaultResponse<TagDto>>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .WithSummary("Get a single Tag");
 
         g.MapPost("/", Create)
+            .WithName("CreateTag")
             .Produces<DefaultResponse<TagDto>>(StatusCodes.Status201Created)
             .Produces<DefaultResponse<TagDto>>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
@@ -41,6 +44,7 @@ public static class TagEndpoints
             .WithSummary("Create a new Tag");
 
         g.MapPut("/{id:guid}", Update)
+            .WithName("UpdateTag")
             .RequireIfMatch()
             .Produces<DefaultResponse<TagDto>>()
             .ProducesValidationProblem()
@@ -48,6 +52,7 @@ public static class TagEndpoints
             .WithSummary("Update an existing Tag");
 
         g.MapDelete("/{id:guid}", Delete)
+            .WithName("DeleteTag")
             .RequireIfMatch()
             .Produces(StatusCodes.Status204NoContent)
             .ProducesValidationProblem()

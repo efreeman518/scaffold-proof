@@ -12,6 +12,7 @@
           "Categories"
         ],
         "summary": "Search Categories with paging, filters, and sorts",
+        "operationId": "SearchCategories",
         "parameters": [
           {
             "name": "includeTotal",
@@ -76,6 +77,7 @@
           "Categories"
         ],
         "summary": "Get a single Category",
+        "operationId": "GetCategory",
         "parameters": [
           {
             "name": "id",
@@ -123,6 +125,7 @@
           "Categories"
         ],
         "summary": "Update an existing Category",
+        "operationId": "UpdateCategory",
         "parameters": [
           {
             "name": "id",
@@ -219,6 +222,7 @@
           "Categories"
         ],
         "summary": "Delete a Category",
+        "operationId": "DeleteCategory",
         "parameters": [
           {
             "name": "id",
@@ -290,6 +294,7 @@
           "Categories"
         ],
         "summary": "Create a new Category",
+        "operationId": "CreateCategory",
         "requestBody": {
           "content": {
             "application/json": {
@@ -366,6 +371,7 @@
           "Tags"
         ],
         "summary": "Search Tags with paging, filters, and sorts",
+        "operationId": "SearchTags",
         "parameters": [
           {
             "name": "includeTotal",
@@ -430,6 +436,7 @@
           "Tags"
         ],
         "summary": "Get a single Tag",
+        "operationId": "GetTag",
         "parameters": [
           {
             "name": "id",
@@ -477,6 +484,7 @@
           "Tags"
         ],
         "summary": "Update an existing Tag",
+        "operationId": "UpdateTag",
         "parameters": [
           {
             "name": "id",
@@ -573,6 +581,7 @@
           "Tags"
         ],
         "summary": "Delete a Tag",
+        "operationId": "DeleteTag",
         "parameters": [
           {
             "name": "id",
@@ -644,6 +653,7 @@
           "Tags"
         ],
         "summary": "Create a new Tag",
+        "operationId": "CreateTag",
         "requestBody": {
           "content": {
             "application/json": {
@@ -720,6 +730,7 @@
           "TaskItems"
         ],
         "summary": "Search TaskItems with keyset (cursor) paging, filters, and a sort mode",
+        "operationId": "SearchTaskItems",
         "requestBody": {
           "content": {
             "application/json": {
@@ -774,6 +785,7 @@
           "TaskItems"
         ],
         "summary": "Get a single TaskItem",
+        "operationId": "GetTaskItem",
         "parameters": [
           {
             "name": "id",
@@ -821,6 +833,7 @@
           "TaskItems"
         ],
         "summary": "Update an existing TaskItem",
+        "operationId": "UpdateTaskItem",
         "parameters": [
           {
             "name": "id",
@@ -917,6 +930,7 @@
           "TaskItems"
         ],
         "summary": "Partially update a TaskItem (JSON merge patch - omitted fields are unchanged)",
+        "operationId": "PatchTaskItem",
         "parameters": [
           {
             "name": "id",
@@ -1013,6 +1027,7 @@
           "TaskItems"
         ],
         "summary": "Delete a TaskItem",
+        "operationId": "DeleteTaskItem",
         "parameters": [
           {
             "name": "id",
@@ -1084,6 +1099,7 @@
           "TaskItems"
         ],
         "summary": "Create a new TaskItem (optional caller-supplied UUIDv7 id makes it idempotent)",
+        "operationId": "CreateTaskItem",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1160,6 +1176,7 @@
           "TaskItems"
         ],
         "summary": "Add a Comment to a TaskItem",
+        "operationId": "AddTaskItemComment",
         "parameters": [
           {
             "name": "id",
@@ -1257,6 +1274,7 @@
           "TaskItems"
         ],
         "summary": "Update a Comment on a TaskItem",
+        "operationId": "UpdateTaskItemComment",
         "parameters": [
           {
             "name": "id",
@@ -1362,6 +1380,7 @@
           "TaskItems"
         ],
         "summary": "Remove a Comment from a TaskItem",
+        "operationId": "RemoveTaskItemComment",
         "parameters": [
           {
             "name": "id",
@@ -1442,6 +1461,7 @@
           "TaskItems"
         ],
         "summary": "Add a ChecklistItem to a TaskItem",
+        "operationId": "AddTaskItemChecklistItem",
         "parameters": [
           {
             "name": "id",
@@ -1539,6 +1559,7 @@
           "TaskItems"
         ],
         "summary": "Update a ChecklistItem on a TaskItem",
+        "operationId": "UpdateTaskItemChecklistItem",
         "parameters": [
           {
             "name": "id",
@@ -1644,6 +1665,7 @@
           "TaskItems"
         ],
         "summary": "Remove a ChecklistItem from a TaskItem",
+        "operationId": "RemoveTaskItemChecklistItem",
         "parameters": [
           {
             "name": "id",
@@ -1724,6 +1746,7 @@
           "TaskItems"
         ],
         "summary": "Associate a Tag with a TaskItem",
+        "operationId": "AssociateTaskItemTag",
         "parameters": [
           {
             "name": "id",
@@ -1808,6 +1831,7 @@
           "TaskItems"
         ],
         "summary": "Remove a Tag association from a TaskItem",
+        "operationId": "RemoveTaskItemTag",
         "parameters": [
           {
             "name": "id",
@@ -2114,6 +2138,7 @@
           "Attachments"
         ],
         "summary": "Search Attachments with paging, filters, and sorts",
+        "operationId": "SearchAttachments",
         "parameters": [
           {
             "name": "includeTotal",
@@ -2178,6 +2203,7 @@
           "Attachments"
         ],
         "summary": "Get a single Attachment",
+        "operationId": "GetAttachment",
         "parameters": [
           {
             "name": "id",
@@ -2225,6 +2251,7 @@
           "Attachments"
         ],
         "summary": "Update an existing Attachment",
+        "operationId": "UpdateAttachment",
         "parameters": [
           {
             "name": "id",
@@ -2321,6 +2348,7 @@
           "Attachments"
         ],
         "summary": "Delete an Attachment",
+        "operationId": "DeleteAttachment",
         "parameters": [
           {
             "name": "id",
@@ -2392,6 +2420,7 @@
           "Attachments"
         ],
         "summary": "Create a new Attachment",
+        "operationId": "CreateAttachment",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2468,6 +2497,7 @@
           "Attachments"
         ],
         "summary": "Upload a file Attachment",
+        "operationId": "UploadAttachment",
         "requestBody": {
           "content": {
             "multipart/form-data": {
@@ -2585,6 +2615,7 @@
           "TaskItems"
         ],
         "summary": "Tenant task counts by status, overdue, and total in one round trip",
+        "operationId": "GetTaskItemSummary",
         "responses": {
           "200": {
             "description": "OK",
@@ -2613,6 +2644,7 @@
           "TaskItems"
         ],
         "summary": "Stream the tenant's tasks as newline-delimited JSON, resumable by afterId",
+        "operationId": "ExportTaskItems",
         "parameters": [
           {
             "name": "afterId",
@@ -2673,6 +2705,7 @@
           "TaskItems"
         ],
         "summary": "Full category and tag lists for pickers",
+        "operationId": "GetTaskMetadata",
         "responses": {
           "200": {
             "description": "OK",

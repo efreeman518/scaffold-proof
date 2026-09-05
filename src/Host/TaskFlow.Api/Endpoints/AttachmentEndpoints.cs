@@ -25,16 +25,19 @@ public static class AttachmentEndpoints
             .AddEndpointFilter<ETagEndpointFilter>();
 
         g.MapPost("/search", Search)
+            .WithName("SearchAttachments")
             .Produces<PagedResponse<AttachmentDto>>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .WithSummary("Search Attachments with paging, filters, and sorts");
 
         g.MapGet("/{id:guid}", GetById)
+            .WithName("GetAttachment")
             .Produces<DefaultResponse<AttachmentDto>>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .WithSummary("Get a single Attachment");
 
         g.MapPost("/", Create)
+            .WithName("CreateAttachment")
             .Produces<DefaultResponse<AttachmentDto>>(StatusCodes.Status201Created)
             .Produces<DefaultResponse<AttachmentDto>>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
@@ -42,6 +45,7 @@ public static class AttachmentEndpoints
             .WithSummary("Create a new Attachment");
 
         g.MapPost("/upload", Upload)
+            .WithName("UploadAttachment")
             .Produces<DefaultResponse<AttachmentDto>>(StatusCodes.Status201Created)
             .Produces<DefaultResponse<AttachmentDto>>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
@@ -50,6 +54,7 @@ public static class AttachmentEndpoints
             .DisableAntiforgery();
 
         g.MapPut("/{id:guid}", Update)
+            .WithName("UpdateAttachment")
             .RequireIfMatch()
             .Produces<DefaultResponse<AttachmentDto>>()
             .ProducesValidationProblem()
@@ -57,6 +62,7 @@ public static class AttachmentEndpoints
             .WithSummary("Update an existing Attachment");
 
         g.MapDelete("/{id:guid}", Delete)
+            .WithName("DeleteAttachment")
             .RequireIfMatch()
             .Produces(StatusCodes.Status204NoContent)
             .ProducesValidationProblem()
