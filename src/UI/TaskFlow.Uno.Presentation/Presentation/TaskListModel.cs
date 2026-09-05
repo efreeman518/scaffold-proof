@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.Messaging;
 using TaskFlow.Uno.Core.Business.Models;
+using TaskFlow.Uno.Core.Business.Notifications;
 using TaskFlow.Uno.Core.Business.Services;
 
 namespace TaskFlow.Uno.Presentation.Presentation;
@@ -7,8 +8,6 @@ namespace TaskFlow.Uno.Presentation.Presentation;
 /// <summary>Drives task list state, navigation, and commands for the Uno presentation layer.</summary>
 public partial record TaskListModel
 {
-    private const int DefaultPageSize = 10;
-
     /// <summary>Initializes task list model with required dependencies and default state.</summary>
     public TaskListModel(
         INavigator navigator,
@@ -23,17 +22,10 @@ public partial record TaskListModel
 
         Messenger.Register<TaskListModel, TaskItemsChangedMessage>(this, static (recipient, message) =>
         {
-            if (message.ResetToFirstPage)
-            {
-                _ = recipient.LoadPageAsync(1).AsTask();
-            }
-            else
-            {
-                _ = recipient.RefreshAsync().AsTask();
-            }
+            _ = recipient.Refresh().AsTask();
         });
 
-        _ = LoadPageAsync(1).AsTask();
+        _ = Refresh().AsTask();
     }
 
     private INavigator Navigator { get; }
@@ -41,26 +33,18 @@ public partial record TaskListModel
     private ICategoryApiService CategoryService { get; }
     private IMessenger Messenger { get; }
 
-    public IImmutableList<int> PageSizeOptions { get; } = [10, 20, 50];
+    // The last page's cursor, kept outside bindable state - nothing in the UI needs it directly,
+    // only LoadMore (walking it forward one page at a time, GR-18).
+    private string? _nextCursor;
 
-    // -- List + page-metadata state (individually bindable) --
+    // -- List + cursor state (individually bindable) --
     public IListState<TaskItemModel> Items => ListState<TaskItemModel>.Empty(this);
-    public IState<int> PageNumber => State<int>.Value(this, () => 1);
-    public IState<int> TotalCount => State<int>.Value(this, () => 0);
-    public IState<int> TotalPages => State<int>.Value(this, () => 1);
-    public IState<int> StartItemNumber => State<int>.Value(this, () => 0);
-    public IState<int> EndItemNumber => State<int>.Value(this, () => 0);
-    public IState<bool> HasPreviousPage => State<bool>.Value(this, () => false);
-    public IState<bool> HasNextPage => State<bool>.Value(this, () => false);
-    public IState<bool> ShowPager => State<bool>.Value(this, () => false);
+    public IState<bool> HasMore => State<bool>.Value(this, () => false);
     public IState<bool> HasItems => State<bool>.Value(this, () => false);
     public IState<bool> IsEmpty => State<bool>.Value(this, () => true);
-    public IListState<PageNumberOption> VisiblePageNumbers => ListState<PageNumberOption>.Empty(this);
+    public IState<bool> IsLoading => State<bool>.Value(this, () => false);
 
     // -- User-input state --
-    public IState<int> CurrentPage => State<int>.Value(this, () => 1);
-    public IState<int> SelectedPageSize => State<int>.Value(this, () => DefaultPageSize);
-    public IState<int> PageSize => State<int>.Value(this, () => DefaultPageSize);
     public IState<string> SearchTerm => State<string>.Value(this, () => string.Empty);
     public IState<string> AppliedSearchTerm => State<string>.Value(this, () => string.Empty);
     public IState<string> StatusFilter => State<string>.Value(this, () => string.Empty);
@@ -69,68 +53,50 @@ public partial record TaskListModel
     public IListFeed<CategoryModel> Categories => ListFeed.Async(async ct =>
         (IImmutableList<CategoryModel>)(await CategoryService.SearchAsync(isActive: true, ct: ct)).ToImmutableList());
 
-    /// <summary>Refreshes refresh from the backing service.</summary>
-    public async ValueTask RefreshAsync(CancellationToken ct = default)
+    /// <summary>Clears the current page and cursor, then loads the first cursor page for the active filters.</summary>
+    public async ValueTask Refresh(CancellationToken ct = default)
     {
-        var page = await CurrentPage;
-        await LoadPageAsync(page, ct);
+        var noCt = CancellationToken.None;
+        _nextCursor = null;
+        await Items.UpdateAsync(_ => ImmutableList<TaskItemModel>.Empty, noCt);
+        await LoadMore(ct);
     }
 
-    /// <summary>Loads load page from the backing service.</summary>
-    public async ValueTask LoadPageAsync(int targetPage, CancellationToken ct = default)
+    /// <summary>Appends the next cursor page. A no-op when there is nothing more to load.</summary>
+    public async ValueTask LoadMore(CancellationToken ct = default)
     {
-        var page = Math.Max(1, targetPage);
-        var size = await PageSize;
+        await IsLoading.UpdateAsync(_ => true, CancellationToken.None);
+
         var term = await AppliedSearchTerm;
         var status = await StatusFilter;
         var priority = await PriorityFilter;
 
-        System.Diagnostics.Debug.WriteLine($"[TaskList] LoadPageAsync requested page={page} size={size}");
-        Console.WriteLine($"[TaskList] LoadPageAsync requested page={page} size={size}");
-
-        // CancellationToken.None for the fetch so MVUX command cancellation
-        // (which fires when IsEnabled bindings flip during state updates)
-        // can't abort mid-request.
-        var result = await TaskItemService.SearchPageAsync(
+        // CancellationToken.None for the fetch so MVUX command cancellation (which fires when
+        // IsEnabled bindings flip during state updates) can't abort mid-request.
+        var page = await TaskItemService.SearchCursorAsync(
             searchTerm: term,
             status: status,
             priority: priority,
-            pageNumber: page,
-            pageSize: size,
+            cursor: _nextCursor,
             ct: CancellationToken.None);
 
-        System.Diagnostics.Debug.WriteLine($"[TaskList] Got result page={result.PageNumber} total={result.TotalCount} items={result.Items.Count}");
-        Console.WriteLine($"[TaskList] Got result page={result.PageNumber} total={result.TotalCount} items={result.Items.Count}");
-
-        // Update every bindable field explicitly. CancellationToken.None so
-        // state writes aren't aborted by command CT cancellation.
         var noCt = CancellationToken.None;
-        await Items.UpdateAsync(_ => result.Items.ToImmutableList(), noCt);
-        await CurrentPage.UpdateAsync(_ => result.PageNumber, noCt);
-        await PageNumber.UpdateAsync(_ => result.PageNumber, noCt);
-        await TotalCount.UpdateAsync(_ => result.TotalCount, noCt);
-        await TotalPages.UpdateAsync(_ => result.TotalPages, noCt);
-        await StartItemNumber.UpdateAsync(_ => result.StartItemNumber, noCt);
-        await EndItemNumber.UpdateAsync(_ => result.EndItemNumber, noCt);
-        await HasPreviousPage.UpdateAsync(_ => result.HasPreviousPage, noCt);
-        await HasNextPage.UpdateAsync(_ => result.HasNextPage, noCt);
-        await ShowPager.UpdateAsync(_ => result.ShowPager, noCt);
-        await HasItems.UpdateAsync(_ => result.HasItems, noCt);
-        await IsEmpty.UpdateAsync(_ => result.IsEmpty, noCt);
-        await VisiblePageNumbers.UpdateAsync(
-            _ => result.VisiblePageNumbers.Select(static value => new PageNumberOption(value)).ToImmutableList(),
-            noCt);
+        await Items.UpdateAsync(current => (current ?? ImmutableList<TaskItemModel>.Empty).AddRange(page.Items), noCt);
+        _nextCursor = page.NextCursor;
+        await HasMore.UpdateAsync(_ => page.HasMore, noCt);
+
+        var itemCount = (await Items)?.Count ?? 0;
+        await HasItems.UpdateAsync(_ => itemCount > 0, noCt);
+        await IsEmpty.UpdateAsync(_ => itemCount == 0, noCt);
+        await IsLoading.UpdateAsync(_ => false, noCt);
     }
 
-    /// <summary>Handles search requests and returns a paged application response.</summary>
+    /// <summary>Handles search requests: applies the draft filters and reloads from the first page.</summary>
     public async ValueTask Search(CancellationToken ct)
     {
         var term = (await SearchTerm) ?? string.Empty;
-        var selectedSize = await SelectedPageSize;
-
         await AppliedSearchTerm.UpdateAsync(_ => term.Trim(), ct);
-        await PageSize.UpdateAsync(_ => NormalizePageSize(selectedSize), ct);
-        await LoadPageAsync(1, ct);
+        await Refresh(ct);
     }
 
     /// <summary>Opens open detail for editing or viewing.</summary>
@@ -141,7 +107,7 @@ public partial record TaskListModel
     public async ValueTask CreateNew(CancellationToken ct) =>
         await Navigator.NavigateRouteAsync(this, "TaskItem", cancellation: ct);
 
-    /// <summary>Converts the current value to ggle status.</summary>
+    /// <summary>Toggles a task's status and sends its Version as If-Match; a 412 reloads the row.</summary>
     public async ValueTask ToggleStatus(TaskItemModel item, CancellationToken ct)
     {
         var newStatus = item.Status switch
@@ -151,46 +117,17 @@ public partial record TaskListModel
             _ => item.Status
         };
 
-        await TaskItemService.UpdateAsync(item with { Status = newStatus }, ct);
-        await RefreshAsync(ct);
+        try
+        {
+            await TaskItemService.UpdateAsync(item with { Status = newStatus }, item.Version, ct);
+        }
+        catch (ProblemDetailsException ex) when (ex.StatusCode == 412)
+        {
+            // Notification already shown by ProblemDetailsDelegatingHandler; refresh so the row
+            // reflects what changed elsewhere instead of staying stale.
+        }
+
+        await Refresh(ct);
         Messenger.Send(new TaskItemsChangedMessage());
     }
-
-    /// <summary>Moves task list paging state to the requested page.</summary>
-    public async ValueTask PreviousPage(CancellationToken ct)
-    {
-        var current = await CurrentPage;
-        if (current <= 1) return;
-        await LoadPageAsync(current - 1, ct);
-    }
-
-    /// <summary>Moves task list paging state to the requested page.</summary>
-    public async ValueTask NextPage(CancellationToken ct)
-    {
-        var current = await CurrentPage;
-        var total = await TotalPages;
-        if (current >= total) return;
-        await LoadPageAsync(current + 1, ct);
-    }
-
-    /// <summary>Moves task list paging state to the requested page.</summary>
-    public async ValueTask FirstPage(CancellationToken ct) =>
-        await LoadPageAsync(1, ct);
-
-    /// <summary>Moves task list paging state to the requested page.</summary>
-    public async ValueTask LastPage(CancellationToken ct)
-    {
-        var total = await TotalPages;
-        await LoadPageAsync(total, ct);
-    }
-
-    /// <summary>Moves task list paging state to the requested page.</summary>
-    public async ValueTask GoToPage(int pageNumber, CancellationToken ct) =>
-        await LoadPageAsync(pageNumber, ct);
-
-    /// <summary>Normalizes page size so callers and persistence use consistent values.</summary>
-    private static int NormalizePageSize(int pageSize) => pageSize is 10 or 20 or 50 ? pageSize : DefaultPageSize;
 }
-
-/// <summary>Exposes a page number as an object so trimmed MVUX list bindings retain a real property.</summary>
-public sealed record PageNumberOption(int Value);

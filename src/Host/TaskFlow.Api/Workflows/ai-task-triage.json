@@ -69,6 +69,7 @@
         "method": "PATCH",
         "path": "/api/v1/task-items/{{$.params.taskId}}",
         "body": { "item": { "Priority": "$.context.triage.suggestedPriority" } },
+        "headers": { "If-Match": "*" },
         "idempotencyKey": "$.params.taskId + '-apply-priority'"
       },
       "edges": [
@@ -118,6 +119,7 @@
         "method": "PATCH",
         "path": "/api/v1/task-items/{{$.params.taskId}}",
         "body": { "item": { "Priority": "Medium" } },
+        "headers": { "If-Match": "*" },
         "idempotencyKey": "$.params.taskId + '-revert-priority'"
       }
     },

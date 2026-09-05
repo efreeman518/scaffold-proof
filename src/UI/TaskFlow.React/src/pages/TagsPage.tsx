@@ -16,9 +16,9 @@ import {
 } from '@mui/material'
 import { Edit, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { taskFlowApi } from '../api/client'
+import { isPreconditionFailed, taskFlowApi } from '../api/client'
 import { queryKeys } from '../api/queryKeys'
-import type { Tag } from '../api/types'
+import type { TagDto } from '../api/models'
 import { useNotifications } from '../app/notificationContext'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { PageHeader } from '../components/PageHeader'
@@ -30,22 +30,31 @@ const defaultColors = ['#0ea5e9', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#
 export function TagsPage() {
   const queryClient = useQueryClient()
   const { showNotification } = useNotifications()
-  const [editing, setEditing] = useState<Tag>(() => emptyTag())
-  const [deleteTarget, setDeleteTarget] = useState<Tag | null>(null)
+  const [editing, setEditing] = useState<TagDto>(() => emptyTag())
+  const [deleteTarget, setDeleteTarget] = useState<TagDto | null>(null)
 
-  const tagsQuery = useQuery({
-    queryKey: queryKeys.tags(),
-    queryFn: ({ signal }) => taskFlowApi.searchTags({}, 1, 500, signal),
+  // Full list, not a search page: /task-metadata is uncapped by the [1,100] search PageSize clamp
+  // (up to PageSizeLimits.MetadataMax), which a PageSize=500 search would now reject.
+  const metadataQuery = useQuery({
+    queryKey: queryKeys.metadata,
+    queryFn: ({ signal }) => taskFlowApi.getTaskMetadata(signal),
   })
 
   const saveMutation = useMutation({
-    mutationFn: (tag: Tag) => (tag.id ? taskFlowApi.updateTag(tag) : taskFlowApi.createTag(tag)),
+    mutationFn: (tag: TagDto) => (tag.id ? taskFlowApi.updateTag(tag) : taskFlowApi.createTag(tag)),
     onSuccess: async () => {
       showNotification(editing.id ? 'Tag saved.' : 'Tag created.', 'success')
       setEditing(emptyTag())
-      await queryClient.invalidateQueries({ queryKey: ['tags'] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.metadata })
     },
-    onError: (error) => showNotification(error instanceof Error ? error.message : 'Tag save failed.', 'error'),
+    onError: (error) => {
+      if (isPreconditionFailed(error)) {
+        showNotification('Tag changed elsewhere, reloading.', 'warning')
+        void queryClient.invalidateQueries({ queryKey: queryKeys.metadata })
+        return
+      }
+      showNotification(error instanceof Error ? error.message : 'Tag save failed.', 'error')
+    },
   })
 
   const deleteMutation = useMutation({
@@ -53,9 +62,17 @@ export function TagsPage() {
     onSuccess: async () => {
       showNotification('Tag deleted.', 'success')
       setDeleteTarget(null)
-      await queryClient.invalidateQueries({ queryKey: ['tags'] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.metadata })
     },
-    onError: (error) => showNotification(error instanceof Error ? error.message : 'Tag delete failed.', 'error'),
+    onError: (error) => {
+      setDeleteTarget(null)
+      if (isPreconditionFailed(error)) {
+        showNotification('Tag changed elsewhere, reloading.', 'warning')
+        void queryClient.invalidateQueries({ queryKey: queryKeys.metadata })
+        return
+      }
+      showNotification(error instanceof Error ? error.message : 'Tag delete failed.', 'error')
+    },
   })
 
   /** Renders save tag page helper UI and keeps form or display state consistent. */
@@ -67,7 +84,7 @@ export function TagsPage() {
     saveMutation.mutate({ ...editing, color: editing.color || defaultColors[0], name: editing.name.trim() })
   }
 
-  const tags = tagsQuery.data?.items ?? []
+  const tags = metadataQuery.data?.tags ?? []
 
   return (
     <>
@@ -82,8 +99,10 @@ export function TagsPage() {
 
       <Box sx={{ display: 'grid', gap: 2.5, gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) 340px' } }}>
         <Stack spacing={2}>
-          {tagsQuery.isLoading ? <LoadingState label="Loading tags" /> : null}
-          {tagsQuery.isError ? <ErrorState error={tagsQuery.error} onRetry={() => void tagsQuery.refetch()} /> : null}
+          {metadataQuery.isLoading ? <LoadingState label="Loading tags" /> : null}
+          {metadataQuery.isError ? (
+            <ErrorState error={metadataQuery.error} onRetry={() => void metadataQuery.refetch()} />
+          ) : null}
 
           {tags.length > 0 ? (
             <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
@@ -186,7 +205,7 @@ export function TagsPage() {
       <ConfirmDialog
         message={`Delete '${deleteTarget?.name ?? 'this tag'}'? This cannot be undone.`}
         onCancel={() => setDeleteTarget(null)}
-        onConfirm={() => deleteTarget?.id && deleteMutation.mutate(deleteTarget.id)}
+        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget)}
         open={deleteTarget !== null}
         title="Delete tag"
       />
@@ -195,7 +214,7 @@ export function TagsPage() {
 }
 
 /** Creates the default tag form state for add and edit flows. */
-function emptyTag(): Tag {
+function emptyTag(): TagDto {
   return {
     color: defaultColors[0],
     name: '',

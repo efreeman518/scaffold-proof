@@ -1,4 +1,5 @@
 using EF.FlowEngine.Definition;
+using EF.FlowEngine.Definition.NodeConfigs;
 using EF.FlowEngine.Impl;
 using System.Text.Json;
 
@@ -127,6 +128,50 @@ public class WorkflowDefinitionValidityTests
         string[] expected = ["ai-task-triage.json", "ai-task-decomposer.json", "compliance-check.json"];
         foreach (var f in expected)
             Assert.IsTrue(File.Exists(Path.Combine(dir, f)), $"Missing workflow file: {f}");
+    }
+
+    /// <summary>
+    /// package request 18 (docs/plans/ef-package-requests.md): EF.FlowEngine 1.0.163's "integration" node
+    /// type (IntegrationNodeExecutor / IntegrationNodeConfig) has no way to set a per-node HTTP header,
+    /// unlike the "fetch" node type (FetchNodeConfig.Headers, forwarded via BuildHeaders). ai-task-triage.json's
+    /// PATCH nodes are "integration" nodes calling the TaskFlow API, which requires If-Match (428 without
+    /// it) - so today those PATCH calls cannot satisfy the API's concurrency contract, and
+    /// TriageWorkflow_AppliesSuggestedPriority_ThroughRealApi (Test.Integration) cannot pass until
+    /// IntegrationNodeConfig gains a Headers property. This test documents the gap by construction: it
+    /// fails (compile or assert) the moment a future EF.FlowEngine version adds Headers to
+    /// IntegrationNodeConfig, which is the cue to wire it up here and in TaskItemTools /
+    /// FunctionCategoryTrigger if similarly affected.
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Integration")]
+    public void IntegrationNodeConfig_HasNoHeadersProperty_PackageRequest18()
+    {
+        var headersProperty = typeof(IntegrationNodeConfig).GetProperty("Headers");
+
+        Assert.IsNull(headersProperty,
+            "IntegrationNodeConfig now has a Headers property - package request 18 is resolved. " +
+            "Wire ai-task-triage.json's PATCH nodes' \"headers\": {\"If-Match\": \"*\"} through " +
+            "IntegrationNodeExecutor and drop this guard.");
+    }
+
+    /// <summary>
+    /// The PATCH nodes already carry the forward-compatible "headers" config key (currently a silent
+    /// no-op per IntegrationNodeConfig_HasNoHeadersProperty_PackageRequest18 above) so the fix in package
+    /// request 18 goes live the moment it ships, with no further workflow JSON change needed.
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Integration")]
+    public void AiTaskTriage_PatchNodes_CarryForwardCompatibleIfMatchHeader()
+    {
+        using var document = JsonDocument.Parse(ReadWorkflowFile("ai-task-triage.json"));
+        var nodes = document.RootElement.GetProperty("nodes");
+
+        foreach (var nodeId in new[] { "n-apply-priority", "n-revert-priority" })
+        {
+            var config = nodes.GetProperty(nodeId).GetProperty("config");
+            Assert.IsTrue(config.TryGetProperty("headers", out var headers), $"{nodeId} is missing the headers config key.");
+            Assert.AreEqual("*", headers.GetProperty("If-Match").GetString());
+        }
     }
 
     /// <summary>Verifies read workflow file behavior and protects the expected test contract.</summary>

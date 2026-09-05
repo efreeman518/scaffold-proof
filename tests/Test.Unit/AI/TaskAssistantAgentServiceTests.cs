@@ -32,7 +32,8 @@ public sealed class TaskAssistantAgentServiceTests
         var tools = new TaskItemTools(
             NullLogger<TaskItemTools>.Instance,
             Mock.Of<ITaskItemService>(),
-            Mock.Of<ITaskFlowSearchService>());
+            Mock.Of<ITaskFlowSearchService>(),
+            Mock.Of<ITaskFlowReadService>());
 
         return new TaskAssistantAgentService(
             NullLogger<TaskAssistantAgentService>.Instance,

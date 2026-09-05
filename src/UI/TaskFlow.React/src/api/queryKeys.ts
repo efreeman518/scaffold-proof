@@ -1,7 +1,7 @@
 export const queryKeys = {
   dashboard: ['dashboard'] as const,
-  tasks: (filters: unknown, pageIndex: number, pageSize: number) => ['tasks', filters, pageIndex, pageSize] as const,
+  tasks: (filters: unknown) => ['tasks', filters] as const,
   task: (id: string | undefined) => ['task', id] as const,
-  categories: (filters?: unknown) => ['categories', filters ?? {}] as const,
-  tags: (filters?: unknown) => ['tags', filters ?? {}] as const,
+  // One key for both Categories and Tags: GET /task-metadata returns both lists in one call.
+  metadata: ['task-metadata'] as const,
 }

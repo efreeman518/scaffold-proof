@@ -88,7 +88,7 @@ public class AttachmentApiServiceTests
     [TestMethod]
     public async Task DeleteAsync_DoesNotThrow()
     {
-        await _service.DeleteAsync(Guid.NewGuid(), TestContext.CancellationToken);
+        await _service.DeleteAsync(Guid.NewGuid(), expectedVersion: null, TestContext.CancellationToken);
     }
 
     public TestContext TestContext { get; set; } = null!;

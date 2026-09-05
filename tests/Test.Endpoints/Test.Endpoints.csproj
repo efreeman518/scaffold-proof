@@ -17,6 +17,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Drift guard: compares this committed build artifact to the runtime document. -->
+    <None Include="..\..\src\Host\TaskFlow.Api\openapi-doc\TaskFlow.Api.json" Link="openapi-doc\TaskFlow.Api.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Test.Support\Test.Support.csproj" />
     <ProjectReference Include="..\..\src\Host\TaskFlow.Api\TaskFlow.Api.csproj" />
     <ProjectReference Include="..\..\src\Application\TaskFlow.Application.Models\TaskFlow.Application.Models.csproj" />

@@ -16,11 +16,11 @@ public class CategoryApiService(
         var response = await client.Api.Categories.Search.PostAsync(new()
         {
             Filter = new() { SearchTerm = searchTerm, IsActive = isActive, ParentCategoryId = parentCategoryId },
-            PageNumber = 1,
+            PageIndex = 1,
             PageSize = 100
         }, cancellationToken: ct);
 
-        return response?.Items?.Select(MapToModel).ToList() ?? [];
+        return response?.Data?.Select(MapToModel).ToList() ?? [];
     }
 
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
@@ -41,26 +41,30 @@ public class CategoryApiService(
     }
 
     /// <summary>Updates existing data after validation and preserves domain invariants.</summary>
-    public async Task<CategoryModel> UpdateAsync(CategoryModel model, CancellationToken ct = default)
+    public async Task<CategoryModel> UpdateAsync(CategoryModel model, long? expectedVersion, CancellationToken ct = default)
     {
         var dto = MapToDto(model);
-        var result = await client.Api.Categories[model.Id!.Value].PutAsync(dto, cancellationToken: ct);
+        var result = await client.Api.Categories[model.Id!.Value].PutAsync(dto, IfMatch(expectedVersion), cancellationToken: ct);
         var updated = MapToModel(result!);
         await notifications.ShowSuccess($"Updated category \"{updated.Name}\".", ct: ct);
         return updated;
     }
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
-    public async Task DeleteAsync(Guid id, CancellationToken ct = default)
+    public async Task DeleteAsync(Guid id, long? expectedVersion, CancellationToken ct = default)
     {
-        await client.Api.Categories[id].DeleteAsync(cancellationToken: ct);
+        await client.Api.Categories[id].DeleteAsync(IfMatch(expectedVersion), cancellationToken: ct);
         await notifications.ShowSuccess("Category deleted.", ct: ct);
     }
+
+    /// <summary>Formats a Version as the If-Match header value; null means the caller trusts the current state ("*").</summary>
+    private static string IfMatch(long? expectedVersion) => expectedVersion?.ToString() ?? "*";
 
     /// <summary>Maps to model into the target contract used by callers.</summary>
     private static CategoryModel MapToModel(CategoryDto dto) => new()
     {
         Id = dto.Id,
+        Version = dto.Version,
         Name = dto.Name ?? string.Empty,
         Description = dto.Description,
         SortOrder = dto.SortOrder ?? 0,
@@ -72,6 +76,7 @@ public class CategoryApiService(
     private static CategoryDto MapToDto(CategoryModel model) => new()
     {
         Id = model.Id,
+        Version = model.Version,
         Name = model.Name,
         Description = model.Description,
         SortOrder = model.SortOrder,

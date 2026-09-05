@@ -4,6 +4,7 @@ using MudBlazor.Services;
 using Refit;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using TaskFlow.ApiClient;
 using TaskFlow.Blazor.Components;
 using TaskFlow.Blazor.Services;
 
@@ -50,6 +51,22 @@ var gatewayBaseUrl = builder.Configuration["Gateway:BaseUrl"]
 // No auth handler yet - gateway dev mode accepts unauthenticated requests.
 builder.Services
     .AddRefitGeneratedClient<ITaskFlowApiClient>(new RefitSettings
+    {
+        ContentSerializer = new SystemTextJsonContentSerializer(jsonOptions)
+    })
+    .ConfigureHttpClient(client =>
+    {
+        client.BaseAddress = new Uri(gatewayBaseUrl);
+        client.DefaultRequestHeaders.Add("Accept", "application/json");
+    })
+    .ConfigureAdditionalHttpMessageHandlers((handlers, _) => handlers.Clear())
+    .AddStandardResilienceHandler();
+
+// Attachment upload is a request shape (StreamPart) the Refit source generator cannot build (RF006),
+// so it lives on its own interface registered via the reflection-based AddRefitClient rather than
+// AddRefitGeneratedClient. Same gateway base address and handler pipeline as the generated client.
+builder.Services
+    .AddRefitClient<IAttachmentUploadClient>(new RefitSettings
     {
         ContentSerializer = new SystemTextJsonContentSerializer(jsonOptions)
     })

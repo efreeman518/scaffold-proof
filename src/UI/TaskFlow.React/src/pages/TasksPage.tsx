@@ -1,5 +1,5 @@
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Box,
   Button,
@@ -12,7 +12,6 @@ import {
   TableBody,
   TableCell,
   TableHead,
-  TablePagination,
   TableRow,
   TextField,
   Tooltip,
@@ -20,10 +19,10 @@ import {
 } from '@mui/material'
 import { CheckCircle2, Edit, Plus, Search, Trash2, XCircle } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { taskFlowApi } from '../api/client'
+import { isPreconditionFailed, taskFlowApi } from '../api/client'
 import { queryKeys } from '../api/queryKeys'
-import type { Priority, TaskItem, TaskItemSearchFilter, TaskItemStatus } from '../api/types'
-import { priorities, taskStatuses } from '../api/types'
+import type { Priority, TaskItemDto, TaskItemSearchFilter, TaskItemStatus } from '../api/models'
+import { priorities, taskStatuses } from '../api/models'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { PageHeader } from '../components/PageHeader'
 import { EmptyState, ErrorState, LoadingState } from '../components/StateViews'
@@ -53,9 +52,7 @@ export function TasksPage() {
   const { showNotification } = useNotifications()
   const [draftFilters, setDraftFilters] = useState(initialFilters)
   const [filters, setFilters] = useState(initialFilters)
-  const [page, setPage] = useState(0)
-  const [pageSize, setPageSize] = useState(10)
-  const [deleteTarget, setDeleteTarget] = useState<TaskItem | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<TaskItemDto | null>(null)
 
   const apiFilters = useMemo<TaskItemSearchFilter>(
     () => ({
@@ -67,23 +64,25 @@ export function TasksPage() {
     [filters],
   )
 
-  const tasksQuery = useQuery({
-    queryKey: queryKeys.tasks(apiFilters, page + 1, pageSize),
-    queryFn: ({ signal }) => taskFlowApi.searchTasks(apiFilters, page + 1, pageSize, signal),
+  const tasksQuery = useInfiniteQuery({
+    queryKey: queryKeys.tasks(apiFilters),
+    queryFn: ({ pageParam, signal }) => taskFlowApi.searchTasks({ filter: apiFilters, cursor: pageParam }, signal),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => (lastPage.hasMore ? (lastPage.nextCursor ?? undefined) : undefined),
   })
 
-  const categoriesQuery = useQuery({
-    queryKey: queryKeys.categories({ isActive: true }),
-    queryFn: ({ signal }) => taskFlowApi.searchCategories({ isActive: true }, 1, 200, signal),
+  const metadataQuery = useQuery({
+    queryKey: queryKeys.metadata,
+    queryFn: ({ signal }) => taskFlowApi.getTaskMetadata(signal),
   })
 
   const categoryNameById = useMemo(() => {
     const map = new Map<string, string>()
-    categoriesQuery.data?.items.forEach((category) => {
+    metadataQuery.data?.categories.forEach((category) => {
       if (category.id) map.set(category.id, category.name)
     })
     return map
-  }, [categoriesQuery.data])
+  }, [metadataQuery.data])
 
   const updateMutation = useMutation({
     mutationFn: taskFlowApi.updateTask,
@@ -92,7 +91,14 @@ export function TasksPage() {
       await queryClient.invalidateQueries({ queryKey: ['tasks'] })
       await queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
     },
-    onError: (error) => showNotification(error instanceof Error ? error.message : 'Task update failed.', 'error'),
+    onError: (error) => {
+      if (isPreconditionFailed(error)) {
+        showNotification('Task changed elsewhere, reloading.', 'warning')
+        void queryClient.invalidateQueries({ queryKey: ['tasks'] })
+        return
+      }
+      showNotification(error instanceof Error ? error.message : 'Task update failed.', 'error')
+    },
   })
 
   const deleteMutation = useMutation({
@@ -103,30 +109,36 @@ export function TasksPage() {
       await queryClient.invalidateQueries({ queryKey: ['tasks'] })
       await queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
     },
-    onError: (error) => showNotification(error instanceof Error ? error.message : 'Task delete failed.', 'error'),
+    onError: (error) => {
+      setDeleteTarget(null)
+      if (isPreconditionFailed(error)) {
+        showNotification('Task changed elsewhere, reloading.', 'warning')
+        void queryClient.invalidateQueries({ queryKey: ['tasks'] })
+        return
+      }
+      showNotification(error instanceof Error ? error.message : 'Task delete failed.', 'error')
+    },
   })
 
-  /** Applies draft filters to the task query and resets pagination. */
+  /** Applies draft filters to the task query. */
   function applyFilters() {
-    setPage(0)
     setFilters(draftFilters)
   }
 
-  /** Clears task filters and resets pagination to the first page. */
+  /** Clears task filters. */
   function clearFilters() {
     setDraftFilters(initialFilters)
     setFilters(initialFilters)
-    setPage(0)
   }
 
   /** Toggles task completion state and submits the update mutation. */
-  function toggleStatus(task: TaskItem) {
+  function toggleStatus(task: TaskItemDto) {
     const nextStatus: TaskItemStatus = task.status === 'Completed' ? 'Open' : 'Completed'
     updateMutation.mutate({ ...task, status: nextStatus })
   }
 
-  const categories = categoriesQuery.data?.items ?? []
-  const tasks = tasksQuery.data?.items ?? []
+  const categories = metadataQuery.data?.categories ?? []
+  const tasks = tasksQuery.data?.pages.flatMap((page) => page.data) ?? []
 
   return (
     <>
@@ -294,25 +306,24 @@ export function TasksPage() {
               ))}
             </TableBody>
           </Table>
-          <TablePagination
-            component="div"
-            count={tasksQuery.data?.total ?? 0}
-            onPageChange={(_, nextPage) => setPage(nextPage)}
-            onRowsPerPageChange={(event) => {
-              setPage(0)
-              setPageSize(Number(event.target.value))
-            }}
-            page={page}
-            rowsPerPage={pageSize}
-            rowsPerPageOptions={[10, 25, 50, 100]}
-          />
+          {tasksQuery.hasNextPage ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 1.5 }}>
+              <Button
+                disabled={tasksQuery.isFetchingNextPage}
+                onClick={() => void tasksQuery.fetchNextPage()}
+                variant="outlined"
+              >
+                Load more
+              </Button>
+            </Box>
+          ) : null}
         </Paper>
       ) : null}
 
       <ConfirmDialog
         message={`Delete '${deleteTarget?.title ?? 'this task'}'? This cannot be undone.`}
         onCancel={() => setDeleteTarget(null)}
-        onConfirm={() => deleteTarget?.id && deleteMutation.mutate(deleteTarget.id)}
+        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget)}
         open={deleteTarget !== null}
         title="Delete task"
       />

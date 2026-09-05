@@ -26,16 +26,19 @@ public static class TaskItemCqrsEndpoints
             .AddEndpointFilter<ETagEndpointFilter>();
 
         g.MapPost("/search", Search)
+            .WithName("SearchTaskItems")
             .Produces<CursorPage<TaskItemDto>>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .WithSummary("Search TaskItems with keyset (cursor) paging, filters, and a sort mode");
 
         g.MapGet("/{id:guid}", GetById)
+            .WithName("GetTaskItem")
             .Produces<DefaultResponse<TaskItemDto>>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .WithSummary("Get a single TaskItem");
 
         g.MapPost("/", Create)
+            .WithName("CreateTaskItem")
             .Produces<DefaultResponse<TaskItemDto>>(StatusCodes.Status201Created)
             .Produces<DefaultResponse<TaskItemDto>>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
@@ -43,6 +46,7 @@ public static class TaskItemCqrsEndpoints
             .WithSummary("Create a new TaskItem (optional caller-supplied UUIDv7 id makes it idempotent)");
 
         g.MapPut("/{id:guid}", Update)
+            .WithName("UpdateTaskItem")
             .RequireIfMatch()
             .Produces<DefaultResponse<TaskItemDto>>()
             .ProducesValidationProblem()
@@ -52,6 +56,7 @@ public static class TaskItemCqrsEndpoints
         // PATCH exists in both styles now; its absence here previously 404'd the AI triage workflow
         // whenever the app ran in CQRS mode.
         g.MapPatch("/{id:guid}", Patch)
+            .WithName("PatchTaskItem")
             .RequireIfMatch()
             .Produces<DefaultResponse<TaskItemDto>>()
             .ProducesValidationProblem()
@@ -59,6 +64,7 @@ public static class TaskItemCqrsEndpoints
             .WithSummary("Partially update a TaskItem (JSON merge patch - omitted fields are unchanged)");
 
         g.MapDelete("/{id:guid}", Delete)
+            .WithName("DeleteTaskItem")
             .RequireIfMatch()
             .Produces(StatusCodes.Status204NoContent)
             .ProducesValidationProblem()
@@ -69,6 +75,7 @@ public static class TaskItemCqrsEndpoints
         // (GR-15) - there are no standalone /comments, /checklist-items, or /task-item-tags write
         // routes. Reads for comments/checklist-items still live on their own query endpoints.
         g.MapPost("/{id:guid}/comments", AddComment)
+            .WithName("AddTaskItemComment")
             .Produces<DefaultResponse<CommentDto>>(StatusCodes.Status201Created)
             .Produces<DefaultResponse<CommentDto>>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
@@ -77,6 +84,7 @@ public static class TaskItemCqrsEndpoints
             .WithSummary("Add a Comment to a TaskItem");
 
         g.MapPut("/{id:guid}/comments/{commentId:guid}", UpdateComment)
+            .WithName("UpdateTaskItemComment")
             .RequireIfMatch()
             .Produces<DefaultResponse<CommentDto>>()
             .ProducesValidationProblem()
@@ -84,12 +92,14 @@ public static class TaskItemCqrsEndpoints
             .WithSummary("Update a Comment on a TaskItem");
 
         g.MapDelete("/{id:guid}/comments/{commentId:guid}", RemoveComment)
+            .WithName("RemoveTaskItemComment")
             .RequireIfMatch()
             .Produces(StatusCodes.Status204NoContent)
             .ProducesValidationProblem()
             .WithSummary("Remove a Comment from a TaskItem");
 
         g.MapPost("/{id:guid}/checklist-items", AddChecklistItem)
+            .WithName("AddTaskItemChecklistItem")
             .Produces<DefaultResponse<ChecklistItemDto>>(StatusCodes.Status201Created)
             .Produces<DefaultResponse<ChecklistItemDto>>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
@@ -98,6 +108,7 @@ public static class TaskItemCqrsEndpoints
             .WithSummary("Add a ChecklistItem to a TaskItem");
 
         g.MapPut("/{id:guid}/checklist-items/{checklistItemId:guid}", UpdateChecklistItem)
+            .WithName("UpdateTaskItemChecklistItem")
             .RequireIfMatch()
             .Produces<DefaultResponse<ChecklistItemDto>>()
             .ProducesValidationProblem()
@@ -105,12 +116,14 @@ public static class TaskItemCqrsEndpoints
             .WithSummary("Update a ChecklistItem on a TaskItem");
 
         g.MapDelete("/{id:guid}/checklist-items/{checklistItemId:guid}", RemoveChecklistItem)
+            .WithName("RemoveTaskItemChecklistItem")
             .RequireIfMatch()
             .Produces(StatusCodes.Status204NoContent)
             .ProducesValidationProblem()
             .WithSummary("Remove a ChecklistItem from a TaskItem");
 
         g.MapPost("/{id:guid}/tags/{tagId:guid}", AssociateTag)
+            .WithName("AssociateTaskItemTag")
             .Produces<DefaultResponse<TaskItemTagDto>>(StatusCodes.Status201Created)
             .Produces<DefaultResponse<TaskItemTagDto>>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
@@ -118,6 +131,7 @@ public static class TaskItemCqrsEndpoints
             .WithSummary("Associate a Tag with a TaskItem");
 
         g.MapDelete("/{id:guid}/tags/{tagId:guid}", RemoveTag)
+            .WithName("RemoveTaskItemTag")
             .RequireIfMatch()
             .Produces(StatusCodes.Status204NoContent)
             .ProducesValidationProblem()

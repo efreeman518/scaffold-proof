@@ -1,7 +1,8 @@
 import { Chip } from '@mui/material'
-import type { Priority, TaskItemStatus } from '../api/types'
+import type { Priority, TaskItemStatus } from '../api/models'
 
 const statusColor: Record<TaskItemStatus, 'default' | 'primary' | 'secondary' | 'success' | 'warning' | 'error'> = {
+  None: 'default',
   Open: 'primary',
   InProgress: 'warning',
   Blocked: 'error',
@@ -10,6 +11,7 @@ const statusColor: Record<TaskItemStatus, 'default' | 'primary' | 'secondary' | 
 }
 
 const priorityColor: Record<Priority, 'default' | 'primary' | 'secondary' | 'success' | 'warning' | 'error'> = {
+  None: 'default',
   Low: 'default',
   Medium: 'primary',
   High: 'warning',

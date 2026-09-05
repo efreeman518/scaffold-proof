@@ -5,21 +5,28 @@ namespace TaskFlow.Uno.Core.Business.Services;
 /// <summary>Coordinates dashboard application use cases with validation, tenant checks, repositories, and response shaping.</summary>
 public class DashboardService(ITaskItemApiService taskItemService) : IDashboardService
 {
-    /// <summary>Loads requested data and maps missing records to the expected response.</summary>
+    /// <summary>
+    /// One tenant-wide summary call for the tiles, plus one cursor page for the recent-activity list -
+    /// replaces the old "fetch every task, count client-side" pattern (SearchAsync no longer exists).
+    /// </summary>
     public async Task<DashboardSummary> GetSummaryAsync(CancellationToken ct = default)
     {
-        var allTasks = await taskItemService.SearchAsync(ct: ct);
+        var summary = await taskItemService.GetSummaryAsync(ct);
+        var recent = await taskItemService.SearchCursorAsync(sortMode: "ModifiedDesc", pageSize: 10, ct: ct);
 
         return new DashboardSummary
         {
-            TotalTasks = allTasks.Count,
-            OpenTasks = allTasks.Count(t => t.Status == "Open"),
-            InProgressTasks = allTasks.Count(t => t.Status == "InProgress"),
-            CompletedTasks = allTasks.Count(t => t.Status == "Completed"),
-            BlockedTasks = allTasks.Count(t => t.Status == "Blocked"),
-            CancelledTasks = allTasks.Count(t => t.Status == "Cancelled"),
-            OverdueTasks = allTasks.Count(t => t.IsOverdue),
-            RecentActivity = allTasks.Take(10).ToList()
+            TotalTasks = summary.Total,
+            OpenTasks = CountOf(summary, "Open"),
+            InProgressTasks = CountOf(summary, "InProgress"),
+            CompletedTasks = CountOf(summary, "Completed"),
+            BlockedTasks = CountOf(summary, "Blocked"),
+            CancelledTasks = CountOf(summary, "Cancelled"),
+            OverdueTasks = summary.Overdue,
+            RecentActivity = recent.Items
         };
     }
+
+    private static int CountOf(TaskItemSummaryModel summary, string status) =>
+        summary.ByStatus.TryGetValue(status, out var count) ? count : 0;
 }

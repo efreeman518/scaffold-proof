@@ -16,11 +16,11 @@ public class AttachmentApiService(
         var response = await client.Api.Attachments.Search.PostAsync(new()
         {
             Filter = new() { OwnerId = ownerId, OwnerType = ownerType },
-            PageNumber = 1,
+            PageIndex = 1,
             PageSize = 100
         }, cancellationToken: ct);
 
-        return response?.Items?.Select(MapToModel).ToList() ?? [];
+        return response?.Data?.Select(MapToModel).ToList() ?? [];
     }
 
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
@@ -41,16 +41,20 @@ public class AttachmentApiService(
     }
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
-    public async Task DeleteAsync(Guid id, CancellationToken ct = default)
+    public async Task DeleteAsync(Guid id, long? expectedVersion, CancellationToken ct = default)
     {
-        await client.Api.Attachments[id].DeleteAsync(cancellationToken: ct);
+        await client.Api.Attachments[id].DeleteAsync(IfMatch(expectedVersion), cancellationToken: ct);
         await notifications.ShowSuccess("Attachment deleted.", ct: ct);
     }
+
+    /// <summary>Formats a Version as the If-Match header value; null means the caller trusts the current state ("*").</summary>
+    private static string IfMatch(long? expectedVersion) => expectedVersion?.ToString() ?? "*";
 
     /// <summary>Maps to model into the target contract used by callers.</summary>
     private static AttachmentModel MapToModel(AttachmentDto dto) => new()
     {
         Id = dto.Id,
+        Version = dto.Version,
         FileName = dto.FileName ?? string.Empty,
         ContentType = dto.ContentType ?? string.Empty,
         FileSizeBytes = dto.FileSizeBytes ?? 0,

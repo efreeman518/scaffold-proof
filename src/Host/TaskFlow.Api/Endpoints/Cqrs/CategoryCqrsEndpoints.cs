@@ -25,16 +25,19 @@ public static class CategoryCqrsEndpoints
             .AddEndpointFilter<ETagEndpointFilter>();
 
         g.MapPost("/search", Search)
+            .WithName("SearchCategories")
             .Produces<PagedResponse<CategoryDto>>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .WithSummary("Search Categories with paging, filters, and sorts");
 
         g.MapGet("/{id:guid}", GetById)
+            .WithName("GetCategory")
             .Produces<DefaultResponse<CategoryDto>>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .WithSummary("Get a single Category");
 
         g.MapPost("/", Create)
+            .WithName("CreateCategory")
             .Produces<DefaultResponse<CategoryDto>>(StatusCodes.Status201Created)
             .Produces<DefaultResponse<CategoryDto>>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
@@ -42,6 +45,7 @@ public static class CategoryCqrsEndpoints
             .WithSummary("Create a new Category");
 
         g.MapPut("/{id:guid}", Update)
+            .WithName("UpdateCategory")
             .RequireIfMatch()
             .Produces<DefaultResponse<CategoryDto>>()
             .ProducesValidationProblem()
@@ -49,6 +53,7 @@ public static class CategoryCqrsEndpoints
             .WithSummary("Update an existing Category");
 
         g.MapDelete("/{id:guid}", Delete)
+            .WithName("DeleteCategory")
             .RequireIfMatch()
             .Produces(StatusCodes.Status204NoContent)
             .ProducesValidationProblem()

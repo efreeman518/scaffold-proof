@@ -41,6 +41,7 @@
     <Project Path="src/Host/Aspire/ServiceDefaults/ServiceDefaults.csproj" />
   </Folder>
   <Folder Name="/UI/">
+    <Project Path="src/UI/TaskFlow.ApiClient/TaskFlow.ApiClient.csproj" />
     <Project Path="src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj" />
     <Project Path="src/UI/TaskFlow.Uno.Core/TaskFlow.Uno.Core.csproj" />
     <Project Path="src/UI/TaskFlow.Uno.Presentation/TaskFlow.Uno.Presentation.csproj" />

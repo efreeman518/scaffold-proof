@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>TaskFlow.ApiClient</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Refit" />
+    <PackageReference Include="EF.Common.Contracts" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Application\TaskFlow.Application.Models\TaskFlow.Application.Models.csproj" />
+    <ProjectReference Include="..\..\Domain\TaskFlow.Domain.Shared\TaskFlow.Domain.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

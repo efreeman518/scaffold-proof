@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.Messaging;
 using TaskFlow.Uno.Core.Business.Models;
+using TaskFlow.Uno.Core.Business.Notifications;
 using TaskFlow.Uno.Core.Business.Services;
 
 namespace TaskFlow.Uno.Presentation.Presentation;
@@ -41,7 +42,14 @@ public partial record TagManagementModel(
         var editing = _editingTag;
         if (editing?.Id is null) return;
 
-        await TagService.UpdateAsync(editing, ct);
+        try
+        {
+            await TagService.UpdateAsync(editing, editing.Version, ct);
+        }
+        catch (ProblemDetailsException ex) when (ex.StatusCode == 412)
+        {
+            // Notification already shown by ProblemDetailsDelegatingHandler; refresh either way.
+        }
         _editingTag = null;
         await TagsVersion.UpdateAsync(version => version + 1, ct);
     }
@@ -50,7 +58,14 @@ public partial record TagManagementModel(
     public async ValueTask DeleteTag(TagModel tag, CancellationToken ct)
     {
         if (tag.Id is null) return;
-        await TagService.DeleteAsync(tag.Id.Value, ct);
+        try
+        {
+            await TagService.DeleteAsync(tag.Id.Value, tag.Version, ct);
+        }
+        catch (ProblemDetailsException ex) when (ex.StatusCode == 412)
+        {
+            // Notification already shown by ProblemDetailsDelegatingHandler; refresh either way.
+        }
         await TagsVersion.UpdateAsync(version => version + 1, ct);
     }
 

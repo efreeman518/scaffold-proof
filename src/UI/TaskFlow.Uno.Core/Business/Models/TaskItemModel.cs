@@ -4,6 +4,7 @@ namespace TaskFlow.Uno.Core.Business.Models;
 public record TaskItemModel
 {
     public Guid? Id { get; init; }
+    public long? Version { get; init; }
     public string Title { get; init; } = string.Empty;
     public string? Description { get; init; }
     public string Priority { get; init; } = "None";
