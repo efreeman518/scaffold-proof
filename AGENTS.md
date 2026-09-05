@@ -17,9 +17,11 @@ This file is the single source of maintainer-session instructions: CLI agents an
 |---|---|
 | Domain | `src/Domain/` |
 | Application | `src/Application/` |
-| Infrastructure | `src/Infrastructure/` (EF Core, AI, Storage, Repositories) |
+| Infrastructure | `src/Infrastructure/` (EF Core, AI, Storage, Repositories, `TaskFlow.Infrastructure.Caching` - FusionCache, `TaskFlow.Infrastructure.Messaging.RabbitMq` - RabbitMQ transport adapter, `TaskFlow.Infrastructure.Data.Migrations.{SqlServer,PostgreSql}` - per-provider migration assemblies) |
+| Packages | `src/Packages/EF.Messaging.RabbitMq` (portable RabbitMQ wrapper: connection multiplexer, topology, consumer host - no TaskFlow dependencies; candidate for the EF.* package feed) |
 | Hosts | `src/Host/` (Api, Gateway, Scheduler, Functions, DatabaseMigrator, Bootstrapper, Aspire, Uno WASM) |
-| Tests | `tests/` (15 projects; see REFERENCE-STATUS.md for verified counts) |
+| UI clients | `src/UI/TaskFlow.ApiClient` (Refitter-generated shared client for Blazor) alongside Blazor, React, Uno |
+| Tests | `tests/` (16 projects incl. `EF.Messaging.RabbitMq.Tests`; see REFERENCE-STATUS.md for verified counts) |
 
 ## Build and test
 
@@ -29,7 +31,11 @@ dotnet build src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj           # Uno builds sepa
 dotnet test TaskFlow.slnx --filter "TestCategory=Unit"         # fast lane
 dotnet test TaskFlow.slnx --filter "TestCategory=Architecture|TestCategory=Endpoint"
 dotnet test TaskFlow.slnx --no-build -m:1                     # unfiltered serial acceptance; full-stack projects are resource-heavy
-# E2E/Integration need a container runtime (Podman-backed Docker context verified)
+# Dual EF Core provider: TASKFLOW_DB_PROVIDER=SqlServer|PostgreSql selects the runtime provider (default SqlServer)
+# TASKFLOW_TEST_DB_PROVIDER=SqlServer|PostgreSql selects the container-backed test lane (default SqlServer); rerun Integration/E2E/FlowEngine-integration with both values
+# TASKFLOW_MESSAGING_PROVIDER=ServiceBus|RabbitMq selects the messaging transport (default ServiceBus); RabbitMq needs no code change, only config
+# E2E/Integration/RabbitMq-container tests need a container runtime. This machine runs Podman, and Podman WSL2 does not forward container ports to localhost:
+#   TESTCONTAINERS_HOST_OVERRIDE=<podman machine ip>       # run-scoped only, changes on reboot, never commit
 dotnet run --project src/Host/Aspire/AppHost                   # full local stack
 ```
 
@@ -38,3 +44,9 @@ dotnet run --project src/Host/Aspire/AppHost                   # full local stac
 - Current verified build/test/vulnerability state: `.scaffold/REFERENCE-STATUS.md`
 - Detailed design: `docs/tech-design.html` (maintenance rules: `docs/TECH-DESIGN-MAINTENANCE.md`)
 - Deployment: `infra/` (Bicep), `.azure/deployment-plan.md`
+- Client regeneration (Refitter/openapi-typescript): `docs/plans/client-generation.md`
+
+## Environment facts (this machine, verified 2026-09-04)
+
+- Container runtime is Podman with a Docker-compatible context. Testcontainers-backed lanes (Test.Integration, Test.E2E, Test.Integration.FlowEngine, EF.Messaging.RabbitMq.Tests integration) work with a run-scoped `TESTCONTAINERS_HOST_OVERRIDE` set to the current podman machine IP - Podman WSL2 does not forward container ports to `localhost` from Windows.
+- Aspire/DCP does not work on this machine: it binds published container ports to `127.0.0.1` inside the Podman WSL VM (`podman port` shows `127.0.0.1:<port>`), unreachable from the Windows host, independent of the Testcontainers override above. `Test.Aspire` and the full-stack `Test.PlaywrightUI` lanes cannot run here until either Docker Desktop replaces Podman or the podman machine networking is reconfigured for port forwarding. `.scaffold/REFERENCE-STATUS.md` records this as the reason those lanes are unverified rather than failing.

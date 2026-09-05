@@ -44,6 +44,21 @@ dotnet run --project src/Host/Aspire/AppHost
 
 Use the Aspire dashboard to discover the Gateway, API, and Blazor URLs; ports are allocated per run. See [AI Demos](#ai-demos-azure-ai-foundry-and-foundry-local) for AI-specific run modes.
 
+### Providers and container runtime
+
+```powershell
+$env:TASKFLOW_DB_PROVIDER = "PostgreSql"       # runtime DB provider: SqlServer (default) | PostgreSql
+$env:TASKFLOW_TEST_DB_PROVIDER = "PostgreSql"  # container-backed test lanes: SqlServer (default) | PostgreSql
+$env:TASKFLOW_MESSAGING_PROVIDER = "RabbitMq"  # messaging transport: ServiceBus (default) | RabbitMq
+dotnet test tests/Test.Integration/Test.Integration.csproj
+```
+
+Container-backed lanes (`Test.Integration`, `Test.E2E`, `Test.Integration.FlowEngine`, `EF.Messaging.RabbitMq.Tests` integration) need a container runtime. On a Podman WSL2 setup, container ports do not forward to `localhost` from Windows: set a run-scoped `TESTCONTAINERS_HOST_OVERRIDE=<podman machine ip>` before running those lanes; never commit the value, it changes on reboot.
+
+Aspire (`dotnet run --project src/Host/Aspire/AppHost`) and the full-stack Playwright lane additionally need the AppHost's DCP to bind published container ports reachable from Windows. Podman WSL2 binds them to `127.0.0.1` inside the VM instead of the host, independent of the override above; use Docker Desktop or a podman machine networking change to run those two lanes.
+
+Generated API clients (Blazor Refit, React `openapi-typescript`) regenerate per [`docs/plans/client-generation.md`](docs/plans/client-generation.md).
+
 ### Authentication
 
 The reference app runs with `AuthMode: Scaffold`. The API supplies a fixed authenticated scaffold principal, UI heads do not require or show a login, and anonymous `GET /auth/mode` reports the public mode without exposing provider configuration. This is the executable scaffold proof, not a production security boundary.
