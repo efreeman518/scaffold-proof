@@ -16,6 +16,7 @@ import {
 import { ListChecks, Plus } from 'lucide-react'
 import { taskFlowApi } from '../api/client'
 import { queryKeys } from '../api/queryKeys'
+import type { TaskItemStatus } from '../api/models'
 import { PageHeader } from '../components/PageHeader'
 import { ErrorState, LoadingState } from '../components/StateViews'
 import { PriorityChip, StatusChip } from '../components/TaskChips'
@@ -26,20 +27,20 @@ export function DashboardPage() {
   const dashboardQuery = useQuery({
     queryKey: queryKeys.dashboard,
     queryFn: async ({ signal }) => {
-      const [recent, total, open, inProgress, completed, blocked] = await Promise.all([
-        taskFlowApi.searchTasks({}, 1, 8, signal),
-        taskFlowApi.searchTasks({}, 1, 1, signal),
-        taskFlowApi.searchTasks({ status: 'Open' }, 1, 1, signal),
-        taskFlowApi.searchTasks({ status: 'InProgress' }, 1, 1, signal),
-        taskFlowApi.searchTasks({ status: 'Completed' }, 1, 1, signal),
-        taskFlowApi.searchTasks({ status: 'Blocked' }, 1, 1, signal),
+      // One tenant-wide summary for the tiles, one cursor page for the recent-tasks preview -
+      // replaces five separate offset searches (a full page fetch plus four per-status count probes).
+      const [summary, recent] = await Promise.all([
+        taskFlowApi.getTaskSummary(signal),
+        taskFlowApi.searchTasks({ sortMode: 'ModifiedDesc', pageSize: 8 }, signal),
       ])
 
-      return { blocked, completed, inProgress, open, recent, total }
+      return { summary, recent }
     },
   })
 
   const data = dashboardQuery.data
+  const countOf = (status: TaskItemStatus) =>
+    data?.summary.byStatus.find((entry) => entry.status === status)?.count ?? 0
 
   return (
     <>
@@ -75,11 +76,11 @@ export function DashboardPage() {
               },
             }}
           >
-            <Metric label="Total" value={data.total.total} />
-            <Metric label="Open" tone="info" value={data.open.total} />
-            <Metric label="In Progress" tone="warning" value={data.inProgress.total} />
-            <Metric label="Blocked" tone="error" value={data.blocked.total} />
-            <Metric label="Completed" tone="success" value={data.completed.total} />
+            <Metric label="Total" value={data.summary.total} />
+            <Metric label="Open" tone="info" value={countOf('Open')} />
+            <Metric label="In Progress" tone="warning" value={countOf('InProgress')} />
+            <Metric label="Blocked" tone="error" value={countOf('Blocked')} />
+            <Metric label="Completed" tone="success" value={countOf('Completed')} />
           </Box>
 
           <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
@@ -99,7 +100,7 @@ export function DashboardPage() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {data.recent.items.map((task) => (
+                {data.recent.data.map((task) => (
                   <TableRow
                     hover
                     key={task.id ?? task.title}
@@ -124,7 +125,7 @@ export function DashboardPage() {
                     <TableCell>{formatDate(task.dueDate)}</TableCell>
                   </TableRow>
                 ))}
-                {data.recent.items.length === 0 ? (
+                {data.recent.data.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={4}>
                       <Typography color="text.secondary" sx={{ py: 4, textAlign: 'center' }}>
