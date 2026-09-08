@@ -28,10 +28,10 @@ public static partial class RegisterServices
         AddRequestContext(services);
         AddDatabaseServices(services, config);
         services.AddTaskFlowCaching(config);
-        AddTableStorageServices(services, config);
-        AddBlobStorageServices(services, config);
+        AddAuditServices(services, config);
+        AddStorageServices(services, config);
         AddMessagingServices(services, config);
-        AddCosmosDbServices(services, config);
+        AddReadModelServices(services, config);
         AddHealthChecks(services, config);
         AddStartupTasks(services);
 

@@ -41,10 +41,6 @@ internal static partial class LogMessages
     [LoggerMessage(EventId = LogEventIds.SchedulerBase + 8, Level = LogLevel.Warning, Message = "Outbox dispatch to {Destination} failed for {Count} message(s); rows released for retry")]
     public static partial void OutboxDispatchFailed(this ILogger logger, string destination, int count, Exception exception);
 
-    /// <summary>Logs that blob-delete work was claimed with no blob storage configured.</summary>
-    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 9, Level = LogLevel.Warning, Message = "Blob storage is not configured: {Count} blob-delete row(s) left pending")]
-    public static partial void BlobDeleteWorkerDisabled(this ILogger logger, int count);
-
     /// <summary>Logs a blob delete that failed and will be retried.</summary>
     [LoggerMessage(EventId = LogEventIds.SchedulerBase + 10, Level = LogLevel.Warning, Message = "Deferred delete of {Container}/{BlobName} failed; row released for retry")]
     public static partial void BlobDeleteFailed(this ILogger logger, string container, string blobName, Exception exception);

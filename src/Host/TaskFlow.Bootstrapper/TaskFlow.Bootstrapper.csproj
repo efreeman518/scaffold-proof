@@ -14,6 +14,10 @@
 
   <ItemGroup>
     <PackageReference Include="Azure.Data.Tables" />
+    <!-- D-043: Data Protection key-ring persistence, lifted here from TaskFlow.Api so Gateway/Scheduler can share it. -->
+    <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" />
+    <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Keys" />
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection.StackExchangeRedis" />
     <PackageReference Include="EF.Host" />
     <PackageReference Include="EF.Common" />
     <PackageReference Include="EF.Data" />

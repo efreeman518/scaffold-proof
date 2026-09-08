@@ -15,10 +15,6 @@ internal static partial class LogMessages
     [LoggerMessage(EventId = LogEventIds.ApiBase + 1, Level = LogLevel.Information, Message = "{AppName} {Environment} - Startup.")]
     public static partial void Startup(this ILogger logger, string appName, string environment);
 
-    /// <summary>Logs that Data Protection is being configured.</summary>
-    [LoggerMessage(EventId = LogEventIds.ApiBase + 2, Level = LogLevel.Information, Message = "{AppName} {Environment} - Configure Data Protection.")]
-    public static partial void ConfigureDataProtection(this ILogger logger, string appName, string environment);
-
     /// <summary>Logs an unexpected host termination.</summary>
     [LoggerMessage(EventId = LogEventIds.ApiBase + 3, Level = LogLevel.Critical, Message = "{AppName} {Environment} - Host terminated unexpectedly.")]
     public static partial void HostTerminated(this ILogger logger, Exception exception, string appName, string environment);

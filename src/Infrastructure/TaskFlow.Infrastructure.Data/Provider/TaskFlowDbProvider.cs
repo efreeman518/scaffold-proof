@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Npgsql;
+using TaskFlow.Application.Contracts.Configuration;
 
 namespace TaskFlow.Infrastructure.Data.Provider;
 
@@ -22,13 +24,14 @@ public sealed record TaskFlowProviderOptions(
     int MaxRetryCount = 5,
     int MaxRetryDelaySeconds = 30,
     int? CommandTimeoutSeconds = null,
-    int CompatibilityLevel = TaskFlowProviderOptions.DefaultCompatibilityLevel)
+    int CompatibilityLevel = TaskFlowProviderOptions.DefaultCompatibilityLevel,
+    PoolerMode PoolerMode = PoolerMode.None)
 {
     public const int DefaultCompatibilityLevel = 170;
 
     /// <summary>
-    /// Resolves provider, retry, and SQL Server compatibility settings from configuration
-    /// (<c>Database:Retry:*</c>, <c>Database:SqlServer:CompatibilityLevel</c>).
+    /// Resolves provider, retry, SQL Server compatibility, and PostgreSQL pooler settings from configuration
+    /// (<c>Database:Retry:*</c>, <c>Database:SqlServer:CompatibilityLevel</c>, <c>Database:PostgreSql:PoolerMode</c>).
     /// </summary>
     public static TaskFlowProviderOptions FromConfiguration(
         IConfiguration configuration,
@@ -44,7 +47,36 @@ public sealed record TaskFlowProviderOptions(
             configuration.GetValue<int?>("Database:Retry:MaxRetryCount") ?? 5,
             configuration.GetValue<int?>("Database:Retry:MaxRetryDelaySeconds") ?? 30,
             commandTimeoutSeconds,
-            configuration.GetValue<int?>("Database:SqlServer:CompatibilityLevel") ?? DefaultCompatibilityLevel);
+            configuration.GetValue<int?>("Database:SqlServer:CompatibilityLevel") ?? DefaultCompatibilityLevel,
+            PoolerModeSelector.Resolve(configuration));
+}
+
+/// <summary>PgBouncer pooling mode the PostgreSQL connection string must cooperate with (D-045).</summary>
+public enum PoolerMode
+{
+    /// <summary>No pooler in front of PostgreSQL (Azure default; Portable's compose profile opts in explicitly).</summary>
+    None,
+
+    /// <summary>PgBouncer transaction-mode pooling: connections are multiplexed across backend sessions.</summary>
+    Transaction
+}
+
+/// <summary>Resolves <see cref="Provider.PoolerMode"/> from <c>Database:PostgreSql:PoolerMode</c>; no env override (D-045).</summary>
+public static class PoolerModeSelector
+{
+    public const string ConfigurationKey = "Database:PostgreSql:PoolerMode";
+
+    public static PoolerMode Resolve(IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        var value = configuration[ConfigurationKey];
+        return string.IsNullOrWhiteSpace(value)
+            ? PoolerMode.None
+            : Enum.TryParse<PoolerMode>(value, ignoreCase: true, out var mode)
+                ? mode
+                : throw new ArgumentException(
+                    $"Unknown pooler mode '{value}'. Allowed values: {string.Join(", ", Enum.GetNames<PoolerMode>())}.");
+    }
 }
 
 /// <summary>Resolves the active provider: env <c>TASKFLOW_DB_PROVIDER</c> wins over <c>Database:Provider</c>, default SqlServer.</summary>
@@ -55,11 +87,22 @@ public static class TaskFlowDbProviderSelector
     public const string SqlServerMigrationsAssembly = "TaskFlow.Infrastructure.Data.Migrations.SqlServer";
     public const string PostgreSqlMigrationsAssembly = "TaskFlow.Infrastructure.Data.Migrations.PostgreSql";
 
-    public static TaskFlowDbProvider Resolve(IConfiguration configuration) =>
-        Parse(Environment.GetEnvironmentVariable(EnvironmentVariable) ?? configuration[ConfigurationKey]);
+    public static TaskFlowDbProvider Resolve(IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        var value = Environment.GetEnvironmentVariable(EnvironmentVariable) ?? configuration[ConfigurationKey];
+        return string.IsNullOrWhiteSpace(value)
+            ? LaneDefault(HostingLaneSelector.Resolve(configuration))
+            : Parse(value);
+    }
 
-    public static TaskFlowDbProvider ResolveFromEnvironment() =>
-        Parse(Environment.GetEnvironmentVariable(EnvironmentVariable));
+    public static TaskFlowDbProvider ResolveFromEnvironment()
+    {
+        var value = Environment.GetEnvironmentVariable(EnvironmentVariable);
+        return string.IsNullOrWhiteSpace(value)
+            ? LaneDefault(HostingLaneSelector.ResolveFromEnvironment())
+            : Parse(value);
+    }
 
     public static string MigrationsAssembly(TaskFlowDbProvider provider) => provider switch
     {
@@ -68,10 +111,15 @@ public static class TaskFlowDbProviderSelector
         _ => throw new ArgumentOutOfRangeException(nameof(provider), provider, null)
     };
 
-    private static TaskFlowDbProvider Parse(string? value) =>
-        string.IsNullOrWhiteSpace(value)
-            ? TaskFlowDbProvider.SqlServer
-            : Enum.Parse<TaskFlowDbProvider>(value, ignoreCase: true);
+    // D-035: Portable lane defaults to PostgreSQL; Azure lane keeps today's SQL Server default.
+    private static TaskFlowDbProvider LaneDefault(HostingLane lane) =>
+        lane == HostingLane.Portable ? TaskFlowDbProvider.PostgreSql : TaskFlowDbProvider.SqlServer;
+
+    private static TaskFlowDbProvider Parse(string value) =>
+        Enum.TryParse<TaskFlowDbProvider>(value, ignoreCase: true, out var provider)
+            ? provider
+            : throw new ArgumentException(
+                $"Unknown database provider '{value}'. Allowed values: {string.Join(", ", Enum.GetNames<TaskFlowDbProvider>())}.");
 }
 
 /// <summary>
@@ -123,7 +171,10 @@ public static class TaskFlowDbProviderExtensions
                 break;
 
             case TaskFlowDbProvider.PostgreSql:
-                options.UseNpgsql(providerOptions.ConnectionString, npgsql =>
+                var npgsqlConnectionString = providerOptions.PoolerMode == PoolerMode.Transaction
+                    ? AppendTransactionPoolerFlags(providerOptions.ConnectionString)
+                    : providerOptions.ConnectionString;
+                options.UseNpgsql(npgsqlConnectionString, npgsql =>
                 {
                     npgsql.EnableRetryOnFailure(providerOptions.MaxRetryCount, retryDelay, errorCodesToAdd: null);
                     npgsql.MigrationsHistoryTable(providerOptions.MigrationsHistoryTable, providerOptions.MigrationsHistorySchema);
@@ -138,4 +189,14 @@ public static class TaskFlowDbProviderExtensions
 
         return options;
     }
+
+    // D-045: transaction-mode PgBouncer multiplexes one backend connection across many client sessions, so
+    // Npgsql must not reset session state on return to the pool or rely on server-side prepared statements
+    // surviving between calls - both assume a stable backend connection that transaction pooling breaks.
+    private static string AppendTransactionPoolerFlags(string connectionString) =>
+        new NpgsqlConnectionStringBuilder(connectionString)
+        {
+            NoResetOnClose = true,
+            MaxAutoPrepare = 0
+        }.ConnectionString;
 }

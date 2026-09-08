@@ -32,4 +32,12 @@ internal static partial class LogMessages
     /// <summary>Logs that FlowEngineIfMatchOverrideHandler applied the D-032 trusted-automation If-Match override.</summary>
     [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 6, Level = LogLevel.Information, Message = "FlowEngine If-Match override applied: {Method} {Route}")]
     public static partial void FlowEngineIfMatchOverrideApplied(this ILogger logger, string method, string route);
+
+    /// <summary>Logs which Data Protection key-ring persistence backend was configured.</summary>
+    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 7, Level = LogLevel.Information, Message = "{AppName} {Environment} - Configure Data Protection key-ring persistence: {Persistence}.")]
+    public static partial void ConfigureDataProtectionPersistence(this ILogger logger, string appName, string environment, string persistence);
+
+    /// <summary>Logs that no Data Protection key-ring persistence is configured (D-043).</summary>
+    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 8, Level = LogLevel.Warning, Message = "{AppName} {Environment} - No Data Protection key-ring persistence configured; DataProtectionCursorProtector-issued cursors will not survive a restart or reach other replicas.")]
+    public static partial void DataProtectionPersistenceNone(this ILogger logger, string appName, string environment);
 }

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using TaskFlow.Infrastructure.Data.Messaging;
 using TaskFlow.Infrastructure.Messaging.RabbitMq;
 
 namespace TaskFlow.Bootstrapper;
@@ -25,20 +26,28 @@ public static partial class RegisterServices
 
     /// <summary>
     /// Resolves the transport once for the process. The environment variable wins so a test lane or a container
-    /// can flip providers without editing configuration; an unrecognized value falls back to Service Bus.
+    /// can flip providers without editing configuration; when neither is set, the Portable lane defaults to
+    /// RabbitMQ and the Azure lane keeps today's Service Bus default (D-035).
     /// </summary>
     public static MessagingProvider ResolveMessagingProvider(IConfiguration config)
     {
         ArgumentNullException.ThrowIfNull(config);
-        var value = Environment.GetEnvironmentVariable(MessagingProviderEnvVar);
-        if (string.IsNullOrWhiteSpace(value)) value = config[MessagingProviderConfigKey];
+        var value = Environment.GetEnvironmentVariable(MessagingProviderEnvVar) ?? config[MessagingProviderConfigKey];
+        if (!string.IsNullOrWhiteSpace(value)) return ParseMessagingProvider(value);
 
-        return string.Equals(value, nameof(MessagingProvider.RabbitMq), StringComparison.OrdinalIgnoreCase)
+        return HostingLaneSelector.Resolve(config) == HostingLane.Portable
             ? MessagingProvider.RabbitMq
             : MessagingProvider.ServiceBus;
     }
 
+    private static MessagingProvider ParseMessagingProvider(string value) =>
+        Enum.TryParse<MessagingProvider>(value, ignoreCase: true, out var provider)
+            ? provider
+            : throw new ArgumentException(
+                $"Unknown messaging provider '{value}'. Allowed values: {string.Join(", ", Enum.GetNames<MessagingProvider>())}.");
+
     /// <summary>Registers the outbox transport for the selected provider. Consumers are hosted separately.</summary>
+    [ProviderSwitch(typeof(IIntegrationEventTransport))]
     private static void AddMessagingServices(IServiceCollection services, IConfiguration config)
     {
         if (ResolveMessagingProvider(config) == MessagingProvider.RabbitMq)

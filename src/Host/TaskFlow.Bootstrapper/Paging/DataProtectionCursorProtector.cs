@@ -13,12 +13,12 @@ namespace TaskFlow.Bootstrapper.Paging;
 /// for one tenant or one ordering is rejected instead of quietly returning another tenant's rows.
 ///
 /// Key-ring caveat: cursors survive process restarts and reach sibling replicas only when the key ring
-/// is persisted and shared - which production does through Blob + Key Vault (Program.cs
-/// ConfigureDataProtection). With the default in-memory ring (local dev, tests, an unconfigured
-/// deployment) an old cursor decrypts to garbage after a restart and is answered with 400, which is
-/// correct but surprising. The alternative is an HMAC over a configured "Paging:CursorKey"; it was not
-/// taken because production already has the shared ring and a second key to rotate is a second thing
-/// to get wrong.
+/// is persisted and shared - which production does through <see cref="RegisterServices.AddTaskFlowDataProtection"/>
+/// (Blob or Redis persistence, D-043). With the default in-memory ring (local dev, tests, or
+/// DataProtection:Persistence=None) an old cursor decrypts to garbage after a restart and is answered
+/// with 400, which is correct but surprising. The alternative is an HMAC over a configured
+/// "Paging:CursorKey"; it was not taken because production already has a shared ring and a second key
+/// to rotate is a second thing to get wrong.
 /// </summary>
 internal sealed class DataProtectionCursorProtector : ICursorProtector
 {
