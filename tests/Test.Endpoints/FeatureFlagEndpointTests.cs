@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Configuration;
 using TaskFlow.Application.Models;
@@ -95,6 +95,76 @@ public sealed class FeatureFlagEndpointTests
             $"/api/v1/task-views?tenantId={Guid.NewGuid()}", TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    /// <summary>
+    /// GR-19/GR-20: SemanticSearch gates one search mode, not the whole route. With the flag off a Semantic
+    /// request is 404 - the surface looks absent rather than forbidden.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [TestMethod]
+    public async Task Given_SemanticSearchFlagOff_When_SemanticSearch_Then_NotFound()
+    {
+        using var factory = new CustomApiFactory().WithWebHostBuilder(builder =>
+            builder.ConfigureAppConfiguration((_, config) =>
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["FeatureManagement:SemanticSearch"] = "false"
+                })));
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/api/v1/search/tasks?query=release&mode=Semantic&maxResults=10", TestContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    /// <summary>
+    /// The gate is per-mode: keyword search answers normally while SemanticSearch is off, so turning the flag
+    /// off cannot take the whole route down with it.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [TestMethod]
+    public async Task Given_SemanticSearchFlagOff_When_KeywordSearch_Then_StillAnswers()
+    {
+        using var factory = new CustomApiFactory().WithWebHostBuilder(builder =>
+            builder.ConfigureAppConfiguration((_, config) =>
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["FeatureManagement:SemanticSearch"] = "false"
+                })));
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/api/v1/search/tasks?query=release&mode=Keyword&maxResults=10", TestContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    /// <summary>
+    /// Flag on, Search:Provider=Sql: the request passes the gate and is answered by the prefix arm, which is
+    /// what the InMemory harness can run. The PgVector arm itself is covered in Test.Integration.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [TestMethod]
+    public async Task Given_SemanticSearchFlagOn_And_SqlSearchProvider_When_Search_Then_ReturnsPrefixResults()
+    {
+        using var factory = new CustomApiFactory().WithWebHostBuilder(builder =>
+            builder.ConfigureAppConfiguration((_, config) =>
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Search:Provider"] = "Sql",
+                    ["FeatureManagement:SemanticSearch"] = "true"
+                })));
+        using var client = factory.CreateClient();
+        var title = await SeedTaskAsync(client);
+
+        using var response = await client.GetAsync(
+            $"/api/v1/search/tasks?query={title}&mode=Semantic&maxResults=10", TestContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync(TestContext.CancellationToken);
+        StringAssert.Contains(body, title);
     }
 
     /// <summary>

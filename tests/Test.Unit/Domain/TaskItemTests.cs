@@ -42,6 +42,57 @@ public class TaskItemTests
         Assert.IsTrue(result.IsFailure);
     }
 
+    /// <summary>
+    /// D-040: the embedding pipeline's signal. Raised when the embeddable text really changed, and only then -
+    /// re-embedding on a priority edit would pay for a model call to write back the same vector.
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public void Given_TitleOrDescriptionChanged_When_Updated_Then_RaisesContentChangedOnce()
+    {
+        var task = TaskItem.Create(TenantId, "Original", "Original body").Value!;
+        task.ClearDomainEvents();
+
+        task.Update(title: "Renamed");
+        Assert.AreEqual(1, ContentChangedCount(task));
+
+        task.ClearDomainEvents();
+        task.Update(description: "Rewritten body");
+        Assert.AreEqual(1, ContentChangedCount(task));
+    }
+
+    /// <summary>Verifies that an update leaving the text untouched raises nothing for the embedding pipeline.</summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public void Given_NoTextChange_When_Updated_Then_RaisesNoContentChanged()
+    {
+        var task = TaskItem.Create(TenantId, "Original", "Original body").Value!;
+        task.ClearDomainEvents();
+
+        // Priority-only edit, and a title/description resubmitted with identical values.
+        task.Update(priority: Priority.Critical);
+        task.Update(title: "Original", description: "Original body");
+
+        Assert.AreEqual(0, ContentChangedCount(task));
+    }
+
+    /// <summary>Verifies that a rejected update raises no content-changed event.</summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public void Given_InvalidTitle_When_Updated_Then_RaisesNoContentChanged()
+    {
+        var task = TaskItem.Create(TenantId, "Original").Value!;
+        task.ClearDomainEvents();
+
+        var result = task.Update(title: "   ");
+
+        Assert.IsTrue(result.IsFailure);
+        Assert.AreEqual(0, ContentChangedCount(task));
+    }
+
+    private static int ContentChangedCount(TaskItem task) =>
+        task.DomainEvents.OfType<TaskFlow.Domain.Shared.Events.TaskItemContentChangedEvent>().Count();
+
     /// <summary>Verifies that given empty tenant ID, when task item created, then returns domain failure.</summary>
     [TestMethod]
     [TestCategory("Unit")]
