@@ -5,6 +5,7 @@ using TaskFlow.Application.Contracts.Configuration;
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Bootstrapper;
 using TaskFlow.Infrastructure.Storage;
+using TaskFlow.Infrastructure.Storage.S3;
 
 namespace Test.Unit.Hosting;
 
@@ -90,11 +91,22 @@ public class ProviderSwitchSelectorTests
     }
 
     [TestMethod]
-    public void AddStorageServices_S3_ThrowsNotSupported()
+    public void AddStorageServices_S3_RegistersS3ObjectStorageRepository()
     {
-        var config = Config((RegisterServices.StorageProviderConfigKey, "S3"));
-        var ex = InvokeDispatcher("AddStorageServices", config);
-        StringAssert.Contains(ex.Message, "P4");
+        var config = Config(
+            (RegisterServices.StorageProviderConfigKey, "S3"),
+            ("Storage:S3:ServiceUrl", "http://minio:9000"),
+            ("Storage:S3:PublicServiceUrl", "http://localhost:9000"));
+
+        var method = typeof(RegisterServices).GetMethod("AddStorageServices", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new MissingMethodException(nameof(RegisterServices), "AddStorageServices");
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        method.Invoke(null, [services, config]);
+
+        using var provider = services.BuildServiceProvider();
+        Assert.IsInstanceOfType<S3ObjectStorageRepository>(provider.GetRequiredService<IBlobStorageRepository>());
     }
 
     [TestMethod]

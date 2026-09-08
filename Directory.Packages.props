@@ -30,6 +30,8 @@
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.14.0" />
     <PackageVersion Include="Testcontainers.Azurite" Version="4.14.0" />
     <PackageVersion Include="Testcontainers.Redis" Version="4.14.0" />
+    <!-- D-037 Portable-lane object-storage arm test fixture; pinned to the same Testcontainers family version. -->
+    <PackageVersion Include="Testcontainers.Minio" Version="4.14.0" />
   </ItemGroup>
   <ItemGroup Label="EF.Packages.Enterprise (Private Feed)">
     <PackageVersion Include="EF.FilterBuilder" Version="1.0.163" />
@@ -187,6 +189,9 @@
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.29.2" />
     <PackageVersion Include="Microsoft.Extensions.Azure" Version="1.14.1" />
     <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.5.3" />
+  </ItemGroup>
+  <ItemGroup Label="AWS S3 (D-037 Portable-lane object-storage arm: MinIO locally/on the VPS, any S3-compatible provider in production)">
+    <PackageVersion Include="AWSSDK.S3" Version="4.0.102.5" />
   </ItemGroup>
   <ItemGroup Label="Azure Service Bus">
     <PackageVersion Include="Azure.Messaging.ServiceBus" Version="7.20.2" />

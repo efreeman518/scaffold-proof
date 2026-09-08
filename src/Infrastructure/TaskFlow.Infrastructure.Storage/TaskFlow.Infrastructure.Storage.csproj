@@ -8,6 +8,8 @@
     <PackageReference Include="Microsoft.Azure.Cosmos" />
     <PackageReference Include="Newtonsoft.Json" />
     <PackageReference Include="Microsoft.Extensions.Azure" />
+    <!-- D-037 Portable-lane object-storage arm (S3-compatible: MinIO locally/on the VPS, any S3 provider in production). -->
+    <PackageReference Include="AWSSDK.S3" />
   </ItemGroup>
 
   <ItemGroup>
