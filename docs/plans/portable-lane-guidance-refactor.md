@@ -21,8 +21,8 @@ Worktrees live in `C:\Users\EbenFreeman\source\repos\scaffold-proof-wt\<slice>` 
 
 | id | scope (plan sections) | model | status | branch | worktree | agent id |
 |---|---|---|---|---|---|---|
-| P1 | Artifacts: D-035..D-055, resource-implementation.yaml, UBIQUITOUS-LANGUAGE, domain-specification, INSTRUCTION-GAPS | sonnet | pending | feature/pl-p1-artifacts | - | - |
-| G1 | Runtime props + Dockerfiles, TaskFlowJsonContext, export writer, pooled publish buffers, bounded blob deletes + dispatcher fan-out, blocking-call sweep, package AOT flags, benchmark (B.2 G1) | opus | pending | feature/pl-g1-runtime | - | - |
+| P1 | Artifacts: D-035..D-055, resource-implementation.yaml, UBIQUITOUS-LANGUAGE, domain-specification, INSTRUCTION-GAPS | sonnet | done (merged) | feature/pl-p1-artifacts | removed | a2c5c8672f43fea50 |
+| G1 | Runtime props + Dockerfiles, TaskFlowJsonContext, export writer, pooled publish buffers, bounded blob deletes + dispatcher fan-out, blocking-call sweep, package AOT flags, benchmark (B.2 G1) | opus | running | feature/pl-g1-runtime | scaffold-proof-wt/pl-g1 | a57532ee14de929e6 |
 | P2 | Six switch skeletons with existing arms + fallbacks, Data Protection switch, lifted credential, pooler option, selector tests, architecture rules (A.1) | sonnet | pending | feature/pl-p2-switches | - | - |
 | G2 | Health contract + Bicep probes/sticky, YARP hardening + edge limiter, hedging, ActivitySources + trace propagation, IDistributedLock (B.2 G2) | opus | pending | feature/pl-g2-edge-health-tracing | - | - |
 | P3 | Relational read model + relational audit: entities, configs, migrations both providers, repositories, arms, parity tests (A.1) | opus | pending | feature/pl-p3-relational-readmodel-audit | - | - |
@@ -42,3 +42,4 @@ Diff reviewed by the orchestrator in the agent's worktree; `dotnet build TaskFlo
 ## Session log
 
 - 2026-09-08: inventories (Azure surfaces, runtime alignment, infra assets) and the portable-lane design completed; the guidance-alignment design agent was stopped by a user interrupt, so the alignment slicing was done by the orchestrator from the inventory evidence. User decisions recorded above. Plan and handoff committed. Next action: spawn wave 1 (P1 with harness worktree, G1 with in-prompt worktree).
+- 2026-09-08: P1 merged (artifacts). Note: new entities TaskView/AuditLog/TaskItemEmbedding sit in the entities list tagged with dataStore readModel/audit/postgresOnly; the embedding path is a fourth subscription on DomainEvents bound to TaskItemCreatedEvent, TaskItemStatusChangedEvent, TaskItemRescheduledEvent, TaskItemCompletedEvent (no generic TaskItemUpdatedEvent exists). aiServices.search.provider is now a list spelled AzureAiSearch. G1 running.
