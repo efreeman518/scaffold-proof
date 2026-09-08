@@ -218,7 +218,16 @@ var migrator = builder.AddProject<Projects.TaskFlow_DatabaseMigrator>("taskflowm
     .WithEnvironment("Database__Encryption__BlindIndexKeyBase64", blindIndexKey)
     .WaitFor(dbServer);
 
-// API host
+// API host.
+//
+// D-054: the Api listens on two cleartext ports, declared in its own appsettings Kestrel:Endpoints
+// ("Http" 8080 REST, "Grpc" 8081 HTTP/2). Aspire turns each Kestrel section key into an endpoint of
+// that name - two http-scheme entries, so the endpoint names are the keys rather than the scheme -
+// carries Protocols: Http2 across as transport "http2", and injects Kestrel__Endpoints__<name>__Url
+// with the port it allocated. There is deliberately no WithHttpEndpoint(targetPort: 8081) here: the
+// endpoint already exists, and re-declaring the target port would pin the DCP proxy port and the app
+// port to the same 8081 in run mode. Endpoint names compare case-insensitively, so GetEndpoint("http")
+// below still resolves the "Http" endpoint.
 var api = builder.AddProject<Projects.TaskFlow_Api>("taskflowapi")
     .WithReference(taskflowDb, connectionName: "TaskFlowDbContextTrxn")
     .WithReference(taskflowDb, connectionName: "TaskFlowDbContextQuery")
@@ -303,6 +312,13 @@ var gateway = builder.AddProject<Projects.TaskFlow_Gateway>("taskflowgateway")
 builder.AddProject<Projects.TaskFlow_Blazor>("taskflowblazor")
     .WithReference(gateway)
     .WithEnvironment("Gateway__BaseUrl", gateway.GetEndpoint("http"))
+    // D-054: the one in-cluster service-to-service hop. Blazor Server reads the dashboard summary and
+    // the picker metadata straight from the Api's gRPC listener; every public client still goes through
+    // the gateway over REST. WithReference records the dependency and publishes
+    // services__taskflowapi__Grpc__0; the explicit variable is what the host actually reads, and it is
+    // the same one Bicep and the compose lane set, so all three lanes configure this identically.
+    .WithReference(api.GetEndpoint("Grpc"))
+    .WithEnvironment("Grpc__TaskFlowRead__Address", api.GetEndpoint("Grpc"))
     .WaitFor(gateway)
     .WithExternalHttpEndpoints();
 

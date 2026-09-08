@@ -36,6 +36,9 @@
     <!-- FlowEngine packages live in TaskFlow.Bootstrapper where DI registration happens.
          Only AdminApi is referenced here for the pipeline mapping. -->
     <PackageReference Include="EF.FlowEngine.AdminApi" />
+    <!-- D-054: server side of the internal gRPC read service. The contract assembly carries the generated
+         types; this brings the ASP.NET Core endpoint routing integration (AddGrpc/MapGrpcService). -->
+    <PackageReference Include="Grpc.AspNetCore" />
     <PackageReference Include="Microsoft.AI.Foundry.Local" PrivateAssets="all" />
     <PackageReference Include="Microsoft.AspNetCore.HeaderPropagation" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
@@ -69,6 +72,7 @@
     <ProjectReference Include="..\..\Infrastructure\TaskFlow.Infrastructure.AI\TaskFlow.Infrastructure.AI.csproj" />
     <ProjectReference Include="..\Aspire\ServiceDefaults\ServiceDefaults.csproj" />
     <ProjectReference Include="..\..\Shared\TaskFlow.Observability\TaskFlow.Observability.csproj" />
+    <ProjectReference Include="..\..\Shared\TaskFlow.Contracts.Grpc\TaskFlow.Contracts.Grpc.csproj" />
   </ItemGroup>
 
 </Project>
