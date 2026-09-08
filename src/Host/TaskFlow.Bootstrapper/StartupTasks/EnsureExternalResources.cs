@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using TaskFlow.Application.Contracts.Locking;
 using TaskFlow.Infrastructure.Storage;
 
 namespace TaskFlow.Bootstrapper.StartupTasks;
@@ -24,14 +25,74 @@ public sealed class EnsureExternalResources(
     IHostEnvironment environment,
     IOptions<BlobStorageSettings> blobSettings,
     IOptions<AuditLogStorageSettings> auditSettings,
+    IDistributedLock distributedLock,
     ILogger<EnsureExternalResources> logger) : IStartupTask
 {
-    /// <summary>Ensures the attachment container, the audit table, and (in development) the Cosmos view store exist.</summary>
+    /// <summary>Lock key every replica of every host competes for (D-052).</summary>
+    private const string ProvisionLockKey = "taskflow:provision";
+
+    /// <summary>
+    /// Longer than provisioning takes, short enough that a crashed holder does not block a deploy. A holder
+    /// that overran would lose the lock while still working, which is why this is not tighter.
+    /// </summary>
+    private static readonly TimeSpan LockTtl = TimeSpan.FromSeconds(60);
+
+    /// <summary>How long a losing replica waits for the winner to finish before giving up on confirmation.</summary>
+    private static readonly TimeSpan WaitBudget = TimeSpan.FromSeconds(90);
+
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// Ensures the attachment container, the audit table, and (in development) the Cosmos view store exist.
+    /// <para>
+    /// D-052: one replica provisions, the rest wait for it. <c>CreateIfNotExists</c> is idempotent but not
+    /// serialized across processes, and Cosmos in particular answers a concurrent create with a conflict
+    /// rather than a no-op - which would make this fatal startup task fail on the replica that lost the race.
+    /// The losing replicas wait rather than continuing immediately so this host does not report ready before
+    /// the resources it needs exist.
+    /// </para>
+    /// </summary>
     public async Task ExecuteAsync(CancellationToken ct = default)
     {
-        await EnsureBlobContainerAsync(ct);
-        await EnsureAuditTableAsync(ct);
-        await EnsureCosmosAsync(ct);
+        var lease = await distributedLock.TryAcquireAsync(ProvisionLockKey, LockTtl, ct).ConfigureAwait(false);
+        if (lease is null)
+        {
+            logger.ProvisioningDeferred(ProvisionLockKey);
+            await WaitForProvisioningAsync(ct).ConfigureAwait(false);
+            return;
+        }
+
+        await using (lease.ConfigureAwait(false))
+        {
+            logger.ProvisioningAcquired(ProvisionLockKey);
+            await EnsureBlobContainerAsync(ct);
+            await EnsureAuditTableAsync(ct);
+            await EnsureCosmosAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// Polls the lock until it is free, which is the signal that the holder finished, then releases it again
+    /// and skips provisioning - the work is already done. A timeout is logged as a warning rather than thrown:
+    /// the resources may well exist, and failing startup here would take down a replica for a slow peer.
+    /// </summary>
+    private async Task WaitForProvisioningAsync(CancellationToken ct)
+    {
+        var deadline = DateTimeOffset.UtcNow + WaitBudget;
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(PollInterval, ct).ConfigureAwait(false);
+
+            var lease = await distributedLock.TryAcquireAsync(ProvisionLockKey, LockTtl, ct).ConfigureAwait(false);
+            if (lease is null) continue;
+
+            await lease.DisposeAsync().ConfigureAwait(false);
+            logger.ProvisioningSkipped(ProvisionLockKey);
+            return;
+        }
+
+        logger.ProvisioningWaitTimedOut(ProvisionLockKey, (int)WaitBudget.TotalSeconds);
     }
 
     /// <summary>Creates the attachment container named by configuration.</summary>

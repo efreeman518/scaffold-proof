@@ -46,4 +46,7 @@ public static class LogEventIds
 
     /// <summary>Application.MessageHandlers (integration event handlers). Range 19000-19999.</summary>
     public const int ApplicationMessageHandlersBase = 19000;
+
+    /// <summary>Infrastructure.Messaging.RabbitMq (topology, transport adapter). Range 20000-20999.</summary>
+    public const int InfrastructureMessagingRabbitMqBase = 20000;
 }

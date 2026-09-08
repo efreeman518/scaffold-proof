@@ -32,4 +32,20 @@ internal static partial class LogMessages
     /// <summary>Logs that FlowEngineIfMatchOverrideHandler applied the D-032 trusted-automation If-Match override.</summary>
     [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 6, Level = LogLevel.Information, Message = "FlowEngine If-Match override applied: {Method} {Route}")]
     public static partial void FlowEngineIfMatchOverrideApplied(this ILogger logger, string method, string route);
+
+    /// <summary>Logs that this replica won the D-052 provisioning lock and is provisioning.</summary>
+    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 7, Level = LogLevel.Information, Message = "Provisioning lock {LockKey} acquired; provisioning external resources.")]
+    public static partial void ProvisioningAcquired(this ILogger logger, string lockKey);
+
+    /// <summary>Logs that another replica holds the D-052 provisioning lock and this one is waiting.</summary>
+    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 8, Level = LogLevel.Information, Message = "Provisioning lock {LockKey} held elsewhere; waiting for the holder to finish.")]
+    public static partial void ProvisioningDeferred(this ILogger logger, string lockKey);
+
+    /// <summary>Logs that the provisioning holder finished, so this replica skipped the work.</summary>
+    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 9, Level = LogLevel.Information, Message = "Provisioning lock {LockKey} released by its holder; external resources already provisioned.")]
+    public static partial void ProvisioningSkipped(this ILogger logger, string lockKey);
+
+    /// <summary>Logs that the wait for another replica's provisioning ran out of budget.</summary>
+    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 10, Level = LogLevel.Warning, Message = "Provisioning lock {LockKey} still held after {WaitSeconds}s; continuing without confirmation that external resources exist.")]
+    public static partial void ProvisioningWaitTimedOut(this ILogger logger, string lockKey, int waitSeconds);
 }

@@ -7,10 +7,12 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Caching;
+using TaskFlow.Application.Contracts.Locking;
 using TaskFlow.Application.Models.Serialization;
 using TaskFlow.Observability.Meters;
 using OpenTelemetry.Metrics;
 using ZiggyCreatures.Caching.Fusion;
+using TaskFlow.Infrastructure.Caching.Locking;
 using TaskFlow.Infrastructure.Caching.RateLimiting;
 using ZiggyCreatures.Caching.Fusion.Backplane.StackExchangeRedis;
 
@@ -88,6 +90,22 @@ public static class RegisterCachingServices
         services.AddSingleton(defaultSettings);
         services.AddSingleton<CacheMeter>();
         services.AddSingleton<ITaskFlowCache, FusionTaskFlowCache>();
+
+        // D-052: the same "is Redis configured" answer that decides L1-only vs L1+L2 decides whether the
+        // startup lock is real. Deciding it here rather than at each call site is the point: a caller cannot
+        // accidentally get a process-local lock on a multi-replica deployment.
+        var lockConnStr = !string.IsNullOrEmpty(defaultSettings.RedisConnectionStringName)
+            ? config.GetConnectionString(defaultSettings.RedisConnectionStringName)
+            : null;
+
+        if (string.IsNullOrEmpty(lockConnStr))
+        {
+            services.AddSingleton<IDistributedLock, InProcessDistributedLock>();
+        }
+        else
+        {
+            services.AddSingleton<IDistributedLock>(_ => new RedisDistributedLock(lockConnStr));
+        }
 
         // FusionCache's own hit/miss/latency instrumentation, registered here rather than in the host's
         // telemetry setup so it arrives with the cache and cannot be forgotten by a host that adds caching.
