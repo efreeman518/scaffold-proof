@@ -7,12 +7,54 @@ using TaskFlow.Infrastructure.AI;
 
 namespace TaskFlow.Bootstrapper;
 
+/// <summary>LLM provider selected for this deployment (D-041).</summary>
+public enum AiProvider
+{
+    /// <summary>Azure AI Foundry via the Aspire-injected "chat" connection.</summary>
+    AzureInference,
+
+    /// <summary>OpenAI SDK client against a configurable endpoint (OpenAI, OpenRouter, Ollama, vLLM). Not implemented yet (slice P5).</summary>
+    OpenAICompatible,
+
+    /// <summary>Foundry Local SDK-direct fallback.</summary>
+    FoundryLocal,
+
+    /// <summary>No live chat client; NoOpChatClient answers every call.</summary>
+    None
+}
+
 public static partial class RegisterServices
 {
+    public const string AiProviderConfigKey = "AiServices:Provider";
+    public const string AiProviderEnvVar = "TASKFLOW_AI_PROVIDER";
+
+    /// <summary>
+    /// Resolves an explicit AI provider selection. Null means "unset": the caller derives today's default
+    /// (ConnectionStrings:chat present -> AzureInference, else FoundryLocal) or the Portable lane default
+    /// (OpenAICompatible) itself (D-035).
+    /// </summary>
+    public static AiProvider? ResolveAiProvider(IConfiguration config)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        var value = Environment.GetEnvironmentVariable(AiProviderEnvVar) ?? config[AiProviderConfigKey];
+        if (!string.IsNullOrWhiteSpace(value)) return ParseAiProvider(value);
+
+        return HostingLaneSelector.Resolve(config) == HostingLane.Portable
+            ? AiProvider.OpenAICompatible
+            : null;
+    }
+
+    private static AiProvider ParseAiProvider(string value) =>
+        Enum.TryParse<AiProvider>(value, ignoreCase: true, out var provider)
+            ? provider
+            : throw new ArgumentException(
+                $"Unknown AI provider '{value}'. Allowed values: {string.Join(", ", Enum.GetNames<AiProvider>())}.");
+
     /// <summary>
     /// Registers the shared AI chat client before application services bind agents and demos.
     /// Azure Foundry wins when Aspire injects the chat connection; otherwise Foundry Local is
     /// attempted directly. Local startup failures fall through to the no-op client in AddAiServices.
+    /// An explicit <c>AiServices:Provider</c>/<c>TASKFLOW_AI_PROVIDER</c> value overrides this derivation.
     /// </summary>
     public static async Task RegisterAiChatClientAsync(
         this IHostApplicationBuilder builder,
@@ -23,8 +65,17 @@ public static partial class RegisterServices
         var appName = config.GetValue<string>("AppName") ?? builder.Environment.ApplicationName;
         var env = builder.Environment.EnvironmentName;
 
+        var explicitProvider = ResolveAiProvider(config);
+        if (explicitProvider == AiProvider.None)
+            return; // AddAiServices registers the no-op chat client and AiProviderInfo("none") fallback.
+
+        if (explicitProvider == AiProvider.OpenAICompatible)
+            throw new NotSupportedException("AI provider OpenAICompatible is not implemented yet (slice P5).");
+
         var chatConnection = config.GetConnectionString("chat");
-        if (!string.IsNullOrWhiteSpace(chatConnection))
+        var useAzure = explicitProvider == AiProvider.AzureInference
+            || (explicitProvider is null && !string.IsNullOrWhiteSpace(chatConnection));
+        if (useAzure)
         {
             logger.ConfigureAzureChatClient(appName, env);
             builder.AddAzureChatCompletionsClient("chat")
@@ -33,7 +84,9 @@ public static partial class RegisterServices
             return;
         }
 
-        if (config.GetValue<bool>("AiServices:DisableFoundryLocal"))
+        // FoundryLocal, explicit or derived. The legacy kill switch only applies to the derived (unset)
+        // path - an explicit FoundryLocal selection means try it regardless.
+        if (explicitProvider is null && config.GetValue<bool>("AiServices:DisableFoundryLocal"))
             return;
 
         logger.ConfigureFoundryLocalChatClient(appName, env);
