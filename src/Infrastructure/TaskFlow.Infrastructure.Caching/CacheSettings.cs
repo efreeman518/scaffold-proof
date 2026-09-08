@@ -34,8 +34,12 @@ public class CacheSettings
     /// <summary>
     /// Bumped whenever a cached snapshot's shape changes. It is part of every key, so a deployment with a new
     /// shape simply cannot read the old one - no eviction sweep, no version-mismatch deserialization failures.
+    ///
+    /// 2: the JSON cache serializer no longer writes ReferenceHandler.Preserve metadata (see
+    /// RegisterCachingServices.CacheSerializerOptions), so entries written by an earlier build carry an
+    /// $id/$values wrapper this build cannot read.
     /// </summary>
-    public int SchemaVersion { get; set; } = 1;
+    public int SchemaVersion { get; set; } = 2;
 
     /// <summary>
     /// D-048: the format L2 entries are stored in. Json is the default and the readable one; MessagePack

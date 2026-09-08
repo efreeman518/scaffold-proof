@@ -17,6 +17,9 @@ using ZiggyCreatures.Caching.Fusion;
 using TaskFlow.Infrastructure.Caching.Locking;
 using TaskFlow.Infrastructure.Caching.RateLimiting;
 using ZiggyCreatures.Caching.Fusion.Backplane.StackExchangeRedis;
+using ZiggyCreatures.Caching.Fusion.Serialization;
+using ZiggyCreatures.Caching.Fusion.Serialization.NeueccMessagePack;
+using ZiggyCreatures.Caching.Fusion.Serialization.SystemTextJson;
 
 namespace TaskFlow.Infrastructure.Caching;
 
@@ -43,9 +46,8 @@ public static class RegisterCachingServices
 
         foreach (var settings in cacheSettings)
         {
-            var fcBuilder = services.AddFusionCache(settings.Name);
-            ApplySerializer(fcBuilder, settings);
-            fcBuilder
+            var fcBuilder = services.AddFusionCache(settings.Name)
+                .WithSerializer(CreateSerializer(settings))
                 .WithCacheKeyPrefix($"{settings.Name}:")
                 // Own memory cache per named instance with a hard entry cap: a shared, unbounded L1 is how a
                 // container with a memory limit gets OOM-killed instead of evicting.
@@ -118,7 +120,7 @@ public static class RegisterCachingServices
     }
 
     /// <summary>
-    /// D-048: picks the serializer for one named cache. JSON stays the default because it is the format
+    /// D-048: the serializer for one named cache. JSON stays the default because it is the format
     /// every existing entry is written in and the one a human can read out of Redis during an incident;
     /// MessagePack is opt-in per cache for the entries where the size and CPU of the L2 hop matter.
     ///
@@ -136,23 +138,23 @@ public static class RegisterCachingServices
     /// the other format fail to deserialize, and FusionCache treats that as a miss and refactories them.
     /// Bump <see cref="CacheSettings.SchemaVersion"/> alongside the switch to retire them by key instead.
     /// </summary>
-    private static void ApplySerializer(IFusionCacheBuilder builder, CacheSettings settings)
+    /// <returns>The serializer the named cache stores its L2 values with.</returns>
+    public static IFusionCacheSerializer CreateSerializer(CacheSettings settings)
     {
-        switch (settings.Serializer)
+        ArgumentNullException.ThrowIfNull(settings);
+
+        return settings.Serializer switch
         {
-            case CacheSerializer.MessagePack:
-                builder.WithNeueccMessagePackSerializer(
+            CacheSerializer.Json =>
+                new FusionCacheSystemTextJsonSerializer(CacheSerializerOptions()),
+            CacheSerializer.MessagePack =>
+                new FusionCacheNeueccMessagePackSerializer(
                     MessagePackSerializerOptions.Standard
                         .WithResolver(ContractlessStandardResolver.Instance)
-                        .WithCompression(MessagePackCompression.Lz4BlockArray));
-                break;
-            case CacheSerializer.Json:
-                builder.WithSystemTextJsonSerializer(CacheSerializerOptions());
-                break;
-            default:
-                throw new InvalidOperationException(
-                    $"CacheSettings:{settings.Name}:Serializer has unsupported value '{settings.Serializer}'.");
-        }
+                        .WithCompression(MessagePackCompression.Lz4BlockArray)),
+            _ => throw new InvalidOperationException(
+                $"CacheSettings:{settings.Name}:Serializer has unsupported value '{settings.Serializer}'.")
+        };
     }
 
     /// <summary>
@@ -160,15 +162,22 @@ public static class RegisterCachingServices
     /// reflection resolver stays behind it, so cached TaskFlow DTOs skip per-entry reflection metadata
     /// while third-party cached shapes still serialize.
     ///
-    /// The stored format does not change. These options declare no naming policy, and the naming policy
-    /// is applied from the options (not baked into the generated context), so entries keep the PascalCase
-    /// names the reflection serializer wrote - an L1/L2 entry written by the previous build still reads
-    /// back after a rolling deploy. ReferenceHandler.Preserve is likewise an options-level setting and
-    /// still applies, which matters because cached aggregates (TaskItemDto.SubTasks) can self-reference.
+    /// These options declare no naming policy, and the naming policy is applied from the options (not
+    /// baked into the generated context), so entries keep the PascalCase names the reflection serializer
+    /// wrote.
+    ///
+    /// ReferenceHandler.Preserve was here for TaskItemDto.SubTasks, and it is gone because nothing caches
+    /// a TaskItemDto: the only two cached shapes are TaskMetadataDto and TaskItemSummaryDto (CacheKind has
+    /// exactly those two members), and neither can self-reference. Keeping it was not free - Preserve
+    /// cannot deserialize a type through a parameterized constructor, and TaskItemSummaryDto.ByStatus
+    /// holds the positional record TaskItemStatusCountDto, so every L2 read of a summary threw
+    /// NotSupportedException and FusionCache swallowed it as a miss. The summary's L2 tier was therefore
+    /// inert, silently, on every replica. CacheSettings.SchemaVersion is 2 for this reason: the $id/$values
+    /// wrapper Preserve wrote is not readable without it, so the old entries must retire by key.
     /// </summary>
     private static JsonSerializerOptions CacheSerializerOptions()
     {
-        var options = new JsonSerializerOptions { ReferenceHandler = ReferenceHandler.Preserve };
+        var options = new JsonSerializerOptions();
         options.TypeInfoResolverChain.Insert(0, TaskFlowJsonContext.Default);
         options.TypeInfoResolverChain.Add(new DefaultJsonTypeInfoResolver());
         return options;

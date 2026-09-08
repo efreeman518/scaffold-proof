@@ -33,6 +33,9 @@
     <ProjectReference Include="..\..\src\Infrastructure\TaskFlow.Infrastructure.Storage\TaskFlow.Infrastructure.Storage.csproj" />
     <ProjectReference Include="..\..\src\Infrastructure\TaskFlow.Infrastructure.Caching\TaskFlow.Infrastructure.Caching.csproj" />
     <ProjectReference Include="..\..\src\Host\TaskFlow.Bootstrapper\TaskFlow.Bootstrapper.csproj" />
+    <!-- D-054: the gRPC read service is a host type, so the rule that it stays a thin adapter over the
+         application services has to reflect over the Api assembly. -->
+    <ProjectReference Include="..\..\src\Host\TaskFlow.Api\TaskFlow.Api.csproj" />
   </ItemGroup>
 
 </Project>
