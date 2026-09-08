@@ -246,6 +246,16 @@ globalRules:
     condition: "List reads are keyset (cursor) paged with page size constrained to [1,100]; totals are computed only when explicitly requested (opt-in)"
     errorMessage: "Page size must be between 1 and 100."
 
+  - id: GR-19
+    name: SemanticSearchOptInAndScoped
+    condition: "Semantic search is an opt-in search provider (Search:Provider = PgVector); results are tenant-scoped and page-bounded like every other list read (GR-18)"
+    errorMessage: "Semantic search is not enabled for this deployment."
+
+  - id: GR-20
+    name: FeatureFlagGatesOptionalSurface
+    condition: "Feature flags gate optional surfaces (TaskViews, Export, SemanticSearch, AiReview); a disabled HTTP surface answers 404, not a business error"
+    errorMessage: "Not Found."
+
 # ---------------------------------------------------------------------------
 # Events
 # ---------------------------------------------------------------------------
