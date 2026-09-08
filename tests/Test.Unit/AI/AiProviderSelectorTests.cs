@@ -66,16 +66,50 @@ public class AiProviderSelectorTests
     }
 
     [TestMethod]
-    public async Task RegisterAiChatClientAsync_ExplicitOpenAICompatible_ThrowsNotSupported()
+    public async Task RegisterAiChatClientAsync_OpenAICompatible_MissingEndpoint_ThrowsFailFast()
     {
         var builder = CreateHostBuilder(new Dictionary<string, string?>
         {
-            [RegisterServices.AiProviderConfigKey] = "OpenAICompatible"
+            [RegisterServices.AiProviderConfigKey] = "OpenAICompatible",
+            ["AiServices:ApiKey"] = "fake-key"
         });
 
-        var ex = await Assert.ThrowsExactlyAsync<NotSupportedException>(() =>
+        var ex = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
             builder.RegisterAiChatClientAsync(NullLogger.Instance, TestContext.CancellationToken));
-        StringAssert.Contains(ex.Message, "P5");
+        StringAssert.Contains(ex.Message, "AiServices:Endpoint");
+    }
+
+    [TestMethod]
+    public async Task RegisterAiChatClientAsync_OpenAICompatible_MissingApiKey_ThrowsFailFast()
+    {
+        var builder = CreateHostBuilder(new Dictionary<string, string?>
+        {
+            [RegisterServices.AiProviderConfigKey] = "OpenAICompatible",
+            ["AiServices:Endpoint"] = "https://api.example.com/v1"
+        });
+
+        var ex = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            builder.RegisterAiChatClientAsync(NullLogger.Instance, TestContext.CancellationToken));
+        StringAssert.Contains(ex.Message, "AiServices:ApiKey");
+    }
+
+    [TestMethod]
+    public async Task RegisterAiChatClientAsync_OpenAICompatible_EndpointAndKeyPresent_RegistersBothClients()
+    {
+        var builder = CreateHostBuilder(new Dictionary<string, string?>
+        {
+            [RegisterServices.AiProviderConfigKey] = "OpenAICompatible",
+            ["AiServices:Endpoint"] = "https://api.example.com/v1",
+            ["AiServices:ApiKey"] = "fake-key"
+        });
+
+        await builder.RegisterAiChatClientAsync(NullLogger.Instance, TestContext.CancellationToken);
+
+        var provider = builder.Services.BuildServiceProvider();
+        Assert.AreEqual("openai-compatible", provider.GetRequiredService<AiProviderInfo>().Name);
+        Assert.IsNotNull(provider.GetRequiredService<Microsoft.Extensions.AI.IChatClient>());
+        Assert.IsNotNull(provider.GetRequiredService<
+            Microsoft.Extensions.AI.IEmbeddingGenerator<string, Microsoft.Extensions.AI.Embedding<float>>>());
     }
 
     [TestMethod]

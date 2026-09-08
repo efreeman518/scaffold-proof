@@ -40,4 +40,12 @@ internal static partial class LogMessages
     /// <summary>Logs that no Data Protection key-ring persistence is configured (D-043).</summary>
     [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 8, Level = LogLevel.Warning, Message = "{AppName} {Environment} - No Data Protection key-ring persistence configured; DataProtectionCursorProtector-issued cursors will not survive a restart or reach other replicas.")]
     public static partial void DataProtectionPersistenceNone(this ILogger logger, string appName, string environment);
+
+    /// <summary>Logs that the OpenAI-compatible chat client is being configured (D-041).</summary>
+    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 9, Level = LogLevel.Information, Message = "{AppName} {Environment} - Configure OpenAI-compatible chat client at {Endpoint}.")]
+    public static partial void ConfigureOpenAICompatibleChatClient(this ILogger logger, string appName, string environment, string endpoint);
+
+    /// <summary>Logs that a legacy AiServices:Use* kill switch is superseded by dynamic feature flags (D-042).</summary>
+    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 10, Level = LogLevel.Warning, Message = "{AppName} {Environment} - {ConfigKey}=false is a legacy AI kill switch superseded by dynamic feature flags (D-042); honored one more release, then removed. Configure App Configuration/appsettings feature flags instead.")]
+    public static partial void LegacyAiSwitchSuperseded(this ILogger logger, string appName, string environment, string configKey);
 }

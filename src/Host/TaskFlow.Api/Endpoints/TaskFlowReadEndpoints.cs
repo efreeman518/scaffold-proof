@@ -3,6 +3,8 @@ using System.Buffers;
 using System.Diagnostics;
 using System.Text.Json;
 using TaskFlow.Api.Endpoints.Shared;
+using TaskFlow.Api.Filters;
+using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models.Paging;
 using TaskFlow.Application.Models.Reads;
@@ -37,10 +39,12 @@ public static class TaskFlowReadEndpoints
             .WithName("ExportTaskItems")
             .Produces<TaskItemExportDto>(StatusCodes.Status200OK, NdJsonContentType)
             .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status404NotFound)
             // Own budget: an export holds a connection for as long as the tenant has rows, so it must not
             // spend the tenant's interactive allowance.
             .WithMetadata(new ExportRateLimitPolicy())
             .RequireRateLimiting(ExportRateLimitPolicy.PolicyName)
+            .RequireFeature(TaskFlowFeatures.Export)
             .WithSummary("Stream the tenant's tasks as newline-delimited JSON, resumable by afterId");
 
         app.MapGet("/task-metadata", GetMetadata)

@@ -13,7 +13,7 @@ public enum AiProvider
     /// <summary>Azure AI Foundry via the Aspire-injected "chat" connection.</summary>
     AzureInference,
 
-    /// <summary>OpenAI SDK client against a configurable endpoint (OpenAI, OpenRouter, Ollama, vLLM). Not implemented yet (slice P5).</summary>
+    /// <summary>OpenAI SDK client against a configurable endpoint (OpenAI, OpenRouter, Ollama, vLLM).</summary>
     OpenAICompatible,
 
     /// <summary>Foundry Local SDK-direct fallback.</summary>
@@ -65,12 +65,21 @@ public static partial class RegisterServices
         var appName = config.GetValue<string>("AppName") ?? builder.Environment.ApplicationName;
         var env = builder.Environment.EnvironmentName;
 
+        LogLegacyAiSwitchCompatibility(config, logger, appName, env);
+
         var explicitProvider = ResolveAiProvider(config);
         if (explicitProvider == AiProvider.None)
             return; // AddAiServices registers the no-op chat client and AiProviderInfo("none") fallback.
 
         if (explicitProvider == AiProvider.OpenAICompatible)
-            throw new NotSupportedException("AI provider OpenAICompatible is not implemented yet (slice P5).");
+        {
+            var clients = OpenAICompatibleChatClientFactory.Create(config);
+            logger.ConfigureOpenAICompatibleChatClient(appName, env, clients.Endpoint);
+            builder.Services.AddSingleton(clients.ChatClient);
+            builder.Services.AddSingleton(clients.EmbeddingGenerator);
+            builder.Services.AddSingleton(new AiProviderInfo("openai-compatible"));
+            return;
+        }
 
         var chatConnection = config.GetConnectionString("chat");
         var useAzure = explicitProvider == AiProvider.AzureInference
@@ -80,6 +89,18 @@ public static partial class RegisterServices
             logger.ConfigureAzureChatClient(appName, env);
             builder.AddAzureChatCompletionsClient("chat")
                 .AddChatClient();
+
+            // Trivial to add: Aspire.Azure.AI.Inference exposes AddEmbeddingGenerator() the same way as
+            // AddChatClient(). No "embeddings" deployment exists in AppHost yet (P6 territory), so this
+            // stays inert until ConnectionStrings:embeddings is configured; P7's IEmbeddingGenerator
+            // resolution fails fast until then, which is the intended default-arm behavior for an
+            // unconfigured optional dependency.
+            var embeddingConnection = config.GetConnectionString("embeddings");
+            if (!string.IsNullOrWhiteSpace(embeddingConnection))
+            {
+                builder.AddAzureEmbeddingsClient("embeddings").AddEmbeddingGenerator();
+            }
+
             builder.Services.AddSingleton(new AiProviderInfo("azure"));
             return;
         }
@@ -120,5 +141,20 @@ public static partial class RegisterServices
                 appName,
                 env);
         }
+    }
+
+    /// <summary>
+    /// D-042 compatibility: <c>AiServices:UseSearch</c>/<c>UseAgents</c> are the ad hoc kill switches
+    /// P5's dynamic feature flags supersede. Kept working (P2 left the properties in place) but warned
+    /// about for one release when a config still sets either to false explicitly - unset stays silent,
+    /// since that is the common case and not a signal anyone still relies on the old switch.
+    /// </summary>
+    private static void LogLegacyAiSwitchCompatibility(IConfiguration config, ILogger logger, string appName, string env)
+    {
+        if (bool.TryParse(config["AiServices:UseSearch"], out var useSearch) && !useSearch)
+            logger.LegacyAiSwitchSuperseded(appName, env, "AiServices:UseSearch");
+
+        if (bool.TryParse(config["AiServices:UseAgents"], out var useAgents) && !useAgents)
+            logger.LegacyAiSwitchSuperseded(appName, env, "AiServices:UseAgents");
     }
 }
