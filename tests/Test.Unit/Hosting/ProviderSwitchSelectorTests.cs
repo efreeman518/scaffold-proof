@@ -1,9 +1,9 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System.Reflection;
+using TaskFlow.Application.Contracts.Configuration;
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Bootstrapper;
-using TaskFlow.Infrastructure.Data.Provider;
 using TaskFlow.Infrastructure.Storage;
 
 namespace Test.Unit.Hosting;

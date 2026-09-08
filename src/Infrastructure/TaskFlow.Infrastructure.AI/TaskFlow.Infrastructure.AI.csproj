@@ -10,12 +10,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- D-040: the Search:Provider switch resolves the hosting lane default via HostingLaneSelector,
+         which lives in Application.Contracts (already referenced below) precisely so this AI adapter
+         does not need a ProjectReference to Infrastructure.Data for one enum parser. -->
     <ProjectReference Include="..\..\Application\TaskFlow.Application.Contracts\TaskFlow.Application.Contracts.csproj" />
     <ProjectReference Include="..\..\Application\TaskFlow.Application.Models\TaskFlow.Application.Models.csproj" />
     <ProjectReference Include="..\..\Shared\TaskFlow.Observability\TaskFlow.Observability.csproj" />
-    <!-- D-040: the Search:Provider switch needs the hosting lane default (HostingLaneSelector), the one
-         cross-cutting resolver Infrastructure.Data owns so every switch shares identical lane parsing. -->
-    <ProjectReference Include="..\TaskFlow.Infrastructure.Data\TaskFlow.Infrastructure.Data.csproj" />
   </ItemGroup>
 
   <ItemGroup>

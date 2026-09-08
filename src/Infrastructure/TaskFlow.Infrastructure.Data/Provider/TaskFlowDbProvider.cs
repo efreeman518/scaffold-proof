@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
+using TaskFlow.Application.Contracts.Configuration;
 
 namespace TaskFlow.Infrastructure.Data.Provider;
 

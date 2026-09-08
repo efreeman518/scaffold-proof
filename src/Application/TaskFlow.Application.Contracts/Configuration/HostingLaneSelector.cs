@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Configuration;
 
-namespace TaskFlow.Infrastructure.Data.Provider;
+namespace TaskFlow.Application.Contracts.Configuration;
 
 /// <summary>Hosting lane selected for this deployment; seeds the DEFAULT of every provider switch (D-035).</summary>
 public enum HostingLane
@@ -14,10 +14,12 @@ public enum HostingLane
 
 /// <summary>
 /// Resolves the active hosting lane: env <c>TASKFLOW_LANE</c> wins over <c>Hosting:Lane</c>, default Azure.
-/// Lives in Infrastructure.Data (not TaskFlow.Bootstrapper) because <see cref="TaskFlowDbProviderSelector"/>
-/// needs the lane to pick its own default and Infrastructure.Data cannot reference Bootstrapper; Bootstrapper's
-/// per-switch <c>LaneDefaults</c> map (Registration/HostingLane.cs) reuses this same resolver instead of
-/// re-implementing lane parsing (D-035).
+/// Lives in Application.Contracts - the lowest project both Infrastructure.Data (the Database provider
+/// selector cannot reference Bootstrapper) and Infrastructure.AI (the Search provider selector) already
+/// reference and that already carries Microsoft.Extensions.Configuration.Abstractions transitively - so
+/// neither Infrastructure project takes on a dependency it would not otherwise have (an AI adapter must
+/// not pull in the data layer for one enum parser). Bootstrapper's per-switch <c>LaneDefaults</c> map
+/// (Registration/HostingLane.cs) reuses this same resolver instead of re-implementing lane parsing (D-035).
 /// </summary>
 public static class HostingLaneSelector
 {

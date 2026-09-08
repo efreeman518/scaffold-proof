@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using TaskFlow.Application.Contracts.Configuration;
 using TaskFlow.Infrastructure.Data.Provider;
 
 namespace Test.Unit.Infrastructure;

@@ -1,9 +1,9 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
+using TaskFlow.Application.Contracts.Configuration;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Infrastructure.AI;
-using TaskFlow.Infrastructure.Data.Provider;
 
 namespace Test.Unit.AI;
 

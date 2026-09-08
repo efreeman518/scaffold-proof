@@ -2,9 +2,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using TaskFlow.Application.Contracts.Configuration;
 using TaskFlow.Bootstrapper;
 using TaskFlow.Infrastructure.AI;
-using TaskFlow.Infrastructure.Data.Provider;
 
 namespace Test.Unit.AI;
 

@@ -4,10 +4,10 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using TaskFlow.Application.Contracts.Configuration;
 using TaskFlow.Infrastructure.AI.Agents;
 using TaskFlow.Infrastructure.AI.Agents.Tools;
 using TaskFlow.Infrastructure.AI.Search;
-using TaskFlow.Infrastructure.Data.Provider;
 
 namespace TaskFlow.Infrastructure.AI;
 
