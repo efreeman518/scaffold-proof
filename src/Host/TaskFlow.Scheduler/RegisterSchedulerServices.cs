@@ -42,6 +42,9 @@ public static class RegisterSchedulerServices
         // Already added by the shared application registration; TryAdd keeps one meter per process.
         services.TryAddSingleton<MessagingMetrics>();
 
+        // D-055: the blob-delete drain's in-flight bound, per environment.
+        services.Configure<BlobDeleteSettings>(config.GetSection(BlobDeleteSettings.ConfigSectionName));
+
         // D-026: both drains run on every replica; the lease, not a leader election, keeps them apart.
         services.AddHostedService<OutboxDispatcherService>();
         services.AddHostedService<BlobDeleteWorkerService>();
