@@ -1,10 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
+  <!-- D-047 shared host runtime profile; the override below follows it deliberately. -->
+  <Import Project="..\..\Host\TaskFlow.Host.props" />
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>TaskFlow.Blazor</RootNamespace>
+    <!-- This host renders user-facing dates, numbers and sorted lists, so it needs real culture data:
+         invariant mode would format every value the same way regardless of the request culture. Paired
+         with the -chiseled-extra runtime image in this project's Dockerfile, which carries ICU. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>
