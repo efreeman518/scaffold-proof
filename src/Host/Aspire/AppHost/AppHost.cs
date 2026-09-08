@@ -29,18 +29,20 @@ var foundryLocalAvailableInTesting =
 var defaultSqlPassword = LocalSqlSettings.SharedSaPassword;
 var sqlServerImageTag = "2025-latest";
 
+// D-035: the hosting lane is a preset, not a switch. It seeds the DEFAULT of every provider switch below;
+// each switch's own env var or config key still wins. Unset means Azure, which is byte-for-byte today's graph.
+var lane = LaneDefaults.Resolve(builder.Configuration);
+var portableLane = lane.IsPortable;
+
 // D-020: exactly one relational server runs locally, chosen by TASKFLOW_DB_PROVIDER / Database:Provider
-// (default SqlServer). Every host receives the same choice as Database__Provider so UseTaskFlowProvider agrees.
-var dbProviderName = Environment.GetEnvironmentVariable("TASKFLOW_DB_PROVIDER")
-    ?? builder.Configuration["Database:Provider"]
-    ?? "SqlServer";
+// (default SqlServer; PostgreSql in the Portable lane). Every host receives the same choice as
+// Database__Provider so UseTaskFlowProvider agrees.
+var dbProviderName = lane.Database;
 var usePostgres = string.Equals(dbProviderName, "PostgreSql", StringComparison.OrdinalIgnoreCase);
 
 // D-034: exactly one broker runs locally, chosen by TASKFLOW_MESSAGING_PROVIDER / Messaging:Provider
-// (default ServiceBus). Every host receives the same choice as Messaging__Provider.
-var messagingProviderName = Environment.GetEnvironmentVariable("TASKFLOW_MESSAGING_PROVIDER")
-    ?? builder.Configuration["Messaging:Provider"]
-    ?? "ServiceBus";
+// (default ServiceBus; RabbitMq in the Portable lane). Every host receives the same choice as Messaging__Provider.
+var messagingProviderName = lane.Messaging;
 var useRabbitMq = string.Equals(messagingProviderName, "RabbitMq", StringComparison.OrdinalIgnoreCase);
 
 // Infrastructure resources
@@ -78,13 +80,46 @@ if (!isTesting)
     redis = redis.WithLifetime(ContainerLifetime.Persistent)
                  .WithDataVolume("taskflow-redis-data");
 
-// Azure Storage (Blob) - emulator
-// Not using ContainerLifetime.Persistent - persistent emulator containers survive Aspire restarts
-// but get stranded on deleted Podman networks, causing netavark "eth2 already exists" errors.
-var storage = builder.AddAzureStorage("AzureStorage")
-    .RunAsEmulator(emulator => emulator.WithImageTag("latest"));
-var blobs = storage.AddBlobs("BlobStorage1");
-var tables = storage.AddTables("TableStorage1");
+// Object storage and the Table audit sink.
+// Azure lane: the Azure Storage emulator (Azurite) supplies both.
+// Portable lane (D-037): MinIO supplies the S3 arm and the audit sink is relational, so neither the
+// emulator nor the Functions host it also backs is declared at all.
+// Not using ContainerLifetime.Persistent for Azurite - persistent emulator containers survive Aspire
+// restarts but get stranded on deleted Podman networks, causing netavark "eth2 already exists" errors.
+IResourceBuilder<AzureStorageResource>? storage = null;
+IResourceBuilder<AzureBlobStorageResource>? blobs = null;
+IResourceBuilder<AzureTableStorageResource>? tables = null;
+IResourceBuilder<ContainerResource>? minio = null;
+IResourceBuilder<ParameterResource>? minioAccessKey = null;
+IResourceBuilder<ParameterResource>? minioSecretKey = null;
+
+if (portableLane)
+{
+    // Dev-only credentials for a local container, exposed as parameters so a run can override them with
+    // Parameters__minio-access-key / Parameters__minio-secret-key. They are never real secrets, and the
+    // bucket itself is created by the Api/Scheduler startup task (IS3BucketProvisioner), not an init container.
+    minioAccessKey = builder.AddParameter("minio-access-key", "taskflowminio");
+    minioSecretKey = builder.AddParameter("minio-secret-key", "taskflowminio-dev-secret", secret: true);
+
+    minio = builder.AddContainer("minio", "minio/minio")
+        .WithImageTag("latest")
+        .WithArgs("server", "/data", "--console-address", ":9001")
+        .WithEnvironment("MINIO_ROOT_USER", minioAccessKey)
+        .WithEnvironment("MINIO_ROOT_PASSWORD", minioSecretKey)
+        .WithHttpEndpoint(targetPort: 9000, name: "s3")
+        .WithHttpEndpoint(targetPort: 9001, name: "console");
+
+    if (!isTesting)
+        minio = minio.WithLifetime(ContainerLifetime.Persistent)
+                     .WithVolume("taskflow-minio-data", "/data");
+}
+else
+{
+    storage = builder.AddAzureStorage("AzureStorage")
+        .RunAsEmulator(emulator => emulator.WithImageTag("latest"));
+    blobs = storage.AddBlobs("BlobStorage1");
+    tables = storage.AddTables("TableStorage1");
+}
 
 // Broker: exactly one of the two is declared. The Service Bus emulator brings its own SQL Server sidecar, so
 // nothing about it is free; declaring it under RabbitMq would burn a container the run never touches.
@@ -153,8 +188,9 @@ static void AddEventTypeSubscription(
 
 // Azure Cosmos DB - emulator (see AzureStorage comment re: Persistent lifetime)
 // Skipped in Testing: the emulator is heavy (~1.3 GB) and not needed for audit pipeline tests.
+// Skipped in the Portable lane: the read model is relational there (D-038).
 // The API's AddCosmosDbServices falls back to NoOpTaskViewRepository when the connection string is absent.
-if (!isTesting)
+if (!isTesting && !portableLane)
 {
     builder.AddAzureCosmosDB("CosmosDb1")
         .RunAsEmulator();
@@ -178,10 +214,13 @@ if (!isTesting)
 //
 // Test mode forces no-op for local AI unless TASKFLOW_ASPIRE_ENABLE_FOUNDRY_LOCAL=true;
 // Azure Foundry can still be explicitly configured.
+// The Portable lane never provisions Foundry: its AI arm is an OpenAI-compatible endpoint reached over
+// plain configuration (D-041), so there is no Azure resource for this graph to declare.
 IResourceBuilder<FoundryDeploymentResource>? chat = null;
-var azureFoundryConfigured = builder.ExecutionContext.IsPublishMode
-    || !string.IsNullOrWhiteSpace(builder.Configuration["AiServices:FoundryEndpoint"])
-    || Environment.GetEnvironmentVariable("TASKFLOW_USE_AZURE_FOUNDRY") == "true";
+var azureFoundryConfigured = !portableLane
+    && (builder.ExecutionContext.IsPublishMode
+        || !string.IsNullOrWhiteSpace(builder.Configuration["AiServices:FoundryEndpoint"])
+        || Environment.GetEnvironmentVariable("TASKFLOW_USE_AZURE_FOUNDRY") == "true");
 
 if (azureFoundryConfigured)
 {
@@ -217,6 +256,7 @@ var migrator = builder.AddProject<Projects.TaskFlow_DatabaseMigrator>("taskflowm
     .WithEnvironment("Database__Encryption__LocalKeyBase64", columnEncryptionKey)
     .WithEnvironment("Database__Encryption__BlindIndexKeyBase64", blindIndexKey)
     .WaitFor(dbServer);
+migrator = WithLaneEnvironment(migrator);
 
 // API host.
 //
@@ -233,8 +273,6 @@ var api = builder.AddProject<Projects.TaskFlow_Api>("taskflowapi")
     .WithReference(taskflowDb, connectionName: "TaskFlowDbContextQuery")
     .WithReference(taskflowDb, connectionName: "TaskFlowFlowEngineDbContext")
     .WithReference(redis, connectionName: "Redis1")
-    .WithReference(tables)
-    .WithReference(blobs)
     .WithEnvironment("Database__Provider", dbProviderName)
     .WithEnvironment("Messaging__Provider", messagingProviderName)
     .WithEnvironment("Database__Encryption__LocalKeyBase64", columnEncryptionKey)
@@ -242,7 +280,10 @@ var api = builder.AddProject<Projects.TaskFlow_Api>("taskflowapi")
     .WaitForCompletion(migrator)
     .WaitFor(dbServer)
     .WaitFor(redis);
+api = WithAuditSink(api);
+api = WithObjectStorage(api);
 api = WithBroker(api);
+api = WithLaneEnvironment(api);
 
 // Wire the Azure Foundry chat model into the API when a deployment was created. Local mode wires no
 // chat resource; the bootstrapper owns the temporary SDK-direct Foundry Local fallback.
@@ -308,8 +349,9 @@ var gateway = builder.AddProject<Projects.TaskFlow_Gateway>("taskflowgateway")
     .WithEnvironment("ReverseProxy__Routes__api-route__Match__Path", "/api/{**catch-all}")
     .WithEnvironment("ReverseProxy__Clusters__api-cluster__Destinations__api__Address", api.GetEndpoint("http"))
     .WaitFor(api);
+gateway = WithLaneEnvironment(gateway);
 
-builder.AddProject<Projects.TaskFlow_Blazor>("taskflowblazor")
+var blazor = builder.AddProject<Projects.TaskFlow_Blazor>("taskflowblazor")
     .WithReference(gateway)
     .WithEnvironment("Gateway__BaseUrl", gateway.GetEndpoint("http"))
     // D-054: the one in-cluster service-to-service hop. Blazor Server reads the dashboard summary and
@@ -321,6 +363,7 @@ builder.AddProject<Projects.TaskFlow_Blazor>("taskflowblazor")
     .WithEnvironment("Grpc__TaskFlowRead__Address", api.GetEndpoint("Grpc"))
     .WaitFor(gateway)
     .WithExternalHttpEndpoints();
+blazor = WithLaneEnvironment(blazor);
 
 if (!isTesting || schedulerAvailableInTesting)
 {
@@ -332,7 +375,6 @@ if (!isTesting || schedulerAvailableInTesting)
         .WithReference(taskflowDb, connectionName: "TaskFlowFlowEngineDbContext")
         .WithReference(taskflowDb, connectionName: "TickerQDbContext")
         .WithReference(redis, connectionName: "Redis1")
-        .WithReference(tables)
         .WithEnvironment("Database__Provider", dbProviderName)
         .WithEnvironment("Messaging__Provider", messagingProviderName)
         .WithEnvironment("Database__Encryption__LocalKeyBase64", columnEncryptionKey)
@@ -342,7 +384,14 @@ if (!isTesting || schedulerAvailableInTesting)
         .WithReplicas(isTesting ? 1 : 2)
         .WaitForCompletion(migrator)
         .WaitFor(dbServer);
+    scheduler = WithAuditSink(scheduler);
+    // Portable lane only. The Scheduler runs the same S3 bucket provisioning startup task and the blob delete
+    // worker, so it needs the MinIO settings; the Azure lane keeps its existing wiring, where the Scheduler
+    // deliberately holds no blob reference, so this stays a lane addition rather than a change to today's graph.
+    if (minio is not null)
+        scheduler = WithObjectStorage(scheduler);
     scheduler = WithBroker(scheduler);
+    scheduler = WithLaneEnvironment(scheduler);
 
     if (!string.IsNullOrWhiteSpace(applicationStyle))
     {
@@ -373,27 +422,31 @@ if (!isTesting || unoWasmAvailableInTesting)
     }
 }
 
-if (!isTesting || functionsAvailableInTesting)
+// The Functions host is Azure-only (it needs the storage account for its own host state), and its consumer
+// logic is already shared with the Scheduler's RabbitMQ handlers - so the Portable lane simply does not
+// declare it rather than declaring a host that cannot run there (D-036).
+if (!portableLane && (!isTesting || functionsAvailableInTesting))
 {
     // Functions host
     var functions = builder.AddAzureFunctionsProject<Projects.TaskFlow_Functions>("taskflowfunctions")
-        .WithHostStorage(storage)
+        .WithHostStorage(storage!)
         // The Functions host process emits request telemetry itself; suppress the worker's ASP.NET Core
         // instrumentation so requests are not double-reported when the Azure Monitor distro is active.
         .WithEnvironment("TASKFLOW_SUPPRESS_ASPNETCORE_INSTRUMENTATION", "true")
         .WithReference(taskflowDb, connectionName: "TaskFlowDbContextTrxn")
         .WithReference(taskflowDb, connectionName: "TaskFlowDbContextQuery")
         .WithReference(taskflowDb, connectionName: "TaskFlowFlowEngineDbContext")
-        .WithReference(tables)
-        .WithReference(blobs)
+        .WithReference(tables!)
+        .WithReference(blobs!)
         .WithEnvironment("Database__Provider", dbProviderName)
         .WithEnvironment("Messaging__Provider", messagingProviderName)
         .WithEnvironment("Database__Encryption__LocalKeyBase64", columnEncryptionKey)
         .WithEnvironment("Database__Encryption__BlindIndexKeyBase64", blindIndexKey)
         .WaitForCompletion(migrator)
         .WaitFor(dbServer)
-        .WaitFor(storage);
+        .WaitFor(storage!);
     functions = WithBroker(functions);
+    functions = WithLaneEnvironment(functions);
 
     if (useRabbitMq)
     {
@@ -432,6 +485,45 @@ IResourceBuilder<T> WithBroker<T>(IResourceBuilder<T> host)
 
     return host.WithReference(serviceBus!).WaitFor(serviceBus!);
 }
+
+// Same rule for object storage (D-037): one place decides whether a host talks to the Azurite blob emulator
+// or to MinIO, so adding a host cannot forget the reference. SigV4 signs the Host header into a presigned
+// URL, so ServiceUrl and PublicServiceUrl are the same allocated endpoint here - locally the app and the
+// browser reach MinIO through the same host-mapped address.
+IResourceBuilder<T> WithObjectStorage<T>(IResourceBuilder<T> host)
+    where T : IResourceWithEnvironment, IResourceWithWaitSupport
+{
+    if (minio is null)
+        return host.WithReference(blobs!);
+
+    return host
+        .WithEnvironment("Storage__S3__ServiceUrl", minio.GetEndpoint("s3"))
+        .WithEnvironment("Storage__S3__PublicServiceUrl", minio.GetEndpoint("s3"))
+        .WithEnvironment("Storage__S3__AccessKeyId", minioAccessKey!)
+        .WithEnvironment("Storage__S3__SecretAccessKey", minioSecretKey!)
+        .WithEnvironment("Storage__S3__ForcePathStyle", "true")
+        .WaitFor(minio);
+}
+
+// D-035: every host learns the lane and the switch values this graph actually declared containers for, the
+// same way Bicep and the compose lane set them. In the Azure lane this is only Hosting__Lane=Azure - the
+// remaining switches keep their own runtime-derived defaults, which is what "Azure means today's behavior"
+// has to mean for the AI, Search and DataProtection switches.
+IResourceBuilder<T> WithLaneEnvironment<T>(IResourceBuilder<T> host)
+    where T : IResourceWithEnvironment
+{
+    foreach (var (key, value) in lane.HostEnvironment)
+    {
+        host = host.WithEnvironment(key, value);
+    }
+
+    return host;
+}
+
+// The Azure Table audit sink only exists in the Azure lane; the Portable lane audits relationally (D-039).
+IResourceBuilder<T> WithAuditSink<T>(IResourceBuilder<T> host)
+    where T : IResourceWithEnvironment =>
+    tables is null ? host : host.WithReference(tables);
 
 await builder.Build().RunAsync();
 
