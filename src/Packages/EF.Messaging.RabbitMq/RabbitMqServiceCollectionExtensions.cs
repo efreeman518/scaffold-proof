@@ -6,6 +6,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
+using System.Diagnostics.CodeAnalysis;
 
 namespace EF.Messaging.RabbitMq;
 
@@ -40,10 +41,14 @@ public static class RabbitMqServiceCollectionExtensions
     /// Registers <typeparamref name="THandler"/> as scoped and a hosted service consuming <paramref name="queue"/>.
     /// The hosted service starts no consumer when <c>Consumers[queue].Enabled</c> is false.
     /// </summary>
-    /// <typeparam name="THandler">Handler invoked for every delivery.</typeparam>
+    /// <typeparam name="THandler">Handler invoked for every delivery. DI activates it by constructor, so the
+    /// annotation propagates that requirement to the caller and keeps the constructors from being trimmed
+    /// (IL2091) - this package declares IsAotCompatible, so the requirement has to be visible, not assumed.</typeparam>
     /// <param name="services">Service collection.</param>
     /// <param name="queue">Queue name; also the key into <see cref="RabbitMqOptions.Consumers"/>.</param>
-    public static IServiceCollection AddRabbitMqConsumer<THandler>(this IServiceCollection services, string queue)
+    public static IServiceCollection AddRabbitMqConsumer<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] THandler>(
+        this IServiceCollection services, string queue)
         where THandler : class, IRabbitMqMessageHandler
     {
         ArgumentNullException.ThrowIfNull(services);
