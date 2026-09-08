@@ -1,7 +1,9 @@
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using System.Text.Json;
 using TaskFlow.Application.Contracts.Messaging;
+using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Domain.Shared.Events;
 using TaskFlow.Observability.Meters;
@@ -97,6 +99,62 @@ public sealed class TaskProjectionConsumer(
         _ => projection.ProjectTaskItemAsync(
             PayloadGuid(envelope, nameof(TaskItemCreatedEvent.TaskItemId)), envelope.OccurredAtUtc, ct)
     };
+}
+
+/// <summary>
+/// Maintains the pgvector search projection (D-040): re-embeds a task's title and description whenever the
+/// task is created or its text changes, and removes the row when the task is gone. Registered only when
+/// <c>Search:Provider</c> resolves to PgVector, and its queue and subscription are declared only then too,
+/// so on any other arm there is nothing to accumulate.
+/// </summary>
+public sealed class TaskEmbeddingConsumer(
+    IInboxStore inbox,
+    ITaskEmbeddingRepository embeddings,
+    IEmbeddingGenerator<string, Embedding<float>> generator,
+    MessagingMetrics metrics,
+    ILogger<TaskEmbeddingConsumer> logger) : IntegrationEventConsumer(inbox, metrics, logger)
+{
+    /// <summary>Subscription and queue name for this consumer.</summary>
+    public const string Name = "embedding";
+
+    /// <inheritdoc />
+    public override string ConsumerName => Name;
+
+    /// <inheritdoc />
+    // Only the two events that change embeddable text. A status or completion event never touches Title or
+    // Description, so binding them would pay for a model call to write back an identical vector.
+    public override bool Handles(string eventType) => eventType is
+        nameof(TaskItemCreatedEvent) or nameof(TaskItemContentChangedEvent);
+
+    /// <inheritdoc />
+    protected override async Task ConsumeAsync(IntegrationEventEnvelope envelope, CancellationToken ct)
+    {
+        var taskItemId = PayloadGuid(envelope, nameof(TaskItemCreatedEvent.TaskItemId));
+
+        var source = await embeddings.GetSourceAsync(envelope.TenantId, taskItemId, ct).ConfigureAwait(false);
+        if (source is null)
+        {
+            // Event delivery is asynchronous and races deletion. Deleting rather than skipping is what keeps
+            // a deleted task from staying searchable; a missing row makes the delete a no-op.
+            await embeddings.DeleteAsync(envelope.TenantId, taskItemId, ct).ConfigureAwait(false);
+            logger.TaskEmbeddingRemovedForMissingTask(taskItemId, envelope.TenantId);
+            return;
+        }
+
+        var text = string.IsNullOrWhiteSpace(source.Description)
+            ? source.Title
+            : $"{source.Title}\n\n{source.Description}";
+
+        var embedding = await generator.GenerateAsync(text, cancellationToken: ct).ConfigureAwait(false);
+
+        // The model that produced the vector is recorded with it: vectors from two models are not comparable,
+        // so a model change has to be visible in the data, not only in configuration.
+        var modelId = embedding.ModelId ?? generator.GetService<EmbeddingGeneratorMetadata>()?.DefaultModelId ?? "unknown";
+
+        await embeddings.UpsertAsync(
+            envelope.TenantId, taskItemId, embedding.Vector, modelId, envelope.OccurredAtUtc, ct).ConfigureAwait(false);
+        logger.TaskEmbeddingUpserted(taskItemId, modelId, embedding.Vector.Length);
+    }
 }
 
 /// <summary>Runs the D6 AI readiness review for a newly created task.</summary>

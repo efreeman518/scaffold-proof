@@ -52,6 +52,14 @@ param databaseProvider string = 'SqlServer'
 ])
 param messagingProvider string = 'ServiceBus'
 
+@description('Search backend: Azure AI Search (default), Postgres pgvector, or the SQL prefix fallback (D-040)')
+@allowed([
+  'AzureAiSearch'
+  'PgVector'
+  'Sql'
+])
+param searchProvider string = 'AzureAiSearch'
+
 @description('RabbitMQ broker password, used only when messagingProvider is RabbitMq')
 @secure()
 param rabbitMqPassword string = ''
@@ -307,6 +315,7 @@ module serviceBus 'modules/service-bus.bicep' = if (messagingProvider == 'Servic
   params: {
     resourcePrefix: prefix
     location: location
+    searchProvider: searchProvider
     tags: tags
   }
 }
@@ -522,6 +531,7 @@ module functions 'modules/functions.bicep' = {
     serviceBusNamespace: serviceBus!.outputs.namespaceEndpoint
     appConfigEndpoint: appConfig.outputs.endpoint
     keyVaultUri: keyVault.outputs.uri
+    searchProvider: searchProvider
     databaseProvider: databaseProvider
     dbConnectionString: dbConnectionString
     dbReadConnectionString: dbReadConnectionString

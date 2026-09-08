@@ -7,6 +7,14 @@ param location string
 @description('Tags')
 param tags object = {}
 
+@description('Search backend (D-040); the embedding subscription exists only for PgVector')
+@allowed([
+  'AzureAiSearch'
+  'PgVector'
+  'Sql'
+])
+param searchProvider string = 'AzureAiSearch'
+
 resource serviceBusNamespace 'Microsoft.ServiceBus/namespaces@2024-01-01' = {
   name: '${resourcePrefix}-sb-${uniqueString(resourceGroup().id)}'
   location: location
@@ -97,6 +105,30 @@ resource workflowRule 'Microsoft.ServiceBus/namespaces/topics/subscriptions/rule
     filterType: 'SqlFilter'
     sqlFilter: {
       sqlExpression: 'EventType = \'TaskItemCreatedEvent\''
+    }
+  }
+}
+
+// D-040: the embedding consumer runs only on the PgVector arm. A subscription without a consumer would
+// accumulate every task event until its TTL, so it is created exactly when something drains it.
+resource embeddingSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2024-01-01' = if (searchProvider == 'PgVector') {
+  parent: domainEventsTopic
+  name: 'embedding'
+  properties: {
+    maxDeliveryCount: 5
+    lockDuration: 'PT5M'
+    deadLetteringOnMessageExpiration: true
+    deadLetteringOnFilterEvaluationExceptions: true
+  }
+}
+
+resource embeddingRule 'Microsoft.ServiceBus/namespaces/topics/subscriptions/rules@2024-01-01' = if (searchProvider == 'PgVector') {
+  parent: embeddingSubscription
+  name: 'EventTypeFilter'
+  properties: {
+    filterType: 'SqlFilter'
+    sqlFilter: {
+      sqlExpression: 'EventType IN (\'TaskItemCreatedEvent\', \'TaskItemContentChangedEvent\')'
     }
   }
 }

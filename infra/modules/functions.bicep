@@ -16,6 +16,14 @@ param appConfigEndpoint string
 @description('Key Vault URI')
 param keyVaultUri string
 
+@description('Search backend (D-040); PgVector enables the embedding trigger and its subscription')
+@allowed([
+  'AzureAiSearch'
+  'PgVector'
+  'Sql'
+])
+param searchProvider string = 'AzureAiSearch'
+
 @description('Active database provider (SqlServer or PostgreSql)')
 @allowed(['SqlServer', 'PostgreSql'])
 param databaseProvider string = 'SqlServer'
@@ -83,6 +91,11 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'AppConfig__Endpoint', value: appConfigEndpoint }
         { name: 'KeyVault__Uri', value: keyVaultUri }
         { name: 'Database__Provider', value: databaseProvider }
+        { name: 'Search__Provider', value: searchProvider }
+        // D-040: the embedding subscription is created only for PgVector (service-bus.bicep). Off any other
+        // arm the trigger is switched off by name rather than removed, the same way D-034 switches off the
+        // Service Bus triggers on the RabbitMq lane, so one deployment can flip providers.
+        { name: 'AzureWebJobs.ProcessTaskEmbedding.Disabled', value: searchProvider == 'PgVector' ? 'false' : 'true' }
         { name: 'ConnectionStrings__TaskFlowDbContextTrxn', value: dbConnectionString }
         { name: 'ConnectionStrings__TaskFlowDbContextQuery', value: dbReadConnectionString }
         { name: 'ConnectionStrings__TaskFlowFlowEngineDbContext', value: dbConnectionString }

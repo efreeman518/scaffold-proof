@@ -23,6 +23,7 @@ public static partial class RegisterServices
     private static void AddApplicationServices(IServiceCollection services, IConfiguration config)
     {
         AddMessageHandlers(services);
+        AddVectorSearchServices(services, config);
         AddSharedApplicationServices(services);
         AddServiceApplicationServices(services);
 

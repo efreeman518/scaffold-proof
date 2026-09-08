@@ -1,4 +1,4 @@
-using AppHost;
+﻿using AppHost;
 using Aspire.Hosting.Azure;
 using Aspire.Hosting.Foundry;
 
@@ -42,6 +42,14 @@ var messagingProviderName = Environment.GetEnvironmentVariable("TASKFLOW_MESSAGI
     ?? builder.Configuration["Messaging:Provider"]
     ?? "ServiceBus";
 var useRabbitMq = string.Equals(messagingProviderName, "RabbitMq", StringComparison.OrdinalIgnoreCase);
+
+// D-040: the pgvector embedding path is opt-in. Only the resolved value matters here - the subscription and
+// the Functions trigger have to agree with whatever the hosts resolve, and TASKFLOW_SEARCH_PROVIDER is an
+// environment variable the child processes inherit.
+var searchProviderName = Environment.GetEnvironmentVariable("TASKFLOW_SEARCH_PROVIDER")
+    ?? builder.Configuration["Search:Provider"]
+    ?? "Sql";
+var usePgVector = string.Equals(searchProviderName, "PgVector", StringComparison.OrdinalIgnoreCase);
 
 // Infrastructure resources
 // In Testing mode: non-persistent, no named volume, random port - ensures fresh container with known password.
@@ -116,6 +124,10 @@ else
         ["TaskItemCreatedEvent", "TaskItemStatusChangedEvent", "TaskItemCompletedEvent"]);
     AddEventTypeSubscription(domainEventsTopic, "ai-review", ["TaskItemCreatedEvent"]);
     AddEventTypeSubscription(domainEventsTopic, "workflow", ["TaskItemCreatedEvent"]);
+    // D-040: declared only on the PgVector arm - a subscription nothing drains just fills up.
+    if (usePgVector)
+        AddEventTypeSubscription(domainEventsTopic, "embedding",
+            ["TaskItemCreatedEvent", "TaskItemContentChangedEvent"]);
 
     sb.AddServiceBusQueue("TaskCommands");
 
@@ -388,6 +400,12 @@ if (!isTesting || functionsAvailableInTesting)
             .WithEnvironment("AzureWebJobs.ProcessTaskAiReview.Disabled", "true")
             .WithEnvironment("AzureWebJobs.ProcessTaskWorkflowStart.Disabled", "true");
     }
+
+    // D-040: same mechanism, second reason. The embedding trigger also has to be off whenever the embedding
+    // subscription was not created, or the Functions host fails at startup binding a listener to a
+    // subscription that does not exist.
+    if (useRabbitMq || !usePgVector)
+        functions = functions.WithEnvironment("AzureWebJobs.ProcessTaskEmbedding.Disabled", "true");
 
     if (!string.IsNullOrWhiteSpace(applicationStyle))
     {
