@@ -140,8 +140,8 @@ public sealed class BicepInfrastructureContractTests
     public void CosmosDbModule_NamesMatchApiAppSettings()
     {
         var module = ReadInfraFile(Path.Combine("modules", "cosmos-db.bicep"));
-        var appSettings = File.ReadAllText(Path.Combine(
-            FindRepoRoot(), "src", "Host", "TaskFlow.Api", "appsettings.json"));
+        var appSettings = File.ReadAllText(
+            RepoRoot.Combine("src", "Host", "TaskFlow.Api", "appsettings.json"));
 
         StringAssert.Contains(module, "name: 'taskflow-db'");
         StringAssert.Contains(module, "name: 'task-views'");
@@ -200,24 +200,5 @@ public sealed class BicepInfrastructureContractTests
     }
 
     private static string ReadInfraFile(string relativePath) =>
-        File.ReadAllText(Path.Combine(FindRepoRoot(), "infra", relativePath));
-
-    private static string FindRepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null)
-        {
-            // A regular clone has ".git" as a directory; a git worktree checkout (used by orchestrated
-            // refactor sessions) has ".git" as a plain gitdir-pointer file. Either marks the repo root.
-            var gitPath = Path.Combine(directory.FullName, ".git");
-            if (Directory.Exists(gitPath) || File.Exists(gitPath))
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new InvalidOperationException("Could not locate repository root.");
-    }
+        File.ReadAllText(RepoRoot.Combine("infra", relativePath));
 }

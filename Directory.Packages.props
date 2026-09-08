@@ -30,6 +30,8 @@
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.14.0" />
     <PackageVersion Include="Testcontainers.Azurite" Version="4.14.0" />
     <PackageVersion Include="Testcontainers.Redis" Version="4.14.0" />
+    <!-- D-037 Portable-lane object-storage arm test fixture; pinned to the same Testcontainers family version. -->
+    <PackageVersion Include="Testcontainers.Minio" Version="4.14.0" />
   </ItemGroup>
   <ItemGroup Label="EF.Packages.Enterprise (Private Feed)">
     <PackageVersion Include="EF.FilterBuilder" Version="1.0.163" />
@@ -178,7 +180,7 @@
     <!-- Temporary exception: the Uno toolchain resolves a vulnerable cryptography transitive.
          Reason: direct reference lifts the vulnerable transitive. Remove when the parent resolves a non-vulnerable release.
          Validate with the transitive vulnerability audit and the separate Uno build. -->
-    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.11" />
+    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.12" />
     <!-- Temporary exception: shared test packages resolve vulnerable SSH.NET transitives.
          Reason: direct reference lifts every affected transitive. Remove when the parents resolve a non-vulnerable release.
          Validate with the transitive vulnerability audit and the Test.Support consumers. -->
@@ -189,6 +191,9 @@
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.29.2" />
     <PackageVersion Include="Microsoft.Extensions.Azure" Version="1.14.1" />
     <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.5.3" />
+  </ItemGroup>
+  <ItemGroup Label="AWS S3 (D-037 Portable-lane object-storage arm: MinIO locally/on the VPS, any S3-compatible provider in production)">
+    <PackageVersion Include="AWSSDK.S3" Version="4.0.102.5" />
   </ItemGroup>
   <ItemGroup Label="Azure Service Bus">
     <PackageVersion Include="Azure.Messaging.ServiceBus" Version="7.20.2" />
@@ -202,6 +207,8 @@
   <ItemGroup Label="Data Protection">
     <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.4" />
     <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Keys" Version="1.6.4" />
+    <!-- D-043 Portable-lane key-ring persistence (DataProtection:Persistence=Redis). -->
+    <PackageVersion Include="Microsoft.AspNetCore.DataProtection.StackExchangeRedis" Version="10.0.12" />
   </ItemGroup>
   <ItemGroup Label="AI Services">
     <PackageVersion Include="Azure.AI.OpenAI" Version="2.9.0-beta.1" />

@@ -5,6 +5,9 @@ public class TaskFlowAiSettings
 {
     public const string ConfigSectionName = "AiServices";
 
+    // COMPATIBILITY (one release, D-040): read only when Search:Provider/TASKFLOW_SEARCH_PROVIDER is
+    // unset, to derive the Azure-lane default (UseSearch + SearchEndpoint present -> AzureAiSearch, else
+    // Sql). Prefer Search:Provider for new configuration.
     public bool UseSearch { get; set; }
     public bool UseAgents { get; set; }
     public bool UseVectorSearch { get; set; }

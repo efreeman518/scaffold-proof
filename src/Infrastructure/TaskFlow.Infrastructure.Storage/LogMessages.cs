@@ -44,4 +44,8 @@ internal static partial class LogMessages
     /// <summary>Logs the audit rows removed by one retention sweep.</summary>
     [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 10, Level = LogLevel.Information, Message = "Purged {Count} audit entries recorded before {CutoffUtc}")]
     public static partial void AuditEntriesPurged(this ILogger logger, int count, DateTimeOffset cutoffUtc);
+
+    /// <summary>Logs once that no object-storage backend is configured, so IBlobStorageRepository is the no-op.</summary>
+    [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 11, Level = LogLevel.Warning, Message = "No object-storage backend configured: attachment upload, download, and URL generation will fail; deferred blob deletes will be treated as already gone.")]
+    public static partial void NoOpBlobStorageConfigured(this ILogger logger);
 }

@@ -4,15 +4,58 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using TaskFlow.Application.Contracts.Configuration;
 using TaskFlow.Infrastructure.AI.Agents;
 using TaskFlow.Infrastructure.AI.Agents.Tools;
 using TaskFlow.Infrastructure.AI.Search;
 
 namespace TaskFlow.Infrastructure.AI;
 
+/// <summary>Search backend selected for this deployment (D-040).</summary>
+public enum SearchProvider
+{
+    /// <summary>Azure AI Search.</summary>
+    AzureAiSearch,
+
+    /// <summary>Postgres pgvector similarity search. Requires Database:Provider=PostgreSql. Not implemented yet (slice P7).</summary>
+    PgVector,
+
+    /// <summary>SQL prefix search fallback (<see cref="NoOpSearchService"/>).</summary>
+    Sql
+}
+
 /// <summary>Provides AI service collection extensions behavior for the Infrastructure layer.</summary>
 public static class AiServiceCollectionExtensions
 {
+    public const string SearchProviderConfigKey = "Search:Provider";
+    public const string SearchProviderEnvVar = "TASKFLOW_SEARCH_PROVIDER";
+
+    /// <summary>
+    /// Resolves the search backend. The environment variable wins over configuration; when neither is
+    /// set, the Portable lane defaults to Sql (D-035) and the Azure lane falls back to the legacy
+    /// <c>AiServices:UseSearch</c>(+<c>SearchEndpoint</c>) compatibility mapping kept one release (D-040).
+    /// </summary>
+    public static SearchProvider ResolveSearchProvider(IConfiguration config, TaskFlowAiSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        ArgumentNullException.ThrowIfNull(settings);
+        var value = Environment.GetEnvironmentVariable(SearchProviderEnvVar) ?? config[SearchProviderConfigKey];
+        if (!string.IsNullOrWhiteSpace(value)) return ParseSearchProvider(value);
+
+        if (HostingLaneSelector.Resolve(config) == HostingLane.Portable)
+            return SearchProvider.Sql;
+
+        return settings.UseSearch && !string.IsNullOrWhiteSpace(settings.SearchEndpoint)
+            ? SearchProvider.AzureAiSearch
+            : SearchProvider.Sql;
+    }
+
+    private static SearchProvider ParseSearchProvider(string value) =>
+        Enum.TryParse<SearchProvider>(value, ignoreCase: true, out var provider)
+            ? provider
+            : throw new ArgumentException(
+                $"Unknown search provider '{value}'. Allowed values: {string.Join(", ", Enum.GetNames<SearchProvider>())}.");
+
     /// <summary>Registers AI services dependencies in the service container.</summary>
     public static IServiceCollection AddAiServices(this IServiceCollection services, IConfiguration config)
     {
@@ -24,27 +67,27 @@ public static class AiServiceCollectionExtensions
 
         var settings = aiSection.Get<TaskFlowAiSettings>() ?? new TaskFlowAiSettings();
 
-        // Azure AI Search (if configured)
-        if (settings.UseSearch)
+        switch (ResolveSearchProvider(config, settings))
         {
-            if (!string.IsNullOrWhiteSpace(settings.SearchEndpoint))
-            {
+            case SearchProvider.AzureAiSearch:
+                if (string.IsNullOrWhiteSpace(settings.SearchEndpoint))
+                    throw new InvalidOperationException(
+                        $"{SearchProviderConfigKey}=AzureAiSearch requires AiServices:SearchEndpoint.");
+
                 services.AddSingleton(new SearchClient(
                     new Uri(settings.SearchEndpoint),
                     settings.SearchIndexName,
                     new DefaultAzureCredential()));
 
                 services.AddScoped<ITaskFlowSearchService, TaskFlowSearchService>();
-            }
-            else
-            {
-                // TODO: [CONFIGURE] AI Search endpoint - set AiServices:SearchEndpoint for live search
+                break;
+
+            case SearchProvider.PgVector:
+                throw new NotSupportedException("Search provider PgVector is not implemented yet (slice P7).");
+
+            case SearchProvider.Sql:
                 services.AddScoped<ITaskFlowSearchService, NoOpSearchService>();
-            }
-        }
-        else
-        {
-            services.AddScoped<ITaskFlowSearchService, NoOpSearchService>();
+                break;
         }
 
         // Agent function tools (always registered - agents and tests both need them)

@@ -20,7 +20,7 @@ public sealed class InProcessDistributedLock : IDistributedLock
     /// The ttl is ignored, and there is nothing for it to do: a semaphore cannot outlive the process holding
     /// it, so the crashed-holder case a ttl exists to bound cannot happen here.
     /// </remarks>
-    public ValueTask<IAsyncDisposable?> TryAcquireAsync(
+    public async ValueTask<IAsyncDisposable?> TryAcquireAsync(
         string key, TimeSpan ttl, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
@@ -28,8 +28,11 @@ public sealed class InProcessDistributedLock : IDistributedLock
 
         var gate = _gates.GetOrAdd(key, static _ => new SemaphoreSlim(1, 1));
 
-        return ValueTask.FromResult<IAsyncDisposable?>(
-            gate.Wait(0, ct) ? new Handle(gate) : null);
+        // Zero timeout: a try-acquire, never a wait. WaitAsync rather than the synchronous overload so
+        // there is no path here that occupies a thread, even one that would return immediately.
+        return await gate.WaitAsync(millisecondsTimeout: 0, ct).ConfigureAwait(false)
+            ? new Handle(gate)
+            : null;
     }
 
     private sealed class Handle(SemaphoreSlim gate) : IAsyncDisposable

@@ -8,7 +8,9 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TaskFlow.Application.Contracts.Locking;
+using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Infrastructure.Storage;
+using TaskFlow.Infrastructure.Storage.S3;
 
 namespace TaskFlow.Bootstrapper.StartupTasks;
 
@@ -43,7 +45,8 @@ public sealed class EnsureExternalResources(
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
 
     /// <summary>
-    /// Ensures the attachment container, the audit table, and (in development) the Cosmos view store exist.
+    /// Ensures the attachment container or S3 bucket, the audit table, and (in development) the Cosmos view
+    /// store exist.
     /// <para>
     /// D-052: one replica provisions, the rest wait for it. <c>CreateIfNotExists</c> is idempotent but not
     /// serialized across processes, and Cosmos in particular answers a concurrent create with a conflict
@@ -66,6 +69,7 @@ public sealed class EnsureExternalResources(
         {
             logger.ProvisioningAcquired(ProvisionLockKey);
             await EnsureBlobContainerAsync(ct);
+            await EnsureS3BucketAsync(ct);
             await EnsureAuditTableAsync(ct);
             await EnsureCosmosAsync(ct);
         }
@@ -106,6 +110,17 @@ public sealed class EnsureExternalResources(
         await container.CreateIfNotExistsAsync(cancellationToken: ct).ConfigureAwait(false);
 
         logger.ExternalResourceReady("blob container", blobSettings.Value.ContainerName);
+    }
+
+    /// <summary>Creates the attachment bucket when the S3 object-storage arm is active (D-037).</summary>
+    private async Task EnsureS3BucketAsync(CancellationToken ct)
+    {
+        var provisioner = services.GetService<IS3BucketProvisioner>();
+        if (provisioner is null) return;
+
+        await provisioner.EnsureBucketExistsAsync(AttachmentBlobs.ContainerName, ct).ConfigureAwait(false);
+
+        logger.ExternalResourceReady("s3 bucket", AttachmentBlobs.ContainerName);
     }
 
     /// <summary>Creates the audit table named by configuration.</summary>

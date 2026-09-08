@@ -81,8 +81,9 @@ public static partial class RegisterServices
     }
 
     /// <summary>
-    /// Registers attachment blob storage only when configured. Upload endpoints surface a
-    /// service-level failure if this optional dependency is absent.
+    /// Registers attachment blob storage when configured; otherwise a no-op repository keeps
+    /// <see cref="IBlobStorageRepository"/> resolvable so the DI graph still builds (D-037). Upload/download
+    /// endpoints surface a service-level failure from the no-op when this optional dependency is absent.
     /// </summary>
     private static void AddBlobStorageServices(IServiceCollection services, IConfiguration config)
     {
@@ -91,7 +92,11 @@ public static partial class RegisterServices
             "BlobStorage1",
             "BlobStorage1",
             "Values:BlobStorage1");
-        if (string.IsNullOrEmpty(connStr)) return;
+        if (string.IsNullOrEmpty(connStr))
+        {
+            services.AddSingleton<IBlobStorageRepository, NoOpBlobStorageRepository>();
+            return;
+        }
 
         services.AddAzureClients(builder =>
         {
@@ -192,6 +197,9 @@ public static partial class RegisterServices
 
         if (!string.IsNullOrWhiteSpace(ResolveConnectionString(config, "BlobStorage1", "BlobStorage1", "Values:BlobStorage1")))
             builder.AddCheck<HealthChecks.BlobStorageHealthCheck>("blob-storage", tags: ["full", "extservice"]);
+
+        if (ResolveStorageProvider(config) == StorageProvider.S3)
+            builder.AddCheck<HealthChecks.S3StorageHealthCheck>("s3-storage", tags: ["full", "extservice"]);
 
         if (!string.IsNullOrWhiteSpace(ResolveConnectionString(config, "ServiceBus1", "ServiceBus1", "Values:ServiceBus1")))
             builder.AddCheck<HealthChecks.ServiceBusHealthCheck>("service-bus", tags: ["full", "extservice"]);
