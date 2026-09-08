@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    D-054 internal gRPC read contract. One assembly holds BOTH the server base type and the client stub
+    (GrpcServices="Both"): the Api host and the Blazor host are the only consumers, they ship from the same
+    build, and a split Contracts/Client pair would double the project count for no versioning benefit that
+    a single repo cares about.
+  -->
+
+  <ItemGroup>
+    <!-- Runtime: the generated message types. -->
+    <PackageReference Include="Google.Protobuf" />
+    <!-- Runtime: Grpc.Net.ClientFactory brings Grpc.Core.Api (ServerCallContext, ClientBase, marshallers)
+         plus the AddGrpcClient extension the Blazor host uses. The server side needs only Grpc.Core.Api,
+         which this already provides; Grpc.AspNetCore stays a host concern. -->
+    <PackageReference Include="Grpc.Net.ClientFactory" />
+    <!-- Build only: protoc + the C# plugin. PrivateAssets=all so it never flows to consumers or publish. -->
+    <PackageReference Include="Grpc.Tools" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Protobuf Include="Protos\taskflow_read.proto" GrpcServices="Both" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- TaskFlowReadGrpcMapper converts between these messages and the REST DTOs. Both hosts need that
+         conversion, so it belongs with the contract rather than duplicated in the Api and the Blazor host. -->
+    <ProjectReference Include="..\..\Application\TaskFlow.Application.Models\TaskFlow.Application.Models.csproj" />
+  </ItemGroup>
+
+</Project>

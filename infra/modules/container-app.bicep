@@ -47,6 +47,9 @@ param startupPath string = '/healthz/live'
 @allowed(['sticky', 'none'])
 param stickySessions string = 'none'
 
+@description('Extra ingress ports beyond targetPort, each { external, targetPort, exposedPort }. D-054 uses one internal TCP mapping for the cleartext HTTP/2 gRPC listener; empty leaves ingress exactly as it was.')
+param additionalPortMappings array = []
+
 @description('Environment variables')
 param envVars array = []
 
@@ -63,15 +66,22 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   properties: {
     environmentId: environmentId
     configuration: {
-      ingress: ingressEnabled ? {
-        external: externalIngress
-        targetPort: targetPort
-        transport: 'auto'
-        allowInsecure: false
-        stickySessions: {
-          affinity: stickySessions
+      // The additional mappings are folded in with union() rather than written as a literal property so
+      // an app that declares none produces byte-identical ingress to before this parameter existed.
+      ingress: ingressEnabled ? union(
+        {
+          external: externalIngress
+          targetPort: targetPort
+          transport: 'auto'
+          allowInsecure: false
+          stickySessions: {
+            affinity: stickySessions
+          }
+        },
+        empty(additionalPortMappings) ? {} : {
+          additionalPortMappings: additionalPortMappings
         }
-      } : null
+      ) : null
     }
     template: {
       containers: [

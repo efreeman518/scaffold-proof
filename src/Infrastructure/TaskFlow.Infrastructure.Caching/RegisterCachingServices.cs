@@ -1,3 +1,5 @@
+using MessagePack;
+using MessagePack.Resolvers;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Microsoft.Extensions.Configuration;
@@ -41,8 +43,9 @@ public static class RegisterCachingServices
 
         foreach (var settings in cacheSettings)
         {
-            var fcBuilder = services.AddFusionCache(settings.Name)
-                .WithSystemTextJsonSerializer(CacheSerializerOptions())
+            var fcBuilder = services.AddFusionCache(settings.Name);
+            ApplySerializer(fcBuilder, settings);
+            fcBuilder
                 .WithCacheKeyPrefix($"{settings.Name}:")
                 // Own memory cache per named instance with a hard entry cap: a shared, unbounded L1 is how a
                 // container with a memory limit gets OOM-killed instead of evicting.
@@ -112,6 +115,44 @@ public static class RegisterCachingServices
         services.AddOpenTelemetry().WithMetrics(metrics => metrics.AddFusionCacheInstrumentation());
 
         return services;
+    }
+
+    /// <summary>
+    /// D-048: picks the serializer for one named cache. JSON stays the default because it is the format
+    /// every existing entry is written in and the one a human can read out of Redis during an incident;
+    /// MessagePack is opt-in per cache for the entries where the size and CPU of the L2 hop matter.
+    ///
+    /// The MessagePack arm uses the CONTRACTLESS resolver, which serializes by property name rather than
+    /// by an attribute-assigned key index. That is what keeps this a deployment setting instead of a code
+    /// change: no [MessagePackObject]/[Key] attributes on the DTOs, no build-time formatter generation,
+    /// and the same tolerance for an added property that the JSON arm has. LZ4 block-array compression is
+    /// on because cached snapshots are lists of similar records, which is the shape it pays off on.
+    ///
+    /// Scope note: this is the L2 cache value only. The queue payload deliberately stays JSON (D-048) -
+    /// a binary body loses broker-side filtering, cross-language consumers, and the ability to read a
+    /// dead-lettered message without a decoder.
+    ///
+    /// Switching an existing cache from Json to MessagePack does not migrate anything: entries written in
+    /// the other format fail to deserialize, and FusionCache treats that as a miss and refactories them.
+    /// Bump <see cref="CacheSettings.SchemaVersion"/> alongside the switch to retire them by key instead.
+    /// </summary>
+    private static void ApplySerializer(IFusionCacheBuilder builder, CacheSettings settings)
+    {
+        switch (settings.Serializer)
+        {
+            case CacheSerializer.MessagePack:
+                builder.WithNeueccMessagePackSerializer(
+                    MessagePackSerializerOptions.Standard
+                        .WithResolver(ContractlessStandardResolver.Instance)
+                        .WithCompression(MessagePackCompression.Lz4BlockArray));
+                break;
+            case CacheSerializer.Json:
+                builder.WithSystemTextJsonSerializer(CacheSerializerOptions());
+                break;
+            default:
+                throw new InvalidOperationException(
+                    $"CacheSettings:{settings.Name}:Serializer has unsupported value '{settings.Serializer}'.");
+        }
     }
 
     /// <summary>

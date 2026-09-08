@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/Shared/">
     <Project Path="src/Shared/TaskFlow.Observability/TaskFlow.Observability.csproj" />
+    <Project Path="src/Shared/TaskFlow.Contracts.Grpc/TaskFlow.Contracts.Grpc.csproj" />
   </Folder>
   <Folder Name="/Packages/">
     <Project Path="src/Packages/EF.Messaging.RabbitMq/EF.Messaging.RabbitMq.csproj" />

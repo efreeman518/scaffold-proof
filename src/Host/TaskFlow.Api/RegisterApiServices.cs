@@ -43,6 +43,10 @@ public static class RegisterApiServices
         AddRateLimiting(services, config);
         AddVersionedOpenApi(services, config);
 
+        // D-054: the internal gRPC read service. Nothing else changes here - it shares this host's
+        // authentication, authorization, and request context; only the transport is different.
+        services.AddGrpc();
+
         // Workflow JSON seeding is now configured in the bootstrapper via
         // FlowEngineBuilder.AddWorkflowJsonSeeding.
         // The seeding hosted service auto-discovers ./Workflows at startup.

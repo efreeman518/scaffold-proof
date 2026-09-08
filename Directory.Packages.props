@@ -109,6 +109,14 @@
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.11" />
     <PackageVersion Include="Testcontainers.RabbitMq" Version="4.14.0" />
   </ItemGroup>
+  <ItemGroup Label="gRPC (D-054 internal read service)">
+    <!-- Grpc.Tools is a build-time-only protoc/codegen package: referenced with PrivateAssets=all in the
+         contracts project, so it never flows to consumers or the publish output. -->
+    <PackageVersion Include="Grpc.Tools" Version="2.83.0" />
+    <PackageVersion Include="Google.Protobuf" Version="3.36.1" />
+    <PackageVersion Include="Grpc.Net.ClientFactory" Version="2.83.0" />
+    <PackageVersion Include="Grpc.AspNetCore" Version="2.83.0" />
+  </ItemGroup>
   <ItemGroup Label="YARP">
     <PackageVersion Include="Scalar.AspNetCore" Version="2.17.2" />
     <PackageVersion Include="Yarp.ReverseProxy" Version="2.3.0" />
@@ -147,6 +155,9 @@
     <PackageVersion Include="RedisRateLimiting" Version="1.2.1" />
     <PackageVersion Include="ZiggyCreatures.FusionCache" Version="2.7.2" />
     <PackageVersion Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" Version="2.7.2" />
+    <!-- D-048: the binary L2 arm of CacheSettings:Serializer. Same 2.7.2 family as the rest of FusionCache;
+         it brings MessagePack 3.1.7 transitively, which the central MessagePack 3.1.8 pin lifts. -->
+    <PackageVersion Include="ZiggyCreatures.FusionCache.Serialization.NeueccMessagePack" Version="2.7.2" />
     <PackageVersion Include="ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis" Version="2.7.2" />
     <PackageVersion Include="ZiggyCreatures.FusionCache.OpenTelemetry" Version="2.7.2" />
     <PackageVersion Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.11" />
@@ -175,7 +186,10 @@
   <ItemGroup Label="Security transitive overrides">
     <!-- Temporary exception: NBomber resolves a transitive with a high-severity advisory.
          Reason: direct reference lifts the vulnerable transitive. Remove when NBomber resolves a non-vulnerable release.
-         Validate with the transitive vulnerability audit and the Test.Load build. -->
+         Validate with the transitive vulnerability audit and the Test.Load build.
+         Also a first-class direct dependency since D-048: Infrastructure.Caching references MessagePack for
+         ContractlessStandardResolver, so this pin now outlives the NBomber advisory - only the comment above
+         goes away when NBomber is fixed, not the line. -->
     <PackageVersion Include="MessagePack" Version="3.1.8" />
     <!-- Temporary exception: the Uno toolchain resolves a vulnerable cryptography transitive.
          Reason: direct reference lifts the vulnerable transitive. Remove when the parent resolves a non-vulnerable release.

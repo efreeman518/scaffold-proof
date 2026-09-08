@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Scalar.AspNetCore;
 using TaskFlow.Api.Endpoints;
 using TaskFlow.Api.Endpoints.Cqrs;
+using TaskFlow.Api.Grpc;
 using TaskFlow.Application.Contracts;
 
 namespace TaskFlow.Api;
@@ -92,6 +93,13 @@ public static class WebApplicationBuilderExtensions
         app.MapGet("/alive", () => Results.Ok("Alive"))
             .AllowAnonymous()
             .RequireRateLimiting("HealthMemory");
+
+        // D-054 internal gRPC read service, served on the dedicated cleartext HTTP/2 Kestrel endpoint
+        // (Kestrel:Endpoints:Grpc). RequireAuthorization is redundant with the authenticated-user
+        // fallback policy and stated anyway: an unauthenticated internal RPC surface is not something a
+        // reader should have to infer from a policy declared in another file.
+        app.MapGrpcService<TaskFlowReadGrpcService>()
+            .RequireAuthorization();
 
         // API endpoint groups
         SetupApiEndpoints(app);

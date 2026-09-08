@@ -3,6 +3,8 @@
 @implements IDisposable
 @inject FloatService FloatService
 @inject ITaskFlowApiClient Api
+@inject TaskFlow.Contracts.Grpc.TaskFlowRead.TaskFlowReadClient GrpcReads
+@inject ClientReadSettings ReadSettings
 @inject NavigationManager Nav
 @inject IDialogService DialogService
 
@@ -202,8 +204,14 @@ else
     {
         // Full category list, not a search page: /task-metadata is uncapped by the [1,100] search
         // PageSize clamp (up to PageSizeLimits.MetadataMax), which a PageSize=200 search would now reject.
+        // D-054: gRPC when the internal read hop is configured, REST through the gateway otherwise.
+        // The task load below deliberately stays on REST: it feeds an editor whose save path depends on
+        // the ETag the REST response carries, and D-054 scopes the proof to the aggregate reads.
         var result = await FloatService.ExecuteWithProgressAsync(
-            () => Api.GetTaskMetadataAsync(), "Failed to load categories.");
+            () => ReadSettings.UseGrpcReads
+                ? GrpcReads.GetTaskMetadataDtoAsync()
+                : Api.GetTaskMetadataAsync(),
+            "Failed to load categories.");
         _categories = result?.Categories?.Where(c => c.IsActive).ToList() ?? [];
     }
 

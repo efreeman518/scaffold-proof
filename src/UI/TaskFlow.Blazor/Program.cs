@@ -9,6 +9,7 @@ using TaskFlow.Application.Models.Serialization;
 using TaskFlow.ApiClient;
 using TaskFlow.Blazor.Components;
 using TaskFlow.Blazor.Services;
+using TaskFlow.Contracts.Grpc;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -74,6 +75,35 @@ apiClient.AddStandardResilienceHandler();
 // component. Hedging is applied here and nowhere else - the attachment upload client and the AI client below
 // carry writes and a long-lived stream, neither of which is safe or useful to duplicate.
 apiClient.AddReadHedging(builder.Configuration);
+
+// D-054: the internal gRPC read client. Address order is explicit configuration first (Bicep and the
+// compose lane set Grpc__TaskFlowRead__Address; so does the AppHost, from the Api's named "Grpc"
+// endpoint), then the Aspire service-discovery name for that endpoint. With neither, the flag below
+// defaults off and every read stays on REST through the gateway.
+var grpcReadAddress = builder.Configuration["Grpc:TaskFlowRead:Address"]
+    ?? (builder.Configuration["Services:taskflowapi:Grpc:0"] is not null ? "http://_Grpc.taskflowapi" : null);
+var useGrpcReads = builder.Configuration.GetValue("Clients:UseGrpcReads", grpcReadAddress is not null);
+
+if (useGrpcReads && grpcReadAddress is null)
+{
+    throw new InvalidOperationException(
+        "Clients:UseGrpcReads is enabled but no gRPC address is available. Set Grpc:TaskFlowRead:Address, " +
+        "or run under Aspire, which injects the taskflowapi 'Grpc' endpoint.");
+}
+
+builder.Services.AddSingleton(new ClientReadSettings(useGrpcReads));
+
+// Registered unconditionally so the call sites can inject the client without an optional-service dance;
+// with the flag off it is constructed and never called. The address is a placeholder in that case, which
+// is exactly why the flag - not the presence of a registration - is what decides the transport.
+builder.Services
+    .AddGrpcClient<TaskFlowRead.TaskFlowReadClient>(options =>
+        options.Address = new Uri(grpcReadAddress ?? "http://_Grpc.taskflowapi"))
+    // Same reason as the Refit clients above: ServiceDefaults adds header propagation to every HttpClient
+    // through ConfigureHttpClientDefaults, and this host runs no UseHeaderPropagation middleware, so an
+    // inherited handler would throw on every call from inside a SignalR circuit.
+    .ConfigureAdditionalHttpMessageHandlers((handlers, _) => handlers.Clear())
+    .AddStandardResilienceHandler();
 
 // Attachment upload is a request shape (StreamPart) the Refit source generator cannot build (RF006),
 // so it lives on its own interface registered via the reflection-based AddRefitClient rather than
