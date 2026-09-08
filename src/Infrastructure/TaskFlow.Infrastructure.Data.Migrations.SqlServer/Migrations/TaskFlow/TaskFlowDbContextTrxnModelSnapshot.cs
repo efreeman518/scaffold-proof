@@ -394,6 +394,63 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TaskFlow
                     b.ToTable("TaskItemTag", "taskflow");
                 });
 
+            modelBuilder.Entity("TaskFlow.Infrastructure.Data.Operational.AuditLogRecord", b =>
+                {
+                    b.Property<string>("TenantId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("RecordedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("AuditId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<long>("ElapsedTimeTicks")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("EntityKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Error")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Metadata")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long>("StartTimeTicks")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.HasKey("TenantId", "RecordedUtc", "Id");
+
+                    b.HasIndex("RecordedUtc")
+                        .HasDatabaseName("IX_AuditLog_RecordedUtc");
+
+                    b.ToTable("AuditLog", "taskflow");
+                });
+
             modelBuilder.Entity("TaskFlow.Infrastructure.Data.Operational.BlobDeleteWork", b =>
                 {
                     b.Property<Guid>("Id")
@@ -530,6 +587,81 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TaskFlow
                         .HasDatabaseName("IX_OutboxMessage_Dispatch");
 
                     b.ToTable("OutboxMessage", "taskflow");
+                });
+
+            modelBuilder.Entity("TaskFlow.Infrastructure.Data.ReadModel.TaskViewRecord", b =>
+                {
+                    b.Property<string>("TenantId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("AttachmentCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CategoryName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("ChecklistCompleted")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ChecklistTotal")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CommentCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("CompletedDate")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("CreatedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Document")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset?>("DueDate")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsOverdue")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("LastModifiedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Priority")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTimeOffset?>("StartDate")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int>("SubTaskCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("TenantId", "Id");
+
+                    b.HasIndex("TenantId", "LastModifiedUtc", "Id")
+                        .IsDescending(false, true, true)
+                        .HasDatabaseName("IX_TaskView_TenantId_LastModifiedUtc_Id");
+
+                    b.ToTable("TaskView", "taskflow");
                 });
 
             modelBuilder.Entity("TaskFlow.Domain.Model.Category", b =>

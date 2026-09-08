@@ -4,6 +4,8 @@ using System.Reflection;
 using TaskFlow.Application.Contracts.Configuration;
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Bootstrapper;
+using Microsoft.Extensions.Options;
+using TaskFlow.Infrastructure.Repositories;
 using TaskFlow.Infrastructure.Storage;
 using TaskFlow.Infrastructure.Storage.S3;
 
@@ -168,11 +170,15 @@ public class ProviderSwitchSelectorTests
     }
 
     [TestMethod]
-    public void AddReadModelServices_Relational_ThrowsNotSupported()
+    public void AddReadModelServices_Relational_RegistersRelationalRepository()
     {
-        var config = Config((RegisterServices.ReadModelProviderConfigKey, "Relational"));
-        var ex = InvokeDispatcher("AddReadModelServices", config);
-        StringAssert.Contains(ex.Message, "P3");
+        var services = InvokeDispatcher("AddReadModelServices",
+            Config((RegisterServices.ReadModelProviderConfigKey, "Relational")));
+
+        var descriptor = services.Single(d => d.ServiceType == typeof(ITaskViewRepository));
+        Assert.AreEqual(typeof(RelationalTaskViewRepository), descriptor.ImplementationType);
+        // Scoped, not singleton: it holds the two request-scoped DbContexts (D-027 write/read split).
+        Assert.AreEqual(ServiceLifetime.Scoped, descriptor.Lifetime);
     }
 
     // ----- Audit -----
@@ -211,11 +217,18 @@ public class ProviderSwitchSelectorTests
     }
 
     [TestMethod]
-    public void AddAuditServices_Relational_ThrowsNotSupported()
+    public void AddAuditServices_Relational_RegistersRelationalSinkAndBindsSettings()
     {
-        var config = Config((RegisterServices.AuditProviderConfigKey, "Relational"));
-        var ex = InvokeDispatcher("AddAuditServices", config);
-        StringAssert.Contains(ex.Message, "P3");
+        var services = InvokeDispatcher("AddAuditServices",
+            Config((RegisterServices.AuditProviderConfigKey, "Relational")));
+
+        var descriptor = services.Single(d => d.ServiceType == typeof(IAuditLogRepository));
+        Assert.AreEqual(ServiceLifetime.Scoped, descriptor.Lifetime);
+        // The settings section carries the retention window the Scheduler job reads and the sentinel tenant
+        // for entries with no tenant; leaving it unbound in this arm would silently use the defaults.
+        Assert.IsTrue(
+            services.Any(d => d.ServiceType == typeof(IConfigureOptions<AuditLogStorageSettings>)),
+            "the relational arm must bind AuditLogStorageSettings as well");
     }
 
     // ----- Messaging (D-034 selector extended with the lane default and fail-fast in this slice) -----
@@ -291,20 +304,31 @@ public class ProviderSwitchSelectorTests
     /// <summary>
     /// Invokes a private static <c>Add&lt;X&gt;Services(IServiceCollection, IConfiguration)</c> dispatcher
     /// directly (bypassing the rest of <c>RegisterInfrastructureServices</c>, which needs a database
-    /// connection and column-encryption key this test does not set up) and returns the exception it threw.
+    /// connection and column-encryption key this test does not set up) and returns what it registered.
     /// </summary>
-    private static NotSupportedException InvokeDispatcher(string methodName, IConfiguration config)
+    private static IServiceCollection InvokeDispatcher(string methodName, IConfiguration config)
     {
-        var method = typeof(RegisterServices).GetMethod(methodName, BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new MissingMethodException(nameof(RegisterServices), methodName);
+        var services = new ServiceCollection();
+        services.AddLogging();
+        Dispatcher(methodName).Invoke(null, [services, config]);
+        return services;
+    }
+
+    /// <summary>Same invocation, for an arm that is expected to fail fast.</summary>
+    private static NotSupportedException InvokeUnsupportedDispatcher(string methodName, IConfiguration config)
+    {
         var services = new ServiceCollection();
         services.AddLogging();
 
         var target = Assert.ThrowsExactly<TargetInvocationException>(() =>
-            method.Invoke(null, [services, config]));
+            Dispatcher(methodName).Invoke(null, [services, config]));
         Assert.IsInstanceOfType<NotSupportedException>(target.InnerException);
         return (NotSupportedException)target.InnerException!;
     }
+
+    private static MethodInfo Dispatcher(string methodName) =>
+        typeof(RegisterServices).GetMethod(methodName, BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new MissingMethodException(nameof(RegisterServices), methodName);
 
     /// <summary>Sets an environment variable for the duration of <paramref name="action"/>, always restoring it.</summary>
     private static void WithEnv(string name, string value, Action action)

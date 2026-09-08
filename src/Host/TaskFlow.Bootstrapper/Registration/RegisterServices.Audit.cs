@@ -1,6 +1,10 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using TaskFlow.Application.Contracts.Storage;
+using TaskFlow.Infrastructure.Data;
+using TaskFlow.Infrastructure.Repositories;
+using TaskFlow.Infrastructure.Storage;
 
 namespace TaskFlow.Bootstrapper;
 
@@ -10,7 +14,7 @@ public enum AuditProvider
     /// <summary>The existing Azure Table Storage audit sink.</summary>
     AzureTable,
 
-    /// <summary>A relational AuditLog table. Not implemented yet (slice P3).</summary>
+    /// <summary>A relational AuditLog table in the application database.</summary>
     Relational
 }
 
@@ -50,7 +54,24 @@ public static partial class RegisterServices
                 AddTableStorageServices(services, config);
                 break;
             case AuditProvider.Relational:
-                throw new NotSupportedException("Audit provider Relational is not implemented yet (slice P3).");
+                AddRelationalAuditServices(services, config);
+                break;
         }
+    }
+
+    /// <summary>
+    /// Relational audit sink (D-039). The settings section is bound here as well as in the Table arm: it
+    /// carries the retention window the Scheduler job reads and the sentinel tenant for entries with no
+    /// tenant, neither of which is Table-specific. No extra health check: the always-on <c>sql</c> readiness
+    /// check already covers this sink.
+    /// </summary>
+    private static void AddRelationalAuditServices(IServiceCollection services, IConfiguration config)
+    {
+        services.Configure<AuditLogStorageSettings>(
+            config.GetSection(AuditLogStorageSettings.ConfigSectionName));
+
+        services.AddScoped<IAuditLogRepository>(sp => new RelationalAuditLogRepository(
+            sp.GetRequiredService<TaskFlowDbContextTrxn>(),
+            sp.GetRequiredService<IOptions<AuditLogStorageSettings>>().Value.NullTenantPartitionKey));
     }
 }

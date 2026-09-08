@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TaskFlow.Application.Contracts.Storage;
+using TaskFlow.Infrastructure.Repositories;
 
 namespace TaskFlow.Bootstrapper;
 
@@ -10,7 +11,7 @@ public enum ReadModelProvider
     /// <summary>The existing denormalized Cosmos DB TaskView projection.</summary>
     Cosmos,
 
-    /// <summary>A relational TaskView table. Not implemented yet (slice P3).</summary>
+    /// <summary>A relational TaskView table in the application database.</summary>
     Relational
 }
 
@@ -50,7 +51,18 @@ public static partial class RegisterServices
                 AddCosmosDbServices(services, config);
                 break;
             case ReadModelProvider.Relational:
-                throw new NotSupportedException("ReadModel provider Relational is not implemented yet (slice P3).");
+                AddRelationalReadModelServices(services);
+                break;
         }
     }
+
+    /// <summary>
+    /// Relational TaskView read model (D-038). Scoped over the pooled context factories already registered
+    /// by <see cref="AddDatabaseServices"/>, so the read model shares the application database rather than
+    /// adding one. No connection-string gate and no extra health check: the always-on <c>sql</c> readiness
+    /// check already covers this store, and a missing database connection is a startup failure for the whole
+    /// host, not a degradation of this one repository.
+    /// </summary>
+    private static void AddRelationalReadModelServices(IServiceCollection services) =>
+        services.AddScoped<ITaskViewRepository, RelationalTaskViewRepository>();
 }
