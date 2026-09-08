@@ -56,7 +56,7 @@ var gatewayBaseUrl = builder.Configuration["Gateway:BaseUrl"]
 // call hangs and FloatService silently swallows the resulting cancellation (no error shown, page never
 // navigates). Clear the inherited additional handlers and add a single clean resilience handler instead.
 // No auth handler yet - gateway dev mode accepts unauthenticated requests.
-builder.Services
+var apiClient = builder.Services
     .AddRefitGeneratedClient<ITaskFlowApiClient>(new RefitSettings
     {
         ContentSerializer = new SystemTextJsonContentSerializer(jsonOptions)
@@ -66,8 +66,14 @@ builder.Services
         client.BaseAddress = new Uri(gatewayBaseUrl);
         client.DefaultRequestHeaders.Add("Accept", "application/json");
     })
-    .ConfigureAdditionalHttpMessageHandlers((handlers, _) => handlers.Clear())
-    .AddStandardResilienceHandler();
+    .ConfigureAdditionalHttpMessageHandlers((handlers, _) => handlers.Clear());
+
+apiClient.AddStandardResilienceHandler();
+
+// D-051: this is the read pipeline a rendered page waits on, so a slow tail costs a visibly stalled
+// component. Hedging is applied here and nowhere else - the attachment upload client and the AI client below
+// carry writes and a long-lived stream, neither of which is safe or useful to duplicate.
+apiClient.AddReadHedging(builder.Configuration);
 
 // Attachment upload is a request shape (StreamPart) the Refit source generator cannot build (RF006),
 // so it lives on its own interface registered via the reflection-based AddRefitClient rather than
