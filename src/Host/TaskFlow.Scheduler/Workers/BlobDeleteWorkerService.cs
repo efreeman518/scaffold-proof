@@ -16,12 +16,9 @@ public sealed class BlobDeleteWorkerService(
     protected override async Task HandleBatchAsync(
         IServiceProvider scope, IOperationalWorkRepository work, LeasedBatch<BlobDeleteWork> batch, CancellationToken ct)
     {
-        var blobs = scope.GetService<IBlobStorageRepository>();
-        if (blobs is null)
-        {
-            logger.BlobDeleteWorkerDisabled(batch.Items.Count);
-            return;
-        }
+        // IBlobStorageRepository always resolves - a no-op fallback stands in when no object-storage
+        // backend is configured and treats a delete as already-gone (D-037), so no null guard is needed here.
+        var blobs = scope.GetRequiredService<IBlobStorageRepository>();
 
         var deleted = new List<Guid>(batch.Items.Count);
         foreach (var item in batch.Items)
