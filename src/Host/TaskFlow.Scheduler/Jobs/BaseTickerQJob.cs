@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using TaskFlow.Scheduler.Abstractions;
 using TaskFlow.Scheduler.Infrastructure;
+using TaskFlow.Observability.Tracing;
 using TaskFlow.Scheduler.Telemetry;
 using TickerQ.Utilities.Base;
 
@@ -36,6 +37,13 @@ public abstract class BaseTickerQJob
         TaskFlowSchedulerExceptionHandler.RegisterJobName(context.Id, jobName);
         _logger.JobStarting(jobName, DateTime.UtcNow);
 
+        // D-053: one span per job execution, here rather than in each handler - a scheduled run has no
+        // incoming request to inherit a trace from, so this is the root that everything the handler does
+        // (database work, outbox staging) hangs off.
+        using var activity = TaskFlowActivitySources.Scheduler.StartActivity(
+            $"{jobName} execute", ActivityKind.Internal);
+        activity?.SetTag("scheduler.job.name", jobName);
+
         try
         {
             await using var scope = _scopeFactory.CreateAsyncScope();
@@ -50,6 +58,7 @@ public abstract class BaseTickerQJob
         catch (Exception ex)
         {
             sw.Stop();
+            activity?.SetStatus(ActivityStatusCode.Error, ex.GetBaseException().Message);
             _logger.LogError(ex, "Job {JobName} failed after {ElapsedMs}ms", jobName, sw.ElapsedMilliseconds);
             throw;
         }

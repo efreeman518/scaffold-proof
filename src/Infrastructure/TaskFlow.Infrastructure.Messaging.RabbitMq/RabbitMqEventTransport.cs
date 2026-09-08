@@ -2,6 +2,7 @@ using EF.Messaging.RabbitMq;
 using TaskFlow.Infrastructure.Data.Messaging;
 using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Observability.Meters;
+using TaskFlow.Observability.Tracing;
 
 namespace TaskFlow.Infrastructure.Messaging.RabbitMq;
 
@@ -30,18 +31,30 @@ public sealed class RabbitMqEventTransport(
         var batch = new List<RabbitMqMessage>(messages.Count);
         foreach (var row in messages)
         {
+            var headers = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["EventType"] = row.EventType,
+                ["EventVersion"] = row.EventVersion,
+                ["TenantId"] = row.TenantId.ToString(),
+                ["CorrelationId"] = row.CorrelationId
+            };
+
+            // D-053: one producer span per message, and the trace context injected into that message's own
+            // headers. Per message rather than per batch because a batch mixes rows staged by unrelated
+            // requests, so a single span for the batch would attach every consumer to an arbitrary one.
+            using var publish = MessagingTrace.StartPublish(
+                MessagingTrace.RabbitMqSystem,
+                TaskFlowRabbitMqTopology.Exchange,
+                row.EventType,
+                row.Id.ToString(),
+                (key, value) => headers[key] = value);
+
             batch.Add(new RabbitMqMessage(
                 bodies.Append(row.Payload),
                 RoutingKey: row.EventType,
                 MessageId: row.Id.ToString(),
                 CorrelationId: row.CorrelationId,
-                Headers: new Dictionary<string, object?>(StringComparer.Ordinal)
-                {
-                    ["EventType"] = row.EventType,
-                    ["EventVersion"] = row.EventVersion,
-                    ["TenantId"] = row.TenantId.ToString(),
-                    ["CorrelationId"] = row.CorrelationId
-                }));
+                Headers: headers));
         }
 
         try

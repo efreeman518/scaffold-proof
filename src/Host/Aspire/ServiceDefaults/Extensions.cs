@@ -8,6 +8,7 @@ using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using TaskFlow.Observability.Meters;
+using TaskFlow.Observability.Tracing;
 
 namespace Microsoft.Extensions.Hosting;
 
@@ -73,6 +74,12 @@ public static class Extensions
             .WithTracing(tracing =>
             {
                 tracing.AddHttpClientInstrumentation();
+
+                // D-053: TaskFlow's own sources, named once here for the same reason the meters are - a
+                // source added inside a shared library is only exported by hosts that remembered its name.
+                tracing.AddSource(
+                    TaskFlowActivitySources.MessagingName,
+                    TaskFlowActivitySources.SchedulerName);
 
                 if (!suppressAspNetCoreInstrumentation)
                 {
