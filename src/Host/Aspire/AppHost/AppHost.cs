@@ -314,9 +314,9 @@ builder.AddProject<Projects.TaskFlow_Blazor>("taskflowblazor")
     .WithEnvironment("Gateway__BaseUrl", gateway.GetEndpoint("http"))
     // D-054: the one in-cluster service-to-service hop. Blazor Server reads the dashboard summary and
     // the picker metadata straight from the Api's gRPC listener; every public client still goes through
-    // the gateway over REST. The reference publishes services__taskflowapi__Grpc__0 for discovery, and
-    // the explicit variable is the single knob the Bicep and compose lanes set too, so all three lanes
-    // configure this the same way.
+    // the gateway over REST. WithReference records the dependency and publishes
+    // services__taskflowapi__Grpc__0; the explicit variable is what the host actually reads, and it is
+    // the same one Bicep and the compose lane set, so all three lanes configure this identically.
     .WithReference(api.GetEndpoint("Grpc"))
     .WithEnvironment("Grpc__TaskFlowRead__Address", api.GetEndpoint("Grpc"))
     .WaitFor(gateway)
