@@ -4,6 +4,10 @@ using TaskFlow.Gateway;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Azure App Configuration (D-042): dynamic config, no-op unless AppConfig:Endpoint (or
+// ConnectionStrings:AppConfig) is set. Runs first so later configuration reads see values it overrides.
+builder.AddGatewayAppConfiguration();
+
 builder.AddServiceDefaults();
 builder.AddProxyForwarding();
 builder.Services.AddGatewayServices(builder.Configuration);
@@ -15,6 +19,13 @@ builder.Services.AddAuthorization();
 var app = builder.Build();
 
 // Pipeline order: security -> CORS -> middleware -> endpoints -> reverse proxy
+// Azure App Configuration sentinel-key refresh middleware (D-042), guarded the same way the config
+// source itself was added - registering it without the provider having been added throws.
+if (GatewayAppConfiguration.IsAppConfigurationConfigured(app.Configuration))
+{
+    app.UseAzureAppConfiguration();
+}
+
 // Adopt the edge proxy's public scheme/host before auth and before YARP re-stamps
 // X-Forwarded-* for the downstream app.
 app.UseProxyForwarding();

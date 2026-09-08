@@ -24,17 +24,6 @@
     <OpenApiDocumentsDirectory>$(MSBuildProjectDirectory)/openapi-doc</OpenApiDocumentsDirectory>
   </PropertyGroup>
 
-  <!-- D-047: the Dockerfile publishes with PublishReadyToRun=true, and crossgen2 needs the full assembly
-       closure of everything it precompiles. Microsoft.Agents.AI.OpenAI arrives transitively and references
-       OpenAI, which this project declares PrivateAssets="all" precisely so it is NOT deployed - so that
-       reference is dangling in the publish output by design and crossgen2 fails on it (NETSDK1096, "Failed
-       to load assembly 'OpenAI'"). Excluding it from R2R costs nothing: an assembly whose dependency is
-       absent cannot be on a hot path, or on any path. Remove this line if OpenAI ever becomes a deployed
-       dependency of the Api. No-op when PublishReadyToRun is off (ordinary build and test). -->
-  <ItemGroup>
-    <PublishReadyToRunExclude Include="Microsoft.Agents.AI.OpenAI.dll" />
-  </ItemGroup>
-
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Http" />
     <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" />
@@ -50,11 +39,15 @@
     <PackageReference Include="Microsoft.AI.Foundry.Local" PrivateAssets="all" />
     <PackageReference Include="Microsoft.AspNetCore.HeaderPropagation" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <!-- D-042: FeatureGateEndpointFilter reads IVariantFeatureManager directly. -->
+    <PackageReference Include="Microsoft.Azure.AppConfiguration.AspNetCore" />
+    <PackageReference Include="Microsoft.FeatureManagement.AspNetCore" />
     <PackageReference Include="Aspire.Azure.AI.Inference" />
     <PackageReference Include="Microsoft.Extensions.AI" />
-    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" PrivateAssets="all" />
+    <!-- Deployed (D-041): the OpenAICompatible LLM arm calls the OpenAI SDK directly at runtime. -->
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
     <PackageReference Include="Newtonsoft.Json" />
-    <PackageReference Include="OpenAI" PrivateAssets="all" />
+    <PackageReference Include="OpenAI" />
     <PackageReference Include="Scalar.AspNetCore" />
     <!-- Direct references participate in the documented Roslyn exact-family exception in Directory.Packages.props. -->
     <PackageReference Include="Microsoft.CodeAnalysis.Common" />

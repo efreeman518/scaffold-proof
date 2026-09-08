@@ -69,4 +69,8 @@ internal static partial class LogMessages
     /// <summary>Logs that the task assistant is processing a message.</summary>
     [LoggerMessage(EventId = LogEventIds.InfrastructureAiBase + 14, Level = LogLevel.Debug, Message = "TaskAssistant processing message for tenant {TenantId}, conversation {ConversationId}")]
     public static partial void AssistantProcessing(this ILogger logger, Guid? tenantId, string? conversationId);
+
+    /// <summary>Logs that the AI task reviewer was skipped because the AiReview feature flag is off (D-042).</summary>
+    [LoggerMessage(EventId = LogEventIds.InfrastructureAiBase + 16, Level = LogLevel.Debug, Message = "AiTaskReviewer skipped for {TaskId} - AiReview feature flag is off.")]
+    public static partial void AiReviewerSkippedByFlag(this ILogger logger, Guid taskId);
 }

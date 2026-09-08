@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using TaskFlow.Api.Filters;
+using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Storage;
 
 namespace TaskFlow.Api.Endpoints;
@@ -9,7 +11,8 @@ public static class TaskViewEndpoints
     /// <summary>Registers task view routes, handlers, and response metadata.</summary>
     public static IEndpointRouteBuilder MapTaskViewEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/task-views").WithTags("TaskViews");
+        var group = app.MapGroup("/task-views").WithTags("TaskViews")
+            .RequireFeature(TaskFlowFeatures.TaskViews);
 
         group.MapGet("/{id}", async (string id,
             [FromQuery] string tenantId,

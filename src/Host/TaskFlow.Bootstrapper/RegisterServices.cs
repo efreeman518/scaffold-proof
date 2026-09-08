@@ -26,6 +26,10 @@ public static partial class RegisterServices
         services.AddSupportServices();
 
         AddRequestContext(services);
+        // D-042: registered here (not per-host Program.cs) so every host that composes through
+        // Bootstrapper - Api, Scheduler, Functions, and any RabbitMQ consumer host - resolves
+        // IVariantFeatureManager for AiTaskReviewer regardless of which one runs the AiReview consumer.
+        services.AddTaskFlowFeatureManagement();
         AddDatabaseServices(services, config);
         services.AddTaskFlowCaching(config);
         AddAuditServices(services, config);

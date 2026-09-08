@@ -7,6 +7,7 @@ using Scalar.AspNetCore;
 using TaskFlow.Api.Endpoints;
 using TaskFlow.Api.Endpoints.Cqrs;
 using TaskFlow.Application.Contracts;
+using TaskFlow.Bootstrapper;
 
 namespace TaskFlow.Api;
 
@@ -25,6 +26,15 @@ public static class WebApplicationBuilderExtensions
     public static WebApplication ConfigurePipeline(this WebApplication app)
     {
         _problemDetailsIncludeStackTrace = app.Environment.IsDevelopment() || app.Environment.IsStaging();
+
+        // 0. Azure App Configuration sentinel-key refresh middleware (D-042). Guarded by the same
+        // condition AddTaskFlowAppConfiguration used: registering the middleware without the provider
+        // having been added throws, so this only runs when the provider is actually configured.
+        if (!string.IsNullOrWhiteSpace(app.Configuration[RegisterServices.AppConfigEndpointConfigKey])
+            || !string.IsNullOrWhiteSpace(app.Configuration.GetConnectionString("AppConfig")))
+        {
+            app.UseAzureAppConfiguration();
+        }
 
         // 1. Public scheme/host/path base from the explicitly trusted deployment proxy.
         app.UseProxyForwarding();

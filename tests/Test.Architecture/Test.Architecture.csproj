@@ -33,6 +33,8 @@
     <ProjectReference Include="..\..\src\Infrastructure\TaskFlow.Infrastructure.Storage\TaskFlow.Infrastructure.Storage.csproj" />
     <ProjectReference Include="..\..\src\Infrastructure\TaskFlow.Infrastructure.Caching\TaskFlow.Infrastructure.Caching.csproj" />
     <ProjectReference Include="..\..\src\Host\TaskFlow.Bootstrapper\TaskFlow.Bootstrapper.csproj" />
+    <!-- D-042: FeatureManagementArchitectureTests checks the Api's own namespace boundary (Filters only). -->
+    <ProjectReference Include="..\..\src\Host\TaskFlow.Api\TaskFlow.Api.csproj" />
   </ItemGroup>
 
 </Project>

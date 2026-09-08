@@ -56,4 +56,11 @@ internal static partial class LogMessages
     /// <summary>Logs that the wait for another replica's provisioning ran out of budget.</summary>
     [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 12, Level = LogLevel.Warning, Message = "Provisioning lock {LockKey} still held after {WaitSeconds}s; continuing without confirmation that external resources exist.")]
     public static partial void ProvisioningWaitTimedOut(this ILogger logger, string lockKey, int waitSeconds);
+    /// <summary>Logs that the OpenAI-compatible chat client is being configured (D-041).</summary>
+    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 13, Level = LogLevel.Information, Message = "{AppName} {Environment} - Configure OpenAI-compatible chat client at {Endpoint}.")]
+    public static partial void ConfigureOpenAICompatibleChatClient(this ILogger logger, string appName, string environment, string endpoint);
+
+    /// <summary>Logs that a legacy AiServices:Use* kill switch is superseded by dynamic feature flags (D-042).</summary>
+    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 14, Level = LogLevel.Warning, Message = "{AppName} {Environment} - {ConfigKey}=false is a legacy AI kill switch superseded by dynamic feature flags (D-042); honored one more release, then removed. Configure App Configuration/appsettings feature flags instead.")]
+    public static partial void LegacyAiSwitchSuperseded(this ILogger logger, string appName, string environment, string configKey);
 }

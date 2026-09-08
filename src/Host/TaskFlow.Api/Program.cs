@@ -14,6 +14,11 @@ startupLogger.Startup(appName, env);
 
 try
 {
+    // 0. Azure App Configuration (D-042): dynamic config + feature flags, no-op unless AppConfig:Endpoint
+    // (or ConnectionStrings:AppConfig) is set. Runs first so every later configuration read - including
+    // AddServiceDefaults below - can see values it overrides.
+    builder.AddTaskFlowAppConfiguration();
+
     // 1. Service defaults (OpenTelemetry, health, resilience)
     builder.AddServiceDefaults();
     builder.AddProxyForwarding();

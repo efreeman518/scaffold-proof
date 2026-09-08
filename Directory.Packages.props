@@ -210,6 +210,13 @@
     <!-- D-043 Portable-lane key-ring persistence (DataProtection:Persistence=Redis). -->
     <PackageVersion Include="Microsoft.AspNetCore.DataProtection.StackExchangeRedis" Version="10.0.12" />
   </ItemGroup>
+  <ItemGroup Label="Configuration and feature flags">
+    <!-- D-042: config + feature-flag provider, gated on AppConfig:Endpoint. -->
+    <PackageVersion Include="Microsoft.Azure.AppConfiguration.AspNetCore" Version="8.6.0" />
+    <PackageVersion Include="Microsoft.FeatureManagement.AspNetCore" Version="4.7.0" />
+    <!-- Infrastructure.AI checks AiReview via IVariantFeatureManager without the ASP.NET Core-specific package. -->
+    <PackageVersion Include="Microsoft.FeatureManagement" Version="4.7.0" />
+  </ItemGroup>
   <ItemGroup Label="AI Services">
     <PackageVersion Include="Azure.AI.OpenAI" Version="2.9.0-beta.1" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />

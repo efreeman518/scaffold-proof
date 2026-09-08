@@ -39,9 +39,13 @@
     <PackageReference Include="EF.FlowEngine.AdminApi" />
     <PackageReference Include="Aspire.Azure.AI.Inference" />
     <PackageReference Include="Microsoft.AI.Foundry.Local" PrivateAssets="all" />
+    <!-- D-042: Azure App Configuration + Microsoft.FeatureManagement, gated on AppConfig:Endpoint. -->
+    <PackageReference Include="Microsoft.Azure.AppConfiguration.AspNetCore" />
+    <PackageReference Include="Microsoft.FeatureManagement.AspNetCore" />
     <PackageReference Include="Microsoft.Extensions.AI" />
-    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" PrivateAssets="all" />
-    <PackageReference Include="OpenAI" PrivateAssets="all" />
+    <!-- Deployed (D-041): the OpenAICompatible LLM arm calls the OpenAI SDK directly at runtime. -->
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
+    <PackageReference Include="OpenAI" />
   </ItemGroup>
 
   <ItemGroup>

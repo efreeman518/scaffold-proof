@@ -1,5 +1,7 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Microsoft.FeatureManagement;
+using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models;
 
@@ -9,6 +11,7 @@ namespace TaskFlow.Infrastructure.AI.Demos;
 public sealed class AiTaskReviewer(
     ILogger<AiTaskReviewer> logger,
     IChatClient chatClient,
+    IVariantFeatureManager featureManager,
     ITaskItemService taskItemService) : IAiTaskReviewer
 {
     private const string ReadyMarker = "READY";
@@ -19,6 +22,12 @@ public sealed class AiTaskReviewer(
         if (chatClient is NoOpChatClient)
         {
             logger.AiReviewerSkipped(taskId);
+            return;
+        }
+
+        if (!await featureManager.IsEnabledAsync(TaskFlowFeatures.AiReview, ct))
+        {
+            logger.AiReviewerSkippedByFlag(taskId);
             return;
         }
 
