@@ -4,6 +4,8 @@ using MudBlazor.Services;
 using Refit;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
+using TaskFlow.Application.Models.Serialization;
 using TaskFlow.ApiClient;
 using TaskFlow.Blazor.Components;
 using TaskFlow.Blazor.Services;
@@ -37,6 +39,11 @@ var jsonOptions = new JsonSerializerOptions
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     Converters = { new JsonStringEnumConverter() }
 };
+// D-048: generated metadata for the API DTOs this circuit deserializes on every interaction, with the
+// reflection resolver kept behind it for anything the context does not cover. Naming stays whatever these
+// options say, so the request/response format is unchanged.
+jsonOptions.TypeInfoResolverChain.Insert(0, TaskFlowJsonContext.Default);
+jsonOptions.TypeInfoResolverChain.Add(new DefaultJsonTypeInfoResolver());
 
 var gatewayBaseUrl = builder.Configuration["Gateway:BaseUrl"]
     ?? throw new InvalidOperationException("Gateway:BaseUrl not configured.");
