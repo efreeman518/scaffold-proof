@@ -34,11 +34,33 @@ public class CacheSettings
     /// <summary>
     /// Bumped whenever a cached snapshot's shape changes. It is part of every key, so a deployment with a new
     /// shape simply cannot read the old one - no eviction sweep, no version-mismatch deserialization failures.
+    ///
+    /// 2: the JSON cache serializer no longer writes ReferenceHandler.Preserve metadata (see
+    /// RegisterCachingServices.CacheSerializerOptions), so entries written by an earlier build carry an
+    /// $id/$values wrapper this build cannot read.
     /// </summary>
-    public int SchemaVersion { get; set; } = 1;
+    public int SchemaVersion { get; set; } = 2;
+
+    /// <summary>
+    /// D-048: the format L2 entries are stored in. Json is the default and the readable one; MessagePack
+    /// is the binary arm, contractless (property names, no DTO attributes). Changing this on a live cache
+    /// invalidates the entries already stored under the current <see cref="SchemaVersion"/> - they fail to
+    /// deserialize and are refactoried - so bump SchemaVersion in the same change.
+    /// </summary>
+    public CacheSerializer Serializer { get; set; } = CacheSerializer.Json;
 
     /// <summary>Per-profile durability. Missing entries fall back to the profile defaults below.</summary>
     public CacheProfileSettings Profiles { get; set; } = new();
+}
+
+/// <summary>The serialization formats a named cache can store its L2 values in (D-048).</summary>
+public enum CacheSerializer
+{
+    /// <summary>System.Text.Json through the source-generated context, with a reflection fallback.</summary>
+    Json = 0,
+
+    /// <summary>Neuecc MessagePack, contractless resolver, LZ4 block-array compression.</summary>
+    MessagePack = 1
 }
 
 /// <summary>Durability for each named cache profile.</summary>

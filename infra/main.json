@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "1272871383972674552"
+      "templateHash": "16608783060016009895"
     }
   },
   "parameters": {
@@ -317,7 +317,8 @@
       "appConfigDataReader": "516239f1-63e1-4d78-a4de-a74fb236a071",
       "contributor": "b24988ac-6180-42a0-ab88-20f7382dd24c",
       "userAccessAdministrator": "18d7d88d-d35e-4fb5-a5c3-7773c20a72d9"
-    }
+    },
+    "apiGrpcPort": 8081
   },
   "resources": {
     "rg": {
@@ -2520,7 +2521,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "10834496467740372009"
+              "templateHash": "11145755578384506289"
             }
           },
           "parameters": {
@@ -2637,6 +2638,13 @@
                 "description": "Ingress session affinity. Sticky is required only for hosts holding server-side per-client state (Blazor Server SignalR circuits)."
               }
             },
+            "additionalPortMappings": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Extra ingress ports beyond targetPort, each { external, targetPort, exposedPort }. D-054 uses one internal TCP mapping for the cleartext HTTP/2 gRPC listener; empty leaves ingress exactly as it was."
+              }
+            },
             "envVars": {
               "type": "array",
               "defaultValue": [],
@@ -2665,7 +2673,7 @@
               "properties": {
                 "environmentId": "[parameters('environmentId')]",
                 "configuration": {
-                  "ingress": "[if(parameters('ingressEnabled'), createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), null())]"
+                  "ingress": "[if(parameters('ingressEnabled'), union(createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), if(empty(parameters('additionalPortMappings')), createObject(), createObject('additionalPortMappings', parameters('additionalPortMappings')))), null())]"
                 },
                 "template": {
                   "containers": [
@@ -2792,6 +2800,15 @@
           "targetPort": {
             "value": 8080
           },
+          "additionalPortMappings": {
+            "value": [
+              {
+                "external": false,
+                "targetPort": "[variables('apiGrpcPort')]",
+                "exposedPort": "[variables('apiGrpcPort')]"
+              }
+            ]
+          },
           "minReplicas": {
             "value": "[parameters('apiProfile').minReplicas]"
           },
@@ -2815,7 +2832,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "10834496467740372009"
+              "templateHash": "11145755578384506289"
             }
           },
           "parameters": {
@@ -2932,6 +2949,13 @@
                 "description": "Ingress session affinity. Sticky is required only for hosts holding server-side per-client state (Blazor Server SignalR circuits)."
               }
             },
+            "additionalPortMappings": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Extra ingress ports beyond targetPort, each { external, targetPort, exposedPort }. D-054 uses one internal TCP mapping for the cleartext HTTP/2 gRPC listener; empty leaves ingress exactly as it was."
+              }
+            },
             "envVars": {
               "type": "array",
               "defaultValue": [],
@@ -2960,7 +2984,7 @@
               "properties": {
                 "environmentId": "[parameters('environmentId')]",
                 "configuration": {
-                  "ingress": "[if(parameters('ingressEnabled'), createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), null())]"
+                  "ingress": "[if(parameters('ingressEnabled'), union(createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), if(empty(parameters('additionalPortMappings')), createObject(), createObject('additionalPortMappings', parameters('additionalPortMappings')))), null())]"
                 },
                 "template": {
                   "containers": [
@@ -3113,7 +3137,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "10834496467740372009"
+              "templateHash": "11145755578384506289"
             }
           },
           "parameters": {
@@ -3230,6 +3254,13 @@
                 "description": "Ingress session affinity. Sticky is required only for hosts holding server-side per-client state (Blazor Server SignalR circuits)."
               }
             },
+            "additionalPortMappings": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Extra ingress ports beyond targetPort, each { external, targetPort, exposedPort }. D-054 uses one internal TCP mapping for the cleartext HTTP/2 gRPC listener; empty leaves ingress exactly as it was."
+              }
+            },
             "envVars": {
               "type": "array",
               "defaultValue": [],
@@ -3258,7 +3289,7 @@
               "properties": {
                 "environmentId": "[parameters('environmentId')]",
                 "configuration": {
-                  "ingress": "[if(parameters('ingressEnabled'), createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), null())]"
+                  "ingress": "[if(parameters('ingressEnabled'), union(createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), if(empty(parameters('additionalPortMappings')), createObject(), createObject('additionalPortMappings', parameters('additionalPortMappings')))), null())]"
                 },
                 "template": {
                   "containers": [
@@ -3408,6 +3439,10 @@
                 "value": "[format('https://{0}', reference('gateway').outputs.fqdn.value)]"
               },
               {
+                "name": "Grpc__TaskFlowRead__Address",
+                "value": "[format('http://{0}:{1}', reference('api').outputs.fqdn.value, variables('apiGrpcPort'))]"
+              },
+              {
                 "name": "ASPNETCORE_ENVIRONMENT",
                 "value": "Production"
               },
@@ -3428,7 +3463,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "10834496467740372009"
+              "templateHash": "11145755578384506289"
             }
           },
           "parameters": {
@@ -3545,6 +3580,13 @@
                 "description": "Ingress session affinity. Sticky is required only for hosts holding server-side per-client state (Blazor Server SignalR circuits)."
               }
             },
+            "additionalPortMappings": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Extra ingress ports beyond targetPort, each { external, targetPort, exposedPort }. D-054 uses one internal TCP mapping for the cleartext HTTP/2 gRPC listener; empty leaves ingress exactly as it was."
+              }
+            },
             "envVars": {
               "type": "array",
               "defaultValue": [],
@@ -3573,7 +3615,7 @@
               "properties": {
                 "environmentId": "[parameters('environmentId')]",
                 "configuration": {
-                  "ingress": "[if(parameters('ingressEnabled'), createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), null())]"
+                  "ingress": "[if(parameters('ingressEnabled'), union(createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), if(empty(parameters('additionalPortMappings')), createObject(), createObject('additionalPortMappings', parameters('additionalPortMappings')))), null())]"
                 },
                 "template": {
                   "containers": [
@@ -3657,6 +3699,7 @@
         }
       },
       "dependsOn": [
+        "api",
         "appInsights",
         "containerAppsEnv",
         "gateway",

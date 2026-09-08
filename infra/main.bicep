@@ -336,6 +336,11 @@ module rabbitMq 'modules/rabbitmq-container-app.bicep' = if (messagingProvider =
   }
 }
 
+// D-054: the Api's second listener. It is the container port declared in appsettings Kestrel:Endpoints:Grpc,
+// the additional ingress port mapping below, and the port Blazor dials - one constant so the three cannot
+// drift apart.
+var apiGrpcPort = 8081
+
 var rabbitMqConnectionString = messagingProvider == 'RabbitMq'
   ? 'amqp://taskflow:${rabbitMqPassword}@${rabbitMq!.outputs.host}:5672/'
   : ''
@@ -441,6 +446,11 @@ module api 'modules/container-app.bicep' = {
     memory: apiProfile.memory
     externalIngress: false // Internal only
     targetPort: 8080
+    // D-054: the cleartext HTTP/2 gRPC read listener. external:false keeps it inside the environment -
+    // only Blazor calls it, and it carries no auth of its own beyond what the Api's own pipeline applies.
+    additionalPortMappings: [
+      { external: false, targetPort: apiGrpcPort, exposedPort: apiGrpcPort }
+    ]
     minReplicas: apiProfile.minReplicas
     maxReplicas: apiProfile.maxReplicas
     concurrentRequests: apiProfile.concurrentRequests
@@ -502,6 +512,10 @@ module blazor 'modules/container-app.bicep' = {
     stickySessions: 'sticky'
     envVars: [
       { name: 'ApiBaseUrl', value: 'https://${gateway.outputs.fqdn}' }
+      // D-054: the internal gRPC read hop. Plain http on the additional port mapping, not the https
+      // ingress FQDN: the listener is cleartext HTTP/2 inside the environment, and the Api app is
+      // external:false so the address is only reachable from within it.
+      { name: 'Grpc__TaskFlowRead__Address', value: 'http://${api.outputs.fqdn}:${apiGrpcPort}' }
       { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.outputs.connectionString }
     ]

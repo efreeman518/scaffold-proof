@@ -1,6 +1,8 @@
 @page "/"
 @inject FloatService FloatService
 @inject ITaskFlowApiClient Api
+@inject TaskFlow.Contracts.Grpc.TaskFlowRead.TaskFlowReadClient GrpcReads
+@inject ClientReadSettings ReadSettings
 @inject NavigationManager Nav
 @implements IDisposable
 
@@ -87,8 +89,13 @@
     {
         _loading = true;
 
+        // D-054: the same read over the internal gRPC hop or over REST through the gateway. Both arms
+        // return the identical DTO, which is the point of the proof.
         var summary = await FloatService.ExecuteWithProgressAsync(
-            () => Api.GetTaskItemSummaryAsync(), "Failed to load task summary.");
+            () => ReadSettings.UseGrpcReads
+                ? GrpcReads.GetTaskItemSummaryDtoAsync()
+                : Api.GetTaskItemSummaryAsync(),
+            "Failed to load task summary.");
         if (summary is not null)
         {
             _total = summary.Total;

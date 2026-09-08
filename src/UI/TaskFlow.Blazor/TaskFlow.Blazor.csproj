@@ -27,6 +27,9 @@
     <ProjectReference Include="..\..\Domain\TaskFlow.Domain.Shared\TaskFlow.Domain.Shared.csproj" />
     <ProjectReference Include="..\..\Host\Aspire\ServiceDefaults\ServiceDefaults.csproj" />
     <ProjectReference Include="..\TaskFlow.ApiClient\TaskFlow.ApiClient.csproj" />
+    <!-- D-054: the generated gRPC client and its DTO mapping. Grpc.Net.ClientFactory (and AddGrpcClient)
+         arrive with it, so this host needs no additional package reference. -->
+    <ProjectReference Include="..\..\Shared\TaskFlow.Contracts.Grpc\TaskFlow.Contracts.Grpc.csproj" />
   </ItemGroup>
 
 </Project>

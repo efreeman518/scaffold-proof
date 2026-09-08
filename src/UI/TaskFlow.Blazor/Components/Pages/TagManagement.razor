@@ -1,6 +1,8 @@
 @page "/tags"
 @inject FloatService FloatService
 @inject ITaskFlowApiClient Api
+@inject TaskFlow.Contracts.Grpc.TaskFlowRead.TaskFlowReadClient GrpcReads
+@inject ClientReadSettings ReadSettings
 @inject IDialogService DialogService
 
 <PageTitle>Tags - TaskFlow</PageTitle>
@@ -79,8 +81,12 @@
     {
         // Full tag list, not a search page: /task-metadata is uncapped by the [1,100] search PageSize
         // clamp (up to PageSizeLimits.MetadataMax), which a PageSize=500 search would now reject.
+        // D-054: gRPC when the internal read hop is configured, REST through the gateway otherwise.
         var result = await FloatService.ExecuteWithProgressAsync(
-            () => Api.GetTaskMetadataAsync(), "Failed to load tags.");
+            () => ReadSettings.UseGrpcReads
+                ? GrpcReads.GetTaskMetadataDtoAsync()
+                : Api.GetTaskMetadataAsync(),
+            "Failed to load tags.");
         _tags = result?.Tags?.OrderBy(t => t.Name).ToList() ?? [];
     }
 
