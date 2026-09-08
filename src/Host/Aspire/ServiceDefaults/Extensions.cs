@@ -119,7 +119,17 @@ public static class Extensions
         return builder;
     }
 
-    /// <summary>Registers default routes, handlers, and response metadata.</summary>
+    /// <summary>
+    /// Maps the D-049 probe contract, identical on every host:
+    /// <list type="bullet">
+    /// <item><c>/healthz/live</c> - tag <c>live</c> only (<c>self</c>). A liveness failure means restart the
+    /// process, so it must never depend on anything a restart cannot fix.</item>
+    /// <item><c>/healthz/ready</c> - tag <c>ready</c>: the dependencies an instance needs before it should be
+    /// routed traffic (database, outbox, scheduler, broker on consumer hosts). The cache is deliberately not
+    /// tagged <c>ready</c>: it degrades to L1 rather than failing requests.</item>
+    /// <item><c>/healthz</c> - every registered check, for humans and Compose healthchecks.</item>
+    /// </list>
+    /// </summary>
     public static WebApplication MapDefaultEndpoints(this WebApplication app)
     {
         app.MapHealthChecks("/healthz", new HealthCheckOptions
@@ -128,7 +138,13 @@ public static class Extensions
         })
         .AllowAnonymous();
 
-        app.MapHealthChecks("/readyz", new HealthCheckOptions
+        app.MapHealthChecks("/healthz/live", new HealthCheckOptions
+        {
+            Predicate = r => r.Tags.Contains("live")
+        })
+        .AllowAnonymous();
+
+        app.MapHealthChecks("/healthz/ready", new HealthCheckOptions
         {
             Predicate = r => r.Tags.Contains("ready")
         })

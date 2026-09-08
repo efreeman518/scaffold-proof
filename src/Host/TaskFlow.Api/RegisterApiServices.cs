@@ -131,8 +131,7 @@ public static class RegisterApiServices
             {
                 if (context.Request.Path.StartsWithSegments("/health")
                     || context.Request.Path.StartsWithSegments("/alive")
-                    || context.Request.Path.StartsWithSegments("/healthz")
-                    || context.Request.Path.StartsWithSegments("/readyz"))
+                    || context.Request.Path.StartsWithSegments("/healthz"))
                     return RateLimitPartition.GetNoLimiter("health");
 
                 var limiters = context.RequestServices.GetRequiredService<TenantRateLimiterFactory>();
