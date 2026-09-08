@@ -2,7 +2,6 @@ using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
-using System.Text;
 using TaskFlow.Infrastructure.Data.Messaging;
 using TaskFlow.Infrastructure.Data.Operational;
 
@@ -41,12 +40,16 @@ public sealed class ServiceBusEventTransport : IIntegrationEventTransport, IAsyn
 
         var sender = _senders.GetOrAdd(destination, _client.CreateSender);
 
+        // D-047 hot path: one pooled UTF-8 buffer for the whole batch instead of a byte[] per row. Disposed
+        // after the last send, because a message body is a slice of it.
+        using var bodies = OutboxBodyBuffer.Rent(messages);
+
         var batch = await sender.CreateMessageBatchAsync(ct).ConfigureAwait(false);
         try
         {
             foreach (var row in messages)
             {
-                var message = ToServiceBusMessage(row);
+                var message = ToServiceBusMessage(row, bodies);
                 if (batch.TryAddMessage(message)) continue;
 
                 if (batch.Count == 0)
@@ -74,9 +77,9 @@ public sealed class ServiceBusEventTransport : IIntegrationEventTransport, IAsyn
     }
 
     /// <summary>Envelope JSON as the body; type, version and tenant as properties so a subscription rule can filter.</summary>
-    private static ServiceBusMessage ToServiceBusMessage(OutboxMessage row)
+    private static ServiceBusMessage ToServiceBusMessage(OutboxMessage row, OutboxBodyBuffer bodies)
     {
-        var message = new ServiceBusMessage(Encoding.UTF8.GetBytes(row.Payload))
+        var message = new ServiceBusMessage(bodies.Append(row.Payload))
         {
             ContentType = "application/json",
             MessageId = row.Id.ToString(),

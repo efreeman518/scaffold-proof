@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using TaskFlow.Domain.Shared;
 
 namespace TaskFlow.Application.Contracts.Messaging;
@@ -45,6 +46,13 @@ public sealed record IntegrationEventEnvelope(
     /// <summary>True when the event type is one this deployment knows how to consume.</summary>
     public static bool IsKnownType(string eventType) => Versions.ContainsKey(eventType);
 
+    /// <summary>Generated payload metadata for an event record; throws when the record is unregistered.</summary>
+    private static JsonTypeInfo PayloadTypeInfo(Type eventType) =>
+        TaskFlowMessagingJsonContext.Default.GetTypeInfo(eventType)
+        ?? throw new InvalidOperationException(
+            $"{eventType.Name} is not registered on TaskFlowMessagingJsonContext (D-048). Add a "
+            + "[JsonSerializable] entry for it alongside its Versions entry.");
+
     /// <summary>Wraps a raised domain event. <paramref name="id"/> allows a deterministic (replayable) message id.</summary>
     public static IntegrationEventEnvelope From(
         IDomainEvent domainEvent, DateTimeOffset occurredAtUtc, string? correlationId, Guid? id = null)
@@ -58,6 +66,9 @@ public sealed record IntegrationEventEnvelope(
             domainEvent.TenantId,
             occurredAtUtc,
             correlationId,
-            JsonSerializer.SerializeToElement(domainEvent, domainEvent.GetType()));
+            // D-048: the generated JsonTypeInfo for the concrete event record. GetTypeInfo returns null
+            // only for a type missing from TaskFlowMessagingJsonContext, which is a build-time omission,
+            // not a runtime condition - hence the throw rather than a reflection fallback.
+            JsonSerializer.SerializeToElement(domainEvent, PayloadTypeInfo(domainEvent.GetType())));
     }
 }

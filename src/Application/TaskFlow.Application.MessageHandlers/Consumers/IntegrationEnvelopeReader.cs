@@ -28,7 +28,9 @@ public static class IntegrationEnvelopeReader
 
         try
         {
-            envelope = JsonSerializer.Deserialize<IntegrationEventEnvelope>(body);
+            // D-048: generated metadata, so neither the Service Bus trigger nor the RabbitMQ handler
+            // builds envelope reflection metadata on the first message of a cold worker.
+            envelope = JsonSerializer.Deserialize(body, TaskFlowMessagingJsonContext.Default.IntegrationEventEnvelope);
         }
         catch (JsonException)
         {

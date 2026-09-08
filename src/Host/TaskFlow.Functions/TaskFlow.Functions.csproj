@@ -1,9 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!-- D-047 shared host runtime profile; the override below follows it deliberately. -->
+  <Import Project="..\TaskFlow.Host.props" />
+
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <AzureFunctionsVersion>v4</AzureFunctionsVersion>
     <RuntimeIdentifiers>win-x64;linux-x64;osx-arm64</RuntimeIdentifiers>
+    <!-- The Functions host, not this worker, owns globalization: it decides the culture a trigger runs
+         under and the platform image ships ICU. Forcing invariant mode here would change how the worker
+         formats and compares strings relative to every other Functions worker in the plan. Paired with
+         the -chiseled-extra runtime image in this project's Dockerfile, which carries ICU. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>

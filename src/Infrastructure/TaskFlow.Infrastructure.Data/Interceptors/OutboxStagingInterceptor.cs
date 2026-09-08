@@ -75,7 +75,10 @@ public sealed class OutboxStagingInterceptor(TimeProvider? timeProvider = null, 
         Destination = DefaultDestination,
         EventType = envelope.Type,
         EventVersion = envelope.Version,
-        Payload = System.Text.Json.JsonSerializer.Serialize(envelope),
+        // D-048: generated metadata. This runs inside SaveChanges on every write that raised an event,
+        // so it is the hottest envelope serialization in the app.
+        Payload = System.Text.Json.JsonSerializer.Serialize(
+            envelope, TaskFlowMessagingJsonContext.Default.IntegrationEventEnvelope),
         CorrelationId = envelope.CorrelationId,
         OccurredAtUtc = envelope.OccurredAtUtc
     };

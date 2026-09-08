@@ -1,7 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!-- D-047 shared host runtime profile; the override below follows it deliberately. -->
+  <Import Project="..\TaskFlow.Host.props" />
+
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <!-- Workstation GC: this host is a run-to-completion migration job, not a request server. Server GC
+         would reserve per-core heaps and spin up GC threads for a process that exits in seconds, which
+         costs startup time and container memory for no throughput it can use. -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
   </PropertyGroup>
 
   <ItemGroup>

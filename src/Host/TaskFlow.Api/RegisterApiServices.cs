@@ -5,9 +5,12 @@ using Microsoft.AspNetCore.Authentication;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using TaskFlow.Api.Auth;
+using TaskFlow.Api.Serialization;
 using TaskFlow.Api.Middleware;
 using TaskFlow.Api.Endpoints;
 using TaskFlow.Api.OpenApi;
+using TaskFlow.Application.Contracts.Messaging;
+using TaskFlow.Application.Models.Serialization;
 using TaskFlow.Infrastructure.Caching;
 using TaskFlow.Infrastructure.Caching.RateLimiting;
 using TaskFlow.Observability.Meters;
@@ -53,6 +56,16 @@ public static class RegisterApiServices
         services.ConfigureHttpJsonOptions(options =>
         {
             options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
+
+            // D-048: TaskFlow's own shapes resolve through generated metadata; ProblemDetails and the
+            // third-party shapes behind it keep the reflection resolver that ConfigureHttpJsonOptions
+            // already installed, which stays LAST in the chain. Insert(0) rather than assigning
+            // TypeInfoResolver, which would replace the chain and break every unregistered type.
+            // The naming policy still comes from these options (Web defaults), not from the contexts,
+            // so the JSON on the wire is byte-identical to the reflection-serialized output.
+            options.SerializerOptions.TypeInfoResolverChain.Insert(0, TaskFlowJsonContext.Default);
+            options.SerializerOptions.TypeInfoResolverChain.Insert(1, TaskFlowApiJsonContext.Default);
+            options.SerializerOptions.TypeInfoResolverChain.Insert(2, TaskFlowMessagingJsonContext.Default);
         });
     }
 

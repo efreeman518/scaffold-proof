@@ -4,8 +4,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Caching;
+using TaskFlow.Application.Models.Serialization;
 using TaskFlow.Observability.Meters;
 using OpenTelemetry.Metrics;
 using ZiggyCreatures.Caching.Fusion;
@@ -38,10 +40,7 @@ public static class RegisterCachingServices
         foreach (var settings in cacheSettings)
         {
             var fcBuilder = services.AddFusionCache(settings.Name)
-                .WithSystemTextJsonSerializer(new JsonSerializerOptions
-                {
-                    ReferenceHandler = ReferenceHandler.Preserve
-                })
+                .WithSystemTextJsonSerializer(CacheSerializerOptions())
                 .WithCacheKeyPrefix($"{settings.Name}:")
                 // Own memory cache per named instance with a hard entry cap: a shared, unbounded L1 is how a
                 // container with a memory limit gets OOM-killed instead of evicting.
@@ -95,6 +94,25 @@ public static class RegisterCachingServices
         services.AddOpenTelemetry().WithMetrics(metrics => metrics.AddFusionCacheInstrumentation());
 
         return services;
+    }
+
+    /// <summary>
+    /// Serializer options for every named cache. D-048: the generated resolver goes first and the
+    /// reflection resolver stays behind it, so cached TaskFlow DTOs skip per-entry reflection metadata
+    /// while third-party cached shapes still serialize.
+    ///
+    /// The stored format does not change. These options declare no naming policy, and the naming policy
+    /// is applied from the options (not baked into the generated context), so entries keep the PascalCase
+    /// names the reflection serializer wrote - an L1/L2 entry written by the previous build still reads
+    /// back after a rolling deploy. ReferenceHandler.Preserve is likewise an options-level setting and
+    /// still applies, which matters because cached aggregates (TaskItemDto.SubTasks) can self-reference.
+    /// </summary>
+    private static JsonSerializerOptions CacheSerializerOptions()
+    {
+        var options = new JsonSerializerOptions { ReferenceHandler = ReferenceHandler.Preserve };
+        options.TypeInfoResolverChain.Insert(0, TaskFlowJsonContext.Default);
+        options.TypeInfoResolverChain.Add(new DefaultJsonTypeInfoResolver());
+        return options;
     }
 
     /// <summary>

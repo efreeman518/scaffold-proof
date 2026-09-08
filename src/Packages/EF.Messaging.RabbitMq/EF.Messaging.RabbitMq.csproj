@@ -9,6 +9,14 @@
     <Version>0.1.0-local</Version>
     <Description>Framework-free RabbitMQ transport for EF.* applications: one persistent connection with a bounded publisher-channel pool and publisher confirms, idempotent topology declaration, a consumer hosted service with prefetch, manual ack, bounded requeue and dead-letter routing, plus options binding, DI registration, a health check and OpenTelemetry metrics.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- D-047: this package is framework-free and has no reflection of its own, so it is the one piece of
+         the tree that can carry the trim/AOT contract for consumers. IsAotCompatible turns on the trim,
+         single-file and AOT analyzers as errors. -->
+    <IsAotCompatible>true</IsAotCompatible>
+    <!-- Source-generated configuration binding, so OptionsBuilder.Bind is intercepted by generated
+         code instead of the reflection binder (IL2026/IL3050 on RabbitMqOptions). This is the fix for
+         those diagnostics, not a suppression: the generated binder is what actually runs. -->
+    <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
   </PropertyGroup>
 
   <ItemGroup>
