@@ -38,6 +38,27 @@ flowchart TD
     D032["D-032: 412 for stale writes"]
     D033["D-033: No idempotency table"]
     D034["D-034: Messaging provider switch"]
+    D035["D-035: Hosting-lane preset"]
+    D036["D-036: Portable compute topology"]
+    D037["D-037: Object-storage switch"]
+    D038["D-038: Read-model switch"]
+    D039["D-039: Audit-sink switch"]
+    D040["D-040: Search switch"]
+    D041["D-041: LLM switch"]
+    D042["D-042: Config + feature flags"]
+    D043["D-043: Data Protection persistence switch"]
+    D044["D-044: Azure surface retained"]
+    D045["D-045: Postgres pooler mode switch"]
+    D046["D-046: Messaging framework retained"]
+    D047["D-047: Runtime profile per host"]
+    D048["D-048: Source-generated JSON"]
+    D049["D-049: Health probe contract"]
+    D050["D-050: Gateway edge protection"]
+    D051["D-051: GET-only hedging"]
+    D052["D-052: Distributed lock primitive"]
+    D053["D-053: Trace propagation across brokers"]
+    D054["D-054: Internal gRPC read service"]
+    D055["D-055: Bounded concurrency"]
 
     D001 --> D002
     D001 --> D003
@@ -66,6 +87,37 @@ flowchart TD
     D021 --> D033
     D026 --> D034
     D029 --> D034
+    D030 --> D035
+    D034 --> D035
+    D035 --> D036
+    D035 --> D037
+    D030 --> D037
+    D035 --> D038
+    D004 --> D038
+    D030 --> D038
+    D035 --> D039
+    D030 --> D039
+    D035 --> D040
+    D020 --> D040
+    D030 --> D040
+    D035 --> D041
+    D030 --> D041
+    D035 --> D042
+    D035 --> D043
+    D030 --> D043
+    D035 --> D044
+    D036 --> D044
+    D020 --> D045
+    D036 --> D045
+    D026 --> D046
+    D029 --> D046
+    D034 --> D046
+    D010 --> D047
+    D047 --> D048
+    D049 --> D050
+    D026 --> D052
+    D034 --> D053
+    D026 --> D055
 ```
 
 ## Decisions
@@ -104,6 +156,27 @@ flowchart TD
 | D-032 | Data | Concurrency conflict status code | 412 (not 409) for stale writes via one shared `ConcurrencyGuard.Require`/`ConcurrencyMismatchException` mapped by `GlobalExceptionHandler`; 428 when `If-Match` is missing (HTTP endpoint filter); `If-Match: *` is the explicit, logged trusted-automation override (FlowEngine PATCH nodes) | D-031 | confirmed | 412 Precondition Failed is the correct HTTP semantics for a stale If-Match; the previously dead 409 arm is removed. | Phase 2 |
 | D-033 | Data | Idempotent create record | No idempotency table: an optional caller-supplied UUIDv7 id, the entity row itself is the idempotency record; equivalent replay returns 200 + existing entity + ETag, divergent payload is a 409 (`IdempotentCreateConflictException`) | D-021 | confirmed | Avoids a second source of truth for create idempotency. Equivalence is a scalar-field compare ignoring Id/Version/TenantId/children (documented limitation). | Phase 2 |
 | D-034 | Messaging | Messaging provider switch | Dual transport: Azure Service Bus or RabbitMQ, `Messaging:Provider = ServiceBus \| RabbitMq` (env `TASKFLOW_MESSAGING_PROVIDER` wins) selects the `IIntegrationEventTransport` implementation and the consumer host; the RabbitMQ client is our own thin in-repo package `EF.Messaging.RabbitMq` over `RabbitMQ.Client` 7.x, not a second messaging framework | D-026, D-029 | confirmed | The TaskFlow-owned outbox (D-026) and the transport port already exist, so only the port implementation and the consumer host change; SlimMessageBus/MassTransit would duplicate both. RabbitMQ has no broker-side duplicate detection, so `ConsumerInbox` (D-029) is the only dedup on both providers. RabbitMQ consumers are hosted in the Scheduler (the Functions runtime has no RabbitMQ trigger); when RabbitMq is selected the Service Bus triggers are switched off with `AzureWebJobs.<function>.Disabled=true` rather than removed, so one deployment can flip providers. Single-node RabbitMQ container app is a dev/staging proof only - production needs a managed broker or a cluster. | Phase 3.7, AppHost, `infra/modules/rabbitmq-container-app.bicep`, Scheduler |
+| D-035 | Hosting | Hosting-lane preset | `TASKFLOW_LANE = Azure \| Portable` seeds the default of every provider switch in the AppHost and hosts; each switch's own env/config still wins; no registration site reads the lane directly | D-030, D-034 | confirmed | A lane is only a preset of already-independent switches, not a new decision axis. Rejected: per-lane `appsettings.<Lane>.json` (drifts from the switches it should mirror, hides which switch fired). | P2, P6, AppHost |
+| D-036 | Hosting | Portable compute topology | Docker Compose on one VPS with Caddy as the TLS edge in front of the YARP gateway; hand-written files under `deploy/compose/` | D-035 | confirmed | Matches the target topology without an IaC generator dependency. Rejected: Aspire publish to Compose (new `Aspire.Hosting.Docker` dependency, generated IaC harder to hand-tune); k3s/Swarm kept as a documented multi-node upgrade path. | P6 |
+| D-037 | Storage | Object-storage provider switch | `Storage:Provider = AzureBlob \| S3` behind the unchanged `IBlobStorageRepository`; S3 arm via `AWSSDK.S3` (MinIO locally/on the VPS, any S3-compatible provider in production); download URLs are presigned against a public endpoint | D-035, D-030 | confirmed | Keeps the attachment port provider-neutral without a second abstraction. Rejected: an S3-to-Blob gateway container (extra moving part, still needs a real switch underneath). | P2, P4 |
+| D-038 | Data | Read-model provider switch | `ReadModel:Provider = Cosmos \| Relational`; relational arm is a `TaskView` table in the `taskflow` schema with the JSON body as a plain string column (jsonb+GIN noted as a commented Postgres customization), counters patched via one `ExecuteUpdateAsync`, paging via an opaque keyset continuation token | D-035, D-004, D-030 | confirmed | Reuses the existing Cosmos projection contract instead of forking it. Rejected: `HasColumnType("jsonb")` (forces a provider branch); a separate read database (new infrastructure for a proof). | P2, P3 |
+| D-039 | Data | Audit-sink provider switch | `Audit:Provider = AzureTable \| Relational`; relational arm keyed `(TenantId, RecordedUtc, Id)`, retention via `ExecuteDeleteBatchedAsync` | D-035, D-030 | confirmed | Same switch shape as the read model, no new pattern. Rejected: Azurite as the portable audit sink (still Azure-shaped, does not prove a non-Azure path). | P2, P3 |
+| D-040 | Search | Search provider switch | `Search:Provider = AzureAiSearch \| PgVector \| Sql`; `PgVector` requires `Database:Provider = PostgreSql` and fails fast at startup otherwise (SQL Server 2025 `VECTOR` type noted as a future arm) | D-035, D-020, D-030 | confirmed | A vector search arm should be loud when its prerequisite provider is missing, not silently degrade. Rejected: silent downgrade to `Sql` prefix search; a dedicated vector database (new infrastructure for a proof). | P2, P7 |
+| D-041 | AI | LLM provider switch | `AiServices:Provider = AzureInference \| OpenAICompatible \| FoundryLocal \| None`; `OpenAICompatible` uses the OpenAI SDK `OpenAIClient` with a configurable endpoint and API key via `.AsIChatClient`/`.AsIEmbeddingGenerator` (covers OpenAI, OpenRouter, Ollama, vLLM); default when unset reproduces current behavior | D-035, D-030 | confirmed | One SDK covers every OpenAI-compatible vendor rather than one integration per vendor. Rejected: per-vendor SDKs (N integrations for the same wire protocol). | P2, P5 |
+| D-042 | Config | Config and feature-flag provider | Azure App Configuration + `Microsoft.FeatureManagement`, gated on `AppConfig:Endpoint`; sentinel-key refresh, Key Vault references for secrets, tenant `TargetingContext`; local fallback is the `FeatureManagement` section in appsettings; replaces the ad hoc `AiServices:Use*` kill switches (compatibility read kept one release) | D-035 | confirmed | Dynamic flags need a real flag service; App Configuration is already the Portable lane's retained Azure surface (D-044) so depending on it costs nothing new. Rejected: env-only switches (no runtime toggle without a redeploy); a self-hosted flag service (new infrastructure for a proof). | P5 |
+| D-043 | Security | Data Protection persistence switch | `DataProtection:Persistence = AzureBlob \| Redis \| None`; key protection stays Key Vault in both lanes; `None` logs a warning because cursor tokens break across replicas | D-035, D-030 | confirmed | Persistence and protection are separable; only persistence needs a portable arm. Rejected: a file-share ring (single point of failure, no multi-VPS story); an ephemeral ring as the default (silently breaks multi-replica cursors). | P2 |
+| D-044 | Hosting | Azure surface retained in the Portable lane | Key Vault (DEK wrap, Data Protection key protection) and App Configuration (config + flags) stay Azure in both lanes; VPS identity is an Entra client secret or certificate consumed by `EnvironmentCredential` inside the existing `DefaultAzureCredential` chain, no code change; workload identity federation is a documented upgrade path | D-035, D-036 | confirmed | Two managed services are cheaper to keep than to replace, and neither blocks the "no Azure compute" goal. Rejected: HashiCorp Vault/SOPS (viable next step, documented, not built now). | P6, docs |
+| D-045 | Data | Postgres pooler mode switch | `Database:PostgreSql:PoolerMode = None \| Transaction`; `Transaction` appends `No Reset On Close=true;Max Auto Prepare=0` to the Npgsql connection string; Portable runs a PgBouncer container, Azure uses Flexible Server's `pgbouncer.enabled` Bicep param (not available on Burstable) | D-020, D-036 | confirmed | Transaction-mode pooling is the throughput-relevant PgBouncer mode and needs explicit connection-string cooperation from Npgsql. Rejected: session-mode-only pooling (does not multiplex connections, defeats the purpose at scale). | P2, P6, Bicep |
+| D-046 | Messaging | Messaging framework retained | Own outbox + `IIntegrationEventTransport` + `EF.Messaging.RabbitMq` stays the transport layer; MassTransit and SlimMessageBus are not adopted | D-026, D-029, D-034 | confirmed | The outbox and consumer host already exist and work on both brokers (D-034); a framework would duplicate both. Rejected: MassTransit (v9 is commercial, v8 maintenance ends 2026); SlimMessageBus (would duplicate the existing outbox and consumer host). Kafka noted as a future transport behind the same port, not needed today. | P1 |
+| D-047 | Runtime | Runtime profile per host | Shared `src/Host/TaskFlow.Host.props` imported by Api, Gateway, Scheduler, Blazor, Functions, DatabaseMigrator: Server GC + Concurrent GC + DATAS (`GarbageCollectionAdaptationMode=1`) for request-serving hosts and the Scheduler; workstation GC for the short-lived DatabaseMigrator job; `TieredPGO` explicit; `InvariantGlobalization` on Api/Gateway/Scheduler/Migrator only (Blazor renders cultures); `PublishReadyToRun` in the Api and Gateway publish step; `EnableRequestDelegateGenerator` on the Api. Native AOT evaluated and not adopted | D-010 | confirmed | Matches each host's actual workload shape instead of one blanket GC setting. Rejected: Native AOT now (EF Core 10 NativeAOT is experimental, TickerQ and FlowEngine are reflection-based); setting `DOTNET_GCHeapHardLimitPercent` (documented only - DATAS already reads the cgroup limit). | G1 |
+| D-048 | Serialization | Source-generated JSON | One `TaskFlowJsonContext : JsonSerializerContext` in `TaskFlow.Application.Models`, registered first in every resolver chain (Api, Functions, Blazor Refit, FusionCache, outbox envelope, broker body, cursor token); reflection resolver kept after it for third-party types; an architecture test enforces completeness. Queue payload stays JSON; binary serialization is scoped to the L2 cache value via `CacheSettings:Serializer = Json \| MessagePack` | D-047 | confirmed | Source generation is the low-risk, high-value half of the AOT story even where full AOT is deferred (D-047). Rejected: binary queue payloads (loses broker-side filtering and interop, not worth it for a proof). | G1 |
+| D-049 | Observability | Health probe contract | `/healthz/live` (self only), `/healthz/ready` (database, outbox, scheduler, broker on consumer hosts; cache excluded because it degrades to L1), `/healthz` aggregate for humans and Compose healthchecks; `/readyz` removed | none | confirmed | Liveness must never fail on a dependency a restart cannot fix; readiness is where dependency checks belong. Rejected: a single combined probe (couples restart-worthy failures to routing-worthy ones); keeping `/readyz` alongside `/healthz/ready` (two names for the same concept). | G2 |
+| D-050 | Edge | Gateway edge protection | Token-bucket rate limiter per client IP plus a concurrency limiter for proxied traffic at the Gateway, in addition to the Api's existing Redis tenant limiter; YARP cluster gets active health on `/healthz/ready`, passive transport-failure health, `PowerOfTwoChoices` load balancing, and an activity timeout | D-049 | confirmed | The Api limiter protects tenants from each other; the edge limiter protects the Gateway itself from unauthenticated traffic before it reaches the Api. Rejected: Redis-backed edge partitions now (in-process per replica is correct until replica count makes cross-replica accounting matter; documented as the scale-up ceiling). | G2 |
+| D-051 | Resilience | GET-only hedging | Hedging on the Blazor read pipeline only (`Resilience:Hedging:{Enabled, DelayMs, MaxHedgedAttempts}`), restricted to GET requests; Cosmos cross-region hedging (`AvailabilityStrategy.CrossRegionHedgingStrategy`) is config-gated and deployment-only | none | confirmed | Hedging a write risks duplicate side effects; only idempotent GETs are safe to hedge. Rejected: hedging writes (unsafe without the idempotency guarantees the write pipeline does not have). | G2 |
+| D-052 | Concurrency | Distributed lock primitive | `IDistributedLock` (Redis `SET NX PX` plus a Lua compare-and-delete release, single node, no RedLock quorum) with an in-process fallback when Redis is absent; scoped to non-reentrant startup tasks (external resource provisioning, RabbitMQ topology declaration) | D-026 | confirmed | Work-table coordination already has leases and conditional updates (D-026); only one-time startup tasks lack a primitive. Rejected: RedLock quorum (documented ceiling, not needed for a single-node lock); Postgres advisory lock as the default (kept as a commented alternative per D-030). | G2 |
+| D-053 | Observability | Trace propagation across brokers | W3C `traceparent`/`tracestate` injected into message headers by the dispatcher (`ActivityKind.Producer`) and extracted by the RabbitMQ and Service Bus consumers (`ActivityKind.Consumer` with a link to the producer); new `ActivitySource`s `TaskFlow.Messaging`, `TaskFlow.Scheduler` | D-034 | confirmed | Without propagation every async hop starts a new, disconnected trace. Rejected: correlation-id-only linking (loses standard trace context, does not compose with existing OTLP export). | G2 |
+| D-054 | RPC | Internal gRPC read service | Api exposes a gRPC read service (`GetTaskItemSummary`, `GetTaskMetadata`, `GetTaskItem`) on a dedicated cleartext HTTP/2 Kestrel endpoint; Blazor Server is the one consumer via service discovery; the Gateway keeps REST for public clients | none | confirmed | Proves the internal-RPC guidance item on the one real in-cluster service-to-service hop without expanding the public contract surface. Rejected: gRPC-Web for browser clients (out of scope, no browser client needs it); replacing the public REST surface with gRPC (breaks existing external clients). | G3 |
+| D-055 | Concurrency | Bounded concurrency for independent I/O | EF.Common `ConcurrentPipeAsync`/`ConcurrentBatchAsync` with options-driven bounds for blob deletes and per-destination outbox sends; a Test.Architecture sweep bans `.Result`/`.Wait()`/`GetAwaiter().GetResult()` in `src/` outside an allow-list | D-026 | confirmed | Independent I/O should fan out, not run sequentially, but still needs a ceiling. Rejected: an unbounded `Task.WhenAll` (no back-pressure); a `Channel` pipeline for lease-based pollers (the lease batch is already the natural bound, a channel adds a second buffer without raising throughput). | G1 |
 
 ## Deferred Decisions
 
