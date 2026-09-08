@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
+  <!-- D-047 shared host runtime profile (Server GC + DATAS, PGO, invariant globalization). -->
+  <Import Project="..\TaskFlow.Host.props" />
+
   <PropertyGroup>
+    <EnableRequestDelegateGenerator>true</EnableRequestDelegateGenerator>
     <RuntimeIdentifiers>win-x64;linux-x64;osx-arm64</RuntimeIdentifiers>
     <!-- Committed src/Host/TaskFlow.Api/openapi-doc/TaskFlow.Api.json is the Refitter/openapi-typescript
          input so client generation runs offline. See docs/plans/client-generation.md for the exact
@@ -19,6 +23,17 @@
     <OpenApiGenerateDocumentsOnBuild>false</OpenApiGenerateDocumentsOnBuild>
     <OpenApiDocumentsDirectory>$(MSBuildProjectDirectory)/openapi-doc</OpenApiDocumentsDirectory>
   </PropertyGroup>
+
+  <!-- D-047: the Dockerfile publishes with PublishReadyToRun=true, and crossgen2 needs the full assembly
+       closure of everything it precompiles. Microsoft.Agents.AI.OpenAI arrives transitively and references
+       OpenAI, which this project declares PrivateAssets="all" precisely so it is NOT deployed - so that
+       reference is dangling in the publish output by design and crossgen2 fails on it (NETSDK1096, "Failed
+       to load assembly 'OpenAI'"). Excluding it from R2R costs nothing: an assembly whose dependency is
+       absent cannot be on a hot path, or on any path. Remove this line if OpenAI ever becomes a deployed
+       dependency of the Api. No-op when PublishReadyToRun is off (ordinary build and test). -->
+  <ItemGroup>
+    <PublishReadyToRunExclude Include="Microsoft.Agents.AI.OpenAI.dll" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Http" />

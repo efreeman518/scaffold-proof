@@ -11,7 +11,9 @@ RUN --mount=type=secret,id=nuget_credentials,required=true \
 
 RUN dotnet publish src/UI/TaskFlow.Blazor/TaskFlow.Blazor.csproj -c Release -o /app --no-restore
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled AS runtime
+# D-047: -chiseled-extra, not plain -chiseled. This host sets InvariantGlobalization=false and plain
+# chiseled ships no ICU, so the runtime would fail at startup with no valid ICU package found.
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled-extra AS runtime
 WORKDIR /app
 EXPOSE 8080
 ENV ASPNETCORE_URLS=http://+:8080
