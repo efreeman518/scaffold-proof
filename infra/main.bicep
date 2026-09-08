@@ -411,7 +411,6 @@ module gateway 'modules/container-app.bicep' = {
     minReplicas: gatewayProfile.minReplicas
     maxReplicas: gatewayProfile.maxReplicas
     concurrentRequests: gatewayProfile.concurrentRequests
-    readinessPath: '/healthz'
     envVars: union(commonEnvVars, [
       { name: 'ReverseProxy__Clusters__api__Destinations__default__Address', value: 'https://${api.outputs.fqdn}' }
       { name: 'AggregateHealthCheck__TaskFlowApiHealthUrl', value: 'https://${api.outputs.fqdn}/health/full' }
@@ -436,7 +435,6 @@ module api 'modules/container-app.bicep' = {
     minReplicas: apiProfile.minReplicas
     maxReplicas: apiProfile.maxReplicas
     concurrentRequests: apiProfile.concurrentRequests
-    readinessPath: '/health/db'
     envVars: union(commonEnvVars, [
       { name: 'ConnectionStrings__TaskFlowDbContextTrxn', value: dbConnectionString }
       { name: 'ConnectionStrings__TaskFlowDbContextQuery', value: dbReadConnectionString }
@@ -490,6 +488,9 @@ module blazor 'modules/container-app.bicep' = {
     minReplicas: blazorProfile.minReplicas
     maxReplicas: blazorProfile.maxReplicas
     concurrentRequests: blazorProfile.concurrentRequests
+    // D-049: the only host that needs affinity. A Blazor Server circuit is per-connection server state, so a
+    // reconnect landing on another replica loses it; every other app here is stateless across replicas.
+    stickySessions: 'sticky'
     envVars: [
       { name: 'ApiBaseUrl', value: 'https://${gateway.outputs.fqdn}' }
       { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }

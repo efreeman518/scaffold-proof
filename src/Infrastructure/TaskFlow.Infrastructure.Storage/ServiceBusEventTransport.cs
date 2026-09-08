@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using TaskFlow.Infrastructure.Data.Messaging;
 using TaskFlow.Infrastructure.Data.Operational;
+using TaskFlow.Observability.Tracing;
 
 namespace TaskFlow.Infrastructure.Storage;
 
@@ -49,7 +50,7 @@ public sealed class ServiceBusEventTransport : IIntegrationEventTransport, IAsyn
         {
             foreach (var row in messages)
             {
-                var message = ToServiceBusMessage(row, bodies);
+                var message = ToServiceBusMessage(row, destination, bodies);
                 if (batch.TryAddMessage(message)) continue;
 
                 if (batch.Count == 0)
@@ -77,7 +78,7 @@ public sealed class ServiceBusEventTransport : IIntegrationEventTransport, IAsyn
     }
 
     /// <summary>Envelope JSON as the body; type, version and tenant as properties so a subscription rule can filter.</summary>
-    private static ServiceBusMessage ToServiceBusMessage(OutboxMessage row, OutboxBodyBuffer bodies)
+    private static ServiceBusMessage ToServiceBusMessage(OutboxMessage row, string destination, OutboxBodyBuffer bodies)
     {
         var message = new ServiceBusMessage(bodies.Append(row.Payload))
         {
@@ -92,6 +93,17 @@ public sealed class ServiceBusEventTransport : IIntegrationEventTransport, IAsyn
         message.ApplicationProperties["EventType"] = row.EventType;
         message.ApplicationProperties["EventVersion"] = row.EventVersion;
         message.ApplicationProperties["TenantId"] = row.TenantId.ToString();
+
+        // D-053: one producer span per message, its trace context written into that message's own application
+        // properties. Per message rather than per batch, because a batch mixes rows staged by unrelated
+        // requests and a single batch span would attach every consumer to an arbitrary one.
+        using var publish = MessagingTrace.StartPublish(
+            MessagingTrace.ServiceBusSystem,
+            destination,
+            row.EventType,
+            row.Id.ToString(),
+            (key, value) => message.ApplicationProperties[key] = value);
+
         return message;
     }
 

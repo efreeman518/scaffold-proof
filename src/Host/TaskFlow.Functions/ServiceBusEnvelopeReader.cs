@@ -3,6 +3,7 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.MessageHandlers.Consumers;
+using TaskFlow.Observability.Tracing;
 
 namespace TaskFlow.Functions;
 
@@ -29,8 +30,17 @@ internal static class ServiceBusEnvelopeReader
             return;
         }
 
+        // D-053: the consume span continues the producer's trace. Started after the body is readable so a
+        // dead-lettered message stays a logged rejection rather than a span reporting a parse failure.
+        using var process = MessagingTrace.StartProcess(
+            MessagingTrace.ServiceBusSystem,
+            consumer.ConsumerName,
+            envelope!.Type,
+            message.MessageId,
+            key => message.ApplicationProperties.TryGetValue(key, out var value) ? value?.ToString() : null);
+
         // Transient failures propagate on purpose: settling here would lose the retry the broker owns.
-        await consumer.HandleAsync(envelope!, ct);
+        await consumer.HandleAsync(envelope, ct);
         await actions.CompleteMessageAsync(message, cancellationToken: ct);
     }
 }

@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "10470177501437926774"
+      "templateHash": "10743627077585098465"
     }
   },
   "parameters": {
@@ -2449,9 +2449,6 @@
           "concurrentRequests": {
             "value": "[parameters('gatewayProfile').concurrentRequests]"
           },
-          "readinessPath": {
-            "value": "/healthz"
-          },
           "envVars": {
             "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value), createObject('name', 'Database__Provider', 'value', parameters('databaseProvider'))), createArray(createObject('name', 'ReverseProxy__Clusters__api__Destinations__default__Address', 'value', format('https://{0}', reference('api').outputs.fqdn.value)), createObject('name', 'AggregateHealthCheck__TaskFlowApiHealthUrl', 'value', format('https://{0}/health/full', reference('api').outputs.fqdn.value)), createObject('name', 'AggregateHealthCheck__TaskFlowApiClusterId', 'value', '')))]"
           },
@@ -2466,7 +2463,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "11779818597717378093"
+              "templateHash": "10834496467740372009"
             }
           },
           "parameters": {
@@ -2553,9 +2550,34 @@
             },
             "readinessPath": {
               "type": "string",
-              "defaultValue": "/readyz",
+              "defaultValue": "/healthz/ready",
               "metadata": {
-                "description": "HTTP readiness path. The revision receives traffic only after this endpoint succeeds."
+                "description": "HTTP readiness path (D-049). The revision receives traffic only after this endpoint succeeds."
+              }
+            },
+            "livenessPath": {
+              "type": "string",
+              "defaultValue": "/healthz/live",
+              "metadata": {
+                "description": "HTTP liveness path (D-049). A failure here restarts the container, so it must not probe dependencies."
+              }
+            },
+            "startupPath": {
+              "type": "string",
+              "defaultValue": "/healthz/live",
+              "metadata": {
+                "description": "HTTP startup path (D-049). Holds liveness and readiness off until the app has finished starting."
+              }
+            },
+            "stickySessions": {
+              "type": "string",
+              "defaultValue": "none",
+              "allowedValues": [
+                "sticky",
+                "none"
+              ],
+              "metadata": {
+                "description": "Ingress session affinity. Sticky is required only for hosts holding server-side per-client state (Blazor Server SignalR circuits)."
               }
             },
             "envVars": {
@@ -2586,7 +2608,7 @@
               "properties": {
                 "environmentId": "[parameters('environmentId')]",
                 "configuration": {
-                  "ingress": "[if(parameters('ingressEnabled'), createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false()), null())]"
+                  "ingress": "[if(parameters('ingressEnabled'), createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), null())]"
                 },
                 "template": {
                   "containers": [
@@ -2599,6 +2621,31 @@
                       },
                       "env": "[parameters('envVars')]",
                       "probes": [
+                        {
+                          "type": "Startup",
+                          "httpGet": {
+                            "path": "[parameters('startupPath')]",
+                            "port": "[parameters('targetPort')]",
+                            "scheme": "HTTP"
+                          },
+                          "initialDelaySeconds": 5,
+                          "periodSeconds": 5,
+                          "timeoutSeconds": 3,
+                          "failureThreshold": 60,
+                          "successThreshold": 1
+                        },
+                        {
+                          "type": "Liveness",
+                          "httpGet": {
+                            "path": "[parameters('livenessPath')]",
+                            "port": "[parameters('targetPort')]",
+                            "scheme": "HTTP"
+                          },
+                          "periodSeconds": 30,
+                          "timeoutSeconds": 5,
+                          "failureThreshold": 3,
+                          "successThreshold": 1
+                        },
                         {
                           "type": "Readiness",
                           "httpGet": {
@@ -2697,9 +2744,6 @@
           "concurrentRequests": {
             "value": "[parameters('apiProfile').concurrentRequests]"
           },
-          "readinessPath": {
-            "value": "/health/db"
-          },
           "envVars": {
             "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value), createObject('name', 'Database__Provider', 'value', parameters('databaseProvider'))), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), format('{0}ApplicationIntent=ReadOnly;', coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), '')), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'readConnectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__CosmosDb1', 'value', reference('cosmosDb').outputs.accountEndpoint.value), createObject('name', 'ConnectionStrings__BlobStorage1', 'value', reference('storage').outputs.appStorageBlobEndpoint.value), createObject('name', 'ConnectionStrings__TableStorage1', 'value', reference('storage').outputs.appStorageTableEndpoint.value), createObject('name', 'ConnectionStrings__Redis1', 'value', listOutputsWithSecureValues('redis', '2025-04-01').connectionString)), if(equals(parameters('messagingProvider'), 'RabbitMq'), createArray(createObject('name', 'Messaging__Provider', 'value', parameters('messagingProvider')), createObject('name', 'ConnectionStrings__RabbitMq1', 'value', if(equals(parameters('messagingProvider'), 'RabbitMq'), format('amqp://taskflow:{0}@{1}:5672/', parameters('rabbitMqPassword'), reference('rabbitMq').outputs.host.value), '')), createObject('name', 'Messaging__RabbitMq__ConnectionString', 'value', if(equals(parameters('messagingProvider'), 'RabbitMq'), format('amqp://taskflow:{0}@{1}:5672/', parameters('rabbitMqPassword'), reference('rabbitMq').outputs.host.value), ''))), createArray(createObject('name', 'Messaging__Provider', 'value', parameters('messagingProvider')), createObject('name', 'SERVICEBUS__fullyQualifiedNamespace', 'value', reference('serviceBus').outputs.namespaceEndpoint.value))))]"
           },
@@ -2714,7 +2758,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "11779818597717378093"
+              "templateHash": "10834496467740372009"
             }
           },
           "parameters": {
@@ -2801,9 +2845,34 @@
             },
             "readinessPath": {
               "type": "string",
-              "defaultValue": "/readyz",
+              "defaultValue": "/healthz/ready",
               "metadata": {
-                "description": "HTTP readiness path. The revision receives traffic only after this endpoint succeeds."
+                "description": "HTTP readiness path (D-049). The revision receives traffic only after this endpoint succeeds."
+              }
+            },
+            "livenessPath": {
+              "type": "string",
+              "defaultValue": "/healthz/live",
+              "metadata": {
+                "description": "HTTP liveness path (D-049). A failure here restarts the container, so it must not probe dependencies."
+              }
+            },
+            "startupPath": {
+              "type": "string",
+              "defaultValue": "/healthz/live",
+              "metadata": {
+                "description": "HTTP startup path (D-049). Holds liveness and readiness off until the app has finished starting."
+              }
+            },
+            "stickySessions": {
+              "type": "string",
+              "defaultValue": "none",
+              "allowedValues": [
+                "sticky",
+                "none"
+              ],
+              "metadata": {
+                "description": "Ingress session affinity. Sticky is required only for hosts holding server-side per-client state (Blazor Server SignalR circuits)."
               }
             },
             "envVars": {
@@ -2834,7 +2903,7 @@
               "properties": {
                 "environmentId": "[parameters('environmentId')]",
                 "configuration": {
-                  "ingress": "[if(parameters('ingressEnabled'), createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false()), null())]"
+                  "ingress": "[if(parameters('ingressEnabled'), createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), null())]"
                 },
                 "template": {
                   "containers": [
@@ -2847,6 +2916,31 @@
                       },
                       "env": "[parameters('envVars')]",
                       "probes": [
+                        {
+                          "type": "Startup",
+                          "httpGet": {
+                            "path": "[parameters('startupPath')]",
+                            "port": "[parameters('targetPort')]",
+                            "scheme": "HTTP"
+                          },
+                          "initialDelaySeconds": 5,
+                          "periodSeconds": 5,
+                          "timeoutSeconds": 3,
+                          "failureThreshold": 60,
+                          "successThreshold": 1
+                        },
+                        {
+                          "type": "Liveness",
+                          "httpGet": {
+                            "path": "[parameters('livenessPath')]",
+                            "port": "[parameters('targetPort')]",
+                            "scheme": "HTTP"
+                          },
+                          "periodSeconds": 30,
+                          "timeoutSeconds": 5,
+                          "failureThreshold": 3,
+                          "successThreshold": 1
+                        },
                         {
                           "type": "Readiness",
                           "httpGet": {
@@ -2962,7 +3056,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "11779818597717378093"
+              "templateHash": "10834496467740372009"
             }
           },
           "parameters": {
@@ -3049,9 +3143,34 @@
             },
             "readinessPath": {
               "type": "string",
-              "defaultValue": "/readyz",
+              "defaultValue": "/healthz/ready",
               "metadata": {
-                "description": "HTTP readiness path. The revision receives traffic only after this endpoint succeeds."
+                "description": "HTTP readiness path (D-049). The revision receives traffic only after this endpoint succeeds."
+              }
+            },
+            "livenessPath": {
+              "type": "string",
+              "defaultValue": "/healthz/live",
+              "metadata": {
+                "description": "HTTP liveness path (D-049). A failure here restarts the container, so it must not probe dependencies."
+              }
+            },
+            "startupPath": {
+              "type": "string",
+              "defaultValue": "/healthz/live",
+              "metadata": {
+                "description": "HTTP startup path (D-049). Holds liveness and readiness off until the app has finished starting."
+              }
+            },
+            "stickySessions": {
+              "type": "string",
+              "defaultValue": "none",
+              "allowedValues": [
+                "sticky",
+                "none"
+              ],
+              "metadata": {
+                "description": "Ingress session affinity. Sticky is required only for hosts holding server-side per-client state (Blazor Server SignalR circuits)."
               }
             },
             "envVars": {
@@ -3082,7 +3201,7 @@
               "properties": {
                 "environmentId": "[parameters('environmentId')]",
                 "configuration": {
-                  "ingress": "[if(parameters('ingressEnabled'), createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false()), null())]"
+                  "ingress": "[if(parameters('ingressEnabled'), createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), null())]"
                 },
                 "template": {
                   "containers": [
@@ -3095,6 +3214,31 @@
                       },
                       "env": "[parameters('envVars')]",
                       "probes": [
+                        {
+                          "type": "Startup",
+                          "httpGet": {
+                            "path": "[parameters('startupPath')]",
+                            "port": "[parameters('targetPort')]",
+                            "scheme": "HTTP"
+                          },
+                          "initialDelaySeconds": 5,
+                          "periodSeconds": 5,
+                          "timeoutSeconds": 3,
+                          "failureThreshold": 60,
+                          "successThreshold": 1
+                        },
+                        {
+                          "type": "Liveness",
+                          "httpGet": {
+                            "path": "[parameters('livenessPath')]",
+                            "port": "[parameters('targetPort')]",
+                            "scheme": "HTTP"
+                          },
+                          "periodSeconds": 30,
+                          "timeoutSeconds": 5,
+                          "failureThreshold": 3,
+                          "successThreshold": 1
+                        },
                         {
                           "type": "Readiness",
                           "httpGet": {
@@ -3197,6 +3341,9 @@
           "concurrentRequests": {
             "value": "[parameters('blazorProfile').concurrentRequests]"
           },
+          "stickySessions": {
+            "value": "sticky"
+          },
           "envVars": {
             "value": [
               {
@@ -3224,7 +3371,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "11779818597717378093"
+              "templateHash": "10834496467740372009"
             }
           },
           "parameters": {
@@ -3311,9 +3458,34 @@
             },
             "readinessPath": {
               "type": "string",
-              "defaultValue": "/readyz",
+              "defaultValue": "/healthz/ready",
               "metadata": {
-                "description": "HTTP readiness path. The revision receives traffic only after this endpoint succeeds."
+                "description": "HTTP readiness path (D-049). The revision receives traffic only after this endpoint succeeds."
+              }
+            },
+            "livenessPath": {
+              "type": "string",
+              "defaultValue": "/healthz/live",
+              "metadata": {
+                "description": "HTTP liveness path (D-049). A failure here restarts the container, so it must not probe dependencies."
+              }
+            },
+            "startupPath": {
+              "type": "string",
+              "defaultValue": "/healthz/live",
+              "metadata": {
+                "description": "HTTP startup path (D-049). Holds liveness and readiness off until the app has finished starting."
+              }
+            },
+            "stickySessions": {
+              "type": "string",
+              "defaultValue": "none",
+              "allowedValues": [
+                "sticky",
+                "none"
+              ],
+              "metadata": {
+                "description": "Ingress session affinity. Sticky is required only for hosts holding server-side per-client state (Blazor Server SignalR circuits)."
               }
             },
             "envVars": {
@@ -3344,7 +3516,7 @@
               "properties": {
                 "environmentId": "[parameters('environmentId')]",
                 "configuration": {
-                  "ingress": "[if(parameters('ingressEnabled'), createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false()), null())]"
+                  "ingress": "[if(parameters('ingressEnabled'), createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), null())]"
                 },
                 "template": {
                   "containers": [
@@ -3357,6 +3529,31 @@
                       },
                       "env": "[parameters('envVars')]",
                       "probes": [
+                        {
+                          "type": "Startup",
+                          "httpGet": {
+                            "path": "[parameters('startupPath')]",
+                            "port": "[parameters('targetPort')]",
+                            "scheme": "HTTP"
+                          },
+                          "initialDelaySeconds": 5,
+                          "periodSeconds": 5,
+                          "timeoutSeconds": 3,
+                          "failureThreshold": 60,
+                          "successThreshold": 1
+                        },
+                        {
+                          "type": "Liveness",
+                          "httpGet": {
+                            "path": "[parameters('livenessPath')]",
+                            "port": "[parameters('targetPort')]",
+                            "scheme": "HTTP"
+                          },
+                          "periodSeconds": 30,
+                          "timeoutSeconds": 5,
+                          "failureThreshold": 3,
+                          "successThreshold": 1
+                        },
                         {
                           "type": "Readiness",
                           "httpGet": {

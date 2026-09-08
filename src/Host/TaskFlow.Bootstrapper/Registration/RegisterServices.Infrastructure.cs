@@ -152,13 +152,34 @@ public static partial class RegisterServices
         var databaseName = config["Cosmos:TaskViews:DatabaseName"] ?? "taskflow-db";
         var containerName = config["Cosmos:TaskViews:ContainerName"] ?? "task-views";
 
-        services.AddSingleton(_ => new Microsoft.Azure.Cosmos.CosmosClient(connStr));
+        services.AddSingleton(_ => new Microsoft.Azure.Cosmos.CosmosClient(connStr, BuildCosmosClientOptions(config)));
         services.AddSingleton<ITaskViewRepository>(sp =>
             new CosmosTaskViewRepository(
                 sp.GetRequiredService<Microsoft.Azure.Cosmos.CosmosClient>(),
                 sp.GetRequiredService<ILogger<CosmosTaskViewRepository>>(),
                 databaseName,
                 containerName));
+    }
+
+    /// <summary>
+    /// D-051: cross-region read hedging, off by default. After <c>threshold</c> without an answer the SDK
+    /// issues the same read against the next preferred region and takes whichever replies first, then repeats
+    /// every <c>thresholdStep</c>. It only helps a multi-region account with preferred regions configured, and
+    /// it multiplies request units on a slow region, so it stays a deployment decision rather than a default.
+    /// </summary>
+    internal static Microsoft.Azure.Cosmos.CosmosClientOptions? BuildCosmosClientOptions(IConfiguration config)
+    {
+        if (!config.GetValue("Cosmos:Hedging:Enabled", false))
+            return null;
+
+        var threshold = TimeSpan.FromMilliseconds(config.GetValue("Cosmos:Hedging:ThresholdMs", 500));
+        var thresholdStep = TimeSpan.FromMilliseconds(config.GetValue("Cosmos:Hedging:ThresholdStepMs", 100));
+
+        return new Microsoft.Azure.Cosmos.CosmosClientOptions
+        {
+            AvailabilityStrategy =
+                Microsoft.Azure.Cosmos.AvailabilityStrategy.CrossRegionHedgingStrategy(threshold, thresholdStep)
+        };
     }
 
     /// <summary>

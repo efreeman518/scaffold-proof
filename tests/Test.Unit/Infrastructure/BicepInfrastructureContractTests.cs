@@ -47,6 +47,36 @@ public sealed class BicepInfrastructureContractTests
         StringAssert.Contains(module, "concurrentRequests: string(concurrentRequests)");
     }
 
+    /// <summary>
+    /// D-049: the container-app module must carry all three probes on the contract paths, and affinity must be
+    /// opt-in. A probe pointed at an authenticated or aggregate route is the failure this locks out - the
+    /// platform probes anonymously, so only the /healthz* routes can ever answer it.
+    /// </summary>
+    [TestMethod]
+    public void ContainerAppModule_HasLiveReadyStartupProbesAndOptInAffinity()
+    {
+        var module = ReadInfraFile(Path.Combine("modules", "container-app.bicep"));
+
+        StringAssert.Contains(module, "param readinessPath string = '/healthz/ready'");
+        StringAssert.Contains(module, "param livenessPath string = '/healthz/live'");
+        StringAssert.Contains(module, "param startupPath string = '/healthz/live'");
+        StringAssert.Contains(module, "type: 'Startup'");
+        StringAssert.Contains(module, "type: 'Liveness'");
+        StringAssert.Contains(module, "type: 'Readiness'");
+        StringAssert.Contains(module, "@allowed(['sticky', 'none'])");
+        StringAssert.Contains(module, "param stickySessions string = 'none'");
+        StringAssert.Contains(module, "affinity: stickySessions");
+        Assert.IsFalse(module.Contains("/readyz", StringComparison.Ordinal));
+
+        // Blazor Server is the only host with per-connection server state, so it is the only sticky app, and
+        // no app may override a probe path away from the contract.
+        var main = ReadInfraFile("main.bicep");
+        StringAssert.Contains(main, "stickySessions: 'sticky'");
+        Assert.AreEqual(1, main.Split("stickySessions:").Length - 1);
+        Assert.IsFalse(main.Contains("readinessPath:", StringComparison.Ordinal));
+        Assert.IsFalse(main.Contains("livenessPath:", StringComparison.Ordinal));
+    }
+
     [TestMethod]
     public void FunctionsModule_HasScaleLimitParamAndReadConnectionString()
     {
@@ -110,8 +140,8 @@ public sealed class BicepInfrastructureContractTests
     public void CosmosDbModule_NamesMatchApiAppSettings()
     {
         var module = ReadInfraFile(Path.Combine("modules", "cosmos-db.bicep"));
-        var appSettings = File.ReadAllText(Path.Combine(
-            FindRepoRoot(), "src", "Host", "TaskFlow.Api", "appsettings.json"));
+        var appSettings = File.ReadAllText(
+            RepoRoot.Combine("src", "Host", "TaskFlow.Api", "appsettings.json"));
 
         StringAssert.Contains(module, "name: 'taskflow-db'");
         StringAssert.Contains(module, "name: 'task-views'");
@@ -170,24 +200,5 @@ public sealed class BicepInfrastructureContractTests
     }
 
     private static string ReadInfraFile(string relativePath) =>
-        File.ReadAllText(Path.Combine(FindRepoRoot(), "infra", relativePath));
-
-    private static string FindRepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null)
-        {
-            // A regular clone has ".git" as a directory; a git worktree checkout (used by orchestrated
-            // refactor sessions) has ".git" as a plain gitdir-pointer file. Either marks the repo root.
-            var gitPath = Path.Combine(directory.FullName, ".git");
-            if (Directory.Exists(gitPath) || File.Exists(gitPath))
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new InvalidOperationException("Could not locate repository root.");
-    }
+        File.ReadAllText(RepoRoot.Combine("infra", relativePath));
 }

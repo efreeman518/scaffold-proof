@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using TaskFlow.Infrastructure.Data.Operational;
+using TaskFlow.Observability.Tracing;
 
 namespace TaskFlow.Scheduler.Workers;
 
@@ -92,6 +94,14 @@ public abstract class LeasedWorkerBase<TWork>(
 
         var batch = await work.ClaimAsync<TWork>(BatchSize, LeaseDuration, LeaseOwner, ct).ConfigureAwait(false);
         if (batch.Items.Count == 0) return 0;
+
+        // D-053: one span per non-empty drain, started after the claim so an idle poll emits nothing. Empty
+        // polls are the common case here (the loop backs off to a 5s floor), and a span for each of them
+        // would bury the drains that did work.
+        using var activity = TaskFlowActivitySources.Scheduler.StartActivity(
+            $"{typeof(TWork).Name} drain", ActivityKind.Internal);
+        activity?.SetTag("scheduler.work.type", typeof(TWork).Name)
+            .SetTag("scheduler.work.claimed", batch.Items.Count);
 
         await HandleBatchAsync(scope.ServiceProvider, work, batch, ct).ConfigureAwait(false);
         return batch.Items.Count;

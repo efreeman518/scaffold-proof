@@ -1,6 +1,9 @@
 using EF.Messaging.RabbitMq;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using TaskFlow.Application.Contracts.Locking;
 using TaskFlow.Infrastructure.Data.Messaging;
 
 namespace TaskFlow.Infrastructure.Messaging.RabbitMq;
@@ -60,7 +63,15 @@ public static class RabbitMqRegistration
             }
         });
 
-        services.AddRabbitMqTopology(TaskFlowRabbitMqTopology.Build());
+        // D-052: TaskFlow's own topology startup instead of the package's, so declaration is serialized
+        // across replicas by the distributed lock. Inserted at the front for the same reason the package
+        // inserts its own there - the topology has to exist before any consumer subscribes.
+        services.Insert(0, ServiceDescriptor.Singleton<IHostedService>(sp => new TaskFlowRabbitMqTopologyStartup(
+            TaskFlowRabbitMqTopology.Build(),
+            sp.GetRequiredService<IRabbitMqTopologyDeclarer>(),
+            sp.GetRequiredService<IDistributedLock>(),
+            sp.GetRequiredService<ILogger<TaskFlowRabbitMqTopologyStartup>>())));
+
         services.AddRabbitMqConsumer<RabbitMqProjectionHandler>(TaskFlowRabbitMqTopology.ProjectionQueue);
         services.AddRabbitMqConsumer<RabbitMqAiReviewHandler>(TaskFlowRabbitMqTopology.AiReviewQueue);
         services.AddRabbitMqConsumer<RabbitMqWorkflowHandler>(TaskFlowRabbitMqTopology.WorkflowQueue);
