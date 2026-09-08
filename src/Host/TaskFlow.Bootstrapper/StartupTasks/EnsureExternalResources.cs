@@ -7,7 +7,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Infrastructure.Storage;
+using TaskFlow.Infrastructure.Storage.S3;
 
 namespace TaskFlow.Bootstrapper.StartupTasks;
 
@@ -30,6 +32,7 @@ public sealed class EnsureExternalResources(
     public async Task ExecuteAsync(CancellationToken ct = default)
     {
         await EnsureBlobContainerAsync(ct);
+        await EnsureS3BucketAsync(ct);
         await EnsureAuditTableAsync(ct);
         await EnsureCosmosAsync(ct);
     }
@@ -45,6 +48,17 @@ public sealed class EnsureExternalResources(
         await container.CreateIfNotExistsAsync(cancellationToken: ct).ConfigureAwait(false);
 
         logger.ExternalResourceReady("blob container", blobSettings.Value.ContainerName);
+    }
+
+    /// <summary>Creates the attachment bucket when the S3 object-storage arm is active (D-037).</summary>
+    private async Task EnsureS3BucketAsync(CancellationToken ct)
+    {
+        var provisioner = services.GetService<IS3BucketProvisioner>();
+        if (provisioner is null) return;
+
+        await provisioner.EnsureBucketExistsAsync(AttachmentBlobs.ContainerName, ct).ConfigureAwait(false);
+
+        logger.ExternalResourceReady("s3 bucket", AttachmentBlobs.ContainerName);
     }
 
     /// <summary>Creates the audit table named by configuration.</summary>
