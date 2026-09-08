@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.FeatureManagement;
+using TaskFlow.Api.Filters;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Infrastructure.AI.Search;
 
@@ -18,19 +18,9 @@ public static class SearchEndpoints
             [FromQuery] SearchMode mode,
             [FromQuery] int maxResults,
             [FromServices] ITaskFlowSearchService searchService,
-            [FromServices] IVariantFeatureManager featureManager,
             HttpContext httpContext,
             CancellationToken ct) =>
         {
-            // GR-19/GR-20: SemanticSearch gates one mode, not the whole route, so the check is here rather
-            // than in a RequireFeature endpoint filter - keyword search must keep answering while the flag
-            // is off. 404, not 403, for the same reason the filter uses it: a disabled surface looks absent.
-            if (mode == SearchMode.Semantic
-                && !await featureManager.IsEnabledAsync(TaskFlowFeatures.SemanticSearch, ct))
-            {
-                return Results.NotFound();
-            }
-
             if (maxResults <= 0 || maxResults > 50) maxResults = 10;
 
             var tenantClaim = httpContext.User.FindFirst("tenant_id")?.Value;
@@ -38,7 +28,14 @@ public static class SearchEndpoints
 
             var results = await searchService.SearchTaskItemsAsync(query, mode, tenantId, maxResults, ct);
             return Results.Ok(results);
-        }).WithName("SearchTasks");
+        })
+        // GR-19/GR-20: SemanticSearch gates one mode, not the route. Keyword search keeps answering while the
+        // flag is off; a Semantic request gets 404, because a disabled surface should look absent rather than
+        // forbidden. Same filter as the TaskViews and Export gates, narrowed to the requests it applies to.
+        .RequireFeature(
+            TaskFlowFeatures.SemanticSearch,
+            context => context.Arguments.OfType<SearchMode>().Contains(SearchMode.Semantic))
+        .WithName("SearchTasks");
 
         return app;
     }
