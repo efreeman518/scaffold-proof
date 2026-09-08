@@ -1,11 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
+using System.Buffers;
 using System.Diagnostics;
-using System.Text;
 using System.Text.Json;
 using TaskFlow.Api.Endpoints.Shared;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models.Paging;
 using TaskFlow.Application.Models.Reads;
+using TaskFlow.Application.Models.Serialization;
 using TaskFlow.Observability.Meters;
 
 namespace TaskFlow.Api.Endpoints;
@@ -18,6 +19,9 @@ namespace TaskFlow.Api.Endpoints;
 public static class TaskFlowReadEndpoints
 {
     private const string NdJsonContentType = "application/x-ndjson";
+
+    /// <summary>Pending (unflushed) byte ceiling before the export writer is drained to the socket (64 KB).</summary>
+    private const int FlushThresholdBytes = 64 * 1024;
 
     /// <summary>Registers summary, metadata, and export routes.</summary>
     public static IEndpointRouteBuilder MapTaskFlowReadEndpoints(this IEndpointRouteBuilder app)
@@ -75,31 +79,45 @@ public static class TaskFlowReadEndpoints
         var guard = SearchRequestGuard.Validate(size);
         if (guard is not null) return guard;
 
-        var jsonOptions = httpContext.RequestServices
-            .GetRequiredService<Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Http.Json.JsonOptions>>()
-            .Value.SerializerOptions;
-
         httpContext.Response.ContentType = NdJsonContentType;
 
         var stopwatch = Stopwatch.StartNew();
         var written = 0;
         var completed = false;
+        // Hot path (D-047/D-048): one Utf8JsonWriter over the response PipeWriter for the whole stream,
+        // Reset between rows, writing through the source-generated TaskItemExportDto metadata. The previous
+        // SerializeAsync-per-row built a writer, rented a buffer and drove an async state machine for every
+        // row, then awaited a Stream write in between; a 100k-row tenant paid all of that 100k times.
+        // Utf8JsonWriter is synchronous over IBufferWriter, so the only awaits left are the real flushes.
+        var body = httpContext.Response.BodyWriter;
+        var writer = new Utf8JsonWriter(body, new JsonWriterOptions { SkipValidation = true });
         try
         {
             await foreach (var row in reads.StreamTaskItemExportAsync(afterId, size, ct))
             {
-                await JsonSerializer.SerializeAsync(httpContext.Response.Body, row, jsonOptions, ct);
-                await httpContext.Response.Body.WriteAsync(NewLine, ct);
+                writer.Reset(body);
+                JsonSerializer.Serialize(writer, row, TaskFlowJsonContext.Default.TaskItemExportDto);
+                body.Write(NewLine);
+                written++;
 
-                if (++written % size == 0)
-                    await httpContext.Response.Body.FlushAsync(ct);
+                // Flush on a full buffer or at the batch boundary, whichever comes first: the byte ceiling
+                // bounds memory on wide rows, the batch boundary keeps a client on narrow rows seeing
+                // progress. FlushAsync observes ct, so a disconnected client stops the enumeration - and the
+                // database work behind it - instead of paging the rest of the tenant into a void.
+                if (writer.BytesPending >= FlushThresholdBytes || written % size == 0)
+                {
+                    writer.Flush();
+                    await body.FlushAsync(ct);
+                }
             }
 
-            await httpContext.Response.Body.FlushAsync(ct);
+            writer.Flush();
+            await body.FlushAsync(ct);
             completed = true;
         }
         finally
         {
+            await writer.DisposeAsync();
             // Recorded in a finally so a client disconnect is measured too: an abandoned export still cost
             // the rows it produced, and a rising abandoned rate is the signal that clients are timing out.
             meter.RecordExport(written, stopwatch.Elapsed.TotalMilliseconds, completed);
@@ -109,7 +127,8 @@ public static class TaskFlowReadEndpoints
         return TypedResults.Empty;
     }
 
-    private static ReadOnlyMemory<byte> NewLine => Encoding.UTF8.GetBytes("\n");
+    /// <summary>NDJSON row separator. A static field, not a property that re-encodes on every row.</summary>
+    private static readonly byte[] NewLine = [(byte)'\n'];
 }
 
 /// <summary>

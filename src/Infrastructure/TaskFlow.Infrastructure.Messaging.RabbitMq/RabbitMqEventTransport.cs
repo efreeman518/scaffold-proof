@@ -1,5 +1,4 @@
 using EF.Messaging.RabbitMq;
-using System.Text;
 using TaskFlow.Infrastructure.Data.Messaging;
 using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Observability.Meters;
@@ -24,11 +23,15 @@ public sealed class RabbitMqEventTransport(
         ArgumentNullException.ThrowIfNull(messages);
         if (messages.Count == 0) return;
 
+        // D-047 hot path: one pooled UTF-8 buffer for the whole batch instead of a byte[] per row. The
+        // using scope outlives the publish, because RabbitMqMessage.Body is a slice of it.
+        using var bodies = OutboxBodyBuffer.Rent(messages);
+
         var batch = new List<RabbitMqMessage>(messages.Count);
         foreach (var row in messages)
         {
             batch.Add(new RabbitMqMessage(
-                Encoding.UTF8.GetBytes(row.Payload),
+                bodies.Append(row.Payload),
                 RoutingKey: row.EventType,
                 MessageId: row.Id.ToString(),
                 CorrelationId: row.CorrelationId,
