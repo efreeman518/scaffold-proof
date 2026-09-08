@@ -5,6 +5,9 @@
 
   <ItemGroup>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <!-- D-040: the AddTaskItemEmbedding migration and the model snapshot name the vector column type. -->
+    <PackageReference Include="Pgvector" />
+    <PackageReference Include="Pgvector.EntityFrameworkCore" />
   </ItemGroup>
 
   <ItemGroup>

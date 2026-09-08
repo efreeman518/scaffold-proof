@@ -6,6 +6,7 @@ using TaskFlow.Domain.Shared;
 using TaskFlow.Infrastructure.Data.Configurations;
 using TaskFlow.Infrastructure.Data.Conventions;
 using TaskFlow.Infrastructure.Data.Encryption;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Infrastructure.Data.ReadModel;
 
@@ -45,9 +46,32 @@ public abstract class TaskFlowDbContextBase(DbContextOptions options) : DbContex
         // TaskItemConfiguration has no parameterless constructor (the assembly scan skips it): it binds the
         // secure-column converters to the process encryptor carried by the options (D-023).
         modelBuilder.ApplyConfiguration(new TaskItemConfiguration(this.GetColumnEncryptor()));
+        ConfigureVectorSearch(modelBuilder);
         SetTableNames(modelBuilder);
         ConfigureTenantQueryFilters(modelBuilder);
     }
+
+    /// <summary>
+    /// The one model-level provider branch the solution allows (D-030), and it is forced: <c>vector</c> is a
+    /// PostgreSQL extension type with no SQL Server equivalent that EF can map today, and the HNSW index needs
+    /// an Npgsql-only <c>HasMethod</c>/<c>HasOperators</c> pair. Mapping it unconditionally would put a column
+    /// SQL Server cannot create into the SQL Server migration snapshot.
+    /// <para>
+    /// Future arm: SQL Server 2025 ships a native <c>VECTOR</c> type with <c>VECTOR_DISTANCE</c>. When the EF
+    /// Core SQL Server provider maps it, this becomes a two-arm branch here rather than a Postgres-only entity,
+    /// and <c>PgVectorSearchService</c>'s startup guard loses its reason to exist.
+    /// </para>
+    /// </summary>
+    private void ConfigureVectorSearch(ModelBuilder modelBuilder)
+    {
+        if (!string.Equals(Database.ProviderName, NpgsqlProviderName, StringComparison.Ordinal)) return;
+
+        modelBuilder.HasPostgresExtension("vector");
+        modelBuilder.ApplyConfiguration(new TaskItemEmbeddingConfiguration(TaskItemEmbedding.DefaultDimensions));
+    }
+
+    /// <summary>Assembly-qualified-free provider name Npgsql reports through <see cref="DatabaseFacade.ProviderName"/>.</summary>
+    private const string NpgsqlProviderName = "Npgsql.EntityFrameworkCore.PostgreSQL";
 
     /// <summary>Provides the set table names operation for task flow DB context base.</summary>
     private static void SetTableNames(ModelBuilder modelBuilder)
