@@ -1,0 +1,44 @@
+# Portable Lane + Guidance Alignment Refactor - Orchestration Handoff
+
+Durable state for the orchestrated refactor. Sessions and agents are disposable; this doc plus `docs/plans/portable-lane-guidance-plan.md` (the approved plan) must be enough to resume.
+
+## Goal
+
+Add the Portable hosting lane (Docker Compose + Caddy on a VPS, external PostgreSQL and LLM provider, Azure only for Key Vault + App Configuration) as independent provider switches with a lane preset, and close every gap against the scale-guidance checklist (runtime profile, source-generated JSON, hot paths, bounded concurrency, health probe contract, edge hardening, hedging, distributed lock, broker trace propagation, internal gRPC, MessagePack L2, feature flags, pgvector search). Plan sections: Part A (lane), Part B (alignment), decisions D-035..D-055.
+
+## Decisions (confirmed by the user 2026-09-08)
+
+- Keep the own transport (`IIntegrationEventTransport`, `EF.Messaging.RabbitMq`); no MassTransit or SlimMessageBus (D-046).
+- Portable compute = Docker Compose + Caddy on one VPS, hand-written under `deploy/compose/`; no `Aspire.Hosting.Docker` (D-036).
+- Build now: pgvector semantic search (P7), gRPC internal read proof (G3), MessagePack L2 serializer (G3).
+- Delivery: slices merge into `feature/scale-baseline-dual-provider` in the primary checkout; one integration commit per green slice; no push, no PR until the user asks.
+- Health paths fixed for every slice: `/healthz/live`, `/healthz/ready`, `/healthz` aggregate (D-049). gRPC h2c port for the Api: 8081 (D-054).
+- Environment: Testcontainers lanes need a run-scoped `TESTCONTAINERS_HOST_OVERRIDE=<podman machine ip>` (never committed); Test.Aspire and compose smoke cannot run on this machine (Podman WSL port binding) - CI is the proof.
+
+## Slice table
+
+Worktrees live in `C:\Users\EbenFreeman\source\repos\scaffold-proof-wt\<slice>` unless the harness chose its own path. Base for every slice branch: `feature/scale-baseline-dual-provider` at spawn time.
+
+| id | scope (plan sections) | model | status | branch | worktree | agent id |
+|---|---|---|---|---|---|---|
+| P1 | Artifacts: D-035..D-055, resource-implementation.yaml, UBIQUITOUS-LANGUAGE, domain-specification, INSTRUCTION-GAPS | sonnet | pending | feature/pl-p1-artifacts | - | - |
+| G1 | Runtime props + Dockerfiles, TaskFlowJsonContext, export writer, pooled publish buffers, bounded blob deletes + dispatcher fan-out, blocking-call sweep, package AOT flags, benchmark (B.2 G1) | opus | pending | feature/pl-g1-runtime | - | - |
+| P2 | Six switch skeletons with existing arms + fallbacks, Data Protection switch, lifted credential, pooler option, selector tests, architecture rules (A.1) | sonnet | pending | feature/pl-p2-switches | - | - |
+| G2 | Health contract + Bicep probes/sticky, YARP hardening + edge limiter, hedging, ActivitySources + trace propagation, IDistributedLock (B.2 G2) | opus | pending | feature/pl-g2-edge-health-tracing | - | - |
+| P3 | Relational read model + relational audit: entities, configs, migrations both providers, repositories, arms, parity tests (A.1) | opus | pending | feature/pl-p3-relational-readmodel-audit | - | - |
+| P4 | S3 object storage + MinIO fixture + health + provisioning + endpoint tests (A.1) | sonnet | pending | feature/pl-p4-s3 | - | - |
+| P5 | App Configuration + FeatureManagement + tenant targeting + flags + OpenAI-compatible arm (A.1) | sonnet | pending | feature/pl-p5-appconfig-flags-ai | - | - |
+| G3 | gRPC read service + Blazor client + ports; MessagePack L2 switch (B.2 G3) | opus | pending | feature/pl-g3-grpc-messagepack | - | - |
+| P6 | Compose lane, Aspire lane preset + MinIO, reusable image workflow + deploy-vps.yml, ci compose config/smoke, Bicep pgbouncer, Test.Aspire portable topology (A.2) | opus | pending | feature/pl-p6-compose-lane | - | - |
+| P7 | PgVector semantic search: entity + migration, embedding consumer + topology, search service, fail-fast, tests (A.1) | opus | pending | feature/pl-p7-pgvector | - | - |
+| G4 | LoggerMessage sweep + CA1848, alignment doc, tech-design, README, REFERENCE-STATUS, scaffold-instructions-handoff, ef-package-requests, language (B.2 G4) | sonnet | pending | feature/pl-g4-docs | - | - |
+
+Waves: 1 = P1 + G1; 2 = P2 + G2 (after wave 1 merged); 3 = P3 + P4 + P5 + G3 (after wave 2 merged); 4 = P6 + P7 (after wave 3 merged); 5 = G4 after full acceptance.
+
+## Merge gate per slice
+
+Diff reviewed by the orchestrator in the agent's worktree; `dotnet build TaskFlow.slnx` and the Uno build at 0 warnings; `dotnet test TaskFlow.slnx --filter "TestCategory=Unit|TestCategory=Architecture|TestCategory=Endpoint"` green; Testcontainers lanes the slice touched on both `TASKFLOW_TEST_DB_PROVIDER` values; `az bicep build` when infra changed; `docker compose config -q` when compose changed; vulnerability audit clean. Then `git merge --no-ff feature/pl-<slice>` into the integration branch in the primary checkout.
+
+## Session log
+
+- 2026-09-08: inventories (Azure surfaces, runtime alignment, infra assets) and the portable-lane design completed; the guidance-alignment design agent was stopped by a user interrupt, so the alignment slicing was done by the orchestrator from the inventory evidence. User decisions recorded above. Plan and handoff committed. Next action: spawn wave 1 (P1 with harness worktree, G1 with in-prompt worktree).
