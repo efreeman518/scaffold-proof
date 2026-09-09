@@ -224,13 +224,20 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(aspireMeshBlock, "trap ");
         StringAssert.Contains(aspireMeshBlock, "kill \"$capture_pid\"");
         StringAssert.Contains(aspireMeshBlock, "exit \"$test_exit\"", "the loop's cleanup must not swallow dotnet test's own exit code");
+        // Second safety net (2026-09-09): print captured evidence inside the Aspire step itself on a
+        // non-zero exit, so it survives even if a later gate (e.g. the diagnostics step's own if:) misfires.
+        StringAssert.Contains(aspireMeshBlock, "test_exit\" -ne 0");
+        StringAssert.Contains(aspireMeshBlock, "tail -n 300");
 
         var diagnosticsBlock = workflow[diagnosticsStep..];
         StringAssert.Contains(diagnosticsBlock, "/tmp/aspire-container-logs");
         StringAssert.Contains(diagnosticsBlock, "tail -n 300");
-        // Keyed off the Aspire step's own conclusion, not a re-evaluated copy of its if: - a skipped or
-        // successful mesh step, or an earlier unrelated failure, must not trigger this step.
-        StringAssert.Contains(diagnosticsBlock, "if: ${{ steps.aspire_mesh.conclusion == 'failure' }}");
+        // A condition with no status-check function gets an implicit success() ANDed in by GitHub Actions,
+        // so steps.aspire_mesh.conclusion == 'failure' alone can never run once the Aspire step has failed
+        // (this skipped the step in run 34406418605) - failure() must be explicit. Keyed off the Aspire
+        // step's own conclusion, not a re-evaluated copy of its if:, so a skipped/successful mesh step or
+        // an earlier unrelated failure still cannot trigger this.
+        StringAssert.Contains(diagnosticsBlock, "if: ${{ failure() && steps.aspire_mesh.conclusion == 'failure' }}");
         StringAssert.Contains(diagnosticsBlock, "continue-on-error: true");
         StringAssert.Contains(diagnosticsBlock, "free -m");
         StringAssert.Contains(diagnosticsBlock, "docker ps -a");

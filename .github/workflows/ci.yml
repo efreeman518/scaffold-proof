@@ -234,14 +234,36 @@ jobs:
             test_exit=$?
           fi
 
+          kill "$capture_pid" 2>/dev/null || true
+          wait "$capture_pid" 2>/dev/null || true
+
+          # Second safety net: print the captured evidence here too, in case a later gate (job cancellation,
+          # a misconfigured if: on the diagnostics step) still skips it - the 2026-09-09 run had exactly that
+          # (an if: with no status-check function gets an implicit success() ANDed in, so it never runs
+          # after a failed step).
+          if [ "$test_exit" -ne 0 ]; then
+            echo "=== Aspire Mesh Tests failed (exit $test_exit); captured container logs follow ==="
+            if [ -d /tmp/aspire-container-logs ]; then
+              for f in /tmp/aspire-container-logs/*; do
+                [ -f "$f" ] || continue
+                echo "--- tail -n 300 $f ---"
+                tail -n 300 "$f" || true
+              done
+            else
+              echo "no captured container logs directory"
+            fi
+          fi
+
           exit "$test_exit"
 
       # Best-effort: the 2026-09-08 failure (SqlException pre-login handshake, sql_check Unhealthy
-      # throughout) had no runner-side evidence to explain it. Keyed off the Aspire step's own outcome
-      # (not re-evaluating its if:) so a skipped or successful mesh step, or an earlier unrelated
-      # failure, cannot trigger this; continue-on-error so best-effort diagnostics can never fail the job.
+      # throughout) had no runner-side evidence to explain it. if: must include failure() explicitly -
+      # a condition with no status-check function gets an implicit success() ANDed in by GitHub Actions,
+      # so steps.aspire_mesh.conclusion == 'failure' alone can never run once the Aspire step has failed
+      # (found in run 34406418605, which skipped this step). continue-on-error so best-effort
+      # diagnostics can never fail the job.
       - name: Aspire Mesh Diagnostics (on failure)
-        if: ${{ steps.aspire_mesh.conclusion == 'failure' }}
+        if: ${{ failure() && steps.aspire_mesh.conclusion == 'failure' }}
         continue-on-error: true
         run: |
           free -m
