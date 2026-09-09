@@ -32,7 +32,7 @@ in item 24 below is `0c5e250`, already committed on this branch.
 | 15 | Postgres features (JSONB, pgvector, partitioning) | Done / documented | `src/Infrastructure/TaskFlow.Infrastructure.Data/ReadModel/TaskItemEmbedding.cs` (`Vector Embedding`, `DefaultDimensions=1536`); `src/Infrastructure/TaskFlow.Infrastructure.AI/Search/PgVectorSearchService.cs` (cosine-distance query, tenant-scoped, `SearchMode.Semantic` only); `Directory.Packages.props:63` (`Pgvector.EntityFrameworkCore` 0.3.0) | pgvector entity is mapped only when the active provider is Npgsql (comment in `TaskItemEmbedding.cs:9-13`); no `DbSet` so the type never reaches the SQL Server model. TaskView `Document` column stays a plain string (not `jsonb`) by design (D-038, rejected `HasColumnType("jsonb")` to avoid a forced provider branch) - partitioning remains a documented customization, not built. |
 | 16 | Read/write split + PgBouncer | Done | `src/Infrastructure/TaskFlow.Infrastructure.Data/Provider/TaskFlowDbProvider.cs:55-78` (`PoolerMode` enum, `PoolerModeSelector.Resolve` from `Database:PostgreSql:PoolerMode`, appends `No Reset On Close=true;Max Auto Prepare=0` at line ~174); `infra/modules/postgres-flexible-server.bicep` (pgbouncer param, per grep match) | Read/write split via the Query/Trxn context split predates this refactor (D-027); the pooler switch (D-045) is new. Portable lane runs a PgBouncer container (`deploy/compose/pgbouncer/`, seen in item watch-list checks); Azure lane uses Flexible Server's `pgbouncer.enabled` Bicep param, not available on Burstable tier. |
 | 17 | Transient work tables, hard deletes | Done (pre-existing) | `src/Infrastructure/TaskFlow.Infrastructure.Data/Operational/OperationalWorkBase.cs:1-40` (`OutboxMessage`, `BlobDeleteWork`, lease fields, `ExecuteDeleteAsync`/`ExecuteDeleteBatchedAsync` completion) | Unaffected by this refactor; cited for completeness. |
-| 18 | Internal gRPC | Done (internal read proof) | `src/Shared/TaskFlow.Contracts.Grpc/taskflow_read.proto`; `src/Host/TaskFlow.Api/Grpc/TaskFlowReadGrpcService.cs:37-40` (`GetTaskItemSummary`/`GetTaskMetadata`/`GetTaskItem`, `RequireAuthorization`); `src/Host/TaskFlow.Api/appsettings.json:7-15` (`Kestrel:Endpoints:Http` 8080, `Grpc` 8081 Http2) | Delegates to the same application services REST uses (comment at `TaskFlowReadGrpcService.cs:14-21`), so the two transports cannot drift; Blazor Server is the one gRPC consumer via `AddGrpcClient`, the Gateway keeps REST for public clients (D-054). Watch item: the Kestrel `Grpc`/`Http` endpoint config can conflict with `launchSettings.json`'s `applicationUrl` on local `dotnet run` (see Watch items). |
+| 18 | Internal gRPC | Done (internal read proof) | `src/Shared/TaskFlow.Contracts.Grpc/taskflow_read.proto`; `src/Host/TaskFlow.Api/Grpc/TaskFlowReadGrpcService.cs:37-40` (`GetTaskItemSummary`/`GetTaskMetadata`/`GetTaskItem`, `RequireAuthorization`); `src/Host/TaskFlow.Api/appsettings.json:7-15` (`Kestrel:Endpoints:Http` 8080, `Grpc` 8081 Http2) | Delegates to the same application services REST uses (comment at `TaskFlowReadGrpcService.cs:14-21`), so the two transports cannot drift; Blazor Server is the one gRPC consumer via `AddGrpcClient`, the Gateway keeps REST for public clients (D-054). Resolved (F1): `launchSettings.json` no longer declares `applicationUrl` for the Api, so `Kestrel:Endpoints` is the single port source on local `dotnet run` (no more "Overriding address(es)" warning). |
 | 19 | Binary payloads | Done (scoped) | `src/Infrastructure/TaskFlow.Infrastructure.Caching/CacheSettings.cs:44-64` (`CacheSerializer.MessagePack`, contractless resolver) | Scoped to the L2 cache value only (D-048); the message-queue payload deliberately stays JSON for broker-side filtering/interop/debuggability (comment in `TaskFlowJsonContext.cs` doc header and D-048 in `DESIGN-DECISIONS.md:174`). |
 | 20 | In-app rate limiting | Done | Api tenant limiter pre-existing; edge limiter added: `src/Host/TaskFlow.Gateway/EdgeRateLimitSettings.cs` (`TokensPerPeriod=200`, `ReplenishmentSeconds=1`, `QueueLimit=0`, `MaxConcurrentRequests=1000`); wired via `RateLimiting:Edge` in `src/Host/TaskFlow.Gateway/appsettings.json:34-46` | Edge limiter is in-process per replica by design (documented ceiling in `EdgeRateLimitSettings.cs:7-12`: swap to the Redis-backed partition factory when replica count makes cross-replica accounting matter). |
 | 21 | Distributed locks | Done | `src/Application/TaskFlow.Application.Contracts/Locking/IDistributedLock.cs` (`TryAcquireAsync(key, ttl, ct)`); arms at `src/Infrastructure/TaskFlow.Infrastructure.Caching/Locking/RedisDistributedLock.cs`, `InProcessDistributedLock.cs` | Scoped to non-reentrant startup tasks (external resource provisioning, RabbitMQ topology declaration) per the interface doc comment; work-table coordination continues to use leases/conditional updates (D-026), not this lock. |
@@ -40,7 +40,7 @@ in item 24 below is `0c5e250`, already committed on this branch.
 | 23 | Hedged requests | Done | `src/Host/Aspire/ServiceDefaults/ReadHedgingExtensions.cs` (`AddReadHedging`, `Resilience:Hedging` config, `ShouldHandle`/`DelayGenerator` both restricted to GET) | Comment in the file explains why both `ShouldHandle` and `DelayGenerator` must be restricted to GET: Polly can trigger a hedge either from an outcome or from the delay timer, and only gating the former would still duplicate a slow POST. Cosmos cross-region hedging (`CrossRegionHedgingStrategy`) is config-gated per the session log; not independently re-verified in this pass (deployment-only, requires a live Cosmos multi-region account). |
 | 24 | OpenTelemetry (ActivitySource, Meter, LoggerMessage, W3C) | Done | `src/Shared/TaskFlow.Observability/Tracing/TaskFlowActivitySources.cs` (`TaskFlow.Messaging`, `TaskFlow.Scheduler` sources); registered at `src/Host/Aspire/ServiceDefaults/Extensions.cs:80-82` (`tracing.AddSource(...)`); LoggerMessage/CA1848 sweep at commit `0c5e250` on this branch | `MessagingTrace.cs` (found at `src/Shared/TaskFlow.Observability/Tracing/MessagingTrace.cs`) carries the W3C `traceparent` inject/extract helpers per the plan (D-053); not opened line-by-line in this pass beyond confirming its existence and the activity-source registration it depends on. LoggerMessage/CA1848 sweep (this same G4 slice): all 58 remaining raw `Log*()` call sites converted to `[LoggerMessage]`, `src/.editorconfig` sets `dotnet_diagnostic.CA1848.severity = error` for `src/**.cs`; verified with `dotnet build TaskFlow.slnx -m:1` (52 projects, 0 warnings/errors) and a temporary probe call that confirmed CA1848 fires as a build error before being removed. |
 | 25 | Separated live/ready probes | Done | `src/Host/Aspire/ServiceDefaults/Extensions.cs:140-161` (`MapDefaultEndpoints`: `/healthz`, `/healthz/live` tag `live`, `/healthz/ready` tag `ready`) | `/readyz` removed per the doc comment at lines 129-139; cache is deliberately excluded from the `ready` tag (degrades to L1 rather than failing requests, stated in the same comment block). |
-| 26 | Dynamic feature flags | Done | `src/Application/TaskFlow.Application.Contracts/TaskFlowFeatures.cs` (`TaskViews`, `Export`, `SemanticSearch`, `AiReview` constants); `src/Host/TaskFlow.Api/Filters/FeatureGateEndpointFilter.cs` (`RequireFeature`, answers 404 when off) | Backed by Azure App Configuration when `AppConfig:Endpoint` is set, else the `FeatureManagement` appsettings section (comment in `TaskFlowFeatures.cs:4-7`). Not wired into the Functions host (see Watch items). |
+| 26 | Dynamic feature flags | Done | `src/Application/TaskFlow.Application.Contracts/TaskFlowFeatures.cs` (`TaskViews`, `Export`, `SemanticSearch`, `AiReview` constants); `src/Host/TaskFlow.Api/Filters/FeatureGateEndpointFilter.cs` (`RequireFeature`, answers 404 when off) | Backed by Azure App Configuration when `AppConfig:Endpoint` is set, else the `FeatureManagement` appsettings section (comment in `TaskFlowFeatures.cs:4-7`). Wired into the Functions host as of F1 via `Microsoft.Azure.AppConfiguration.Functions.Worker`'s refresh middleware, guarded by the same `AppConfig:Endpoint`/`ConnectionStrings:AppConfig` condition `AddTaskFlowAppConfiguration` checks. |
 
 ## Native AOT evaluation (D-047)
 
@@ -70,37 +70,37 @@ are recorded at `.scaffold/DESIGN-DECISIONS.md:172` (D-046).
 
 ## Watch items
 
-- Pgvector.EntityFrameworkCore 0.3.0 targets net8.0/Npgsql >= 9.0.1 rolling forward onto 10.0.3
-- Floating image tags in compose (otel-lgtm, minio, pgbouncer)
-- launchSettings.json applicationUrl vs Kestrel:Endpoints warning on local dotnet run
-- TaskFlow.Functions.csproj still has OpenAI PrivateAssets=all
-- App Configuration source not wired into Functions
+- Pgvector.EntityFrameworkCore 0.3.0 is the newest published release; it targets net8.0 and declares
+  `Npgsql.EntityFrameworkCore.PostgreSQL >= 9.0.1`, running on EF Core 10/Npgsql 10.0.3 by framework
+  roll-forward (this is a standing pin, not a gap - see verification notes)
 - Functions obj-tree build noise (~180 ExtensionsMetadataGenerator warnings on a second consecutive build)
 - TaskItemRescheduledEvent dead code
 - nothing in the compose/VPS path has executed on the dev machine (CI compose-smoke is the first real run)
 
+Resolved by slice F1 (2026-09-09), previously listed here:
+- Floating image tags in compose (otel-lgtm, minio, pgbouncer) - pinned to the newest tags published as
+  of 2026-09-09 (`grafana/otel-lgtm:0.32.1`, `minio/minio:RELEASE.2025-09-07T16-13-09Z`,
+  `edoburu/pgbouncer:v1.25.2-p0`); digest pinning remains the production recommendation (see README).
+- launchSettings.json applicationUrl vs Kestrel:Endpoints warning on local dotnet run - the Api's
+  launchSettings.json no longer declares `applicationUrl` (the `https` profile was removed entirely, its
+  local-cert story belongs to Aspire), so `Kestrel:Endpoints` is the single port source and the
+  "Overriding address(es)" warning is gone.
+- TaskFlow.Functions.csproj still has OpenAI PrivateAssets=all - removed from `OpenAI` and
+  `Microsoft.Extensions.AI.OpenAI`; both are deployed dependencies now, matching Api/Bootstrapper (D-041).
+  `Microsoft.AI.Foundry.Local` keeps `PrivateAssets="all"` (unrelated to the OpenAICompatible arm).
+- App Configuration source not wired into Functions - wired via the isolated-worker package
+  `Microsoft.Azure.AppConfiguration.Functions.Worker`, guarded by the same `AppConfig:Endpoint`/
+  `ConnectionStrings:AppConfig` condition `AddTaskFlowAppConfiguration` already checked.
+
 Verification notes on the above, checked against this tree where practical:
-- `Directory.Packages.props:63` pins `Pgvector.EntityFrameworkCore` at `0.3.0`; its own `.nuget.g.targets`
-  and `deps.json` under `src/Infrastructure/TaskFlow.Infrastructure.Data.Migrations.PostgreSql/obj|bin`
-  show the package's own `lib/net8.0` target.
-- `deploy/compose/docker-compose.yml:168` pins `grafana/otel-lgtm:latest`; `docker-compose.yml:185` pins
-  `${PGBOUNCER_IMAGE:-edoburu/pgbouncer:latest}`; `docker-compose.override.local.yml:53` pins
-  `minio/minio:latest`. All three float on `latest`.
-- `src/Host/TaskFlow.Api/Properties/launchSettings.json` sets `applicationUrl` to `http://localhost:5188`
-  and `https://localhost:7067;http://localhost:5188`, while `src/Host/TaskFlow.Api/appsettings.json:7-15`
-  now declares `Kestrel:Endpoints:Http` (8080) and `Kestrel:Endpoints:Grpc` (8081, Http2) - the two disagree
-  on the plain-HTTP port for a local `dotnet run`.
-- `src/Host/TaskFlow.Functions/TaskFlow.Functions.csproj:31` still carries
-  `<PackageReference Include="OpenAI" PrivateAssets="all" />` (also `Microsoft.Extensions.AI.OpenAI` and
-  `Microsoft.AI.Foundry.Local`, both `PrivateAssets="all"`).
-- No `AppConfig`/`FeatureManagement` reference was found anywhere under `src/Host/TaskFlow.Functions`.
-- The ExtensionsMetadataGenerator build-noise item is not independently reproduced in this pass (this task
-  does not run `dotnet build`); it is recorded in the G2 entry of the orchestration session log
-  (`docs/plans/portable-lane-guidance-refactor.md`), not in `.scaffold/REFERENCE-STATUS.md`, which predates
-  this refactor (last verified 2026-09-04) and does not yet reflect it.
-- `src/Domain/TaskFlow.Domain.Shared/Events/TaskItemRescheduledEvent.cs` defines the record; a repo-wide
-  search for `new TaskItemRescheduledEvent(` outside `obj`/`bin` found no construction sites. This matches
-  `.scaffold/REFERENCE-STATUS.md:122`, which already records it as dead code.
-- The compose/VPS path itself was not exercised in this verification pass, consistent with the claim: CI's
-  `compose-smoke` job (`.github/workflows/ci.yml:338-340`) is gated behind
-  `workflow_dispatch` + `inputs.includeComposeSmoke == true`, so it has not run as part of ordinary pushes.
+- Pgvector: nuget.org's flat-container index for `pgvector.entityframeworkcore` lists only
+  `0.1.0`..`0.3.0` (verified 2026-09-09); no net10/EF Core 10 build has been published. `Directory.Packages.props:62-63`
+  pins `Pgvector` (the ADO client) at `0.3.2` - also the newest published version - and
+  `Pgvector.EntityFrameworkCore` at `0.3.0`. The PostgreSql integration lane
+  (`Test.Integration/PgVectorSearchTests.cs`) is the running proof that the net8.0 package still works
+  correctly against EF Core 10/Npgsql 10.0.3 after roll-forward. Upgrade path: bump the pin when a
+  net10/EF Core 10 build of `Pgvector.EntityFrameworkCore` is published, or vendor the Npgsql/EF Core
+  vector type-mapping plugin in-repo if the roll-forward ever breaks.
+- The ExtensionsMetadataGenerator build-noise item, `TaskItemRescheduledEvent` dead code, and the
+  unexercised compose/VPS path are unchanged from the prior verification pass (out of F1's scope, which
+  covered only Functions parity, launchSettings, the pgvector wording, and the compose image pins).
