@@ -74,8 +74,20 @@ if (usePostgres)
 else
 {
     var sqlPassword = builder.AddParameter("sql-password", defaultSqlPassword, secret: true);
-    var sql = builder.AddSqlServer("sql", sqlPassword, port: isTesting ? null : 38433)
-        .WithImageTag(sqlServerImageTag);
+    // Bypass DCP's TCP endpoint proxy for this resource only (not Postgres, not the Service Bus emulator's
+    // mssql sidecar - one variable at a time). CI proof run 34408268503: the SQL container was ready in
+    // 5 s with a stable port for 8 minutes and a clean errorlog (no failed logins after Aspire's own
+    // migrator connected), while Aspire's sql_check/taskflowdb_check kept failing pre-login handshake for
+    // 5 more minutes once the Api/Scheduler/migrator started opening connections - i.e. connections were
+    // dying in DCP's proxy, between the client and the container, not at the server. Aspire 13.5.3 shipped
+    // a newer DCP than the last passing run (13.4.6); SqlClient can't be downgraded (Aspire.Hosting.SqlServer
+    // 13.5.3 requires >= 7.0.1). Remove once an Aspire/DCP release fixes TDS negotiation through the proxy.
+    // With the proxy off, Aspire uses the container's target port as the host port unless an explicit host
+    // port is given, and the mssql sidecar above also listens on 1433 - so this resource needs an explicit,
+    // unique host port in every mode, not just outside Testing.
+    var sql = builder.AddSqlServer("sql", sqlPassword, port: isTesting ? 38434 : 38433)
+        .WithImageTag(sqlServerImageTag)
+        .WithEndpointProxySupport(false);
     if (!isTesting)
         sql = sql.WithLifetime(ContainerLifetime.Persistent)
                  .WithDataVolume("taskflow-sql-data");
