@@ -59,6 +59,7 @@ flowchart TD
     D053["D-053: Trace propagation across brokers"]
     D054["D-054: Internal gRPC read service"]
     D055["D-055: Bounded concurrency"]
+    D056["D-056: Cache serialization schema v2"]
 
     D001 --> D002
     D001 --> D003
@@ -118,6 +119,7 @@ flowchart TD
     D026 --> D052
     D034 --> D053
     D026 --> D055
+    D048 --> D056
 ```
 
 ## Decisions
@@ -177,6 +179,7 @@ flowchart TD
 | D-053 | Observability | Trace propagation across brokers | W3C `traceparent`/`tracestate` injected into message headers by the dispatcher (`ActivityKind.Producer`) and extracted by the RabbitMQ and Service Bus consumers (`ActivityKind.Consumer` with a link to the producer); new `ActivitySource`s `TaskFlow.Messaging`, `TaskFlow.Scheduler` | D-034 | confirmed | Without propagation every async hop starts a new, disconnected trace. Rejected: correlation-id-only linking (loses standard trace context, does not compose with existing OTLP export). | G2 |
 | D-054 | RPC | Internal gRPC read service | Api exposes a gRPC read service (`GetTaskItemSummary`, `GetTaskMetadata`, `GetTaskItem`) on a dedicated cleartext HTTP/2 Kestrel endpoint; Blazor Server is the one consumer via service discovery; the Gateway keeps REST for public clients | none | confirmed | Proves the internal-RPC guidance item on the one real in-cluster service-to-service hop without expanding the public contract surface. Rejected: gRPC-Web for browser clients (out of scope, no browser client needs it); replacing the public REST surface with gRPC (breaks existing external clients). | G3 |
 | D-055 | Concurrency | Bounded concurrency for independent I/O | EF.Common `ConcurrentPipeAsync`/`ConcurrentBatchAsync` with options-driven bounds for blob deletes and per-destination outbox sends; a Test.Architecture sweep bans `.Result`/`.Wait()`/`GetAwaiter().GetResult()` in `src/` outside an allow-list | D-026 | confirmed | Independent I/O should fan out, not run sequentially, but still needs a ceiling. Rejected: an unbounded `Task.WhenAll` (no back-pressure); a `Channel` pipeline for lease-based pollers (the lease batch is already the natural bound, a channel adds a second buffer without raising throughput). | G1 |
+| D-056 | Caching | Cache serialization schema v2 | JSON cache serializer options no longer set `ReferenceHandler.Preserve`; `CacheSettings.SchemaVersion` bumped `1 -> 2` so the key prefix changes and every pre-existing L2 entry is treated as a miss instead of a deserialization failure. The MessagePack contractless arm (D-048) follows the same rule: no cyclic-reference metadata, schema-versioned keys. | D-048 | confirmed | `ReferenceHandler.Preserve` cannot deserialize positional records (it needs a settable `$id`/`$values` shape); every L2 read of a cached summary DTO was silently missing and falling through to the database, defeating the cache without surfacing an error. Rejected: keeping `Preserve` and switching the DTOs off positional records (would ripple into every STJ-serialized contract, not just the cache path); a data migration/purge of existing keys (the schema-version prefix already isolates old entries without one). | G3 |
 
 ## Deferred Decisions
 

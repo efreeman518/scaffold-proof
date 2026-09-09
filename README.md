@@ -59,6 +59,19 @@ Aspire (`dotnet run --project src/Host/Aspire/AppHost`) and the full-stack Playw
 
 Generated API clients (Blazor Refit, React `openapi-typescript`) regenerate per [`docs/plans/client-generation.md`](docs/plans/client-generation.md).
 
+### Hosting lanes: Azure vs Portable
+
+`TASKFLOW_LANE = Azure | Portable` (default `Azure`) seeds the default of every provider switch below; each switch's own env var or config key still wins over the lane default, and no registration site reads the lane directly (D-035).
+
+```powershell
+dotnet run --project src/Host/Aspire/AppHost                                     # Azure lane (default): SQL Server/Cosmos/Service Bus/Blob/Azure AI Search emulators
+$env:TASKFLOW_LANE = "Portable"; dotnet run --project src/Host/Aspire/AppHost     # Portable lane: Postgres + RabbitMQ + MinIO, no Azure emulators
+```
+
+The Portable lane is the non-Azure hosting target: Docker Compose on a single VPS, Caddy as the TLS edge in front of the YARP gateway, PostgreSQL + RabbitMQ + MinIO (S3-compatible object storage) as containers, Azure retained only for Key Vault (DEK wrap, Data Protection key protection) and App Configuration (config + feature flags). The Compose files, environment template, and VPS deploy runbook live under [`deploy/compose/`](deploy/compose/README.md); the Azure IaC counterpart (including the Bicep `pgbouncer` param that mirrors the Portable lane's pooler switch) is in [`infra/README.md`](infra/README.md).
+
+Every independent provider switch (object storage, read model, audit sink, search, LLM client, Data Protection persistence, Postgres pooler mode) plus its env var, config key, and default is listed in the `Build and test` section of [`AGENTS.md`](AGENTS.md) - that table is the single source, not duplicated here.
+
 ### Authentication
 
 The reference app runs with `AuthMode: Scaffold`. The API supplies a fixed authenticated scaffold principal, UI heads do not require or show a login, and anonymous `GET /auth/mode` reports the public mode without exposing provider configuration. This is the executable scaffold proof, not a production security boundary.
@@ -94,6 +107,10 @@ EventIds are centralized in the dependency-free **`TaskFlow.Observability`** sha
 | Application.Cqrs | `ApplicationCqrsBase` | 17000-17999 |
 | Application.Services | `ApplicationServicesBase` | 18000-18999 |
 | Application.MessageHandlers | `ApplicationMessageHandlersBase` | 19000-19999 |
+| Infrastructure.Messaging.RabbitMq | `InfrastructureMessagingRabbitMqBase` | 20000-20999 |
+| Uno WASM static-asset host | `UnoWasmHostBase` | 21000-21999 |
+| Infrastructure.Caching | `InfrastructureCachingBase` | 22000-22999 |
+| Infrastructure.Data | `InfrastructureDataBase` | 23000-23999 |
 
 The non-zero base avoids colliding with low-numbered EventIds from framework and third-party libraries, and the buckets leave room to grow. `TaskFlow.Observability` intentionally has no dependencies so any layer (domain, application, infrastructure, hosts) can reference it without introducing improper coupling.
 
@@ -102,6 +119,7 @@ The non-zero base avoids colliding with low-numbered EventIds from framework and
 The repository is kept clean at the **error and warning** severities, and CI enforces that gate:
 
 - **Build enforcement:** [`Directory.Build.props`](Directory.Build.props) sets `TreatWarningsAsErrors=true` with `Nullable=enable`, so any warning fails the build for every project in the solution.
+- **`src/` logging gate:** [`src/.editorconfig`](src/.editorconfig) (inherits the repo root; does not set `root = true`) sets `dotnet_diagnostic.CA1848.severity = error` for every `.cs` file under `src/`, so a raw `ILogger.Log*()` call fails the build instead of the analyzer-default advisory. `tests/` stays at the default severity so fixtures and test doubles are not forced through source-generated logging.
 - **CI analyzer gate:** the `Analyzer cleanliness` step runs `dotnet format analyzers TaskFlow.slnx --severity warn --verify-no-changes --no-restore` on every push and pull request, failing the build if analyzer or code-style diagnostics at `warn` or higher remain.
 - **Info-level advisories:** info-severity advisories (for example the CA1873 logging guards) surface in the IDE but do not block CI. The `[LoggerMessage]` strategy above keeps them low; once the source is verified clean at `--severity info`, raise the CI gate to match.
 
