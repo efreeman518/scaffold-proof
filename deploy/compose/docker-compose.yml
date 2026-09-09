@@ -165,7 +165,7 @@ services:
   # Grafana/Loki/Tempo/Mimir in one container. Bound to loopback: reachable over an ssh tunnel only,
   # never published to the internet (it has no authentication worth exposing).
   otel-lgtm:
-    image: grafana/otel-lgtm:latest
+    image: grafana/otel-lgtm:0.32.1
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
@@ -182,7 +182,7 @@ services:
   # D-045 opt-in: `docker compose --profile pooler up -d`. Point the app connection strings at
   # pgbouncer:6432 and set Database__PostgreSql__PoolerMode=Transaction in .env when this runs.
   pgbouncer:
-    image: ${PGBOUNCER_IMAGE:-edoburu/pgbouncer:latest}
+    image: ${PGBOUNCER_IMAGE:-edoburu/pgbouncer:v1.25.2-p0}
     profiles: ["pooler"]
     restart: unless-stopped
     volumes:

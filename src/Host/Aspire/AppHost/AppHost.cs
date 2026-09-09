@@ -108,7 +108,7 @@ if (portableLane)
     minioSecretKey = builder.AddParameter("minio-secret-key", "taskflowminio-dev-secret", secret: true);
 
     minio = builder.AddContainer("minio", "minio/minio")
-        .WithImageTag("latest")
+        .WithImageTag("RELEASE.2025-09-07T16-13-09Z")
         .WithArgs("server", "/data", "--console-address", ":9001")
         .WithEnvironment("MINIO_ROOT_USER", minioAccessKey)
         .WithEnvironment("MINIO_ROOT_PASSWORD", minioSecretKey)

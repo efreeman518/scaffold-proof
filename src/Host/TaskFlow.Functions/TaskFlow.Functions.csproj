@@ -25,10 +25,14 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Aspire.Azure.AI.Inference" />
     <PackageReference Include="Microsoft.AI.Foundry.Local" PrivateAssets="all" />
+    <!-- D-042: Azure App Configuration refresh middleware for the isolated worker pipeline, parity with
+         Api/Gateway/Scheduler (see Program.cs). Gated on AppConfig:Endpoint at runtime. -->
+    <PackageReference Include="Microsoft.Azure.AppConfiguration.Functions.Worker" />
     <PackageReference Include="Microsoft.Extensions.AI" />
-    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" PrivateAssets="all" />
+    <!-- Deployed (D-041): the OpenAICompatible LLM arm calls the OpenAI SDK directly at runtime. -->
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
     <PackageReference Include="Newtonsoft.Json" />
-    <PackageReference Include="OpenAI" PrivateAssets="all" />
+    <PackageReference Include="OpenAI" />
   </ItemGroup>
 
   <ItemGroup>

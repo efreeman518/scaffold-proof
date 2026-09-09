@@ -248,7 +248,9 @@ public sealed class DeploymentWorkflowContractTests
 
     /// <summary>
     /// Every deployed image is built the same way: private feed as a BuildKit secret, chiseled runtime,
-    /// non-root. Blazor and Functions need ICU, so they - and only they - take the -extra variant (D-047).
+    /// non-root. Gateway is the only host with neither a culture-rendering nor a Microsoft.Data.SqlClient
+    /// reason to need ICU (D-047), so it alone stays on the plain chiseled base; every other host takes
+    /// the -extra variant.
     /// </summary>
     [TestMethod]
     public void Dockerfiles_UseTheSecretMountAndTheRightChiseledBase()
@@ -256,9 +258,9 @@ public sealed class DeploymentWorkflowContractTests
         foreach (var (dockerfile, runtimeBase) in new[]
         {
             ("src/Host/TaskFlow.Gateway/Dockerfile", "10.0-noble-chiseled"),
-            ("src/Host/TaskFlow.Api/Dockerfile", "10.0-noble-chiseled"),
-            ("src/Host/TaskFlow.Scheduler/Dockerfile", "10.0-noble-chiseled"),
-            ("src/Host/TaskFlow.DatabaseMigrator/Dockerfile", "10.0-noble-chiseled"),
+            ("src/Host/TaskFlow.Api/Dockerfile", "10.0-noble-chiseled-extra"),
+            ("src/Host/TaskFlow.Scheduler/Dockerfile", "10.0-noble-chiseled-extra"),
+            ("src/Host/TaskFlow.DatabaseMigrator/Dockerfile", "10.0-noble-chiseled-extra"),
             ("src/Host/TaskFlow.Functions/Dockerfile", "10.0-noble-chiseled-extra"),
             ("src/UI/TaskFlow.Blazor/Dockerfile", "10.0-noble-chiseled-extra")
         })

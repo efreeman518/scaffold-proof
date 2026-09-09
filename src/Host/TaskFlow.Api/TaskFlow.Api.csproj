@@ -22,6 +22,11 @@
     <OpenApiGenerateDocuments>true</OpenApiGenerateDocuments>
     <OpenApiGenerateDocumentsOnBuild>false</OpenApiGenerateDocumentsOnBuild>
     <OpenApiDocumentsDirectory>$(MSBuildProjectDirectory)/openapi-doc</OpenApiDocumentsDirectory>
+    <!-- This host opens real Microsoft.Data.SqlClient connections (Database:Provider=SqlServer, via
+         TaskFlow.Infrastructure.Data through Bootstrapper), and SqlClient throws NotSupportedException
+         under invariant globalization. Paired with the -chiseled-extra runtime image in this project's
+         Dockerfile, which carries ICU. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>

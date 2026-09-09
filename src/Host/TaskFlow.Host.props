@@ -43,8 +43,13 @@
     <TieredCompilation>true</TieredCompilation>
 
     <!-- Invariant globalization: no ICU load at startup and no ICU in the runtime image, which is
-         what the aspnet:*-noble-chiseled base (no ICU, no tzdata) already requires. Hosts that render
-         user-facing cultures override this to false AND move to the -chiseled-extra base image. -->
+         what the aspnet:*-noble-chiseled base (no ICU, no tzdata) already requires. Two independent
+         reasons force a host to override this to false AND move to the -chiseled-extra base image:
+         rendering user-facing cultures (Blazor), or depending on Microsoft.Data.SqlClient, which
+         throws NotSupportedException under invariant globalization (Api, Scheduler, DatabaseMigrator,
+         Functions - all reach TaskFlow.Infrastructure.Data's Microsoft.EntityFrameworkCore.SqlServer
+         package, directly or through Bootstrapper). Only Gateway has neither reason and keeps true
+         on the plain chiseled base. -->
     <InvariantGlobalization>true</InvariantGlobalization>
 
     <!-- Keep real exception messages rather than resource keys. Only ever true as a trimming size
