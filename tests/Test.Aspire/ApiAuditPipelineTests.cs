@@ -165,7 +165,13 @@ public class ApiAuditPipelineTests
     /// <summary>Verifies post create category with retry behavior and protects the expected test contract.</summary>
     private static async Task<HttpResponseMessage> PostCreateCategoryWithRetryAsync(HttpClient client, object request, CancellationToken ct)
     {
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(45);
+        // 4 minutes, not 45 s: this is the tests' actual tolerance for a slow-to-settle SQL Server, not the
+        // ~900 s cumulative Aspire startup budget (AspireTestHost.WaitForResourceHealthyAsync("taskflowdb"),
+        // which already passed before this method runs). The 2026-09-08 CI failure showed the sql_check health
+        // probe can report Healthy while SQL Server still rejects new connections with a pre-login handshake
+        // error (first start converting system databases can exceed 90 s on a 4-core runner) - these are the
+        // only mesh tests that issue a real SQL-backed request, so the 45 s window gave that race no room.
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(4);
         HttpStatusCode? lastStatusCode = null;
         string? lastBody = null;
         Exception? lastException = null;
@@ -208,7 +214,9 @@ public class ApiAuditPipelineTests
         CancellationToken ct,
         string expectedAction = "Added")
     {
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(45);
+        // 4 minutes: same SQL-settling-race rationale as PostCreateCategoryWithRetryAsync's deadline above -
+        // the audit row is written only after the API's own SQL-backed request succeeds.
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(4);
         List<AuditLogTableEntity> recentEntities = [];
 
         while (DateTimeOffset.UtcNow < deadline)

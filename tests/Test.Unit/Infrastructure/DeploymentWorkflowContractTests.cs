@@ -196,6 +196,21 @@ public sealed class DeploymentWorkflowContractTests
         var logDump = smokeJob.IndexOf("Dump stack logs", StringComparison.Ordinal);
         Assert.IsGreaterThan(0, logDump);
         StringAssert.Contains(smokeJob[logDump..], "if: always()");
+
+        // The Aspire mesh lane's own container logs are the only lead into a failure like the 2026-09-08
+        // SqlException pre-login handshake run, where the sql_check health probe stayed Unhealthy with no
+        // other explanation on the runner - the diagnostics step must exist, run only after that lane
+        // actually ran and failed, and cover both the sql/mssql containers and host memory pressure.
+        var aspireStep = workflow.IndexOf("Aspire Mesh Tests (manual or scheduled, full graph)", StringComparison.Ordinal);
+        Assert.IsGreaterThan(0, aspireStep);
+        var diagnosticsStep = workflow.IndexOf("Aspire Mesh Diagnostics (on failure)", StringComparison.Ordinal);
+        Assert.IsGreaterThan(aspireStep, diagnosticsStep, "the diagnostics step must follow the Aspire Mesh Tests step");
+        var diagnosticsBlock = workflow[diagnosticsStep..];
+        StringAssert.Contains(diagnosticsBlock, "if: failure() && ((github.event_name == 'workflow_dispatch' && inputs.includeAspireMesh == true) || github.event_name == 'schedule')");
+        StringAssert.Contains(diagnosticsBlock, "free -m");
+        StringAssert.Contains(diagnosticsBlock, "docker ps -a");
+        StringAssert.Contains(diagnosticsBlock, "docker logs --tail 200");
+        StringAssert.Contains(diagnosticsBlock, "grep -iE 'sql|mssql'");
     }
 
     /// <summary>

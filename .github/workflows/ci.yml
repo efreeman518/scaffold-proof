@@ -185,6 +185,19 @@ jobs:
           --logger "trx;LogFileName=aspire-results.trx"
           --results-directory ./TestResults
 
+      # Best-effort: the 2026-09-08 failure (SqlException pre-login handshake, sql_check Unhealthy
+      # throughout) had no runner-side evidence to explain it. Same gating as the Aspire step above,
+      # combined with failure() so it only runs when that step actually ran and failed.
+      - name: Aspire Mesh Diagnostics (on failure)
+        if: failure() && ((github.event_name == 'workflow_dispatch' && inputs.includeAspireMesh == true) || github.event_name == 'schedule')
+        run: |
+          free -m
+          docker ps -a
+          for name in $(docker ps -a --format '{{.Names}}' | grep -iE 'sql|mssql'); do
+            echo "=== docker logs --tail 200 $name ==="
+            docker logs --tail 200 "$name" || true
+          done
+
       - name: Foundry Local Tests (manual, live local)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeFoundryLocal == true }}
         timeout-minutes: 70

@@ -186,6 +186,10 @@ internal static class AspireTestHost
             ct);
         AiProvider = SelectRequestedAiProviderForTesting();
 
+        // Bounded by whatever remains of the ~900 s (15 min) cumulative startup budget (StartupTimeoutEnvironmentVariable,
+        // default 900) - already well over 4 minutes, so this wait is not the bottleneck. It also only gates the
+        // sql_check health signal, not whether SQL Server accepts new connections without a pre-login handshake
+        // error immediately after; see the deadline comments in ApiAuditPipelineTests.cs for that race.
         await hostContext.WaitForResourceHealthyAsync("taskflowdb", ct);
 
         ConnectionString = await hostContext.RunStartupStepAsync(
