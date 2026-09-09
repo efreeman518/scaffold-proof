@@ -54,7 +54,7 @@ public class FunctionCategoryTrigger(
 
         if (result.IsFailure || result.Value?.Item == null)
         {
-            logger.LogWarning("CreateCategory failed for request {Name}", request.Name);
+            logger.CreateCategoryFailed(request.Name);
             var failed = req.CreateResponse(HttpStatusCode.BadRequest);
             await failed.WriteAsJsonAsync(new { message = "Unable to create category." }, ct);
             return failed;

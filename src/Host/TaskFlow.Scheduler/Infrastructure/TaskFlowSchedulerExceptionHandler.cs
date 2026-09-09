@@ -28,11 +28,7 @@ public sealed class TaskFlowSchedulerExceptionHandler(
     public Task HandleExceptionAsync(Exception exception, Guid tickerId, TickerType tickerType)
     {
         var jobName = ResolveJobName(tickerId);
-        logger.LogError(exception,
-            "Scheduler job failed. JobName: {JobName}, TickerId: {TickerId}, TickerType: {TickerType}",
-            jobName,
-            tickerId,
-            tickerType);
+        logger.SchedulerJobFailed(exception, jobName, tickerId, tickerType);
 
         metrics.RecordJobFailure(jobName, exception.Message);
         UnregisterJobName(tickerId);
@@ -43,12 +39,7 @@ public sealed class TaskFlowSchedulerExceptionHandler(
     public Task HandleCanceledExceptionAsync(Exception exception, Guid tickerId, TickerType tickerType)
     {
         var jobName = ResolveJobName(tickerId);
-        logger.LogWarning(
-            "Scheduler job cancelled. JobName: {JobName}, TickerId: {TickerId}, TickerType: {TickerType}, Reason: {Reason}",
-            jobName,
-            tickerId,
-            tickerType,
-            exception.Message);
+        logger.SchedulerJobCancelled(jobName, tickerId, tickerType, exception.Message);
 
         UnregisterJobName(tickerId);
         return Task.CompletedTask;

@@ -19,7 +19,7 @@ public sealed class NoOpChatClient(ILogger<NoOpChatClient> logger) : IChatClient
     public Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
     {
-        logger.LogWarning("NoOpChatClient invoked - no Foundry model configured.");
+        logger.NoOpChatClientInvoked();
         return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, NotConfigured)));
     }
 
@@ -28,7 +28,7 @@ public sealed class NoOpChatClient(ILogger<NoOpChatClient> logger) : IChatClient
         IEnumerable<ChatMessage> messages, ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        logger.LogWarning("NoOpChatClient streaming invoked - no Foundry model configured.");
+        logger.NoOpChatClientStreamingInvoked();
         yield return new ChatResponseUpdate(ChatRole.Assistant, NotConfigured);
         await Task.CompletedTask;
     }

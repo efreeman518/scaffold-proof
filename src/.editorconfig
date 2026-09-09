@@ -1,0 +1,4 @@
+# Inherits the repo-root .editorconfig (no root=true here). Scoped to src/ only: tests/ stays
+# advisory so test helpers and fixtures are not forced through source-generated logging (D-053).
+[*.cs]
+dotnet_diagnostic.CA1848.severity = error

@@ -41,8 +41,7 @@ internal sealed class IfMatchEndpointFilter(ILogger<IfMatchEndpointFilter> logge
         // somewhere upstream (a client that stopped tracking ETags), not normal traffic.
         if (ifMatch.IsWildcard)
         {
-            logger.LogInformation(
-                "If-Match wildcard override on {Method} {Path}", httpContext.Request.Method, httpContext.Request.Path);
+            logger.IfMatchWildcardOverride(httpContext.Request.Method, httpContext.Request.Path);
         }
 
         try
@@ -58,8 +57,7 @@ internal sealed class IfMatchEndpointFilter(ILogger<IfMatchEndpointFilter> logge
             httpContext.Response.Headers.ETag =
                 $"\"{mismatch.Current.ToString(CultureInfo.InvariantCulture)}\"";
 
-            logger.LogWarning(
-                "Precondition failed on {Method} {Path}: expected version {Expected}, current {Current}",
+            logger.IfMatchPreconditionFailed(
                 httpContext.Request.Method, httpContext.Request.Path, mismatch.Expected, mismatch.Current);
 
             return Results.Problem(

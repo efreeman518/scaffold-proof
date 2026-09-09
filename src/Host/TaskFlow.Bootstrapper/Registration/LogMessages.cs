@@ -63,4 +63,16 @@ internal static partial class LogMessages
     /// <summary>Logs that a legacy AiServices:Use* kill switch is superseded by dynamic feature flags (D-042).</summary>
     [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 14, Level = LogLevel.Warning, Message = "{AppName} {Environment} - {ConfigKey}=false is a legacy AI kill switch superseded by dynamic feature flags (D-042); honored one more release, then removed. Configure App Configuration/appsettings feature flags instead.")]
     public static partial void LegacyAiSwitchSuperseded(this ILogger logger, string appName, string environment, string configKey);
+
+    /// <summary>Logs that Foundry Local is unavailable and the process is falling back to the no-op AI client.</summary>
+    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 15, Level = LogLevel.Warning, Message = "{AppName} {Environment} - Foundry Local unavailable. Falling back to no-op AI client.")]
+    public static partial void FoundryLocalUnavailable(this ILogger logger, Exception exception, string appName, string environment);
+
+    /// <summary>Logs that startup dependency warmup completed.</summary>
+    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 16, Level = LogLevel.Information, Message = "Database warmup completed")]
+    public static partial void DatabaseWarmupCompleted(this ILogger logger);
+
+    /// <summary>Logs that startup dependency warmup failed; startup continues regardless.</summary>
+    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 17, Level = LogLevel.Warning, Message = "Database warmup failed - continuing startup")]
+    public static partial void DatabaseWarmupFailed(this ILogger logger, Exception exception);
 }

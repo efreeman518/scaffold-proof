@@ -114,7 +114,7 @@ internal class CategoryService(
         }
         catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
-            logger.LogError(ex, "Error creating Category");
+            logger.CategoryCreateFailed(ex);
             return Result<DefaultResponse<CategoryDto>>.Failure(ex.GetBaseException().Message);
         }
 
@@ -158,7 +158,7 @@ internal class CategoryService(
         }
         catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
-            logger.LogError(ex, "Error updating Category {Id}", dto.Id);
+            logger.CategoryUpdateFailed(ex, dto.Id);
             return Result<DefaultResponse<CategoryDto>>.Failure(ex.GetBaseException().Message);
         }
 
@@ -188,7 +188,7 @@ internal class CategoryService(
         }
         catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
-            logger.LogError(ex, "Error deleting Category {Id}", id);
+            logger.CategoryDeleteFailed(ex, id);
             return Result.Failure(ex.GetBaseException().Message);
         }
 

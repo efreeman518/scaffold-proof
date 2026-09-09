@@ -55,7 +55,7 @@ public sealed class TaskTriageService(
         var triage = ParseTriage(response.Text);
         if (triage is null || !IsValidTriage(triage))
         {
-            logger.LogWarning("Triage for {TaskId} returned unparseable output.", taskId);
+            logger.TaskTriageUnparseable(taskId);
             return new TaskTriageResponse(taskId, null, false, true, "Could not parse model output as triage JSON.");
         }
 
@@ -66,7 +66,7 @@ public sealed class TaskTriageService(
             var update = await taskItemService.UpdateAsync(new DefaultRequest<TaskItemDto> { Item = task }, task.Version, ct);
             applied = !update.IsFailure;
             if (!applied)
-                logger.LogWarning("Failed to apply triage priority to {TaskId}: {Error}", taskId, update.ErrorMessage);
+                logger.TaskTriageApplyFailed(taskId, update.ErrorMessage);
         }
 
         return new TaskTriageResponse(taskId, triage, applied, true);

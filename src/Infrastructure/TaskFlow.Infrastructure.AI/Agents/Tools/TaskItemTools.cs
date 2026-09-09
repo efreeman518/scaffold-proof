@@ -136,7 +136,7 @@ public class TaskItemTools(
     /// </summary>
     public async Task<string> SummarizeBacklog()
     {
-        logger.LogDebug("Agent tool: SummarizeBacklog");
+        logger.AgentSummarizeBacklog();
 
         var summary = await readService.GetTaskItemSummaryAsync();
 

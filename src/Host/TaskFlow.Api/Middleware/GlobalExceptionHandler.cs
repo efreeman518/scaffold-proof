@@ -50,11 +50,9 @@ internal sealed class DefaultExceptionHandler(
         if (exception is OperationCanceledException)
             logger.RequestCancelledByClient(httpContext.Request.Path);
         else if (statusCode < 500)
-            logger.LogWarning(exception, "Client error {StatusCode}: {ExceptionType} - {Message}",
-                statusCode, exception.GetType().Name, exception.Message);
+            logger.ClientError(exception, statusCode, exception.GetType().Name, exception.Message);
         else
-            logger.LogError(exception, "Unhandled exception: {ExceptionType} - {Message}",
-                exception.GetType().Name, exception.Message);
+            logger.UnhandledException(exception, exception.GetType().Name, exception.Message);
 
         var problemDetails = new ProblemDetails
         {

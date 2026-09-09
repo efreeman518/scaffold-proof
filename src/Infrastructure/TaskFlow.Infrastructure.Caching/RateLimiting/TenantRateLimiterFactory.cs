@@ -69,7 +69,7 @@ public sealed class TenantRateLimiterFactory
 
         if (_redis is null)
         {
-            _logger.LogDebug("No Redis connection configured: rate limiting {Partition} in process.", partitionKey);
+            _logger.RateLimiterInProcessFallback(partitionKey);
             return new SlidingWindowRateLimiter(new SlidingWindowRateLimiterOptions
             {
                 PermitLimit = allowance.PermitLimit,

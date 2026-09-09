@@ -67,7 +67,7 @@ public sealed class AiTaskReviewer(
 
         var result = await taskItemService.AddCommentAsync(taskId, comment, ct);
         if (result.IsFailure)
-            logger.LogWarning("AiTaskReviewer failed to post comment on {TaskId}: {Error}", taskId, result.ErrorMessage);
+            logger.AiReviewerPostFailed(taskId, result.ErrorMessage);
         else
             logger.AiReviewerPosted(taskId);
     }

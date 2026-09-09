@@ -59,7 +59,7 @@ public abstract class BaseTickerQJob
         {
             sw.Stop();
             activity?.SetStatus(ActivityStatusCode.Error, ex.GetBaseException().Message);
-            _logger.LogError(ex, "Job {JobName} failed after {ElapsedMs}ms", jobName, sw.ElapsedMilliseconds);
+            _logger.TickerQJobExecutionFailed(ex, jobName, sw.ElapsedMilliseconds);
             throw;
         }
     }

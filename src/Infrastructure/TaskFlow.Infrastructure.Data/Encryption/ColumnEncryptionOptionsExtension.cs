@@ -81,8 +81,7 @@ public static class ColumnEncryptionExtensions
             if (!keys.IsEnabled)
             {
                 sp.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(ColumnEncryptionExtensions))
-                    .LogWarning("Column encryption is disabled ({Section}:Enabled=false); secure columns are stored as plaintext.",
-                        ColumnEncryptionOptions.SectionName);
+                    .ColumnEncryptionDisabled(ColumnEncryptionOptions.SectionName);
             }
             return keys;
         });

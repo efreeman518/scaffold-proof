@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 using TaskFlow.Observability;
+using TickerQ.Utilities.Enums;
 
 namespace TaskFlow.Scheduler;
 
@@ -52,4 +53,32 @@ internal static partial class LogMessages
     /// <summary>Logs a generated occurrence rejected by domain validation.</summary>
     [LoggerMessage(EventId = LogEventIds.SchedulerBase + 12, Level = LogLevel.Error, Message = "Occurrence {OccurrenceUtc} of template {TemplateId} was rejected: {Reason}")]
     public static partial void RecurrenceOccurrenceRejected(this ILogger logger, Guid templateId, DateTimeOffset occurrenceUtc, string reason);
+
+    /// <summary>Logs an unhandled TickerQ job failure (ITickerExceptionHandler.HandleExceptionAsync).</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 13, Level = LogLevel.Error, Message = "Scheduler job failed. JobName: {JobName}, TickerId: {TickerId}, TickerType: {TickerType}")]
+    public static partial void SchedulerJobFailed(this ILogger logger, Exception exception, string jobName, Guid tickerId, TickerType tickerType);
+
+    /// <summary>Logs a cancelled TickerQ job (ITickerExceptionHandler.HandleCanceledExceptionAsync).</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 14, Level = LogLevel.Warning, Message = "Scheduler job cancelled. JobName: {JobName}, TickerId: {TickerId}, TickerType: {TickerType}, Reason: {Reason}")]
+    public static partial void SchedulerJobCancelled(this ILogger logger, string jobName, Guid tickerId, TickerType tickerType, string reason);
+
+    /// <summary>Logs a job failure caught by the shared TickerQ job wrapper before it rethrows for TickerQ's retry policy.</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 15, Level = LogLevel.Error, Message = "Job {JobName} failed after {ElapsedMs}ms")]
+    public static partial void TickerQJobExecutionFailed(this ILogger logger, Exception exception, string jobName, long elapsedMs);
+
+    /// <summary>Logs that TickerQ is running without a persisted operational store.</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 16, Level = LogLevel.Information, Message = "TickerQ running without persisted operational store.")]
+    public static partial void TickerQPersistenceDisabled(this ILogger logger);
+
+    /// <summary>Logs that the TickerQ operational-store schema was validated.</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 17, Level = LogLevel.Information, Message = "TickerQ operational-store schema validated.")]
+    public static partial void TickerQSchemaValidated(this ILogger logger);
+
+    /// <summary>Logs that cron seeding was skipped because no ICronTickerManager is available.</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 18, Level = LogLevel.Warning, Message = "ICronTickerManager not available - cron seeding skipped.")]
+    public static partial void TickerQCronManagerUnavailable(this ILogger logger);
+
+    /// <summary>Logs that TickerQ cron jobs were seeded successfully.</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 19, Level = LogLevel.Information, Message = "TickerQ cron jobs seeded successfully")]
+    public static partial void TickerQCronJobsSeeded(this ILogger logger);
 }
