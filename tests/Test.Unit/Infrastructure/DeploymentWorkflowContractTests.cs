@@ -206,7 +206,28 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(workflow[aspireStep..], "id: aspire_mesh");
         var diagnosticsStep = workflow.IndexOf("Aspire Mesh Diagnostics (on failure)", StringComparison.Ordinal);
         Assert.IsGreaterThan(aspireStep, diagnosticsStep, "the diagnostics step must follow the Aspire Mesh Tests step");
+        var aspireMeshBlock = workflow[aspireStep..diagnosticsStep];
+
+        // Aspire tears the graph down before the diagnostics step runs (2026-09-09 proof run: docker ps -a
+        // was already empty), so the Aspire Mesh Tests step itself must capture container state WHILE the
+        // graph is up: a background poll loop, per-container logs plus a redacted env dump, and per-poll
+        // docker port for every container (not only sql ones) to catch a host-port collision or DCP
+        // misrouting between the sql container and the Service Bus emulator's mssql sidecar.
+        StringAssert.Contains(aspireMeshBlock, "mkdir -p /tmp/aspire-container-logs");
+        StringAssert.Contains(aspireMeshBlock, "sleep 10");
+        StringAssert.Contains(aspireMeshBlock, "docker logs --since 12s");
+        StringAssert.Contains(aspireMeshBlock, "docker port");
+        StringAssert.Contains(aspireMeshBlock, "/tmp/aspire-container-logs/ps.log");
+        StringAssert.Contains(aspireMeshBlock, "/tmp/aspire-container-logs/env.log");
+        StringAssert.Contains(aspireMeshBlock, "sed -E 's/(PASSWORD=).*/\\1<redacted>/'", "captured env vars must redact password values");
+        StringAssert.Contains(aspireMeshBlock, "capture_pid=$!");
+        StringAssert.Contains(aspireMeshBlock, "trap ");
+        StringAssert.Contains(aspireMeshBlock, "kill \"$capture_pid\"");
+        StringAssert.Contains(aspireMeshBlock, "exit \"$test_exit\"", "the loop's cleanup must not swallow dotnet test's own exit code");
+
         var diagnosticsBlock = workflow[diagnosticsStep..];
+        StringAssert.Contains(diagnosticsBlock, "/tmp/aspire-container-logs");
+        StringAssert.Contains(diagnosticsBlock, "tail -n 300");
         // Keyed off the Aspire step's own conclusion, not a re-evaluated copy of its if: - a skipped or
         // successful mesh step, or an earlier unrelated failure, must not trigger this step.
         StringAssert.Contains(diagnosticsBlock, "if: ${{ steps.aspire_mesh.conclusion == 'failure' }}");
