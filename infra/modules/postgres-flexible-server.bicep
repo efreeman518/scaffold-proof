@@ -34,6 +34,9 @@ param highAvailabilityMode string = 'Disabled'
 @description('Deploy a prod-only read replica')
 param deployReadReplica bool = false
 
+@description('Enable the built-in PgBouncer (D-045). Requires GeneralPurpose or MemoryOptimized: the Burstable tier does not offer the pgbouncer.* server parameters and the deployment fails if this is set there.')
+param pgBouncerEnabled bool = false
+
 @description('Maximum Npgsql connection pool size, emitted explicitly in every connection string')
 param maxPoolSize int = 100
 
@@ -99,6 +102,19 @@ resource pgVectorExtension 'Microsoft.DBforPostgreSQL/flexibleServers/configurat
   }
 }
 
+// D-045 transaction pooling. Flexible Server ships PgBouncer as a server parameter rather than a sidecar, so
+// enabling it is a configuration resource; clients then connect on 6432 instead of 5432. pool_mode defaults to
+// transaction, which is the mode that raises the connection ceiling and the mode the app's
+// Database:PostgreSql:PoolerMode=Transaction arm is written for. NOT available on Burstable.
+resource pgBouncer 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2025-08-01' = if (pgBouncerEnabled) {
+  parent: pgServer
+  name: 'pgbouncer.enabled'
+  properties: {
+    source: 'user-override'
+    value: 'true'
+  }
+}
+
 // Allow Azure services to access PostgreSQL
 resource pgFirewallAzure 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2025-08-01' = {
   parent: pgServer
@@ -124,11 +140,16 @@ resource pgReplica 'Microsoft.DBforPostgreSQL/flexibleServers@2025-08-01' = if (
   }
 }
 
+// 6432 is the PgBouncer listener, 5432 the server itself. Both connection strings move together with the
+// Database__PostgreSql__PoolerMode env var main.bicep sets from the same flag.
+var pgPort = pgBouncerEnabled ? 6432 : 5432
+
 output serverName string = pgServer.name
 output serverFqdn string = pgServer.properties.fullyQualifiedDomainName
 output databaseName string = pgDatabase.name
+output poolerMode string = pgBouncerEnabled ? 'Transaction' : 'None'
 // Auth gap: Entra-only connection strings do not create Postgres roles for the connecting managed identities.
 // Provision one Postgres role per app identity (matching its system-assigned identity display name) separately;
 // entraConnectingPrincipalName here reflects only the caller-supplied primary/reference identity.
-output connectionString string = 'Host=${pgServer.properties.fullyQualifiedDomainName};Port=5432;Database=${pgDatabase.name};Username=${entraConnectingPrincipalName};SSL Mode=Require;Trust Server Certificate=False;Maximum Pool Size=${maxPoolSize}'
-output readConnectionString string = 'Host=${pgReplica.?properties.?fullyQualifiedDomainName ?? pgServer.properties.fullyQualifiedDomainName};Port=5432;Database=${pgDatabase.name};Username=${entraConnectingPrincipalName};SSL Mode=Require;Trust Server Certificate=False;Maximum Pool Size=${maxPoolSize}'
+output connectionString string = 'Host=${pgServer.properties.fullyQualifiedDomainName};Port=${pgPort};Database=${pgDatabase.name};Username=${entraConnectingPrincipalName};SSL Mode=Require;Trust Server Certificate=False;Maximum Pool Size=${maxPoolSize}'
+output readConnectionString string = 'Host=${pgReplica.?properties.?fullyQualifiedDomainName ?? pgServer.properties.fullyQualifiedDomainName};Port=${pgPort};Database=${pgDatabase.name};Username=${entraConnectingPrincipalName};SSL Mode=Require;Trust Server Certificate=False;Maximum Pool Size=${maxPoolSize}'

@@ -219,3 +219,5 @@ To redeploy infra without pushing code, run the bootstrap script again. It's ide
 | Container image pull fails | Verify repo packages are public, or add `packages: read` permission |
 | Functions deploy fails | Functions require `allowSharedKeyAccess: true` on their storage account (already configured) |
 | SWA deploy fails | Check that `swa-name` output is correctly passed from deploy-infra job |
+
+> Portable lane (Docker Compose on a VPS): see [`deploy/compose/README.md`](../deploy/compose/README.md). The `postgresPgBouncerEnabled` param here is the Azure half of the same D-045 pooling switch.
