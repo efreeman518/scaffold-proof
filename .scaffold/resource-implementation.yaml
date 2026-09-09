@@ -41,7 +41,7 @@ includeGitHubActions: true
 includeAzd: false
 includeAiServices: true
 
-database: SQLServer+PostgreSQL
+database: SQLServer            # scaffold schema enum (AzureSQL | SQLServer) has no PostgreSQL value yet; the runtime default provider is SqlServer and databaseProviders below declares both arms (D-020)
 migrationLifecycle: unreleased-resettable   # scaffold schema value; the migration sets were reset as a fresh baseline (D-025) and nothing is released yet
 databaseProviders: [SqlServer, PostgreSql]
 caching: FusionCache+Redis
