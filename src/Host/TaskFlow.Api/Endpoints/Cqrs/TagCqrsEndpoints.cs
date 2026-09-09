@@ -3,6 +3,8 @@ using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
+using TaskFlow.Api.Endpoints.Shared;
+using TaskFlow.Api.Filters;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Cqrs.Features.Tags;
 using TaskFlow.Application.Models;
@@ -19,29 +21,40 @@ public static class TagCqrsEndpoints
     {
         _problemDetailsIncludeStackTrace = problemDetailsIncludeStackTrace;
 
-        var g = group.MapGroup("/tags").WithTags("Tags");
+        var g = group.MapGroup("/tags").WithTags("Tags")
+            .AddEndpointFilter<ETagEndpointFilter>();
 
         g.MapPost("/search", Search)
+            .WithName("SearchTags")
             .Produces<PagedResponse<TagDto>>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
             .WithSummary("Search Tags with paging, filters, and sorts");
 
         g.MapGet("/{id:guid}", GetById)
+            .WithName("GetTag")
             .Produces<DefaultResponse<TagDto>>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .WithSummary("Get a single Tag");
 
         g.MapPost("/", Create)
+            .WithName("CreateTag")
             .Produces<DefaultResponse<TagDto>>(StatusCodes.Status201Created)
+            .Produces<DefaultResponse<TagDto>>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status409Conflict)
             .WithSummary("Create a new Tag");
 
         g.MapPut("/{id:guid}", Update)
+            .WithName("UpdateTag")
+            .RequireIfMatch()
             .Produces<DefaultResponse<TagDto>>()
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status404NotFound)
             .WithSummary("Update an existing Tag");
 
         g.MapDelete("/{id:guid}", Delete)
+            .WithName("DeleteTag")
+            .RequireIfMatch()
             .Produces(StatusCodes.Status204NoContent)
             .ProducesValidationProblem()
             .WithSummary("Delete a Tag");
@@ -53,10 +66,14 @@ public static class TagCqrsEndpoints
     private static async Task<IResult> Search(
         [FromServices] IRequestHandler<SearchTagsQuery, PagedResponse<TagDto>> handler,
         [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] SearchRequest<TagSearchFilter>? request,
-        CancellationToken ct)
+        CancellationToken ct,
+        [FromQuery] bool includeTotal = false)
     {
-        var items = await handler.HandleAsync(new SearchTagsQuery(request ?? new SearchRequest<TagSearchFilter>()), ct);
-        return TypedResults.Ok(items);
+        var search = request ?? new SearchRequest<TagSearchFilter>();
+        var guard = SearchRequestGuard.Validate(search.PageSize);
+        if (guard is not null) return guard;
+
+        return TypedResults.Ok(await handler.HandleAsync(new SearchTagsQuery(search, includeTotal), ct));
     }
 
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
@@ -82,9 +99,14 @@ public static class TagCqrsEndpoints
     {
         var result = await handler.HandleAsync(new CreateTagCommand(request), ct);
         return result.Match<IResult>(
-            response => TypedResults.Created(httpContext.Request.Path, response),
+            response => response.IsReplay
+                ? TypedResults.Ok(response)
+                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response),
+            // Create rejections are caller-input failures (a bad payload, a non-v7 id): 400, not the
+            // 500 the untyped helper defaults to.
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, traceId: httpContext.TraceIdentifier,
+                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
+                traceId: httpContext.TraceIdentifier,
                 includeStackTrace: _problemDetailsIncludeStackTrace)));
     }
 
@@ -93,6 +115,7 @@ public static class TagCqrsEndpoints
         HttpContext httpContext,
         [FromServices] IRequestHandler<UpdateTagCommand, Result<DefaultResponse<TagDto>>> handler,
         Guid id,
+        IfMatch ifMatch,
         [FromBody] DefaultRequest<TagDto> request,
         CancellationToken ct)
     {
@@ -101,7 +124,7 @@ public static class TagCqrsEndpoints
                 statusCodeOverride: StatusCodes.Status400BadRequest,
                 message: $"{ErrorConstants.ERROR_URL_BODY_ID_MISMATCH}: {id} <> {request.Item.Id}"));
 
-        var result = await handler.HandleAsync(new UpdateTagCommand(request), ct);
+        var result = await handler.HandleAsync(new UpdateTagCommand(request, ifMatch.ExpectedVersion), ct);
         return result.Match(
             response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
@@ -114,9 +137,10 @@ public static class TagCqrsEndpoints
         HttpContext httpContext,
         [FromServices] IRequestHandler<DeleteTagCommand, Result> handler,
         Guid id,
+        IfMatch ifMatch,
         CancellationToken ct)
     {
-        var result = await handler.HandleAsync(new DeleteTagCommand(id), ct);
+        var result = await handler.HandleAsync(new DeleteTagCommand(id, ifMatch.ExpectedVersion), ct);
         return result.Match<IResult>(
             () => TypedResults.NoContent(),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(

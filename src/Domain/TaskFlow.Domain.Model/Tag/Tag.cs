@@ -6,7 +6,7 @@ using DomainTenantId = TaskFlow.Domain.Shared.TenantId;
 namespace TaskFlow.Domain.Model;
 
 /// <summary>Models tag domain behavior and invariants.</summary>
-public sealed class Tag : EntityBase<DomainTagId>, ITenantEntity<DomainTenantId>, IEquatable<Tag>
+public sealed class Tag : TaskFlowEntityBase<DomainTagId>, ITenantEntity<DomainTenantId>, IEquatable<Tag>
 {
     public DomainTenantId TenantId { get; init; }
     public string Name { get; private set; } = null!;
@@ -19,17 +19,18 @@ public sealed class Tag : EntityBase<DomainTagId>, ITenantEntity<DomainTenantId>
     private Tag() { }
 
     /// <summary>Initializes tag with required dependencies and default state.</summary>
-    private Tag(DomainTenantId tenantId, string name, string? color)
+    private Tag(DomainTenantId tenantId, string name, string? color, DomainTagId? id)
     {
+        if (id.HasValue) Id = id.Value; // D-033: caller-supplied UUIDv7 id makes create idempotent.
         TenantId = tenantId;
         Name = name;
         Color = color;
     }
 
     /// <summary>Creates requested data after validation and maps the result to the caller contract.</summary>
-    public static DomainResult<Tag> Create(DomainTenantId tenantId, string name, string? color = null)
+    public static DomainResult<Tag> Create(DomainTenantId tenantId, string name, string? color = null, DomainTagId? id = null)
     {
-        var entity = new Tag(tenantId, name, color);
+        var entity = new Tag(tenantId, name, color, id);
         return entity.Valid();
     }
 

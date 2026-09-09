@@ -6,7 +6,7 @@ using DomainTenantId = TaskFlow.Domain.Shared.TenantId;
 namespace TaskFlow.Domain.Model;
 
 /// <summary>Models category domain behavior and invariants.</summary>
-public class Category : EntityBase<DomainCategoryId>, ITenantEntity<DomainTenantId>
+public class Category : TaskFlowEntityBase<DomainCategoryId>, ITenantEntity<DomainTenantId>
 {
     public DomainTenantId TenantId { get; init; }
     public string Name { get; private set; } = null!;
@@ -26,8 +26,9 @@ public class Category : EntityBase<DomainCategoryId>, ITenantEntity<DomainTenant
     private Category() { }
 
     /// <summary>Initializes category with required dependencies and default state.</summary>
-    private Category(DomainTenantId tenantId, string name, string? description, int sortOrder, DomainCategoryId? parentCategoryId)
+    private Category(DomainTenantId tenantId, string name, string? description, int sortOrder, DomainCategoryId? parentCategoryId, DomainCategoryId? id)
     {
+        if (id.HasValue) Id = id.Value; // D-033: caller-supplied UUIDv7 id makes create idempotent.
         TenantId = tenantId;
         Name = name;
         Description = description;
@@ -37,9 +38,9 @@ public class Category : EntityBase<DomainCategoryId>, ITenantEntity<DomainTenant
     }
 
     /// <summary>Creates requested data after validation and maps the result to the caller contract.</summary>
-    public static DomainResult<Category> Create(DomainTenantId tenantId, string name, string? description = null, int sortOrder = 0, DomainCategoryId? parentCategoryId = null)
+    public static DomainResult<Category> Create(DomainTenantId tenantId, string name, string? description = null, int sortOrder = 0, DomainCategoryId? parentCategoryId = null, DomainCategoryId? id = null)
     {
-        var entity = new Category(tenantId, name, description, sortOrder, parentCategoryId);
+        var entity = new Category(tenantId, name, description, sortOrder, parentCategoryId, id);
         return entity.Valid();
     }
 

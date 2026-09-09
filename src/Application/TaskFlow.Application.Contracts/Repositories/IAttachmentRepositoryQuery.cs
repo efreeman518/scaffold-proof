@@ -13,7 +13,7 @@ public interface IAttachmentRepositoryQuery : IRepositoryQuery<Attachment, Attac
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     Task<Attachment?> GetAttachmentAsync(AttachmentId id, CancellationToken ct = default);
     /// <summary>Searches search attachments and returns filtered results for callers.</summary>
-    Task<PagedResponse<AttachmentDto>> SearchAttachmentsAsync(SearchRequest<AttachmentSearchFilter> request, CancellationToken ct = default);
+    Task<PagedResponse<AttachmentDto>> SearchAttachmentsAsync(SearchRequest<AttachmentSearchFilter> request, bool includeTotal = false, CancellationToken ct = default);
     /// <summary>Provides the count by owner operation for attachment repository query.</summary>
     Task<int> CountByOwnerAsync(AttachmentOwnerType ownerType, Guid ownerId, CancellationToken ct = default);
 }

@@ -29,18 +29,16 @@ public sealed class TaskFlowApiJsonContextTests
         typeof(DefaultResponse<CommentDto>),
         typeof(DefaultResponse<ChecklistItemDto>),
         typeof(DefaultResponse<AttachmentDto>),
-        typeof(SearchRequest<TaskItemSearchFilter>),
         typeof(SearchRequest<CategorySearchFilter>),
         typeof(SearchRequest<TagSearchFilter>),
-        typeof(SearchRequest<CommentSearchFilter>),
-        typeof(SearchRequest<ChecklistItemSearchFilter>),
         typeof(SearchRequest<AttachmentSearchFilter>),
-        typeof(PagedResponse<TaskItemDto>),
         typeof(PagedResponse<CategoryDto>),
         typeof(PagedResponse<TagDto>),
-        typeof(PagedResponse<CommentDto>),
-        typeof(PagedResponse<ChecklistItemDto>),
         typeof(PagedResponse<AttachmentDto>),
+        typeof(TaskItemCursorSearchRequest),
+        typeof(CursorPage<TaskItemDto>),
+        typeof(TaskItemSummaryDto),
+        typeof(TaskMetadataDto),
         typeof(ProblemDetailsPayload)
     ];
 

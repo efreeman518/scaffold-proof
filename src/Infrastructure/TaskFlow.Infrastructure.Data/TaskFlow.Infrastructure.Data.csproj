@@ -2,8 +2,9 @@
 
   <ItemGroup>
     <PackageReference Include="EF.Data" />
-    <!-- DefaultAzureCredential for the Always Encrypted CMK setup in InitialCreate (D-019). -->
+    <!-- D-023 Key Vault RSA-OAEP unwrap of the column data-encryption key (KeyVaultDekProvider). -->
     <PackageReference Include="Azure.Identity" />
+    <PackageReference Include="Azure.Security.KeyVault.Keys" />
     <PackageReference Include="EF.Common.Contracts" />
     <PackageReference Include="EF.Domain.Contracts" />
     <PackageReference Include="EF.FlowEngine.StateStore.Sql" />
@@ -11,13 +12,23 @@
     <PackageReference Include="EF.FlowEngine.WorkflowRegistry.Sql" />
     <PackageReference Include="EF.FlowEngine.HumanTaskStore.Sql" />
     <PackageReference Include="EF.FlowEngine.CircuitBreaker.Sql" />
+    <!-- Both relational providers ship in the data assembly; UseTaskFlowProvider selects one at runtime (D-020). -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <!-- D-040: the TaskItemEmbedding row is mapped only on Npgsql, but the Vector type and UseVector()
+         extension have to be compiled in for the branch to exist at all. -->
+    <PackageReference Include="Pgvector" />
+    <PackageReference Include="Pgvector.EntityFrameworkCore" />
     <PackageReference Include="TickerQ.EntityFrameworkCore" />
   </ItemGroup>
 
   <ItemGroup>
+    <!-- D-026: the outbox staging interceptor writes IntegrationEventEnvelope rows. Infrastructure may know
+         Application.Contracts (ports), never Application.Services (implementations). -->
+    <ProjectReference Include="..\..\Application\TaskFlow.Application.Contracts\TaskFlow.Application.Contracts.csproj" />
     <ProjectReference Include="..\..\Domain\TaskFlow.Domain.Model\TaskFlow.Domain.Model.csproj" />
     <ProjectReference Include="..\..\Domain\TaskFlow.Domain.Shared\TaskFlow.Domain.Shared.csproj" />
+    <ProjectReference Include="..\..\Shared\TaskFlow.Observability\TaskFlow.Observability.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,4 +1,4 @@
-using EF.Data.Contracts;
+﻿using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
@@ -14,7 +14,7 @@ namespace Test.Integration;
 /// generic <c>Create</c> + tracked <c>GetAsync</c> on the write context, and no-tracking <c>GetAsync</c>
 /// + <c>ListAsync</c> on the query context. <c>Tag</c> is used because it is a generic-coverable entity
 /// (its write side was folded into the generic pair) with no FK prerequisites.
-/// Component tier: standalone SQL Testcontainer via <c>SqlContainerFixture</c> - no Aspire graph.
+/// Component tier: standalone SQL Testcontainer via <c>DbContainerFixture</c> - no Aspire graph.
 /// </summary>
 [TestClass]
 public class GenericRepositoryIntegrationTests
@@ -27,9 +27,9 @@ public class GenericRepositoryIntegrationTests
     [ClassInitialize]
     public static async Task ClassInit(TestContext _)
     {
-        if (IntegrationTestSetup.IsUnavailable(SqlContainerFixture.StartupError))
+        if (IntegrationTestSetup.IsUnavailable(DbContainerFixture.StartupError))
             return;
-        await using var db = SqlContainerFixture.CreateTrxnContext();
+        await using var db = DbContainerFixture.CreateTrxnContext();
         await db.Database.MigrateAsync(_.CancellationToken);
     }
 
@@ -37,7 +37,7 @@ public class GenericRepositoryIntegrationTests
     [TestInitialize]
     public void TestSetup()
     {
-        IntegrationTestSetup.AssertAvailable("SQL", SqlContainerFixture.StartupError);
+        IntegrationTestSetup.AssertAvailable("SQL", DbContainerFixture.StartupError);
     }
 
     /// <summary>Verifies that a tag persisted via the generic Trxn repo is readable by tracked and no-tracking GetAsync.</summary>
@@ -46,10 +46,10 @@ public class GenericRepositoryIntegrationTests
     [Timeout(120000, CooperativeCancellation = true)]
     public async Task Given_TagCreatedViaGenericTrxn_When_GetAsync_Then_ReturnsEntity()
     {
-        var connStr = SqlContainerFixture.ConnectionString;
+        var connStr = DbContainerFixture.ConnectionString;
 
         // Arrange + Act (write) - generic RepositoryTrxn.Create + SaveChangesAsync
-        await using var trxnCtx = SqlContainerFixture.CreateTrxnContext(connStr);
+        await using var trxnCtx = DbContainerFixture.CreateTrxnContext(connStr);
         var trxnRepo = new TaskFlowRepositoryTrxn<Tag, TagId>(trxnCtx);
         var tag = Tag.Create(TenantId, $"GenRepo-{Guid.NewGuid():N}").Value!;
         trxnRepo.Create(ref tag);
@@ -61,7 +61,7 @@ public class GenericRepositoryIntegrationTests
         Assert.AreEqual(tag.Name, tracked.Name);
 
         // Assert - no-tracking GetAsync on a fresh query context
-        await using var queryCtx = SqlContainerFixture.CreateQueryContext(connStr);
+        await using var queryCtx = DbContainerFixture.CreateQueryContext(connStr);
         var queryRepo = new TaskFlowRepositoryQuery<Tag, TagId>(queryCtx);
         var read = await queryRepo.GetAsync(tag.Id, TestContext.CancellationToken);
         Assert.IsNotNull(read, "generic Query GetAsync should return the persisted tag");
@@ -77,10 +77,10 @@ public class GenericRepositoryIntegrationTests
     [Timeout(120000, CooperativeCancellation = true)]
     public async Task Given_MultipleTags_When_ListAsync_Then_ReturnsPredicateMatches()
     {
-        var connStr = SqlContainerFixture.ConnectionString;
+        var connStr = DbContainerFixture.ConnectionString;
         var prefix = $"GenRepoList-{Guid.NewGuid():N}";
 
-        await using var trxnCtx = SqlContainerFixture.CreateTrxnContext(connStr);
+        await using var trxnCtx = DbContainerFixture.CreateTrxnContext(connStr);
         var trxnRepo = new TaskFlowRepositoryTrxn<Tag, TagId>(trxnCtx);
         var tagA = Tag.Create(TenantId, $"{prefix}-A").Value!;
         var tagB = Tag.Create(TenantId, $"{prefix}-B").Value!;
@@ -88,7 +88,7 @@ public class GenericRepositoryIntegrationTests
         trxnRepo.Create(ref tagB);
         await trxnRepo.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, CancellationToken.None);
 
-        await using var queryCtx = SqlContainerFixture.CreateQueryContext(connStr);
+        await using var queryCtx = DbContainerFixture.CreateQueryContext(connStr);
         var queryRepo = new TaskFlowRepositoryQuery<Tag, TagId>(queryCtx);
 
         var matches = await queryRepo.ListAsync(t => t.Name.StartsWith(prefix), TestContext.CancellationToken);

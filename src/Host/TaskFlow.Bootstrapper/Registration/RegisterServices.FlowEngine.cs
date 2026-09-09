@@ -3,6 +3,7 @@ using EF.FlowEngine.AdminApi;
 using EF.FlowEngine.Clients.AI;
 using EF.FlowEngine.Clients.Http;
 using EF.FlowEngine.Clients.ServiceBus;
+using EF.FlowEngine.Model;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -38,6 +39,19 @@ public static partial class RegisterServices
             .UseOutboxSql<TaskFlowFlowEngineDbContext>()
             .UseCircuitBreakerSql<TaskFlowFlowEngineDbContext>();
 
+        // Terminal workflow instances were never removed, so the FlowEngine state store grew forever.
+        // UseRetentionPolicy registers a hosted service, and every host loading this assembly would run its
+        // own copy against the same tables; Scheduling:OwnsRetention makes the Scheduler the single owner.
+        if (config.GetValue("Scheduling:OwnsRetention", false))
+        {
+            fe.UseRetentionPolicy(new RetentionPolicy
+            {
+                MaxAge = TimeSpan.FromDays(7),
+                Statuses = [ExecStatus.Completed, ExecStatus.Faulted, ExecStatus.Cancelled],
+                RunInterval = TimeSpan.FromHours(6)
+            });
+        }
+
         AddTaskFlowConnectorClients(fe, services, config);
         AddWorkflowJsonSeeding(fe);
 
@@ -70,7 +84,9 @@ public static partial class RegisterServices
         var apiBaseUrl = config["FlowEngine:TaskFlowApiBaseUrl"]
             ?? config["Gateway:BaseUrl"]
             ?? "https://localhost";
-        services.AddHttpClient("taskflow-api", c => c.BaseAddress = new Uri(apiBaseUrl));
+        services.AddTransient<FlowEngineIfMatchOverrideHandler>();
+        services.AddHttpClient("taskflow-api", c => c.BaseAddress = new Uri(apiBaseUrl))
+            .AddHttpMessageHandler<FlowEngineIfMatchOverrideHandler>();
         fe.AddResilientHttpClient("taskflow-api", namedClient: "taskflow-api");
 
         // Service Bus message client - uses the same connection string as the application's

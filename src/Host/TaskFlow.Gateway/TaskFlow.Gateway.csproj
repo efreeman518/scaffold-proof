@@ -1,10 +1,18 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
+  <!-- D-047 shared host runtime profile (Server GC + DATAS, PGO, invariant globalization). -->
+  <Import Project="..\TaskFlow.Host.props" />
+
   <ItemGroup>
     <PackageReference Include="Azure.Identity" />
     <PackageReference Include="Microsoft.AspNetCore.HeaderPropagation" />
     <PackageReference Include="Yarp.ReverseProxy" />
     <PackageReference Include="Microsoft.Extensions.ServiceDiscovery.Yarp" />
+    <!-- D-042: Gateway does not reference Bootstrapper, so it wires Azure App Configuration itself
+         (GatewayAppConfiguration.cs) instead of sharing RegisterServices.AddTaskFlowAppConfiguration.
+         No Microsoft.FeatureManagement reference here by design - Gateway evaluates no feature flags,
+         keeping it out of the "who may use Microsoft.FeatureManagement" architecture boundary. -->
+    <PackageReference Include="Microsoft.Azure.AppConfiguration.AspNetCore" />
   </ItemGroup>
 
   <ItemGroup>

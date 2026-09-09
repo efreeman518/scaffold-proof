@@ -1,4 +1,4 @@
-using EF.Data;
+﻿using EF.Data;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
@@ -8,7 +8,7 @@ namespace TaskFlow.Infrastructure.Repositories;
 
 /// <summary>Persists and queries attachment data through infrastructure storage contracts.</summary>
 public class AttachmentRepositoryTrxn(TaskFlowDbContextTrxn db)
-    : RepositoryTrxn<Attachment, AttachmentId, TaskFlowDbContextTrxn>(db), IAttachmentRepositoryTrxn
+    : TaskFlowRepositoryTrxn<Attachment, AttachmentId>(db), IAttachmentRepositoryTrxn
 {
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<Attachment?> GetAttachmentAsync(AttachmentId id, CancellationToken ct = default)

@@ -1,26 +1,17 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Microsoft.FeatureManagement;
+using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models;
 
 namespace TaskFlow.Infrastructure.AI.Demos;
 
-/// <summary>
-/// D6 - Asynchronous, event-driven inference. Invoked from the Functions Service Bus pipeline after a
-/// task is created: the model reviews the new task and posts clarifying questions / missing-detail
-/// notes as a comment. The inference happens off the request path and produces a side effect on a
-/// different surface (a comment), distinct from the synchronous triage (D4) and draft (D5) demos.
-/// </summary>
-public interface IAiTaskReviewer
-{
-    /// <summary>Reviews a newly created task and, if it is not already clear, posts a comment.</summary>
-    Task ReviewNewTaskAsync(Guid taskId, Guid tenantId, CancellationToken ct = default);
-}
-
 /// <inheritdoc />
 public sealed class AiTaskReviewer(
     ILogger<AiTaskReviewer> logger,
     IChatClient chatClient,
+    IVariantFeatureManager featureManager,
     ITaskItemService taskItemService) : IAiTaskReviewer
 {
     private const string ReadyMarker = "READY";
@@ -31,6 +22,12 @@ public sealed class AiTaskReviewer(
         if (chatClient is NoOpChatClient)
         {
             logger.AiReviewerSkipped(taskId);
+            return;
+        }
+
+        if (!await featureManager.IsEnabledAsync(TaskFlowFeatures.AiReview, ct))
+        {
+            logger.AiReviewerSkippedByFlag(taskId);
             return;
         }
 
@@ -70,7 +67,7 @@ public sealed class AiTaskReviewer(
 
         var result = await taskItemService.AddCommentAsync(taskId, comment, ct);
         if (result.IsFailure)
-            logger.LogWarning("AiTaskReviewer failed to post comment on {TaskId}: {Error}", taskId, result.ErrorMessage);
+            logger.AiReviewerPostFailed(taskId, result.ErrorMessage);
         else
             logger.AiReviewerPosted(taskId);
     }

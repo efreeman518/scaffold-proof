@@ -13,8 +13,8 @@ internal static class GatewayBlazorSmokeRunner
     /// </summary>
     public static async Task RunAsync(string gatewayBaseUrl, string blazorBaseUrl, CancellationToken cancellationToken)
     {
-        await EndpointProbe.EnsureReachableAsync($"{gatewayBaseUrl.TrimEnd('/')}/readyz", "Gateway", cancellationToken);
-        await EndpointProbe.EnsureReachableAsync($"{blazorBaseUrl.TrimEnd('/')}/readyz", "Blazor", cancellationToken);
+        await EndpointProbe.EnsureReachableAsync($"{gatewayBaseUrl.TrimEnd('/')}/healthz/ready", "Gateway", cancellationToken);
+        await EndpointProbe.EnsureReachableAsync($"{blazorBaseUrl.TrimEnd('/')}/healthz/ready", "Blazor", cancellationToken);
 
         using var playwright = await Playwright.CreateAsync().WaitAsync(cancellationToken);
         await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions

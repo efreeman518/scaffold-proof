@@ -1,5 +1,19 @@
 namespace TaskFlow.Application.Contracts.Storage;
 
+/// <summary>
+/// Container and blob naming shared by the attachment write path and the deferred blob-delete work the
+/// stale-task job stages. Both must agree on the name or a delete silently targets nothing.
+/// </summary>
+public static class AttachmentBlobs
+{
+    /// <summary>Container attachments are written to (matches <c>BlobStorageSettings.ContainerName</c>).</summary>
+    public const string ContainerName = "attachments";
+
+    /// <summary>Blob path for one attachment: tenant, owner, file name.</summary>
+    public static string BlobName(Guid tenantId, Guid ownerId, string fileName) =>
+        $"{tenantId}/{ownerId}/{fileName}";
+}
+
 /// <summary>Persists and queries i blob storage data through infrastructure storage contracts.</summary>
 public interface IBlobStorageRepository
 {

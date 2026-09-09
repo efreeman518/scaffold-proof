@@ -1,3 +1,9 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- D-053: Propagators/Baggage for the W3C broker hop. The API package only, not the SDK: every host
+         already brings the SDK through its exporter, and the shared library must not choose one. -->
+    <PackageReference Include="OpenTelemetry.Api" />
+  </ItemGroup>
 
 </Project>

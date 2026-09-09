@@ -15,7 +15,7 @@ namespace TaskFlow.Infrastructure.Repositories;
 
 /// <summary>Persists and queries category data through infrastructure storage contracts.</summary>
 public class CategoryRepositoryQuery(TaskFlowDbContextQuery db)
-    : RepositoryQuery<Category, CategoryId, TaskFlowDbContextQuery>(db), ICategoryRepositoryQuery
+    : TaskFlowRepositoryQuery<Category, CategoryId>(db), ICategoryRepositoryQuery
 {
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<Category?> GetCategoryAsync(CategoryId id, CancellationToken ct = default)
@@ -34,8 +34,21 @@ public class CategoryRepositoryQuery(TaskFlowDbContextQuery db)
         ).ConfigureAwait(ConfigureAwaitOptions.None);
     }
 
+    /// <inheritdoc />
+    // Metadata list for pickers: active categories only, hard-capped so a tenant with a runaway
+    // category tree cannot turn /task-metadata into an unbounded read.
+    public async Task<IReadOnlyList<CategoryDto>> GetActiveCategoriesAsync(int max, CancellationToken ct = default) =>
+        await DB.Set<Category>()
+            .AsNoTracking()
+            .Where(c => c.IsActive)
+            .OrderBy(c => c.SortOrder).ThenBy(c => c.Name).ThenBy(c => c.Id)
+            .Take(max)
+            .Select(CategoryMapper.Projection)
+            .ToListAsync(ct)
+            .ConfigureAwait(ConfigureAwaitOptions.None);
+
     /// <summary>Searches search categories and returns filtered results for callers.</summary>
-    public async Task<PagedResponse<CategoryDto>> SearchCategoriesAsync(SearchRequest<CategorySearchFilter> request, CancellationToken ct = default)
+    public async Task<PagedResponse<CategoryDto>> SearchCategoriesAsync(SearchRequest<CategorySearchFilter> request, bool includeTotal = false, CancellationToken ct = default)
     {
         var q = DB.Set<Category>().ComposeIQueryable(false);
 
@@ -78,7 +91,7 @@ public class CategoryRepositoryQuery(TaskFlowDbContextQuery db)
 
         (var data, var total) = await q.QueryPageProjectionAsync(CategoryMapper.Projection,
             pageSize: request.PageSize, pageIndex: Math.Max(1, request.PageIndex),
-            includeTotal: true, splitQueryOptions: SplitQueryThresholdOptions.Default,
+            includeTotal: includeTotal, splitQueryOptions: SplitQueryThresholdOptions.Default,
             cancellationToken: ct).ConfigureAwait(ConfigureAwaitOptions.None);
 
         return new PagedResponse<CategoryDto>

@@ -1,6 +1,10 @@
 <Solution>
   <Folder Name="/Shared/">
     <Project Path="src/Shared/TaskFlow.Observability/TaskFlow.Observability.csproj" />
+    <Project Path="src/Shared/TaskFlow.Contracts.Grpc/TaskFlow.Contracts.Grpc.csproj" />
+  </Folder>
+  <Folder Name="/Packages/">
+    <Project Path="src/Packages/EF.Messaging.RabbitMq/EF.Messaging.RabbitMq.csproj" />
   </Folder>
   <Folder Name="/Domain/">
     <Project Path="src/Domain/TaskFlow.Domain.Shared/TaskFlow.Domain.Shared.csproj" />
@@ -16,9 +20,13 @@
   </Folder>
   <Folder Name="/Infrastructure/">
     <Project Path="src/Infrastructure/TaskFlow.Infrastructure.Data/TaskFlow.Infrastructure.Data.csproj" />
+    <Project Path="src/Infrastructure/TaskFlow.Infrastructure.Data.Migrations.SqlServer/TaskFlow.Infrastructure.Data.Migrations.SqlServer.csproj" />
+    <Project Path="src/Infrastructure/TaskFlow.Infrastructure.Data.Migrations.PostgreSql/TaskFlow.Infrastructure.Data.Migrations.PostgreSql.csproj" />
     <Project Path="src/Infrastructure/TaskFlow.Infrastructure.Repositories/TaskFlow.Infrastructure.Repositories.csproj" />
     <Project Path="src/Infrastructure/TaskFlow.Infrastructure.AI/TaskFlow.Infrastructure.AI.csproj" />
+    <Project Path="src/Infrastructure/TaskFlow.Infrastructure.Caching/TaskFlow.Infrastructure.Caching.csproj" />
     <Project Path="src/Infrastructure/TaskFlow.Infrastructure.Storage/TaskFlow.Infrastructure.Storage.csproj" />
+    <Project Path="src/Infrastructure/TaskFlow.Infrastructure.Messaging.RabbitMq/TaskFlow.Infrastructure.Messaging.RabbitMq.csproj" />
   </Folder>
   <Folder Name="/Host/">
     <Project Path="src/Host/TaskFlow.Bootstrapper/TaskFlow.Bootstrapper.csproj" />
@@ -34,12 +42,14 @@
     <Project Path="src/Host/Aspire/ServiceDefaults/ServiceDefaults.csproj" />
   </Folder>
   <Folder Name="/UI/">
+    <Project Path="src/UI/TaskFlow.ApiClient/TaskFlow.ApiClient.csproj" />
     <Project Path="src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj" />
     <Project Path="src/UI/TaskFlow.Uno.Core/TaskFlow.Uno.Core.csproj" />
     <Project Path="src/UI/TaskFlow.Uno.Presentation/TaskFlow.Uno.Presentation.csproj" />
     <Project Path="src/UI/TaskFlow.Blazor/TaskFlow.Blazor.csproj" />
   </Folder>
   <Folder Name="/Tests/">
+    <Project Path="tests/EF.Messaging.RabbitMq.Tests/EF.Messaging.RabbitMq.Tests.csproj" />
     <Project Path="tests/Test.Support/Test.Support.csproj" />
     <Project Path="tests/Test.Unit/Test.Unit.csproj" />
     <Project Path="tests/Test.UI/Test.UI.csproj" />

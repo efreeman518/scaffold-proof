@@ -49,7 +49,7 @@
     </MudGrid>
 </MudPaper>
 
-<MudTable @ref="_table" ServerData="LoadServerData" Hover="true" Dense="true" Striped="true"
+<MudTable Items="@_items" Hover="true" Dense="true" Striped="true"
           Loading="@_loading" Elevation="2">
     <HeaderContent>
         <MudTh>Title</MudTh>
@@ -79,13 +79,21 @@
     </RowTemplate>
     <NoRecordsContent><MudText>No tasks found.</MudText></NoRecordsContent>
     <LoadingContent><MudText>Loading...</MudText></LoadingContent>
-    <PagerContent>
-        <MudTablePager PageSizeOptions="new[] { 10, 25, 50, 100 }" />
-    </PagerContent>
 </MudTable>
 
+<div class="d-flex justify-center mt-4">
+    @if (_hasMore)
+    {
+        <MudButton Variant="Variant.Outlined" OnClick="LoadMoreAsync" Disabled="@FloatService.RequestIsActive">
+            Load more
+        </MudButton>
+    }
+</div>
+
 @code {
-    private MudTable<TaskItemDto> _table = null!;
+    private readonly List<TaskItemDto> _items = [];
+    private string? _nextCursor;
+    private bool _hasMore;
     private string? _searchTerm;
     private TaskItemStatus? _status;
     private Priority? _priority;
@@ -96,19 +104,29 @@
     private static readonly Priority[] _priorityOptions =
         Enum.GetValues<Priority>().Where(p => p != Priority.None).ToArray();
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         FloatService.ModuleName = "Tasks";
         FloatService.TaskItemsChanged += OnExternalChange;
+        await ReloadAsync();
     }
 
-    private async Task<TableData<TaskItemDto>> LoadServerData(TableState state, CancellationToken ct)
+    /// <summary>Clears the current page and loads the first cursor page for the active filters.</summary>
+    private async Task ReloadAsync()
+    {
+        _items.Clear();
+        _nextCursor = null;
+        _hasMore = false;
+        await LoadMoreAsync();
+    }
+
+    /// <summary>Appends the next cursor page; a no-op button click can never request a prior page.</summary>
+    private async Task LoadMoreAsync()
     {
         _loading = true;
-        var request = new SearchRequest<TaskItemSearchFilter>
+        var request = new TaskItemCursorSearchRequest
         {
-            PageIndex = state.Page,
-            PageSize = state.PageSize,
+            Cursor = _nextCursor,
             Filter = new TaskItemSearchFilter
             {
                 SearchTerm = string.IsNullOrWhiteSpace(_searchTerm) ? null : _searchTerm,
@@ -117,23 +135,23 @@
             }
         };
         var response = await FloatService.ExecuteWithProgressAsync(
-            () => Api.SearchTaskItemsAsync(request, ct), "Failed to search tasks.");
+            () => Api.SearchTaskItemsAsync(request), "Failed to search tasks.");
         _loading = false;
-        return new TableData<TaskItemDto>
-        {
-            Items = response?.Data ?? Enumerable.Empty<TaskItemDto>(),
-            TotalItems = response?.Total ?? 0
-        };
+        if (response is null) return;
+
+        _items.AddRange(response.Data);
+        _nextCursor = response.NextCursor;
+        _hasMore = response.HasMore;
     }
 
-    private async Task SearchAsync() => await _table.ReloadServerData();
+    private async Task SearchAsync() => await ReloadAsync();
 
     private async Task ClearFilters()
     {
         _searchTerm = null;
         _status = null;
         _priority = null;
-        await _table.ReloadServerData();
+        await ReloadAsync();
     }
 
     private async Task OnSearchKey(KeyboardEventArgs e)
@@ -148,14 +166,26 @@
             : TaskItemStatus.Completed;
         var updated = item with { Status = newStatus };
 
-        var ok = await FloatService.ExecuteWithProgressAsync(
-            () => Api.UpdateTaskItemAsync(item.Id!.Value, new DefaultRequest<TaskItemDto> { Item = updated }),
-            "Failed to update status.");
-        if (ok is not null)
+        var ok = await FloatService.ExecuteWithProgressAsync(async () =>
+        {
+            try
+            {
+                await Api.UpdateTaskItemAsync(item.Id!.Value, new DefaultRequest<TaskItemDto> { Item = updated },
+                    item.Version?.ToString() ?? "*");
+                return true;
+            }
+            catch (ApiException ex) when (ex.StatusCode == HttpStatusCode.PreconditionFailed)
+            {
+                FloatService.ShowSnack("Task changed elsewhere, reloading.", Severity.Warning);
+                await ReloadAsync();
+                return false;
+            }
+        }, "Failed to update status.");
+        if (ok is true)
         {
             FloatService.ShowSnack($"Task marked {newStatus}.", Severity.Success);
             FloatService.NotifyTaskItemsChanged();
-            await _table.ReloadServerData();
+            await ReloadAsync();
         }
     }
 
@@ -170,13 +200,25 @@
         });
         if (confirm != true) return;
 
-        var ok = await FloatService.ExecuteWithProgressAsync(
-            () => Api.DeleteTaskItemAsync(item.Id!.Value), "Failed to delete task.");
-        if (ok)
+        var ok = await FloatService.ExecuteWithProgressAsync(async () =>
+        {
+            try
+            {
+                await Api.DeleteTaskItemAsync(item.Id!.Value, item.Version?.ToString() ?? "*");
+                return true;
+            }
+            catch (ApiException ex) when (ex.StatusCode == HttpStatusCode.PreconditionFailed)
+            {
+                FloatService.ShowSnack("Task changed elsewhere, reloading.", Severity.Warning);
+                await ReloadAsync();
+                return false;
+            }
+        }, "Failed to delete task.");
+        if (ok is true)
         {
             FloatService.ShowSnack("Task deleted.", Severity.Success);
             FloatService.NotifyTaskItemsChanged();
-            await _table.ReloadServerData();
+            await ReloadAsync();
         }
     }
 
@@ -192,7 +234,7 @@
 
     private async void OnExternalChange()
     {
-        await InvokeAsync(async () => await _table.ReloadServerData());
+        await InvokeAsync(ReloadAsync);
     }
 
     public void Dispose()

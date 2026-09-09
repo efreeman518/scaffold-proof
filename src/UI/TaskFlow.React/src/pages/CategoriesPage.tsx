@@ -18,9 +18,9 @@ import {
 } from '@mui/material'
 import { Edit, Plus, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { taskFlowApi } from '../api/client'
+import { isPreconditionFailed, taskFlowApi } from '../api/client'
 import { queryKeys } from '../api/queryKeys'
-import type { Category } from '../api/types'
+import type { CategoryDto } from '../api/models'
 import { useNotifications } from '../app/notificationContext'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { PageHeader } from '../components/PageHeader'
@@ -30,25 +30,37 @@ import { ErrorState, LoadingState } from '../components/StateViews'
 export function CategoriesPage() {
   const queryClient = useQueryClient()
   const { showNotification } = useNotifications()
-  const [editing, setEditing] = useState<Category>(() => emptyCategory())
-  const [deleteTarget, setDeleteTarget] = useState<Category | null>(null)
+  const [editing, setEditing] = useState<CategoryDto>(() => emptyCategory())
+  const [deleteTarget, setDeleteTarget] = useState<CategoryDto | null>(null)
 
-  const categoriesQuery = useQuery({
-    queryKey: queryKeys.categories(),
-    queryFn: ({ signal }) => taskFlowApi.searchCategories({}, 1, 500, signal),
+  // Full list, not a search page: /task-metadata is uncapped by the [1,100] search PageSize clamp
+  // (up to PageSizeLimits.MetadataMax), which a PageSize=500 search would now reject.
+  const metadataQuery = useQuery({
+    queryKey: queryKeys.metadata,
+    queryFn: ({ signal }) => taskFlowApi.getTaskMetadata(signal),
   })
 
-  const categories = useMemo(() => orderCategories(categoriesQuery.data?.items ?? []), [categoriesQuery.data])
+  const categories = useMemo(
+    () => orderCategories(metadataQuery.data?.categories ?? []),
+    [metadataQuery.data],
+  )
 
   const saveMutation = useMutation({
-    mutationFn: (category: Category) =>
+    mutationFn: (category: CategoryDto) =>
       category.id ? taskFlowApi.updateCategory(category) : taskFlowApi.createCategory(category),
     onSuccess: async () => {
       showNotification(editing.id ? 'Category saved.' : 'Category created.', 'success')
       setEditing(emptyCategory())
-      await queryClient.invalidateQueries({ queryKey: ['categories'] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.metadata })
     },
-    onError: (error) => showNotification(error instanceof Error ? error.message : 'Category save failed.', 'error'),
+    onError: (error) => {
+      if (isPreconditionFailed(error)) {
+        showNotification('Category changed elsewhere, reloading.', 'warning')
+        void queryClient.invalidateQueries({ queryKey: queryKeys.metadata })
+        return
+      }
+      showNotification(error instanceof Error ? error.message : 'Category save failed.', 'error')
+    },
   })
 
   const deleteMutation = useMutation({
@@ -56,9 +68,17 @@ export function CategoriesPage() {
     onSuccess: async () => {
       showNotification('Category deleted.', 'success')
       setDeleteTarget(null)
-      await queryClient.invalidateQueries({ queryKey: ['categories'] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.metadata })
     },
-    onError: (error) => showNotification(error instanceof Error ? error.message : 'Category delete failed.', 'error'),
+    onError: (error) => {
+      setDeleteTarget(null)
+      if (isPreconditionFailed(error)) {
+        showNotification('Category changed elsewhere, reloading.', 'warning')
+        void queryClient.invalidateQueries({ queryKey: queryKeys.metadata })
+        return
+      }
+      showNotification(error instanceof Error ? error.message : 'Category delete failed.', 'error')
+    },
   })
 
   /** Renders save category page helper UI and keeps form or display state consistent. */
@@ -83,9 +103,9 @@ export function CategoriesPage() {
 
       <Box sx={{ display: 'grid', gap: 2.5, gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) 360px' } }}>
         <Stack spacing={2}>
-          {categoriesQuery.isLoading ? <LoadingState label="Loading categories" /> : null}
-          {categoriesQuery.isError ? (
-            <ErrorState error={categoriesQuery.error} onRetry={() => void categoriesQuery.refetch()} />
+          {metadataQuery.isLoading ? <LoadingState label="Loading categories" /> : null}
+          {metadataQuery.isError ? (
+            <ErrorState error={metadataQuery.error} onRetry={() => void metadataQuery.refetch()} />
           ) : null}
 
           {categories.length > 0 ? (
@@ -198,7 +218,7 @@ export function CategoriesPage() {
       <ConfirmDialog
         message={`Delete '${deleteTarget?.name ?? 'this category'}'? This cannot be undone.`}
         onCancel={() => setDeleteTarget(null)}
-        onConfirm={() => deleteTarget?.id && deleteMutation.mutate(deleteTarget.id)}
+        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget)}
         open={deleteTarget !== null}
         title="Delete category"
       />
@@ -207,12 +227,12 @@ export function CategoriesPage() {
 }
 
 /** Describes category with depth data used by the React UI. */
-interface CategoryWithDepth extends Category {
+interface CategoryWithDepth extends CategoryDto {
   depth: number
 }
 
 /** Creates the default category form state for add and edit flows. */
-function emptyCategory(): Category {
+function emptyCategory(): CategoryDto {
   return {
     description: '',
     isActive: true,
@@ -222,8 +242,8 @@ function emptyCategory(): Category {
 }
 
 /** Orders categories into a depth-aware tree for display. */
-function orderCategories(categories: Category[]): CategoryWithDepth[] {
-  const children = new Map<string | null, Category[]>()
+function orderCategories(categories: CategoryDto[]): CategoryWithDepth[] {
+  const children = new Map<string | null, CategoryDto[]>()
   categories.forEach((category) => {
     const key = category.parentCategoryId ?? null
     children.set(key, [...(children.get(key) ?? []), category])
@@ -243,7 +263,7 @@ function orderCategories(categories: Category[]): CategoryWithDepth[] {
 }
 
 /** Sorts categories by display order and name for stable rendering. */
-function compareCategories(left: Category, right: Category) {
+function compareCategories(left: CategoryDto, right: CategoryDto) {
   return left.sortOrder - right.sortOrder || left.name.localeCompare(right.name)
 }
 
@@ -254,7 +274,7 @@ function parentName(parentId: string | null | undefined, categories: CategoryWit
 }
 
 /** Removes tree-depth indentation from category labels before saving. */
-function stripDepth(category: CategoryWithDepth): Category {
+function stripDepth(category: CategoryWithDepth): CategoryDto {
   return {
     description: category.description,
     id: category.id,
@@ -263,5 +283,6 @@ function stripDepth(category: CategoryWithDepth): Category {
     parentCategoryId: category.parentCategoryId,
     sortOrder: category.sortOrder,
     tenantId: category.tenantId,
+    version: category.version,
   }
 }

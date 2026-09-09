@@ -1,14 +1,16 @@
-using Azure.Identity;
-using EF.Data;
+﻿using EF.Data;
 using EF.Data.Contracts;
 using EF.Data.Interceptors;
-using Microsoft.Data.SqlClient;
-using Microsoft.Data.SqlClient.AlwaysEncrypted.AzureKeyVaultProvider;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Infrastructure.Data;
+using TaskFlow.Infrastructure.Data.Encryption;
+using TaskFlow.Infrastructure.Data.Interceptors;
+using TaskFlow.Infrastructure.Data.Operational;
+using TaskFlow.Infrastructure.Data.Provider;
 using TaskFlow.Infrastructure.Repositories;
 
 namespace TaskFlow.Bootstrapper;
@@ -18,39 +20,36 @@ public static partial class RegisterServices
 {
     /// <summary>
     /// Registers write DbContext, read DbContext, FlowEngine DbContext, and repositories.
+    /// Provider selection (SQL Server / PostgreSQL) happens once in <see cref="TaskFlowDbProviderExtensions.UseTaskFlowProvider"/>.
     /// </summary>
     private static void AddDatabaseServices(IServiceCollection services, IConfiguration config)
     {
         services.AddTransient<AuditInterceptor<string, Guid?>>();
+        services.AddSingleton<VersionTimestampInterceptor>();
+        // D-026: stages raised domain events as outbox rows in the same SaveChanges as the domain write.
+        services.AddSingleton<OutboxStagingInterceptor>();
         services.AddTransient<ConnectionNoLockInterceptor>();
+        // D-023: one AES-GCM column encryptor per process, bound from Database:Encryption (fails fast without a key).
+        services.AddColumnEncryption(config);
 
         var dbConnectionStringTrxn = config.GetConnectionString("TaskFlowDbContextTrxn") ?? "";
+        // D-027: the Query context is an independently authored connection string on both providers.
+        // SQL Server callers put `ApplicationIntent=ReadOnly` in it (Hyperscale HA secondary); PostgreSQL
+        // callers point it at the read-replica FQDN. Nothing is appended here.
         var dbConnectionStringQuery = config.GetConnectionString("TaskFlowDbContextQuery") ?? "";
         var dbConnectionStringFlowEngine =
             config.GetConnectionString("TaskFlowFlowEngineDbContext") ?? dbConnectionStringTrxn;
-        var maxRetryCount = config.GetValue<int?>("Database:Retry:MaxRetryCount") ?? 5;
-        var maxRetryDelaySeconds = config.GetValue<int?>("Database:Retry:MaxRetryDelaySeconds") ?? 30;
-
-        // Always Encrypted (D-019) is opt-in. When enabled, register the Azure Key Vault CMK provider once and
-        // turn on client-side column encryption for the contexts that map TaskItem (Trxn + Query). Off by
-        // default so local build/test/run need no Key Vault.
-        var alwaysEncrypted = config.GetValue<bool?>("Database:AlwaysEncrypted:Enabled")
-            ?? string.Equals(
-                Environment.GetEnvironmentVariable("TASKFLOW_ENABLE_ALWAYS_ENCRYPTED"),
-                "true",
-                StringComparison.OrdinalIgnoreCase);
-        if (alwaysEncrypted)
-        {
-            RegisterSqlAlwaysEncrypted();
-            dbConnectionStringTrxn = EnsureColumnEncryption(dbConnectionStringTrxn);
-            dbConnectionStringQuery = EnsureColumnEncryption(dbConnectionStringQuery);
-        }
 
         services.AddPooledDbContextFactory<TaskFlowDbContextTrxn>((sp, options) =>
         {
-            ConfigureSqlOptions(options, dbConnectionStringTrxn, maxRetryCount, maxRetryDelaySeconds);
-            var auditInterceptor = sp.GetRequiredService<AuditInterceptor<string, Guid?>>();
-            options.AddInterceptors(auditInterceptor);
+            UseTaskFlowProviderIfConfigured(options, config, dbConnectionStringTrxn,
+                TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName);
+            options.UseColumnEncryption(sp.GetRequiredService<IColumnEncryptor>());
+            options.AddInterceptors(
+                sp.GetRequiredService<AuditInterceptor<string, Guid?>>(),
+                sp.GetRequiredService<VersionTimestampInterceptor>(),
+                sp.GetRequiredService<OutboxStagingInterceptor>(),
+                sp.GetRequiredService<BlindIndexInterceptor>());
         });
         services.AddScoped<DbContextScopedFactory<TaskFlowDbContextTrxn, string, Guid?>>();
         services.AddScoped(sp => sp.GetRequiredService<DbContextScopedFactory<TaskFlowDbContextTrxn, string, Guid?>>()
@@ -58,24 +57,18 @@ public static partial class RegisterServices
 
         services.AddPooledDbContextFactory<TaskFlowDbContextQuery>((sp, options) =>
         {
-            var readOnlyConnStr = dbConnectionStringQuery.Contains("ApplicationIntent=")
-                ? dbConnectionStringQuery
-                : dbConnectionStringQuery + ";ApplicationIntent=ReadOnly";
             options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
-            ConfigureSqlOptions(options, readOnlyConnStr, maxRetryCount, maxRetryDelaySeconds);
+            UseTaskFlowProviderIfConfigured(options, config, dbConnectionStringQuery,
+                TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName);
+            options.UseColumnEncryption(sp.GetRequiredService<IColumnEncryptor>());
         });
         services.AddScoped<DbContextScopedFactory<TaskFlowDbContextQuery, string, Guid?>>();
         services.AddScoped(sp => sp.GetRequiredService<DbContextScopedFactory<TaskFlowDbContextQuery, string, Guid?>>()
             .CreateDbContext());
 
         services.AddPooledDbContextFactory<TaskFlowFlowEngineDbContext>((sp, options) =>
-        {
-            ConfigureFlowEngineSqlOptions(
-                options,
-                dbConnectionStringFlowEngine,
-                maxRetryCount,
-                maxRetryDelaySeconds);
-        });
+            UseTaskFlowProviderIfConfigured(options, config, dbConnectionStringFlowEngine,
+                TaskFlowFlowEngineDbContext.MigrationHistoryTable, TaskFlowFlowEngineDbContext.SchemaName));
 
         services.AddScoped(typeof(IRepositoryTrxn<,>), typeof(TaskFlowRepositoryTrxn<,>));
         services.AddScoped(typeof(IRepositoryQuery<,>), typeof(TaskFlowRepositoryQuery<,>));
@@ -90,122 +83,26 @@ public static partial class RegisterServices
         services.AddScoped<ITagRepositoryQuery, TagRepositoryQuery>();
         services.AddScoped<ICommentRepositoryQuery, CommentRepositoryQuery>();
         services.AddScoped<IChecklistItemRepositoryQuery, ChecklistItemRepositoryQuery>();
+
+        services.AddScoped<IInboxStore, InboxStore>();
+        services.AddScoped<IOutboxStaging, OutboxStaging>();
+        services.AddScoped<IOperationalWorkRepository, OperationalWorkRepository>();
+        // Cross-tenant system access for the scheduler jobs (IgnoreQueryFilters), so background work no
+        // longer leans on the request context defaulting to global admin.
+        services.AddScoped<ITaskItemSystemRepository, TaskItemSystemRepository>();
     }
 
-    private static bool _keyStoreProviderRegistered;
-
-    // Registers the Azure Key Vault CMK provider for Always Encrypted (D-019). SQL Always Encrypted also
-    // requires "Column Encryption Setting=Enabled" on the connection string (see EnsureColumnEncryption).
-    private static void RegisterSqlAlwaysEncrypted()
-    {
-        if (!_keyStoreProviderRegistered)
-        {
-            var credential = new DefaultAzureCredential();
-            SqlColumnEncryptionAzureKeyVaultProvider sqlColumnEncryptionAzureKeyVaultProvider = new(credential);
-
-            try
-            {
-                SqlConnection.RegisterColumnEncryptionKeyStoreProviders(
-                    customProviders: new Dictionary<string, SqlColumnEncryptionKeyStoreProvider>(capacity: 1, comparer: StringComparer.OrdinalIgnoreCase)
-                    {
-                        {
-                            SqlColumnEncryptionAzureKeyVaultProvider.ProviderName,
-                            sqlColumnEncryptionAzureKeyVaultProvider
-                        }
-                    });
-            }
-            catch
-            {
-                // Ignore; already registered. SqlConnection has no try-register or "is registered" check, and
-                // the provider can be registered only once per process (e.g. across WebApplicationFactory reuse).
-            }
-            _keyStoreProviderRegistered = true;
-        }
-    }
-
-    private static string EnsureColumnEncryption(string connectionString) =>
-        string.IsNullOrEmpty(connectionString)
-            || connectionString.Contains("Column Encryption Setting", StringComparison.OrdinalIgnoreCase)
-            ? connectionString
-            : connectionString + ";Column Encryption Setting=Enabled";
-
-    private static void ConfigureSqlOptions(
+    // An empty connection string leaves the context unconfigured so test hosts can replace it (InMemory).
+    private static void UseTaskFlowProviderIfConfigured(
         DbContextOptionsBuilder options,
+        IConfiguration config,
         string connectionString,
-        int maxRetryCount,
-        int maxRetryDelaySeconds)
+        string migrationsHistoryTable,
+        string migrationsHistorySchema)
     {
         if (string.IsNullOrEmpty(connectionString)) return;
 
-        var maxRetryDelay = TimeSpan.FromSeconds(maxRetryDelaySeconds);
-
-        if (connectionString.Contains("database.windows.net", StringComparison.OrdinalIgnoreCase))
-        {
-            options.UseAzureSql(connectionString, sqlOptions =>
-            {
-                sqlOptions.UseLatestCompatibilityLevel();
-                sqlOptions.EnableRetryOnFailure(
-                    maxRetryCount: maxRetryCount,
-                    maxRetryDelay: maxRetryDelay,
-                    errorNumbersToAdd: null);
-                sqlOptions.MigrationsHistoryTable(
-                    TaskFlowDbContextBase.MigrationHistoryTable,
-                    TaskFlowDbContextBase.SchemaName);
-            });
-        }
-        else
-        {
-            options.UseSqlServer(connectionString, sqlOptions =>
-            {
-                sqlOptions.UseLatestCompatibilityLevel();
-                sqlOptions.EnableRetryOnFailure(
-                    maxRetryCount: maxRetryCount,
-                    maxRetryDelay: maxRetryDelay,
-                    errorNumbersToAdd: null);
-                sqlOptions.MigrationsHistoryTable(
-                    TaskFlowDbContextBase.MigrationHistoryTable,
-                    TaskFlowDbContextBase.SchemaName);
-            });
-        }
-    }
-
-    private static void ConfigureFlowEngineSqlOptions(
-        DbContextOptionsBuilder options,
-        string connectionString,
-        int maxRetryCount,
-        int maxRetryDelaySeconds)
-    {
-        if (string.IsNullOrEmpty(connectionString)) return;
-
-        var maxRetryDelay = TimeSpan.FromSeconds(maxRetryDelaySeconds);
-
-        if (connectionString.Contains("database.windows.net", StringComparison.OrdinalIgnoreCase))
-        {
-            options.UseAzureSql(connectionString, sqlOptions =>
-            {
-                sqlOptions.UseLatestCompatibilityLevel();
-                sqlOptions.EnableRetryOnFailure(
-                    maxRetryCount: maxRetryCount,
-                    maxRetryDelay: maxRetryDelay,
-                    errorNumbersToAdd: null);
-                sqlOptions.MigrationsHistoryTable(
-                    TaskFlowFlowEngineDbContext.MigrationHistoryTable,
-                    TaskFlowFlowEngineDbContext.SchemaName);
-            });
-        }
-        else
-        {
-            options.UseSqlServer(connectionString, sqlOptions =>
-            {
-                sqlOptions.UseLatestCompatibilityLevel();
-                sqlOptions.EnableRetryOnFailure(
-                    maxRetryCount: maxRetryCount,
-                    maxRetryDelay: maxRetryDelay,
-                    errorNumbersToAdd: null);
-                sqlOptions.MigrationsHistoryTable(
-                    TaskFlowFlowEngineDbContext.MigrationHistoryTable,
-                    TaskFlowFlowEngineDbContext.SchemaName);
-            });
-        }
+        options.UseTaskFlowProvider(TaskFlowProviderOptions.FromConfiguration(
+            config, connectionString, migrationsHistoryTable, migrationsHistorySchema));
     }
 }

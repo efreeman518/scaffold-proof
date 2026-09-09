@@ -40,6 +40,7 @@
     <ProjectReference Include="..\..\src\Host\TaskFlow.Gateway\TaskFlow.Gateway.csproj" />
     <ProjectReference Include="..\..\src\Host\TaskFlow.Bootstrapper\TaskFlow.Bootstrapper.csproj" />
     <ProjectReference Include="..\..\src\Application\TaskFlow.Application.Cqrs\TaskFlow.Application.Cqrs.csproj" />
+    <ProjectReference Include="..\..\src\Shared\TaskFlow.Contracts.Grpc\TaskFlow.Contracts.Grpc.csproj" />
   </ItemGroup>
 
 </Project>

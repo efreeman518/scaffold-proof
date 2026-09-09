@@ -8,7 +8,7 @@ using DomainTenantId = TaskFlow.Domain.Shared.TenantId;
 namespace TaskFlow.Domain.Model;
 
 /// <summary>Models task item tag domain behavior and invariants.</summary>
-public class TaskItemTag : EntityBase<DomainTaskItemTagId>, ITenantEntity<DomainTenantId>
+public class TaskItemTag : TaskFlowEntityBase<DomainTaskItemTagId>, ITenantEntity<DomainTenantId>
 {
     public DomainTenantId TenantId { get; init; }
 

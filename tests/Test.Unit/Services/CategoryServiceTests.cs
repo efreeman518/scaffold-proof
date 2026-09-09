@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using TaskFlow.Application.Contracts;
+using TaskFlow.Application.Contracts.Caching;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Models;
 using TaskFlow.Application.Services;
@@ -28,7 +29,7 @@ public class CategoryServiceTests
     private readonly Mock<ICategoryRepositoryQuery> _repoQueryMock = new();
     private readonly Mock<IRequestContext<string, Guid?>> _requestContextMock = new();
     private readonly Mock<ITenantBoundaryValidator> _tenantBoundaryValidatorMock = new();
-    private readonly Mock<IEntityCacheProvider> _cacheMock = new();
+    private readonly Mock<ITaskFlowCache> _cacheMock = new();
 
     /// <summary>Prepares per-test fixtures so each test starts from a predictable state.</summary>
     [TestInitialize]
@@ -115,7 +116,7 @@ public class CategoryServiceTests
         _repoTrxnMock.Setup(r => r.SaveChangesAsync(It.IsAny<OptimisticConcurrencyWinner>(), It.IsAny<CancellationToken>())).ReturnsAsync(0);
 
         var dto = new CategoryDto { Id = entity.Id, Name = "Updated Name" };
-        var result = await CreateService().UpdateAsync(new DefaultRequest<CategoryDto> { Item = dto }, TestContext.CancellationToken);
+        var result = await CreateService().UpdateAsync(new DefaultRequest<CategoryDto> { Item = dto }, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual("Updated Name", result.Value!.Item!.Name);
@@ -129,7 +130,7 @@ public class CategoryServiceTests
         _repoTrxnMock.Setup(r => r.GetCategoryAsync(It.IsAny<CategoryId>(), It.IsAny<CancellationToken>())).ReturnsAsync((Category?)null);
 
         var dto = new CategoryDto { Id = Guid.NewGuid(), Name = "Updated" };
-        var result = await CreateService().UpdateAsync(new DefaultRequest<CategoryDto> { Item = dto }, TestContext.CancellationToken);
+        var result = await CreateService().UpdateAsync(new DefaultRequest<CategoryDto> { Item = dto }, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
         Assert.IsNull(result.Value?.Item);
@@ -144,7 +145,7 @@ public class CategoryServiceTests
         _repoTrxnMock.Setup(r => r.GetCategoryAsync(entity.Id, It.IsAny<CancellationToken>())).ReturnsAsync(entity);
         _repoTrxnMock.Setup(r => r.SaveChangesAsync(It.IsAny<OptimisticConcurrencyWinner>(), It.IsAny<CancellationToken>())).ReturnsAsync(0);
 
-        var result = await CreateService().DeleteAsync(entity.Id, TestContext.CancellationToken);
+        var result = await CreateService().DeleteAsync(entity.Id, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
         _repoTrxnMock.Verify(r => r.Delete(entity), Times.Once);
@@ -157,7 +158,7 @@ public class CategoryServiceTests
     {
         _repoTrxnMock.Setup(r => r.GetCategoryAsync(It.IsAny<CategoryId>(), It.IsAny<CancellationToken>())).ReturnsAsync((Category?)null);
 
-        var result = await CreateService().DeleteAsync(Guid.NewGuid(), TestContext.CancellationToken);
+        var result = await CreateService().DeleteAsync(Guid.NewGuid(), null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
     }
@@ -169,11 +170,11 @@ public class CategoryServiceTests
     {
         var dtos = new List<CategoryDto> { new() { Name = "Test" }, new() { Name = "Second" } };
         var pagedResponse = new PagedResponse<CategoryDto> { Data = dtos, Total = 2, PageSize = 10, PageIndex = 0 };
-        _repoQueryMock.Setup(r => r.SearchCategoriesAsync(It.IsAny<SearchRequest<CategorySearchFilter>>(), It.IsAny<CancellationToken>()))
+        _repoQueryMock.Setup(r => r.SearchCategoriesAsync(It.IsAny<SearchRequest<CategorySearchFilter>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(pagedResponse);
 
         var request = new SearchRequest<CategorySearchFilter> { PageSize = 10, PageIndex = 0 };
-        var response = await CreateService().SearchAsync(request, TestContext.CancellationToken);
+        var response = await CreateService().SearchAsync(request, false, TestContext.CancellationToken);
 
         Assert.AreEqual(2, response.Total);
         Assert.HasCount(2, response.Data);

@@ -3,6 +3,8 @@
 @implements IDisposable
 @inject FloatService FloatService
 @inject ITaskFlowApiClient Api
+@inject TaskFlow.Contracts.Grpc.TaskFlowRead.TaskFlowReadClient GrpcReads
+@inject ClientReadSettings ReadSettings
 @inject NavigationManager Nav
 @inject IDialogService DialogService
 
@@ -82,19 +84,19 @@ else
                     <div class="d-flex align-center mb-2">
                         <MudTextField @bind-Value="_newChecklistTitle" Placeholder="Add item..." Variant="Variant.Outlined"
                                       Margin="Margin.Dense" Immediate="true"
-                                      OnKeyDown="@(e => { if (e.Key == "Enter") AddChecklist(); })" />
+                                      OnKeyDown="@(e => { if (e.Key == "Enter") _ = AddChecklistAsync(); })" />
                         <MudButton Class="ml-2" Variant="Variant.Filled" Color="Color.Primary"
-                                   OnClick="AddChecklist">Add</MudButton>
+                                   OnClick="AddChecklistAsync">Add</MudButton>
                     </div>
                     @foreach (var item in Checklist)
                     {
                         <div class="d-flex align-center">
                             <MudCheckBox T="bool" Value="@item.IsCompleted"
-                                         ValueChanged="@(v => ToggleChecklist(item, v))" />
+                                         ValueChanged="@(v => ToggleChecklistAsync(item, v))" />
                             <MudText Class="@(item.IsCompleted ? "mud-text-disabled" : "")">@item.Title</MudText>
                             <MudSpacer />
                             <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
-                                           OnClick="@(() => DeleteChecklist(item))" />
+                                           OnClick="@(() => DeleteChecklistAsync(item))" />
                         </div>
                     }
                     @if (Checklist.Count == 0)
@@ -107,7 +109,7 @@ else
                         <MudTextField @bind-Value="_newCommentBody" Placeholder="Add a comment..."
                                       Variant="Variant.Outlined" Lines="2" />
                         <MudButton Class="ml-2 mt-1" Variant="Variant.Filled" Color="Color.Primary"
-                                   OnClick="AddComment">Add</MudButton>
+                                   OnClick="AddCommentAsync">Add</MudButton>
                     </div>
                     @foreach (var c in Comments)
                     {
@@ -115,7 +117,7 @@ else
                             <div class="d-flex align-start">
                                 <MudText Typo="Typo.body2" Style="flex: 1; white-space: pre-wrap;">@c.Body</MudText>
                                 <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
-                                               OnClick="@(() => DeleteComment(c))" />
+                                               OnClick="@(() => DeleteCommentAsync(c))" />
                             </div>
                         </MudPaper>
                     }
@@ -158,11 +160,9 @@ else
     private string? _selectedCategoryName;
     private IDisposable? _locationChangingRegistration;
     private bool _bypassDirtyCheck;
-    private bool _childrenDirty;
 
-    // The Updater on the server handles child-collection syncing on Create and Update,
-    // so the UI treats ChecklistItems / Comments as local state attached to the parent
-    // DTO and persists them in the single Save call.
+    // Children mutate immediately through the aggregate root's nested routes (see the handlers near
+    // the bottom of this file), so ChecklistItems/Comments are never part of the pending Save payload.
     private List<ChecklistItemDto> Checklist => _model!.ChecklistItems ??= new();
     private List<CommentDto> Comments => _model!.Comments ??= new();
 
@@ -202,13 +202,17 @@ else
 
     private async Task LoadCategoriesAsync()
     {
+        // Full category list, not a search page: /task-metadata is uncapped by the [1,100] search
+        // PageSize clamp (up to PageSizeLimits.MetadataMax), which a PageSize=200 search would now reject.
+        // D-054: gRPC when the internal read hop is configured, REST through the gateway otherwise.
+        // The task load below deliberately stays on REST: it feeds an editor whose save path depends on
+        // the ETag the REST response carries, and D-054 scopes the proof to the aggregate reads.
         var result = await FloatService.ExecuteWithProgressAsync(
-            () => Api.SearchCategoriesAsync(new SearchRequest<CategorySearchFilter>
-            {
-                Filter = new CategorySearchFilter { IsActive = true },
-                PageSize = 200
-            }), "Failed to load categories.");
-        _categories = result?.Data?.ToList() ?? new();
+            () => ReadSettings.UseGrpcReads
+                ? GrpcReads.GetTaskMetadataDtoAsync()
+                : Api.GetTaskMetadataAsync(),
+            "Failed to load categories.");
+        _categories = result?.Categories?.Where(c => c.IsActive).ToList() ?? [];
     }
 
     private async Task LoadTaskAsync(Guid id)
@@ -263,10 +267,22 @@ else
         }
         else
         {
-            var resp = await FloatService.ExecuteWithProgressAsync(
-                () => Api.UpdateTaskItemAsync(_model.Id!.Value,
-                    new DefaultRequest<TaskItemDto> { Item = _model }),
-                "Failed to update task.");
+            var resp = await FloatService.ExecuteWithProgressAsync(async () =>
+            {
+                try
+                {
+                    return await Api.UpdateTaskItemAsync(_model.Id!.Value,
+                        new DefaultRequest<TaskItemDto> { Item = _model },
+                        _model.Version?.ToString() ?? "*");
+                }
+                catch (ApiException ex) when (ex.StatusCode == HttpStatusCode.PreconditionFailed)
+                {
+                    FloatService.ShowSnack("Task changed elsewhere, reloading.", Severity.Warning);
+                    await LoadTaskAsync(_model.Id!.Value);
+                    CaptureBaseline();
+                    return null;
+                }
+            }, "Failed to update task.");
             if (resp?.Item is not null)
             {
                 _model = resp.Item;
@@ -293,9 +309,22 @@ else
         });
         if (confirm != true) return;
 
-        var ok = await FloatService.ExecuteWithProgressAsync(
-            () => Api.DeleteTaskItemAsync(_model.Id.Value), "Failed to delete task.");
-        if (ok)
+        var ok = await FloatService.ExecuteWithProgressAsync(async () =>
+        {
+            try
+            {
+                await Api.DeleteTaskItemAsync(_model.Id!.Value, _model.Version?.ToString() ?? "*");
+                return true;
+            }
+            catch (ApiException ex) when (ex.StatusCode == HttpStatusCode.PreconditionFailed)
+            {
+                FloatService.ShowSnack("Task changed elsewhere, reloading.", Severity.Warning);
+                await LoadTaskAsync(_model.Id!.Value);
+                CaptureBaseline();
+                return false;
+            }
+        }, "Failed to delete task.");
+        if (ok is true)
         {
             FloatService.ShowSnack("Task deleted.", Severity.Success);
             FloatService.NotifyTaskItemsChanged();
@@ -327,7 +356,6 @@ else
             : _model with { };
         _baselineStart = _startDate;
         _baselineDue = _dueDate;
-        _childrenDirty = false;
     }
 
     private bool IsDirty()
@@ -335,7 +363,6 @@ else
         if (_model is null || _baseline is null) return false;
         if (!string.IsNullOrWhiteSpace(_newChecklistTitle)) return true;
         if (!string.IsNullOrWhiteSpace(_newCommentBody)) return true;
-        if (_childrenDirty) return true;
         return _model.Title != _baseline.Title
             || _model.Description != _baseline.Description
             || _model.Status != _baseline.Status
@@ -370,51 +397,109 @@ else
         _locationChangingRegistration?.Dispose();
     }
 
-    // Children are local-only - the server Updater syncs them from the parent
-    // DTO on the next Save. Newly added items have no Id so the Updater treats
-    // them as inserts; removals drop them from the list and the Updater hard-
-    // deletes the matching rows via RelatedDeleteBehavior.RelationshipAndEntity.
+    // Children are mutated through the TaskItem aggregate root's dedicated nested routes (GR-15),
+    // never bundled into the whole-model PUT, and each mutation bumps the root's Version - so every
+    // handler below reloads the task afterward rather than patching local state, keeping _model.Version
+    // current for the next If-Match the user sends (root Save, or the next child mutation).
 
-    private void AddChecklist()
+    private async Task AddChecklistAsync()
     {
-        if (_model is null || string.IsNullOrWhiteSpace(_newChecklistTitle)) return;
-        Checklist.Add(new ChecklistItemDto
+        if (_model?.Id is not Guid taskId || string.IsNullOrWhiteSpace(_newChecklistTitle)) return;
+
+        var resp = await FloatService.ExecuteWithProgressAsync(
+            () => Api.AddTaskItemChecklistItemAsync(taskId, new DefaultRequest<ChecklistItemDto>
+            {
+                Item = new ChecklistItemDto
+                {
+                    Title = _newChecklistTitle!,
+                    TaskItemId = taskId,
+                    SortOrder = Checklist.Count
+                }
+            }), "Failed to add checklist item.");
+        if (resp?.Item is not null)
         {
-            Title = _newChecklistTitle!,
-            TaskItemId = _model.Id ?? Guid.Empty,
-            SortOrder = Checklist.Count
-        });
-        _newChecklistTitle = null;
-        _childrenDirty = true;
+            _newChecklistTitle = null;
+            await LoadTaskAsync(taskId);
+            CaptureBaseline();
+        }
     }
 
-    private void ToggleChecklist(ChecklistItemDto item, bool completed)
+    private async Task ToggleChecklistAsync(ChecklistItemDto item, bool completed)
     {
-        var idx = Checklist.IndexOf(item);
-        if (idx < 0) return;
-        Checklist[idx] = item with { IsCompleted = completed };
-        _childrenDirty = true;
-    }
+        if (_model?.Id is not Guid taskId || item.Id is not Guid itemId) return;
 
-    private void DeleteChecklist(ChecklistItemDto item)
-    {
-        if (Checklist.Remove(item)) _childrenDirty = true;
-    }
-
-    private void AddComment()
-    {
-        if (_model is null || string.IsNullOrWhiteSpace(_newCommentBody)) return;
-        Comments.Insert(0, new CommentDto
+        var ok = await FloatService.ExecuteWithProgressAsync(async () =>
         {
-            Body = _newCommentBody!,
-            TaskItemId = _model.Id ?? Guid.Empty
-        });
-        _newCommentBody = null;
-        _childrenDirty = true;
+            try
+            {
+                await Api.UpdateTaskItemChecklistItemAsync(taskId, itemId,
+                    new DefaultRequest<ChecklistItemDto> { Item = item with { IsCompleted = completed } },
+                    item.Version?.ToString() ?? "*");
+                return true;
+            }
+            catch (ApiException ex) when (ex.StatusCode == HttpStatusCode.PreconditionFailed)
+            {
+                FloatService.ShowSnack("Checklist item changed elsewhere, reloading.", Severity.Warning);
+                return false;
+            }
+        }, "Failed to update checklist item.");
+        await LoadTaskAsync(taskId);
+        CaptureBaseline();
+        _ = ok;
     }
 
-    private void DeleteComment(CommentDto c)
+    private async Task DeleteChecklistAsync(ChecklistItemDto item)
     {
-        if (Comments.Remove(c)) _childrenDirty = true;
+        if (_model?.Id is not Guid taskId || item.Id is not Guid itemId) return;
+
+        await FloatService.ExecuteWithProgressAsync(async () =>
+        {
+            try
+            {
+                await Api.RemoveTaskItemChecklistItemAsync(taskId, itemId, item.Version?.ToString() ?? "*");
+            }
+            catch (ApiException ex) when (ex.StatusCode == HttpStatusCode.PreconditionFailed)
+            {
+                FloatService.ShowSnack("Checklist item changed elsewhere, reloading.", Severity.Warning);
+            }
+        }, "Failed to remove checklist item.");
+        await LoadTaskAsync(taskId);
+        CaptureBaseline();
+    }
+
+    private async Task AddCommentAsync()
+    {
+        if (_model?.Id is not Guid taskId || string.IsNullOrWhiteSpace(_newCommentBody)) return;
+
+        var resp = await FloatService.ExecuteWithProgressAsync(
+            () => Api.AddTaskItemCommentAsync(taskId, new DefaultRequest<CommentDto>
+            {
+                Item = new CommentDto { Body = _newCommentBody!, TaskItemId = taskId }
+            }), "Failed to add comment.");
+        if (resp?.Item is not null)
+        {
+            _newCommentBody = null;
+            await LoadTaskAsync(taskId);
+            CaptureBaseline();
+        }
+    }
+
+    private async Task DeleteCommentAsync(CommentDto c)
+    {
+        if (_model?.Id is not Guid taskId || c.Id is not Guid commentId) return;
+
+        await FloatService.ExecuteWithProgressAsync(async () =>
+        {
+            try
+            {
+                await Api.RemoveTaskItemCommentAsync(taskId, commentId, c.Version?.ToString() ?? "*");
+            }
+            catch (ApiException ex) when (ex.StatusCode == HttpStatusCode.PreconditionFailed)
+            {
+                FloatService.ShowSnack("Comment changed elsewhere, reloading.", Severity.Warning);
+            }
+        }, "Failed to remove comment.");
+        await LoadTaskAsync(taskId);
+        CaptureBaseline();
     }
 }

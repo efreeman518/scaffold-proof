@@ -87,7 +87,7 @@ public class TagApiServiceTests
             Color = "#000000"
         };
 
-        var result = await _service.UpdateAsync(tag, TestContext.CancellationToken);
+        var result = await _service.UpdateAsync(tag, expectedVersion: 1, TestContext.CancellationToken);
 
         Assert.IsNotNull(result);
         Assert.IsNotNull(result.Id);
@@ -97,7 +97,7 @@ public class TagApiServiceTests
     [TestMethod]
     public async Task DeleteAsync_DoesNotThrow()
     {
-        await _service.DeleteAsync(Guid.NewGuid(), TestContext.CancellationToken);
+        await _service.DeleteAsync(Guid.NewGuid(), expectedVersion: null, TestContext.CancellationToken);
     }
 
     public TestContext TestContext { get; set; } = null!;

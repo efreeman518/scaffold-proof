@@ -1,11 +1,12 @@
 {
   "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "languageVersion": "2.0",
   "contentVersion": "1.0.0.0",
   "metadata": {
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "4317804484939077104"
+      "templateHash": "16899074585721004178"
     }
   },
   "parameters": {
@@ -88,6 +89,222 @@
       "metadata": {
         "description": "Blazor container image"
       }
+    },
+    "databaseProvider": {
+      "type": "string",
+      "defaultValue": "SqlServer",
+      "allowedValues": [
+        "SqlServer",
+        "PostgreSql"
+      ],
+      "metadata": {
+        "description": "Active database provider"
+      }
+    },
+    "messagingProvider": {
+      "type": "string",
+      "defaultValue": "ServiceBus",
+      "allowedValues": [
+        "ServiceBus",
+        "RabbitMq"
+      ],
+      "metadata": {
+        "description": "Messaging transport: Azure Service Bus (default) or a single-node RabbitMQ container app (D-034)"
+      }
+    },
+    "searchProvider": {
+      "type": "string",
+      "defaultValue": "AzureAiSearch",
+      "allowedValues": [
+        "AzureAiSearch",
+        "PgVector",
+        "Sql"
+      ],
+      "metadata": {
+        "description": "Search backend: Azure AI Search (default), Postgres pgvector, or the SQL prefix fallback (D-040)"
+      }
+    },
+    "rabbitMqPassword": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "RabbitMQ broker password, used only when messagingProvider is RabbitMq"
+      }
+    },
+    "dbMaxPoolSize": {
+      "type": "int",
+      "defaultValue": 100,
+      "metadata": {
+        "description": "Explicit connection pool ceiling emitted in every connection string"
+      }
+    },
+    "sqlSkuName": {
+      "type": "string",
+      "defaultValue": "Basic",
+      "metadata": {
+        "description": "SQL Server database SKU name, e.g. Basic (dev) or HS_Gen5_2 (prod Hyperscale)"
+      }
+    },
+    "sqlSkuTier": {
+      "type": "string",
+      "defaultValue": "Basic",
+      "metadata": {
+        "description": "SQL Server database SKU tier, e.g. Basic (dev) or Hyperscale (prod)"
+      }
+    },
+    "sqlSkuFamily": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "SQL Server database SKU family, required for Hyperscale (e.g. Gen5); empty for DTU tiers"
+      }
+    },
+    "sqlSkuCapacity": {
+      "type": "int",
+      "defaultValue": 0,
+      "metadata": {
+        "description": "SQL Server database SKU capacity (vCores for Hyperscale); 0 leaves the ARM default"
+      }
+    },
+    "sqlZoneRedundant": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "SQL Hyperscale zone redundancy (prod)"
+      }
+    },
+    "sqlHighAvailabilityReplicaCount": {
+      "type": "int",
+      "defaultValue": 0,
+      "metadata": {
+        "description": "SQL Hyperscale HA secondary replica count (prod); 0 disables HA replicas"
+      }
+    },
+    "sqlReadScaleEnabled": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "SQL Hyperscale read-scale routing via ApplicationIntent=ReadOnly (prod)"
+      }
+    },
+    "pgSkuName": {
+      "type": "string",
+      "defaultValue": "Standard_B1ms",
+      "metadata": {
+        "description": "PostgreSQL Flexible Server compute SKU name"
+      }
+    },
+    "pgSkuTier": {
+      "type": "string",
+      "defaultValue": "Burstable",
+      "metadata": {
+        "description": "PostgreSQL Flexible Server compute SKU tier"
+      }
+    },
+    "pgStorageSizeGB": {
+      "type": "int",
+      "defaultValue": 32,
+      "metadata": {
+        "description": "PostgreSQL Flexible Server storage size in GB"
+      }
+    },
+    "pgHighAvailabilityMode": {
+      "type": "string",
+      "defaultValue": "Disabled",
+      "allowedValues": [
+        "Disabled",
+        "ZoneRedundant"
+      ],
+      "metadata": {
+        "description": "PostgreSQL high availability mode: ZoneRedundant for prod, Disabled for dev"
+      }
+    },
+    "pgDeployReadReplica": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Deploy a PostgreSQL prod-only read replica"
+      }
+    },
+    "postgresPgBouncerEnabled": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Enable the built-in PgBouncer on PostgreSQL Flexible Server (D-045). Not available on the Burstable tier - use GeneralPurpose or MemoryOptimized. When true the app connection strings target port 6432 and every host gets Database__PostgreSql__PoolerMode=Transaction."
+      }
+    },
+    "redisSkuName": {
+      "type": "string",
+      "defaultValue": "Balanced_B0",
+      "metadata": {
+        "description": "Redis Enterprise SKU name: small Balanced tier for dev, HA tier for prod"
+      }
+    },
+    "redisHighAvailability": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Redis Enterprise high availability (prod)"
+      }
+    },
+    "functionAppScaleLimit": {
+      "type": "int",
+      "defaultValue": 20,
+      "metadata": {
+        "description": "Flex Consumption Functions app maximum instance count"
+      }
+    },
+    "gatewayProfile": {
+      "type": "object",
+      "defaultValue": {
+        "minReplicas": 0,
+        "maxReplicas": 2,
+        "concurrentRequests": 0,
+        "cpu": "0.25",
+        "memory": "0.5Gi"
+      },
+      "metadata": {
+        "description": "Gateway container app scale/sizing profile"
+      }
+    },
+    "apiProfile": {
+      "type": "object",
+      "defaultValue": {
+        "minReplicas": 0,
+        "maxReplicas": 3,
+        "concurrentRequests": 0,
+        "cpu": "0.5",
+        "memory": "1Gi"
+      },
+      "metadata": {
+        "description": "API container app scale/sizing profile"
+      }
+    },
+    "schedulerProfile": {
+      "type": "object",
+      "defaultValue": {
+        "minReplicas": 0,
+        "maxReplicas": 1,
+        "concurrentRequests": 0,
+        "cpu": "0.25",
+        "memory": "0.5Gi"
+      },
+      "metadata": {
+        "description": "Scheduler container app scale/sizing profile"
+      }
+    },
+    "blazorProfile": {
+      "type": "object",
+      "defaultValue": {
+        "minReplicas": 0,
+        "maxReplicas": 1,
+        "concurrentRequests": 0,
+        "cpu": "0.25",
+        "memory": "0.5Gi"
+      },
+      "metadata": {
+        "description": "Blazor container app scale/sizing profile"
+      }
     }
   },
   "variables": {
@@ -107,17 +324,18 @@
       "appConfigDataReader": "516239f1-63e1-4d78-a4de-a74fb236a071",
       "contributor": "b24988ac-6180-42a0-ab88-20f7382dd24c",
       "userAccessAdministrator": "18d7d88d-d35e-4fb5-a5c3-7773c20a72d9"
-    }
+    },
+    "apiGrpcPort": 8081
   },
-  "resources": [
-    {
+  "resources": {
+    "rg": {
       "type": "Microsoft.Resources/resourceGroups",
       "apiVersion": "2024-03-01",
       "name": "[format('{0}-rg', variables('prefix'))]",
       "location": "[parameters('location')]",
       "tags": "[variables('tags')]"
     },
-    {
+    "logAnalytics": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "logAnalytics",
@@ -201,10 +419,110 @@
         }
       },
       "dependsOn": [
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "rg"
       ]
     },
-    {
+    "appInsights": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "appInsights",
+      "resourceGroup": "[format('{0}-rg', variables('prefix'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "resourcePrefix": {
+            "value": "[variables('prefix')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "logAnalyticsWorkspaceId": {
+            "value": "[reference('logAnalytics').outputs.id.value]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "1316350998453023255"
+            }
+          },
+          "parameters": {
+            "resourcePrefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource name prefix"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "logAnalyticsWorkspaceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Log Analytics workspace ID that backs this workspace-based Application Insights resource"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/components",
+              "apiVersion": "2020-02-02",
+              "name": "[format('{0}-ai', parameters('resourcePrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "web",
+              "properties": {
+                "Application_Type": "web",
+                "WorkspaceResourceId": "[parameters('logAnalyticsWorkspaceId')]"
+              }
+            }
+          ],
+          "outputs": {
+            "id": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Insights/components', format('{0}-ai', parameters('resourcePrefix')))]"
+            },
+            "name": {
+              "type": "string",
+              "value": "[format('{0}-ai', parameters('resourcePrefix'))]"
+            },
+            "connectionString": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Insights/components', format('{0}-ai', parameters('resourcePrefix'))), '2020-02-02').ConnectionString]"
+            },
+            "instrumentationKey": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Insights/components', format('{0}-ai', parameters('resourcePrefix'))), '2020-02-02').InstrumentationKey]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "logAnalytics",
+        "rg"
+      ]
+    },
+    "containerAppsEnv": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "containerAppsEnv",
@@ -222,7 +540,7 @@
             "value": "[parameters('location')]"
           },
           "logAnalyticsWorkspaceId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'logAnalytics'), '2025-04-01').outputs.id.value]"
+            "value": "[reference('logAnalytics').outputs.id.value]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -306,11 +624,11 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'logAnalytics')]",
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "logAnalytics",
+        "rg"
       ]
     },
-    {
+    "keyVault": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "keyVault",
@@ -338,7 +656,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "9253993118976766890"
+              "templateHash": "6417335175787255132"
             }
           },
           "parameters": {
@@ -378,12 +696,30 @@
                 "enableRbacAuthorization": true,
                 "enableSoftDelete": true,
                 "softDeleteRetentionInDays": 7,
-                "enablePurgeProtection": false,
+                "enablePurgeProtection": true,
                 "networkAcls": {
                   "defaultAction": "Allow",
                   "bypass": "AzureServices"
                 }
               }
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults/keys",
+              "apiVersion": "2023-07-01",
+              "name": "[format('{0}/{1}', format('{0}-kv-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'taskflow-cmk')]",
+              "properties": {
+                "kty": "RSA",
+                "keySize": 2048,
+                "keyOps": [
+                  "wrapKey",
+                  "unwrapKey",
+                  "sign",
+                  "verify"
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', format('{0}-kv-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)))]"
+              ]
             }
           ],
           "outputs": {
@@ -398,15 +734,19 @@
             "id": {
               "type": "string",
               "value": "[resourceId('Microsoft.KeyVault/vaults', format('{0}-kv-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)))]"
+            },
+            "cmkKeyUri": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.KeyVault/vaults/keys', format('{0}-kv-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'taskflow-cmk'), '2023-07-01').keyUriWithVersion]"
             }
           }
         }
       },
       "dependsOn": [
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "rg"
       ]
     },
-    {
+    "appConfig": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "appConfig",
@@ -491,10 +831,11 @@
         }
       },
       "dependsOn": [
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "rg"
       ]
     },
-    {
+    "sqlDatabase": {
+      "condition": "[equals(parameters('databaseProvider'), 'SqlServer')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "sqlDatabase",
@@ -520,6 +861,30 @@
           "sqlAdminPrincipalType": {
             "value": "[parameters('sqlAdminPrincipalType')]"
           },
+          "skuName": {
+            "value": "[parameters('sqlSkuName')]"
+          },
+          "skuTier": {
+            "value": "[parameters('sqlSkuTier')]"
+          },
+          "skuFamily": {
+            "value": "[parameters('sqlSkuFamily')]"
+          },
+          "skuCapacity": {
+            "value": "[parameters('sqlSkuCapacity')]"
+          },
+          "zoneRedundant": {
+            "value": "[parameters('sqlZoneRedundant')]"
+          },
+          "highAvailabilityReplicaCount": {
+            "value": "[parameters('sqlHighAvailabilityReplicaCount')]"
+          },
+          "readScaleEnabled": {
+            "value": "[parameters('sqlReadScaleEnabled')]"
+          },
+          "maxPoolSize": {
+            "value": "[parameters('dbMaxPoolSize')]"
+          },
           "tags": {
             "value": "[variables('tags')]"
           }
@@ -531,7 +896,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "104531193730183655"
+              "templateHash": "3688746022337082840"
             }
           },
           "parameters": {
@@ -571,6 +936,62 @@
                 "description": "Entra admin principal type"
               }
             },
+            "skuName": {
+              "type": "string",
+              "defaultValue": "Basic",
+              "metadata": {
+                "description": "Database SKU name, e.g. Basic (dev) or HS_Gen5_2 (prod Hyperscale)"
+              }
+            },
+            "skuTier": {
+              "type": "string",
+              "defaultValue": "Basic",
+              "metadata": {
+                "description": "Database SKU tier, e.g. Basic (dev) or Hyperscale (prod)"
+              }
+            },
+            "skuFamily": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Database SKU family, required for Hyperscale/vCore tiers (e.g. Gen5). Empty for DTU tiers such as Basic."
+              }
+            },
+            "skuCapacity": {
+              "type": "int",
+              "defaultValue": 0,
+              "metadata": {
+                "description": "Database SKU capacity (vCores for Hyperscale, DTUs for Basic). 0 leaves the ARM default for the tier."
+              }
+            },
+            "zoneRedundant": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Zone-redundant deployment (prod Hyperscale)"
+              }
+            },
+            "highAvailabilityReplicaCount": {
+              "type": "int",
+              "defaultValue": 0,
+              "metadata": {
+                "description": "Hyperscale high-availability secondary replica count (prod). 0 disables HA replicas."
+              }
+            },
+            "readScaleEnabled": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Hyperscale read-scale routing via ApplicationIntent=ReadOnly (prod)"
+              }
+            },
+            "maxPoolSize": {
+              "type": "int",
+              "defaultValue": 100,
+              "metadata": {
+                "description": "Maximum SqlClient connection pool size, emitted explicitly in every connection string"
+              }
+            },
             "tags": {
               "type": "object",
               "defaultValue": {},
@@ -580,7 +1001,9 @@
             }
           },
           "variables": {
-            "uniqueSuffix": "[uniqueString(resourceGroup().id)]"
+            "uniqueSuffix": "[uniqueString(resourceGroup().id)]",
+            "sqlSku": "[union(createObject('name', parameters('skuName'), 'tier', parameters('skuTier')), if(empty(parameters('skuFamily')), createObject(), createObject('family', parameters('skuFamily'))), if(greater(parameters('skuCapacity'), 0), createObject('capacity', parameters('skuCapacity')), createObject()))]",
+            "sqlDatabaseProperties": "[union(createObject('collation', 'SQL_Latin1_General_CP1_CI_AS'), if(equals(parameters('skuTier'), 'Basic'), createObject('maxSizeBytes', json('2147483648')), createObject()), if(parameters('zoneRedundant'), createObject('zoneRedundant', true()), createObject()), if(greater(parameters('highAvailabilityReplicaCount'), 0), createObject('highAvailabilityReplicaCount', parameters('highAvailabilityReplicaCount')), createObject()), if(parameters('readScaleEnabled'), createObject('readScale', 'Enabled'), createObject()))]"
           },
           "resources": [
             {
@@ -607,14 +1030,8 @@
               "name": "[format('{0}/{1}', format('{0}-sql-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), 'taskflowdb')]",
               "location": "[parameters('location')]",
               "tags": "[parameters('tags')]",
-              "sku": {
-                "name": "Basic",
-                "tier": "Basic"
-              },
-              "properties": {
-                "collation": "SQL_Latin1_General_CP1_CI_AS",
-                "maxSizeBytes": 2147483648
-              },
+              "sku": "[variables('sqlSku')]",
+              "properties": "[variables('sqlDatabaseProperties')]",
               "dependsOn": [
                 "[resourceId('Microsoft.Sql/servers', format('{0}-sql-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')))]"
               ]
@@ -647,16 +1064,470 @@
             },
             "connectionString": {
               "type": "string",
-              "value": "[format('Server=tcp:{0},1433;Database={1};Authentication=Active Directory Default;Encrypt=True;TrustServerCertificate=False;', reference(resourceId('Microsoft.Sql/servers', format('{0}-sql-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))), '2023-08-01-preview').fullyQualifiedDomainName, 'taskflowdb')]"
+              "value": "[format('Server=tcp:{0},1433;Database={1};Authentication=Active Directory Default;Encrypt=True;TrustServerCertificate=False;Max Pool Size={2};', reference(resourceId('Microsoft.Sql/servers', format('{0}-sql-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))), '2023-08-01-preview').fullyQualifiedDomainName, 'taskflowdb', parameters('maxPoolSize'))]"
             }
           }
         }
       },
       "dependsOn": [
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "rg"
       ]
     },
-    {
+    "postgres": {
+      "condition": "[equals(parameters('databaseProvider'), 'PostgreSql')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "postgres",
+      "resourceGroup": "[format('{0}-rg', variables('prefix'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "resourcePrefix": {
+            "value": "[variables('prefix')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "pgAdminPrincipalId": {
+            "value": "[parameters('sqlAdminPrincipalId')]"
+          },
+          "pgAdminPrincipalName": {
+            "value": "[parameters('sqlAdminPrincipalName')]"
+          },
+          "pgAdminPrincipalType": "[if(equals(parameters('sqlAdminPrincipalType'), 'Application'), createObject('value', 'ServicePrincipal'), createObject('value', parameters('sqlAdminPrincipalType')))]",
+          "skuName": {
+            "value": "[parameters('pgSkuName')]"
+          },
+          "skuTier": {
+            "value": "[parameters('pgSkuTier')]"
+          },
+          "storageSizeGB": {
+            "value": "[parameters('pgStorageSizeGB')]"
+          },
+          "highAvailabilityMode": {
+            "value": "[parameters('pgHighAvailabilityMode')]"
+          },
+          "deployReadReplica": {
+            "value": "[parameters('pgDeployReadReplica')]"
+          },
+          "pgBouncerEnabled": {
+            "value": "[parameters('postgresPgBouncerEnabled')]"
+          },
+          "maxPoolSize": {
+            "value": "[parameters('dbMaxPoolSize')]"
+          },
+          "entraConnectingPrincipalName": {
+            "value": "[format('{0}-api', variables('prefix'))]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "2103795624463452919"
+            }
+          },
+          "parameters": {
+            "resourcePrefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource name prefix"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "pgAdminPrincipalId": {
+              "type": "string",
+              "metadata": {
+                "description": "Entra admin principal ID (object ID)"
+              }
+            },
+            "pgAdminPrincipalName": {
+              "type": "string",
+              "metadata": {
+                "description": "Entra admin principal name"
+              }
+            },
+            "pgAdminPrincipalType": {
+              "type": "string",
+              "defaultValue": "User",
+              "allowedValues": [
+                "User",
+                "Group",
+                "ServicePrincipal"
+              ],
+              "metadata": {
+                "description": "Entra admin principal type"
+              }
+            },
+            "postgresVersion": {
+              "type": "string",
+              "defaultValue": "17",
+              "metadata": {
+                "description": "PostgreSQL major version"
+              }
+            },
+            "skuName": {
+              "type": "string",
+              "defaultValue": "Standard_B1ms",
+              "metadata": {
+                "description": "Compute SKU name, e.g. Standard_B1ms (dev) or Standard_D2s_v3 (prod)"
+              }
+            },
+            "skuTier": {
+              "type": "string",
+              "defaultValue": "Burstable",
+              "allowedValues": [
+                "Burstable",
+                "GeneralPurpose",
+                "MemoryOptimized"
+              ],
+              "metadata": {
+                "description": "Compute SKU tier"
+              }
+            },
+            "storageSizeGB": {
+              "type": "int",
+              "defaultValue": 32,
+              "metadata": {
+                "description": "Storage size in GB"
+              }
+            },
+            "highAvailabilityMode": {
+              "type": "string",
+              "defaultValue": "Disabled",
+              "allowedValues": [
+                "Disabled",
+                "ZoneRedundant"
+              ],
+              "metadata": {
+                "description": "High availability mode: ZoneRedundant for prod, Disabled for dev"
+              }
+            },
+            "deployReadReplica": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Deploy a prod-only read replica"
+              }
+            },
+            "pgBouncerEnabled": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Enable the built-in PgBouncer (D-045). Requires GeneralPurpose or MemoryOptimized: the Burstable tier does not offer the pgbouncer.* server parameters and the deployment fails if this is set there."
+              }
+            },
+            "maxPoolSize": {
+              "type": "int",
+              "defaultValue": 100,
+              "metadata": {
+                "description": "Maximum Npgsql connection pool size, emitted explicitly in every connection string"
+              }
+            },
+            "entraConnectingPrincipalName": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Name of the Entra principal (managed identity display name) used as the connecting Npgsql role. Data-plane role creation is a separate step; see comment on connectionString output."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags"
+              }
+            }
+          },
+          "variables": {
+            "uniqueSuffix": "[uniqueString(resourceGroup().id)]",
+            "pgPort": "[if(parameters('pgBouncerEnabled'), 6432, 5432)]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.DBforPostgreSQL/flexibleServers",
+              "apiVersion": "2025-08-01",
+              "name": "[format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "[parameters('skuName')]",
+                "tier": "[parameters('skuTier')]"
+              },
+              "properties": {
+                "version": "[parameters('postgresVersion')]",
+                "storage": {
+                  "storageSizeGB": "[parameters('storageSizeGB')]"
+                },
+                "highAvailability": {
+                  "mode": "[parameters('highAvailabilityMode')]"
+                },
+                "authConfig": {
+                  "activeDirectoryAuth": "Enabled",
+                  "passwordAuth": "Disabled",
+                  "tenantId": "[subscription().tenantId]"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.DBforPostgreSQL/flexibleServers/administrators",
+              "apiVersion": "2025-08-01",
+              "name": "[format('{0}/{1}', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), parameters('pgAdminPrincipalId'))]",
+              "properties": {
+                "principalName": "[parameters('pgAdminPrincipalName')]",
+                "principalType": "[parameters('pgAdminPrincipalType')]",
+                "tenantId": "[subscription().tenantId]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.DBforPostgreSQL/flexibleServers/databases",
+              "apiVersion": "2025-08-01",
+              "name": "[format('{0}/{1}', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), 'taskflowdb')]",
+              "properties": {
+                "charset": "UTF8",
+                "collation": "en_US.utf8"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.DBforPostgreSQL/flexibleServers/configurations",
+              "apiVersion": "2025-08-01",
+              "name": "[format('{0}/{1}', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), 'azure.extensions')]",
+              "properties": {
+                "source": "user-override",
+                "value": "VECTOR"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')))]"
+              ]
+            },
+            {
+              "condition": "[parameters('pgBouncerEnabled')]",
+              "type": "Microsoft.DBforPostgreSQL/flexibleServers/configurations",
+              "apiVersion": "2025-08-01",
+              "name": "[format('{0}/{1}', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), 'pgbouncer.enabled')]",
+              "properties": {
+                "source": "user-override",
+                "value": "true"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.DBforPostgreSQL/flexibleServers/firewallRules",
+              "apiVersion": "2025-08-01",
+              "name": "[format('{0}/{1}', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), 'AllowAzureServices')]",
+              "properties": {
+                "startIpAddress": "0.0.0.0",
+                "endIpAddress": "0.0.0.0"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')))]"
+              ]
+            },
+            {
+              "condition": "[parameters('deployReadReplica')]",
+              "type": "Microsoft.DBforPostgreSQL/flexibleServers",
+              "apiVersion": "2025-08-01",
+              "name": "[format('{0}-pg-replica-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "[parameters('skuName')]",
+                "tier": "[parameters('skuTier')]"
+              },
+              "properties": {
+                "createMode": "Replica",
+                "sourceServerResourceId": "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')))]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "serverName": {
+              "type": "string",
+              "value": "[format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))]"
+            },
+            "serverFqdn": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))), '2025-08-01').fullyQualifiedDomainName]"
+            },
+            "databaseName": {
+              "type": "string",
+              "value": "taskflowdb"
+            },
+            "poolerMode": {
+              "type": "string",
+              "value": "[if(parameters('pgBouncerEnabled'), 'Transaction', 'None')]"
+            },
+            "connectionString": {
+              "type": "string",
+              "value": "[format('Host={0};Port={1};Database={2};Username={3};SSL Mode=Require;Trust Server Certificate=False;Maximum Pool Size={4}', reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))), '2025-08-01').fullyQualifiedDomainName, variables('pgPort'), 'taskflowdb', parameters('entraConnectingPrincipalName'), parameters('maxPoolSize'))]"
+            },
+            "readConnectionString": {
+              "type": "string",
+              "value": "[format('Host={0};Port={1};Database={2};Username={3};SSL Mode=Require;Trust Server Certificate=False;Maximum Pool Size={4}', coalesce(tryGet(tryGet(if(parameters('deployReadReplica'), reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-replica-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))), '2025-08-01', 'full'), null()), 'properties'), 'fullyQualifiedDomainName'), reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))), '2025-08-01').fullyQualifiedDomainName), variables('pgPort'), 'taskflowdb', parameters('entraConnectingPrincipalName'), parameters('maxPoolSize'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "rg"
+      ]
+    },
+    "redis": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "redis",
+      "resourceGroup": "[format('{0}-rg', variables('prefix'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "resourcePrefix": {
+            "value": "[variables('prefix')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "skuName": {
+            "value": "[parameters('redisSkuName')]"
+          },
+          "highAvailability": {
+            "value": "[parameters('redisHighAvailability')]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "languageVersion": "2.0",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "13557798000225448301"
+            }
+          },
+          "parameters": {
+            "resourcePrefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource name prefix"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "skuName": {
+              "type": "string",
+              "defaultValue": "Balanced_B0",
+              "metadata": {
+                "description": "Redis Enterprise SKU name: small Balanced tier for dev, HA tier for prod (e.g. Balanced_B0 dev, Balanced_B5 or higher prod)"
+              }
+            },
+            "highAvailability": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Enable zone-redundant high availability (prod)"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags"
+              }
+            }
+          },
+          "variables": {
+            "uniqueSuffix": "[uniqueString(resourceGroup().id)]"
+          },
+          "resources": {
+            "redisEnterprise": {
+              "type": "Microsoft.Cache/redisEnterprise",
+              "apiVersion": "2025-07-01",
+              "name": "[format('{0}-redis-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "[parameters('skuName')]"
+              },
+              "properties": {
+                "minimumTlsVersion": "1.2",
+                "highAvailability": "[if(parameters('highAvailability'), 'Enabled', 'Disabled')]",
+                "publicNetworkAccess": "Enabled"
+              }
+            },
+            "redisDatabase": {
+              "type": "Microsoft.Cache/redisEnterprise/databases",
+              "apiVersion": "2025-07-01",
+              "name": "[format('{0}/{1}', format('{0}-redis-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), 'default')]",
+              "properties": {
+                "clientProtocol": "Encrypted",
+                "clusteringPolicy": "NoCluster",
+                "port": 10000
+              },
+              "dependsOn": [
+                "redisEnterprise"
+              ]
+            }
+          },
+          "outputs": {
+            "redisEnterpriseName": {
+              "type": "string",
+              "value": "[format('{0}-redis-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))]"
+            },
+            "hostName": {
+              "type": "string",
+              "value": "[reference('redisEnterprise').hostName]"
+            },
+            "databaseName": {
+              "type": "string",
+              "value": "default"
+            },
+            "connectionString": {
+              "type": "securestring",
+              "value": "[format('{0}:10000,password={1},ssl=True,abortConnect=False', reference('redisEnterprise').hostName, listKeys('redisDatabase', '2025-07-01').primaryKey)]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "rg"
+      ]
+    },
+    "cosmosDb": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "cosmosDb",
@@ -684,7 +1555,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "8839309284207889351"
+              "templateHash": "8620976428092086288"
             }
           },
           "parameters": {
@@ -743,10 +1614,10 @@
             {
               "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases",
               "apiVersion": "2024-05-15",
-              "name": "[format('{0}/{1}', format('{0}-cosmos-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), 'TaskFlowViews')]",
+              "name": "[format('{0}/{1}', format('{0}-cosmos-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), 'taskflow-db')]",
               "properties": {
                 "resource": {
-                  "id": "TaskFlowViews"
+                  "id": "taskflow-db"
                 }
               },
               "dependsOn": [
@@ -756,10 +1627,10 @@
             {
               "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers",
               "apiVersion": "2024-05-15",
-              "name": "[format('{0}/{1}/{2}', format('{0}-cosmos-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), 'TaskFlowViews', 'TaskItemViews')]",
+              "name": "[format('{0}/{1}/{2}', format('{0}-cosmos-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), 'taskflow-db', 'task-views')]",
               "properties": {
                 "resource": {
-                  "id": "TaskItemViews",
+                  "id": "task-views",
                   "partitionKey": {
                     "paths": [
                       "/tenantId"
@@ -769,7 +1640,7 @@
                 }
               },
               "dependsOn": [
-                "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlDatabases', format('{0}-cosmos-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), 'TaskFlowViews')]"
+                "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlDatabases', format('{0}-cosmos-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), 'taskflow-db')]"
               ]
             }
           ],
@@ -784,16 +1655,17 @@
             },
             "databaseName": {
               "type": "string",
-              "value": "TaskFlowViews"
+              "value": "taskflow-db"
             }
           }
         }
       },
       "dependsOn": [
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "rg"
       ]
     },
-    {
+    "serviceBus": {
+      "condition": "[equals(parameters('messagingProvider'), 'ServiceBus')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "serviceBus",
@@ -810,6 +1682,9 @@
           "location": {
             "value": "[parameters('location')]"
           },
+          "searchProvider": {
+            "value": "[parameters('searchProvider')]"
+          },
           "tags": {
             "value": "[variables('tags')]"
           }
@@ -821,7 +1696,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "13092639649562252157"
+              "templateHash": "6498947995616007242"
             }
           },
           "parameters": {
@@ -842,6 +1717,18 @@
               "defaultValue": {},
               "metadata": {
                 "description": "Tags"
+              }
+            },
+            "searchProvider": {
+              "type": "string",
+              "defaultValue": "AzureAiSearch",
+              "allowedValues": [
+                "AzureAiSearch",
+                "PgVector",
+                "Sql"
+              ],
+              "metadata": {
+                "description": "Search backend (D-040); the embedding subscription exists only for PgVector"
               }
             }
           },
@@ -867,7 +1754,9 @@
               "name": "[format('{0}/{1}', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'DomainEvents')]",
               "properties": {
                 "maxSizeInMegabytes": 1024,
-                "defaultMessageTimeToLive": "P14D"
+                "defaultMessageTimeToLive": "P14D",
+                "requiresDuplicateDetection": true,
+                "duplicateDetectionHistoryTimeWindow": "PT1H"
               },
               "dependsOn": [
                 "[resourceId('Microsoft.ServiceBus/namespaces', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)))]"
@@ -876,14 +1765,115 @@
             {
               "type": "Microsoft.ServiceBus/namespaces/topics/subscriptions",
               "apiVersion": "2024-01-01",
-              "name": "[format('{0}/{1}/{2}', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'DomainEvents', 'function-processor')]",
+              "name": "[format('{0}/{1}/{2}', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'DomainEvents', 'projection')]",
               "properties": {
-                "maxDeliveryCount": 10,
-                "lockDuration": "PT1M",
-                "deadLetteringOnMessageExpiration": true
+                "maxDeliveryCount": 5,
+                "lockDuration": "PT5M",
+                "deadLetteringOnMessageExpiration": true,
+                "deadLetteringOnFilterEvaluationExceptions": true
               },
               "dependsOn": [
                 "[resourceId('Microsoft.ServiceBus/namespaces/topics', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'DomainEvents')]"
+              ]
+            },
+            {
+              "type": "Microsoft.ServiceBus/namespaces/topics/subscriptions/rules",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}/{2}/{3}', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'DomainEvents', 'projection', 'EventTypeFilter')]",
+              "properties": {
+                "filterType": "SqlFilter",
+                "sqlFilter": {
+                  "sqlExpression": "EventType IN ('TaskItemCreatedEvent', 'TaskItemStatusChangedEvent', 'TaskItemCompletedEvent')"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ServiceBus/namespaces/topics/subscriptions', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'DomainEvents', 'projection')]"
+              ]
+            },
+            {
+              "type": "Microsoft.ServiceBus/namespaces/topics/subscriptions",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}/{2}', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'DomainEvents', 'ai-review')]",
+              "properties": {
+                "maxDeliveryCount": 5,
+                "lockDuration": "PT5M",
+                "deadLetteringOnMessageExpiration": true,
+                "deadLetteringOnFilterEvaluationExceptions": true
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ServiceBus/namespaces/topics', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'DomainEvents')]"
+              ]
+            },
+            {
+              "type": "Microsoft.ServiceBus/namespaces/topics/subscriptions/rules",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}/{2}/{3}', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'DomainEvents', 'ai-review', 'EventTypeFilter')]",
+              "properties": {
+                "filterType": "SqlFilter",
+                "sqlFilter": {
+                  "sqlExpression": "EventType = 'TaskItemCreatedEvent'"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ServiceBus/namespaces/topics/subscriptions', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'DomainEvents', 'ai-review')]"
+              ]
+            },
+            {
+              "type": "Microsoft.ServiceBus/namespaces/topics/subscriptions",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}/{2}', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'DomainEvents', 'workflow')]",
+              "properties": {
+                "maxDeliveryCount": 5,
+                "lockDuration": "PT5M",
+                "deadLetteringOnMessageExpiration": true,
+                "deadLetteringOnFilterEvaluationExceptions": true
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ServiceBus/namespaces/topics', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'DomainEvents')]"
+              ]
+            },
+            {
+              "type": "Microsoft.ServiceBus/namespaces/topics/subscriptions/rules",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}/{2}/{3}', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'DomainEvents', 'workflow', 'EventTypeFilter')]",
+              "properties": {
+                "filterType": "SqlFilter",
+                "sqlFilter": {
+                  "sqlExpression": "EventType = 'TaskItemCreatedEvent'"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ServiceBus/namespaces/topics/subscriptions', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'DomainEvents', 'workflow')]"
+              ]
+            },
+            {
+              "condition": "[equals(parameters('searchProvider'), 'PgVector')]",
+              "type": "Microsoft.ServiceBus/namespaces/topics/subscriptions",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}/{2}', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'DomainEvents', 'embedding')]",
+              "properties": {
+                "maxDeliveryCount": 5,
+                "lockDuration": "PT5M",
+                "deadLetteringOnMessageExpiration": true,
+                "deadLetteringOnFilterEvaluationExceptions": true
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ServiceBus/namespaces/topics', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'DomainEvents')]"
+              ]
+            },
+            {
+              "condition": "[equals(parameters('searchProvider'), 'PgVector')]",
+              "type": "Microsoft.ServiceBus/namespaces/topics/subscriptions/rules",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}/{2}/{3}', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'DomainEvents', 'embedding', 'EventTypeFilter')]",
+              "properties": {
+                "filterType": "SqlFilter",
+                "sqlFilter": {
+                  "sqlExpression": "EventType IN ('TaskItemCreatedEvent', 'TaskItemContentChangedEvent')"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ServiceBus/namespaces/topics/subscriptions', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'DomainEvents', 'embedding')]"
               ]
             },
             {
@@ -915,10 +1905,275 @@
         }
       },
       "dependsOn": [
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "rg"
       ]
     },
-    {
+    "rabbitMq": {
+      "condition": "[equals(parameters('messagingProvider'), 'RabbitMq')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "rabbitMq",
+      "resourceGroup": "[format('{0}-rg', variables('prefix'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "resourcePrefix": {
+            "value": "[variables('prefix')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "environmentId": {
+            "value": "[reference('containerAppsEnv').outputs.id.value]"
+          },
+          "environmentName": {
+            "value": "[reference('containerAppsEnv').outputs.name.value]"
+          },
+          "storageAccountName": {
+            "value": "[reference('storage').outputs.appStorageName.value]"
+          },
+          "brokerPassword": {
+            "value": "[parameters('rabbitMqPassword')]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "4817523154133430326"
+            }
+          },
+          "parameters": {
+            "resourcePrefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource name prefix"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "environmentId": {
+              "type": "string",
+              "metadata": {
+                "description": "Container Apps Environment ID"
+              }
+            },
+            "environmentName": {
+              "type": "string",
+              "metadata": {
+                "description": "Container Apps Environment name, needed to attach the Azure Files storage mount"
+              }
+            },
+            "storageAccountName": {
+              "type": "string",
+              "metadata": {
+                "description": "Storage account that hosts the file share backing the broker volume"
+              }
+            },
+            "containerImage": {
+              "type": "string",
+              "defaultValue": "rabbitmq:4.1-management",
+              "metadata": {
+                "description": "RabbitMQ container image, pinned so a broker restart cannot pick up a new major version"
+              }
+            },
+            "brokerUser": {
+              "type": "string",
+              "defaultValue": "taskflow",
+              "metadata": {
+                "description": "Broker user name"
+              }
+            },
+            "brokerPassword": {
+              "type": "securestring",
+              "metadata": {
+                "description": "Broker password"
+              }
+            },
+            "cpu": {
+              "type": "string",
+              "defaultValue": "1.0",
+              "metadata": {
+                "description": "CPU cores"
+              }
+            },
+            "memory": {
+              "type": "string",
+              "defaultValue": "2Gi",
+              "metadata": {
+                "description": "Memory"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags"
+              }
+            }
+          },
+          "variables": {
+            "fileShareName": "rabbitmq-data",
+            "storageMountName": "rabbitmq-storage"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Storage/storageAccounts/fileServices",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('storageAccountName'), 'default')]"
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/fileServices/shares",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('storageAccountName'), 'default', variables('fileShareName'))]",
+              "properties": {
+                "shareQuota": 100
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/fileServices', parameters('storageAccountName'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.App/managedEnvironments/storages",
+              "apiVersion": "2024-03-01",
+              "name": "[format('{0}/{1}', parameters('environmentName'), variables('storageMountName'))]",
+              "properties": {
+                "azureFile": {
+                  "accountName": "[parameters('storageAccountName')]",
+                  "accountKey": "[listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-05-01').keys[0].value]",
+                  "shareName": "[variables('fileShareName')]",
+                  "accessMode": "ReadWrite"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/fileServices/shares', parameters('storageAccountName'), 'default', variables('fileShareName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.App/containerApps",
+              "apiVersion": "2024-03-01",
+              "name": "[format('{0}-rabbitmq', parameters('resourcePrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "environmentId": "[parameters('environmentId')]",
+                "configuration": {
+                  "secrets": [
+                    {
+                      "name": "broker-password",
+                      "value": "[parameters('brokerPassword')]"
+                    }
+                  ],
+                  "ingress": {
+                    "external": false,
+                    "targetPort": 5672,
+                    "exposedPort": 5672,
+                    "transport": "tcp",
+                    "additionalPortMappings": [
+                      {
+                        "external": false,
+                        "targetPort": 15672,
+                        "exposedPort": 15672
+                      }
+                    ]
+                  }
+                },
+                "template": {
+                  "containers": [
+                    {
+                      "name": "rabbitmq",
+                      "image": "[parameters('containerImage')]",
+                      "resources": {
+                        "cpu": "[json(parameters('cpu'))]",
+                        "memory": "[parameters('memory')]"
+                      },
+                      "env": [
+                        {
+                          "name": "RABBITMQ_DEFAULT_USER",
+                          "value": "[parameters('brokerUser')]"
+                        },
+                        {
+                          "name": "RABBITMQ_DEFAULT_PASS",
+                          "secretRef": "broker-password"
+                        }
+                      ],
+                      "volumeMounts": [
+                        {
+                          "volumeName": "[variables('storageMountName')]",
+                          "mountPath": "/var/lib/rabbitmq/mnesia"
+                        }
+                      ],
+                      "probes": [
+                        {
+                          "type": "Readiness",
+                          "tcpSocket": {
+                            "port": 5672
+                          },
+                          "initialDelaySeconds": 15,
+                          "periodSeconds": 10,
+                          "timeoutSeconds": 5,
+                          "failureThreshold": 12
+                        }
+                      ]
+                    }
+                  ],
+                  "volumes": [
+                    {
+                      "name": "[variables('storageMountName')]",
+                      "storageType": "AzureFile",
+                      "storageName": "[variables('storageMountName')]"
+                    }
+                  ],
+                  "scale": {
+                    "minReplicas": 1,
+                    "maxReplicas": 1
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.App/managedEnvironments/storages', parameters('environmentName'), variables('storageMountName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "name": {
+              "type": "string",
+              "value": "[format('{0}-rabbitmq', parameters('resourcePrefix'))]"
+            },
+            "host": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.App/containerApps', format('{0}-rabbitmq', parameters('resourcePrefix'))), '2024-03-01').configuration.ingress.fqdn]"
+            },
+            "managementPort": {
+              "type": "int",
+              "value": 15672
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "containerAppsEnv",
+        "rg",
+        "storage"
+      ]
+    },
+    "storage": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "storage",
@@ -1070,10 +2325,10 @@
         }
       },
       "dependsOn": [
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "rg"
       ]
     },
-    {
+    "migrator": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "migrator",
@@ -1091,7 +2346,7 @@
             "value": "[parameters('location')]"
           },
           "environmentId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'containerAppsEnv'), '2025-04-01').outputs.id.value]"
+            "value": "[reference('containerAppsEnv').outputs.id.value]"
           },
           "containerImage": {
             "value": "[parameters('migratorImage')]"
@@ -1103,7 +2358,7 @@
             "value": "0.5Gi"
           },
           "envVars": {
-            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'appConfig'), '2025-04-01').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'keyVault'), '2025-04-01').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production')), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'sqlDatabase'), '2025-04-01').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'sqlDatabase'), '2025-04-01').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TickerQDbContext', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'sqlDatabase'), '2025-04-01').outputs.connectionString.value)))]"
+            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value), createObject('name', 'Database__Provider', 'value', parameters('databaseProvider')), createObject('name', 'Database__PostgreSql__PoolerMode', 'value', if(and(equals(parameters('databaseProvider'), 'PostgreSql'), parameters('postgresPgBouncerEnabled')), 'Transaction', 'None'))), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TickerQDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), '')))))]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -1234,14 +2489,16 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'appConfig')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'containerAppsEnv')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'keyVault')]",
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'sqlDatabase')]"
+        "appConfig",
+        "appInsights",
+        "containerAppsEnv",
+        "keyVault",
+        "postgres",
+        "rg",
+        "sqlDatabase"
       ]
     },
-    {
+    "gateway": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "gateway",
@@ -1259,16 +2516,16 @@
             "value": "[parameters('location')]"
           },
           "environmentId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'containerAppsEnv'), '2025-04-01').outputs.id.value]"
+            "value": "[reference('containerAppsEnv').outputs.id.value]"
           },
           "containerImage": {
             "value": "[parameters('gatewayImage')]"
           },
           "cpu": {
-            "value": "0.25"
+            "value": "[parameters('gatewayProfile').cpu]"
           },
           "memory": {
-            "value": "0.5Gi"
+            "value": "[parameters('gatewayProfile').memory]"
           },
           "externalIngress": {
             "value": true
@@ -1277,13 +2534,16 @@
             "value": 8080
           },
           "minReplicas": {
-            "value": 0
+            "value": "[parameters('gatewayProfile').minReplicas]"
           },
           "maxReplicas": {
-            "value": 2
+            "value": "[parameters('gatewayProfile').maxReplicas]"
+          },
+          "concurrentRequests": {
+            "value": "[parameters('gatewayProfile').concurrentRequests]"
           },
           "envVars": {
-            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'appConfig'), '2025-04-01').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'keyVault'), '2025-04-01').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production')), createArray(createObject('name', 'ReverseProxy__Clusters__api__Destinations__default__Address', 'value', format('https://{0}', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'api'), '2025-04-01').outputs.fqdn.value))))]"
+            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value), createObject('name', 'Database__Provider', 'value', parameters('databaseProvider')), createObject('name', 'Database__PostgreSql__PoolerMode', 'value', if(and(equals(parameters('databaseProvider'), 'PostgreSql'), parameters('postgresPgBouncerEnabled')), 'Transaction', 'None'))), createArray(createObject('name', 'ReverseProxy__Clusters__api__Destinations__default__Address', 'value', format('https://{0}', reference('api').outputs.fqdn.value)), createObject('name', 'AggregateHealthCheck__TaskFlowApiHealthUrl', 'value', format('https://{0}/health/full', reference('api').outputs.fqdn.value)), createObject('name', 'AggregateHealthCheck__TaskFlowApiClusterId', 'value', '')))]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -1296,7 +2556,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "15511983385848466231"
+              "templateHash": "11145755578384506289"
             }
           },
           "parameters": {
@@ -1374,6 +2634,52 @@
                 "description": "Maximum replicas"
               }
             },
+            "concurrentRequests": {
+              "type": "int",
+              "defaultValue": 0,
+              "metadata": {
+                "description": "HTTP concurrent request scale rule threshold. 0 omits the rule (falls back to the platform default)."
+              }
+            },
+            "readinessPath": {
+              "type": "string",
+              "defaultValue": "/healthz/ready",
+              "metadata": {
+                "description": "HTTP readiness path (D-049). The revision receives traffic only after this endpoint succeeds."
+              }
+            },
+            "livenessPath": {
+              "type": "string",
+              "defaultValue": "/healthz/live",
+              "metadata": {
+                "description": "HTTP liveness path (D-049). A failure here restarts the container, so it must not probe dependencies."
+              }
+            },
+            "startupPath": {
+              "type": "string",
+              "defaultValue": "/healthz/live",
+              "metadata": {
+                "description": "HTTP startup path (D-049). Holds liveness and readiness off until the app has finished starting."
+              }
+            },
+            "stickySessions": {
+              "type": "string",
+              "defaultValue": "none",
+              "allowedValues": [
+                "sticky",
+                "none"
+              ],
+              "metadata": {
+                "description": "Ingress session affinity. Sticky is required only for hosts holding server-side per-client state (Blazor Server SignalR circuits)."
+              }
+            },
+            "additionalPortMappings": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Extra ingress ports beyond targetPort, each { external, targetPort, exposedPort }. D-054 uses one internal TCP mapping for the cleartext HTTP/2 gRPC listener; empty leaves ingress exactly as it was."
+              }
+            },
             "envVars": {
               "type": "array",
               "defaultValue": [],
@@ -1402,7 +2708,7 @@
               "properties": {
                 "environmentId": "[parameters('environmentId')]",
                 "configuration": {
-                  "ingress": "[if(parameters('ingressEnabled'), createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false()), null())]"
+                  "ingress": "[if(parameters('ingressEnabled'), union(createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), if(empty(parameters('additionalPortMappings')), createObject(), createObject('additionalPortMappings', parameters('additionalPortMappings')))), null())]"
                 },
                 "template": {
                   "containers": [
@@ -1413,13 +2719,50 @@
                         "cpu": "[json(parameters('cpu'))]",
                         "memory": "[parameters('memory')]"
                       },
-                      "env": "[parameters('envVars')]"
+                      "env": "[parameters('envVars')]",
+                      "probes": [
+                        {
+                          "type": "Startup",
+                          "httpGet": {
+                            "path": "[parameters('startupPath')]",
+                            "port": "[parameters('targetPort')]",
+                            "scheme": "HTTP"
+                          },
+                          "initialDelaySeconds": 5,
+                          "periodSeconds": 5,
+                          "timeoutSeconds": 3,
+                          "failureThreshold": 60,
+                          "successThreshold": 1
+                        },
+                        {
+                          "type": "Liveness",
+                          "httpGet": {
+                            "path": "[parameters('livenessPath')]",
+                            "port": "[parameters('targetPort')]",
+                            "scheme": "HTTP"
+                          },
+                          "periodSeconds": 30,
+                          "timeoutSeconds": 5,
+                          "failureThreshold": 3,
+                          "successThreshold": 1
+                        },
+                        {
+                          "type": "Readiness",
+                          "httpGet": {
+                            "path": "[parameters('readinessPath')]",
+                            "port": "[parameters('targetPort')]",
+                            "scheme": "HTTP"
+                          },
+                          "initialDelaySeconds": 10,
+                          "periodSeconds": 10,
+                          "timeoutSeconds": 5,
+                          "failureThreshold": 18,
+                          "successThreshold": 1
+                        }
+                      ]
                     }
                   ],
-                  "scale": {
-                    "minReplicas": "[parameters('minReplicas')]",
-                    "maxReplicas": "[parameters('maxReplicas')]"
-                  }
+                  "scale": "[union(createObject('minReplicas', parameters('minReplicas'), 'maxReplicas', parameters('maxReplicas')), if(greater(parameters('concurrentRequests'), 0), createObject('rules', createArray(createObject('name', 'http-concurrency', 'http', createObject('metadata', createObject('concurrentRequests', string(parameters('concurrentRequests'))))))), createObject()))]"
                 }
               }
             }
@@ -1440,19 +2783,24 @@
             "principalId": {
               "type": "string",
               "value": "[reference(resourceId('Microsoft.App/containerApps', parameters('appName')), '2024-03-01', 'full').identity.principalId]"
+            },
+            "latestRevisionName": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.App/containerApps', parameters('appName')), '2024-03-01').latestRevisionName]"
             }
           }
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'api')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'appConfig')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'containerAppsEnv')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'keyVault')]",
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "api",
+        "appConfig",
+        "appInsights",
+        "containerAppsEnv",
+        "keyVault",
+        "rg"
       ]
     },
-    {
+    "api": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "api",
@@ -1470,16 +2818,16 @@
             "value": "[parameters('location')]"
           },
           "environmentId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'containerAppsEnv'), '2025-04-01').outputs.id.value]"
+            "value": "[reference('containerAppsEnv').outputs.id.value]"
           },
           "containerImage": {
             "value": "[parameters('apiImage')]"
           },
           "cpu": {
-            "value": "0.5"
+            "value": "[parameters('apiProfile').cpu]"
           },
           "memory": {
-            "value": "1Gi"
+            "value": "[parameters('apiProfile').memory]"
           },
           "externalIngress": {
             "value": false
@@ -1487,14 +2835,26 @@
           "targetPort": {
             "value": 8080
           },
+          "additionalPortMappings": {
+            "value": [
+              {
+                "external": false,
+                "targetPort": "[variables('apiGrpcPort')]",
+                "exposedPort": "[variables('apiGrpcPort')]"
+              }
+            ]
+          },
           "minReplicas": {
-            "value": 0
+            "value": "[parameters('apiProfile').minReplicas]"
           },
           "maxReplicas": {
-            "value": 3
+            "value": "[parameters('apiProfile').maxReplicas]"
+          },
+          "concurrentRequests": {
+            "value": "[parameters('apiProfile').concurrentRequests]"
           },
           "envVars": {
-            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'appConfig'), '2025-04-01').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'keyVault'), '2025-04-01').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production')), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'sqlDatabase'), '2025-04-01').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'sqlDatabase'), '2025-04-01').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'sqlDatabase'), '2025-04-01').outputs.connectionString.value), createObject('name', 'ConnectionStrings__CosmosDb1', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'cosmosDb'), '2025-04-01').outputs.accountEndpoint.value), createObject('name', 'ConnectionStrings__BlobStorage1', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.appStorageBlobEndpoint.value), createObject('name', 'ConnectionStrings__TableStorage1', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.appStorageTableEndpoint.value), createObject('name', 'SERVICEBUS__fullyQualifiedNamespace', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'serviceBus'), '2025-04-01').outputs.namespaceEndpoint.value)))]"
+            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value), createObject('name', 'Database__Provider', 'value', parameters('databaseProvider')), createObject('name', 'Database__PostgreSql__PoolerMode', 'value', if(and(equals(parameters('databaseProvider'), 'PostgreSql'), parameters('postgresPgBouncerEnabled')), 'Transaction', 'None'))), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), format('{0}ApplicationIntent=ReadOnly;', coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), '')), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'readConnectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__CosmosDb1', 'value', reference('cosmosDb').outputs.accountEndpoint.value), createObject('name', 'ConnectionStrings__BlobStorage1', 'value', reference('storage').outputs.appStorageBlobEndpoint.value), createObject('name', 'ConnectionStrings__TableStorage1', 'value', reference('storage').outputs.appStorageTableEndpoint.value), createObject('name', 'ConnectionStrings__Redis1', 'value', listOutputsWithSecureValues('redis', '2025-04-01').connectionString)), if(equals(parameters('messagingProvider'), 'RabbitMq'), createArray(createObject('name', 'Messaging__Provider', 'value', parameters('messagingProvider')), createObject('name', 'ConnectionStrings__RabbitMq1', 'value', if(equals(parameters('messagingProvider'), 'RabbitMq'), format('amqp://taskflow:{0}@{1}:5672/', parameters('rabbitMqPassword'), reference('rabbitMq').outputs.host.value), '')), createObject('name', 'Messaging__RabbitMq__ConnectionString', 'value', if(equals(parameters('messagingProvider'), 'RabbitMq'), format('amqp://taskflow:{0}@{1}:5672/', parameters('rabbitMqPassword'), reference('rabbitMq').outputs.host.value), ''))), createArray(createObject('name', 'Messaging__Provider', 'value', parameters('messagingProvider')), createObject('name', 'SERVICEBUS__fullyQualifiedNamespace', 'value', reference('serviceBus').outputs.namespaceEndpoint.value))))]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -1507,7 +2867,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "15511983385848466231"
+              "templateHash": "11145755578384506289"
             }
           },
           "parameters": {
@@ -1585,6 +2945,52 @@
                 "description": "Maximum replicas"
               }
             },
+            "concurrentRequests": {
+              "type": "int",
+              "defaultValue": 0,
+              "metadata": {
+                "description": "HTTP concurrent request scale rule threshold. 0 omits the rule (falls back to the platform default)."
+              }
+            },
+            "readinessPath": {
+              "type": "string",
+              "defaultValue": "/healthz/ready",
+              "metadata": {
+                "description": "HTTP readiness path (D-049). The revision receives traffic only after this endpoint succeeds."
+              }
+            },
+            "livenessPath": {
+              "type": "string",
+              "defaultValue": "/healthz/live",
+              "metadata": {
+                "description": "HTTP liveness path (D-049). A failure here restarts the container, so it must not probe dependencies."
+              }
+            },
+            "startupPath": {
+              "type": "string",
+              "defaultValue": "/healthz/live",
+              "metadata": {
+                "description": "HTTP startup path (D-049). Holds liveness and readiness off until the app has finished starting."
+              }
+            },
+            "stickySessions": {
+              "type": "string",
+              "defaultValue": "none",
+              "allowedValues": [
+                "sticky",
+                "none"
+              ],
+              "metadata": {
+                "description": "Ingress session affinity. Sticky is required only for hosts holding server-side per-client state (Blazor Server SignalR circuits)."
+              }
+            },
+            "additionalPortMappings": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Extra ingress ports beyond targetPort, each { external, targetPort, exposedPort }. D-054 uses one internal TCP mapping for the cleartext HTTP/2 gRPC listener; empty leaves ingress exactly as it was."
+              }
+            },
             "envVars": {
               "type": "array",
               "defaultValue": [],
@@ -1613,7 +3019,7 @@
               "properties": {
                 "environmentId": "[parameters('environmentId')]",
                 "configuration": {
-                  "ingress": "[if(parameters('ingressEnabled'), createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false()), null())]"
+                  "ingress": "[if(parameters('ingressEnabled'), union(createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), if(empty(parameters('additionalPortMappings')), createObject(), createObject('additionalPortMappings', parameters('additionalPortMappings')))), null())]"
                 },
                 "template": {
                   "containers": [
@@ -1624,13 +3030,50 @@
                         "cpu": "[json(parameters('cpu'))]",
                         "memory": "[parameters('memory')]"
                       },
-                      "env": "[parameters('envVars')]"
+                      "env": "[parameters('envVars')]",
+                      "probes": [
+                        {
+                          "type": "Startup",
+                          "httpGet": {
+                            "path": "[parameters('startupPath')]",
+                            "port": "[parameters('targetPort')]",
+                            "scheme": "HTTP"
+                          },
+                          "initialDelaySeconds": 5,
+                          "periodSeconds": 5,
+                          "timeoutSeconds": 3,
+                          "failureThreshold": 60,
+                          "successThreshold": 1
+                        },
+                        {
+                          "type": "Liveness",
+                          "httpGet": {
+                            "path": "[parameters('livenessPath')]",
+                            "port": "[parameters('targetPort')]",
+                            "scheme": "HTTP"
+                          },
+                          "periodSeconds": 30,
+                          "timeoutSeconds": 5,
+                          "failureThreshold": 3,
+                          "successThreshold": 1
+                        },
+                        {
+                          "type": "Readiness",
+                          "httpGet": {
+                            "path": "[parameters('readinessPath')]",
+                            "port": "[parameters('targetPort')]",
+                            "scheme": "HTTP"
+                          },
+                          "initialDelaySeconds": 10,
+                          "periodSeconds": 10,
+                          "timeoutSeconds": 5,
+                          "failureThreshold": 18,
+                          "successThreshold": 1
+                        }
+                      ]
                     }
                   ],
-                  "scale": {
-                    "minReplicas": "[parameters('minReplicas')]",
-                    "maxReplicas": "[parameters('maxReplicas')]"
-                  }
+                  "scale": "[union(createObject('minReplicas', parameters('minReplicas'), 'maxReplicas', parameters('maxReplicas')), if(greater(parameters('concurrentRequests'), 0), createObject('rules', createArray(createObject('name', 'http-concurrency', 'http', createObject('metadata', createObject('concurrentRequests', string(parameters('concurrentRequests'))))))), createObject()))]"
                 }
               }
             }
@@ -1651,22 +3094,30 @@
             "principalId": {
               "type": "string",
               "value": "[reference(resourceId('Microsoft.App/containerApps', parameters('appName')), '2024-03-01', 'full').identity.principalId]"
+            },
+            "latestRevisionName": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.App/containerApps', parameters('appName')), '2024-03-01').latestRevisionName]"
             }
           }
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'appConfig')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'containerAppsEnv')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'cosmosDb')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'keyVault')]",
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'serviceBus')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'sqlDatabase')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'storage')]"
+        "appConfig",
+        "appInsights",
+        "containerAppsEnv",
+        "cosmosDb",
+        "keyVault",
+        "postgres",
+        "rabbitMq",
+        "redis",
+        "rg",
+        "serviceBus",
+        "sqlDatabase",
+        "storage"
       ]
     },
-    {
+    "scheduler": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "scheduler",
@@ -1684,16 +3135,16 @@
             "value": "[parameters('location')]"
           },
           "environmentId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'containerAppsEnv'), '2025-04-01').outputs.id.value]"
+            "value": "[reference('containerAppsEnv').outputs.id.value]"
           },
           "containerImage": {
             "value": "[parameters('schedulerImage')]"
           },
           "cpu": {
-            "value": "0.25"
+            "value": "[parameters('schedulerProfile').cpu]"
           },
           "memory": {
-            "value": "0.5Gi"
+            "value": "[parameters('schedulerProfile').memory]"
           },
           "ingressEnabled": {
             "value": false
@@ -1702,13 +3153,13 @@
             "value": 8080
           },
           "minReplicas": {
-            "value": 0
+            "value": "[parameters('schedulerProfile').minReplicas]"
           },
           "maxReplicas": {
-            "value": 1
+            "value": "[parameters('schedulerProfile').maxReplicas]"
           },
           "envVars": {
-            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'appConfig'), '2025-04-01').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'keyVault'), '2025-04-01').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production')), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'sqlDatabase'), '2025-04-01').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'sqlDatabase'), '2025-04-01').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'sqlDatabase'), '2025-04-01').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TickerQDbContext', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'sqlDatabase'), '2025-04-01').outputs.connectionString.value), createObject('name', 'SERVICEBUS__fullyQualifiedNamespace', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'serviceBus'), '2025-04-01').outputs.namespaceEndpoint.value)))]"
+            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value), createObject('name', 'Database__Provider', 'value', parameters('databaseProvider')), createObject('name', 'Database__PostgreSql__PoolerMode', 'value', if(and(equals(parameters('databaseProvider'), 'PostgreSql'), parameters('postgresPgBouncerEnabled')), 'Transaction', 'None'))), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), format('{0}ApplicationIntent=ReadOnly;', coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), '')), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'readConnectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TickerQDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__Redis1', 'value', listOutputsWithSecureValues('redis', '2025-04-01').connectionString)), if(equals(parameters('messagingProvider'), 'RabbitMq'), createArray(createObject('name', 'Messaging__Provider', 'value', parameters('messagingProvider')), createObject('name', 'ConnectionStrings__RabbitMq1', 'value', if(equals(parameters('messagingProvider'), 'RabbitMq'), format('amqp://taskflow:{0}@{1}:5672/', parameters('rabbitMqPassword'), reference('rabbitMq').outputs.host.value), '')), createObject('name', 'Messaging__RabbitMq__ConnectionString', 'value', if(equals(parameters('messagingProvider'), 'RabbitMq'), format('amqp://taskflow:{0}@{1}:5672/', parameters('rabbitMqPassword'), reference('rabbitMq').outputs.host.value), ''))), createArray(createObject('name', 'Messaging__Provider', 'value', parameters('messagingProvider')), createObject('name', 'SERVICEBUS__fullyQualifiedNamespace', 'value', reference('serviceBus').outputs.namespaceEndpoint.value))))]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -1721,7 +3172,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "15511983385848466231"
+              "templateHash": "11145755578384506289"
             }
           },
           "parameters": {
@@ -1799,6 +3250,52 @@
                 "description": "Maximum replicas"
               }
             },
+            "concurrentRequests": {
+              "type": "int",
+              "defaultValue": 0,
+              "metadata": {
+                "description": "HTTP concurrent request scale rule threshold. 0 omits the rule (falls back to the platform default)."
+              }
+            },
+            "readinessPath": {
+              "type": "string",
+              "defaultValue": "/healthz/ready",
+              "metadata": {
+                "description": "HTTP readiness path (D-049). The revision receives traffic only after this endpoint succeeds."
+              }
+            },
+            "livenessPath": {
+              "type": "string",
+              "defaultValue": "/healthz/live",
+              "metadata": {
+                "description": "HTTP liveness path (D-049). A failure here restarts the container, so it must not probe dependencies."
+              }
+            },
+            "startupPath": {
+              "type": "string",
+              "defaultValue": "/healthz/live",
+              "metadata": {
+                "description": "HTTP startup path (D-049). Holds liveness and readiness off until the app has finished starting."
+              }
+            },
+            "stickySessions": {
+              "type": "string",
+              "defaultValue": "none",
+              "allowedValues": [
+                "sticky",
+                "none"
+              ],
+              "metadata": {
+                "description": "Ingress session affinity. Sticky is required only for hosts holding server-side per-client state (Blazor Server SignalR circuits)."
+              }
+            },
+            "additionalPortMappings": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Extra ingress ports beyond targetPort, each { external, targetPort, exposedPort }. D-054 uses one internal TCP mapping for the cleartext HTTP/2 gRPC listener; empty leaves ingress exactly as it was."
+              }
+            },
             "envVars": {
               "type": "array",
               "defaultValue": [],
@@ -1827,7 +3324,7 @@
               "properties": {
                 "environmentId": "[parameters('environmentId')]",
                 "configuration": {
-                  "ingress": "[if(parameters('ingressEnabled'), createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false()), null())]"
+                  "ingress": "[if(parameters('ingressEnabled'), union(createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), if(empty(parameters('additionalPortMappings')), createObject(), createObject('additionalPortMappings', parameters('additionalPortMappings')))), null())]"
                 },
                 "template": {
                   "containers": [
@@ -1838,13 +3335,50 @@
                         "cpu": "[json(parameters('cpu'))]",
                         "memory": "[parameters('memory')]"
                       },
-                      "env": "[parameters('envVars')]"
+                      "env": "[parameters('envVars')]",
+                      "probes": [
+                        {
+                          "type": "Startup",
+                          "httpGet": {
+                            "path": "[parameters('startupPath')]",
+                            "port": "[parameters('targetPort')]",
+                            "scheme": "HTTP"
+                          },
+                          "initialDelaySeconds": 5,
+                          "periodSeconds": 5,
+                          "timeoutSeconds": 3,
+                          "failureThreshold": 60,
+                          "successThreshold": 1
+                        },
+                        {
+                          "type": "Liveness",
+                          "httpGet": {
+                            "path": "[parameters('livenessPath')]",
+                            "port": "[parameters('targetPort')]",
+                            "scheme": "HTTP"
+                          },
+                          "periodSeconds": 30,
+                          "timeoutSeconds": 5,
+                          "failureThreshold": 3,
+                          "successThreshold": 1
+                        },
+                        {
+                          "type": "Readiness",
+                          "httpGet": {
+                            "path": "[parameters('readinessPath')]",
+                            "port": "[parameters('targetPort')]",
+                            "scheme": "HTTP"
+                          },
+                          "initialDelaySeconds": 10,
+                          "periodSeconds": 10,
+                          "timeoutSeconds": 5,
+                          "failureThreshold": 18,
+                          "successThreshold": 1
+                        }
+                      ]
                     }
                   ],
-                  "scale": {
-                    "minReplicas": "[parameters('minReplicas')]",
-                    "maxReplicas": "[parameters('maxReplicas')]"
-                  }
+                  "scale": "[union(createObject('minReplicas', parameters('minReplicas'), 'maxReplicas', parameters('maxReplicas')), if(greater(parameters('concurrentRequests'), 0), createObject('rules', createArray(createObject('name', 'http-concurrency', 'http', createObject('metadata', createObject('concurrentRequests', string(parameters('concurrentRequests'))))))), createObject()))]"
                 }
               }
             }
@@ -1865,20 +3399,28 @@
             "principalId": {
               "type": "string",
               "value": "[reference(resourceId('Microsoft.App/containerApps', parameters('appName')), '2024-03-01', 'full').identity.principalId]"
+            },
+            "latestRevisionName": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.App/containerApps', parameters('appName')), '2024-03-01').latestRevisionName]"
             }
           }
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'appConfig')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'containerAppsEnv')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'keyVault')]",
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'serviceBus')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'sqlDatabase')]"
+        "appConfig",
+        "appInsights",
+        "containerAppsEnv",
+        "keyVault",
+        "postgres",
+        "rabbitMq",
+        "redis",
+        "rg",
+        "serviceBus",
+        "sqlDatabase"
       ]
     },
-    {
+    "blazor": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "blazor",
@@ -1896,16 +3438,16 @@
             "value": "[parameters('location')]"
           },
           "environmentId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'containerAppsEnv'), '2025-04-01').outputs.id.value]"
+            "value": "[reference('containerAppsEnv').outputs.id.value]"
           },
           "containerImage": {
             "value": "[parameters('blazorImage')]"
           },
           "cpu": {
-            "value": "0.25"
+            "value": "[parameters('blazorProfile').cpu]"
           },
           "memory": {
-            "value": "0.5Gi"
+            "value": "[parameters('blazorProfile').memory]"
           },
           "externalIngress": {
             "value": true
@@ -1914,20 +3456,34 @@
             "value": 8080
           },
           "minReplicas": {
-            "value": 0
+            "value": "[parameters('blazorProfile').minReplicas]"
           },
           "maxReplicas": {
-            "value": 1
+            "value": "[parameters('blazorProfile').maxReplicas]"
+          },
+          "concurrentRequests": {
+            "value": "[parameters('blazorProfile').concurrentRequests]"
+          },
+          "stickySessions": {
+            "value": "sticky"
           },
           "envVars": {
             "value": [
               {
-                "name": "ApiBaseUrl",
-                "value": "[format('https://{0}', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'gateway'), '2025-04-01').outputs.fqdn.value)]"
+                "name": "Gateway__BaseUrl",
+                "value": "[format('https://{0}', reference('gateway').outputs.fqdn.value)]"
+              },
+              {
+                "name": "Grpc__TaskFlowRead__Address",
+                "value": "[format('http://{0}:{1}', reference('api').outputs.fqdn.value, variables('apiGrpcPort'))]"
               },
               {
                 "name": "ASPNETCORE_ENVIRONMENT",
                 "value": "Production"
+              },
+              {
+                "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                "value": "[reference('appInsights').outputs.connectionString.value]"
               }
             ]
           },
@@ -1942,7 +3498,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "15511983385848466231"
+              "templateHash": "11145755578384506289"
             }
           },
           "parameters": {
@@ -2020,6 +3576,52 @@
                 "description": "Maximum replicas"
               }
             },
+            "concurrentRequests": {
+              "type": "int",
+              "defaultValue": 0,
+              "metadata": {
+                "description": "HTTP concurrent request scale rule threshold. 0 omits the rule (falls back to the platform default)."
+              }
+            },
+            "readinessPath": {
+              "type": "string",
+              "defaultValue": "/healthz/ready",
+              "metadata": {
+                "description": "HTTP readiness path (D-049). The revision receives traffic only after this endpoint succeeds."
+              }
+            },
+            "livenessPath": {
+              "type": "string",
+              "defaultValue": "/healthz/live",
+              "metadata": {
+                "description": "HTTP liveness path (D-049). A failure here restarts the container, so it must not probe dependencies."
+              }
+            },
+            "startupPath": {
+              "type": "string",
+              "defaultValue": "/healthz/live",
+              "metadata": {
+                "description": "HTTP startup path (D-049). Holds liveness and readiness off until the app has finished starting."
+              }
+            },
+            "stickySessions": {
+              "type": "string",
+              "defaultValue": "none",
+              "allowedValues": [
+                "sticky",
+                "none"
+              ],
+              "metadata": {
+                "description": "Ingress session affinity. Sticky is required only for hosts holding server-side per-client state (Blazor Server SignalR circuits)."
+              }
+            },
+            "additionalPortMappings": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Extra ingress ports beyond targetPort, each { external, targetPort, exposedPort }. D-054 uses one internal TCP mapping for the cleartext HTTP/2 gRPC listener; empty leaves ingress exactly as it was."
+              }
+            },
             "envVars": {
               "type": "array",
               "defaultValue": [],
@@ -2048,7 +3650,7 @@
               "properties": {
                 "environmentId": "[parameters('environmentId')]",
                 "configuration": {
-                  "ingress": "[if(parameters('ingressEnabled'), createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false()), null())]"
+                  "ingress": "[if(parameters('ingressEnabled'), union(createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), if(empty(parameters('additionalPortMappings')), createObject(), createObject('additionalPortMappings', parameters('additionalPortMappings')))), null())]"
                 },
                 "template": {
                   "containers": [
@@ -2059,13 +3661,50 @@
                         "cpu": "[json(parameters('cpu'))]",
                         "memory": "[parameters('memory')]"
                       },
-                      "env": "[parameters('envVars')]"
+                      "env": "[parameters('envVars')]",
+                      "probes": [
+                        {
+                          "type": "Startup",
+                          "httpGet": {
+                            "path": "[parameters('startupPath')]",
+                            "port": "[parameters('targetPort')]",
+                            "scheme": "HTTP"
+                          },
+                          "initialDelaySeconds": 5,
+                          "periodSeconds": 5,
+                          "timeoutSeconds": 3,
+                          "failureThreshold": 60,
+                          "successThreshold": 1
+                        },
+                        {
+                          "type": "Liveness",
+                          "httpGet": {
+                            "path": "[parameters('livenessPath')]",
+                            "port": "[parameters('targetPort')]",
+                            "scheme": "HTTP"
+                          },
+                          "periodSeconds": 30,
+                          "timeoutSeconds": 5,
+                          "failureThreshold": 3,
+                          "successThreshold": 1
+                        },
+                        {
+                          "type": "Readiness",
+                          "httpGet": {
+                            "path": "[parameters('readinessPath')]",
+                            "port": "[parameters('targetPort')]",
+                            "scheme": "HTTP"
+                          },
+                          "initialDelaySeconds": 10,
+                          "periodSeconds": 10,
+                          "timeoutSeconds": 5,
+                          "failureThreshold": 18,
+                          "successThreshold": 1
+                        }
+                      ]
                     }
                   ],
-                  "scale": {
-                    "minReplicas": "[parameters('minReplicas')]",
-                    "maxReplicas": "[parameters('maxReplicas')]"
-                  }
+                  "scale": "[union(createObject('minReplicas', parameters('minReplicas'), 'maxReplicas', parameters('maxReplicas')), if(greater(parameters('concurrentRequests'), 0), createObject('rules', createArray(createObject('name', 'http-concurrency', 'http', createObject('metadata', createObject('concurrentRequests', string(parameters('concurrentRequests'))))))), createObject()))]"
                 }
               }
             }
@@ -2086,17 +3725,23 @@
             "principalId": {
               "type": "string",
               "value": "[reference(resourceId('Microsoft.App/containerApps', parameters('appName')), '2024-03-01', 'full').identity.principalId]"
+            },
+            "latestRevisionName": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.App/containerApps', parameters('appName')), '2024-03-01').latestRevisionName]"
             }
           }
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'containerAppsEnv')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'gateway')]",
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "api",
+        "appInsights",
+        "containerAppsEnv",
+        "gateway",
+        "rg"
       ]
     },
-    {
+    "staticWebApp": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "staticWebApp",
@@ -2176,10 +3821,10 @@
         }
       },
       "dependsOn": [
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "rg"
       ]
     },
-    {
+    "functions": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "functions",
@@ -2197,28 +3842,36 @@
             "value": "[parameters('location')]"
           },
           "funcStorageAccountName": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.funcStorageName.value]"
+            "value": "[reference('storage').outputs.funcStorageName.value]"
           },
           "serviceBusNamespace": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'serviceBus'), '2025-04-01').outputs.namespaceEndpoint.value]"
+            "value": "[reference('serviceBus').outputs.namespaceEndpoint.value]"
           },
           "appConfigEndpoint": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'appConfig'), '2025-04-01').outputs.endpoint.value]"
+            "value": "[reference('appConfig').outputs.endpoint.value]"
           },
           "keyVaultUri": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'keyVault'), '2025-04-01').outputs.uri.value]"
+            "value": "[reference('keyVault').outputs.uri.value]"
           },
-          "sqlConnectionString": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'sqlDatabase'), '2025-04-01').outputs.connectionString.value]"
+          "searchProvider": {
+            "value": "[parameters('searchProvider')]"
           },
+          "databaseProvider": {
+            "value": "[parameters('databaseProvider')]"
+          },
+          "dbConnectionString": "[if(equals(parameters('databaseProvider'), 'SqlServer'), createObject('value', coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), '')), createObject('value', coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), '')))]",
+          "dbReadConnectionString": "[if(equals(parameters('databaseProvider'), 'SqlServer'), createObject('value', format('{0}ApplicationIntent=ReadOnly;', coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('value', coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'readConnectionString'), 'value'), '')))]",
           "cosmosEndpoint": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'cosmosDb'), '2025-04-01').outputs.accountEndpoint.value]"
+            "value": "[reference('cosmosDb').outputs.accountEndpoint.value]"
           },
           "storageBlobEndpoint": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.appStorageBlobEndpoint.value]"
+            "value": "[reference('storage').outputs.appStorageBlobEndpoint.value]"
           },
-          "logAnalyticsWorkspaceId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'logAnalytics'), '2025-04-01').outputs.id.value]"
+          "appInsightsConnectionString": {
+            "value": "[reference('appInsights').outputs.connectionString.value]"
+          },
+          "functionAppScaleLimit": {
+            "value": "[parameters('functionAppScaleLimit')]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -2231,7 +3884,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "15839809790742923656"
+              "templateHash": "12817049552883407345"
             }
           },
           "parameters": {
@@ -2271,10 +3924,39 @@
                 "description": "Key Vault URI"
               }
             },
-            "sqlConnectionString": {
+            "searchProvider": {
+              "type": "string",
+              "defaultValue": "AzureAiSearch",
+              "allowedValues": [
+                "AzureAiSearch",
+                "PgVector",
+                "Sql"
+              ],
+              "metadata": {
+                "description": "Search backend (D-040); PgVector enables the embedding trigger and its subscription"
+              }
+            },
+            "databaseProvider": {
+              "type": "string",
+              "defaultValue": "SqlServer",
+              "allowedValues": [
+                "SqlServer",
+                "PostgreSql"
+              ],
+              "metadata": {
+                "description": "Active database provider (SqlServer or PostgreSql)"
+              }
+            },
+            "dbConnectionString": {
               "type": "string",
               "metadata": {
-                "description": "SQL connection string"
+                "description": "Primary (read-write) database connection string"
+              }
+            },
+            "dbReadConnectionString": {
+              "type": "string",
+              "metadata": {
+                "description": "Read-replica database connection string; falls back to the primary string when no replica exists"
               }
             },
             "cosmosEndpoint": {
@@ -2289,10 +3971,17 @@
                 "description": "Storage blob endpoint"
               }
             },
-            "logAnalyticsWorkspaceId": {
+            "appInsightsConnectionString": {
               "type": "string",
               "metadata": {
-                "description": "Log Analytics workspace ID"
+                "description": "Shared Application Insights connection string"
+              }
+            },
+            "functionAppScaleLimit": {
+              "type": "int",
+              "defaultValue": 20,
+              "metadata": {
+                "description": "Maximum function app instance count (Flex Consumption scale-out ceiling); pair with host.json serviceBus.maxConcurrentCalls"
               }
             },
             "tags": {
@@ -2362,16 +4051,28 @@
                       "value": "[parameters('keyVaultUri')]"
                     },
                     {
+                      "name": "Database__Provider",
+                      "value": "[parameters('databaseProvider')]"
+                    },
+                    {
+                      "name": "Search__Provider",
+                      "value": "[parameters('searchProvider')]"
+                    },
+                    {
+                      "name": "AzureWebJobs.ProcessTaskEmbedding.Disabled",
+                      "value": "[if(equals(parameters('searchProvider'), 'PgVector'), 'false', 'true')]"
+                    },
+                    {
                       "name": "ConnectionStrings__TaskFlowDbContextTrxn",
-                      "value": "[parameters('sqlConnectionString')]"
+                      "value": "[parameters('dbConnectionString')]"
                     },
                     {
                       "name": "ConnectionStrings__TaskFlowDbContextQuery",
-                      "value": "[parameters('sqlConnectionString')]"
+                      "value": "[parameters('dbReadConnectionString')]"
                     },
                     {
                       "name": "ConnectionStrings__TaskFlowFlowEngineDbContext",
-                      "value": "[parameters('sqlConnectionString')]"
+                      "value": "[parameters('dbConnectionString')]"
                     },
                     {
                       "name": "ConnectionStrings__CosmosDb1",
@@ -2383,29 +4084,21 @@
                     },
                     {
                       "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
-                      "value": "[reference(resourceId('Microsoft.Insights/components', format('{0}-func-ai', parameters('resourcePrefix'))), '2020-02-02').ConnectionString]"
+                      "value": "[parameters('appInsightsConnectionString')]"
+                    },
+                    {
+                      "name": "TASKFLOW_SUPPRESS_ASPNETCORE_INSTRUMENTATION",
+                      "value": "true"
                     }
                   ],
                   "minTlsVersion": "1.2",
-                  "ftpsState": "Disabled"
+                  "ftpsState": "Disabled",
+                  "functionAppScaleLimit": "[parameters('functionAppScaleLimit')]"
                 }
               },
               "dependsOn": [
-                "[resourceId('Microsoft.Insights/components', format('{0}-func-ai', parameters('resourcePrefix')))]",
                 "[resourceId('Microsoft.Web/serverfarms', format('{0}-func-plan', parameters('resourcePrefix')))]"
               ]
-            },
-            {
-              "type": "Microsoft.Insights/components",
-              "apiVersion": "2020-02-02",
-              "name": "[format('{0}-func-ai', parameters('resourcePrefix'))]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
-              "kind": "web",
-              "properties": {
-                "Application_Type": "web",
-                "WorkspaceResourceId": "[parameters('logAnalyticsWorkspaceId')]"
-              }
             }
           ],
           "outputs": {
@@ -2425,17 +4118,18 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'appConfig')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'cosmosDb')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'keyVault')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'logAnalytics')]",
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'serviceBus')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'sqlDatabase')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'storage')]"
+        "appConfig",
+        "appInsights",
+        "cosmosDb",
+        "keyVault",
+        "postgres",
+        "rg",
+        "serviceBus",
+        "sqlDatabase",
+        "storage"
       ]
     },
-    {
+    "deployIdentity": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "deployIdentity",
@@ -2517,10 +4211,10 @@
         }
       },
       "dependsOn": [
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "rg"
       ]
     },
-    {
+    "deployContributor": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "deployContributor",
@@ -2532,7 +4226,7 @@
         "mode": "Incremental",
         "parameters": {
           "principalId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'deployIdentity'), '2025-04-01').outputs.principalId.value]"
+            "value": "[reference('deployIdentity').outputs.principalId.value]"
           },
           "roleDefinitionId": {
             "value": "[variables('roles').contributor]"
@@ -2583,11 +4277,11 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'deployIdentity')]",
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "deployIdentity",
+        "rg"
       ]
     },
-    {
+    "deployUaa": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "deployUaa",
@@ -2599,7 +4293,7 @@
         "mode": "Incremental",
         "parameters": {
           "principalId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'deployIdentity'), '2025-04-01').outputs.principalId.value]"
+            "value": "[reference('deployIdentity').outputs.principalId.value]"
           },
           "roleDefinitionId": {
             "value": "[variables('roles').userAccessAdministrator]"
@@ -2650,11 +4344,11 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'deployIdentity')]",
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "deployIdentity",
+        "rg"
       ]
     },
-    {
+    "gatewayAppConfigReader": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "gatewayAppConfigReader",
@@ -2666,7 +4360,7 @@
         "mode": "Incremental",
         "parameters": {
           "principalId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'gateway'), '2025-04-01').outputs.principalId.value]"
+            "value": "[reference('gateway').outputs.principalId.value]"
           },
           "roleDefinitionId": {
             "value": "[variables('roles').appConfigDataReader]"
@@ -2717,11 +4411,11 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'gateway')]",
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "gateway",
+        "rg"
       ]
     },
-    {
+    "gatewayKvSecretsUser": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "gatewayKvSecretsUser",
@@ -2733,7 +4427,7 @@
         "mode": "Incremental",
         "parameters": {
           "principalId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'gateway'), '2025-04-01').outputs.principalId.value]"
+            "value": "[reference('gateway').outputs.principalId.value]"
           },
           "roleDefinitionId": {
             "value": "[variables('roles').keyVaultSecretsUser]"
@@ -2784,11 +4478,11 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'gateway')]",
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "gateway",
+        "rg"
       ]
     },
-    {
+    "apiAppConfigReader": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "apiAppConfigReader",
@@ -2800,7 +4494,7 @@
         "mode": "Incremental",
         "parameters": {
           "principalId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'api'), '2025-04-01').outputs.principalId.value]"
+            "value": "[reference('api').outputs.principalId.value]"
           },
           "roleDefinitionId": {
             "value": "[variables('roles').appConfigDataReader]"
@@ -2851,11 +4545,11 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'api')]",
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "api",
+        "rg"
       ]
     },
-    {
+    "apiKvSecretsUser": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "apiKvSecretsUser",
@@ -2867,7 +4561,7 @@
         "mode": "Incremental",
         "parameters": {
           "principalId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'api'), '2025-04-01').outputs.principalId.value]"
+            "value": "[reference('api').outputs.principalId.value]"
           },
           "roleDefinitionId": {
             "value": "[variables('roles').keyVaultSecretsUser]"
@@ -2918,11 +4612,12 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'api')]",
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "api",
+        "rg"
       ]
     },
-    {
+    "apiServiceBusSender": {
+      "condition": "[equals(parameters('messagingProvider'), 'ServiceBus')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "apiServiceBusSender",
@@ -2934,7 +4629,7 @@
         "mode": "Incremental",
         "parameters": {
           "principalId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'api'), '2025-04-01').outputs.principalId.value]"
+            "value": "[reference('api').outputs.principalId.value]"
           },
           "roleDefinitionId": {
             "value": "[variables('roles').serviceBusDataSender]"
@@ -2985,11 +4680,11 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'api')]",
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "api",
+        "rg"
       ]
     },
-    {
+    "apiBlobContributor": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "apiBlobContributor",
@@ -3001,7 +4696,7 @@
         "mode": "Incremental",
         "parameters": {
           "principalId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'api'), '2025-04-01').outputs.principalId.value]"
+            "value": "[reference('api').outputs.principalId.value]"
           },
           "roleDefinitionId": {
             "value": "[variables('roles').storageBlobDataContributor]"
@@ -3052,11 +4747,11 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'api')]",
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "api",
+        "rg"
       ]
     },
-    {
+    "apiTableContributor": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "apiTableContributor",
@@ -3068,7 +4763,7 @@
         "mode": "Incremental",
         "parameters": {
           "principalId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'api'), '2025-04-01').outputs.principalId.value]"
+            "value": "[reference('api').outputs.principalId.value]"
           },
           "roleDefinitionId": {
             "value": "[variables('roles').storageTableDataContributor]"
@@ -3119,11 +4814,11 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'api')]",
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "api",
+        "rg"
       ]
     },
-    {
+    "schedulerAppConfigReader": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "schedulerAppConfigReader",
@@ -3135,7 +4830,7 @@
         "mode": "Incremental",
         "parameters": {
           "principalId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'scheduler'), '2025-04-01').outputs.principalId.value]"
+            "value": "[reference('scheduler').outputs.principalId.value]"
           },
           "roleDefinitionId": {
             "value": "[variables('roles').appConfigDataReader]"
@@ -3186,11 +4881,11 @@
         }
       },
       "dependsOn": [
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'scheduler')]"
+        "rg",
+        "scheduler"
       ]
     },
-    {
+    "schedulerKvSecretsUser": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "schedulerKvSecretsUser",
@@ -3202,7 +4897,7 @@
         "mode": "Incremental",
         "parameters": {
           "principalId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'scheduler'), '2025-04-01').outputs.principalId.value]"
+            "value": "[reference('scheduler').outputs.principalId.value]"
           },
           "roleDefinitionId": {
             "value": "[variables('roles').keyVaultSecretsUser]"
@@ -3253,11 +4948,12 @@
         }
       },
       "dependsOn": [
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'scheduler')]"
+        "rg",
+        "scheduler"
       ]
     },
-    {
+    "schedulerServiceBusSender": {
+      "condition": "[equals(parameters('messagingProvider'), 'ServiceBus')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "schedulerServiceBusSender",
@@ -3269,7 +4965,7 @@
         "mode": "Incremental",
         "parameters": {
           "principalId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'scheduler'), '2025-04-01').outputs.principalId.value]"
+            "value": "[reference('scheduler').outputs.principalId.value]"
           },
           "roleDefinitionId": {
             "value": "[variables('roles').serviceBusDataSender]"
@@ -3320,11 +5016,12 @@
         }
       },
       "dependsOn": [
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'scheduler')]"
+        "rg",
+        "scheduler"
       ]
     },
-    {
+    "funcServiceBusReceiver": {
+      "condition": "[equals(parameters('messagingProvider'), 'ServiceBus')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "funcServiceBusReceiver",
@@ -3336,7 +5033,7 @@
         "mode": "Incremental",
         "parameters": {
           "principalId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'functions'), '2025-04-01').outputs.functionAppPrincipalId.value]"
+            "value": "[reference('functions').outputs.functionAppPrincipalId.value]"
           },
           "roleDefinitionId": {
             "value": "[variables('roles').serviceBusDataReceiver]"
@@ -3387,11 +5084,11 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'functions')]",
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "functions",
+        "rg"
       ]
     },
-    {
+    "funcBlobContributor": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "funcBlobContributor",
@@ -3403,7 +5100,7 @@
         "mode": "Incremental",
         "parameters": {
           "principalId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'functions'), '2025-04-01').outputs.functionAppPrincipalId.value]"
+            "value": "[reference('functions').outputs.functionAppPrincipalId.value]"
           },
           "roleDefinitionId": {
             "value": "[variables('roles').storageBlobDataContributor]"
@@ -3454,11 +5151,11 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'functions')]",
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "functions",
+        "rg"
       ]
     },
-    {
+    "funcAppConfigReader": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "funcAppConfigReader",
@@ -3470,7 +5167,7 @@
         "mode": "Incremental",
         "parameters": {
           "principalId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'functions'), '2025-04-01').outputs.functionAppPrincipalId.value]"
+            "value": "[reference('functions').outputs.functionAppPrincipalId.value]"
           },
           "roleDefinitionId": {
             "value": "[variables('roles').appConfigDataReader]"
@@ -3521,11 +5218,11 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'functions')]",
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "functions",
+        "rg"
       ]
     },
-    {
+    "funcKvSecretsUser": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "funcKvSecretsUser",
@@ -3537,7 +5234,7 @@
         "mode": "Incremental",
         "parameters": {
           "principalId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'functions'), '2025-04-01').outputs.functionAppPrincipalId.value]"
+            "value": "[reference('functions').outputs.functionAppPrincipalId.value]"
           },
           "roleDefinitionId": {
             "value": "[variables('roles').keyVaultSecretsUser]"
@@ -3588,11 +5285,11 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'functions')]",
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "functions",
+        "rg"
       ]
     },
-    {
+    "cosmosRbac": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "cosmosRbac",
@@ -3604,12 +5301,12 @@
         "mode": "Incremental",
         "parameters": {
           "cosmosAccountName": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'cosmosDb'), '2025-04-01').outputs.accountName.value]"
+            "value": "[reference('cosmosDb').outputs.accountName.value]"
           },
           "principalIds": {
             "value": [
-              "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'api'), '2025-04-01').outputs.principalId.value]",
-              "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'functions'), '2025-04-01').outputs.functionAppPrincipalId.value]"
+              "[reference('api').outputs.principalId.value]",
+              "[reference('functions').outputs.functionAppPrincipalId.value]"
             ]
           }
         },
@@ -3653,13 +5350,84 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'api')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'cosmosDb')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'functions')]",
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-rg', variables('prefix')))]"
+        "api",
+        "cosmosDb",
+        "functions",
+        "rg"
+      ]
+    },
+    "redisRbac": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "redisRbac",
+      "resourceGroup": "[format('{0}-rg', variables('prefix'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "redisEnterpriseName": {
+            "value": "[reference('redis').outputs.redisEnterpriseName.value]"
+          },
+          "principalIds": {
+            "value": [
+              "[reference('api').outputs.principalId.value]",
+              "[reference('scheduler').outputs.principalId.value]"
+            ]
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "13192089253297005915"
+            }
+          },
+          "parameters": {
+            "redisEnterpriseName": {
+              "type": "string",
+              "metadata": {
+                "description": "Redis Enterprise cluster name (from the redis module output)"
+              }
+            },
+            "principalIds": {
+              "type": "array",
+              "metadata": {
+                "description": "Principal IDs (container app system-assigned identities) granted Entra data-plane access to the default database"
+              }
+            }
+          },
+          "resources": [
+            {
+              "copy": {
+                "name": "redisEntraAccess",
+                "count": "[length(parameters('principalIds'))]"
+              },
+              "type": "Microsoft.Cache/redisEnterprise/databases/accessPolicyAssignments",
+              "apiVersion": "2025-07-01",
+              "name": "[format('{0}/{1}/{2}', parameters('redisEnterpriseName'), 'default', replace(parameters('principalIds')[copyIndex()], '-', ''))]",
+              "properties": {
+                "accessPolicyName": "default",
+                "user": {
+                  "objectId": "[parameters('principalIds')[copyIndex()]]"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "api",
+        "redis",
+        "rg",
+        "scheduler"
       ]
     }
-  ],
+  },
   "outputs": {
     "resourceGroupName": {
       "type": "string",
@@ -3667,51 +5435,67 @@
     },
     "gatewayFqdn": {
       "type": "string",
-      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'gateway'), '2025-04-01').outputs.fqdn.value]"
+      "value": "[reference('gateway').outputs.fqdn.value]"
     },
     "apiFqdn": {
       "type": "string",
-      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'api'), '2025-04-01').outputs.fqdn.value]"
+      "value": "[reference('api').outputs.fqdn.value]"
     },
     "blazorFqdn": {
       "type": "string",
-      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'blazor'), '2025-04-01').outputs.fqdn.value]"
+      "value": "[reference('blazor').outputs.fqdn.value]"
     },
     "staticWebAppName": {
       "type": "string",
-      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'staticWebApp'), '2025-04-01').outputs.name.value]"
+      "value": "[reference('staticWebApp').outputs.name.value]"
     },
     "staticWebAppDefaultHostname": {
       "type": "string",
-      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'staticWebApp'), '2025-04-01').outputs.defaultHostname.value]"
+      "value": "[reference('staticWebApp').outputs.defaultHostname.value]"
     },
     "functionAppName": {
       "type": "string",
-      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'functions'), '2025-04-01').outputs.functionAppName.value]"
+      "value": "[reference('functions').outputs.functionAppName.value]"
     },
     "migrationJobName": {
       "type": "string",
-      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'migrator'), '2025-04-01').outputs.name.value]"
+      "value": "[reference('migrator').outputs.name.value]"
     },
     "deployIdentityClientId": {
       "type": "string",
-      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'deployIdentity'), '2025-04-01').outputs.clientId.value]"
+      "value": "[reference('deployIdentity').outputs.clientId.value]"
     },
     "deployIdentityPrincipalId": {
       "type": "string",
-      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'deployIdentity'), '2025-04-01').outputs.principalId.value]"
+      "value": "[reference('deployIdentity').outputs.principalId.value]"
     },
     "keyVaultName": {
       "type": "string",
-      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'keyVault'), '2025-04-01').outputs.name.value]"
+      "value": "[reference('keyVault').outputs.name.value]"
     },
     "appConfigName": {
       "type": "string",
-      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'appConfig'), '2025-04-01').outputs.name.value]"
+      "value": "[reference('appConfig').outputs.name.value]"
+    },
+    "databaseProviderName": {
+      "type": "string",
+      "value": "[parameters('databaseProvider')]"
     },
     "sqlServerName": {
       "type": "string",
-      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-rg', variables('prefix'))), 'Microsoft.Resources/deployments', 'sqlDatabase'), '2025-04-01').outputs.serverName.value]"
+      "value": "[if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'serverName'), 'value'), ''), '')]"
+    },
+    "postgresServerName": {
+      "type": "string",
+      "value": "[if(equals(parameters('databaseProvider'), 'PostgreSql'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'serverName'), 'value'), ''), '')]"
+    },
+    "redisHostName": {
+      "type": "string",
+      "value": "[reference('redis').outputs.hostName.value]"
+    },
+    "appStorageName": {
+      "type": "string",
+      "value": "[reference('storage').outputs.appStorageName.value]"
     }
   }
 }

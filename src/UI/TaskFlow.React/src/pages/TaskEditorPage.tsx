@@ -17,18 +17,16 @@ import {
   Typography,
 } from '@mui/material'
 import { ArrowLeft, ChevronDown, Plus, Save, Trash2 } from 'lucide-react'
-import { useMemo, useState } from 'react'
-import { taskFlowApi } from '../api/client'
+import { useState } from 'react'
+import { isPreconditionFailed, taskFlowApi } from '../api/client'
 import { queryKeys } from '../api/queryKeys'
-import type { ChecklistItem, Comment, Priority, TaskItem, TaskItemStatus } from '../api/types'
-import { priorities, taskStatuses } from '../api/types'
+import type { ChecklistItemDto, CommentDto, Priority, TaskItemDto, TaskItemStatus } from '../api/models'
+import { priorities, taskStatuses } from '../api/models'
 import { useNotifications } from '../app/notificationContext'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { PageHeader } from '../components/PageHeader'
 import { ErrorState, LoadingState } from '../components/StateViews'
 import { formatDate, fromDateInputValue, toDateInputValue } from '../utils/format'
-
-const emptyGuid = '00000000-0000-0000-0000-000000000000'
 
 /** Renders the task editor page and coordinates its data operations. */
 export function TaskEditorPage() {
@@ -68,7 +66,7 @@ export function TaskEditorPage() {
 
 /** Describes task editor content props data used by the React UI. */
 interface TaskEditorContentProps {
-  initialTask: TaskItem
+  initialTask: TaskItemDto
   isCreate: boolean
   routeId?: string
 }
@@ -78,20 +76,21 @@ function TaskEditorContent({ initialTask, isCreate, routeId }: TaskEditorContent
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { showNotification } = useNotifications()
-  const [form, setForm] = useState<TaskItem>(() => initialTask)
+  const [form, setForm] = useState<TaskItemDto>(() => initialTask)
   const [startDate, setStartDate] = useState(() => toDateInputValue(initialTask.startDate))
   const [dueDate, setDueDate] = useState(() => toDateInputValue(initialTask.dueDate))
   const [newChecklistTitle, setNewChecklistTitle] = useState('')
   const [newCommentBody, setNewCommentBody] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [childBusy, setChildBusy] = useState(false)
 
-  const categoriesQuery = useQuery({
-    queryKey: queryKeys.categories({ isActive: true }),
-    queryFn: ({ signal }) => taskFlowApi.searchCategories({ isActive: true }, 1, 200, signal),
+  const metadataQuery = useQuery({
+    queryKey: queryKeys.metadata,
+    queryFn: ({ signal }) => taskFlowApi.getTaskMetadata(signal),
   })
 
   const saveMutation = useMutation({
-    mutationFn: (item: TaskItem) => (isCreate ? taskFlowApi.createTask(item) : taskFlowApi.updateTask(item)),
+    mutationFn: (item: TaskItemDto) => (isCreate ? taskFlowApi.createTask(item) : taskFlowApi.updateTask(item)),
     onSuccess: async (saved) => {
       showNotification(isCreate ? 'Task created.' : 'Task saved.', 'success')
       await queryClient.invalidateQueries({ queryKey: ['tasks'] })
@@ -105,7 +104,14 @@ function TaskEditorContent({ initialTask, isCreate, routeId }: TaskEditorContent
         setDueDate(toDateInputValue(saved.dueDate))
       }
     },
-    onError: (error) => showNotification(error instanceof Error ? error.message : 'Task save failed.', 'error'),
+    onError: (error) => {
+      if (isPreconditionFailed(error)) {
+        showNotification('Task changed elsewhere, reloading.', 'warning')
+        void reloadTask()
+        return
+      }
+      showNotification(error instanceof Error ? error.message : 'Task save failed.', 'error')
+    },
   })
 
   const deleteMutation = useMutation({
@@ -116,20 +122,22 @@ function TaskEditorContent({ initialTask, isCreate, routeId }: TaskEditorContent
       await queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
       navigate('/tasks', { replace: true })
     },
-    onError: (error) => showNotification(error instanceof Error ? error.message : 'Task delete failed.', 'error'),
+    onError: (error) => {
+      if (isPreconditionFailed(error)) {
+        showNotification('Task changed elsewhere, reloading.', 'warning')
+        void reloadTask()
+        return
+      }
+      showNotification(error instanceof Error ? error.message : 'Task delete failed.', 'error')
+    },
   })
 
-  const categories = useMemo(() => categoriesQuery.data?.items ?? [], [categoriesQuery.data])
-  const selectedCategory = useMemo(
-    () => categories.find((category) => category.id === form.categoryId),
-    [categories, form.categoryId],
-  )
+  const categories = metadataQuery.data?.categories ?? []
+  const selectedCategory = categories.find((category) => category.id === form.categoryId)
   const checklist = form.checklistItems ?? []
   const comments = form.comments ?? []
-  const isBusy = saveMutation.isPending || deleteMutation.isPending
+  const isBusy = saveMutation.isPending || deleteMutation.isPending || childBusy
 
-  // Checklist and comment edits stay local until Save. The API updater syncs them from
-  // the parent TaskItem payload, which keeps create/update as one aggregate save.
   function saveTask() {
     if (!form.title.trim()) {
       showNotification('Title is required.', 'warning')
@@ -138,75 +146,116 @@ function TaskEditorContent({ initialTask, isCreate, routeId }: TaskEditorContent
 
     saveMutation.mutate({
       ...form,
-      checklistItems: checklist.map((item, index) => ({
-        ...item,
-        sortOrder: index,
-        taskItemId: item.taskItemId || form.id || emptyGuid,
-      })),
-      comments: comments.map((comment) => ({
-        ...comment,
-        taskItemId: comment.taskItemId || form.id || emptyGuid,
-      })),
       dueDate: fromDateInputValue(dueDate),
       startDate: fromDateInputValue(startDate),
       title: form.title.trim(),
     })
   }
 
-  function setField<TKey extends keyof TaskItem>(key: TKey, value: TaskItem[TKey]) {
+  function setField<TKey extends keyof TaskItemDto>(key: TKey, value: TaskItemDto[TKey]) {
     setForm((current) => ({ ...current, [key]: value }))
   }
 
-  /** Adds an empty checklist row to the task editor form state. */
-  function addChecklistItem() {
+  /** Re-fetches the task directly (not through the react-query cache) after a child mutation, since
+   *  each one bumps the aggregate root's Version - the next If-Match this form sends must stay current. */
+  async function reloadTask() {
+    if (!form.id) return
+    const fresh = await taskFlowApi.getTask(form.id)
+    setForm(normalizeTask(fresh))
+    setStartDate(toDateInputValue(fresh.startDate))
+    setDueDate(toDateInputValue(fresh.dueDate))
+    await queryClient.invalidateQueries({ queryKey: queryKeys.task(form.id) })
+  }
+
+  // Children are mutated through the aggregate root's dedicated nested routes (GR-15), never bundled
+  // into the whole-task PUT, and each mutation bumps the root Version - so every handler below reloads
+  // the task afterward rather than patching local state.
+  async function addChecklistItem() {
     const title = newChecklistTitle.trim()
-    if (!title) return
-    setForm((current) => ({
-      ...current,
-      checklistItems: [
-        ...(current.checklistItems ?? []),
-        { isCompleted: false, sortOrder: current.checklistItems?.length ?? 0, taskItemId: current.id ?? emptyGuid, title },
-      ],
-    }))
-    setNewChecklistTitle('')
+    if (!title || !form.id) return
+    setChildBusy(true)
+    try {
+      await taskFlowApi.addChecklistItem(form.id, { title, sortOrder: checklist.length })
+      setNewChecklistTitle('')
+      await reloadTask()
+    } catch (error) {
+      showNotification(error instanceof Error ? error.message : 'Failed to add checklist item.', 'error')
+    } finally {
+      setChildBusy(false)
+    }
   }
 
-  // New child rows use emptyGuid until the task has a server id. The API layer and server
-  // updater replace that placeholder from the parent route/body during persistence.
-  function updateChecklistItem(index: number, item: ChecklistItem) {
-    setForm((current) => ({
-      ...current,
-      checklistItems: (current.checklistItems ?? []).map((existing, existingIndex) =>
-        existingIndex === index ? item : existing,
-      ),
-    }))
+  async function toggleChecklistItem(item: ChecklistItemDto, completed: boolean) {
+    if (!form.id) return
+    setChildBusy(true)
+    try {
+      await taskFlowApi.updateChecklistItem(form.id, {
+        ...item,
+        completedDate: completed ? new Date().toISOString() : null,
+        isCompleted: completed,
+      })
+      await reloadTask()
+    } catch (error) {
+      if (isPreconditionFailed(error)) {
+        showNotification('Checklist item changed elsewhere, reloading.', 'warning')
+        await reloadTask()
+      } else {
+        showNotification(error instanceof Error ? error.message : 'Failed to update checklist item.', 'error')
+      }
+    } finally {
+      setChildBusy(false)
+    }
   }
 
-  /** Removes a checklist row from the task editor form state. */
-  function removeChecklistItem(index: number) {
-    setForm((current) => ({
-      ...current,
-      checklistItems: (current.checklistItems ?? []).filter((_, existingIndex) => existingIndex !== index),
-    }))
+  async function removeChecklistItem(item: ChecklistItemDto) {
+    if (!form.id) return
+    setChildBusy(true)
+    try {
+      await taskFlowApi.removeChecklistItem(form.id, item)
+      await reloadTask()
+    } catch (error) {
+      if (isPreconditionFailed(error)) {
+        showNotification('Checklist item changed elsewhere, reloading.', 'warning')
+        await reloadTask()
+      } else {
+        showNotification(error instanceof Error ? error.message : 'Failed to remove checklist item.', 'error')
+      }
+    } finally {
+      setChildBusy(false)
+    }
   }
 
-  /** Adds an empty comment row to the task editor form state. */
-  function addComment() {
+  async function addComment() {
     const body = newCommentBody.trim()
-    if (!body) return
-    setForm((current) => ({
-      ...current,
-      comments: [{ body, taskItemId: current.id ?? emptyGuid }, ...(current.comments ?? [])],
-    }))
-    setNewCommentBody('')
+    if (!body || !form.id) return
+    setChildBusy(true)
+    try {
+      await taskFlowApi.addComment(form.id, { body })
+      setNewCommentBody('')
+      await reloadTask()
+    } catch (error) {
+      showNotification(error instanceof Error ? error.message : 'Failed to add comment.', 'error')
+    } finally {
+      setChildBusy(false)
+    }
   }
 
-  /** Removes a comment row from the task editor form state. */
-  function removeComment(comment: Comment) {
-    setForm((current) => ({
-      ...current,
-      comments: (current.comments ?? []).filter((existing) => existing !== comment),
-    }))
+  async function removeComment(comment: CommentDto) {
+    if (!form.id) return
+    setChildBusy(true)
+    try {
+      await taskFlowApi.removeComment(form.id, comment)
+      await reloadTask()
+    } catch (error) {
+      if (isPreconditionFailed(error)) {
+        showNotification('Comment changed elsewhere, reloading.', 'warning')
+        await reloadTask()
+      } else {
+        showNotification(error instanceof Error ? error.message : 'Failed to remove comment.', 'error')
+      }
+    } finally {
+      setChildBusy(false)
+    }
   }
 
   return (
@@ -342,56 +391,64 @@ function TaskEditorContent({ initialTask, isCreate, routeId }: TaskEditorContent
               </AccordionSummary>
               <AccordionDetails>
                 <Stack spacing={1.5}>
-                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                    <TextField
-                      fullWidth
-                      onChange={(event) => setNewChecklistTitle(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.preventDefault()
-                          addChecklistItem()
-                        }
-                      }}
-                      placeholder="Add item"
-                      value={newChecklistTitle}
-                    />
-                    <Button onClick={addChecklistItem} startIcon={<Plus size={17} />} variant="contained">
-                      Add
-                    </Button>
-                  </Stack>
-                  {checklist.map((item, index) => (
-                    <Stack
-                      direction="row"
-                      key={`${item.id ?? 'new'}-${index}`}
-                      spacing={1}
-                      sx={{ alignItems: 'center' }}
-                    >
-                      <Checkbox
-                        checked={item.isCompleted}
-                        onChange={(event) =>
-                          updateChecklistItem(index, {
-                            ...item,
-                            completedDate: event.target.checked ? new Date().toISOString() : null,
-                            isCompleted: event.target.checked,
-                          })
-                        }
-                      />
-                      <Typography
-                        sx={{
-                          flex: 1,
-                          textDecoration: item.isCompleted ? 'line-through' : 'none',
-                        }}
-                      >
-                        {item.title}
-                      </Typography>
-                      <Tooltip title="Remove checklist item">
-                        <IconButton aria-label="Remove checklist item" color="error" onClick={() => removeChecklistItem(index)}>
-                          <Trash2 size={17} />
-                        </IconButton>
-                      </Tooltip>
-                    </Stack>
-                  ))}
-                  {checklist.length === 0 ? <Typography color="text.secondary">No checklist items yet.</Typography> : null}
+                  {isCreate ? (
+                    <Typography color="text.secondary">Save the task before adding checklist items.</Typography>
+                  ) : (
+                    <>
+                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                        <TextField
+                          fullWidth
+                          onChange={(event) => setNewChecklistTitle(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault()
+                              void addChecklistItem()
+                            }
+                          }}
+                          placeholder="Add item"
+                          value={newChecklistTitle}
+                        />
+                        <Button
+                          disabled={childBusy}
+                          onClick={() => void addChecklistItem()}
+                          startIcon={<Plus size={17} />}
+                          variant="contained"
+                        >
+                          Add
+                        </Button>
+                      </Stack>
+                      {checklist.map((item) => (
+                        <Stack direction="row" key={item.id} spacing={1} sx={{ alignItems: 'center' }}>
+                          <Checkbox
+                            checked={item.isCompleted}
+                            disabled={childBusy}
+                            onChange={(event) => void toggleChecklistItem(item, event.target.checked)}
+                          />
+                          <Typography
+                            sx={{
+                              flex: 1,
+                              textDecoration: item.isCompleted ? 'line-through' : 'none',
+                            }}
+                          >
+                            {item.title}
+                          </Typography>
+                          <Tooltip title="Remove checklist item">
+                            <IconButton
+                              aria-label="Remove checklist item"
+                              color="error"
+                              disabled={childBusy}
+                              onClick={() => void removeChecklistItem(item)}
+                            >
+                              <Trash2 size={17} />
+                            </IconButton>
+                          </Tooltip>
+                        </Stack>
+                      ))}
+                    </>
+                  )}
+                  {!isCreate && checklist.length === 0 ? (
+                    <Typography color="text.secondary">No checklist items yet.</Typography>
+                  ) : null}
                 </Stack>
               </AccordionDetails>
             </Accordion>
@@ -402,32 +459,50 @@ function TaskEditorContent({ initialTask, isCreate, routeId }: TaskEditorContent
               </AccordionSummary>
               <AccordionDetails>
                 <Stack spacing={1.5}>
-                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                    <TextField
-                      fullWidth
-                      minRows={2}
-                      multiline
-                      onChange={(event) => setNewCommentBody(event.target.value)}
-                      placeholder="Add a comment"
-                      value={newCommentBody}
-                    />
-                    <Button onClick={addComment} startIcon={<Plus size={17} />} variant="contained">
-                      Add
-                    </Button>
-                  </Stack>
-                  {comments.map((comment, index) => (
-                    <Paper key={`${comment.id ?? 'new'}-${index}`} variant="outlined" sx={{ p: 1.5 }}>
-                      <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
-                        <Typography sx={{ flex: 1, whiteSpace: 'pre-wrap' }}>{comment.body}</Typography>
-                        <Tooltip title="Remove comment">
-                          <IconButton aria-label="Remove comment" color="error" onClick={() => removeComment(comment)}>
-                            <Trash2 size={17} />
-                          </IconButton>
-                        </Tooltip>
+                  {isCreate ? (
+                    <Typography color="text.secondary">Save the task before adding comments.</Typography>
+                  ) : (
+                    <>
+                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                        <TextField
+                          fullWidth
+                          minRows={2}
+                          multiline
+                          onChange={(event) => setNewCommentBody(event.target.value)}
+                          placeholder="Add a comment"
+                          value={newCommentBody}
+                        />
+                        <Button
+                          disabled={childBusy}
+                          onClick={() => void addComment()}
+                          startIcon={<Plus size={17} />}
+                          variant="contained"
+                        >
+                          Add
+                        </Button>
                       </Stack>
-                    </Paper>
-                  ))}
-                  {comments.length === 0 ? <Typography color="text.secondary">No comments yet.</Typography> : null}
+                      {comments.map((comment) => (
+                        <Paper key={comment.id} variant="outlined" sx={{ p: 1.5 }}>
+                          <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+                            <Typography sx={{ flex: 1, whiteSpace: 'pre-wrap' }}>{comment.body}</Typography>
+                            <Tooltip title="Remove comment">
+                              <IconButton
+                                aria-label="Remove comment"
+                                color="error"
+                                disabled={childBusy}
+                                onClick={() => void removeComment(comment)}
+                              >
+                                <Trash2 size={17} />
+                              </IconButton>
+                            </Tooltip>
+                          </Stack>
+                        </Paper>
+                      ))}
+                    </>
+                  )}
+                  {!isCreate && comments.length === 0 ? (
+                    <Typography color="text.secondary">No comments yet.</Typography>
+                  ) : null}
                 </Stack>
               </AccordionDetails>
             </Accordion>
@@ -447,7 +522,10 @@ function TaskEditorContent({ initialTask, isCreate, routeId }: TaskEditorContent
       <ConfirmDialog
         message={`Delete '${form.title || 'this task'}'? This cannot be undone.`}
         onCancel={() => setConfirmDelete(false)}
-        onConfirm={() => form.id && deleteMutation.mutate(form.id)}
+        onConfirm={() => {
+          setConfirmDelete(false)
+          if (form.id) deleteMutation.mutate(form)
+        }}
         open={confirmDelete}
         title="Delete task"
       />
@@ -466,7 +544,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 }
 
 /** Builds create empty task values for API or UI code. */
-function createEmptyTask(): TaskItem {
+function createEmptyTask(): TaskItemDto {
   return {
     checklistItems: [],
     comments: [],
@@ -478,7 +556,7 @@ function createEmptyTask(): TaskItem {
 }
 
 /** Normalizes task form state into the API payload shape. */
-function normalizeTask(task: TaskItem): TaskItem {
+function normalizeTask(task: TaskItemDto): TaskItemDto {
   return {
     ...task,
     checklistItems: [...(task.checklistItems ?? [])].sort((left, right) => left.sortOrder - right.sortOrder),

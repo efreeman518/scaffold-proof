@@ -9,7 +9,7 @@ public class NoOpTaskAssistantAgent(ILogger<NoOpTaskAssistantAgent> logger) : IT
     public Task<AgentChatResponse> ChatAsync(
         AgentChatRequest request, Guid? tenantId, CancellationToken ct = default)
     {
-        logger.LogWarning("TaskAssistant agent not configured - returning stub response");
+        logger.AssistantNotConfigured();
         return Task.FromResult(new AgentChatResponse
         {
             Message = "AI agent is not configured. Wire the Aspire chat model or enable Foundry Local to continue.",

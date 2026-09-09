@@ -12,8 +12,8 @@ public interface ICategoryApiService
     Task<CategoryModel?> GetAsync(Guid id, CancellationToken ct = default);
     /// <summary>Creates requested data after validation and maps the result to the caller contract.</summary>
     Task<CategoryModel> CreateAsync(CategoryModel model, CancellationToken ct = default);
-    /// <summary>Updates existing data after validation and preserves domain invariants.</summary>
-    Task<CategoryModel> UpdateAsync(CategoryModel model, CancellationToken ct = default);
-    /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
-    Task DeleteAsync(Guid id, CancellationToken ct = default);
+    /// <summary>Updates existing data after validation and preserves domain invariants. expectedVersion is sent as If-Match ("*" when null).</summary>
+    Task<CategoryModel> UpdateAsync(CategoryModel model, long? expectedVersion, CancellationToken ct = default);
+    /// <summary>Deletes requested data and maps failures to the caller contract. expectedVersion is sent as If-Match ("*" when null).</summary>
+    Task DeleteAsync(Guid id, long? expectedVersion, CancellationToken ct = default);
 }

@@ -7,7 +7,7 @@ using DomainTenantId = TaskFlow.Domain.Shared.TenantId;
 namespace TaskFlow.Domain.Model;
 
 /// <summary>Models comment domain behavior and invariants.</summary>
-public class Comment : EntityBase<DomainCommentId>, ITenantEntity<DomainTenantId>
+public class Comment : TaskFlowEntityBase<DomainCommentId>, ITenantEntity<DomainTenantId>
 {
     public DomainTenantId TenantId { get; init; }
     public string Body { get; private set; } = null!;
@@ -22,17 +22,18 @@ public class Comment : EntityBase<DomainCommentId>, ITenantEntity<DomainTenantId
     private Comment() { }
 
     /// <summary>Initializes comment with required dependencies and default state.</summary>
-    private Comment(DomainTenantId tenantId, DomainTaskItemId taskItemId, string body)
+    private Comment(DomainTenantId tenantId, DomainTaskItemId taskItemId, string body, DomainCommentId? id)
     {
+        if (id.HasValue) Id = id.Value; // D-033: caller-supplied UUIDv7 id makes create idempotent.
         TenantId = tenantId;
         TaskItemId = taskItemId;
         Body = body;
     }
 
     /// <summary>Creates requested data after validation and maps the result to the caller contract.</summary>
-    public static DomainResult<Comment> Create(DomainTenantId tenantId, DomainTaskItemId taskItemId, string body)
+    public static DomainResult<Comment> Create(DomainTenantId tenantId, DomainTaskItemId taskItemId, string body, DomainCommentId? id = null)
     {
-        var entity = new Comment(tenantId, taskItemId, body);
+        var entity = new Comment(tenantId, taskItemId, body, id);
         return entity.Valid();
     }
 

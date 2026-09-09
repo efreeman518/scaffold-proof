@@ -34,6 +34,42 @@ This file records the shared domain language used by the TaskFlow reference app.
 | `EntraID` | external-system | Enterprise identity provider for API authentication. | Use in auth configuration. |
 | `EntraExternal` | external-system | External identity provider for gateway/user-facing auth. | Use for gateway auth configuration. |
 | `enterprise` | auth scenario | Internal workforce authentication scenario. | Use in domain spec auth scenario. |
+| `ETag` | concept | HTTP entity tag identifying a specific version of an aggregate; used for optimistic concurrency via `If-Match`. | `ETag: "<Version>"` (strong). See `Version`, `Aggregate Version`. |
+| `Version` | concept | App-managed monotonic `long` concurrency token on every entity; the raw value behind an ETag. | `long Version` column, `IsConcurrencyToken()`. See D-021. |
+| `Aggregate Version` | concept | The root entity's `Version`; the single concurrency currency for an aggregate, bumped whenever a child is mutated. | Child PUT/DELETE use the root's `Version` as If-Match currency, not their own. See D-031. |
+| `Cursor` | concept | Opaque, tamper-protected token encoding the last-seen sort key and id for keyset (seek) pagination. | `CursorToken`, `ICursorProtector`; Base64Url encoded. |
+| `SortMode` | concept | Named, enumerated sort order for a cursor-paged list (e.g. `DueDateAsc`, `ModifiedDesc`). | `TaskItemSortMode` enum; part of the cursor's tamper check. |
+| `Export` | concept | Bulk, unpaged NDJSON stream of an entity's flat scalar fields for downstream/offline consumption. | `TaskItemExportDto`; `StreamTaskItemExportAsync(afterId, batchSize)`. |
+| `Idempotent Create` | concept | A create request carrying a caller-supplied UUIDv7 id; replay with an equivalent payload returns the existing entity, a divergent payload conflicts. | See GR-17, D-033. |
+| `Outbox` | concept | TaskFlow-owned transactional table of staged domain events/messages, written in the same transaction as the domain change and drained by the scheduler host. | `OutboxMessage`; provider-neutral lease-based claim. See D-026. |
+| `Consumer Inbox` | concept | Table recording which messages a given consumer has already processed, enforcing at-least-once-safe idempotent consumption. | `ConsumerInbox (Consumer, MessageId, ProcessedAtUtc)`. See D-029. |
+| `Work Table` | concept | A staging table holding units of deferred work for a background worker (e.g. blob deletes) that is not itself the domain entity. | `BlobDeleteWork`; drained by a dedicated worker. |
+| `Lease` | concept | A time-bounded claim (`LeaseOwner`, `LeaseExpiresUtc`) a scheduler/worker replica takes on a batch of rows so other replicas skip them until it expires. | Conditional `ExecuteUpdateAsync` claim. See D-026. |
+| `Recurrence Template` | concept | The Recurring `TaskItem` definition (`RecurrencePattern`, `NextOccurrenceAtUtc`) that a scheduled job expands into cloned occurrence tasks. | `RecurrenceTemplateId` on the generated occurrence. |
+| `Occurrence` | concept | One cloned instance of a Recurrence Template for a specific point in time, unique per tenant on `(RecurrenceTemplateId, OccurrenceUtc)`. | `OccurrenceUtc`; upserted via FlexLabs Upsert. |
+| `Provider` (database provider) | concept | The relational database engine backing a DbContext for a given deployment: SQL Server or PostgreSQL, selected by config. | `Database:Provider`; `TaskFlowDbProvider` enum. See D-020. |
+| `Blind Index` | concept | An indexed HMAC-SHA256 hash sibling column enabling equality lookup on a deterministically-encrypted value without decrypting it. | `SecureDeterministicHash`. See D-023. |
+| `Connection Multiplexer` | concept | One long-lived broker connection shared process-wide, over which channels are rented per publish and dedicated per consumer. | `RabbitMqConnectionMultiplexer`; analogous to StackExchange.Redis `ConnectionMultiplexer`. See D-034. |
+| `Prefetch Count` | concept | The number of unacknowledged deliveries a broker may have outstanding on one consumer channel; also that consumer's dispatch concurrency. | `Messaging:RabbitMq:Consumers:{queue}:PrefetchCount`; `BasicQosAsync(0, n, global: false)`. See D-034. |
+| `Dead-Letter Exchange` | concept | The RabbitMQ exchange a queue routes rejected or expired messages to; the broker-side equivalent of a Service Bus dead-letter queue. | `taskflow.domain-events.dlx` -> `taskflow.dead-letter`; `x-dead-letter-exchange` queue argument. See D-034. |
+| `Lane` | concept | A named preset of infrastructure-provider defaults for a deployment target (e.g. full Azure, or Portable). | `TASKFLOW_LANE`; seeds provider-switch defaults only, never read at a registration site. See D-035. |
+| `Portable lane` | concept | The non-Azure hosting lane: containers on a VPS, PostgreSQL and the LLM on separate providers, Azure retained only for Key Vault and App Configuration. | `TASKFLOW_LANE=Portable`. See D-035, D-036, D-044. |
+| `Provider switch` | concept | One independent, provider-neutral seam (enum + config key + env var + resolver + dispatcher) selecting which concrete implementation of a port is registered. | `RegisterServices.Messaging.cs` is the template; env wins over config, unknown value falls back to the Azure default. See D-034, D-035. |
+| `Lane preset` | concept | The set of provider-switch defaults a hosting lane seeds; any switch's own env/config still overrides its lane default. | `hostingLaneDefaults` in `resource-implementation.yaml`. See D-035. |
+| `Read-model provider` | concept | The backing store for the denormalized `TaskView` projection: Cosmos DB or a relational table. | `ReadModel:Provider = Cosmos \| Relational`. See D-038. |
+| `Object-storage provider` | concept | The backing store for attachment binary content behind `IBlobStorageRepository`: Azure Blob or S3-compatible. | `Storage:Provider = AzureBlob \| S3`. See D-037. |
+| `Audit sink` | concept | The backing store for `AuditLog` rows: Azure Table or a relational table. | `Audit:Provider = AzureTable \| Relational`. See D-039. |
+| `Presigned URL` | concept | A time-limited, signed download URL issued directly against object storage without proxying bytes through the app. | S3 arm `GetBlobUriAsync`; `Storage:S3:PublicServiceUrl`, `DownloadUrlLifetime`. See D-037. |
+| `Feature flag` | concept | A dynamically toggleable gate on an optional surface, backed by Azure App Configuration + `Microsoft.FeatureManagement`; a disabled HTTP surface answers 404. | `TaskViews`, `Export`, `SemanticSearch`, `AiReview`; `IVariantFeatureManager`, endpoint-filter check points. See D-042, GR-20. |
+| `Targeting context` | concept | The tenant identity a feature flag's targeting filter evaluates against to decide rollout. | `TenantTargetingContextAccessor`; `WithTargeting<T>()`. See D-042. |
+| `Pooler mode` | concept | The PgBouncer connection-pooling mode a Postgres connection string is prepared for. | `Database:PostgreSql:PoolerMode = None \| Transaction`; `No Reset On Close=true;Max Auto Prepare=0`. See D-045. |
+| `Hedged request` | concept | A second, concurrent attempt at an in-flight idempotent read issued after a delay, racing the original to reduce tail latency. | Blazor `AddHedging` on GET only; never on writes. See D-051. |
+| `Distributed lock` | concept | A short-lived, cross-replica mutual-exclusion primitive for non-reentrant startup tasks, distinct from the lease pattern used for work-table claims. | `IDistributedLock.TryAcquireAsync`; Redis `SET NX PX` + Lua compare-and-delete release, in-process fallback. See D-052. |
+| `Liveness probe` | concept | The health check answering whether the process itself should be restarted; excludes external dependencies. | `/healthz/live`, tag `live`, checks `self` only. See D-049. |
+| `Readiness probe` | concept | The health check answering whether an instance should receive traffic; includes external dependencies. | `/healthz/ready`, tag `ready`: database, outbox, scheduler, broker on consumer hosts. See D-049. |
+| `Trace context propagation` | concept | Carrying the W3C `traceparent`/`tracestate` across an asynchronous broker hop so producer and consumer spans join one trace. | Injected into RabbitMQ headers / Service Bus `ApplicationProperties` by the dispatcher; extracted by the consumer with an `ActivityLink` to the producer. See D-053. |
+| `Internal RPC (gRPC read service)` | concept | The one in-cluster service-to-service hop exposed as gRPC instead of REST: Blazor Server reading task summaries directly from the Api. | `TaskFlowRead.GetTaskItemSummary/GetTaskMetadata/GetTaskItem`; dedicated cleartext HTTP/2 Kestrel endpoint, port 8081. See D-054. |
+| `Semantic search` / `Embedding` | concept | Vector-similarity search over task item text, backed by a stored embedding vector; opt-in and tenant-scoped like every other search mode. | `TaskItemEmbedding.Embedding (vector(1536))`; `Search:Provider = PgVector`; `SearchMode.Semantic`. See D-040, GR-19. |
 
 ## Rejected Synonyms
 
@@ -86,9 +122,10 @@ This file records the shared domain language used by the TaskFlow reference app.
 | Event | Raised By | Meaning | Consumers |
 |---|---|---|---|
 | `TaskItemCreated` | `TaskItem` | A new task item exists. | Service Bus, Functions, Cosmos projection, AI search. |
+| `TaskItemContentChanged` | `TaskItem` | The task's embeddable text (title or description) actually changed value. | pgvector embedding consumer (D-040). |
 | `TaskItemStatusChanged` | `TaskItem` | Task lifecycle state changed. | Service Bus, Functions, Cosmos projection, notifications. |
 | `TaskItemCompleted` | `TaskItem` | Task reached completed state. | Notifications. |
-| `TaskItemRescheduled` | `TaskItem` | Task date range changed. | Recalculation, scheduler. |
+| `TaskItemRescheduled` | `TaskItem` | Task date range changed. | None today - no aggregate method raises it; the record and its wire registration are kept for the schema, not for a live path. |
 | `TaskItemOverdueSuspected` | Scheduler | Scheduled job found a likely overdue task. | Notifications, escalation. |
 | `CommentAdded` | `Comment` | Discussion entry was added. | Notifications, activity views. |
 | `AttachmentUploaded` | `Attachment` | Attachment metadata points to uploaded content. | Functions, metadata extraction. |
@@ -151,7 +188,8 @@ Terms used by the workflow orchestration layer. These are FlowEngine-runtime con
 
 - Use `TaskItem` everywhere source-level naming needs the aggregate; do not shorten it to `Task`.
 - Use `Attachment` for metadata and blob reference. Do not model file bytes on the domain entity.
-- Use integration event records in `Application.Contracts.Events`; do not publish domain namespace events over transport.
+- Use the shared lifecycle event records in `Domain.Shared.Events` as both the raised domain event and the integration-event payload (one record, wrapped by `IntegrationEventEnvelope`); do not define a second parallel set.
+- Use integration event records raised by the aggregate; do not publish domain namespace events over transport.
 - Use `OwnerType` and `OwnerId` for polymorphic attachment ownership; do not add EF navigation collections to owners.
 - Use `WorkflowDefinition` for the persisted FlowEngine document; reserve unqualified `Workflow` for prose, never as a C# type name.
 - Use `HumanTask` (not `Task`) for FlowEngine human-approval records - collides with both `System.Threading.Tasks.Task` and `TaskItem`.

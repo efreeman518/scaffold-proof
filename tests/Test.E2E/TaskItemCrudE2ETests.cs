@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using TaskFlow.Application.Models;
+using TaskFlow.Application.Models.Paging;
 using TaskFlow.Domain.Shared.Enums;
 using Test.Support;
 
@@ -14,7 +15,7 @@ namespace Test.E2E;
 /// Multi-endpoint workflow tests over the full HTTP->Endpoint->Service->EF->SQL stack: TaskItem/Category/Tag
 /// CRUD round-trips, server-side paged search across distinct pages, and child-aggregate (Comment,
 /// ChecklistItem) lifecycles.
-/// SQL tier (WebApplicationFactory + Testcontainers SQL via <c>SqlApiFactory</c>): real SQL is required
+/// SQL tier (WebApplicationFactory + Testcontainers SQL via <c>DbApiFactory</c>): real SQL is required
 /// for paging plans, FK constraints applied by EF migrations, and projection behavior - InMemory
 /// (Test.Endpoints tier) would silently mask these. The Aspire tier is unnecessary because only one
 /// backing service (SQL) participates.
@@ -23,18 +24,18 @@ namespace Test.E2E;
 [TestCategory("E2E")]
 public class TaskItemCrudE2ETests
 {
-    private static SqlApiFactory _factory = null!;
+    private static DbApiFactory _factory = null!;
     private static readonly JsonSerializerOptions _json = JsonTestOptions.Default;
 
     /// <summary>Initializes shared test fixtures before the class-level test run begins.</summary>
     [ClassInitialize]
     public static async Task ClassInit(TestContext _)
     {
-        await SqlApiFactory.StartContainerAsync(_.CancellationToken);
-        if (SqlApiFactory.DockerUnavailableReason is not null || SqlApiFactory.StartupError is not null)
+        await DbApiFactory.StartContainerAsync(_.CancellationToken);
+        if (DbApiFactory.DockerUnavailableReason is not null || DbApiFactory.StartupError is not null)
             return;
 
-        _factory = new SqlApiFactory();
+        _factory = new DbApiFactory();
 
         // Apply EF migrations against the real SQL container
         using var scope = _factory.Services.CreateScope();
@@ -44,11 +45,7 @@ public class TaskItemCrudE2ETests
 
     /// <summary>Disposes shared test fixtures after the class-level test run finishes.</summary>
     [ClassCleanup]
-    public static async Task ClassCleanup()
-    {
-        _factory?.Dispose();
-        await SqlApiFactory.StopContainerAsync();
-    }
+    public static void ClassCleanup() => _factory?.Dispose();
 
     /// <summary>Creates client used by the surrounding test cases.</summary>
     private static HttpClient CreateClient() => _factory.CreateClient();
@@ -85,15 +82,17 @@ public class TaskItemCrudE2ETests
             Priority = Priority.Low,
             Status = fetched.Status
         };
-        var putResp = await client.PutAsJsonAsync($"/api/v1/task-items/{id}",
-            new DefaultRequest<TaskItemDto> { Item = updateDto }, cancellationToken: TestContext.CancellationToken);
+        var putResp = await client.PutWithIfMatchAsync($"/api/v1/task-items/{id}",
+            new DefaultRequest<TaskItemDto> { Item = updateDto },
+            ConcurrencyHttp.IfMatch(fetched.Version!.Value), TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.OK, putResp.StatusCode,
             $"Update failed: {await putResp.Content.ReadAsStringAsync(TestContext.CancellationToken)}");
         var updated = (await putResp.Content.ReadFromJsonAsync<DefaultResponse<TaskItemDto>>(_json, TestContext.CancellationToken))!.Item;
         Assert.AreEqual("E2E Task Updated", updated!.Title);
 
         // DELETE
-        var delResp = await client.DeleteAsync($"/api/v1/task-items/{id}", TestContext.CancellationToken);
+        var delResp = await client.DeleteWithIfMatchAsync($"/api/v1/task-items/{id}",
+            ConcurrencyHttp.IfMatch(updated.Version!.Value), TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.NoContent, delResp.StatusCode);
 
         // VERIFY DELETED
@@ -121,11 +120,13 @@ public class TaskItemCrudE2ETests
         Assert.AreEqual(HttpStatusCode.OK, getResp.StatusCode);
 
         var updateDto = new CategoryDto { Id = id, Name = "E2E Category Updated", IsActive = true, SortOrder = 2 };
-        var putResp = await client.PutAsJsonAsync($"/api/v1/categories/{id}",
-            new DefaultRequest<CategoryDto> { Item = updateDto }, cancellationToken: TestContext.CancellationToken);
+        var putResp = await client.PutWithIfMatchAsync($"/api/v1/categories/{id}",
+            new DefaultRequest<CategoryDto> { Item = updateDto },
+            ConcurrencyHttp.IfMatch(created.Version!.Value), TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.OK, putResp.StatusCode);
 
-        var delResp = await client.DeleteAsync($"/api/v1/categories/{id}", TestContext.CancellationToken);
+        var delResp = await client.DeleteWithIfMatchAsync($"/api/v1/categories/{id}",
+            ConcurrencyHttp.IfMatch(putResp.ETagValue()), TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.NoContent, delResp.StatusCode);
 
         var verifyResp = await client.GetAsync($"/api/v1/categories/{id}", TestContext.CancellationToken);
@@ -152,11 +153,13 @@ public class TaskItemCrudE2ETests
         Assert.AreEqual(HttpStatusCode.OK, getResp.StatusCode);
 
         var updateDto = new TagDto { Id = id, Name = "e2e-tag-updated", Color = "#00FF00" };
-        var putResp = await client.PutAsJsonAsync($"/api/v1/tags/{id}",
-            new DefaultRequest<TagDto> { Item = updateDto }, cancellationToken: TestContext.CancellationToken);
+        var putResp = await client.PutWithIfMatchAsync($"/api/v1/tags/{id}",
+            new DefaultRequest<TagDto> { Item = updateDto },
+            ConcurrencyHttp.IfMatch(created.Version!.Value), TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.OK, putResp.StatusCode);
 
-        var delResp = await client.DeleteAsync($"/api/v1/tags/{id}", TestContext.CancellationToken);
+        var delResp = await client.DeleteWithIfMatchAsync($"/api/v1/tags/{id}",
+            ConcurrencyHttp.IfMatch(putResp.ETagValue()), TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.NoContent, delResp.StatusCode);
 
         var verifyResp = await client.GetAsync($"/api/v1/tags/{id}", TestContext.CancellationToken);
@@ -177,9 +180,8 @@ public class TaskItemCrudE2ETests
             new DefaultRequest<TaskItemDto> { Item = dto }, cancellationToken: TestContext.CancellationToken);
 
         // Search
-        var searchReq = new SearchRequest<TaskItemSearchFilter>
+        var searchReq = new TaskItemCursorSearchRequest
         {
-            PageIndex = 1,
             PageSize = 50,
             Filter = new TaskItemSearchFilter { SearchTerm = searchMarker }
         };
@@ -188,7 +190,6 @@ public class TaskItemCrudE2ETests
 
         using var document = await JsonDocument.ParseAsync(await searchResp.Content.ReadAsStreamAsync(TestContext.CancellationToken), cancellationToken: TestContext.CancellationToken);
         var root = document.RootElement;
-        var total = root.GetProperty("total").GetInt32();
         var titles = root.GetProperty("data")
             .EnumerateArray()
             .Select(item => item.GetProperty("title").GetString())
@@ -196,18 +197,22 @@ public class TaskItemCrudE2ETests
             .Cast<string>()
             .ToList();
 
-        Assert.IsGreaterThanOrEqualTo(total, 1, $"Expected at least 1 search result, got {total}");
+        // Keyset pages carry no total (GR-18) - the rows themselves are the assertion.
         CollectionAssert.Contains(titles, $"{searchMarker} Task");
     }
 
-    /// <summary>Verifies task item search paginates distinct pages against real SQL behavior and protects the expected test contract.</summary>
+    /// <summary>
+    /// Walks every keyset page against real SQL. Offset paging is gone (GR-18), so this replaces the
+    /// former distinct-pages assertion: the property that matters now is that a page-through returns
+    /// each row exactly once, which is precisely what a non-total sort order would break.
+    /// </summary>
     [TestMethod]
-    public async Task TaskItem_Search_PaginatesDistinctPages_AgainstRealSql()
+    public async Task TaskItem_CursorSearch_WalksEveryRowOnce_AgainstRealSql()
     {
         using var client = CreateClient();
 
         var searchMarker = $"Paged Search E2E {Guid.NewGuid():N}";
-        foreach (var title in new[] { $"{searchMarker} 01", $"{searchMarker} 02" })
+        foreach (var title in new[] { $"{searchMarker} 01", $"{searchMarker} 02", $"{searchMarker} 03" })
         {
             var dto = new TaskItemDto { Title = title, Priority = Priority.Medium };
             var createResp = await client.PostAsJsonAsync("/api/v1/task-items",
@@ -216,12 +221,13 @@ public class TaskItemCrudE2ETests
                 $"Create failed: {await createResp.Content.ReadAsStringAsync(TestContext.CancellationToken)}");
         }
 
-        async Task<(int Total, List<string> Titles)> SearchPageAsync(int pageIndex)
+        async Task<(bool HasMore, string? NextCursor, List<string> Titles)> SearchPageAsync(string? cursor)
         {
-            var request = new SearchRequest<TaskItemSearchFilter>
+            var request = new TaskItemCursorSearchRequest
             {
-                PageIndex = pageIndex,
                 PageSize = 1,
+                SortMode = TaskItemSortMode.IdAsc,
+                Cursor = cursor,
                 Filter = new TaskItemSearchFilter { SearchTerm = searchMarker }
             };
 
@@ -229,9 +235,10 @@ public class TaskItemCrudE2ETests
             Assert.AreEqual(HttpStatusCode.OK, response.StatusCode,
                 $"Search failed: {await response.Content.ReadAsStringAsync(TestContext.CancellationToken)}");
 
-            using var document = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(TestContext.CancellationToken), cancellationToken: TestContext.CancellationToken);
+            using var document = await JsonDocument.ParseAsync(
+                await response.Content.ReadAsStreamAsync(TestContext.CancellationToken),
+                cancellationToken: TestContext.CancellationToken);
             var root = document.RootElement;
-            var total = root.GetProperty("total").GetInt32();
             var titles = root.GetProperty("data")
                 .EnumerateArray()
                 .Select(item => item.GetProperty("title").GetString())
@@ -239,26 +246,33 @@ public class TaskItemCrudE2ETests
                 .Cast<string>()
                 .ToList();
 
-            return (total, titles);
+            var next = root.GetProperty("nextCursor").ValueKind == JsonValueKind.Null
+                ? null
+                : root.GetProperty("nextCursor").GetString();
+
+            return (root.GetProperty("hasMore").GetBoolean(), next, titles);
         }
 
-        var firstPage = await SearchPageAsync(1);
-        var secondPage = await SearchPageAsync(2);
-
-        Assert.AreEqual(2, firstPage.Total);
-        Assert.AreEqual(2, secondPage.Total);
-        Assert.HasCount(1, firstPage.Titles);
-        Assert.HasCount(1, secondPage.Titles);
-
-        var pagedTitles = new[]
+        var seen = new List<string>();
+        string? cursor = null;
+        for (var page = 0; page < 5; page++)
         {
-            firstPage.Titles[0],
-            secondPage.Titles[0]
-        };
+            var (hasMore, next, titles) = await SearchPageAsync(cursor);
+            seen.AddRange(titles);
+            if (!hasMore)
+            {
+                Assert.IsNull(next, "The final page must not hand out a cursor.");
+                break;
+            }
+
+            Assert.IsNotNull(next, "A page with HasMore must carry the next cursor.");
+            cursor = next;
+        }
 
         CollectionAssert.AreEquivalent(
-            new[] { $"{searchMarker} 01", $"{searchMarker} 02" },
-            pagedTitles);
+            new[] { $"{searchMarker} 01", $"{searchMarker} 02", $"{searchMarker} 03" },
+            seen);
+        Assert.AreEqual(seen.Count, seen.Distinct().Count(), "Keyset paging must not repeat a row.");
     }
 
     // -- Comment CRUD (child of TaskItem) ----------------------
@@ -289,7 +303,9 @@ public class TaskItemCrudE2ETests
         Assert.AreEqual(HttpStatusCode.OK, getResp.StatusCode);
 
         // Remove through the aggregate root; the orphaned row is hard-deleted
-        var delResp = await client.DeleteAsync($"/api/v1/task-items/{taskId}/comments/{commentId}", TestContext.CancellationToken);
+        var delResp = await client.DeleteWithIfMatchAsync(
+            $"/api/v1/task-items/{taskId}/comments/{commentId}",
+            ConcurrencyHttp.IfMatch(createResp.ETagValue()), TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.NoContent, delResp.StatusCode);
 
         var verifyResp = await client.GetAsync($"/api/v1/comments/{commentId}", TestContext.CancellationToken);
@@ -319,21 +335,23 @@ public class TaskItemCrudE2ETests
         Assert.IsNotNull(created);
 
         // Remove through the aggregate root
-        var delResp = await client.DeleteAsync($"/api/v1/task-items/{taskId}/checklist-items/{created.Id}", TestContext.CancellationToken);
+        var delResp = await client.DeleteWithIfMatchAsync(
+            $"/api/v1/task-items/{taskId}/checklist-items/{created.Id}",
+            ConcurrencyHttp.IfMatch(createResp.ETagValue()), TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.NoContent, delResp.StatusCode);
     }
 
     [TestInitialize]
     public void TestSetup()
     {
-        if (SqlApiFactory.DockerUnavailableReason is not null)
+        if (DbApiFactory.DockerUnavailableReason is not null)
         {
-            Assert.Inconclusive(SqlApiFactory.DockerUnavailableReason);
+            Assert.Inconclusive(DbApiFactory.DockerUnavailableReason);
             return;
         }
 
-        if (SqlApiFactory.StartupError is not null)
-            Assert.Fail($"SQL container startup failed after Docker preflight succeeded:{Environment.NewLine}{SqlApiFactory.StartupError}");
+        if (DbApiFactory.StartupError is not null)
+            Assert.Fail($"SQL container startup failed after Docker preflight succeeded:{Environment.NewLine}{DbApiFactory.StartupError}");
     }
 
     public TestContext TestContext { get; set; } = null!;

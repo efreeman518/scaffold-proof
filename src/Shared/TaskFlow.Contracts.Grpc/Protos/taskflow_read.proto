@@ -1,0 +1,175 @@
+syntax = "proto3";
+
+package taskflow.read.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "TaskFlow.Contracts.Grpc";
+
+// D-054: the internal read contract consumed by the Blazor Server host over cleartext HTTP/2.
+// It mirrors the REST DTOs in TaskFlow.Application.Models(.Reads) field for field so the two styles
+// answer the same question with the same data; TaskFlowReadGrpcMapper is the one place that converts.
+//
+// Conventions used throughout, and the reasons:
+// - GUIDs travel as their canonical "D" strings. proto has no uuid type, and bytes would make every
+//   log line and grpcurl transcript unreadable for a 16-byte saving.
+// - Aggregate versions are int64: the DTO concurrency token is a long (D-021).
+// - Timestamps are google.protobuf.Timestamp, which is a UTC instant. DateTimeOffset offsets are NOT
+//   carried; a value round-trips as the same instant with a zero offset. Every TaskFlow timestamp is
+//   already stored and compared in UTC, so nothing depends on the original offset.
+// - decimal has no proto equivalent that keeps scale, so effort values travel as invariant-culture
+//   strings rather than a lossy double.
+// - Optional scalars use proto3 explicit presence (the `optional` keyword) so "absent" and "default"
+//   stay distinguishable, matching the nullable DTO properties.
+
+service TaskFlowRead {
+  // Tenant-wide task counts by status plus overdue and total, in one round trip.
+  rpc GetTaskItemSummary(GetTaskItemSummaryRequest) returns (TaskItemSummary);
+
+  // Full category and tag lists for pickers.
+  rpc GetTaskMetadata(GetTaskMetadataRequest) returns (TaskMetadata);
+
+  // A single task item. NOT_FOUND when the id does not resolve inside the caller's tenant.
+  rpc GetTaskItem(GetTaskItemRequest) returns (TaskItem);
+}
+
+// Both aggregate reads are tenant-scoped from the call's authenticated principal, so neither takes a
+// parameter. The empty request messages exist because a proto rpc must name one, and because adding a
+// filter later is then a field addition instead of a signature change.
+message GetTaskItemSummaryRequest {}
+
+message GetTaskMetadataRequest {}
+
+message GetTaskItemRequest {
+  string id = 1;
+}
+
+enum TaskItemStatus {
+  TASK_ITEM_STATUS_NONE = 0;
+  TASK_ITEM_STATUS_OPEN = 1;
+  TASK_ITEM_STATUS_IN_PROGRESS = 2;
+  TASK_ITEM_STATUS_BLOCKED = 3;
+  TASK_ITEM_STATUS_COMPLETED = 4;
+  TASK_ITEM_STATUS_CANCELLED = 5;
+}
+
+enum Priority {
+  PRIORITY_NONE = 0;
+  PRIORITY_LOW = 1;
+  PRIORITY_MEDIUM = 2;
+  PRIORITY_HIGH = 3;
+  PRIORITY_CRITICAL = 4;
+}
+
+enum AttachmentOwnerType {
+  ATTACHMENT_OWNER_TYPE_TASK_ITEM = 0;
+  ATTACHMENT_OWNER_TYPE_COMMENT = 1;
+}
+
+message TaskItemStatusCount {
+  TaskItemStatus status = 1;
+  int32 count = 2;
+}
+
+message TaskItemSummary {
+  repeated TaskItemStatusCount by_status = 1;
+  int32 overdue = 2;
+  int32 total = 3;
+  google.protobuf.Timestamp generated_at_utc = 4;
+}
+
+message TaskMetadata {
+  repeated Category categories = 1;
+  repeated Tag tags = 2;
+  google.protobuf.Timestamp generated_at_utc = 3;
+}
+
+message Category {
+  string id = 1;
+  optional int64 version = 2;
+  string tenant_id = 3;
+  string name = 4;
+  optional string description = 5;
+  int32 sort_order = 6;
+  bool is_active = 7;
+  optional string parent_category_id = 8;
+}
+
+message Tag {
+  string id = 1;
+  optional int64 version = 2;
+  string tenant_id = 3;
+  string name = 4;
+  optional string color = 5;
+}
+
+message ChecklistItem {
+  string id = 1;
+  optional int64 version = 2;
+  string tenant_id = 3;
+  string title = 4;
+  bool is_completed = 5;
+  int32 sort_order = 6;
+  optional google.protobuf.Timestamp completed_date = 7;
+  string task_item_id = 8;
+}
+
+message Attachment {
+  string id = 1;
+  optional int64 version = 2;
+  string tenant_id = 3;
+  string file_name = 4;
+  string content_type = 5;
+  int64 file_size_bytes = 6;
+  string storage_uri = 7;
+  AttachmentOwnerType owner_type = 8;
+  string owner_id = 9;
+}
+
+message Comment {
+  string id = 1;
+  optional int64 version = 2;
+  string tenant_id = 3;
+  string body = 4;
+  string task_item_id = 5;
+  repeated Attachment attachments = 6;
+}
+
+message TaskItem {
+  string id = 1;
+  optional int64 version = 2;
+  string tenant_id = 3;
+  string title = 4;
+  optional string description = 5;
+  Priority priority = 6;
+  TaskItemStatus status = 7;
+
+  // TaskFeatures is a [Flags] enum, so a proto enum cannot express a combination of members. The raw
+  // bitmask is the only lossless representation.
+  int32 features = 8;
+
+  // decimal, as an invariant-culture string. See the header note.
+  optional string estimated_effort = 9;
+  optional string actual_effort = 10;
+
+  optional google.protobuf.Timestamp completed_date = 11;
+  optional google.protobuf.Timestamp modified_at_utc = 12;
+  optional string category_id = 13;
+  optional string parent_task_item_id = 14;
+  optional google.protobuf.Timestamp start_date = 15;
+  optional google.protobuf.Timestamp due_date = 16;
+  optional int32 recurrence_interval = 17;
+  optional string recurrence_frequency = 18;
+  optional google.protobuf.Timestamp recurrence_end_date = 19;
+
+  // The DTO distinguishes a null collection (not loaded) from an empty one; proto3 repeated fields
+  // cannot. The mapper materializes null as empty in both directions, which is what every call site
+  // already treats them as.
+  repeated Comment comments = 20;
+  repeated ChecklistItem checklist_items = 21;
+  repeated Tag tags = 22;
+  repeated Attachment attachments = 23;
+  repeated TaskItem sub_tasks = 24;
+
+  optional string category_name = 25;
+}

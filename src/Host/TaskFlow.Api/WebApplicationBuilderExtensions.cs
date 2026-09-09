@@ -1,4 +1,4 @@
-using EF.AspNetCore.Correlation;
+﻿using EF.AspNetCore.Correlation;
 using EF.AspNetCore.Security;
 using EF.AspNetCore.Versioning;
 using EF.FlowEngine.AdminApi;
@@ -6,7 +6,9 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Scalar.AspNetCore;
 using TaskFlow.Api.Endpoints;
 using TaskFlow.Api.Endpoints.Cqrs;
+using TaskFlow.Api.Grpc;
 using TaskFlow.Application.Contracts;
+using TaskFlow.Bootstrapper;
 
 namespace TaskFlow.Api;
 
@@ -25,6 +27,15 @@ public static class WebApplicationBuilderExtensions
     public static WebApplication ConfigurePipeline(this WebApplication app)
     {
         _problemDetailsIncludeStackTrace = app.Environment.IsDevelopment() || app.Environment.IsStaging();
+
+        // 0. Azure App Configuration sentinel-key refresh middleware (D-042). Guarded by the same
+        // condition AddTaskFlowAppConfiguration used: registering the middleware without the provider
+        // having been added throws, so this only runs when the provider is actually configured.
+        if (!string.IsNullOrWhiteSpace(app.Configuration[RegisterServices.AppConfigEndpointConfigKey])
+            || !string.IsNullOrWhiteSpace(app.Configuration.GetConnectionString("AppConfig")))
+        {
+            app.UseAzureAppConfiguration();
+        }
 
         // 1. Public scheme/host/path base from the explicitly trusted deployment proxy.
         app.UseProxyForwarding();
@@ -93,6 +104,13 @@ public static class WebApplicationBuilderExtensions
             .AllowAnonymous()
             .RequireRateLimiting("HealthMemory");
 
+        // D-054 internal gRPC read service, served on the dedicated cleartext HTTP/2 Kestrel endpoint
+        // (Kestrel:Endpoints:Grpc). RequireAuthorization is redundant with the authenticated-user
+        // fallback policy and stated anyway: an unauthenticated internal RPC surface is not something a
+        // reader should have to infer from a policy declared in another file.
+        app.MapGrpcService<TaskFlowReadGrpcService>()
+            .RequireAuthorization();
+
         // API endpoint groups
         SetupApiEndpoints(app);
 
@@ -143,9 +161,12 @@ public static class WebApplicationBuilderExtensions
             api.MapAttachmentEndpoints(ProblemDetailsIncludeStackTrace);
         }
 
+        // Style-agnostic reads (summary, metadata, export) - one registration for both styles.
+        api.MapTaskFlowReadEndpoints();
         api.MapSearchEndpoints();
         api.MapAgentEndpoints();
         api.MapAiDemoEndpoints();
         api.MapTaskViewEndpoints();
+        api.MapOutboxAdminEndpoints();
     }
 }

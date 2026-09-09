@@ -229,6 +229,8 @@ PublishScripts/
 **/[Pp]ackages/*
 # except build/, which is used as an MSBuild target.
 !**/[Pp]ackages/build/
+# except src/Packages/, which holds portable EF.* package projects, not restored packages.
+!src/Packages/*
 # Uncomment if necessary however generally it will be regenerated when needed
 #!**/[Pp]ackages/repositories.config
 # NuGet v3's project.json files produces more ignorable files
@@ -435,3 +437,17 @@ playwright-screenshots/
 
 # Playwright test output
 test-results/
+
+# Harness-created agent worktrees (orchestrated refactor)
+.claude/worktrees/
+
+# Agent scratch output (pack artifacts, local probes)
+.tmp/
+
+# Windows artifact created by shell redirections to NUL in Git Bash
+NUL
+
+# Portable lane compose secrets and digest pins (written on the VPS / by CI, never committed)
+deploy/compose/.env
+deploy/compose/images.env
+deploy/compose/pgbouncer/userlist.txt

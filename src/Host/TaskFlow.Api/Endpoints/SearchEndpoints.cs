@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using TaskFlow.Api.Filters;
+using TaskFlow.Application.Contracts;
 using TaskFlow.Infrastructure.AI.Search;
 
 namespace TaskFlow.Api.Endpoints;
@@ -26,7 +28,14 @@ public static class SearchEndpoints
 
             var results = await searchService.SearchTaskItemsAsync(query, mode, tenantId, maxResults, ct);
             return Results.Ok(results);
-        }).WithName("SearchTasks");
+        })
+        // GR-19/GR-20: SemanticSearch gates one mode, not the route. Keyword search keeps answering while the
+        // flag is off; a Semantic request gets 404, because a disabled surface should look absent rather than
+        // forbidden. Same filter as the TaskViews and Export gates, narrowed to the requests it applies to.
+        .RequireFeature(
+            TaskFlowFeatures.SemanticSearch,
+            context => context.Arguments.OfType<SearchMode>().Contains(SearchMode.Semantic))
+        .WithName("SearchTasks");
 
         return app;
     }

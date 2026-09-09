@@ -1,15 +1,20 @@
-using EF.Common.Contracts;
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
+using TaskFlow.Application.Contracts.Paging;
 using TaskFlow.Application.Models;
-using TaskFlow.Domain.Model;
+using TaskFlow.Application.Models.Paging;
 using TaskFlow.Infrastructure.Repositories;
 using Test.Integration.Infrastructure;
+using Test.Support;
 using Test.Support.Builders;
 
 namespace Test.Integration;
 
-/// <summary>Proves paged repository searches use a unique final sort against real SQL Server.</summary>
+/// <summary>
+/// Proves keyset (cursor) paging walks every row exactly once against real SQL, including when the
+/// leading sort key is duplicated across rows - the case an unstable sort silently corrupts.
+/// Replaces the former offset-paging assertions: offset paging no longer exists on TaskItem search.
+/// </summary>
 [TestClass]
 [TestCategory("Integration")]
 public sealed class StablePaginationIntegrationTests
@@ -20,35 +25,35 @@ public sealed class StablePaginationIntegrationTests
     [ClassInitialize]
     public static async Task ClassInit(TestContext context)
     {
-        if (IntegrationTestSetup.IsUnavailable(SqlContainerFixture.StartupError))
+        if (IntegrationTestSetup.IsUnavailable(DbContainerFixture.StartupError))
             return;
 
-        await using var db = SqlContainerFixture.CreateTrxnContext();
+        await using var db = DbContainerFixture.CreateTrxnContext();
         await db.Database.MigrateAsync(context.CancellationToken);
     }
 
     /// <summary>Marks the test inconclusive when the SQL container is unavailable.</summary>
     [TestInitialize]
     public void TestSetup() =>
-        IntegrationTestSetup.AssertAvailable("SQL", SqlContainerFixture.StartupError);
+        IntegrationTestSetup.AssertAvailable("SQL", DbContainerFixture.StartupError);
 
-    /// <summary>Verifies duplicate default sort keys remain stable across every page.</summary>
+    /// <summary>Verifies the id-ordered keyset walk returns every row once with duplicate titles.</summary>
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
-    public async Task DefaultSort_WithDuplicateTitles_ReturnsStableCompletePages()
+    public async Task IdAscKeyset_WithDuplicateTitles_ReturnsStableCompletePages()
     {
-        await AssertStablePagesAsync(sorts: null);
+        await AssertKeysetWalkAsync(TaskItemSortMode.IdAsc);
     }
 
-    /// <summary>Verifies caller-supplied sorts also receive the unique ID tie-breaker.</summary>
+    /// <summary>Verifies the status keyset walk (duplicate leading key for every row) also stays total.</summary>
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
-    public async Task ExplicitSort_WithDuplicateTitles_ReturnsStableCompletePages()
+    public async Task StatusThenIdKeyset_WithDuplicateStatus_ReturnsStableCompletePages()
     {
-        await AssertStablePagesAsync([new Sort(nameof(TaskItem.Title), SortOrder.Descending)]);
+        await AssertKeysetWalkAsync(TaskItemSortMode.StatusThenId);
     }
 
-    private async Task AssertStablePagesAsync(IEnumerable<Sort>? sorts)
+    private async Task AssertKeysetWalkAsync(TaskItemSortMode sortMode)
     {
         var title = $"StablePaging-{Guid.NewGuid():N}";
         var seeded = Enumerable.Range(0, 7)
@@ -58,7 +63,7 @@ public sealed class StablePaginationIntegrationTests
                 .Build())
             .ToArray();
 
-        await using var writeDb = SqlContainerFixture.CreateTrxnContext();
+        await using var writeDb = DbContainerFixture.CreateTrxnContext();
         writeDb.TaskItems.AddRange(seeded);
         await writeDb.SaveChangesAsync(
             OptimisticConcurrencyWinner.ClientWins,
@@ -66,42 +71,40 @@ public sealed class StablePaginationIntegrationTests
 
         try
         {
-            var expected = await writeDb.TaskItems
-                .IgnoreQueryFilters()
-                .Where(task => task.Title == title)
-                .OrderBy(task => task.Title)
-                .ThenBy(task => task.Id)
-                .Select(task => task.Id.Value)
-                .ToArrayAsync(TestContext.CancellationToken);
+            var expected = seeded.Select(task => task.Id.Value).ToHashSet();
 
-            await using var queryDb = SqlContainerFixture.CreateQueryContext();
-            var repository = new TaskItemRepositoryQuery(queryDb);
+            await using var queryDb = DbContainerFixture.CreateQueryContext();
+            var repository = new TaskItemRepositoryQuery(queryDb, TestColumnEncryption.Keys);
             var actual = new List<Guid>();
 
-            for (var pageIndex = 1; pageIndex <= 3; pageIndex++)
+            CursorToken? after = null;
+            for (var page = 0; page < 5; page++)
             {
-                var page = await repository.SearchTaskItemsAsync(
-                    new SearchRequest<TaskItemSearchFilter>
-                    {
-                        Filter = new TaskItemSearchFilter
-                        {
-                            SearchTerm = title,
-                            TenantId = QueryTenantId
-                        },
-                        PageIndex = pageIndex,
-                        PageSize = 3,
-                        Sorts = sorts
-                    },
-                    TestContext.CancellationToken);
+                var request = new TaskItemCursorSearchRequest
+                {
+                    Filter = new TaskItemSearchFilter { SearchTerm = title, TenantId = QueryTenantId },
+                    SortMode = sortMode,
+                    PageSize = 3
+                };
 
-                Assert.AreEqual(7, page.Total);
-                Assert.AreEqual(pageIndex < 3 ? 3 : 1, page.Data.Count);
-                actual.AddRange(page.Data.Select(item => item.Id!.Value));
+                var (data, hasMore) = await repository.SearchTaskItemsAsync(request, after, TestContext.CancellationToken);
+                actual.AddRange(data.Select(item => item.Id!.Value));
+
+                if (!hasMore)
+                {
+                    Assert.AreEqual(1, data.Count, "The final page should carry the remainder of the seven rows.");
+                    break;
+                }
+
+                Assert.AreEqual(3, data.Count);
+                after = new CursorToken(
+                    sortMode, QueryTenantId, CursorKey.From(sortMode, data[^1]), data[^1].Id!.Value);
             }
 
-            CollectionAssert.AreEqual(expected, actual);
+            Assert.AreEqual(7, actual.Count, "Keyset paging must return every seeded row.");
             Assert.AreEqual(actual.Count, actual.Distinct().Count(),
-                "Stable paging must not duplicate an item across page boundaries.");
+                "Keyset paging must not duplicate an item across page boundaries.");
+            CollectionAssert.AreEquivalent(expected.ToArray(), actual.ToArray());
         }
         finally
         {

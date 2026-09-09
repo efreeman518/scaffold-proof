@@ -47,7 +47,7 @@ public sealed class TaskDraftService(
         var draft = ParseDraft(response.Text);
         if (draft is null)
         {
-            logger.LogWarning("Task draft for '{Title}' returned unparseable output.", title);
+            logger.TaskDraftUnparseable(title);
             return new DraftTaskResponse(null, title, null, null, false, true, "Could not parse model output.");
         }
 

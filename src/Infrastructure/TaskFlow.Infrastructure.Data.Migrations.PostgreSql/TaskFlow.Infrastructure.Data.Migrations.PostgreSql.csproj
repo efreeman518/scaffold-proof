@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- D-025: PostgreSQL migration set for TaskFlow (Trxn/Query), FlowEngine and TickerQ contexts.
+       Selected at runtime through TaskFlowDbProviderSelector.MigrationsAssembly; never referenced by Infrastructure.Data. -->
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <!-- D-040: the AddTaskItemEmbedding migration and the model snapshot name the vector column type. -->
+    <PackageReference Include="Pgvector" />
+    <PackageReference Include="Pgvector.EntityFrameworkCore" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TaskFlow.Infrastructure.Data\TaskFlow.Infrastructure.Data.csproj" />
+  </ItemGroup>
+
+</Project>

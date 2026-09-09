@@ -1,49 +1,60 @@
-using EF.Common.Contracts;
-using TaskFlow.Application.Contracts.Services;
-using TaskFlow.Application.Models;
-using TaskFlow.Domain.Shared.Enums;
+using TaskFlow.Application.Contracts.Repositories;
+using TaskFlow.Observability.Meters;
 using TaskFlow.Scheduler.Abstractions;
 
 namespace TaskFlow.Scheduler.Handlers;
 
-/// <summary>Handles stale task cleanup work by coordinating validation, tenant boundaries, persistence, and response mapping.</summary>
-public class StaleTaskCleanupHandler : IScheduledJobHandler
+/// <summary>
+/// Removes cancelled tasks past their retention window. Per tenant batch, in one transaction: record the
+/// deferred blob deletions, delete the attachments, then delete the tasks (comments, checklist items, and tag
+/// links cascade). Blobs are never deleted inline - a storage outage would otherwise block the row deletion.
+/// </summary>
+public sealed class StaleTaskCleanupHandler(
+    ITaskItemSystemRepository systemRepository,
+    SchedulerJobMeter meter,
+    TimeProvider timeProvider,
+    IConfiguration config,
+    ILogger<StaleTaskCleanupHandler> logger) : IScheduledJobHandler
 {
-    private readonly ITaskItemService _taskItemService;
-    private readonly ILogger<StaleTaskCleanupHandler> _logger;
+    public const string JobName = "StaleTaskCleanup";
 
-    /// <summary>Initializes stale task cleanup handler with required dependencies and default state.</summary>
-    public StaleTaskCleanupHandler(ITaskItemService taskItemService, ILogger<StaleTaskCleanupHandler> logger)
-    {
-        _taskItemService = taskItemService;
-        _logger = logger;
-    }
+    /// <summary>Tasks read per keyset page, and the size of one tenant transaction at most.</summary>
+    private const int PageSize = 200;
+    private const int DefaultRetentionDays = 90;
 
     /// <summary>Handles stale task cleanup requests and returns the application result.</summary>
     public async Task HandleAsync(CancellationToken ct)
     {
-        _logger.LogInformation("Cleaning up stale tasks...");
+        var retentionDays = config.GetValue("Scheduling:StaleCleanup:RetentionDays", DefaultRetentionDays);
+        var cutoffUtc = timeProvider.GetUtcNow().AddDays(-retentionDays);
 
-        var request = new SearchRequest<TaskItemSearchFilter>
+        var scanned = 0;
+        var deleted = 0;
+        StaleTaskRow? after = null;
+
+        while (true)
         {
-            PageSize = 500,
-            PageIndex = 0,
-            Filter = new TaskItemSearchFilter
+            var batch = await systemRepository.GetStaleBatchAsync(cutoffUtc, after, PageSize, ct);
+            if (batch.Count == 0) break;
+            scanned += batch.Count;
+
+            foreach (var tenant in batch.GroupBy(r => r.TenantId))
             {
-                Status = TaskItemStatus.Cancelled
+                var ids = tenant.Select(r => r.Id).ToList();
+                await systemRepository.ExecuteInTransactionAsync(async token =>
+                {
+                    await systemRepository.StageBlobDeletesAsync(tenant.Key, ids, token);
+                    deleted += await systemRepository.DeleteStaleBatchAsync(tenant.Key, ids, cutoffUtc, token);
+                }, ct);
             }
-        };
 
-        var result = await _taskItemService.SearchAsync(request, ct);
+            if (batch.Count < PageSize) break;
+            // Resume past the last row scanned, not the last row deleted: a task skipped for still having
+            // subtasks must not be re-read for the rest of this run.
+            after = batch[^1];
+        }
 
-        var staleDays = 90;
-        var staleTasks = result.Data?
-            .Where(t => t.DueDate.HasValue
-                && t.DueDate.Value < DateTimeOffset.UtcNow.AddDays(-staleDays))
-            .ToList() ?? [];
-
-        _logger.StaleTasksFound(staleTasks.Count, staleDays);
-
-        // Future: archive or soft-delete stale tasks
+        meter.RecordWork(JobName, scanned, deleted);
+        logger.StaleTasksFound(deleted, (int)(timeProvider.GetUtcNow() - cutoffUtc).TotalDays);
     }
 }

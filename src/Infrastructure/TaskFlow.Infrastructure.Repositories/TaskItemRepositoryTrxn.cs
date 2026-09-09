@@ -18,7 +18,7 @@ namespace TaskFlow.Infrastructure.Repositories;
 /// child collections when the application service needs to sync a full task graph.
 /// </summary>
 public class TaskItemRepositoryTrxn(TaskFlowDbContextTrxn db)
-    : RepositoryTrxn<TaskItem, TaskItemId, TaskFlowDbContextTrxn>(db), ITaskItemRepositoryTrxn
+    : TaskFlowRepositoryTrxn<TaskItem, TaskItemId>(db), ITaskItemRepositoryTrxn
 {
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<TaskItem?> GetTaskItemAsync(TaskItemId id, bool inclChildren = true, CancellationToken ct = default)
@@ -44,6 +44,26 @@ public class TaskItemRepositoryTrxn(TaskFlowDbContextTrxn db)
             cancellationToken: ct
         ).ConfigureAwait(ConfigureAwaitOptions.None);
     }
+
+    // Single-child tracked loads for the lean child-mutation path. Each filters on the owning
+    // TaskItemId as well as the child id, so a child id belonging to another task returns null instead
+    // of being mutated through the wrong root. These replace the five-include aggregate load that the
+    // eight child endpoints previously paid for just to touch one row.
+
+    /// <inheritdoc />
+    public Task<Comment?> GetCommentAsync(TaskItemId taskItemId, CommentId commentId, CancellationToken ct = default) =>
+        DB.Set<Comment>().FirstOrDefaultAsync(c => c.TaskItemId == taskItemId && c.Id == commentId, ct);
+
+    /// <inheritdoc />
+    public Task<ChecklistItem?> GetChecklistItemAsync(TaskItemId taskItemId, ChecklistItemId checklistItemId, CancellationToken ct = default) =>
+        DB.Set<ChecklistItem>().FirstOrDefaultAsync(c => c.TaskItemId == taskItemId && c.Id == checklistItemId, ct);
+
+    /// <inheritdoc />
+    public Task<TaskItemTag?> GetTaskItemTagAsync(TaskItemId taskItemId, TagId tagId, CancellationToken ct = default) =>
+        DB.Set<TaskItemTag>().FirstOrDefaultAsync(t => t.TaskItemId == taskItemId && t.TagId == tagId, ct);
+
+    /// <inheritdoc />
+    public void DeleteChild<TChild>(TChild child) where TChild : class => DB.Remove(child);
 
     /// <summary>
     /// Delegates DTO graph sync to the DbContext updater so EF change tracking and related deletes

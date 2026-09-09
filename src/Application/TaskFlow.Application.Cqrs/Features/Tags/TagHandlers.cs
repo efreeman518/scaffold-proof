@@ -1,8 +1,10 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
+using TaskFlow.Application.Contracts.Caching;
+using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Cqrs.Shared;
 using TaskFlow.Application.Mappers;
@@ -24,7 +26,7 @@ internal sealed class SearchTagsHandler(
     {
         var request = query.Request;
         HandlerHelpers.EnforceTenantFilter(request, requestContext.TenantId, requestContext.Roles, logger, "TagSearch");
-        return await CqrsHandlerSupport.SearchAsync(token => repoQuery.SearchTagsAsync(request, token), logger, "Tag", ct);
+        return await CqrsHandlerSupport.SearchAsync(token => repoQuery.SearchTagsAsync(request, query.IncludeTotal, token), logger, "Tag", ct);
     }
 }
 
@@ -56,7 +58,8 @@ internal sealed class CreateTagHandler(
     ILogger<CreateTagHandler> logger,
     IRequestContext<string, Guid?> requestContext,
     IRepositoryTrxn<Tag, TagId> repoTrxn,
-    ITenantBoundaryValidator tenantBoundaryValidator)
+    ITenantBoundaryValidator tenantBoundaryValidator,
+    ITaskFlowCache cache)
     : IRequestHandler<CreateTagCommand, Result<DefaultResponse<TagDto>>>
 {
     /// <summary>Handles create tag requests and returns the application result.</summary>
@@ -73,6 +76,21 @@ internal sealed class CreateTagHandler(
             "Tag:Create", nameof(Tag));
         if (boundary.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(boundary.ErrorMessage!);
 
+        // D-033: the row itself is the idempotency record for a caller-supplied UUIDv7 id.
+        if (dto.Id is Guid callerId && callerId != Guid.Empty)
+        {
+            var existing = await repoTrxn.GetAsync(DomainId.From<TagId>(callerId), ct);
+            if (existing is not null)
+            {
+                var existingDto = existing.ToDto();
+                if (!IdempotentCreateGuard.IsEquivalent(existingDto, dto))
+                    throw new IdempotentCreateConflictException(nameof(Tag), callerId);
+
+                return Result<DefaultResponse<TagDto>>.Success(
+                    new DefaultResponse<TagDto> { Item = existingDto, IsReplay = true });
+            }
+        }
+
         var entityResult = dto.ToEntity(dto.TenantId);
         if (entityResult.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(entityResult.ErrorMessage!);
 
@@ -82,6 +100,7 @@ internal sealed class CreateTagHandler(
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error creating Tag", ct);
         if (save.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(save.ErrorMessage!);
 
+        await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(Tag)), ct);
         return HandlerHelpers.Success(entity.ToDto());
     }
 }
@@ -91,7 +110,8 @@ internal sealed class UpdateTagHandler(
     ILogger<UpdateTagHandler> logger,
     IRequestContext<string, Guid?> requestContext,
     IRepositoryTrxn<Tag, TagId> repoTrxn,
-    ITenantBoundaryValidator tenantBoundaryValidator)
+    ITenantBoundaryValidator tenantBoundaryValidator,
+    ITaskFlowCache cache)
     : IRequestHandler<UpdateTagCommand, Result<DefaultResponse<TagDto>>>
 {
     /// <summary>Handles update tag requests and returns the application result.</summary>
@@ -114,6 +134,8 @@ internal sealed class UpdateTagHandler(
             "Tag:Update", nameof(Tag), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(boundary.ErrorMessage!);
 
+        ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(Tag), entity.Id.Value);
+
         var tenantChangeCheck = tenantBoundaryValidator.PreventTenantChange(
             logger, entity.TenantId.Value, dto.TenantId, nameof(Tag), entity.Id.Value);
         if (tenantChangeCheck.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(tenantChangeCheck.ErrorMessage!);
@@ -124,6 +146,7 @@ internal sealed class UpdateTagHandler(
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error updating Tag {Id}", ct, dto.Id);
         if (save.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(save.ErrorMessage!);
 
+        await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(Tag)), ct);
         return HandlerHelpers.Success(entity.ToDto());
     }
 }
@@ -134,7 +157,7 @@ internal sealed class DeleteTagHandler(
     IRequestContext<string, Guid?> requestContext,
     IRepositoryTrxn<Tag, TagId> repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    IEntityCacheProvider cache)
+    ITaskFlowCache cache)
     : IRequestHandler<DeleteTagCommand, Result>
 {
     /// <summary>Handles delete tag requests and returns the application result.</summary>
@@ -148,12 +171,14 @@ internal sealed class DeleteTagHandler(
             "Tag:Delete", nameof(Tag), entity.Id.Value);
         if (boundary.IsFailure) return Result.Failure(boundary.ErrorMessage!);
 
+        ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(Tag), entity.Id.Value);
+
         repoTrxn.Delete(entity);
 
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error deleting Tag {Id}", ct, command.Id);
         if (save.IsFailure) return save;
 
-        await cache.RemoveAsync(HandlerHelpers.CacheKey(nameof(Tag), command.Id), ct);
+        await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(Tag)), ct);
         return Result.Success();
     }
 }

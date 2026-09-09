@@ -1,18 +1,111 @@
-using Azure.Identity;
+﻿using Azure.Identity;
 using Azure.Search.Documents;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using TaskFlow.Application.Contracts.Configuration;
 using TaskFlow.Infrastructure.AI.Agents;
 using TaskFlow.Infrastructure.AI.Agents.Tools;
 using TaskFlow.Infrastructure.AI.Search;
 
 namespace TaskFlow.Infrastructure.AI;
 
+/// <summary>Search backend selected for this deployment (D-040).</summary>
+public enum SearchProvider
+{
+    /// <summary>Azure AI Search.</summary>
+    AzureAiSearch,
+
+    /// <summary>Postgres pgvector similarity search (D-040). Requires Database:Provider=PostgreSql.</summary>
+    PgVector,
+
+    /// <summary>SQL prefix search fallback (<see cref="NoOpSearchService"/>).</summary>
+    Sql
+}
+
 /// <summary>Provides AI service collection extensions behavior for the Infrastructure layer.</summary>
 public static class AiServiceCollectionExtensions
 {
+    public const string SearchProviderConfigKey = "Search:Provider";
+    public const string SearchProviderEnvVar = "TASKFLOW_SEARCH_PROVIDER";
+
+    /// <summary>
+    /// Resolves the search backend. The environment variable wins over configuration; when neither is
+    /// set, the Portable lane defaults to Sql (D-035) and the Azure lane falls back to the legacy
+    /// <c>AiServices:UseSearch</c>(+<c>SearchEndpoint</c>) compatibility mapping kept one release (D-040).
+    /// </summary>
+    public static SearchProvider ResolveSearchProvider(IConfiguration config, TaskFlowAiSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        ArgumentNullException.ThrowIfNull(settings);
+        var value = Environment.GetEnvironmentVariable(SearchProviderEnvVar) ?? config[SearchProviderConfigKey];
+        if (!string.IsNullOrWhiteSpace(value)) return ParseSearchProvider(value);
+
+        if (HostingLaneSelector.Resolve(config) == HostingLane.Portable)
+            return SearchProvider.Sql;
+
+        return settings.UseSearch && !string.IsNullOrWhiteSpace(settings.SearchEndpoint)
+            ? SearchProvider.AzureAiSearch
+            : SearchProvider.Sql;
+    }
+
+    /// <summary>
+    /// Same resolution binding <c>AiServices</c> from configuration first, for callers outside this assembly
+    /// that need the answer before <c>AddAiServices</c> runs (queue topology, consumer registration).
+    /// </summary>
+    public static SearchProvider ResolveSearchProvider(IConfiguration config)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        return ResolveSearchProvider(
+            config,
+            config.GetSection(TaskFlowAiSettings.ConfigSectionName).Get<TaskFlowAiSettings>() ?? new TaskFlowAiSettings());
+    }
+
+    private static SearchProvider ParseSearchProvider(string value) =>
+        Enum.TryParse<SearchProvider>(value, ignoreCase: true, out var provider)
+            ? provider
+            : throw new ArgumentException(
+                $"Unknown search provider '{value}'. Allowed values: {string.Join(", ", Enum.GetNames<SearchProvider>())}.");
+
+    /// <summary>Configuration key for the vector dimension the deployed pgvector column was created with.</summary>
+    public const string PgVectorDimensionsConfigKey = "Search:PgVector:Dimensions";
+
+    /// <summary>Vector dimension the PostgreSQL migration creates the <c>Embedding</c> column with.</summary>
+    public const int PgVectorDefaultDimensions = 1536;
+
+    /// <summary>
+    /// Wires the PgVector arm (D-040), failing at startup rather than degrading: without an
+    /// <see cref="IEmbeddingGenerator{TInput,TEmbedding}"/> there is nothing to embed the query with, and a
+    /// silent fall back to prefix search would report semantic results that are not.
+    /// <para>
+    /// The arm's other prerequisite - the relational provider must be PostgreSQL, because the
+    /// <c>TaskItemEmbedding</c> table is mapped only on Npgsql - is checked by the Bootstrapper
+    /// (<c>RegisterServices.VectorSearch.cs</c>), which runs first and already knows the database switch.
+    /// Asking it here would mean this AI adapter referencing the data layer.
+    /// </para>
+    /// </summary>
+    private static void AddPgVectorSearch(IServiceCollection services, IConfiguration config)
+    {
+        if (!services.Any(d => d.ServiceType == typeof(IEmbeddingGenerator<string, Embedding<float>>)))
+            throw new InvalidOperationException(
+                $"{SearchProviderConfigKey}=PgVector requires an IEmbeddingGenerator<string, Embedding<float>>, and none "
+                + "is registered. Select an AI provider that wires one (AiServices:Provider=OpenAICompatible), or "
+                + "configure ConnectionStrings:embeddings for the AzureInference arm.");
+
+        var dimensions = config.GetValue<int?>(PgVectorDimensionsConfigKey) ?? PgVectorDefaultDimensions;
+        if (dimensions != PgVectorDefaultDimensions)
+            throw new InvalidOperationException(
+                $"{PgVectorDimensionsConfigKey}={dimensions} does not match the {PgVectorDefaultDimensions}-dimension "
+                + "vector column the deployed PostgreSQL migration created. The dimension is part of the column type "
+                + "and of the HNSW index, so changing it needs a new migration, not a configuration change.");
+
+        // The prefix arm is a concrete dependency of the PgVector service, not a second ITaskFlowSearchService
+        // registration: only one implementation may resolve for the contract.
+        services.AddScoped<NoOpSearchService>();
+        services.AddScoped<ITaskFlowSearchService, PgVectorSearchService>();
+    }
+
     /// <summary>Registers AI services dependencies in the service container.</summary>
     public static IServiceCollection AddAiServices(this IServiceCollection services, IConfiguration config)
     {
@@ -24,27 +117,28 @@ public static class AiServiceCollectionExtensions
 
         var settings = aiSection.Get<TaskFlowAiSettings>() ?? new TaskFlowAiSettings();
 
-        // Azure AI Search (if configured)
-        if (settings.UseSearch)
+        switch (ResolveSearchProvider(config, settings))
         {
-            if (!string.IsNullOrWhiteSpace(settings.SearchEndpoint))
-            {
+            case SearchProvider.AzureAiSearch:
+                if (string.IsNullOrWhiteSpace(settings.SearchEndpoint))
+                    throw new InvalidOperationException(
+                        $"{SearchProviderConfigKey}=AzureAiSearch requires AiServices:SearchEndpoint.");
+
                 services.AddSingleton(new SearchClient(
                     new Uri(settings.SearchEndpoint),
                     settings.SearchIndexName,
                     new DefaultAzureCredential()));
 
                 services.AddScoped<ITaskFlowSearchService, TaskFlowSearchService>();
-            }
-            else
-            {
-                // TODO: [CONFIGURE] AI Search endpoint - set AiServices:SearchEndpoint for live search
+                break;
+
+            case SearchProvider.PgVector:
+                AddPgVectorSearch(services, config);
+                break;
+
+            case SearchProvider.Sql:
                 services.AddScoped<ITaskFlowSearchService, NoOpSearchService>();
-            }
-        }
-        else
-        {
-            services.AddScoped<ITaskFlowSearchService, NoOpSearchService>();
+                break;
         }
 
         // Agent function tools (always registered - agents and tests both need them)
@@ -78,7 +172,7 @@ public static class AiServiceCollectionExtensions
         // registered IChatClient - real or no-op):
         services.AddScoped<Demos.ITaskTriageService, Demos.TaskTriageService>();       // D4: structured classification
         services.AddScoped<Demos.ITaskDraftService, Demos.TaskDraftService>();         // D5: generative enrichment on create
-        services.AddScoped<Demos.IAiTaskReviewer, Demos.AiTaskReviewer>();             // D6: async event-driven inference
+        services.AddScoped<Application.Contracts.Services.IAiTaskReviewer, Demos.AiTaskReviewer>();             // D6: async event-driven inference
         services.AddScoped<Demos.INextActionAdvisor, Demos.NextActionAdvisor>();       // D7: read-only multi-tool reasoning
 
         return services;

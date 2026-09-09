@@ -7,7 +7,7 @@ using DomainTenantId = TaskFlow.Domain.Shared.TenantId;
 namespace TaskFlow.Domain.Model;
 
 /// <summary>Models checklist item domain behavior and invariants.</summary>
-public class ChecklistItem : EntityBase<DomainChecklistItemId>, ITenantEntity<DomainTenantId>
+public class ChecklistItem : TaskFlowEntityBase<DomainChecklistItemId>, ITenantEntity<DomainTenantId>
 {
     public DomainTenantId TenantId { get; init; }
     public string Title { get; private set; } = null!;
@@ -25,8 +25,9 @@ public class ChecklistItem : EntityBase<DomainChecklistItemId>, ITenantEntity<Do
     private ChecklistItem() { }
 
     /// <summary>Initializes checklist item with required dependencies and default state.</summary>
-    private ChecklistItem(DomainTenantId tenantId, DomainTaskItemId taskItemId, string title, int sortOrder)
+    private ChecklistItem(DomainTenantId tenantId, DomainTaskItemId taskItemId, string title, int sortOrder, DomainChecklistItemId? id)
     {
+        if (id.HasValue) Id = id.Value; // D-033: caller-supplied UUIDv7 id makes create idempotent.
         TenantId = tenantId;
         TaskItemId = taskItemId;
         Title = title;
@@ -35,9 +36,9 @@ public class ChecklistItem : EntityBase<DomainChecklistItemId>, ITenantEntity<Do
     }
 
     /// <summary>Creates requested data after validation and maps the result to the caller contract.</summary>
-    public static DomainResult<ChecklistItem> Create(DomainTenantId tenantId, DomainTaskItemId taskItemId, string title, int sortOrder = 0)
+    public static DomainResult<ChecklistItem> Create(DomainTenantId tenantId, DomainTaskItemId taskItemId, string title, int sortOrder = 0, DomainChecklistItemId? id = null)
     {
-        var entity = new ChecklistItem(tenantId, taskItemId, title, sortOrder);
+        var entity = new ChecklistItem(tenantId, taskItemId, title, sortOrder, id);
         return entity.Valid();
     }
 

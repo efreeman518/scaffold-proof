@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <PackageReference Include="Azure.Identity" />
@@ -7,9 +7,15 @@
     <PackageReference Include="Microsoft.Agents.AI.OpenAI" />
     <PackageReference Include="Microsoft.Extensions.AI" />
     <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
+    <!-- D-042: AiTaskReviewer checks the AiReview flag via IVariantFeatureManager. -->
+    <PackageReference Include="Microsoft.FeatureManagement" />
   </ItemGroup>
 
   <ItemGroup>
+    <!-- D-040: the Search:Provider switch resolves the hosting lane default via HostingLaneSelector,
+         which lives in Application.Contracts (already referenced below), precisely so this AI adapter needs
+         no ProjectReference to Infrastructure.Data. PgVectorSearchService reaches storage only through the
+         ITaskEmbeddingRepository port, and the arm's PostgreSQL prerequisite is checked in the Bootstrapper. -->
     <ProjectReference Include="..\..\Application\TaskFlow.Application.Contracts\TaskFlow.Application.Contracts.csproj" />
     <ProjectReference Include="..\..\Application\TaskFlow.Application.Models\TaskFlow.Application.Models.csproj" />
     <ProjectReference Include="..\..\Shared\TaskFlow.Observability\TaskFlow.Observability.csproj" />

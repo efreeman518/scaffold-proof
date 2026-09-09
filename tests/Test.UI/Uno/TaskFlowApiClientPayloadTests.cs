@@ -6,82 +6,85 @@ using TaskFlow.Uno.Core.Client;
 namespace Test.UI.Uno;
 
 /// <summary>
-/// Validates the Kiota-generated <c>TaskFlowApiClient</c> outgoing payload shape: child collections
-/// (Comments, ChecklistItems) always emit a non-null <c>taskItemId</c> on POST and reuse the route id on
-/// PUT, even when the caller leaves them empty.
-/// Pure-unit tier: a capturing <see cref="System.Net.Http.HttpMessageHandler"/> records the JSON body
+/// Validates the hand-authored <c>TaskFlowApiClient</c> outgoing request shape: create assigns a
+/// client-generated UUIDv7 id when the caller leaves it unset, and every PUT/DELETE sends the
+/// required If-Match header (D-021/GR-16).
+/// Pure-unit tier: a capturing <see cref="System.Net.Http.HttpMessageHandler"/> records the request
 /// without ever opening a socket - payload-shape regression coverage for client serialization rules.
 /// </summary>
 [TestClass]
 [TestCategory("UI")]
 public class TaskFlowApiClientPayloadTests
 {
-    /// <summary>Verifies task items post sets child task item ID when missing behavior and protects the expected test contract.</summary>
+    /// <summary>Verifies TaskItems.PostAsync assigns a UUIDv7 id when the caller left it null (idempotent create).</summary>
     [TestMethod]
-    public async Task TaskItemsPostAsync_SetsChildTaskItemId_WhenMissing()
+    public async Task TaskItemsPostAsync_AssignsUuidV7Id_WhenMissing()
     {
         var handler = new CaptureRequestHandler();
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://localhost:7200") };
         var apiClient = new TaskFlowApiClient(httpClient);
 
-        var dto = new TaskItemDto
-        {
-            Title = "New Task",
-            Priority = "Medium",
-            Comments = [new CommentDto { Body = "hello" }],
-            ChecklistItems = [new ChecklistItemDto { Title = "step 1", IsCompleted = false, SortOrder = 1 }]
-        };
+        var dto = new TaskItemDto { Title = "New Task", Priority = "Medium" };
 
-        var result = await apiClient.Api.TaskItems.PostAsync(dto, TestContext.CancellationToken);
+        await apiClient.Api.TaskItems.PostAsync(dto, TestContext.CancellationToken);
 
-        Assert.IsNotNull(result);
         Assert.IsNotNull(handler.LastRequestBody);
-
         using var doc = JsonDocument.Parse(handler.LastRequestBody!);
-        var commentTaskItemId = doc.RootElement.GetProperty("item").GetProperty("comments")[0].GetProperty("taskItemId");
-        var checklistTaskItemId = doc.RootElement.GetProperty("item").GetProperty("checklistItems")[0].GetProperty("taskItemId");
-
-        Assert.AreNotEqual(JsonValueKind.Null, commentTaskItemId.ValueKind);
-        Assert.AreNotEqual(JsonValueKind.Null, checklistTaskItemId.ValueKind);
-        Assert.AreEqual(Guid.Empty.ToString(), commentTaskItemId.GetString());
-        Assert.AreEqual(Guid.Empty.ToString(), checklistTaskItemId.GetString());
+        var id = doc.RootElement.GetProperty("item").GetProperty("id").GetString();
+        Assert.IsNotNull(id);
+        var guid = Guid.Parse(id!);
+        Assert.AreEqual(7, (guid.ToByteArray()[7] >> 4) & 0x0F, "The client-generated id must be a UUIDv7 (version nibble 7).");
     }
 
-    /// <summary>Verifies task items put uses route ID for missing child task item ID behavior and protects the expected test contract.</summary>
+    /// <summary>Verifies TaskItems[id].PutAsync sends the caller's Version as a quoted If-Match header.</summary>
     [TestMethod]
-    public async Task TaskItemsPutAsync_UsesRouteId_ForMissingChildTaskItemId()
+    public async Task TaskItemsPutAsync_SendsIfMatchHeader()
     {
         var handler = new CaptureRequestHandler();
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://localhost:7200") };
         var apiClient = new TaskFlowApiClient(httpClient);
 
         var taskId = Guid.NewGuid();
-        var dto = new TaskItemDto
-        {
-            Id = taskId,
-            Title = "Existing Task",
-            Priority = "High",
-            Comments = [new CommentDto { Body = "updated" }],
-            ChecklistItems = [new ChecklistItemDto { Title = "step 1", IsCompleted = false, SortOrder = 1 }]
-        };
+        var dto = new TaskItemDto { Id = taskId, Title = "Existing Task", Priority = "High" };
 
-        var result = await apiClient.Api.TaskItems[taskId].PutAsync(dto, TestContext.CancellationToken);
+        await apiClient.Api.TaskItems[taskId].PutAsync(dto, "42", TestContext.CancellationToken);
 
-        Assert.IsNotNull(result);
-        Assert.IsNotNull(handler.LastRequestBody);
+        Assert.IsNotNull(handler.LastIfMatch);
+        Assert.AreEqual("\"42\"", handler.LastIfMatch);
+    }
 
-        using var doc = JsonDocument.Parse(handler.LastRequestBody!);
-        var commentTaskItemId = doc.RootElement.GetProperty("item").GetProperty("comments")[0].GetProperty("taskItemId").GetString();
-        var checklistTaskItemId = doc.RootElement.GetProperty("item").GetProperty("checklistItems")[0].GetProperty("taskItemId").GetString();
+    /// <summary>Verifies TaskItems[id].Comments.DeleteAsync sends the root's Version as a quoted If-Match header.</summary>
+    [TestMethod]
+    public async Task CommentsDeleteAsync_SendsRootVersionAsIfMatchHeader()
+    {
+        var handler = new CaptureRequestHandler();
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://localhost:7200") };
+        var apiClient = new TaskFlowApiClient(httpClient);
 
-        Assert.AreEqual(taskId.ToString(), commentTaskItemId);
-        Assert.AreEqual(taskId.ToString(), checklistTaskItemId);
+        await apiClient.Api.TaskItems[Guid.NewGuid()].Comments.DeleteAsync(Guid.NewGuid(), "3", TestContext.CancellationToken);
+
+        Assert.IsNotNull(handler.LastIfMatch);
+        Assert.AreEqual("\"3\"", handler.LastIfMatch);
+    }
+
+    /// <summary>Verifies the "*" trusted-automation wildcard is sent unquoted (D-032).</summary>
+    [TestMethod]
+    public async Task DeleteAsync_WithWildcard_SendsUnquotedAsterisk()
+    {
+        var handler = new CaptureRequestHandler();
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://localhost:7200") };
+        var apiClient = new TaskFlowApiClient(httpClient);
+
+        await apiClient.Api.TaskItems[Guid.NewGuid()].DeleteAsync("*", TestContext.CancellationToken);
+
+        Assert.AreEqual("*", handler.LastIfMatch);
     }
 
     /// <summary>Supports test execution for Test.unit Uno scenarios.</summary>
     private sealed class CaptureRequestHandler : HttpMessageHandler
     {
         public string? LastRequestBody { get; private set; }
+        public string? LastIfMatch { get; private set; }
 
         /// <summary>Verifies send behavior and protects the expected test contract.</summary>
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -89,8 +92,9 @@ public class TaskFlowApiClientPayloadTests
             LastRequestBody = request.Content is null
                 ? null
                 : await request.Content.ReadAsStringAsync(cancellationToken);
+            LastIfMatch = request.Headers.IfMatch.Count > 0 ? request.Headers.IfMatch.First().Tag : null;
 
-            var responseJson = "{\"item\":{\"id\":\"" + Guid.NewGuid() + "\"}}";
+            var responseJson = "{\"item\":{\"id\":\"" + Guid.NewGuid() + "\",\"title\":\"x\",\"priority\":\"Medium\",\"status\":\"Open\"}}";
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(responseJson, Encoding.UTF8, "application/json")

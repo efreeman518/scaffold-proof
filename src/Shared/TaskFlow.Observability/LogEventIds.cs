@@ -46,4 +46,16 @@ public static class LogEventIds
 
     /// <summary>Application.MessageHandlers (integration event handlers). Range 19000-19999.</summary>
     public const int ApplicationMessageHandlersBase = 19000;
+
+    /// <summary>Infrastructure.Messaging.RabbitMq (topology, transport adapter). Range 20000-20999.</summary>
+    public const int InfrastructureMessagingRabbitMqBase = 20000;
+
+    /// <summary>Uno WASM static-asset host. Range 21000-21999.</summary>
+    public const int UnoWasmHostBase = 21000;
+
+    /// <summary>Infrastructure.Caching (rate limiting). Range 22000-22999.</summary>
+    public const int InfrastructureCachingBase = 22000;
+
+    /// <summary>Infrastructure.Data (encryption, EF provider extensions). Range 23000-23999.</summary>
+    public const int InfrastructureDataBase = 23000;
 }

@@ -1,0 +1,61 @@
+<Project>
+
+  <!--
+    D-047 shared runtime profile for the TaskFlow deployable hosts.
+
+    Imported explicitly by each host csproj (<Import Project="..\TaskFlow.Host.props" />) rather than
+    dropped in as a Directory.Build.props: src/Host/ also holds libraries (TaskFlow.Bootstrapper,
+    Aspire/ServiceDefaults) and a launcher (Aspire/AppHost), none of which should carry a server
+    runtime profile, and directory-convention import would give them one silently. Opting in is one
+    visible line per host; per-host overrides go AFTER that line so they win.
+
+    Verified against the .NET 10 SDK: Microsoft.NET.Sdk emits the System.GC.* runtimeconfig entries
+    only when the matching MSBuild property is set (Microsoft.NET.Sdk.targets, the
+    RuntimeHostConfigurationOption items for System.GC.Server / System.GC.Concurrent /
+    System.GC.DynamicAdaptationMode), and neither Microsoft.NET.Sdk.Web nor the aspnet runtime image
+    sets them. Nothing else decides these values, so this file is their single source of truth.
+
+    Container memory is deliberately left to the runtime: .NET reads the cgroup v2 memory limit and
+    sizes the heap from it, and DATAS below keeps the committed set close to live data, so no
+    DOTNET_GCHeapHardLimit / DOTNET_GCHeapHardLimitPercent is set anywhere in this repo. Setting one
+    would pin a limit that no longer follows the container app's memory setting.
+  -->
+  <PropertyGroup>
+    <!-- Per-core heaps with dedicated GC threads: the right shape for a process that serves
+         concurrent requests on a multi-core container. DatabaseMigrator overrides this to false. -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+
+    <!-- Background (concurrent) gen2 collection, so a full GC does not stop request threads for the
+         whole collection. Also the precondition for DATAS, which only applies to Server GC with
+         concurrent collection enabled. -->
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+
+    <!-- DATAS (System.GC.DynamicAdaptationMode): start from one heap and add heaps only as sustained
+         throughput needs them, keeping the committed working set close to live data. On by default
+         for Server GC since .NET 9; declared explicitly because the whole point of this file is that
+         the memory profile of a container app is not an inherited default. -->
+    <GarbageCollectionAdaptationMode>1</GarbageCollectionAdaptationMode>
+
+    <!-- Dynamic PGO: tier-1 recompilation guided by tier-0 profile data (guarded devirtualization of
+         the interface-heavy DI/repository call paths). On by default since .NET 8; explicit so a
+         future default flip does not silently change the steady-state profile of these hosts. -->
+    <TieredPGO>true</TieredPGO>
+    <TieredCompilation>true</TieredCompilation>
+
+    <!-- Invariant globalization: no ICU load at startup and no ICU in the runtime image, which is
+         what the aspnet:*-noble-chiseled base (no ICU, no tzdata) already requires. Two independent
+         reasons force a host to override this to false AND move to the -chiseled-extra base image:
+         rendering user-facing cultures (Blazor), or depending on Microsoft.Data.SqlClient, which
+         throws NotSupportedException under invariant globalization (Api, Scheduler, DatabaseMigrator,
+         Functions - all reach TaskFlow.Infrastructure.Data's Microsoft.EntityFrameworkCore.SqlServer
+         package, directly or through Bootstrapper). Only Gateway has neither reason and keeps true
+         on the plain chiseled base. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- Keep real exception messages rather than resource keys. Only ever true as a trimming size
+         optimization; a stack with "SR.Arg_KeyNotFound" instead of a message costs more in triage
+         time than the few hundred KB it saves. -->
+    <UseSystemResourceKeys>false</UseSystemResourceKeys>
+  </PropertyGroup>
+
+</Project>

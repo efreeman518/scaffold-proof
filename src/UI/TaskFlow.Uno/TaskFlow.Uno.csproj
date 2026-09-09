@@ -1,4 +1,4 @@
-<Project Sdk="Uno.Sdk/6.6.42">
+<Project Sdk="Uno.Sdk/6.7.22">
 
   <PropertyGroup>
     <!-- Clear singular TargetFramework inherited from Directory.Build.props -->

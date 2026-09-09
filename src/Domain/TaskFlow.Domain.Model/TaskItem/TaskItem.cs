@@ -4,6 +4,7 @@ using TaskFlow.Domain.Model.ValueObjects;
 using TaskFlow.Domain.Shared;
 using TaskFlow.Domain.Shared.Constants;
 using TaskFlow.Domain.Shared.Enums;
+using TaskFlow.Domain.Shared.Events;
 using DomainCategoryId = TaskFlow.Domain.Shared.CategoryId;
 using DomainTaskItemId = TaskFlow.Domain.Shared.TaskItemId;
 using DomainTenantId = TaskFlow.Domain.Shared.TenantId;
@@ -14,8 +15,17 @@ namespace TaskFlow.Domain.Model;
 /// Task aggregate root. Owns task lifecycle rules, value-object updates, and local child
 /// collection mutations before repositories persist the graph.
 /// </summary>
-public class TaskItem : EntityBase<DomainTaskItemId>, ITenantEntity<DomainTenantId>
+public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<DomainTenantId>, IHasDomainEvents
 {
+    // D-026: events raised here are staged as outbox rows by OutboxStagingInterceptor in the same SaveChanges.
+    private readonly DomainEventContainer _domainEvents = new();
+
+    /// <inheritdoc />
+    public IReadOnlyCollection<IDomainEvent> DomainEvents => _domainEvents.Events;
+
+    /// <inheritdoc />
+    public void ClearDomainEvents() => _domainEvents.Clear();
+
     public DomainTenantId TenantId { get; init; }
     public string Title { get; private set; } = null!;
     public string? Description { get; private set; }
@@ -26,17 +36,31 @@ public class TaskItem : EntityBase<DomainTaskItemId>, ITenantEntity<DomainTenant
     public decimal? ActualEffort { get; private set; }
     public DateTimeOffset? CompletedDate { get; private set; }
 
-    // Sensitive properties - persisted with SQL Always Encrypted (varbinary(200)). See D-019.
-    // Deterministic: equality-queryable; Randomized: not queryable.
+    // Sensitive properties - persisted through the application-layer column encryptor (D-023):
+    // both are stored randomized (AES-GCM); SecureDeterministic is additionally equality-queryable
+    // through an HMAC blind-index sibling column populated by the persistence layer.
     public string? SecureDeterministic { get; private set; }
     public string? SecureRandom { get; private set; }
+
+    // First-class scheduling dates (UTC). DateRange below is composed from them and is not mapped:
+    // an index spanning owner and owned-type properties is not expressible in EF.
+    public DateTimeOffset? StartDate { get; private set; }
+    public DateTimeOffset? DueDate { get; private set; }
+
+    // Scale columns (D-020 plan, Phase 3 jobs own the behavior). TerminalAtUtc is maintained here because
+    // it is a pure consequence of the status state machine.
+    public DateTimeOffset? TerminalAtUtc { get; private set; }
+    public DateTimeOffset? NextOccurrenceAtUtc { get; private set; }
+    public DateTimeOffset? OverdueNotifiedForDueDate { get; private set; }
+    public DomainTaskItemId? RecurrenceTemplateId { get; private set; }
+    public DateTimeOffset? OccurrenceUtc { get; private set; }
 
     // Foreign keys
     public DomainCategoryId? CategoryId { get; private set; }
     public DomainTaskItemId? ParentTaskItemId { get; private set; }
 
-    // Value objects (owned types)
-    public DateRange DateRange { get; private set; } = new();
+    // Value objects
+    public DateRange DateRange => new() { StartDate = StartDate, DueDate = DueDate };
     public RecurrencePattern? RecurrencePattern { get; private set; }
 
     // Navigation
@@ -51,8 +75,9 @@ public class TaskItem : EntityBase<DomainTaskItemId>, ITenantEntity<DomainTenant
     private TaskItem() { }
 
     /// <summary>Initializes task item with required dependencies and default state.</summary>
-    private TaskItem(DomainTenantId tenantId, string title, string? description, Priority priority, DomainCategoryId? categoryId, DomainTaskItemId? parentTaskItemId)
+    private TaskItem(DomainTenantId tenantId, string title, string? description, Priority priority, DomainCategoryId? categoryId, DomainTaskItemId? parentTaskItemId, DomainTaskItemId? id)
     {
+        if (id.HasValue) Id = id.Value; // D-033: caller-supplied UUIDv7 id makes create idempotent.
         TenantId = tenantId;
         Title = title;
         Description = description;
@@ -68,12 +93,41 @@ public class TaskItem : EntityBase<DomainTaskItemId>, ITenantEntity<DomainTenant
         DomainTenantId tenantId, string title, string? description = null,
         Priority priority = Priority.None, DomainCategoryId? categoryId = null,
         DomainTaskItemId? parentTaskItemId = null,
-        string? secureDeterministic = null, string? secureRandom = null)
+        string? secureDeterministic = null, string? secureRandom = null,
+        DomainTaskItemId? id = null)
     {
-        var entity = new TaskItem(tenantId, title, description, priority, categoryId, parentTaskItemId)
+        var entity = new TaskItem(tenantId, title, description, priority, categoryId, parentTaskItemId, id)
         {
             SecureDeterministic = secureDeterministic,
             SecureRandom = secureRandom
+        };
+        var validated = entity.Valid();
+        if (validated.IsSuccess)
+            entity._domainEvents.Raise(new TaskItemCreatedEvent(entity.Id.Value, tenantId.Value, entity.Title));
+        return validated;
+    }
+
+    /// <summary>
+    /// Creates one generated occurrence of a recurring template. <paramref name="id"/> is the caller's
+    /// deterministic UUIDv5 over (tenant, template, occurrence) and <c>(TenantId, RecurrenceTemplateId,
+    /// OccurrenceUtc)</c> is unique, so a replayed generation run upserts the same row instead of a second
+    /// copy. The occurrence is an ordinary task afterwards: it is not linked to the template as a subtask.
+    /// </summary>
+    public static DomainResult<TaskItem> CreateOccurrence(
+        DomainTenantId tenantId,
+        DomainTaskItemId id,
+        DomainTaskItemId templateId,
+        DateTimeOffset occurrenceUtc,
+        string title,
+        string? description = null,
+        Priority priority = Priority.None,
+        DomainCategoryId? categoryId = null)
+    {
+        var entity = new TaskItem(tenantId, title, description, priority, categoryId, null, id)
+        {
+            RecurrenceTemplateId = templateId,
+            OccurrenceUtc = occurrenceUtc,
+            DueDate = occurrenceUtc
         };
         return entity.Valid();
     }
@@ -89,6 +143,13 @@ public class TaskItem : EntityBase<DomainTaskItemId>, ITenantEntity<DomainTenant
         DomainCategoryId? categoryId = null, DomainTaskItemId? parentTaskItemId = null,
         string? secureDeterministic = null, string? secureRandom = null)
     {
+        // D-040: the embedding pipeline needs a content-change signal, and only a real change of the
+        // embeddable text counts - comparing before assigning keeps a priority-only or status-only edit
+        // from paying for a model call and a vector rewrite.
+        var contentChanged =
+            (title is not null && !string.Equals(title, Title, StringComparison.Ordinal))
+            || (description is not null && !string.Equals(description, Description, StringComparison.Ordinal));
+
         if (title is not null) Title = title;
         if (description is not null) Description = description;
         if (priority.HasValue) Priority = priority.Value;
@@ -99,12 +160,17 @@ public class TaskItem : EntityBase<DomainTaskItemId>, ITenantEntity<DomainTenant
         if (parentTaskItemId.HasValue) ParentTaskItemId = parentTaskItemId.Value.Value == Guid.Empty ? null : parentTaskItemId.Value;
         if (secureDeterministic is not null) SecureDeterministic = secureDeterministic;
         if (secureRandom is not null) SecureRandom = secureRandom;
-        return Valid();
+
+        var validated = Valid();
+        // Raised only on a successful update, the same rule Create follows: a rejected edit never happened.
+        if (contentChanged && validated.IsSuccess)
+            _domainEvents.Raise(new TaskItemContentChangedEvent(Id.Value, TenantId.Value, DateTimeOffset.UtcNow));
+        return validated;
     }
 
     /// <summary>
-    /// Moves the task through the allowed status state machine and keeps CompletedDate aligned
-    /// with Completed status. TaskItemStatus.None is a reset escape hatch for seed/test data.
+    /// Moves the task through the allowed status state machine and keeps CompletedDate and TerminalAtUtc
+    /// aligned with the terminal statuses. TaskItemStatus.None is a reset escape hatch for seed/test data.
     /// </summary>
     public DomainResult<TaskItem> TransitionStatus(TaskItemStatus newStatus)
     {
@@ -112,6 +178,7 @@ public class TaskItem : EntityBase<DomainTaskItemId>, ITenantEntity<DomainTenant
         {
             Status = TaskItemStatus.None;
             CompletedDate = null;
+            TerminalAtUtc = null;
             return DomainResult<TaskItem>.Success(this);
         }
 
@@ -119,27 +186,39 @@ public class TaskItem : EntityBase<DomainTaskItemId>, ITenantEntity<DomainTenant
             return DomainResult<TaskItem>.Failure($"Cannot transition from {Status} to {newStatus}.");
 
         var previousStatus = Status;
+        var now = DateTimeOffset.UtcNow;
         Status = newStatus;
 
         if (newStatus == TaskItemStatus.Completed)
-            CompletedDate = DateTimeOffset.UtcNow;
+            CompletedDate = now;
         else if (previousStatus == TaskItemStatus.Completed)
             CompletedDate = null;
+
+        // Terminal statuses stamp TerminalAtUtc (stale cleanup key); reopening clears it.
+        TerminalAtUtc = newStatus is TaskItemStatus.Completed or TaskItemStatus.Cancelled ? now : null;
+
+        _domainEvents.Raise(new TaskItemStatusChangedEvent(Id.Value, TenantId.Value, previousStatus, newStatus));
+        if (newStatus == TaskItemStatus.Completed)
+            _domainEvents.Raise(new TaskItemCompletedEvent(Id.Value, TenantId.Value, CompletedDate!.Value));
 
         return DomainResult<TaskItem>.Success(this);
     }
 
+    // D-031 (aggregate-level ETag): every child mutation below calls the base Touch() so EF marks the
+    // root Modified and VersionTimestampInterceptor bumps the root Version. Child PUT/DELETE therefore
+    // use the root ETag as the If-Match currency; child DTO Version values are display-only.
     #region Child Collection Methods
 
     /// <summary>
     /// Add a new comment to this task item.
     /// </summary>
-    public DomainResult<Comment> AddComment(string body)
+    public DomainResult<Comment> AddComment(string body, CommentId? commentId = null)
     {
-        var result = Comment.Create(TenantId, Id, body);
+        var result = Comment.Create(TenantId, Id, body, commentId);
         if (result.IsFailure) return result;
 
         Comments.Add(result.Value!);
+        Touch();
         return result;
     }
 
@@ -147,6 +226,7 @@ public class TaskItem : EntityBase<DomainTaskItemId>, ITenantEntity<DomainTenant
     public DomainResult RemoveComment(Comment comment)
     {
         Comments.Remove(comment);
+        Touch();
         return DomainResult.Success();
     }
 
@@ -157,18 +237,20 @@ public class TaskItem : EntityBase<DomainTaskItemId>, ITenantEntity<DomainTenant
     {
         var toRemove = Comments.FirstOrDefault(c => c.Id == commentId);
         if (toRemove != null) Comments.Remove(toRemove);
+        Touch();
         return DomainResult.Success(); // Always return success - desired state (comment removed) is achieved
     }
 
     /// <summary>
     /// Add a new checklist item to this task item.
     /// </summary>
-    public DomainResult<ChecklistItem> AddChecklistItem(string title, int sortOrder = 0)
+    public DomainResult<ChecklistItem> AddChecklistItem(string title, int sortOrder = 0, ChecklistItemId? checklistItemId = null)
     {
-        var result = ChecklistItem.Create(TenantId, Id, title, sortOrder);
+        var result = ChecklistItem.Create(TenantId, Id, title, sortOrder, checklistItemId);
         if (result.IsFailure) return result;
 
         ChecklistItems.Add(result.Value!);
+        Touch();
         return result;
     }
 
@@ -176,6 +258,7 @@ public class TaskItem : EntityBase<DomainTaskItemId>, ITenantEntity<DomainTenant
     public DomainResult RemoveChecklistItem(ChecklistItem checklistItem)
     {
         ChecklistItems.Remove(checklistItem);
+        Touch();
         return DomainResult.Success();
     }
 
@@ -186,6 +269,7 @@ public class TaskItem : EntityBase<DomainTaskItemId>, ITenantEntity<DomainTenant
     {
         var toRemove = ChecklistItems.FirstOrDefault(ci => ci.Id == checklistItemId);
         if (toRemove != null) ChecklistItems.Remove(toRemove);
+        Touch();
         return DomainResult.Success(); // Always return success - desired state is achieved
     }
 
@@ -201,6 +285,7 @@ public class TaskItem : EntityBase<DomainTaskItemId>, ITenantEntity<DomainTenant
         if (result.IsFailure) return result;
 
         TaskItemTags.Add(result.Value!);
+        Touch();
         return result;
     }
 
@@ -208,6 +293,7 @@ public class TaskItem : EntityBase<DomainTaskItemId>, ITenantEntity<DomainTenant
     public DomainResult RemoveTag(TaskItemTag taskItemTag)
     {
         TaskItemTags.Remove(taskItemTag);
+        Touch();
         return DomainResult.Success();
     }
 
@@ -218,28 +304,53 @@ public class TaskItem : EntityBase<DomainTaskItemId>, ITenantEntity<DomainTenant
     {
         var toRemove = TaskItemTags.FirstOrDefault(t => t.TagId == tagId);
         if (toRemove != null) TaskItemTags.Remove(toRemove);
+        Touch();
         return DomainResult.Success(); // Always return success - desired state (tag not assigned) is achieved
     }
+
+    /// <summary>
+    /// Marks the aggregate changed for a child field update. Add and remove already Touch() through
+    /// the methods above; an in-place child edit (comment body, checklist item title) never passes
+    /// through the root, so the application layer states it explicitly and the root Version still moves.
+    /// </summary>
+    public void MarkChildMutated() => Touch();
 
     #endregion
 
     /// <summary>
-    /// Replaces the owned DateRange value object. Validation is intentionally outside the
-    /// value object so services can decide whether incomplete dates are allowed.
+    /// Replaces the scheduling dates. Validation is intentionally outside the value object so
+    /// services can decide whether incomplete dates are allowed.
     /// </summary>
     public void UpdateDateRange(DateTimeOffset? startDate, DateTimeOffset? dueDate)
     {
-        DateRange = new DateRange { StartDate = startDate, DueDate = dueDate };
+        StartDate = startDate;
+        DueDate = dueDate;
     }
 
     /// <summary>
     /// Replaces or clears the recurrence value object. Schedulers read this as a template
     /// signal; this aggregate does not create recurring child tasks itself.
+    /// <para>
+    /// The generator scans <c>IX_TaskItem_TenantId_NextOccurrenceAtUtc</c>, so a template with no first
+    /// due point is invisible to it. Attaching a pattern seeds that point from the task's own schedule;
+    /// removing the pattern clears it. An already-scheduled series keeps its position.
+    /// </para>
     /// </summary>
     public void UpdateRecurrencePattern(RecurrencePattern? pattern)
     {
         RecurrencePattern = pattern;
+        NextOccurrenceAtUtc = pattern is null
+            ? null
+            : NextOccurrenceAtUtc ?? DueDate ?? StartDate ?? DateTimeOffset.UtcNow;
     }
+
+    /// <summary>
+    /// Moves the template to its next scheduled occurrence, or stops the series when the pattern has run
+    /// past its end date. The scheduler advances the stored column with a guarded <c>ExecuteUpdate</c>;
+    /// this overload exists for in-memory callers (tests, seed data) working with a tracked aggregate.
+    /// </summary>
+    public void AdvanceRecurrence(DateTimeOffset? nextOccurrenceAtUtc) =>
+        NextOccurrenceAtUtc = nextOccurrenceAtUtc;
 
     /// <summary>Checks whether a task status transition is allowed by the domain state machine.</summary>
     private static bool IsValidTransition(TaskItemStatus current, TaskItemStatus target) =>
@@ -272,7 +383,7 @@ public class TaskItem : EntityBase<DomainTaskItemId>, ITenantEntity<DomainTenant
             : DomainResult<TaskItem>.Success(this);
     }
 
-    /// <summary>True when a secure property's UTF8 encoding exceeds the Always Encrypted varbinary(200) budget.</summary>
+    /// <summary>True when a secure property's UTF8 encoding exceeds the plaintext budget (ciphertext column is 256 bytes: 200 + 12 nonce + 16 tag + headroom).</summary>
     private static bool ExceedsSecureBudget(string? value) =>
         value is not null
         && System.Text.Encoding.UTF8.GetByteCount(value) > DomainConstants.RULE_SECURE_PROPERTY_MAX_BYTES;

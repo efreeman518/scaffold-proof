@@ -1,7 +1,9 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
+using TaskFlow.Application.Contracts.Caching;
+using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Cqrs.Shared;
 using TaskFlow.Application.Mappers;
@@ -23,7 +25,7 @@ internal sealed class SearchCategoriesHandler(
     {
         var request = query.Request;
         HandlerHelpers.EnforceTenantFilter(request, requestContext.TenantId, requestContext.Roles, logger, "CategorySearch");
-        return await CqrsHandlerSupport.SearchAsync(token => repoQuery.SearchCategoriesAsync(request, token), logger, "Category", ct);
+        return await CqrsHandlerSupport.SearchAsync(token => repoQuery.SearchCategoriesAsync(request, query.IncludeTotal, token), logger, "Category", ct);
     }
 }
 
@@ -55,7 +57,8 @@ internal sealed class CreateCategoryHandler(
     ILogger<CreateCategoryHandler> logger,
     IRequestContext<string, Guid?> requestContext,
     ICategoryRepositoryTrxn repoTrxn,
-    ITenantBoundaryValidator tenantBoundaryValidator)
+    ITenantBoundaryValidator tenantBoundaryValidator,
+    ITaskFlowCache cache)
     : IRequestHandler<CreateCategoryCommand, Result<DefaultResponse<CategoryDto>>>
 {
     /// <summary>Handles create category requests and returns the application result.</summary>
@@ -72,6 +75,21 @@ internal sealed class CreateCategoryHandler(
             "Category:Create", nameof(Category));
         if (boundary.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(boundary.ErrorMessage!);
 
+        // D-033: the row itself is the idempotency record for a caller-supplied UUIDv7 id.
+        if (dto.Id is Guid callerId && callerId != Guid.Empty)
+        {
+            var existing = await repoTrxn.GetCategoryAsync(DomainId.From<CategoryId>(callerId), ct);
+            if (existing is not null)
+            {
+                var existingDto = existing.ToDto();
+                if (!IdempotentCreateGuard.IsEquivalent(existingDto, dto))
+                    throw new IdempotentCreateConflictException(nameof(Category), callerId);
+
+                return Result<DefaultResponse<CategoryDto>>.Success(
+                    new DefaultResponse<CategoryDto> { Item = existingDto, IsReplay = true });
+            }
+        }
+
         var entityResult = dto.ToEntity(dto.TenantId);
         if (entityResult.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(entityResult.ErrorMessage!);
 
@@ -81,6 +99,7 @@ internal sealed class CreateCategoryHandler(
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error creating Category", ct);
         if (save.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(save.ErrorMessage!);
 
+        await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(Category)), ct);
         return HandlerHelpers.Success(entity.ToDto());
     }
 }
@@ -90,7 +109,8 @@ internal sealed class UpdateCategoryHandler(
     ILogger<UpdateCategoryHandler> logger,
     IRequestContext<string, Guid?> requestContext,
     ICategoryRepositoryTrxn repoTrxn,
-    ITenantBoundaryValidator tenantBoundaryValidator)
+    ITenantBoundaryValidator tenantBoundaryValidator,
+    ITaskFlowCache cache)
     : IRequestHandler<UpdateCategoryCommand, Result<DefaultResponse<CategoryDto>>>
 {
     /// <summary>Handles update category requests and returns the application result.</summary>
@@ -113,6 +133,8 @@ internal sealed class UpdateCategoryHandler(
             "Category:Update", nameof(Category), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(boundary.ErrorMessage!);
 
+        ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(Category), entity.Id.Value);
+
         var tenantChangeCheck = tenantBoundaryValidator.PreventTenantChange(
             logger, entity.TenantId.Value, dto.TenantId, nameof(Category), entity.Id.Value);
         if (tenantChangeCheck.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(tenantChangeCheck.ErrorMessage!);
@@ -125,6 +147,7 @@ internal sealed class UpdateCategoryHandler(
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error updating Category {Id}", ct, dto.Id);
         if (save.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(save.ErrorMessage!);
 
+        await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(Category)), ct);
         return HandlerHelpers.Success(entity.ToDto());
     }
 }
@@ -135,7 +158,7 @@ internal sealed class DeleteCategoryHandler(
     IRequestContext<string, Guid?> requestContext,
     ICategoryRepositoryTrxn repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    IEntityCacheProvider cache)
+    ITaskFlowCache cache)
     : IRequestHandler<DeleteCategoryCommand, Result>
 {
     /// <summary>Handles delete category requests and returns the application result.</summary>
@@ -149,12 +172,16 @@ internal sealed class DeleteCategoryHandler(
             "Category:Delete", nameof(Category), entity.Id.Value);
         if (boundary.IsFailure) return Result.Failure(boundary.ErrorMessage!);
 
+        ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(Category), entity.Id.Value);
+
+        // Composite FK (TenantId, CategoryId) cannot cascade to SetNull; detach the tenant's tasks first (D-022).
+        await repoTrxn.ClearCategoryFromTaskItemsAsync(entity.Id, ct);
         repoTrxn.Delete(entity);
 
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error deleting Category {Id}", ct, command.Id);
         if (save.IsFailure) return save;
 
-        await cache.RemoveAsync(HandlerHelpers.CacheKey(nameof(Category), command.Id), ct);
+        await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(Category)), ct);
         return Result.Success();
     }
 }

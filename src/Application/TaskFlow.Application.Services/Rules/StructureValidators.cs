@@ -1,4 +1,5 @@
 using EF.Common.Contracts;
+using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Models.Shared;
 
 namespace TaskFlow.Application.Services.Rules;
@@ -21,7 +22,13 @@ public static class StructureValidators
     internal static Result ValidateCreate<T>(T? dto) where T : class, ITenantEntityDto
     {
         if (dto is null) return Result.Failure("Payload is required.");
-        return Require(dto.TenantId != Guid.Empty, "TenantId is required.");
+
+        // GR-17: a caller may supply the create id, but only a UUIDv7 - a random v4 from a client
+        // would fragment the clustered index every create lands in.
+        var callerId = dto is IEntityBaseDto entityDto ? entityDto.Id : null;
+        return Result.Combine(
+            Require(dto.TenantId != Guid.Empty, "TenantId is required."),
+            UuidV7.ValidateCallerId(callerId));
     }
 
     /// <summary>

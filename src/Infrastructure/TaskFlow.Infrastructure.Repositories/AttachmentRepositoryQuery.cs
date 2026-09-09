@@ -14,7 +14,7 @@ namespace TaskFlow.Infrastructure.Repositories;
 
 /// <summary>Persists and queries attachment data through infrastructure storage contracts.</summary>
 public class AttachmentRepositoryQuery(TaskFlowDbContextQuery db)
-    : RepositoryQuery<Attachment, AttachmentId, TaskFlowDbContextQuery>(db), IAttachmentRepositoryQuery
+    : TaskFlowRepositoryQuery<Attachment, AttachmentId>(db), IAttachmentRepositoryQuery
 {
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<Attachment?> GetAttachmentAsync(AttachmentId id, CancellationToken ct = default)
@@ -27,7 +27,7 @@ public class AttachmentRepositoryQuery(TaskFlowDbContextQuery db)
     }
 
     /// <summary>Searches search attachments and returns filtered results for callers.</summary>
-    public async Task<PagedResponse<AttachmentDto>> SearchAttachmentsAsync(SearchRequest<AttachmentSearchFilter> request, CancellationToken ct = default)
+    public async Task<PagedResponse<AttachmentDto>> SearchAttachmentsAsync(SearchRequest<AttachmentSearchFilter> request, bool includeTotal = false, CancellationToken ct = default)
     {
         var q = DB.Set<Attachment>().ComposeIQueryable(false);
 
@@ -70,7 +70,7 @@ public class AttachmentRepositoryQuery(TaskFlowDbContextQuery db)
 
         (var data, var total) = await q.QueryPageProjectionAsync(AttachmentMapper.Projection,
             pageSize: request.PageSize, pageIndex: Math.Max(1, request.PageIndex),
-            includeTotal: true, splitQueryOptions: SplitQueryThresholdOptions.Default,
+            includeTotal: includeTotal, splitQueryOptions: SplitQueryThresholdOptions.Default,
             cancellationToken: ct).ConfigureAwait(ConfigureAwaitOptions.None);
 
         return new PagedResponse<AttachmentDto>

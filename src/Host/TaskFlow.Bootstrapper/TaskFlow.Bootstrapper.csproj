@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <RuntimeIdentifiers>win-x64;linux-x64;osx-arm64</RuntimeIdentifiers>
@@ -9,20 +9,20 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Test.Unit" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Azure.Data.Tables" />
+    <!-- D-043: Data Protection key-ring persistence, lifted here from TaskFlow.Api so Gateway/Scheduler can share it. -->
+    <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" />
+    <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Keys" />
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection.StackExchangeRedis" />
     <PackageReference Include="EF.Host" />
     <PackageReference Include="EF.Common" />
     <PackageReference Include="EF.Data" />
     <PackageReference Include="EF.BackgroundServices" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
-    <!-- Always Encrypted runtime provider registration (D-019). -->
-    <PackageReference Include="Microsoft.Data.SqlClient.AlwaysEncrypted.AzureKeyVaultProvider" />
-    <PackageReference Include="Azure.Identity" />
     <PackageReference Include="Newtonsoft.Json" />
-    <PackageReference Include="ZiggyCreatures.FusionCache" />
-    <PackageReference Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" />
-    <PackageReference Include="ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis" />
-    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
     <PackageReference Include="Microsoft.Extensions.Azure" />
     <PackageReference Include="Azure.Storage.Blobs" />
     <PackageReference Include="Azure.Messaging.ServiceBus" />
@@ -39,9 +39,13 @@
     <PackageReference Include="EF.FlowEngine.AdminApi" />
     <PackageReference Include="Aspire.Azure.AI.Inference" />
     <PackageReference Include="Microsoft.AI.Foundry.Local" PrivateAssets="all" />
+    <!-- D-042: Azure App Configuration + Microsoft.FeatureManagement, gated on AppConfig:Endpoint. -->
+    <PackageReference Include="Microsoft.Azure.AppConfiguration.AspNetCore" />
+    <PackageReference Include="Microsoft.FeatureManagement.AspNetCore" />
     <PackageReference Include="Microsoft.Extensions.AI" />
-    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" PrivateAssets="all" />
-    <PackageReference Include="OpenAI" PrivateAssets="all" />
+    <!-- Deployed (D-041): the OpenAICompatible LLM arm calls the OpenAI SDK directly at runtime. -->
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
+    <PackageReference Include="OpenAI" />
   </ItemGroup>
 
   <ItemGroup>
@@ -52,7 +56,10 @@
     <ProjectReference Include="..\..\Infrastructure\TaskFlow.Infrastructure.Data\TaskFlow.Infrastructure.Data.csproj" />
     <ProjectReference Include="..\..\Infrastructure\TaskFlow.Infrastructure.Repositories\TaskFlow.Infrastructure.Repositories.csproj" />
     <ProjectReference Include="..\..\Infrastructure\TaskFlow.Infrastructure.AI\TaskFlow.Infrastructure.AI.csproj" />
+    <ProjectReference Include="..\..\Infrastructure\TaskFlow.Infrastructure.Caching\TaskFlow.Infrastructure.Caching.csproj" />
     <ProjectReference Include="..\..\Infrastructure\TaskFlow.Infrastructure.Storage\TaskFlow.Infrastructure.Storage.csproj" />
+    <!-- D-034: the Messaging:Provider switch picks the transport here, so both adapters must be reachable. -->
+    <ProjectReference Include="..\..\Infrastructure\TaskFlow.Infrastructure.Messaging.RabbitMq\TaskFlow.Infrastructure.Messaging.RabbitMq.csproj" />
     <ProjectReference Include="..\..\Shared\TaskFlow.Observability\TaskFlow.Observability.csproj" />
   </ItemGroup>
 

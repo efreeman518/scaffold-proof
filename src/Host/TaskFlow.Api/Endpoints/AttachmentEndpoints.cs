@@ -2,6 +2,8 @@ using EF.AspNetCore;
 using EF.Common.Contracts;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
+using TaskFlow.Api.Endpoints.Shared;
+using TaskFlow.Api.Filters;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models;
@@ -19,35 +21,49 @@ public static class AttachmentEndpoints
     {
         _problemDetailsIncludeStackTrace = problemDetailsIncludeStackTrace;
 
-        var g = group.MapGroup("/attachments").WithTags("Attachments");
+        var g = group.MapGroup("/attachments").WithTags("Attachments")
+            .AddEndpointFilter<ETagEndpointFilter>();
 
         g.MapPost("/search", Search)
+            .WithName("SearchAttachments")
             .Produces<PagedResponse<AttachmentDto>>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
             .WithSummary("Search Attachments with paging, filters, and sorts");
 
         g.MapGet("/{id:guid}", GetById)
+            .WithName("GetAttachment")
             .Produces<DefaultResponse<AttachmentDto>>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .WithSummary("Get a single Attachment");
 
         g.MapPost("/", Create)
+            .WithName("CreateAttachment")
             .Produces<DefaultResponse<AttachmentDto>>(StatusCodes.Status201Created)
+            .Produces<DefaultResponse<AttachmentDto>>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status409Conflict)
             .WithSummary("Create a new Attachment");
 
         g.MapPost("/upload", Upload)
+            .WithName("UploadAttachment")
             .Produces<DefaultResponse<AttachmentDto>>(StatusCodes.Status201Created)
+            .Produces<DefaultResponse<AttachmentDto>>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status409Conflict)
             .WithSummary("Upload a file Attachment")
             .DisableAntiforgery();
 
         g.MapPut("/{id:guid}", Update)
+            .WithName("UpdateAttachment")
+            .RequireIfMatch()
             .Produces<DefaultResponse<AttachmentDto>>()
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status404NotFound)
             .WithSummary("Update an existing Attachment");
 
         g.MapDelete("/{id:guid}", Delete)
+            .WithName("DeleteAttachment")
+            .RequireIfMatch()
             .Produces(StatusCodes.Status204NoContent)
             .ProducesValidationProblem()
             .WithSummary("Delete an Attachment");
@@ -59,10 +75,14 @@ public static class AttachmentEndpoints
     private static async Task<IResult> Search(
         [FromServices] IAttachmentService service,
         [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] SearchRequest<AttachmentSearchFilter>? request,
-        CancellationToken ct)
+        CancellationToken ct,
+        [FromQuery] bool includeTotal = false)
     {
-        var items = await service.SearchAsync(request ?? new SearchRequest<AttachmentSearchFilter>(), ct);
-        return TypedResults.Ok(items);
+        var search = request ?? new SearchRequest<AttachmentSearchFilter>();
+        var guard = SearchRequestGuard.Validate(search.PageSize);
+        if (guard is not null) return guard;
+
+        return TypedResults.Ok(await service.SearchAsync(search, includeTotal, ct));
     }
 
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
@@ -86,9 +106,14 @@ public static class AttachmentEndpoints
     {
         var result = await service.CreateAsync(request, ct);
         return result.Match<IResult>(
-            response => TypedResults.Created(httpContext.Request.Path, response),
+            response => response.IsReplay
+                ? TypedResults.Ok(response)
+                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response),
+            // Create rejections are caller-input failures (a bad payload, a non-v7 id): 400, not the
+            // 500 the untyped helper defaults to.
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, traceId: httpContext.TraceIdentifier,
+                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
+                traceId: httpContext.TraceIdentifier,
                 includeStackTrace: _problemDetailsIncludeStackTrace)));
     }
 
@@ -99,16 +124,22 @@ public static class AttachmentEndpoints
         [FromForm] AttachmentOwnerType ownerType,
         [FromForm] Guid ownerId,
         [FromServices] IAttachmentService service,
-        CancellationToken ct)
+        CancellationToken ct,
+        [FromForm] Guid? id = null)
     {
         await using var stream = file.OpenReadStream();
         var result = await service.UploadAsync(
             stream, file.FileName, file.ContentType, file.Length,
-            ownerType, ownerId, ct);
+            ownerType, ownerId, id, ct);
         return result.Match<IResult>(
-            response => TypedResults.Created(httpContext.Request.Path, response),
+            response => response.IsReplay
+                ? TypedResults.Ok(response)
+                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response),
+            // Create rejections are caller-input failures (a bad payload, a non-v7 id): 400, not the
+            // 500 the untyped helper defaults to.
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, traceId: httpContext.TraceIdentifier,
+                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
+                traceId: httpContext.TraceIdentifier,
                 includeStackTrace: _problemDetailsIncludeStackTrace)));
     }
 
@@ -117,6 +148,7 @@ public static class AttachmentEndpoints
         HttpContext httpContext,
         [FromServices] IAttachmentService service,
         Guid id,
+        IfMatch ifMatch,
         [FromBody] DefaultRequest<AttachmentDto> request,
         CancellationToken ct)
     {
@@ -125,7 +157,7 @@ public static class AttachmentEndpoints
                 statusCodeOverride: StatusCodes.Status400BadRequest,
                 message: $"{ErrorConstants.ERROR_URL_BODY_ID_MISMATCH}: {id} <> {request.Item.Id}"));
 
-        var result = await service.UpdateAsync(request, ct);
+        var result = await service.UpdateAsync(request, ifMatch.ExpectedVersion, ct);
         return result.Match(
             response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
@@ -136,9 +168,9 @@ public static class AttachmentEndpoints
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
     private static async Task<IResult> Delete(
         HttpContext httpContext,
-        [FromServices] IAttachmentService service, Guid id, CancellationToken ct)
+        [FromServices] IAttachmentService service, Guid id, IfMatch ifMatch, CancellationToken ct)
     {
-        var result = await service.DeleteAsync(id, ct);
+        var result = await service.DeleteAsync(id, ifMatch.ExpectedVersion, ct);
         return result.Match<IResult>(
             () => TypedResults.NoContent(),
             errors => TypedResults.Problem(

@@ -41,13 +41,76 @@ includeGitHubActions: true
 includeAzd: false
 includeAiServices: true
 
-database: SQLServer
-migrationLifecycle: preserved-append-only
-databaseProviders: [SqlServer]
+database: SQLServer            # scalar = the runtime default provider; databaseProviders below declares both arms (D-020)
+migrationLifecycle: unreleased-resettable   # scaffold schema value; the migration sets were reset as a fresh baseline (D-025) and nothing is released yet
+databaseProviders: [SqlServer, PostgreSql]
 caching: FusionCache+Redis
 includeKeyVault: true
-deployTarget: ContainerApps
+deployTarget: ContainerApps   # kept as-is for compatibility; see deployTargets below (D-036, D-044)
 useAspire: true
+
+# ---------------------------------------------------------------------------
+# Hosting Lanes (Portable lane, see DESIGN-DECISIONS D-035..D-045)
+# ---------------------------------------------------------------------------
+hostingLanes: [Azure, Portable]
+
+# TASKFLOW_LANE seeds these as the DEFAULT of each independent provider switch;
+# each switch's own env/config key still wins. See D-035.
+hostingLaneDefaults:
+  Azure:
+    storageProvider: AzureBlob
+    readModelProvider: Cosmos
+    auditProvider: AzureTable
+    searchProvider: AzureAiSearch
+    aiProvider: AzureInference
+    dataProtectionPersistence: AzureBlob
+  Portable:
+    storageProvider: S3
+    readModelProvider: Relational
+    auditProvider: Relational
+    searchProvider: Sql                # PgVector is the opt-in Postgres arm (Search:Provider=PgVector): it needs an embedding endpoint, so it is not a lane default. See D-040.
+    aiProvider: OpenAICompatible
+    dataProtectionPersistence: Redis
+
+storageProviders: [AzureBlob, S3]                                   # Storage:Provider, see D-037
+readModelProviders: [Cosmos, Relational]                            # ReadModel:Provider, see D-038
+auditProviders: [AzureTable, Relational]                             # Audit:Provider, see D-039
+searchProviders: [AzureAiSearch, PgVector, Sql]                      # Search:Provider, see D-040 (Sql = NoOpSearchService prefix search)
+aiProviders: [AzureInference, OpenAICompatible, FoundryLocal, None]  # AiServices:Provider, see D-041
+dataProtectionPersistence: [AzureBlob, Redis, None]                  # DataProtection:Persistence, see D-043 (None logs a warning)
+
+deployTargets: [ContainerApps, DockerCompose]
+
+# ---------------------------------------------------------------------------
+# Runtime / Operations (guidance alignment, see DESIGN-DECISIONS D-047..D-055)
+# ---------------------------------------------------------------------------
+runtimeProfile:
+  Api: { gc: ServerGC+DATAS, readyToRun: true }
+  Gateway: { gc: ServerGC+DATAS, readyToRun: true }
+  Scheduler: { gc: ServerGC+DATAS }
+  Blazor: { gc: ServerGC+DATAS }
+  Functions: { gc: ServerGC+DATAS }
+  DatabaseMigrator: { gc: Workstation }
+  # ServerGC+DATAS = ServerGarbageCollection + ConcurrentGarbageCollection + GarbageCollectionAdaptationMode=1 (explicit).
+  # Workstation GC for the short-lived migrator job. See D-047.
+
+healthProbes: { live: /healthz/live, ready: /healthz/ready, aggregate: /healthz }   # see D-049
+
+internalRpc:
+  protocol: gRPC
+  port: 8081
+  consumers: [Blazor]
+  # Dedicated cleartext HTTP/2 Kestrel endpoint on the Api (Kestrel cannot serve h2c and HTTP/1.1 on one port).
+  # Gateway keeps REST for public clients. See D-054.
+
+# ---------------------------------------------------------------------------
+# Feature Flags (see DESIGN-DECISIONS D-042, domain-specification GR-20)
+# ---------------------------------------------------------------------------
+featureFlags:
+  - { name: TaskViews, checkPoint: endpoint-filter, description: "Gates the TaskView read-model HTTP surface; disabled answers 404" }
+  - { name: Export, checkPoint: endpoint-filter, description: "Gates the NDJSON task export HTTP surface; disabled answers 404" }
+  - { name: SemanticSearch, checkPoint: endpoint-filter, description: "Gates the PgVector semantic search HTTP surface; disabled answers 404, see GR-19" }
+  - { name: AiReview, checkPoint: consumer, description: "Gates AiTaskReviewer's AI-assisted review consumer path via IVariantFeatureManager" }
 
 # ---------------------------------------------------------------------------
 # Security
@@ -56,6 +119,7 @@ gatewayAuth: EntraExternal
 apiAuth: EntraID
 tokenRelay: true
 tenantIdType: Guid
+gatewayEdgeRateLimiting: token-bucket-per-client-ip   # Gateway edge limiter, in addition to the Api's Redis tenant limiter, see D-050
 
 # ---------------------------------------------------------------------------
 # IaC / Pipeline
@@ -185,56 +249,158 @@ entities:
       - { name: TaskItemId, type: "Guid", required: true }
       - { name: TagId, type: "Guid", required: true }
 
+  # =========================================================================
+  # TaskView (read-model projection, not a domain aggregate)
+  # =========================================================================
+  - name: TaskView
+    dataStore: sql   # relational read-model table (ReadModel:Provider=Relational, D-038); the Cosmos arm is the Azure-lane default   # ReadModel:Provider = Cosmos | Relational, see D-038; readModelProviders above
+    properties:
+      - { name: TenantId, type: "Guid", required: true }
+      - { name: Title, type: "nvarchar", maxLength: 200, required: true }
+      - { name: Status, type: "nvarchar", maxLength: 32, required: true }
+      - { name: Priority, type: "nvarchar", maxLength: 32, required: false }
+      - { name: CategoryName, type: "nvarchar", maxLength: 200, required: false }
+      - { name: StartDate, type: "DateTimeOffset?", required: false }
+      - { name: DueDate, type: "DateTimeOffset?", required: false }
+      - { name: CompletedDate, type: "DateTimeOffset?", required: false }
+      - { name: IsOverdue, type: "bit", required: false }
+      - { name: CommentCount, type: "int", required: false }
+      - { name: ChecklistTotal, type: "int", required: false }
+      - { name: ChecklistCompleted, type: "int", required: false }
+      - { name: AttachmentCount, type: "int", required: false }
+      - { name: SubTaskCount, type: "int", required: false }
+      - { name: CreatedUtc, type: "DateTimeOffset", required: true }
+      - { name: LastModifiedUtc, type: "DateTimeOffset", required: true }
+      - { name: Document, type: "nvarchar(max)", required: false, note: "JSON body: Description, Tags. jsonb+GIN index noted as a commented Postgres customization." }
+    note: "Cosmos arm keeps the existing TaskView projection; Relational arm is this table in the taskflow schema, PK (TenantId, Id), index (TenantId, LastModifiedUtc desc, Id desc), counters patched via one ExecuteUpdateAsync, keyset continuation token. Projection target, not a domain aggregate - no TaskItem attribute changes. See D-038."
+
+  # =========================================================================
+  # AuditLog (audit-sink projection, not a domain aggregate)
+  # =========================================================================
+  - name: AuditLog
+    dataStore: sql   # relational audit table (Audit:Provider=Relational, D-039); the Table Storage arm is the Azure-lane default   # Audit:Provider = AzureTable | Relational, see D-039; auditProviders above
+    properties:
+      - { name: TenantId, type: "nvarchar", maxLength: 64, required: true, note: "NullTenantPartitionKey sentinel for system-scoped audit rows" }
+      - { name: RecordedUtc, type: "DateTimeOffset", required: true }
+      - { name: AuditId, type: "nvarchar", maxLength: 128, required: true }
+      - { name: EntityType, type: "nvarchar", maxLength: 200, required: true }
+      - { name: EntityKey, type: "nvarchar", maxLength: 200, required: true }
+      - { name: Action, type: "nvarchar", maxLength: 64, required: true }
+      - { name: Status, type: "nvarchar", maxLength: 32, required: true }
+      - { name: StartTimeTicks, type: "long", required: true }
+      - { name: ElapsedTimeTicks, type: "long", required: true }
+      - { name: Metadata, type: "nvarchar(max)", required: false }
+      - { name: Error, type: "nvarchar(max)", required: false }
+    note: "AzureTable arm is the existing table; Relational arm PK (TenantId, RecordedUtc, Id), index IX_AuditLog_RecordedUtc for the retention sweep. Projection target, not a domain aggregate. See D-039."
+
+  # =========================================================================
+  # TaskItemEmbedding (search projection, Postgres-only)
+  # =========================================================================
+  - name: TaskItemEmbedding
+    dataStore: sql   # PostgreSQL-only table (pgvector, Search:Provider=PgVector, D-040); absent from the SQL Server model   # Search:Provider = PgVector, requires Database:Provider = PostgreSql, see D-040
+    properties:
+      - { name: TenantId, type: "Guid", required: true }
+      - { name: TaskItemId, type: "Guid", required: true }
+      - { name: Embedding, type: "vector(1536)", required: true }
+      - { name: Dimensions, type: "int", required: true }
+      - { name: ModelId, type: "nvarchar", maxLength: 128, required: true }
+      - { name: UpdatedUtc, type: "DateTimeOffset", required: true }
+    note: "HNSW cosine index (vector_cosine_ops); mapped in OnModelCreating only when Database.ProviderName is Npgsql (the one new forced provider branch, D-030) - no DbSet, because a DbSet would pull the type into the SQL Server model too; migration lives in the PostgreSql migration assembly only. The vector dimension is the TaskItemEmbedding.DefaultDimensions constant (1536) because it is also the deployed column type; Search:PgVector:Dimensions is validated against it at startup rather than driving the model. Search projection, not domain state - no TaskItem attribute changes. See D-040, domain-specification GR-19/GR-20."
+
 # ---------------------------------------------------------------------------
 # Messaging
 # ---------------------------------------------------------------------------
 messagingProviders:
   - { name: ServiceBus, type: AzureServiceBus }
+  - { name: RabbitMq, type: RabbitMQ }
 
 messagingChannels:
   - { name: DomainEvents, provider: ServiceBus, pattern: topic }
   - { name: TaskCommands, provider: ServiceBus, pattern: queue }
 
 messagingSemantics:
-  - { channel: DomainEvents, deliveryMode: at-least-once, outboxEnabled: true, idempotencyKey: MessageId, deduplicationWindow: "PT1H" }
+  - { channel: DomainEvents, deliveryMode: at-least-once, outboxEnabled: true, idempotencyKey: MessageId, deduplicationWindow: "PT1H", subscriptions: [projection, ai-review, workflow, embedding], inboxTable: ConsumerInbox }
   - { channel: TaskCommands, deliveryMode: at-least-once, outboxEnabled: false, idempotencyKey: CorrelationId, deduplicationWindow: "PT30M" }
+  # "embedding" subscription: RabbitMQ queue taskflow.embedding (own queue beside taskflow.projection/ai-review/workflow);
+  # bound to TaskItemCreatedEvent, TaskItemStatusChangedEvent, TaskItemRescheduledEvent, TaskItemCompletedEvent; inbox-guarded. See D-040.
 
 # ---------------------------------------------------------------------------
 # Scheduled Jobs
 # ---------------------------------------------------------------------------
+# Schedules are the seeded TickerQ cron expressions (6 fields, seconds first) from
+# RegisterSchedulerServices.SeedCronJobs. targetService/method name the entry point each
+# TickerFunction handler calls; the handler itself is Handlers/<name>Handler.
 scheduledJobs:
   - name: OverdueTaskCheck
-    schedule: "0 */6 * * *"
-    description: "Check for overdue tasks and raise TaskItemOverdueSuspected events"
-    targetService: TaskItemService
-    method: CheckOverdueItemsAsync
+    schedule: "0 0 */6 * * *"
+    description: "Announce tasks past their due date as TaskItemOverdueSuspected, once per due date"
+    targetService: ITaskItemSystemRepository
+    method: StreamOverdueAsync
 
   - name: RecurringTaskGeneration
-    schedule: "0 0 * * *"
-    description: "Generate next occurrences for tasks with active recurrence patterns"
-    targetService: TaskItemService
-    method: GenerateRecurringTasksAsync
+    schedule: "0 0 2 * * *"
+    description: "Generate up to 12 due occurrences per recurring template and advance its next-occurrence pointer"
+    targetService: ITaskItemSystemRepository
+    method: StreamDueTemplatesAsync
 
   - name: StaleTaskCleanup
-    schedule: "0 2 * * 0"
-    description: "Archive or remove cancelled tasks older than 90 days"
-    targetService: TaskItemService
-    method: CleanupStaleTasksAsync
+    schedule: "0 0 3 * * 0"
+    description: "Delete cancelled tasks terminal for more than 90 days, staging deferred blob deletes first"
+    targetService: ITaskItemSystemRepository
+    method: GetStaleBatchAsync
+
+  - name: OutboxRetention
+    schedule: "0 15 * * * *"
+    description: "Hard-delete dead-lettered OutboxMessage and BlobDeleteWork rows older than 7 days"
+    targetService: IOperationalWorkRepository
+    method: PurgeDeadLetteredAsync
+
+  - name: ConsumerInboxRetention
+    schedule: "0 20 * * * *"
+    description: "Hard-delete ConsumerInbox rows older than 7 days"
+    targetService: IInboxStore
+    method: PurgeProcessedAsync
+
+  - name: TickerQOccurrenceRetention
+    schedule: "0 30 4 * * *"
+    description: "Purge TickerQ cron occurrence rows executed more than 24 hours ago"
+    targetService: TaskFlowTickerQDbContext
+    method: ExecuteDeleteBatchedAsync
+
+  - name: AuditRetention
+    schedule: "0 40 4 * * *"
+    description: "Batch-delete audit log entries older than 30 days (100-row single-partition transactions, PartitionKey = tenantId|yyyyMMdd)"
+    targetService: IAuditLogRepository
+    method: PurgeOlderThanAsync
 
 # ---------------------------------------------------------------------------
 # Function Definitions
 # ---------------------------------------------------------------------------
 functionDefinitions:
-  - name: ProcessTaskEvent
+  - name: ProcessTaskProjection
     trigger: serviceBusTopic
     channel: DomainEvents
-    subscription: task-events
-    description: "Process domain events for task lifecycle changes (update Cosmos projection, trigger workflows)"
+    subscription: projection
+    description: "Update the Cosmos DB TaskView read-model projection from domain events"
 
-  - name: StaleTaskCleanup
-    trigger: timerTrigger
-    schedule: "0 0 3 * * 0"
-    description: "Weekly cleanup of cancelled tasks older than 90 days"
+  - name: ProcessTaskAiReview
+    trigger: serviceBusTopic
+    channel: DomainEvents
+    subscription: ai-review
+    description: "AI-assisted review of task domain events (e.g. triage suggestions)"
+
+  - name: ProcessTaskWorkflowStart
+    trigger: serviceBusTopic
+    channel: DomainEvents
+    subscription: workflow
+    description: "Start or advance FlowEngine workflows triggered by domain events"
+
+  - name: ProcessTaskEmbedding
+    trigger: serviceBusTopic
+    channel: DomainEvents
+    subscription: embedding
+    description: "Generate or refresh the pgvector TaskItemEmbedding row from TaskItemCreatedEvent and TaskItemContentChangedEvent; RabbitMQ queue taskflow.embedding on the RabbitMq lane; declared and consumed only when Search:Provider resolves to PgVector, so nothing accumulates on the other arms; Postgres+PgVector only, see D-040"
+    note: "Bound to the two events that change embeddable text. Status-class events are not bound: TaskItemStatusChangedEvent and TaskItemCompletedEvent never alter Title or Description, and TaskItemRescheduledEvent is dead code - no aggregate method raises it - so binding it would have been a subscription on an event that never arrives."
 
   - name: ProcessAttachment
     trigger: blobTrigger
@@ -249,12 +415,17 @@ functionDefinitions:
 # ---------------------------------------------------------------------------
 externalDependencyModes:
   sql: emulator
+  postgres: emulator
   redis: emulator
   serviceBus: emulator
+  rabbitMq: emulator
   keyVault: lazy-optional
   blobStorage: emulator
   cosmosDb: emulator
   aiServices: deployment-only
+  minio: emulator                # Portable lane object-storage emulator (S3 arm), see D-037
+  appConfiguration: lazy-optional # no-op without AppConfig:Endpoint, see D-042
+  otelLgtm: emulator              # Portable lane observability stack (Grafana/Loki/Tempo/Mimir)
 
 # ---------------------------------------------------------------------------
 # AI Services
@@ -274,7 +445,7 @@ aiServices:
     useFoundryAgentService: false
 
   search:
-    provider: AzureAISearch
+    provider: AzureAISearch   # schema scalar = the Azure-lane default arm; every arm of the Search:Provider switch is listed under searchProviders (D-040)
     indexes:
       - name: taskitems-index
         sourceEntity: TaskItem

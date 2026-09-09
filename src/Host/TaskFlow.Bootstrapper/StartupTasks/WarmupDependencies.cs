@@ -21,11 +21,11 @@ public class WarmupDependencies(
             await using var queryDb = await queryFactory.CreateDbContextAsync(ct);
             await queryDb.Database.CanConnectAsync(ct);
 
-            logger.LogInformation("Database warmup completed");
+            logger.DatabaseWarmupCompleted();
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Database warmup failed - continuing startup");
+            logger.DatabaseWarmupFailed(ex);
         }
     }
 }

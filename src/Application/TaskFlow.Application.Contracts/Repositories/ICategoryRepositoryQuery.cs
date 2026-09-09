@@ -11,6 +11,8 @@ public interface ICategoryRepositoryQuery : IRepositoryQuery<Category, CategoryI
 {
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     Task<Category?> GetCategoryAsync(CategoryId id, CancellationToken ct = default);
+    /// <summary>Full active-category list for /task-metadata, hard-capped at <paramref name="max"/>.</summary>
+    Task<IReadOnlyList<CategoryDto>> GetActiveCategoriesAsync(int max, CancellationToken ct = default);
     /// <summary>Searches search categories and returns filtered results for callers.</summary>
-    Task<PagedResponse<CategoryDto>> SearchCategoriesAsync(SearchRequest<CategorySearchFilter> request, CancellationToken ct = default);
+    Task<PagedResponse<CategoryDto>> SearchCategoriesAsync(SearchRequest<CategorySearchFilter> request, bool includeTotal = false, CancellationToken ct = default);
 }

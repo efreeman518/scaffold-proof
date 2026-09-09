@@ -1,7 +1,9 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
+using TaskFlow.Application.Contracts.Caching;
+using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Application.Cqrs.Shared;
@@ -24,7 +26,7 @@ internal sealed class SearchAttachmentsHandler(
     {
         var request = query.Request;
         HandlerHelpers.EnforceTenantFilter(request, requestContext.TenantId, requestContext.Roles, logger, "AttachmentSearch");
-        return await CqrsHandlerSupport.SearchAsync(token => repoQuery.SearchAttachmentsAsync(request, token), logger, "Attachment", ct);
+        return await CqrsHandlerSupport.SearchAsync(token => repoQuery.SearchAttachmentsAsync(request, query.IncludeTotal, token), logger, "Attachment", ct);
     }
 }
 
@@ -73,6 +75,21 @@ internal sealed class CreateAttachmentHandler(
             "Attachment:Create", nameof(Attachment));
         if (boundary.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(boundary.ErrorMessage!);
 
+        // D-033: the row itself is the idempotency record for a caller-supplied UUIDv7 id.
+        if (dto.Id is Guid callerId && callerId != Guid.Empty)
+        {
+            var existing = await repoTrxn.GetAttachmentAsync(DomainId.From<AttachmentId>(callerId), ct);
+            if (existing is not null)
+            {
+                var existingDto = existing.ToDto();
+                if (!IdempotentCreateGuard.IsEquivalent(existingDto, dto))
+                    throw new IdempotentCreateConflictException(nameof(Attachment), callerId);
+
+                return Result<DefaultResponse<AttachmentDto>>.Success(
+                    new DefaultResponse<AttachmentDto> { Item = existingDto, IsReplay = true });
+            }
+        }
+
         var entityResult = dto.ToEntity(dto.TenantId);
         if (entityResult.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(entityResult.ErrorMessage!);
 
@@ -98,6 +115,11 @@ internal sealed class UploadAttachmentHandler(
     /// <summary>Handles upload attachment requests and returns the application result.</summary>
     public async Task<Result<DefaultResponse<AttachmentDto>>> HandleAsync(UploadAttachmentCommand command, CancellationToken ct = default)
     {
+        // GR-17: the upload form carries its own optional caller id, so it needs the same UUIDv7
+        // check as the JSON create path - it was missing here, which let Guid.Empty and v4 ids through.
+        var idCheck = UuidV7.ValidateCallerId(command.Id);
+        if (idCheck.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(idCheck.ErrorMessage!);
+
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             logger, requestContext.TenantId, requestContext.Roles, requestContext.TenantId,
             "Attachment:Upload", nameof(Attachment));
@@ -115,7 +137,7 @@ internal sealed class UploadAttachmentHandler(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error uploading blob for Attachment {FileName}", command.FileName);
+            logger.AttachmentBlobUploadFailed(ex, command.FileName);
             return Result<DefaultResponse<AttachmentDto>>.Failure($"Blob upload failed: {ex.GetBaseException().Message}");
         }
 
@@ -127,7 +149,8 @@ internal sealed class UploadAttachmentHandler(
             command.FileSizeBytes,
             storageUri,
             command.OwnerType,
-            command.OwnerId);
+            command.OwnerId,
+            DomainId.FromNullable<AttachmentId>(command.Id));
         if (entityResult.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(entityResult.ErrorMessage!);
 
         var entity = entityResult.Value!;
@@ -168,6 +191,8 @@ internal sealed class UpdateAttachmentHandler(
             "Attachment:Update", nameof(Attachment), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(boundary.ErrorMessage!);
 
+        ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(Attachment), entity.Id.Value);
+
         var tenantChangeCheck = tenantBoundaryValidator.PreventTenantChange(
             logger, entity.TenantId.Value, dto.TenantId, nameof(Attachment), entity.Id.Value);
         if (tenantChangeCheck.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(tenantChangeCheck.ErrorMessage!);
@@ -188,7 +213,7 @@ internal sealed class DeleteAttachmentHandler(
     IRequestContext<string, Guid?> requestContext,
     IAttachmentRepositoryTrxn repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    IEntityCacheProvider cache,
+    ITaskFlowCache cache,
     IBlobStorageRepository? blobStorage = null)
     : IRequestHandler<DeleteAttachmentCommand, Result>
 {
@@ -202,6 +227,8 @@ internal sealed class DeleteAttachmentHandler(
             logger, requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "Attachment:Delete", nameof(Attachment), entity.Id.Value);
         if (boundary.IsFailure) return Result.Failure(boundary.ErrorMessage!);
+
+        ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(Attachment), entity.Id.Value);
 
         repoTrxn.Delete(entity);
 
@@ -217,11 +244,11 @@ internal sealed class DeleteAttachmentHandler(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Failed to delete blob for Attachment {Id}", command.Id);
+                logger.AttachmentBlobDeleteFailed(ex, command.Id);
             }
         }
 
-        await cache.RemoveAsync(HandlerHelpers.CacheKey(nameof(Attachment), command.Id), ct);
+        await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(Attachment)), ct);
         return Result.Success();
     }
 }

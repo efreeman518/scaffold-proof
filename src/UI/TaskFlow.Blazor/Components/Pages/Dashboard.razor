@@ -1,6 +1,8 @@
 @page "/"
 @inject FloatService FloatService
 @inject ITaskFlowApiClient Api
+@inject TaskFlow.Contracts.Grpc.TaskFlowRead.TaskFlowReadClient GrpcReads
+@inject ClientReadSettings ReadSettings
 @inject NavigationManager Nav
 @implements IDisposable
 
@@ -86,39 +88,38 @@
     private async Task LoadAsync()
     {
         _loading = true;
-        var recent = await FloatService.ExecuteWithProgressAsync(
-            () => Api.SearchTaskItemsAsync(new SearchRequest<TaskItemSearchFilter>
-            {
-                Filter = new TaskItemSearchFilter(),
-                PageSize = 10,
-                PageIndex = 0
-            }),
-            "Failed to load tasks.");
 
-        if (recent is not null)
+        // D-054: the same read over the internal gRPC hop or over REST through the gateway. Both arms
+        // return the identical DTO, which is the point of the proof.
+        var summary = await FloatService.ExecuteWithProgressAsync(
+            () => ReadSettings.UseGrpcReads
+                ? GrpcReads.GetTaskItemSummaryDtoAsync()
+                : Api.GetTaskItemSummaryAsync(),
+            "Failed to load task summary.");
+        if (summary is not null)
         {
-            _recent = recent.Data?.ToList() ?? new();
-            _total = recent.Total;
-            // Tile counts come from server totals, never from the fetched page - a 10-row page undercounts.
-            _open = await CountByStatusAsync(TaskItemStatus.Open);
-            _inProgress = await CountByStatusAsync(TaskItemStatus.InProgress);
-            _completed = await CountByStatusAsync(TaskItemStatus.Completed);
+            _total = summary.Total;
+            _open = CountOf(summary, TaskItemStatus.Open);
+            _inProgress = CountOf(summary, TaskItemStatus.InProgress);
+            _completed = CountOf(summary, TaskItemStatus.Completed);
         }
+
+        // One cursor page for the recent-tasks preview; the tile counts above already come from the
+        // tenant-wide summary, not from this page, so there is no double round trip to page through.
+        var recent = await FloatService.ExecuteWithProgressAsync(
+            () => Api.SearchTaskItemsAsync(new TaskItemCursorSearchRequest
+            {
+                SortMode = TaskItemSortMode.ModifiedDesc,
+                PageSize = 8
+            }),
+            "Failed to load recent tasks.");
+        _recent = recent?.Data?.ToList() ?? [];
+
         _loading = false;
     }
 
-    private async Task<int> CountByStatusAsync(TaskItemStatus status)
-    {
-        var page = await FloatService.ExecuteWithProgressAsync(
-            () => Api.SearchTaskItemsAsync(new SearchRequest<TaskItemSearchFilter>
-            {
-                Filter = new TaskItemSearchFilter { Status = status },
-                PageSize = 1,
-                PageIndex = 0
-            }),
-            "Failed to load task counts.");
-        return page?.Total ?? 0;
-    }
+    private static int CountOf(TaskItemSummaryDto summary, TaskItemStatus status) =>
+        summary.ByStatus.FirstOrDefault(s => s.Status == status)?.Count ?? 0;
 
     private async void OnTaskItemsChanged()
     {

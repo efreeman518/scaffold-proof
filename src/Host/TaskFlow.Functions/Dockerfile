@@ -15,7 +15,9 @@ RUN --mount=type=secret,id=nuget_credentials,required=true \
 RUN dotnet publish src/Host/TaskFlow.Functions/TaskFlow.Functions.csproj -c Release -o /app --no-restore
 
 # Runtime - Azure Functions isolated worker
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled AS runtime
+# D-047: -chiseled-extra, not plain -chiseled. This host sets InvariantGlobalization=false and plain
+# chiseled ships no ICU, so the runtime would fail at startup with no valid ICU package found.
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled-extra AS runtime
 WORKDIR /app
 EXPOSE 8080
 ENV AzureWebJobsScriptRoot=/app \

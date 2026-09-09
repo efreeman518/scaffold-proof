@@ -2,8 +2,8 @@ using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Storage;
+using TaskFlow.Infrastructure.Data.Messaging;
 using TaskFlow.Infrastructure.Storage;
 using TaskFlow.Infrastructure.Storage.CosmosDb;
 
@@ -81,8 +81,9 @@ public static partial class RegisterServices
     }
 
     /// <summary>
-    /// Registers attachment blob storage only when configured. Upload endpoints surface a
-    /// service-level failure if this optional dependency is absent.
+    /// Registers attachment blob storage when configured; otherwise a no-op repository keeps
+    /// <see cref="IBlobStorageRepository"/> resolvable so the DI graph still builds (D-037). Upload/download
+    /// endpoints surface a service-level failure from the no-op when this optional dependency is absent.
     /// </summary>
     private static void AddBlobStorageServices(IServiceCollection services, IConfiguration config)
     {
@@ -91,7 +92,11 @@ public static partial class RegisterServices
             "BlobStorage1",
             "BlobStorage1",
             "Values:BlobStorage1");
-        if (string.IsNullOrEmpty(connStr)) return;
+        if (string.IsNullOrEmpty(connStr))
+        {
+            services.AddSingleton<IBlobStorageRepository, NoOpBlobStorageRepository>();
+            return;
+        }
 
         services.AddAzureClients(builder =>
         {
@@ -106,8 +111,8 @@ public static partial class RegisterServices
     }
 
     /// <summary>
-    /// Registers integration-event publishing through Service Bus when available; otherwise
-    /// uses a no-op publisher so core CRUD remains usable without messaging infrastructure.
+    /// Registers the Service Bus outbox transport when a namespace is configured; otherwise a transport that
+    /// reports it cannot dispatch, so staged rows stay in the outbox instead of being dropped (D-026).
     /// </summary>
     private static void AddServiceBusServices(IServiceCollection services, IConfiguration config)
     {
@@ -118,7 +123,7 @@ public static partial class RegisterServices
             "Values:ServiceBus1");
         if (string.IsNullOrEmpty(connStr))
         {
-            services.AddSingleton<IIntegrationEventPublisher, NoOpIntegrationEventPublisher>();
+            services.AddSingleton<IIntegrationEventTransport, NoOpEventTransport>();
             return;
         }
 
@@ -128,7 +133,7 @@ public static partial class RegisterServices
                 .WithName("TaskFlowSBClient");
         });
 
-        services.AddSingleton<IIntegrationEventPublisher, ServiceBusIntegrationEventPublisher>();
+        services.AddSingleton<IIntegrationEventTransport, ServiceBusEventTransport>();
     }
 
     /// <summary>
@@ -147,13 +152,34 @@ public static partial class RegisterServices
         var databaseName = config["Cosmos:TaskViews:DatabaseName"] ?? "taskflow-db";
         var containerName = config["Cosmos:TaskViews:ContainerName"] ?? "task-views";
 
-        services.AddSingleton(_ => new Microsoft.Azure.Cosmos.CosmosClient(connStr));
+        services.AddSingleton(_ => new Microsoft.Azure.Cosmos.CosmosClient(connStr, BuildCosmosClientOptions(config)));
         services.AddSingleton<ITaskViewRepository>(sp =>
             new CosmosTaskViewRepository(
                 sp.GetRequiredService<Microsoft.Azure.Cosmos.CosmosClient>(),
                 sp.GetRequiredService<ILogger<CosmosTaskViewRepository>>(),
                 databaseName,
                 containerName));
+    }
+
+    /// <summary>
+    /// D-051: cross-region read hedging, off by default. After <c>threshold</c> without an answer the SDK
+    /// issues the same read against the next preferred region and takes whichever replies first, then repeats
+    /// every <c>thresholdStep</c>. It only helps a multi-region account with preferred regions configured, and
+    /// it multiplies request units on a slow region, so it stays a deployment decision rather than a default.
+    /// </summary>
+    internal static Microsoft.Azure.Cosmos.CosmosClientOptions? BuildCosmosClientOptions(IConfiguration config)
+    {
+        if (!config.GetValue("Cosmos:Hedging:Enabled", false))
+            return null;
+
+        var threshold = TimeSpan.FromMilliseconds(config.GetValue("Cosmos:Hedging:ThresholdMs", 500));
+        var thresholdStep = TimeSpan.FromMilliseconds(config.GetValue("Cosmos:Hedging:ThresholdStepMs", 100));
+
+        return new Microsoft.Azure.Cosmos.CosmosClientOptions
+        {
+            AvailabilityStrategy =
+                Microsoft.Azure.Cosmos.AvailabilityStrategy.CrossRegionHedgingStrategy(threshold, thresholdStep)
+        };
     }
 
     /// <summary>
@@ -172,10 +198,16 @@ public static partial class RegisterServices
         if (!string.IsNullOrWhiteSpace(ResolveConnectionString(config, "BlobStorage1", "BlobStorage1", "Values:BlobStorage1")))
             builder.AddCheck<HealthChecks.BlobStorageHealthCheck>("blob-storage", tags: ["full", "extservice"]);
 
+        if (ResolveStorageProvider(config) == StorageProvider.S3)
+            builder.AddCheck<HealthChecks.S3StorageHealthCheck>("s3-storage", tags: ["full", "extservice"]);
+
         if (!string.IsNullOrWhiteSpace(ResolveConnectionString(config, "ServiceBus1", "ServiceBus1", "Values:ServiceBus1")))
             builder.AddCheck<HealthChecks.ServiceBusHealthCheck>("service-bus", tags: ["full", "extservice"]);
 
         if (!string.IsNullOrWhiteSpace(config.GetConnectionString("CosmosDb1")))
             builder.AddCheck<HealthChecks.CosmosDbHealthCheck>("cosmos-db", tags: ["full", "extservice"]);
+
+        if (!string.IsNullOrWhiteSpace(config.GetConnectionString("Redis1")))
+            builder.AddCheck<HealthChecks.RedisCacheHealthCheck>("redis-cache", tags: ["full", "extservice"]);
     }
 }

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import {
   addChecklistItem,
   addComment,
@@ -15,6 +15,11 @@ import {
   uniqueTitle,
   waitForReactApp,
 } from "../../utils/reactTestUtils";
+
+/** Provides Playwright helper logic for the React notification Snackbar/Alert. */
+async function expectNotification(page: Page, textFragment: string, timeout = 15_000) {
+  await expect(page.getByRole("alert")).toContainText(textFragment, { timeout });
+}
 
 /**
  * Full Task CRUD lifecycle exercised through the React + TypeScript UI.
@@ -115,5 +120,44 @@ test.describe("TaskFlow React - Task CRUD lifecycle", () => {
     await deleteTaskFromList(page, updatedTitle);
     await expect(page.getByText("Task deleted.")).toBeVisible({ timeout: 15_000 });
     await expectTaskNotInTable(page, updatedTitle);
+  });
+});
+
+test.describe("TaskFlow React - two-tab optimistic concurrency (412)", () => {
+  /** Editing the same task from two tabs surfaces a 412 on the second save instead of an overwrite. */
+  test("editing the same task from two tabs surfaces a 412 on the second save", async ({ page, context }) => {
+    const title = uniqueTitle("E2E-React-Conflict");
+
+    // Tab A creates the task and stays on its edit page (holds the just-loaded Version/ETag).
+    await waitForReactApp(page);
+    await navigateToNewTask(page);
+    await fillTaskForm(page, { title });
+    await saveTask(page);
+    await expect(page.getByRole("heading", { name: /edit task/i })).toBeVisible({ timeout: 15_000 });
+    const taskUrl = page.url();
+
+    // Tab B loads the same task independently, capturing the same If-Match currency as tab A.
+    const pageB = await context.newPage();
+    await pageB.goto(taskUrl, { waitUntil: "domcontentloaded" });
+    await expect(pageB.getByRole("heading", { name: /edit task/i })).toBeVisible({ timeout: 15_000 });
+
+    // Tab A saves first: succeeds and bumps the server-side Version past what tab B is holding.
+    await fillTaskForm(page, { priority: "High" });
+    await saveTask(page);
+    await expect(page.getByText("Task saved.")).toBeVisible({ timeout: 15_000 });
+
+    // Tab B saves against its now-stale Version: the API returns 412, and the UI reports the
+    // conflict and reloads instead of silently overwriting tab A's change.
+    await fillTaskForm(pageB, { priority: "Low" });
+    await saveTask(pageB);
+    await expectNotification(pageB, "Task changed elsewhere, reloading.");
+
+    await pageB.close();
+
+    // Cleanup.
+    await navigateToTaskList(page);
+    await searchForTask(page, title);
+    await deleteTaskFromList(page, title);
+    await expectTaskNotInTable(page, title);
   });
 });

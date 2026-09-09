@@ -2,6 +2,7 @@ using EF.Common.Contracts;
 using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
+using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Contracts.Storage;
@@ -21,7 +22,8 @@ internal class AttachmentService(
     IAttachmentRepositoryTrxn repoTrxn,
     IAttachmentRepositoryQuery repoQuery,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    IEntityCacheProvider cache,
+    // No cache dependency: no cached snapshot is built from attachments, so an attachment write has nothing
+    // to invalidate. Add one here the day a snapshot starts counting them.
     IBlobStorageRepository? blobStorage = null) : IAttachmentService
 {
     private Guid? RequestTenantId => requestContext.TenantId;
@@ -38,7 +40,7 @@ internal class AttachmentService(
 
     /// <summary>Searches search and returns filtered results for callers.</summary>
     public async Task<PagedResponse<AttachmentDto>> SearchAsync(
-        SearchRequest<AttachmentSearchFilter> request, CancellationToken ct = default)
+        SearchRequest<AttachmentSearchFilter> request, bool includeTotal = false, CancellationToken ct = default)
     {
         if (!IsGlobalAdmin)
         {
@@ -49,7 +51,7 @@ internal class AttachmentService(
             }
             request.Filter.TenantId = RequestTenantId;
         }
-        return await repoQuery.SearchAttachmentsAsync(request, ct);
+        return await repoQuery.SearchAttachmentsAsync(request, includeTotal, ct);
     }
 
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
@@ -81,6 +83,21 @@ internal class AttachmentService(
             "Attachment:Create", nameof(Attachment));
         if (boundary.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(boundary.ErrorMessage!);
 
+        // D-033: the row itself is the idempotency record for a caller-supplied UUIDv7 id.
+        if (dto.Id is Guid callerId && callerId != Guid.Empty)
+        {
+            var existing = await repoTrxn.GetAttachmentAsync(DomainId.From<AttachmentId>(callerId), ct);
+            if (existing is not null)
+            {
+                var existingDto = existing.ToDto();
+                if (!IdempotentCreateGuard.IsEquivalent(existingDto, dto))
+                    throw new IdempotentCreateConflictException(nameof(Attachment), callerId);
+
+                return Result<DefaultResponse<AttachmentDto>>.Success(
+                    new DefaultResponse<AttachmentDto> { Item = existingDto, IsReplay = true });
+            }
+        }
+
         var entityResult = dto.ToEntity(dto.TenantId);
         if (entityResult.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(entityResult.ErrorMessage!);
 
@@ -89,11 +106,11 @@ internal class AttachmentService(
 
         try
         {
-            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, ct);
+            await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
-            logger.LogError(ex, "Error creating Attachment");
+            logger.AttachmentCreateFailed(ex);
             return Result<DefaultResponse<AttachmentDto>>.Failure(ex.GetBaseException().Message);
         }
 
@@ -103,8 +120,13 @@ internal class AttachmentService(
     /// <summary>Uploads upload to the configured storage backend and returns metadata.</summary>
     public async Task<Result<DefaultResponse<AttachmentDto>>> UploadAsync(
         Stream fileStream, string fileName, string contentType, long fileSizeBytes,
-        AttachmentOwnerType ownerType, Guid ownerId, CancellationToken ct = default)
+        AttachmentOwnerType ownerType, Guid ownerId, Guid? id = null, CancellationToken ct = default)
     {
+        // GR-17: the upload form carries its own optional caller id, so it needs the same UUIDv7
+        // check as the JSON create path - it was missing here, which let Guid.Empty and v4 ids through.
+        var idCheck = UuidV7.ValidateCallerId(id);
+        if (idCheck.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(idCheck.ErrorMessage!);
+
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             logger, RequestTenantId, RequestRoles, RequestTenantId,
             "Attachment:Upload", nameof(Attachment));
@@ -114,21 +136,22 @@ internal class AttachmentService(
             return Result<DefaultResponse<AttachmentDto>>.Failure("Blob storage is not configured.");
 
         var tenantId = RequestTenantId ?? Guid.Empty;
-        var blobName = $"{tenantId}/{ownerId}/{fileName}";
+        var blobName = AttachmentBlobs.BlobName(tenantId, ownerId, fileName);
 
         try
         {
-            await blobStorage.UploadAsync("attachments", blobName, fileStream, contentType, ct: ct);
+            await blobStorage.UploadAsync(AttachmentBlobs.ContainerName, blobName, fileStream, contentType, ct: ct);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
-            logger.LogError(ex, "Error uploading blob for Attachment {FileName}", fileName);
+            logger.AttachmentBlobUploadFailed(ex, fileName);
             return Result<DefaultResponse<AttachmentDto>>.Failure($"Blob upload failed: {ex.GetBaseException().Message}");
         }
 
-        var storageUri = (await blobStorage.GetBlobUriAsync("attachments", blobName, ct)).ToString();
+        var storageUri = (await blobStorage.GetBlobUriAsync(AttachmentBlobs.ContainerName, blobName, ct)).ToString();
         var entityResult = Domain.Model.Attachment.Create(
-            DomainId.From<TenantId>(tenantId), fileName, contentType, fileSizeBytes, storageUri, ownerType, ownerId);
+            DomainId.From<TenantId>(tenantId), fileName, contentType, fileSizeBytes, storageUri, ownerType, ownerId,
+            DomainId.FromNullable<AttachmentId>(id));
         if (entityResult.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(entityResult.ErrorMessage!);
 
         var entity = entityResult.Value!;
@@ -136,11 +159,11 @@ internal class AttachmentService(
 
         try
         {
-            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, ct);
+            await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
-            logger.LogError(ex, "Error persisting Attachment after upload");
+            logger.AttachmentPersistAfterUploadFailed(ex);
             return Result<DefaultResponse<AttachmentDto>>.Failure(ex.GetBaseException().Message);
         }
 
@@ -149,7 +172,7 @@ internal class AttachmentService(
 
     /// <summary>Updates existing data after validation and preserves domain invariants.</summary>
     public async Task<Result<DefaultResponse<AttachmentDto>>> UpdateAsync(
-        DefaultRequest<AttachmentDto> request, CancellationToken ct = default)
+        DefaultRequest<AttachmentDto> request, long? expectedVersion, CancellationToken ct = default)
     {
         var dto = request.Item;
         dto.TenantId = RequestTenantId ?? Guid.Empty;
@@ -166,6 +189,8 @@ internal class AttachmentService(
             "Attachment:Update", nameof(Attachment), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(boundary.ErrorMessage!);
 
+        ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(Attachment), entity.Id.Value);
+
         var tenantChangeCheck = tenantBoundaryValidator.PreventTenantChange(
             logger, entity.TenantId.Value, dto.TenantId, nameof(Attachment), entity.Id.Value);
         if (tenantChangeCheck.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(tenantChangeCheck.ErrorMessage!);
@@ -175,11 +200,11 @@ internal class AttachmentService(
 
         try
         {
-            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, ct);
+            await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
-            logger.LogError(ex, "Error updating Attachment {Id}", dto.Id);
+            logger.AttachmentUpdateFailed(ex, dto.Id);
             return Result<DefaultResponse<AttachmentDto>>.Failure(ex.GetBaseException().Message);
         }
 
@@ -187,7 +212,7 @@ internal class AttachmentService(
     }
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
-    public async Task<Result> DeleteAsync(Guid id, CancellationToken ct = default)
+    public async Task<Result> DeleteAsync(Guid id, long? expectedVersion, CancellationToken ct = default)
     {
         var entity = await repoTrxn.GetAttachmentAsync(DomainId.From<AttachmentId>(id), ct);
         if (entity == null) return Result.Success();
@@ -197,15 +222,17 @@ internal class AttachmentService(
             "Attachment:Delete", nameof(Attachment), entity.Id.Value);
         if (boundary.IsFailure) return Result.Failure(boundary.ErrorMessage!);
 
+        ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(Attachment), entity.Id.Value);
+
         repoTrxn.Delete(entity);
 
         try
         {
-            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, ct);
+            await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
-            logger.LogError(ex, "Error deleting Attachment {Id}", id);
+            logger.AttachmentDeleteFailed(ex, id);
             return Result.Failure(ex.GetBaseException().Message);
         }
 
@@ -214,16 +241,15 @@ internal class AttachmentService(
         {
             try
             {
-                var blobName = $"{entity.TenantId.Value}/{entity.OwnerId}/{entity.FileName}";
-                await blobStorage.DeleteAsync("attachments", blobName, ct);
+                var blobName = AttachmentBlobs.BlobName(entity.TenantId.Value, entity.OwnerId, entity.FileName);
+                await blobStorage.DeleteAsync(AttachmentBlobs.ContainerName, blobName, ct);
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Failed to delete blob for Attachment {Id}", id);
+                logger.AttachmentBlobDeleteFailed(ex, id);
             }
         }
 
-        await cache.RemoveAsync($"Attachment:{id}", ct);
         return Result.Success();
     }
 }

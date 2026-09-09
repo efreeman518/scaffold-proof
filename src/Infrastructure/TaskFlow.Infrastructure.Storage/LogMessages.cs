@@ -17,6 +17,10 @@ internal static partial class LogMessages
     [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 2, Level = LogLevel.Debug, Message = "Upserted TaskView {Id} for tenant {TenantId}")]
     public static partial void TaskViewUpserted(this ILogger logger, string id, string tenantId);
 
+    /// <summary>Logs that a TaskView was not there to patch; the create projection will build it.</summary>
+    [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 9, Level = LogLevel.Debug, Message = "TaskView {Id} not found for counter patch")]
+    public static partial void TaskViewNotFoundForPatch(this ILogger logger, string id);
+
     /// <summary>Logs that a TaskView was not found during deletion.</summary>
     [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 3, Level = LogLevel.Debug, Message = "TaskView {Id} not found for deletion")]
     public static partial void TaskViewNotFoundForDeletion(this ILogger logger, string id);
@@ -29,15 +33,19 @@ internal static partial class LogMessages
     [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 5, Level = LogLevel.Debug, Message = "NoOp: would persist audit entry {AuditEntryId}")]
     public static partial void NoOpAuditPersist(this ILogger logger, Guid auditEntryId);
 
-    /// <summary>Logs a no-op integration event publish.</summary>
-    [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 6, Level = LogLevel.Debug, Message = "NoOp: Would publish {EventType}")]
-    public static partial void NoOpPublish(this ILogger logger, string eventType);
+    /// <summary>Logs that no broker is configured, so outbox rows stay in the table.</summary>
+    [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 6, Level = LogLevel.Warning, Message = "No messaging transport configured: {Count} outbox row(s) for {Destination} are left pending")]
+    public static partial void NoOpTransport(this ILogger logger, string destination, int count);
 
-    /// <summary>Logs a no-op integration event publish to a specific destination.</summary>
-    [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 7, Level = LogLevel.Debug, Message = "NoOp: Would publish {EventType} to {TopicOrQueue}")]
-    public static partial void NoOpPublishTo(this ILogger logger, string eventType, string topicOrQueue);
+    /// <summary>Logs that one claimed outbox batch was handed to the broker.</summary>
+    [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 8, Level = LogLevel.Debug, Message = "Sent {Count} outbox message(s) to {Destination}")]
+    public static partial void OutboxBatchSent(this ILogger logger, string destination, int count);
 
-    /// <summary>Logs that an integration event was published to Service Bus.</summary>
-    [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 8, Level = LogLevel.Information, Message = "Published {EventType} to {TopicOrQueue}")]
-    public static partial void EventPublished(this ILogger logger, string eventType, string topicOrQueue);
+    /// <summary>Logs the audit rows removed by one retention sweep.</summary>
+    [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 10, Level = LogLevel.Information, Message = "Purged {Count} audit entries recorded before {CutoffUtc}")]
+    public static partial void AuditEntriesPurged(this ILogger logger, int count, DateTimeOffset cutoffUtc);
+
+    /// <summary>Logs once that no object-storage backend is configured, so IBlobStorageRepository is the no-op.</summary>
+    [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 11, Level = LogLevel.Warning, Message = "No object-storage backend configured: attachment upload, download, and URL generation will fail; deferred blob deletes will be treated as already gone.")]
+    public static partial void NoOpBlobStorageConfigured(this ILogger logger);
 }

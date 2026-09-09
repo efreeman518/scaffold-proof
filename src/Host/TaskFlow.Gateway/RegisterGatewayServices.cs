@@ -1,6 +1,8 @@
 using Azure.Core;
 using Azure.Identity;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text.Json;
@@ -138,10 +140,18 @@ public static class RegisterGatewayServices
     {
         var memoryPermitLimit = config.GetValue<int?>("RateLimiting:Health:MemoryPermitLimit") ?? 30;
         var fullPermitLimit = config.GetValue<int?>("RateLimiting:Health:FullPermitLimit") ?? 3;
+        var edge = config.GetSection(EdgeRateLimitSettings.ConfigSectionName).Get<EdgeRateLimitSettings>()
+            ?? new EdgeRateLimitSettings();
 
         services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+            if (edge.Enabled)
+            {
+                options.GlobalLimiter = BuildEdgeLimiter(edge);
+                options.OnRejected = WriteRetryAfter(edge);
+            }
 
             options.AddPolicy("HealthMemory", context =>
                 RateLimitPartition.GetFixedWindowLimiter(
@@ -167,4 +177,70 @@ public static class RegisterGatewayServices
         });
     }
 
+    /// <summary>
+    /// The global limiter for proxied traffic (D-050): a token bucket per client IP chained with one process-wide
+    /// concurrency limiter. Two limiters because they answer different questions - the bucket caps how fast one
+    /// caller may arrive, the concurrency limiter caps how many requests this replica may have in flight when the
+    /// downstream slows down, which no per-caller budget can bound.
+    /// <para>
+    /// The client IP comes from <c>Connection.RemoteIpAddress</c>, which is the real client only because
+    /// <c>UseProxyForwarding</c> runs before <c>UseRateLimiter</c> in <c>Program.cs</c> and rewrites it from the
+    /// trusted <c>X-Forwarded-For</c> chain. Moving the limiter above that middleware would silently partition
+    /// every request into the edge proxy's single address.
+    /// </para>
+    /// Health and liveness routes get no limiter: they exist to report this instance's state, and shedding a
+    /// probe is how a healthy replica gets restarted or pulled out of rotation.
+    /// </summary>
+    private static PartitionedRateLimiter<HttpContext> BuildEdgeLimiter(EdgeRateLimitSettings edge) =>
+        PartitionedRateLimiter.CreateChained(
+            PartitionedRateLimiter.Create<HttpContext, string>(context =>
+            {
+                if (IsProbe(context.Request.Path))
+                    return RateLimitPartition.GetNoLimiter("probe");
+
+                return RateLimitPartition.GetTokenBucketLimiter(
+                    context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    _ => new TokenBucketRateLimiterOptions
+                    {
+                        TokenLimit = edge.TokensPerPeriod,
+                        TokensPerPeriod = edge.TokensPerPeriod,
+                        ReplenishmentPeriod = TimeSpan.FromSeconds(Math.Max(1, edge.ReplenishmentSeconds)),
+                        QueueLimit = edge.QueueLimit,
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        AutoReplenishment = true
+                    });
+            }),
+            PartitionedRateLimiter.Create<HttpContext, string>(context =>
+                IsProbe(context.Request.Path)
+                    ? RateLimitPartition.GetNoLimiter("probe")
+                    : RateLimitPartition.GetConcurrencyLimiter(
+                        "edge",
+                        _ => new ConcurrencyLimiterOptions
+                        {
+                            PermitLimit = edge.MaxConcurrentRequests,
+                            QueueLimit = edge.QueueLimit,
+                            QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+                        })));
+
+    /// <summary>
+    /// Adds Retry-After to the 429 so a client backs off by the limiter's own replenishment rather than
+    /// guessing. The token bucket reports the wait when it knows it; the period is the floor otherwise.
+    /// </summary>
+    private static Func<OnRejectedContext, CancellationToken, ValueTask> WriteRetryAfter(EdgeRateLimitSettings edge) =>
+        (context, _) =>
+        {
+            var retryAfter = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var wait)
+                ? wait
+                : TimeSpan.FromSeconds(Math.Max(1, edge.ReplenishmentSeconds));
+
+            context.HttpContext.Response.Headers.RetryAfter =
+                ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
+
+            return ValueTask.CompletedTask;
+        };
+
+    private static bool IsProbe(PathString path) =>
+        path.StartsWithSegments("/healthz")
+        || path.StartsWithSegments("/health")
+        || path.StartsWithSegments("/alive");
 }

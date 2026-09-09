@@ -87,6 +87,81 @@ public class ApiAuditPipelineTests
         Assert.IsGreaterThanOrEqualTo(auditWindowStartUtc, auditEntity.RecordedUtc);
     }
 
+    /// <summary>
+    /// Verifies that given an API category update sent with the ETag from the create response as
+    /// If-Match, when the request is handled, then the update succeeds and a "Modified" audit entry is
+    /// persisted to table storage - end to end coverage that If-Match on a real PUT reaches the audit
+    /// pipeline the same way the POST create path already does.
+    /// </summary>
+    [TestMethod]
+    [Timeout(1_200_000, CooperativeCancellation = true)]
+    public async Task Given_ApiCategoryUpdateWithIfMatch_When_RequestHandled_Then_AuditEntryPersistedToTableStorage()
+    {
+        var ct = CancellationToken.None;
+
+        await AspireTestHost.WaitForResourceHealthyAsync("taskflowapi", ct);
+        await AspireTestHost.WaitForResourceHealthyAsync("TableStorage1", ct);
+
+        using var client = AspireTestHost.AspireApp!.CreateHttpClient("taskflowapi", "http");
+        client.Timeout = TimeSpan.FromMinutes(10);
+
+        var createRequest = new DefaultRequest<CategoryDto>
+        {
+            Item = new CategoryDto
+            {
+                Name = $"Api Audit Update {Guid.NewGuid():N}",
+                Description = "Integration-created category, updated in this test",
+                SortOrder = 1,
+                IsActive = true
+            }
+        };
+
+        using var createResponse = await PostCreateCategoryWithRetryAsync(client, createRequest, ct);
+        var createdBody = await createResponse.Content.ReadFromJsonAsync<DefaultResponse<CategoryDto>>(cancellationToken: ct);
+        Assert.IsNotNull(createdBody?.Item?.Id);
+        var etag = createResponse.Headers.ETag;
+        Assert.IsNotNull(etag, "Create response is expected to carry an ETag (D-0xx: aggregate version).");
+
+        var auditWindowStartUtc = DateTimeOffset.UtcNow;
+        var updateRequest = new DefaultRequest<CategoryDto>
+        {
+            Item = new CategoryDto
+            {
+                Id = createdBody!.Item!.Id,
+                Name = createdBody.Item.Name,
+                Description = "Updated by Given_ApiCategoryUpdateWithIfMatch_When_RequestHandled_Then_AuditEntryPersistedToTableStorage",
+                SortOrder = createdBody.Item.SortOrder,
+                IsActive = createdBody.Item.IsActive
+            }
+        };
+        using var updateHttpRequest = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/categories/{createdBody.Item.Id}")
+        {
+            Content = JsonContent.Create(updateRequest)
+        };
+        updateHttpRequest.Headers.IfMatch.Add(etag!);
+
+        using var updateResponse = await client.SendAsync(updateHttpRequest, ct);
+        var updateResponseBody = await updateResponse.Content.ReadAsStringAsync(ct);
+        Assert.AreEqual(HttpStatusCode.OK, updateResponse.StatusCode, $"Update did not succeed: {updateResponseBody}");
+
+        var connectionString = await AspireTestHost.AspireApp!.GetRequiredConnectionStringAsync(
+            "TableStorage1",
+            AspireTestHost.DefaultTimeout,
+            ct);
+        var tableClient = new TableServiceClient(connectionString).GetTableClient("taskflowaudit");
+        var auditEntity = await WaitForAuditEntityAsync(
+            tableClient,
+            ScaffoldTenantId.ToString(),
+            auditWindowStartUtc,
+            ct,
+            expectedAction: "Modified");
+
+        Assert.IsNotNull(auditEntity);
+        Assert.AreEqual("Category", auditEntity.EntityType);
+        Assert.AreEqual("Modified", auditEntity.Action);
+        Assert.AreEqual(AuditStatus.Success.ToString(), auditEntity.Status);
+    }
+
     /// <summary>Verifies post create category with retry behavior and protects the expected test contract.</summary>
     private static async Task<HttpResponseMessage> PostCreateCategoryWithRetryAsync(HttpClient client, object request, CancellationToken ct)
     {
@@ -130,7 +205,8 @@ public class ApiAuditPipelineTests
         TableClient tableClient,
         string partitionKey,
         DateTimeOffset auditWindowStartUtc,
-        CancellationToken ct)
+        CancellationToken ct,
+        string expectedAction = "Added")
     {
         var deadline = DateTimeOffset.UtcNow.AddSeconds(45);
         List<AuditLogTableEntity> recentEntities = [];
@@ -151,7 +227,7 @@ public class ApiAuditPipelineTests
                     recentEntities.Add(entity);
 
                     if (entity.EntityType == "Category" &&
-                        entity.Action == "Added" &&
+                        entity.Action == expectedAction &&
                         entity.Status == AuditStatus.Success.ToString())
                     {
                         return entity;

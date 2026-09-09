@@ -3,11 +3,9 @@
   "Values": {
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
-    "StaleTaskCleanupCron": "0 0 3 * * 0",
     "AttachmentBlobContainer": "attachments",
     "ServiceBus1": "",
-    "DomainEventsTopic": "DomainEvents",
-    "DomainEventsSubscription": "function-processor"
+    "DomainEventsTopic": "DomainEvents"
   },
   "ConnectionStrings": {
     "TableStorage1": "UseDevelopmentStorage=true"

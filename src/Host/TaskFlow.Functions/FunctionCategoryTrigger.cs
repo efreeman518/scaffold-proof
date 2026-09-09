@@ -1,7 +1,10 @@
+using EF.Common.Contracts;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
+using System.Globalization;
 using System.Net;
+using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models;
 
@@ -26,20 +29,32 @@ public class FunctionCategoryTrigger(
             return badRequest;
         }
 
-        var result = await categoryService.CreateAsync(new DefaultRequest<CategoryDto>
+        Result<DefaultResponse<CategoryDto>> result;
+        try
         {
-            Item = new CategoryDto
+            result = await categoryService.CreateAsync(new DefaultRequest<CategoryDto>
             {
-                Name = request.Name.Trim(),
-                Description = request.Description,
-                SortOrder = request.SortOrder,
-                IsActive = request.IsActive
-            }
-        }, ct);
+                Item = new CategoryDto
+                {
+                    Id = request.Id,
+                    Name = request.Name.Trim(),
+                    Description = request.Description,
+                    SortOrder = request.SortOrder,
+                    IsActive = request.IsActive
+                }
+            }, ct);
+        }
+        catch (IdempotentCreateConflictException)
+        {
+            // Caller-supplied id replayed with a different payload than the existing row (D-033).
+            var conflict = req.CreateResponse(HttpStatusCode.Conflict);
+            await conflict.WriteAsJsonAsync(new { message = "A category with this id already exists with different data." }, ct);
+            return conflict;
+        }
 
         if (result.IsFailure || result.Value?.Item == null)
         {
-            logger.LogWarning("CreateCategory failed for request {Name}", request.Name);
+            logger.CreateCategoryFailed(request.Name);
             var failed = req.CreateResponse(HttpStatusCode.BadRequest);
             await failed.WriteAsJsonAsync(new { message = "Unable to create category." }, ct);
             return failed;
@@ -47,7 +62,12 @@ public class FunctionCategoryTrigger(
 
         logger.CategoryCreated(result.Value.Item.Id);
 
-        var response = req.CreateResponse(HttpStatusCode.Created);
+        // A replay of a caller-supplied id is 200, not 201: nothing was created this time (D-033).
+        var response = req.CreateResponse(result.Value.IsReplay ? HttpStatusCode.OK : HttpStatusCode.Created);
+        if (result.Value.ETagVersion is long version)
+        {
+            response.Headers.Add("ETag", $"\"{version.ToString(CultureInfo.InvariantCulture)}\"");
+        }
         await response.WriteAsJsonAsync(result.Value.Item, ct);
         return response;
     }
@@ -55,6 +75,8 @@ public class FunctionCategoryTrigger(
     /// <summary>Carries create category request CQRS data between endpoints and handlers.</summary>
     public sealed record CreateCategoryRequest
     {
+        /// <summary>Optional caller-supplied UUIDv7 id; makes the create idempotent (D-033).</summary>
+        public Guid? Id { get; init; }
         public string Name { get; init; } = null!;
         public string? Description { get; init; }
         public int SortOrder { get; init; }

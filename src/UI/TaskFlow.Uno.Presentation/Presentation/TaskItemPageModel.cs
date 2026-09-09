@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.Messaging;
 using TaskFlow.Uno.Core.Business.Models;
+using TaskFlow.Uno.Core.Business.Notifications;
 using TaskFlow.Uno.Core.Business.Services;
 
 namespace TaskFlow.Uno.Presentation.Presentation;
@@ -16,8 +17,6 @@ public partial record TaskItemPageModel
     private ITaskItemApiService TaskItemService { get; }
     private ICategoryApiService CategoryService { get; }
     private ITagApiService TagService { get; }
-    private ICommentApiService CommentService { get; }
-    private IChecklistItemApiService ChecklistItemService { get; }
     private IAttachmentApiService AttachmentService { get; }
     private IMessenger Messenger { get; }
     private IFormGuard FormGuard { get; }
@@ -33,8 +32,6 @@ public partial record TaskItemPageModel
         ITaskItemApiService taskItemService,
         ICategoryApiService categoryService,
         ITagApiService tagService,
-        ICommentApiService commentService,
-        IChecklistItemApiService checklistItemService,
         IAttachmentApiService attachmentService,
         IMessenger messenger,
         IFormGuard formGuard)
@@ -44,8 +41,6 @@ public partial record TaskItemPageModel
         TaskItemService = taskItemService;
         CategoryService = categoryService;
         TagService = tagService;
-        CommentService = commentService;
-        ChecklistItemService = checklistItemService;
         AttachmentService = attachmentService;
         Messenger = messenger;
         FormGuard = formGuard;
@@ -82,20 +77,21 @@ public partial record TaskItemPageModel
     public IListFeed<TagModel> AvailableTags => ListFeed.Async(async ct =>
         (IImmutableList<TagModel>)(await TagService.SearchAsync(ct: ct)).ToImmutableList());
 
-    // -- Children (mutable lists - add/delete updates immediately; initial
-    //    load is via ListState.Async which fetches once then lets us mutate). --
+    // -- Children (mutable lists - add/delete updates immediately; initial load fetches the
+    //    TaskItem once since comments/checklist items arrive attached to it, not through a
+    //    standalone route). --
     public IListState<CommentModel> Comments => ListState.Async(this, async ct =>
     {
-        if (Entity?.Id is null) return ImmutableList<CommentModel>.Empty;
-        var result = await CommentService.SearchAsync(Entity.Id.Value, ct);
-        return (IImmutableList<CommentModel>)result.ToImmutableList();
+        if (Entity?.Id is not Guid id) return ImmutableList<CommentModel>.Empty;
+        var task = await TaskItemService.GetAsync(id, ct);
+        return (IImmutableList<CommentModel>)(task?.Comments ?? []).ToImmutableList();
     });
 
     public IListState<ChecklistItemModel> ChecklistItems => ListState.Async(this, async ct =>
     {
-        if (Entity?.Id is null) return ImmutableList<ChecklistItemModel>.Empty;
-        var result = await ChecklistItemService.SearchAsync(Entity.Id.Value, ct: ct);
-        return (IImmutableList<ChecklistItemModel>)result.ToImmutableList();
+        if (Entity?.Id is not Guid id) return ImmutableList<ChecklistItemModel>.Empty;
+        var task = await TaskItemService.GetAsync(id, ct);
+        return (IImmutableList<ChecklistItemModel>)(task?.ChecklistItems ?? []).ToImmutableList();
     });
 
     public IListState<AttachmentModel> Attachments => ListState.Async(this, async ct =>
@@ -129,25 +125,41 @@ public partial record TaskItemPageModel
         await NewCommentBody.UpdateAsync(_ => string.Empty, noCt);
         await NewChecklistTitle.UpdateAsync(_ => string.Empty, noCt);
 
-        // Reload children from server in edit mode; clear them in create mode.
+        // Reload children from server in edit mode (they arrive attached to the TaskItem itself -
+        // comments/checklist items are never fetched through a standalone route); clear in create mode.
         if (Entity?.Id is Guid id)
         {
-            var comments = await CommentService.SearchAsync(id, noCt);
-            await Comments.UpdateAsync(_ => comments.ToImmutableList(), noCt);
-            var checklist = await ChecklistItemService.SearchAsync(id, ct: noCt);
-            await ChecklistItems.UpdateAsync(_ => checklist.ToImmutableList(), noCt);
+            var fresh = await TaskItemService.GetAsync(id, noCt) ?? Entity;
+            await Comments.UpdateAsync(_ => (fresh.Comments ?? []).ToImmutableList(), noCt);
+            await ChecklistItems.UpdateAsync(_ => (fresh.ChecklistItems ?? []).ToImmutableList(), noCt);
             var attachments = await AttachmentService.SearchAsync(id, "TaskItem", noCt);
             await Attachments.UpdateAsync(_ => attachments.ToImmutableList(), noCt);
+            _baseline = fresh;
         }
         else
         {
             await Comments.UpdateAsync(_ => ImmutableList<CommentModel>.Empty, noCt);
             await ChecklistItems.UpdateAsync(_ => ImmutableList<ChecklistItemModel>.Empty, noCt);
             await Attachments.UpdateAsync(_ => ImmutableList<AttachmentModel>.Empty, noCt);
+            _baseline = Entity ?? new TaskItemModel();
         }
 
-        _baseline = Entity ?? new TaskItemModel();
         FormGuard.IsDirtyAsync = ComputeIsDirtyAsync;
+    }
+
+    /// <summary>
+    /// Re-fetches the task after a child mutation: each one bumps the aggregate root's Version (D-031),
+    /// which arrives only in the response ETag header - not exposed by this fetch-based client - so a
+    /// reload is the reliable way to keep _baseline.Version (the next If-Match) current.
+    /// </summary>
+    private async ValueTask ReloadTaskAsync(CancellationToken ct)
+    {
+        if (Entity?.Id is not Guid id) return;
+        var fresh = await TaskItemService.GetAsync(id, ct);
+        if (fresh is null) return;
+        _baseline = fresh;
+        await Comments.UpdateAsync(_ => (fresh.Comments ?? []).ToImmutableList(), CancellationToken.None);
+        await ChecklistItems.UpdateAsync(_ => (fresh.ChecklistItems ?? []).ToImmutableList(), CancellationToken.None);
     }
 
     // Called by the shell chrome before switching to a sibling route so
@@ -183,8 +195,10 @@ public partial record TaskItemPageModel
 
     // -- Save (create or update) ----------------------------------
     /// <summary>
-    /// Saves either a new aggregate or an existing aggregate. Child collections are included
-    /// in the same request so the server updater can insert, update, and delete related rows.
+    /// Saves either a new aggregate or an existing aggregate. Children are never part of this
+    /// payload - they mutate immediately through the aggregate root's dedicated nested routes
+    /// (Add/Toggle/RemoveComment, Add/Toggle/RemoveChecklistItem below), never bundled into the
+    /// whole-task PUT/POST.
     /// </summary>
     public async ValueTask Save(CancellationToken ct)
     {
@@ -198,13 +212,6 @@ public partial record TaskItemPageModel
 
         if (string.IsNullOrWhiteSpace(title)) return;
 
-        // Gather any buffered children so the task + its children ship in a
-        // single request. Buffered children carry a client-side Id for local
-        // tracking - strip it so the server assigns a real Id.
-        var pendingChecklist = (await ChecklistItems) ?? ImmutableList<ChecklistItemModel>.Empty;
-        var pendingComments = (await Comments) ?? ImmutableList<CommentModel>.Empty;
-        var isCreate = Entity?.Id is null;
-
         var model = (Entity ?? new TaskItemModel()) with
         {
             Title = title,
@@ -213,32 +220,33 @@ public partial record TaskItemPageModel
             Status = status ?? "Open",
             StartDate = startDate,
             DueDate = dueDate,
-            CategoryId = categoryId,
-            ChecklistItems = isCreate
-                ? pendingChecklist.Select(c => c with { Id = null, TaskItemId = Guid.Empty }).ToList()
-                : pendingChecklist.ToList(),
-            Comments = isCreate
-                ? pendingComments.Select(c => c with { Id = null, TaskItemId = Guid.Empty }).ToList()
-                : pendingComments.ToList()
+            CategoryId = categoryId
         };
 
         var wasCreate = !model.Id.HasValue;
-        var saved = wasCreate
-            ? await TaskItemService.CreateAsync(model, ct)
-            : await TaskItemService.UpdateAsync(model, ct);
-
-        _baseline = saved ?? model;
-        FormGuard.Clear();
-
-        Messenger.Send(new TaskItemsChangedMessage(ResetToFirstPage: wasCreate));
-
-        if (wasCreate)
+        try
         {
-            await Navigator.NavigateRouteAsync(this, "/Main/TaskList", cancellation: CancellationToken.None);
+            var saved = wasCreate
+                ? await TaskItemService.CreateAsync(model, ct)
+                : await TaskItemService.UpdateAsync(model, _baseline.Version, ct);
+
+            _baseline = saved ?? model;
+            FormGuard.Clear();
+
+            Messenger.Send(new TaskItemsChangedMessage(ResetToFirstPage: wasCreate));
+
+            if (wasCreate)
+            {
+                await Navigator.NavigateRouteAsync(this, "/Main/TaskList", cancellation: CancellationToken.None);
+            }
+            else
+            {
+                await Navigator.NavigateBackAsync(this, cancellation: CancellationToken.None);
+            }
         }
-        else
+        catch (ProblemDetailsException ex) when (ex.StatusCode == 412)
         {
-            await Navigator.NavigateBackAsync(this, cancellation: CancellationToken.None);
+            await ReloadTaskAsync(CancellationToken.None);
         }
     }
 
@@ -246,142 +254,92 @@ public partial record TaskItemPageModel
     public async ValueTask DeleteTask(CancellationToken ct)
     {
         if (Entity?.Id is null) return;
-        await TaskItemService.DeleteAsync(Entity.Id.Value, ct);
-        FormGuard.Clear();
-        Messenger.Send(new TaskItemsChangedMessage(ResetToFirstPage: true));
-        await Navigator.NavigateBackAsync(this, cancellation: CancellationToken.None);
+        try
+        {
+            await TaskItemService.DeleteAsync(Entity.Id.Value, _baseline.Version, ct);
+            FormGuard.Clear();
+            Messenger.Send(new TaskItemsChangedMessage(ResetToFirstPage: true));
+            await Navigator.NavigateBackAsync(this, cancellation: CancellationToken.None);
+        }
+        catch (ProblemDetailsException ex) when (ex.StatusCode == 412)
+        {
+            await ReloadTaskAsync(CancellationToken.None);
+        }
     }
 
-    // -- Comment commands (buffered in create mode; persisted on task Save) --
-    /// <summary>
-    /// Adds a comment immediately for persisted tasks or buffers it locally until parent save.
-    /// </summary>
+    // -- Comment commands: mutate immediately through the aggregate root (GR-15) --
     public async ValueTask AddComment(CancellationToken ct)
     {
         var body = await NewCommentBody;
-        if (string.IsNullOrWhiteSpace(body)) return;
+        if (string.IsNullOrWhiteSpace(body) || Entity?.Id is not Guid taskId) return;
 
-        CommentModel created;
-        if (Entity?.Id is Guid taskId)
-        {
-            created = await CommentService.CreateAsync(new CommentModel { Body = body, TaskItemId = taskId }, ct);
-        }
-        else
-        {
-            // Buffered comment: assign a client-side Id for local tracking.
-            // It's stripped before the server save.
-            created = new CommentModel { Id = Guid.NewGuid(), Body = body };
-        }
-
+        await TaskItemService.AddCommentAsync(taskId, body, ct);
         await NewCommentBody.UpdateAsync(_ => string.Empty, CancellationToken.None);
-        await Comments.UpdateAsync(list => (list ?? ImmutableList<CommentModel>.Empty).Add(created), CancellationToken.None);
+        await ReloadTaskAsync(CancellationToken.None);
     }
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
     public async ValueTask DeleteComment(CommentModel comment, CancellationToken ct)
     {
-        if (Entity?.Id is not null && comment.Id is Guid id)
+        if (Entity?.Id is not Guid taskId || comment.Id is not Guid commentId) return;
+        try
         {
-            await CommentService.DeleteAsync(id, ct);
-            await Comments.UpdateAsync(list => (list ?? ImmutableList<CommentModel>.Empty).RemoveAll(c => c.Id == id), CancellationToken.None);
+            await TaskItemService.RemoveCommentAsync(taskId, commentId, comment.Version, ct);
         }
-        else if (comment.Id is Guid clientId)
+        catch (ProblemDetailsException ex) when (ex.StatusCode == 412)
         {
-            await Comments.UpdateAsync(list => (list ?? ImmutableList<CommentModel>.Empty).RemoveAll(c => c.Id == clientId), CancellationToken.None);
+            // Fall through to the reload below - the comment already changed elsewhere.
         }
-        else
-        {
-            await Comments.UpdateAsync(list => (list ?? ImmutableList<CommentModel>.Empty).Remove(comment), CancellationToken.None);
-        }
+        await ReloadTaskAsync(CancellationToken.None);
     }
 
-    // -- Checklist commands (buffered in create mode; persisted on task Save) --
-    /// <summary>
-    /// Adds a checklist item immediately for persisted tasks or buffers it locally until parent save.
-    /// </summary>
+    // -- Checklist commands: mutate immediately through the aggregate root (GR-15) --
     public async ValueTask AddChecklistItem(CancellationToken ct)
     {
         var title = await NewChecklistTitle;
-        if (string.IsNullOrWhiteSpace(title)) return;
+        if (string.IsNullOrWhiteSpace(title) || Entity?.Id is not Guid taskId) return;
 
-        ChecklistItemModel created;
-        if (Entity?.Id is Guid taskId)
-        {
-            created = await ChecklistItemService.CreateAsync(new ChecklistItemModel { Title = title, TaskItemId = taskId }, ct);
-        }
-        else
-        {
-            // Buffered item: assign a client-side Id so subsequent toggle/delete
-            // operations can find it reliably by Id. The Id will be sent to the
-            // server when the parent task is saved.
-            created = new ChecklistItemModel { Id = Guid.NewGuid(), Title = title };
-        }
-
+        var sortOrder = (await ChecklistItems)?.Count ?? 0;
+        await TaskItemService.AddChecklistItemAsync(taskId, title, sortOrder, ct);
         await NewChecklistTitle.UpdateAsync(_ => string.Empty, CancellationToken.None);
-        await ChecklistItems.UpdateAsync(list => (list ?? ImmutableList<ChecklistItemModel>.Empty).Add(created), CancellationToken.None);
+        await ReloadTaskAsync(CancellationToken.None);
     }
 
     /// <summary>Converts the current value to ggle checklist item.</summary>
     public async ValueTask ToggleChecklistItem(ChecklistItemModel item, CancellationToken ct)
     {
-        var updated = item with { IsCompleted = !item.IsCompleted };
-
-        // Update the in-memory list first so the UI reflects the new state
-        // immediately. If the parent task is persisted, send the change to
-        // the server afterwards; in create mode the item gets persisted
-        // with its current IsCompleted when the parent task is saved.
-        await ChecklistItems.UpdateAsync((IImmutableList<ChecklistItemModel> list) =>
+        if (Entity?.Id is not Guid taskId) return;
+        try
         {
-            var source = list ?? (IImmutableList<ChecklistItemModel>)ImmutableList<ChecklistItemModel>.Empty;
-            var idx = FindIndex(source, item);
-            return idx < 0 ? source : source.SetItem(idx, updated);
-        }, CancellationToken.None);
-
-        if (Entity?.Id is not null && item.Id is Guid)
-        {
-            try { await ChecklistItemService.UpdateAsync(updated, ct); }
-            catch (Exception ex) { Console.WriteLine($"[Toggle] server update failed: {ex.Message}"); }
+            await TaskItemService.UpdateChecklistItemAsync(taskId, item with { IsCompleted = !item.IsCompleted }, item.Version, ct);
         }
-
-        static int FindIndex(IImmutableList<ChecklistItemModel> items, ChecklistItemModel target)
+        catch (ProblemDetailsException ex) when (ex.StatusCode == 412)
         {
-            for (var i = 0; i < items.Count; i++)
-            {
-                // Match by Id first (both buffered and saved items have one);
-                // fall back to reference/value equality.
-                if (target.Id is Guid id && items[i].Id == id) return i;
-                if (ReferenceEquals(items[i], target)) return i;
-            }
-            return -1;
+            // Fall through to the reload below - the item already changed elsewhere.
         }
+        await ReloadTaskAsync(CancellationToken.None);
     }
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
     public async ValueTask DeleteChecklistItem(ChecklistItemModel item, CancellationToken ct)
     {
-        // Server call only when the parent task is persisted AND this item has an Id
-        // AND the Id is not a client-side buffered one (we can't reliably tell by Id,
-        // so use Entity.Id presence as the persisted-task gate).
-        if (Entity?.Id is not null && item.Id is Guid id)
+        if (Entity?.Id is not Guid taskId || item.Id is not Guid itemId) return;
+        try
         {
-            await ChecklistItemService.DeleteAsync(id, ct);
-            await ChecklistItems.UpdateAsync(list => (list ?? ImmutableList<ChecklistItemModel>.Empty).RemoveAll(c => c.Id == id), CancellationToken.None);
+            await TaskItemService.RemoveChecklistItemAsync(taskId, itemId, item.Version, ct);
         }
-        else if (item.Id is Guid clientId)
+        catch (ProblemDetailsException ex) when (ex.StatusCode == 412)
         {
-            await ChecklistItems.UpdateAsync(list => (list ?? ImmutableList<ChecklistItemModel>.Empty).RemoveAll(c => c.Id == clientId), CancellationToken.None);
+            // Fall through to the reload below - the item already changed elsewhere.
         }
-        else
-        {
-            await ChecklistItems.UpdateAsync(list => (list ?? ImmutableList<ChecklistItemModel>.Empty).Remove(item), CancellationToken.None);
-        }
+        await ReloadTaskAsync(CancellationToken.None);
     }
 
     // -- Attachment commands --------------------------------------
     public async ValueTask DeleteAttachment(AttachmentModel attachment, CancellationToken ct)
     {
         if (attachment.Id is null) return;
-        await AttachmentService.DeleteAsync(attachment.Id.Value, ct);
+        await AttachmentService.DeleteAsync(attachment.Id.Value, attachment.Version, ct);
         await Attachments.UpdateAsync(list => (list ?? ImmutableList<AttachmentModel>.Empty).RemoveAll(a => a.Id == attachment.Id), ct);
     }
 }

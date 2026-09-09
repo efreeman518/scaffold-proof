@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TaskFlow.Bootstrapper.StartupTasks;
 using TaskFlow.Infrastructure.AI;
+using TaskFlow.Infrastructure.Caching;
 
 namespace TaskFlow.Bootstrapper;
 
@@ -25,12 +26,16 @@ public static partial class RegisterServices
         services.AddSupportServices();
 
         AddRequestContext(services);
+        // D-042: registered here (not per-host Program.cs) so every host that composes through
+        // Bootstrapper - Api, Scheduler, Functions, and any RabbitMQ consumer host - resolves
+        // IVariantFeatureManager for AiTaskReviewer regardless of which one runs the AiReview consumer.
+        services.AddTaskFlowFeatureManagement();
         AddDatabaseServices(services, config);
-        AddCachingServices(services, config);
-        AddTableStorageServices(services, config);
-        AddBlobStorageServices(services, config);
-        AddServiceBusServices(services, config);
-        AddCosmosDbServices(services, config);
+        services.AddTaskFlowCaching(config);
+        AddAuditServices(services, config);
+        AddStorageServices(services, config);
+        AddMessagingServices(services, config);
+        AddReadModelServices(services, config);
         AddHealthChecks(services, config);
         AddStartupTasks(services);
 
@@ -80,6 +85,8 @@ public static partial class RegisterServices
     private static void AddStartupTasks(IServiceCollection services)
     {
         services.AddScoped<IStartupTask, WarmupDependencies>();
+        // Provision containers and tables once here instead of on every write (see the class remarks).
+        services.AddScoped<IStartupTask, EnsureExternalResources>();
     }
 
     /// <summary>Registers support services dependencies in the service container.</summary>

@@ -52,7 +52,7 @@ public sealed class GatewayClaimsTransformer(
         }
         catch (Exception ex) when (ex is FormatException or JsonException)
         {
-            logger.LogWarning(ex, "Failed to parse forwarded gateway claims from {HeaderName}", _settings.HeaderName);
+            logger.GatewayClaimsParseFailed(ex, _settings.HeaderName);
         }
 
         if (forwardedClaims is null)

@@ -12,7 +12,7 @@ namespace TaskFlow.Infrastructure.Repositories;
 
 /// <summary>Persists and queries comment data through infrastructure storage contracts.</summary>
 public class CommentRepositoryQuery(TaskFlowDbContextQuery db)
-    : RepositoryQuery<Comment, CommentId, TaskFlowDbContextQuery>(db), ICommentRepositoryQuery
+    : TaskFlowRepositoryQuery<Comment, CommentId>(db), ICommentRepositoryQuery
 {
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<Comment?> GetCommentAsync(CommentId id, CancellationToken ct = default)
@@ -25,7 +25,7 @@ public class CommentRepositoryQuery(TaskFlowDbContextQuery db)
     }
 
     /// <summary>Searches search comments and returns filtered results for callers.</summary>
-    public async Task<PagedResponse<CommentDto>> SearchCommentsAsync(SearchRequest<CommentSearchFilter> request, CancellationToken ct = default)
+    public async Task<PagedResponse<CommentDto>> SearchCommentsAsync(SearchRequest<CommentSearchFilter> request, bool includeTotal = false, CancellationToken ct = default)
     {
         var q = DB.Set<Comment>().ComposeIQueryable(false);
 
@@ -62,7 +62,7 @@ public class CommentRepositoryQuery(TaskFlowDbContextQuery db)
 
         (var data, var total) = await q.QueryPageProjectionAsync(CommentMapper.Projection,
             pageSize: request.PageSize, pageIndex: Math.Max(1, request.PageIndex),
-            includeTotal: true, splitQueryOptions: SplitQueryThresholdOptions.Default,
+            includeTotal: includeTotal, splitQueryOptions: SplitQueryThresholdOptions.Default,
             cancellationToken: ct).ConfigureAwait(ConfigureAwaitOptions.None);
 
         return new PagedResponse<CommentDto>

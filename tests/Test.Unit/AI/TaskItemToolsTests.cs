@@ -1,8 +1,10 @@
 using EF.Common.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models;
+using TaskFlow.Application.Models.Reads;
 using TaskFlow.Domain.Shared.Enums;
 using TaskFlow.Infrastructure.AI.Agents.Tools;
 using TaskFlow.Infrastructure.AI.Search;
@@ -21,6 +23,7 @@ public class TaskItemToolsTests
 {
     private readonly Mock<ITaskItemService> _taskItemServiceMock = new();
     private readonly Mock<ITaskFlowSearchService> _searchServiceMock = new();
+    private readonly Mock<ITaskFlowReadService> _readServiceMock = new();
     private TaskItemTools _tools = null!;
 
     /// <summary>Prepares per-test fixtures so each test starts from a predictable state.</summary>
@@ -30,7 +33,8 @@ public class TaskItemToolsTests
         _tools = new TaskItemTools(
             NullLogger<TaskItemTools>.Instance,
             _taskItemServiceMock.Object,
-            _searchServiceMock.Object);
+            _searchServiceMock.Object,
+            _readServiceMock.Object);
     }
 
     /// <summary>Verifies search tasks returns formatted results behavior and protects the expected test contract.</summary>
@@ -140,22 +144,46 @@ public class TaskItemToolsTests
     [TestMethod]
     public async Task SummarizeBacklog_ReturnsStatusBreakdown()
     {
-        var tasks = new List<TaskItemDto>
+        var summary = new TaskItemSummaryDto
         {
-            new() { Title = "T1", Status = TaskItemStatus.Open },
-            new() { Title = "T2", Status = TaskItemStatus.Open },
-            new() { Title = "T3", Status = TaskItemStatus.InProgress },
-            new() { Title = "T4", Status = TaskItemStatus.Completed }
+            Total = 4,
+            Overdue = 1,
+            ByStatus =
+            [
+                new TaskItemStatusCountDto(TaskItemStatus.Open, 2),
+                new TaskItemStatusCountDto(TaskItemStatus.InProgress, 1),
+                new TaskItemStatusCountDto(TaskItemStatus.Completed, 1)
+            ]
         };
 
-        _taskItemServiceMock
-            .Setup(x => x.SearchAsync(It.IsAny<SearchRequest<TaskItemSearchFilter>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagedResponse<TaskItemDto> { Data = tasks, Total = 4, PageSize = 100, PageIndex = 0 });
+        _readServiceMock
+            .Setup(x => x.GetTaskItemSummaryAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(summary);
 
         var result = await _tools.SummarizeBacklog();
 
         Assert.Contains("4 total", result);
         Assert.Contains("Open: 2", result);
         Assert.Contains("InProgress: 1", result);
+        Assert.Contains("Overdue: 1", result);
+    }
+
+    /// <summary>Verifies a concurrent edit between the read and write surfaces as a retry message, not an unhandled exception.</summary>
+    [TestMethod]
+    public async Task UpdateTaskStatus_ConcurrencyMismatch_ReturnsRetryMessage()
+    {
+        var taskId = Guid.NewGuid();
+        var dto = new TaskItemDto { Id = taskId, Title = "Racy task", Status = TaskItemStatus.Open, Version = 1 };
+
+        _taskItemServiceMock
+            .Setup(x => x.GetAsync(taskId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DefaultResponse<TaskItemDto>>.Success(new DefaultResponse<TaskItemDto> { Item = dto }));
+        _taskItemServiceMock
+            .Setup(x => x.UpdateAsync(It.IsAny<DefaultRequest<TaskItemDto>>(), dto.Version, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ConcurrencyMismatchException("TaskItem", taskId, dto.Version, (dto.Version ?? 0) + 1));
+
+        var result = await _tools.UpdateTaskStatus(taskId.ToString(), "InProgress");
+
+        Assert.Contains("retry", result, StringComparison.OrdinalIgnoreCase);
     }
 }

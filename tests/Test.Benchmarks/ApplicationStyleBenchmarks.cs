@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using System.Net.Http.Json;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Models;
+using TaskFlow.Application.Models.Paging;
 using TaskFlow.Domain.Shared.Enums;
 using TaskFlow.Infrastructure.Data;
 using Test.Support;
@@ -27,7 +28,10 @@ public class ApplicationStyleBenchmarks
 
     private ApplicationStyleBenchmarkApiFactory _factory = null!;
     private HttpClient _client = null!;
-    private SearchRequest<TaskItemSearchFilter> _searchRequest = null!;
+
+    // TaskItem search is cursor-only (GR-18): there is no PageIndex/offset request shape any more, so
+    // this benchmark always measures the first cursor page at the standard default size (50).
+    private TaskItemCursorSearchRequest _searchRequest = null!;
     private string? _previousStyle;
     private string? _previousRateLimitPermit;
     private string? _previousRateLimitWindow;
@@ -50,10 +54,9 @@ public class ApplicationStyleBenchmarks
 
         _factory = new ApplicationStyleBenchmarkApiFactory(Style);
         _client = _factory.CreateClient();
-        _searchRequest = new SearchRequest<TaskItemSearchFilter>
+        _searchRequest = new TaskItemCursorSearchRequest
         {
-            PageIndex = 0,
-            PageSize = 20,
+            PageSize = PageSizeLimits.Default,
             Filter = new TaskItemSearchFilter { SearchTerm = "BenchmarkSeed" }
         };
 

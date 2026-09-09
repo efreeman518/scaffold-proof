@@ -1,4 +1,4 @@
-using EF.Common.Contracts;
+﻿using EF.Common.Contracts;
 using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -28,7 +28,6 @@ public class AttachmentServiceTests
     private readonly Mock<IAttachmentRepositoryQuery> _repoQueryMock = new();
     private readonly Mock<IRequestContext<string, Guid?>> _requestContextMock = new();
     private readonly Mock<ITenantBoundaryValidator> _tenantBoundaryValidatorMock = new();
-    private readonly Mock<IEntityCacheProvider> _cacheMock = new();
 
     /// <summary>Prepares per-test fixtures so each test starts from a predictable state.</summary>
     [TestInitialize]
@@ -50,8 +49,7 @@ public class AttachmentServiceTests
         _requestContextMock.Object,
         _repoTrxnMock.Object,
         _repoQueryMock.Object,
-        _tenantBoundaryValidatorMock.Object,
-        _cacheMock.Object);
+        _tenantBoundaryValidatorMock.Object);
 
     /// <summary>Verifies that given valid DTO, when create, then returns success.</summary>
     [TestMethod]
@@ -85,6 +83,25 @@ public class AttachmentServiceTests
         var result = await CreateService().CreateAsync(new DefaultRequest<AttachmentDto> { Item = dto }, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsFailure);
+    }
+
+    /// <summary>
+    /// Verifies the upload path enforces GR-17 before anything else - it used to skip UuidV7 validation
+    /// entirely, so a caller-supplied Guid.Empty (or any v4) reached DomainId.FromNullable unchecked.
+    /// blobStorage stays unconfigured (null) here specifically to prove the id check runs first: a stale
+    /// fix that reordered the checks would surface as "Blob storage is not configured" instead.
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public async Task Given_EmptyGuidCallerId_When_UploadAsync_Then_ReturnsFailureBeforeBlobStorageCheck()
+    {
+        using var stream = new MemoryStream();
+        var result = await CreateService().UploadAsync(
+            stream, "doc.pdf", "application/pdf", 0,
+            AttachmentOwnerType.TaskItem, Guid.NewGuid(), id: Guid.Empty, ct: TestContext.CancellationToken);
+
+        Assert.IsTrue(result.IsFailure);
+        Assert.Contains("not a UUIDv7", result.ErrorMessage!, StringComparison.Ordinal);
     }
 
     /// <summary>Verifies that given existing entity, when get, then returns mapped DTO.</summary>
@@ -132,7 +149,7 @@ public class AttachmentServiceTests
             OwnerType = entity.OwnerType,
             OwnerId = entity.OwnerId
         };
-        var result = await CreateService().UpdateAsync(new DefaultRequest<AttachmentDto> { Item = dto }, TestContext.CancellationToken);
+        var result = await CreateService().UpdateAsync(new DefaultRequest<AttachmentDto> { Item = dto }, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual("updated.pdf", result.Value!.Item!.FileName);
@@ -154,7 +171,7 @@ public class AttachmentServiceTests
             StorageUri = "https://storage.example.com/x.pdf",
             OwnerId = Guid.NewGuid()
         };
-        var result = await CreateService().UpdateAsync(new DefaultRequest<AttachmentDto> { Item = dto }, TestContext.CancellationToken);
+        var result = await CreateService().UpdateAsync(new DefaultRequest<AttachmentDto> { Item = dto }, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
         Assert.IsNull(result.Value?.Item);
@@ -169,7 +186,7 @@ public class AttachmentServiceTests
         _repoTrxnMock.Setup(r => r.GetAttachmentAsync(entity.Id, It.IsAny<CancellationToken>())).ReturnsAsync(entity);
         _repoTrxnMock.Setup(r => r.SaveChangesAsync(It.IsAny<OptimisticConcurrencyWinner>(), It.IsAny<CancellationToken>())).ReturnsAsync(0);
 
-        var result = await CreateService().DeleteAsync(entity.Id, TestContext.CancellationToken);
+        var result = await CreateService().DeleteAsync(entity.Id, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
         _repoTrxnMock.Verify(r => r.Delete(entity), Times.Once);
@@ -182,7 +199,7 @@ public class AttachmentServiceTests
     {
         _repoTrxnMock.Setup(r => r.GetAttachmentAsync(It.IsAny<AttachmentId>(), It.IsAny<CancellationToken>())).ReturnsAsync((Attachment?)null);
 
-        var result = await CreateService().DeleteAsync(Guid.NewGuid(), TestContext.CancellationToken);
+        var result = await CreateService().DeleteAsync(Guid.NewGuid(), null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
     }
@@ -194,11 +211,11 @@ public class AttachmentServiceTests
     {
         var dtos = new List<AttachmentDto> { new() { FileName = "Test" } };
         var pagedResponse = new PagedResponse<AttachmentDto> { Data = dtos, Total = 1, PageSize = 10, PageIndex = 0 };
-        _repoQueryMock.Setup(r => r.SearchAttachmentsAsync(It.IsAny<SearchRequest<AttachmentSearchFilter>>(), It.IsAny<CancellationToken>()))
+        _repoQueryMock.Setup(r => r.SearchAttachmentsAsync(It.IsAny<SearchRequest<AttachmentSearchFilter>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(pagedResponse);
 
         var request = new SearchRequest<AttachmentSearchFilter> { PageSize = 10, PageIndex = 0 };
-        var response = await CreateService().SearchAsync(request, TestContext.CancellationToken);
+        var response = await CreateService().SearchAsync(request, false, TestContext.CancellationToken);
 
         Assert.AreEqual(1, response.Total);
     }

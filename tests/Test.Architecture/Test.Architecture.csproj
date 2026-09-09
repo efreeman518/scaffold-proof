@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <IsTestProject>true</IsTestProject>
@@ -8,6 +8,11 @@
     <PackageReference Include="MSTest" />
     <PackageReference Include="NetArchTest.Rules" />
     <PackageReference Include="EF.CQRS" />
+    <PackageReference Include="EF.BackgroundServices" />
+    <!-- Forces the same resolved OpenAI versions as TaskFlow.Bootstrapper (now referenced below) so
+         ResolveAssemblyReferences does not see two different floors and warn MSB3277. -->
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" PrivateAssets="all" />
+    <PackageReference Include="OpenAI" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
@@ -19,8 +24,19 @@
     <ProjectReference Include="..\..\src\Application\TaskFlow.Application.Contracts\TaskFlow.Application.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Application\TaskFlow.Application.Services\TaskFlow.Application.Services.csproj" />
     <ProjectReference Include="..\..\src\Application\TaskFlow.Application.Cqrs\TaskFlow.Application.Cqrs.csproj" />
+    <ProjectReference Include="..\..\src\Application\TaskFlow.Application.MessageHandlers\TaskFlow.Application.MessageHandlers.csproj" />
     <ProjectReference Include="..\..\src\Infrastructure\TaskFlow.Infrastructure.Data\TaskFlow.Infrastructure.Data.csproj" />
     <ProjectReference Include="..\..\src\Infrastructure\TaskFlow.Infrastructure.Repositories\TaskFlow.Infrastructure.Repositories.csproj" />
+    <!-- Provider-switch architecture tests (D-035..D-045): reflect over the Bootstrapper's tagged
+         dispatchers and check the Azure.*/Amazon.* namespace boundary on the Infrastructure siblings. -->
+    <ProjectReference Include="..\..\src\Infrastructure\TaskFlow.Infrastructure.AI\TaskFlow.Infrastructure.AI.csproj" />
+    <ProjectReference Include="..\..\src\Infrastructure\TaskFlow.Infrastructure.Storage\TaskFlow.Infrastructure.Storage.csproj" />
+    <ProjectReference Include="..\..\src\Infrastructure\TaskFlow.Infrastructure.Caching\TaskFlow.Infrastructure.Caching.csproj" />
+    <ProjectReference Include="..\..\src\Host\TaskFlow.Bootstrapper\TaskFlow.Bootstrapper.csproj" />
+    <!-- D-042: FeatureManagementArchitectureTests checks the Api's own namespace boundary (Filters only). -->
+    <!-- D-054: the gRPC read service is a host type, so the rule that it stays a thin adapter over the
+         application services has to reflect over the Api assembly. -->
+    <ProjectReference Include="..\..\src\Host\TaskFlow.Api\TaskFlow.Api.csproj" />
   </ItemGroup>
 
 </Project>

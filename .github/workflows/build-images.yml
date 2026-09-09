@@ -1,0 +1,85 @@
+name: Build container images
+
+# Reusable image build shared by the Azure lane (deploy.yml) and the Portable lane (deploy-vps.yml).
+# Both lanes ship the same five images from the same commit, so building them twice would double the
+# minutes and, worse, allow the two lanes to diverge.
+#
+# No concurrency group here on purpose: a workflow_call job runs inside the caller's concurrency group,
+# and declaring a second group would let a caller cancel itself.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Exact commit SHA to build.
+        type: string
+        required: true
+    secrets:
+      NUGET_PAT:
+        description: Credential for the private EF.* GitHub Packages feed.
+        required: true
+    outputs:
+      gateway-image:
+        value: ${{ jobs.build.outputs.gateway-image }}
+      api-image:
+        value: ${{ jobs.build.outputs.api-image }}
+      scheduler-image:
+        value: ${{ jobs.build.outputs.scheduler-image }}
+      migrator-image:
+        value: ${{ jobs.build.outputs.migrator-image }}
+      blazor-image:
+        value: ${{ jobs.build.outputs.blazor-image }}
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      NuGetPackageSourceCredentials_efreeman518-github: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
+    outputs:
+      gateway-image: ${{ steps.images.outputs.gateway }}
+      api-image: ${{ steps.images.outputs.api }}
+      scheduler-image: ${{ steps.images.outputs.scheduler }}
+      migrator-image: ${{ steps.images.outputs.migrator }}
+      blazor-image: ${{ steps.images.outputs.blazor }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Require private NuGet feed credential
+        env:
+          NUGET_PAT: ${{ secrets.NUGET_PAT }}
+        run: |
+          [[ -n "$NUGET_PAT" ]] || { echo "::error::NUGET_PAT is required"; exit 1; }
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build each image once and record registry digest
+        id: images
+        env:
+          TARGET_SHA: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          build_image() {
+            local key="$1" image="$2" dockerfile="$3"
+            local tag="${REGISTRY}/${GITHUB_REPOSITORY_OWNER}/${image}:${TARGET_SHA}"
+            docker buildx build . --file "$dockerfile" --push --tag "$tag" \
+              --secret id=nuget_credentials,env=NuGetPackageSourceCredentials_efreeman518-github
+            digest=$(docker buildx imagetools inspect "$tag" --format '{{json .Manifest.Digest}}' | tr -d '"')
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::Missing digest for $image"; exit 1; }
+            echo "$key=${REGISTRY}/${GITHUB_REPOSITORY_OWNER}/${image}@${digest}" >> "$GITHUB_OUTPUT"
+          }
+          build_image gateway taskflow-gateway ./src/Host/TaskFlow.Gateway/Dockerfile
+          build_image api taskflow-api ./src/Host/TaskFlow.Api/Dockerfile
+          build_image scheduler taskflow-scheduler ./src/Host/TaskFlow.Scheduler/Dockerfile
+          build_image migrator taskflow-db-migrator ./src/Host/TaskFlow.DatabaseMigrator/Dockerfile
+          build_image blazor taskflow-blazor ./src/UI/TaskFlow.Blazor/Dockerfile

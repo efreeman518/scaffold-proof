@@ -12,7 +12,7 @@ namespace TaskFlow.Infrastructure.Repositories;
 
 /// <summary>Persists and queries checklist item data through infrastructure storage contracts.</summary>
 public class ChecklistItemRepositoryQuery(TaskFlowDbContextQuery db)
-    : RepositoryQuery<ChecklistItem, ChecklistItemId, TaskFlowDbContextQuery>(db), IChecklistItemRepositoryQuery
+    : TaskFlowRepositoryQuery<ChecklistItem, ChecklistItemId>(db), IChecklistItemRepositoryQuery
 {
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<ChecklistItem?> GetChecklistItemAsync(ChecklistItemId id, CancellationToken ct = default)
@@ -25,7 +25,7 @@ public class ChecklistItemRepositoryQuery(TaskFlowDbContextQuery db)
     }
 
     /// <summary>Searches search checklist items and returns filtered results for callers.</summary>
-    public async Task<PagedResponse<ChecklistItemDto>> SearchChecklistItemsAsync(SearchRequest<ChecklistItemSearchFilter> request, CancellationToken ct = default)
+    public async Task<PagedResponse<ChecklistItemDto>> SearchChecklistItemsAsync(SearchRequest<ChecklistItemSearchFilter> request, bool includeTotal = false, CancellationToken ct = default)
     {
         var q = DB.Set<ChecklistItem>().ComposeIQueryable(false);
 
@@ -68,7 +68,7 @@ public class ChecklistItemRepositoryQuery(TaskFlowDbContextQuery db)
 
         (var data, var total) = await q.QueryPageProjectionAsync(ChecklistItemMapper.Projection,
             pageSize: request.PageSize, pageIndex: Math.Max(1, request.PageIndex),
-            includeTotal: true, splitQueryOptions: SplitQueryThresholdOptions.Default,
+            includeTotal: includeTotal, splitQueryOptions: SplitQueryThresholdOptions.Default,
             cancellationToken: ct).ConfigureAwait(ConfigureAwaitOptions.None);
 
         return new PagedResponse<ChecklistItemDto>

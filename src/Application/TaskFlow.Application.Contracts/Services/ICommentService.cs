@@ -7,7 +7,7 @@ namespace TaskFlow.Application.Contracts.Services;
 public interface ICommentService
 {
     /// <summary>Searches search and returns filtered results for callers.</summary>
-    Task<PagedResponse<CommentDto>> SearchAsync(SearchRequest<CommentSearchFilter> request, CancellationToken ct = default);
+    Task<PagedResponse<CommentDto>> SearchAsync(SearchRequest<CommentSearchFilter> request, bool includeTotal = false, CancellationToken ct = default);
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     Task<Result<DefaultResponse<CommentDto>>> GetAsync(Guid id, CancellationToken ct = default);
 }

@@ -1,6 +1,8 @@
 @page "/categories"
 @inject FloatService FloatService
 @inject ITaskFlowApiClient Api
+@inject TaskFlow.Contracts.Grpc.TaskFlowRead.TaskFlowReadClient GrpcReads
+@inject ClientReadSettings ReadSettings
 @inject IDialogService DialogService
 
 <PageTitle>Categories - TaskFlow</PageTitle>
@@ -100,13 +102,15 @@
 
     private async Task LoadAsync()
     {
+        // Full category list, not a search page: /task-metadata is uncapped by the [1,100] search
+        // PageSize clamp (up to PageSizeLimits.MetadataMax), which a PageSize=500 search would now reject.
+        // D-054: gRPC when the internal read hop is configured, REST through the gateway otherwise.
         var result = await FloatService.ExecuteWithProgressAsync(
-            () => Api.SearchCategoriesAsync(new SearchRequest<CategorySearchFilter>
-            {
-                Filter = new CategorySearchFilter(),
-                PageSize = 500
-            }), "Failed to load categories.");
-        _categories = result?.Data?.ToList() ?? new();
+            () => ReadSettings.UseGrpcReads
+                ? GrpcReads.GetTaskMetadataDtoAsync()
+                : Api.GetTaskMetadataAsync(),
+            "Failed to load categories.");
+        _categories = result?.Categories?.ToList() ?? [];
     }
 
     private string? ParentName(Guid? parentId) =>
@@ -138,10 +142,21 @@
         }
         else
         {
-            var resp = await FloatService.ExecuteWithProgressAsync(
-                () => Api.UpdateCategoryAsync(_editing.Id.Value,
-                    new DefaultRequest<CategoryDto> { Item = _editing }),
-                "Failed to update category.");
+            var resp = await FloatService.ExecuteWithProgressAsync(async () =>
+            {
+                try
+                {
+                    return await Api.UpdateCategoryAsync(_editing.Id!.Value,
+                        new DefaultRequest<CategoryDto> { Item = _editing },
+                        _editing.Version?.ToString() ?? "*");
+                }
+                catch (ApiException ex) when (ex.StatusCode == HttpStatusCode.PreconditionFailed)
+                {
+                    FloatService.ShowSnack("Category changed elsewhere, reloading.", Severity.Warning);
+                    await LoadAsync();
+                    return null;
+                }
+            }, "Failed to update category.");
             if (resp?.Item is not null)
             {
                 FloatService.ShowSnack("Category saved.", Severity.Success);
@@ -163,9 +178,21 @@
         });
         if (confirm != true) return;
 
-        var ok = await FloatService.ExecuteWithProgressAsync(
-            () => Api.DeleteCategoryAsync(c.Id!.Value), "Failed to delete category.");
-        if (ok)
+        var ok = await FloatService.ExecuteWithProgressAsync(async () =>
+        {
+            try
+            {
+                await Api.DeleteCategoryAsync(c.Id!.Value, c.Version?.ToString() ?? "*");
+                return true;
+            }
+            catch (ApiException ex) when (ex.StatusCode == HttpStatusCode.PreconditionFailed)
+            {
+                FloatService.ShowSnack("Category changed elsewhere, reloading.", Severity.Warning);
+                await LoadAsync();
+                return false;
+            }
+        }, "Failed to delete category.");
+        if (ok is true)
         {
             FloatService.ShowSnack("Category deleted.", Severity.Success);
             FloatService.NotifyCategoriesChanged();

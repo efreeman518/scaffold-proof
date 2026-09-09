@@ -60,7 +60,7 @@ else
 {
     if (!File.Exists(indexPath))
     {
-        app.Logger.LogWarning("Uno WASM assets were not found at {DistPath}. Build TaskFlow.Uno for net10.0-browserwasm first.", distPath);
+        app.Logger.UnoWasmAssetsNotFound(distPath);
     }
 
     Directory.CreateDirectory(distPath);

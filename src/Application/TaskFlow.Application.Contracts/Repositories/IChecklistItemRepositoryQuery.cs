@@ -12,5 +12,5 @@ public interface IChecklistItemRepositoryQuery : IRepositoryQuery<ChecklistItem,
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     Task<ChecklistItem?> GetChecklistItemAsync(ChecklistItemId id, CancellationToken ct = default);
     /// <summary>Searches search checklist items and returns filtered results for callers.</summary>
-    Task<PagedResponse<ChecklistItemDto>> SearchChecklistItemsAsync(SearchRequest<ChecklistItemSearchFilter> request, CancellationToken ct = default);
+    Task<PagedResponse<ChecklistItemDto>> SearchChecklistItemsAsync(SearchRequest<ChecklistItemSearchFilter> request, bool includeTotal = false, CancellationToken ct = default);
 }

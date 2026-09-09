@@ -10,6 +10,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using TaskFlow.Application.Models;
+using TaskFlow.Application.Models.Paging;
 using TaskFlow.Domain.Shared.Enums;
 using TaskFlow.Infrastructure.AI.Agents;
 
@@ -262,7 +263,7 @@ public sealed class AiEndpointContractTests
     {
         using var response = await client.PostAsJsonAsync(
             "/api/v1/task-items/search",
-            new SearchRequest<TaskItemSearchFilter>
+            new TaskItemCursorSearchRequest
             {
                 PageSize = 10,
                 Filter = new TaskItemSearchFilter { SearchTerm = title }
