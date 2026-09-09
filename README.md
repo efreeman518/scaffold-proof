@@ -193,18 +193,18 @@ Scaffold agents should preserve these AI test contracts:
 
 ### CI test lanes
 
-GitHub Actions runs the fast, no-Docker gate on every push and pull request: Unit, Architecture, Endpoint, and FlowEngine definition tests. The heavier lanes run automatically on a weekly schedule (Mondays 06:17 UTC) and can also be launched on demand through `workflow_dispatch` inputs:
+GitHub Actions runs the fast, no-Docker gate on every pull request: Unit, Architecture, Endpoint, and FlowEngine definition tests. PR runs are the merge gate, so there is no separate push trigger. The heavier lanes run automatically on a monthly schedule (28th of the month, 06:17 UTC - the last day that exists in every month, since GitHub Actions cron cannot express "last day of month") and can also be launched on demand through `workflow_dispatch` inputs:
 
 | Input | Test project | Trigger | Notes |
 |-------|--------------|---------|-------|
-| `includeE2E` | `Test.E2E` | Weekly + manual | SQL-backed HTTP workflows; requires Docker |
-| `includeIntegration` | `Test.Integration` | Weekly + manual | SQL + Azurite component tests; requires Docker |
-| `includeAspireMesh` | `Test.Aspire` | Weekly + manual | Full Aspire AppHost graph; CI explicitly opts out Azure Foundry smoke unless configured |
+| `includeE2E` | `Test.E2E` | Monthly + manual | SQL-backed HTTP workflows; requires Docker |
+| `includeIntegration` | `Test.Integration` | Monthly + manual | SQL + Azurite component tests; requires Docker |
+| `includeAspireMesh` | `Test.Aspire` | Monthly + manual | Full Aspire AppHost graph; CI explicitly opts out Azure Foundry smoke unless configured |
 | `includeFoundryLocal` | `Test.FoundryLocal` | Manual only | RID-bound Foundry Local live smoke; may download local model assets |
 | `includePlaywrightUI` | `Test.PlaywrightUI` | Manual only | Browser smoke path; restores Playwright and React npm packages |
 | `includeFullAcceptance` | Entire solution | Manual only | Unfiltered `dotnet test TaskFlow.slnx --no-build -m:1`; provisions browser/React prerequisites, while the WASM fixture owns restore/build inside its startup deadline |
 
-The weekly run keeps the Docker-backed E2E, Integration, and Aspire lanes continuously green; Foundry Local and Playwright UI stay dispatch-only for cost and flakiness reasons.
+The monthly run keeps the Docker-backed E2E, Integration, and Aspire lanes green at minimal Actions-minute cost; Foundry Local and Playwright UI stay dispatch-only for cost and flakiness reasons.
 
 Unfiltered CI acceptance uses explicit false opt-outs for unavailable Functions, Azure Foundry, Foundry Local, or mobile lanes. Local acceptance does not require AI opt-out flags: absent Azure/Foundry Local resources and bootstrapped-but-slow local generation are inconclusive. Enabled-provider contract failures remain red.
 

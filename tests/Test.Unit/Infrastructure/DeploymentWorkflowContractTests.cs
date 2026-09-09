@@ -158,6 +158,10 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(workflow, "  schedule:");
         StringAssert.Contains(workflow, "  workflow_dispatch:");
 
+        // Monthly, not weekly: GitHub Actions cron has no "last day of month" syntax, so the 28th (the one
+        // day that exists in every month) stands in for it - minimal Actions-minute cost for the deep lanes.
+        StringAssert.Contains(workflow, "- cron: \"17 6 28 * *\"");
+
         // Uno.Sdk conditions implicit package references (DevServer, HotDesign, MCP) on Optimize: a Debug restore
         // followed by a Release --no-restore build fails with UNOB0019, so every restore names the Release configuration.
         StringAssert.Contains(workflow, "dotnet restore TaskFlow.slnx -p:Configuration=Release");

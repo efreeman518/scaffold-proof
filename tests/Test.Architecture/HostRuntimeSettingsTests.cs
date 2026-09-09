@@ -257,6 +257,25 @@ public class HostRuntimeSettingsTests
         }
     }
 
+    /// <summary>
+    /// Verifies no host calls UseHttpsRedirection. Every deployment lane terminates TLS at the edge
+    /// (Container Apps ingress in the Azure lane, Caddy in the portable lane, D-036/D-049), so every host
+    /// container only ever serves plain http; a reintroduced redirect would 307 the edge's own health/proxy
+    /// probes and, on a host with no locally trusted certificate (as TaskFlow.Blazor was before this rule),
+    /// break any client that follows the redirect.
+    /// </summary>
+    [TestMethod]
+    public void Given_HostSourceFiles_When_Read_Then_NoneCallUseHttpsRedirection()
+    {
+        foreach (var file in RepoFiles.SourceFiles)
+        {
+            Assert.IsFalse(
+                File.ReadAllText(file).Contains("UseHttpsRedirection", StringComparison.Ordinal),
+                $"{file} calls UseHttpsRedirection, but every lane terminates TLS at the edge (D-036/D-049) "
+                + "and hosts only ever serve plain http.");
+        }
+    }
+
     private static string ReadRepoFile(string relativePath) =>
         File.ReadAllText(RepoFiles.Path(relativePath.Split('/')));
 
