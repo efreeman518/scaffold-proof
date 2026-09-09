@@ -14,6 +14,20 @@ not published to Compose, so nothing here is generated and nothing here needs `A
 | `images.env.example` | Shape of the digest-pinned image variables the deploy job writes |
 | `pgbouncer/` | Transaction-pooling config for the opt-in `pooler` profile |
 
+Infrastructure images (`otel-lgtm`, `pgbouncer`, `minio`) are pinned to a specific published tag rather than
+`latest` (verified against the upstream registry 2026-09-09: `grafana/otel-lgtm:0.32.1`,
+`edoburu/pgbouncer:v1.25.2-p0`, `minio/minio:RELEASE.2025-09-07T16-13-09Z`). Only the five app images move
+via digest through `images.env` on every deploy (see Rollback); bumping an infrastructure image tag is a
+manual edit to `docker-compose.yml` / `docker-compose.override.local.yml`, done deliberately. Digest pinning
+these three as well remains the production recommendation once the VPS path has run for real.
+
+The `minio` image only appears in `docker-compose.override.local.yml` (CI/local, profile `local`) - the VPS
+stack in `docker-compose.yml` has no `minio` service and expects `Storage:S3:*` to point at a real S3
+endpoint. That matters because MinIO has not published a community-edition update since 2025-09 (the
+project moved the community edition to maintenance mode); do not point a production deployment's S3 target
+at this image or its successor - use a managed S3 provider or another actively maintained S3-compatible
+server instead.
+
 ## First deploy
 
 1. Point an A/AAAA record at the VPS. Caddy solves the ACME challenge itself, so DNS must resolve before
