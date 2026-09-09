@@ -196,6 +196,57 @@ public sealed class DeploymentWorkflowContractTests
         var logDump = smokeJob.IndexOf("Dump stack logs", StringComparison.Ordinal);
         Assert.IsGreaterThan(0, logDump);
         StringAssert.Contains(smokeJob[logDump..], "if: always()");
+
+        // The Aspire mesh lane's own container logs are the only lead into a failure like the 2026-09-08
+        // SqlException pre-login handshake run, where the sql_check health probe stayed Unhealthy with no
+        // other explanation on the runner - the diagnostics step must exist, run only after that lane
+        // actually ran and failed, and cover both the sql/mssql containers and host memory pressure.
+        var aspireStep = workflow.IndexOf("Aspire Mesh Tests (manual or scheduled, full graph)", StringComparison.Ordinal);
+        Assert.IsGreaterThan(0, aspireStep);
+        StringAssert.Contains(workflow[aspireStep..], "id: aspire_mesh");
+        var diagnosticsStep = workflow.IndexOf("Aspire Mesh Diagnostics (on failure)", StringComparison.Ordinal);
+        Assert.IsGreaterThan(aspireStep, diagnosticsStep, "the diagnostics step must follow the Aspire Mesh Tests step");
+        var aspireMeshBlock = workflow[aspireStep..diagnosticsStep];
+
+        // Aspire tears the graph down before the diagnostics step runs (2026-09-09 proof run: docker ps -a
+        // was already empty), so the Aspire Mesh Tests step itself must capture container state WHILE the
+        // graph is up: a background poll loop, per-container logs plus a redacted env dump, and per-poll
+        // docker port for every container (not only sql ones) to catch a host-port collision or DCP
+        // misrouting between the sql container and the Service Bus emulator's mssql sidecar.
+        StringAssert.Contains(aspireMeshBlock, "mkdir -p /tmp/aspire-container-logs");
+        StringAssert.Contains(aspireMeshBlock, "sleep 10");
+        StringAssert.Contains(aspireMeshBlock, "docker logs --since 12s");
+        StringAssert.Contains(aspireMeshBlock, "docker port");
+        StringAssert.Contains(aspireMeshBlock, "/tmp/aspire-container-logs/ps.log");
+        StringAssert.Contains(aspireMeshBlock, "/tmp/aspire-container-logs/env.log");
+        StringAssert.Contains(aspireMeshBlock, "sed -E 's/(PASSWORD=).*/\\1<redacted>/'", "captured env vars must redact password values");
+        StringAssert.Contains(aspireMeshBlock, "capture_pid=$!");
+        StringAssert.Contains(aspireMeshBlock, "trap ");
+        StringAssert.Contains(aspireMeshBlock, "kill \"$capture_pid\"");
+        StringAssert.Contains(aspireMeshBlock, "exit \"$test_exit\"", "the loop's cleanup must not swallow dotnet test's own exit code");
+        // Second safety net (2026-09-09): print captured evidence inside the Aspire step itself on a
+        // non-zero exit, so it survives even if a later gate (e.g. the diagnostics step's own if:) misfires.
+        StringAssert.Contains(aspireMeshBlock, "test_exit\" -ne 0");
+        StringAssert.Contains(aspireMeshBlock, "tail -n 300");
+
+        var diagnosticsBlock = workflow[diagnosticsStep..];
+        StringAssert.Contains(diagnosticsBlock, "/tmp/aspire-container-logs");
+        StringAssert.Contains(diagnosticsBlock, "tail -n 300");
+        // A condition with no status-check function gets an implicit success() ANDed in by GitHub Actions,
+        // so steps.aspire_mesh.conclusion == 'failure' alone can never run once the Aspire step has failed
+        // (this skipped the step in run 34406418605) - failure() must be explicit. Keyed off the Aspire
+        // step's own conclusion, not a re-evaluated copy of its if:, so a skipped/successful mesh step or
+        // an earlier unrelated failure still cannot trigger this.
+        StringAssert.Contains(diagnosticsBlock, "if: ${{ failure() && steps.aspire_mesh.conclusion == 'failure' }}");
+        StringAssert.Contains(diagnosticsBlock, "continue-on-error: true");
+        StringAssert.Contains(diagnosticsBlock, "free -m");
+        StringAssert.Contains(diagnosticsBlock, "docker ps -a");
+        StringAssert.Contains(diagnosticsBlock, "docker logs --tail 200");
+        // Non-fatal container-name match: no grep in a pipeline that could fail the step, and it reports
+        // when nothing matches instead of silently emitting nothing.
+        Assert.IsFalse(diagnosticsBlock.Contains("grep", StringComparison.Ordinal), "diagnostics must not rely on grep exit status");
+        StringAssert.Contains(diagnosticsBlock, "docker ps -a --format '{{.Names}}'");
+        StringAssert.Contains(diagnosticsBlock, "no sql containers");
     }
 
     /// <summary>

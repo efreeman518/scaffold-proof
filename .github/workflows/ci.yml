@@ -171,6 +171,7 @@ jobs:
           --results-directory ./TestResults
 
       - name: Aspire Mesh Tests (manual or scheduled, full graph)
+        id: aspire_mesh
         if: ${{ (github.event_name == 'workflow_dispatch' && inputs.includeAspireMesh == true) || github.event_name == 'schedule' }}
         timeout-minutes: 30
         env:
@@ -178,12 +179,120 @@ jobs:
           TASKFLOW_RUN_FUNCTIONS_TESTS: "false"
           TASKFLOW_REACT_TESTS_ENABLED: "false"
           TASKFLOW_WASM_TESTS_ENABLED: "false"
-        run: >
-          dotnet test tests/Test.Aspire/Test.Aspire.csproj
-          --no-build --configuration Release
-          -m:1
-          --logger "trx;LogFileName=aspire-results.trx"
-          --results-directory ./TestResults
+        # Captures container state WHILE the graph is up: the 2026-09-08/09 failures tore the graph down
+        # before the diagnostics step ran, so `docker ps -a` was already empty and no container logs
+        # survived. A background loop polls every 10 s until dotnet test exits, so a Login failed (18456)
+        # or pre-login handshake error has evidence even after Aspire's own teardown.
+        run: |
+          mkdir -p /tmp/aspire-container-logs
+
+          capture_loop() {
+            while true; do
+              {
+                echo "=== $(date -u +%FT%TZ) docker ps -a ==="
+                docker ps -a
+                docker ps -a --format '{{.Names}}' 2>/dev/null | while IFS= read -r pname; do
+                  [ -z "$pname" ] && continue
+                  echo "--- docker port $pname ---"
+                  docker port "$pname" || true
+                done
+              } >> /tmp/aspire-container-logs/ps.log 2>&1 || true
+
+              docker ps -a --format '{{.Names}}' 2>/dev/null | while IFS= read -r name; do
+                [ -z "$name" ] && continue
+                lower=$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')
+                case "$lower" in
+                  *sql*)
+                    docker logs --since 12s "$name" >> "/tmp/aspire-container-logs/${name}.log" 2>&1 || true
+                    marker="/tmp/aspire-container-logs/.env-captured-${name}"
+                    if [ ! -f "$marker" ]; then
+                      docker inspect --format '{{.Name}} {{range .Config.Env}}{{println .}}{{end}}' "$name" 2>/dev/null \
+                        | grep -iE 'MSSQL|SA_PASSWORD|ACCEPT' \
+                        | sed -E 's/(PASSWORD=).*/\1<redacted>/' \
+                        >> /tmp/aspire-container-logs/env.log 2>&1 || true
+                      touch "$marker" || true
+                    fi
+                    ;;
+                esac
+              done || true
+
+              sleep 10
+            done
+          }
+
+          capture_loop &
+          capture_pid=$!
+          trap 'kill "$capture_pid" 2>/dev/null || true; wait "$capture_pid" 2>/dev/null || true' EXIT
+
+          if dotnet test tests/Test.Aspire/Test.Aspire.csproj \
+            --no-build --configuration Release \
+            -m:1 \
+            --logger "trx;LogFileName=aspire-results.trx" \
+            --results-directory ./TestResults; then
+            test_exit=0
+          else
+            test_exit=$?
+          fi
+
+          kill "$capture_pid" 2>/dev/null || true
+          wait "$capture_pid" 2>/dev/null || true
+
+          # Second safety net: print the captured evidence here too, in case a later gate (job cancellation,
+          # a misconfigured if: on the diagnostics step) still skips it - the 2026-09-09 run had exactly that
+          # (an if: with no status-check function gets an implicit success() ANDed in, so it never runs
+          # after a failed step).
+          if [ "$test_exit" -ne 0 ]; then
+            echo "=== Aspire Mesh Tests failed (exit $test_exit); captured container logs follow ==="
+            if [ -d /tmp/aspire-container-logs ]; then
+              for f in /tmp/aspire-container-logs/*; do
+                [ -f "$f" ] || continue
+                echo "--- tail -n 300 $f ---"
+                tail -n 300 "$f" || true
+              done
+            else
+              echo "no captured container logs directory"
+            fi
+          fi
+
+          exit "$test_exit"
+
+      # Best-effort: the 2026-09-08 failure (SqlException pre-login handshake, sql_check Unhealthy
+      # throughout) had no runner-side evidence to explain it. if: must include failure() explicitly -
+      # a condition with no status-check function gets an implicit success() ANDed in by GitHub Actions,
+      # so steps.aspire_mesh.conclusion == 'failure' alone can never run once the Aspire step has failed
+      # (found in run 34406418605, which skipped this step). continue-on-error so best-effort
+      # diagnostics can never fail the job.
+      - name: Aspire Mesh Diagnostics (on failure)
+        if: ${{ failure() && steps.aspire_mesh.conclusion == 'failure' }}
+        continue-on-error: true
+        run: |
+          free -m
+          docker ps -a
+          found=0
+          while IFS= read -r name; do
+            lower=$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')
+            case "$lower" in
+              *sql*)
+                found=1
+                echo "=== docker logs --tail 200 $name ==="
+                docker logs --tail 200 "$name" || true
+                ;;
+            esac
+          done < <(docker ps -a --format '{{.Names}}')
+          if [ "$found" -eq 0 ]; then
+            echo "no sql containers"
+          fi
+
+          echo "=== captured container logs (docker may have already torn the graph down) ==="
+          if [ -d /tmp/aspire-container-logs ]; then
+            for f in /tmp/aspire-container-logs/*; do
+              [ -f "$f" ] || continue
+              echo "--- tail -300 $f ---"
+              tail -n 300 "$f" || true
+            done
+          else
+            echo "no captured container logs directory"
+          fi
 
       - name: Foundry Local Tests (manual, live local)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeFoundryLocal == true }}

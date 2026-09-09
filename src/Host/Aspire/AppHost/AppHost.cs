@@ -27,7 +27,10 @@ var foundryLocalAvailableInTesting =
 // Keep the database password stable across restarts so persistent volumes remain usable.
 // Tests can still override via Parameters__sql-password / Parameters__postgres-password.
 var defaultSqlPassword = LocalSqlSettings.SharedSaPassword;
-var sqlServerImageTag = "2025-latest";
+// Pinned, not "2025-latest": every other image here is pinned, and a floating tag moving mid-CI-run was the
+// suspected trigger for the 2026-09-08 Aspire Mesh Tests failure (audit tests hit SqlException pre-login
+// handshake errors against a freshly pulled build). Bump deliberately when a newer CU is needed.
+var sqlServerImageTag = "2025-CU8-ubuntu-22.04";
 
 // D-035: the hosting lane is a preset, not a switch. It seeds the DEFAULT of every provider switch below;
 // each switch's own env var or config key still wins. Unset means Azure, which is byte-for-byte today's graph.

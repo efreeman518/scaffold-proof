@@ -75,10 +75,13 @@ public class ApiAuditPipelineTests
             tableClient,
             ScaffoldTenantId.ToString(),
             auditWindowStartUtc,
+            response.StatusCode,
             ct);
 
         Assert.IsNotNull(auditEntity);
-        Assert.AreEqual(ScaffoldTenantId.ToString(), auditEntity.PartitionKey);
+        // AuditLogRepository.PartitionKey (TaskFlow.Infrastructure.Storage) writes "{tenantId}|{yyyyMMdd}",
+        // not the bare tenant id - assert the prefix, not exact equality.
+        StringAssert.StartsWith(auditEntity.PartitionKey, $"{ScaffoldTenantId}|");
         Assert.AreEqual(ScaffoldTenantId.ToString(), auditEntity.TenantId);
         Assert.AreEqual("Category", auditEntity.EntityType);
         Assert.IsFalse(string.IsNullOrWhiteSpace(auditEntity.AuditId));
@@ -153,6 +156,7 @@ public class ApiAuditPipelineTests
             tableClient,
             ScaffoldTenantId.ToString(),
             auditWindowStartUtc,
+            updateResponse.StatusCode,
             ct,
             expectedAction: "Modified");
 
@@ -165,7 +169,12 @@ public class ApiAuditPipelineTests
     /// <summary>Verifies post create category with retry behavior and protects the expected test contract.</summary>
     private static async Task<HttpResponseMessage> PostCreateCategoryWithRetryAsync(HttpClient client, object request, CancellationToken ct)
     {
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(45);
+        // 2 minutes: room for a slow-to-settle SQL Server first start (~40 s observed on the runner) plus
+        // the API's own retries, without letting a genuinely broken run burn the full 4-minute window (and
+        // therefore CI minutes) before failing. Not the ~900 s cumulative Aspire startup budget
+        // (AspireTestHost.WaitForResourceHealthyAsync("taskflowdb"), which already passed before this method
+        // runs) - that one is not the bottleneck either way.
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(2);
         HttpStatusCode? lastStatusCode = null;
         string? lastBody = null;
         Exception? lastException = null;
@@ -203,12 +212,25 @@ public class ApiAuditPipelineTests
     /// <summary>Verifies wait for audit entity behavior and protects the expected test contract.</summary>
     private static async Task<AuditLogTableEntity> WaitForAuditEntityAsync(
         TableClient tableClient,
-        string partitionKey,
+        string tenantId,
         DateTimeOffset auditWindowStartUtc,
+        HttpStatusCode lastRequestStatusCode,
         CancellationToken ct,
         string expectedAction = "Added")
     {
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(45);
+        // AuditLogRepository.PartitionKey (TaskFlow.Infrastructure.Storage) writes "{tenantId}|{yyyyMMdd}",
+        // not the bare tenant id - retention deletes a whole expired day per tenant in one transaction.
+        // Query the tenant's whole partition-key range (Azure Tables string-prefix technique: ge the
+        // prefix, lt the prefix + the highest printable ASCII character) instead of an exact day key, so a
+        // UTC day boundary crossed mid-poll cannot make an otherwise-correct row invisible. This is the bug
+        // that produced the 2026-09 CI failures - not SQL Server startup timing.
+        var partitionPrefix = $"{tenantId}|";
+        var filter = TableClient.CreateQueryFilter($"PartitionKey ge {partitionPrefix} and PartitionKey lt {partitionPrefix + "~"}");
+
+        // 2 minutes: room for a slow-to-settle SQL Server first start (~40 s observed on the runner) without
+        // letting a genuinely broken run burn 4+ minutes of CI time before failing.
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(2);
+        var tableFound = true;
         List<AuditLogTableEntity> recentEntities = [];
 
         while (DateTimeOffset.UtcNow < deadline)
@@ -217,9 +239,7 @@ public class ApiAuditPipelineTests
             {
                 recentEntities.Clear();
 
-                await foreach (var entity in tableClient.QueryAsync<AuditLogTableEntity>(
-                    entry => entry.PartitionKey == partitionKey,
-                    cancellationToken: ct))
+                await foreach (var entity in tableClient.QueryAsync<AuditLogTableEntity>(filter, cancellationToken: ct))
                 {
                     if (entity.RecordedUtc < auditWindowStartUtc)
                         continue;
@@ -236,6 +256,7 @@ public class ApiAuditPipelineTests
             }
             catch (RequestFailedException ex) when (ex.Status == 404)
             {
+                tableFound = false;
             }
 
             await Task.Delay(TimeSpan.FromSeconds(1), ct);
@@ -248,10 +269,14 @@ public class ApiAuditPipelineTests
                 recentEntities
                     .OrderByDescending(entity => entity.RecordedUtc)
                     .Take(5)
-                    .Select(entity => $"{entity.RecordedUtc:O}|{entity.EntityType}|{entity.Action}|{entity.Status}|{entity.AuditId}|{entity.EntityKey}"));
+                    .Select(entity => $"{entity.PartitionKey}|{entity.RecordedUtc:O}|{entity.EntityType}|{entity.Action}|{entity.Status}|{entity.AuditId}|{entity.EntityKey}"));
 
+        // Self-explaining failure: table existence and the triggering request's own status rule out an API
+        // or storage-provisioning problem before anyone has to re-run with diagnostics.
         Assert.Fail(
-            $"Expected recent audit entity for partition '{partitionKey}' since '{auditWindowStartUtc:O}'. Recent entities: {recentEntitySummary}.");
+            $"Expected recent audit entity for tenant '{tenantId}' (partition prefix '{partitionPrefix}') "
+            + $"since '{auditWindowStartUtc:O}'. Table 'taskflowaudit' found: {tableFound}. Triggering "
+            + $"request status: {(int)lastRequestStatusCode} {lastRequestStatusCode}. Recent entities: {recentEntitySummary}.");
         throw new InvalidOperationException("Unreachable");
     }
 }
