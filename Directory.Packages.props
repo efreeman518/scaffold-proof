@@ -57,6 +57,10 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.11" />
     <!-- Dual-provider dependency (Phase 0 pin, no PackageReference yet) -->
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <!-- D-040 pgvector semantic search: Vector type + the EF Core mapping/UseVector extension. Postgres-only
+         by construction; the SQL Server arm of the search switch fails fast instead of mapping the entity. -->
+    <PackageVersion Include="Pgvector" Version="0.3.2" />
+    <PackageVersion Include="Pgvector.EntityFrameworkCore" Version="0.3.0" />
   </ItemGroup>
   <!-- Temporary exception: FlowEngine's scripting dependency requires one exact Roslyn family and mixed families fail migration tooling at runtime.
        Reason: align every direct Roslyn package to the family selected by current FlowEngine. Remove when FlowEngine permits the latest stable Roslyn family.

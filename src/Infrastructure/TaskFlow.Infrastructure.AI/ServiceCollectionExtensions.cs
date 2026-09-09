@@ -1,4 +1,4 @@
-using Azure.Identity;
+﻿using Azure.Identity;
 using Azure.Search.Documents;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
@@ -50,11 +50,61 @@ public static class AiServiceCollectionExtensions
             : SearchProvider.Sql;
     }
 
+    /// <summary>
+    /// Same resolution binding <c>AiServices</c> from configuration first, for callers outside this assembly
+    /// that need the answer before <c>AddAiServices</c> runs (queue topology, consumer registration).
+    /// </summary>
+    public static SearchProvider ResolveSearchProvider(IConfiguration config)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        return ResolveSearchProvider(
+            config,
+            config.GetSection(TaskFlowAiSettings.ConfigSectionName).Get<TaskFlowAiSettings>() ?? new TaskFlowAiSettings());
+    }
+
     private static SearchProvider ParseSearchProvider(string value) =>
         Enum.TryParse<SearchProvider>(value, ignoreCase: true, out var provider)
             ? provider
             : throw new ArgumentException(
                 $"Unknown search provider '{value}'. Allowed values: {string.Join(", ", Enum.GetNames<SearchProvider>())}.");
+
+    /// <summary>Configuration key for the vector dimension the deployed pgvector column was created with.</summary>
+    public const string PgVectorDimensionsConfigKey = "Search:PgVector:Dimensions";
+
+    /// <summary>Vector dimension the PostgreSQL migration creates the <c>Embedding</c> column with.</summary>
+    public const int PgVectorDefaultDimensions = 1536;
+
+    /// <summary>
+    /// Wires the PgVector arm (D-040), failing at startup rather than degrading: without an
+    /// <see cref="IEmbeddingGenerator{TInput,TEmbedding}"/> there is nothing to embed the query with, and a
+    /// silent fall back to prefix search would report semantic results that are not.
+    /// <para>
+    /// The arm's other prerequisite - the relational provider must be PostgreSQL, because the
+    /// <c>TaskItemEmbedding</c> table is mapped only on Npgsql - is checked by the Bootstrapper
+    /// (<c>RegisterServices.VectorSearch.cs</c>), which runs first and already knows the database switch.
+    /// Asking it here would mean this AI adapter referencing the data layer.
+    /// </para>
+    /// </summary>
+    private static void AddPgVectorSearch(IServiceCollection services, IConfiguration config)
+    {
+        if (!services.Any(d => d.ServiceType == typeof(IEmbeddingGenerator<string, Embedding<float>>)))
+            throw new InvalidOperationException(
+                $"{SearchProviderConfigKey}=PgVector requires an IEmbeddingGenerator<string, Embedding<float>>, and none "
+                + "is registered. Select an AI provider that wires one (AiServices:Provider=OpenAICompatible), or "
+                + "configure ConnectionStrings:embeddings for the AzureInference arm.");
+
+        var dimensions = config.GetValue<int?>(PgVectorDimensionsConfigKey) ?? PgVectorDefaultDimensions;
+        if (dimensions != PgVectorDefaultDimensions)
+            throw new InvalidOperationException(
+                $"{PgVectorDimensionsConfigKey}={dimensions} does not match the {PgVectorDefaultDimensions}-dimension "
+                + "vector column the deployed PostgreSQL migration created. The dimension is part of the column type "
+                + "and of the HNSW index, so changing it needs a new migration, not a configuration change.");
+
+        // The prefix arm is a concrete dependency of the PgVector service, not a second ITaskFlowSearchService
+        // registration: only one implementation may resolve for the contract.
+        services.AddScoped<NoOpSearchService>();
+        services.AddScoped<ITaskFlowSearchService, PgVectorSearchService>();
+    }
 
     /// <summary>Registers AI services dependencies in the service container.</summary>
     public static IServiceCollection AddAiServices(this IServiceCollection services, IConfiguration config)
@@ -83,7 +133,8 @@ public static class AiServiceCollectionExtensions
                 break;
 
             case SearchProvider.PgVector:
-                throw new NotSupportedException("Search provider PgVector is not implemented yet (slice P7).");
+                AddPgVectorSearch(services, config);
+                break;
 
             case SearchProvider.Sql:
                 services.AddScoped<ITaskFlowSearchService, NoOpSearchService>();

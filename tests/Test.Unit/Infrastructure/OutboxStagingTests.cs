@@ -1,4 +1,4 @@
-using EF.Data.Contracts;
+﻿using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 using TaskFlow.Application.Contracts.Messaging;
@@ -48,9 +48,11 @@ public sealed class OutboxStagingTests
         Assert.AreEqual(0, rows[0].AttemptCount);
         Assert.IsNull(rows[0].LeaseToken);
 
-        // Drained: a second save must not stage the same event again.
+        // Drained: a second save must not stage the same event again. The touch is a priority edit on
+        // purpose - a title or description edit would legitimately raise TaskItemContentChangedEvent
+        // (D-040) and this assertion is about re-staging, not about how many events an update raises.
         Assert.AreEqual(0, task.DomainEvents.Count);
-        task.Update(description: "touched");
+        task.Update(priority: TaskFlow.Domain.Shared.Enums.Priority.High);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: ct);
         Assert.AreEqual(1, await db.OutboxMessages.CountAsync(ct));
     }

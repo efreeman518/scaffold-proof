@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "7870313617990324347"
+      "templateHash": "16899074585721004178"
     }
   },
   "parameters": {
@@ -110,6 +110,18 @@
       ],
       "metadata": {
         "description": "Messaging transport: Azure Service Bus (default) or a single-node RabbitMQ container app (D-034)"
+      }
+    },
+    "searchProvider": {
+      "type": "string",
+      "defaultValue": "AzureAiSearch",
+      "allowedValues": [
+        "AzureAiSearch",
+        "PgVector",
+        "Sql"
+      ],
+      "metadata": {
+        "description": "Search backend: Azure AI Search (default), Postgres pgvector, or the SQL prefix fallback (D-040)"
       }
     },
     "rabbitMqPassword": {
@@ -1670,6 +1682,9 @@
           "location": {
             "value": "[parameters('location')]"
           },
+          "searchProvider": {
+            "value": "[parameters('searchProvider')]"
+          },
           "tags": {
             "value": "[variables('tags')]"
           }
@@ -1681,7 +1696,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "3965650003238973502"
+              "templateHash": "6498947995616007242"
             }
           },
           "parameters": {
@@ -1702,6 +1717,18 @@
               "defaultValue": {},
               "metadata": {
                 "description": "Tags"
+              }
+            },
+            "searchProvider": {
+              "type": "string",
+              "defaultValue": "AzureAiSearch",
+              "allowedValues": [
+                "AzureAiSearch",
+                "PgVector",
+                "Sql"
+              ],
+              "metadata": {
+                "description": "Search backend (D-040); the embedding subscription exists only for PgVector"
               }
             }
           },
@@ -1817,6 +1844,36 @@
               },
               "dependsOn": [
                 "[resourceId('Microsoft.ServiceBus/namespaces/topics/subscriptions', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'DomainEvents', 'workflow')]"
+              ]
+            },
+            {
+              "condition": "[equals(parameters('searchProvider'), 'PgVector')]",
+              "type": "Microsoft.ServiceBus/namespaces/topics/subscriptions",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}/{2}', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'DomainEvents', 'embedding')]",
+              "properties": {
+                "maxDeliveryCount": 5,
+                "lockDuration": "PT5M",
+                "deadLetteringOnMessageExpiration": true,
+                "deadLetteringOnFilterEvaluationExceptions": true
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ServiceBus/namespaces/topics', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'DomainEvents')]"
+              ]
+            },
+            {
+              "condition": "[equals(parameters('searchProvider'), 'PgVector')]",
+              "type": "Microsoft.ServiceBus/namespaces/topics/subscriptions/rules",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}/{2}/{3}', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'DomainEvents', 'embedding', 'EventTypeFilter')]",
+              "properties": {
+                "filterType": "SqlFilter",
+                "sqlFilter": {
+                  "sqlExpression": "EventType IN ('TaskItemCreatedEvent', 'TaskItemContentChangedEvent')"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ServiceBus/namespaces/topics/subscriptions', format('{0}-sb-{1}', parameters('resourcePrefix'), uniqueString(resourceGroup().id)), 'DomainEvents', 'embedding')]"
               ]
             },
             {
@@ -3796,6 +3853,9 @@
           "keyVaultUri": {
             "value": "[reference('keyVault').outputs.uri.value]"
           },
+          "searchProvider": {
+            "value": "[parameters('searchProvider')]"
+          },
           "databaseProvider": {
             "value": "[parameters('databaseProvider')]"
           },
@@ -3824,7 +3884,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "14866392897691122901"
+              "templateHash": "12817049552883407345"
             }
           },
           "parameters": {
@@ -3862,6 +3922,18 @@
               "type": "string",
               "metadata": {
                 "description": "Key Vault URI"
+              }
+            },
+            "searchProvider": {
+              "type": "string",
+              "defaultValue": "AzureAiSearch",
+              "allowedValues": [
+                "AzureAiSearch",
+                "PgVector",
+                "Sql"
+              ],
+              "metadata": {
+                "description": "Search backend (D-040); PgVector enables the embedding trigger and its subscription"
               }
             },
             "databaseProvider": {
@@ -3981,6 +4053,14 @@
                     {
                       "name": "Database__Provider",
                       "value": "[parameters('databaseProvider')]"
+                    },
+                    {
+                      "name": "Search__Provider",
+                      "value": "[parameters('searchProvider')]"
+                    },
+                    {
+                      "name": "AzureWebJobs.ProcessTaskEmbedding.Disabled",
+                      "value": "[if(equals(parameters('searchProvider'), 'PgVector'), 'false', 'true')]"
                     },
                     {
                       "name": "ConnectionStrings__TaskFlowDbContextTrxn",

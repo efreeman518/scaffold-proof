@@ -1,9 +1,15 @@
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.AI;
 using Moq;
+using System.Reflection;
+using TaskFlow.Application.MessageHandlers.Consumers;
+using TaskFlow.Bootstrapper;
 using TaskFlow.Application.Contracts.Configuration;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Infrastructure.AI;
+using TaskFlow.Infrastructure.AI.Search;
+using TaskFlow.Infrastructure.Data.Provider;
 
 namespace Test.Unit.AI;
 
@@ -101,15 +107,124 @@ public class SearchProviderSelectorTests
         StringAssert.Contains(ex.Message, "SearchEndpoint");
     }
 
+    /// <summary>
+    /// D-040 fail-fast, prerequisite 1: PgVector needs PostgreSQL, because the TaskItemEmbedding table is
+    /// mapped only on the Npgsql provider. Silently degrading to prefix search would report results labelled
+    /// semantic that are not. The check lives in the Bootstrapper, the only place that composes both
+    /// switches - Infrastructure.AI must not reference Infrastructure.Data to ask.
+    /// </summary>
     [TestMethod]
-    public void AddAiServices_SearchProviderPgVector_ThrowsNotSupported()
+    public void AddVectorSearchServices_PgVectorOnSqlServer_ThrowsNamingTheSqlServerVectorFutureArm()
+    {
+        var config = Config(
+            (AiServiceCollectionExtensions.SearchProviderConfigKey, "PgVector"),
+            (TaskFlowDbProviderSelector.ConfigurationKey, "SqlServer"));
+
+        var ex = Assert.ThrowsExactly<InvalidOperationException>(
+            () => InvokeAddVectorSearchServices(new ServiceCollection(), config));
+        StringAssert.Contains(ex.Message, "PostgreSql");
+        StringAssert.Contains(ex.Message, "VECTOR");
+    }
+
+    /// <summary>Prerequisite met: the arm's repository and consumer are registered for the consumer hosts.</summary>
+    [TestMethod]
+    public void AddVectorSearchServices_PgVectorOnPostgreSql_RegistersTheEmbeddingRepositoryAndConsumer()
+    {
+        var services = new ServiceCollection();
+        var config = Config(
+            (AiServiceCollectionExtensions.SearchProviderConfigKey, "PgVector"),
+            (TaskFlowDbProviderSelector.ConfigurationKey, "PostgreSql"));
+
+        InvokeAddVectorSearchServices(services, config);
+
+        Assert.IsTrue(services.Any(d => d.ServiceType == typeof(ITaskEmbeddingRepository)));
+        Assert.IsTrue(services.Any(d => d.ServiceType == typeof(TaskEmbeddingConsumer)));
+    }
+
+    /// <summary>Any other arm registers nothing, so no queue or subscription has an unread consumer behind it.</summary>
+    [TestMethod]
+    public void AddVectorSearchServices_NonPgVectorArm_RegistersNothing()
+    {
+        var services = new ServiceCollection();
+
+        InvokeAddVectorSearchServices(
+            services, Config((AiServiceCollectionExtensions.SearchProviderConfigKey, "Sql")));
+
+        Assert.IsFalse(services.Any(d => d.ServiceType == typeof(ITaskEmbeddingRepository)));
+        Assert.IsFalse(services.Any(d => d.ServiceType == typeof(TaskEmbeddingConsumer)));
+    }
+
+    // Private dispatcher, invoked the same way ProviderSwitchArchitectureTests invokes the other switch
+    // dispatchers: making it public purely for a test would widen the composition root's surface.
+    private static void InvokeAddVectorSearchServices(IServiceCollection services, IConfiguration config)
+    {
+        var method = typeof(RegisterServices).GetMethod(
+            "AddVectorSearchServices", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("RegisterServices.AddVectorSearchServices was renamed or removed.");
+        try
+        {
+            method.Invoke(null, [services, config]);
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            throw ex.InnerException;
+        }
+    }
+
+    /// <summary>
+    /// D-040 fail-fast, prerequisite 2: without an embedding generator there is nothing to embed the query
+    /// with, so the arm cannot answer a semantic request at all.
+    /// </summary>
+    [TestMethod]
+    public void AddAiServices_PgVectorWithoutEmbeddingGenerator_Throws()
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(Mock.Of<ITaskItemRepositoryQuery>());
-        var config = Config((AiServiceCollectionExtensions.SearchProviderConfigKey, "PgVector"));
+        var config = Config(
+            (AiServiceCollectionExtensions.SearchProviderConfigKey, "PgVector"),
+            (TaskFlowDbProviderSelector.ConfigurationKey, "PostgreSql"));
 
-        var ex = Assert.ThrowsExactly<NotSupportedException>(() => services.AddAiServices(config));
-        StringAssert.Contains(ex.Message, "P7");
+        var ex = Assert.ThrowsExactly<InvalidOperationException>(() => services.AddAiServices(config));
+        StringAssert.Contains(ex.Message, "IEmbeddingGenerator");
+    }
+
+    /// <summary>
+    /// The dimension is the deployed column type, not a runtime knob: a value that disagrees with the
+    /// migration would leave the HNSW index unusable, so it is refused rather than applied.
+    /// </summary>
+    [TestMethod]
+    public void AddAiServices_PgVectorWithMismatchedDimensions_ThrowsNamingTheMigration()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(Mock.Of<ITaskItemRepositoryQuery>());
+        services.AddSingleton(Mock.Of<IEmbeddingGenerator<string, Embedding<float>>>());
+        var config = Config(
+            (AiServiceCollectionExtensions.SearchProviderConfigKey, "PgVector"),
+            (TaskFlowDbProviderSelector.ConfigurationKey, "PostgreSql"),
+            (AiServiceCollectionExtensions.PgVectorDimensionsConfigKey, "3072"));
+
+        var ex = Assert.ThrowsExactly<InvalidOperationException>(() => services.AddAiServices(config));
+        StringAssert.Contains(ex.Message, "migration");
+    }
+
+    /// <summary>Both prerequisites met: the contract resolves to the pgvector arm, not the prefix fallback.</summary>
+    [TestMethod]
+    public void AddAiServices_PgVectorWithPrerequisitesMet_RegistersPgVectorSearchService()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(Mock.Of<ITaskItemRepositoryQuery>());
+        services.AddSingleton(Mock.Of<IEmbeddingGenerator<string, Embedding<float>>>());
+        services.AddSingleton(Mock.Of<ITaskEmbeddingRepository>());
+        var config = Config(
+            (AiServiceCollectionExtensions.SearchProviderConfigKey, "PgVector"),
+            (TaskFlowDbProviderSelector.ConfigurationKey, "PostgreSql"));
+
+        services.AddAiServices(config);
+
+        using var provider = services.BuildServiceProvider();
+        Assert.IsInstanceOfType<PgVectorSearchService>(provider.GetRequiredService<ITaskFlowSearchService>());
     }
 }

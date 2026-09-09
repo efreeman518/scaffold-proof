@@ -69,3 +69,7 @@ public sealed class RabbitMqAiReviewHandler(TaskAiReviewConsumer consumer, ILogg
 /// <summary>Feeds <see cref="TaskWorkflowConsumer"/> from the workflow queue.</summary>
 public sealed class RabbitMqWorkflowHandler(TaskWorkflowConsumer consumer, ILogger<RabbitMqWorkflowHandler> logger)
     : RabbitMqConsumerHandler(consumer, logger);
+
+/// <summary>Feeds <see cref="TaskEmbeddingConsumer"/> from the embedding queue; PgVector arm only (D-040).</summary>
+public sealed class RabbitMqEmbeddingHandler(TaskEmbeddingConsumer consumer, ILogger<RabbitMqEmbeddingHandler> logger)
+    : RabbitMqConsumerHandler(consumer, logger);

@@ -7,7 +7,7 @@ namespace TaskFlow.Infrastructure.Messaging.RabbitMq;
 /// <summary>
 /// The exchange, queues and bindings TaskFlow declares on RabbitMQ (D-034). One topic exchange keyed by event
 /// type mirrors the Service Bus topic plus correlation-filtered subscriptions, so the same event reaches the
-/// same three consumers on either provider.
+/// same consumers on either provider.
 /// </summary>
 public static class TaskFlowRabbitMqTopology
 {
@@ -29,8 +29,18 @@ public static class TaskFlowRabbitMqTopology
     /// <summary>Queue drained by the workflow-start consumer.</summary>
     public const string WorkflowQueue = "taskflow." + TaskWorkflowConsumer.Name;
 
-    /// <summary>Builds the declaration passed to the package topology declarer. Declaration is idempotent.</summary>
-    public static RabbitMqTopology Build() => new(
+    /// <summary>Queue drained by the pgvector embedding consumer; declared only on the PgVector arm (D-040).</summary>
+    public const string EmbeddingQueue = "taskflow." + TaskEmbeddingConsumer.Name;
+
+    /// <summary>
+    /// Builds the declaration passed to the package topology declarer. Declaration is idempotent.
+    /// </summary>
+    /// <param name="includeEmbedding">
+    /// True only when <c>Search:Provider</c> resolves to PgVector. A declared queue with no consumer keeps
+    /// accumulating messages the broker will never hand to anyone, so the embedding queue and its bindings
+    /// exist exactly when something drains them.
+    /// </param>
+    public static RabbitMqTopology Build(bool includeEmbedding = false) => new(
         Exchanges:
         [
             new RabbitMqExchange(Exchange),
@@ -42,7 +52,10 @@ public static class TaskFlowRabbitMqTopology
             new RabbitMqQueue(ProjectionQueue, DeadLetterExchange: DeadLetterExchange),
             new RabbitMqQueue(AiReviewQueue, DeadLetterExchange: DeadLetterExchange),
             new RabbitMqQueue(WorkflowQueue, DeadLetterExchange: DeadLetterExchange),
-            new RabbitMqQueue(DeadLetterQueue)
+            new RabbitMqQueue(DeadLetterQueue),
+            .. includeEmbedding
+                ? new[] { new RabbitMqQueue(EmbeddingQueue, DeadLetterExchange: DeadLetterExchange) }
+                : Array.Empty<RabbitMqQueue>()
         ],
         Bindings:
         [
@@ -51,6 +64,13 @@ public static class TaskFlowRabbitMqTopology
             new RabbitMqBinding(ProjectionQueue, Exchange, nameof(TaskItemCompletedEvent)),
             new RabbitMqBinding(AiReviewQueue, Exchange, nameof(TaskItemCreatedEvent)),
             new RabbitMqBinding(WorkflowQueue, Exchange, nameof(TaskItemCreatedEvent)),
-            new RabbitMqBinding(DeadLetterQueue, DeadLetterExchange, "#")
+            new RabbitMqBinding(DeadLetterQueue, DeadLetterExchange, "#"),
+            .. includeEmbedding
+                ? new[]
+                {
+                    new RabbitMqBinding(EmbeddingQueue, Exchange, nameof(TaskItemCreatedEvent)),
+                    new RabbitMqBinding(EmbeddingQueue, Exchange, nameof(TaskItemContentChangedEvent))
+                }
+                : Array.Empty<RabbitMqBinding>()
         ]);
 }

@@ -3,6 +3,9 @@
   <ItemGroup>
     <PackageReference Include="EF.BackgroundServices" />
     <PackageReference Include="EF.FlowEngine" />
+    <!-- D-040: TaskEmbeddingConsumer embeds through the provider-neutral
+         IEmbeddingGenerator abstraction; no vendor SDK enters this layer. -->
+    <PackageReference Include="Microsoft.Extensions.AI" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <PackageReference Include="Azure.Identity" />
@@ -13,8 +13,9 @@
 
   <ItemGroup>
     <!-- D-040: the Search:Provider switch resolves the hosting lane default via HostingLaneSelector,
-         which lives in Application.Contracts (already referenced below) precisely so this AI adapter
-         does not need a ProjectReference to Infrastructure.Data for one enum parser. -->
+         which lives in Application.Contracts (already referenced below), precisely so this AI adapter needs
+         no ProjectReference to Infrastructure.Data. PgVectorSearchService reaches storage only through the
+         ITaskEmbeddingRepository port, and the arm's PostgreSQL prerequisite is checked in the Bootstrapper. -->
     <ProjectReference Include="..\..\Application\TaskFlow.Application.Contracts\TaskFlow.Application.Contracts.csproj" />
     <ProjectReference Include="..\..\Application\TaskFlow.Application.Models\TaskFlow.Application.Models.csproj" />
     <ProjectReference Include="..\..\Shared\TaskFlow.Observability\TaskFlow.Observability.csproj" />

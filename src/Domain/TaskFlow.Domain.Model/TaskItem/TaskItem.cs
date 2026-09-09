@@ -143,6 +143,13 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
         DomainCategoryId? categoryId = null, DomainTaskItemId? parentTaskItemId = null,
         string? secureDeterministic = null, string? secureRandom = null)
     {
+        // D-040: the embedding pipeline needs a content-change signal, and only a real change of the
+        // embeddable text counts - comparing before assigning keeps a priority-only or status-only edit
+        // from paying for a model call and a vector rewrite.
+        var contentChanged =
+            (title is not null && !string.Equals(title, Title, StringComparison.Ordinal))
+            || (description is not null && !string.Equals(description, Description, StringComparison.Ordinal));
+
         if (title is not null) Title = title;
         if (description is not null) Description = description;
         if (priority.HasValue) Priority = priority.Value;
@@ -153,7 +160,12 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
         if (parentTaskItemId.HasValue) ParentTaskItemId = parentTaskItemId.Value.Value == Guid.Empty ? null : parentTaskItemId.Value;
         if (secureDeterministic is not null) SecureDeterministic = secureDeterministic;
         if (secureRandom is not null) SecureRandom = secureRandom;
-        return Valid();
+
+        var validated = Valid();
+        // Raised only on a successful update, the same rule Create follows: a rejected edit never happened.
+        if (contentChanged && validated.IsSuccess)
+            _domainEvents.Raise(new TaskItemContentChangedEvent(Id.Value, TenantId.Value, DateTimeOffset.UtcNow));
+        return validated;
     }
 
     /// <summary>

@@ -122,9 +122,10 @@ This file records the shared domain language used by the TaskFlow reference app.
 | Event | Raised By | Meaning | Consumers |
 |---|---|---|---|
 | `TaskItemCreated` | `TaskItem` | A new task item exists. | Service Bus, Functions, Cosmos projection, AI search. |
+| `TaskItemContentChanged` | `TaskItem` | The task's embeddable text (title or description) actually changed value. | pgvector embedding consumer (D-040). |
 | `TaskItemStatusChanged` | `TaskItem` | Task lifecycle state changed. | Service Bus, Functions, Cosmos projection, notifications. |
 | `TaskItemCompleted` | `TaskItem` | Task reached completed state. | Notifications. |
-| `TaskItemRescheduled` | `TaskItem` | Task date range changed. | Recalculation, scheduler. |
+| `TaskItemRescheduled` | `TaskItem` | Task date range changed. | None today - no aggregate method raises it; the record and its wire registration are kept for the schema, not for a live path. |
 | `TaskItemOverdueSuspected` | Scheduler | Scheduled job found a likely overdue task. | Notifications, escalation. |
 | `CommentAdded` | `Comment` | Discussion entry was added. | Notifications, activity views. |
 | `AttachmentUploaded` | `Attachment` | Attachment metadata points to uploaded content. | Functions, metadata extraction. |

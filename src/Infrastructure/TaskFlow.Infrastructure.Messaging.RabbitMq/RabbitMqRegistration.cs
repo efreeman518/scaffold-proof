@@ -15,12 +15,14 @@ public static class RabbitMqRegistration
     public const string OptionsSection = "Messaging:RabbitMq";
 
     // Per-queue defaults: projection is the cheapest and highest volume, AI review is the slowest and most
-    // expensive per message, workflow starts sit in between. Overridable per queue in configuration.
+    // expensive per message, workflow starts sit in between. Embedding sits with AI review: every message is
+    // a model call. Overridable per queue in configuration.
     private static readonly (string Queue, ushort Prefetch)[] QueueDefaults =
     [
         (TaskFlowRabbitMqTopology.ProjectionQueue, 16),
         (TaskFlowRabbitMqTopology.AiReviewQueue, 4),
-        (TaskFlowRabbitMqTopology.WorkflowQueue, 8)
+        (TaskFlowRabbitMqTopology.WorkflowQueue, 8),
+        (TaskFlowRabbitMqTopology.EmbeddingQueue, 4)
     ];
 
     /// <summary>
@@ -40,12 +42,17 @@ public static class RabbitMqRegistration
     }
 
     /// <summary>
-    /// Declares the topology and starts the three consumer hosted services with their per-queue prefetch, plus
-    /// the broker health check. Only the Scheduler calls this: the Functions runtime has no RabbitMQ trigger.
+    /// Declares the topology and starts the consumer hosted services with their per-queue prefetch, plus the
+    /// broker health check. Only the Scheduler calls this: the Functions runtime has no RabbitMQ trigger.
     /// </summary>
     /// <param name="services">Service collection.</param>
     /// <param name="config">Configuration root.</param>
-    public static IServiceCollection AddTaskFlowRabbitMqConsumers(this IServiceCollection services, IConfiguration config)
+    /// <param name="includeEmbedding">
+    /// True only when <c>Search:Provider</c> resolves to PgVector (D-040). The caller resolves it because the
+    /// search switch lives in Infrastructure.AI and this transport adapter must not depend on it.
+    /// </param>
+    public static IServiceCollection AddTaskFlowRabbitMqConsumers(
+        this IServiceCollection services, IConfiguration config, bool includeEmbedding = false)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(config);
@@ -54,6 +61,9 @@ public static class RabbitMqRegistration
         {
             foreach (var (queue, prefetch) in QueueDefaults)
             {
+                // No prefetch entry for a queue this deployment neither declares nor consumes.
+                if (!includeEmbedding && queue == TaskFlowRabbitMqTopology.EmbeddingQueue) continue;
+
                 if (!options.Consumers.TryGetValue(queue, out var consumer))
                     options.Consumers[queue] = consumer = new RabbitMqConsumerOptions();
 
@@ -67,7 +77,7 @@ public static class RabbitMqRegistration
         // across replicas by the distributed lock. Inserted at the front for the same reason the package
         // inserts its own there - the topology has to exist before any consumer subscribes.
         services.Insert(0, ServiceDescriptor.Singleton<IHostedService>(sp => new TaskFlowRabbitMqTopologyStartup(
-            TaskFlowRabbitMqTopology.Build(),
+            TaskFlowRabbitMqTopology.Build(includeEmbedding),
             sp.GetRequiredService<IRabbitMqTopologyDeclarer>(),
             sp.GetRequiredService<IDistributedLock>(),
             sp.GetRequiredService<ILogger<TaskFlowRabbitMqTopologyStartup>>())));
@@ -75,6 +85,8 @@ public static class RabbitMqRegistration
         services.AddRabbitMqConsumer<RabbitMqProjectionHandler>(TaskFlowRabbitMqTopology.ProjectionQueue);
         services.AddRabbitMqConsumer<RabbitMqAiReviewHandler>(TaskFlowRabbitMqTopology.AiReviewQueue);
         services.AddRabbitMqConsumer<RabbitMqWorkflowHandler>(TaskFlowRabbitMqTopology.WorkflowQueue);
+        if (includeEmbedding)
+            services.AddRabbitMqConsumer<RabbitMqEmbeddingHandler>(TaskFlowRabbitMqTopology.EmbeddingQueue);
         services.AddHealthChecks().AddRabbitMqHealthCheck(tags: "ready");
 
         return services;

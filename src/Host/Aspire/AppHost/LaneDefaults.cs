@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
 
 namespace AppHost;
 
@@ -92,10 +92,10 @@ public sealed record LaneSwitches(
 /// test pins both against the host-side selector.
 /// </para>
 /// <para>
-/// Portable lane values match <c>TaskFlow.Bootstrapper.LaneDefaults.Portable</c>. The one deliberate
-/// difference from <c>.scaffold/resource-implementation.yaml</c> is Search: the artifact records PgVector as
-/// the portable default, and the Bootstrapper still defaults to Sql because the PgVector arm lands in slice
-/// P7. Flip both together when it does.
+/// Portable lane values match <c>TaskFlow.Bootstrapper.LaneDefaults.Portable</c> and
+/// <c>.scaffold/resource-implementation.yaml</c>, Search included: both lanes default to Sql, because the
+/// PgVector arm (D-040) needs an embedding endpoint and is therefore opt-in through
+/// <c>Search:Provider</c>/<c>TASKFLOW_SEARCH_PROVIDER</c> rather than seeded by a lane.
 /// </para>
 /// </remarks>
 public static class LaneDefaults

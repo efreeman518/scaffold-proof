@@ -32,6 +32,7 @@ public sealed record IntegrationEventEnvelope(
     private static readonly Dictionary<string, int> Versions = new(StringComparer.Ordinal)
     {
         [nameof(Domain.Shared.Events.TaskItemCreatedEvent)] = 1,
+        [nameof(Domain.Shared.Events.TaskItemContentChangedEvent)] = 1,
         [nameof(Domain.Shared.Events.TaskItemStatusChangedEvent)] = 1,
         [nameof(Domain.Shared.Events.TaskItemCompletedEvent)] = 1,
         [nameof(Domain.Shared.Events.TaskItemOverdueSuspectedEvent)] = 1,

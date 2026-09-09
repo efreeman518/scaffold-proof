@@ -1,5 +1,6 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using TaskFlow.Infrastructure.AI;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Provider;
 using TaskFlow.Infrastructure.Messaging.RabbitMq;
@@ -52,7 +53,10 @@ public static class RegisterSchedulerServices
         // D-034: the Scheduler is the RabbitMQ consumer host; the Functions runtime has no RabbitMQ trigger.
         if (RegisterServices.ResolveMessagingProvider(config) == MessagingProvider.RabbitMq)
         {
-            services.AddTaskFlowRabbitMqConsumers(config);
+            // D-040: the embedding queue is declared and drained only on the PgVector arm.
+            services.AddTaskFlowRabbitMqConsumers(
+                config,
+                includeEmbedding: AiServiceCollectionExtensions.ResolveSearchProvider(config) == SearchProvider.PgVector);
         }
 
         services.AddHealthChecks()

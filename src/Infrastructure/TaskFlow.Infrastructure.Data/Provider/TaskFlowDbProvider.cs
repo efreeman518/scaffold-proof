@@ -176,6 +176,10 @@ public static class TaskFlowDbProviderExtensions
                     : providerOptions.ConnectionString;
                 options.UseNpgsql(npgsqlConnectionString, npgsql =>
                 {
+                    // D-040: registers the pgvector type handler. Unconditional on this arm because the model
+                    // branch in OnModelCreating is unconditional on Npgsql too; without it a context that maps
+                    // TaskItemEmbedding cannot read or write the column at all.
+                    npgsql.UseVector();
                     npgsql.EnableRetryOnFailure(providerOptions.MaxRetryCount, retryDelay, errorCodesToAdd: null);
                     npgsql.MigrationsHistoryTable(providerOptions.MigrationsHistoryTable, providerOptions.MigrationsHistorySchema);
                     npgsql.MigrationsAssembly(migrationsAssembly);

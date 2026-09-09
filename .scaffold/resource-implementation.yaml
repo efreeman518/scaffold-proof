@@ -68,7 +68,7 @@ hostingLaneDefaults:
     storageProvider: S3
     readModelProvider: Relational
     auditProvider: Relational
-    searchProvider: PgVector
+    searchProvider: Sql                # PgVector is the opt-in Postgres arm (Search:Provider=PgVector): it needs an embedding endpoint, so it is not a lane default. See D-040.
     aiProvider: OpenAICompatible
     dataProtectionPersistence: Redis
 
@@ -302,9 +302,10 @@ entities:
       - { name: TenantId, type: "Guid", required: true }
       - { name: TaskItemId, type: "Guid", required: true }
       - { name: Embedding, type: "vector(1536)", required: true }
-      - { name: ModelId, type: "nvarchar", maxLength: 200, required: true }
+      - { name: Dimensions, type: "int", required: true }
+      - { name: ModelId, type: "nvarchar", maxLength: 128, required: true }
       - { name: UpdatedUtc, type: "DateTimeOffset", required: true }
-    note: "HNSW cosine index; mapped in OnModelCreating only when Database.ProviderName is Npgsql (the one new forced provider branch, D-030); migration lives in the PostgreSql migration assembly only. Search projection, not domain state - no TaskItem attribute changes. See D-040, domain-specification GR-19/GR-20."
+    note: "HNSW cosine index (vector_cosine_ops); mapped in OnModelCreating only when Database.ProviderName is Npgsql (the one new forced provider branch, D-030) - no DbSet, because a DbSet would pull the type into the SQL Server model too; migration lives in the PostgreSql migration assembly only. The vector dimension is the TaskItemEmbedding.DefaultDimensions constant (1536) because it is also the deployed column type; Search:PgVector:Dimensions is validated against it at startup rather than driving the model. Search projection, not domain state - no TaskItem attribute changes. See D-040, domain-specification GR-19/GR-20."
 
 # ---------------------------------------------------------------------------
 # Messaging
@@ -398,7 +399,8 @@ functionDefinitions:
     trigger: serviceBusTopic
     channel: DomainEvents
     subscription: embedding
-    description: "Generate or refresh the pgvector TaskItemEmbedding row from TaskItemCreatedEvent and the update-class events (TaskItemStatusChangedEvent, TaskItemRescheduledEvent, TaskItemCompletedEvent); RabbitMQ queue taskflow.embedding on the RabbitMq lane; Postgres+PgVector only, see D-040"
+    description: "Generate or refresh the pgvector TaskItemEmbedding row from TaskItemCreatedEvent and TaskItemContentChangedEvent; RabbitMQ queue taskflow.embedding on the RabbitMq lane; declared and consumed only when Search:Provider resolves to PgVector, so nothing accumulates on the other arms; Postgres+PgVector only, see D-040"
+    note: "Bound to the two events that change embeddable text. Status-class events are not bound: TaskItemStatusChangedEvent and TaskItemCompletedEvent never alter Title or Description, and TaskItemRescheduledEvent is dead code - no aggregate method raises it - so binding it would have been a subscription on an event that never arrives."
 
   - name: ProcessAttachment
     trigger: blobTrigger

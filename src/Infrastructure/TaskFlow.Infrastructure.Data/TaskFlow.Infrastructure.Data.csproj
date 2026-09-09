@@ -15,6 +15,10 @@
     <!-- Both relational providers ship in the data assembly; UseTaskFlowProvider selects one at runtime (D-020). -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <!-- D-040: the TaskItemEmbedding row is mapped only on Npgsql, but the Vector type and UseVector()
+         extension have to be compiled in for the branch to exist at all. -->
+    <PackageReference Include="Pgvector" />
+    <PackageReference Include="Pgvector.EntityFrameworkCore" />
     <PackageReference Include="TickerQ.EntityFrameworkCore" />
   </ItemGroup>
 

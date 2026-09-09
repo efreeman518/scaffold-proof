@@ -26,6 +26,7 @@ namespace TaskFlow.Application.Contracts.Messaging;
 // (unknown type) or falls back to reflection.
 [JsonSerializable(typeof(IDomainEvent))]
 [JsonSerializable(typeof(TaskItemCreatedEvent))]
+[JsonSerializable(typeof(TaskItemContentChangedEvent))]
 [JsonSerializable(typeof(TaskItemStatusChangedEvent))]
 [JsonSerializable(typeof(TaskItemCompletedEvent))]
 [JsonSerializable(typeof(TaskItemOverdueSuspectedEvent))]
