@@ -203,14 +203,22 @@ public sealed class DeploymentWorkflowContractTests
         // actually ran and failed, and cover both the sql/mssql containers and host memory pressure.
         var aspireStep = workflow.IndexOf("Aspire Mesh Tests (manual or scheduled, full graph)", StringComparison.Ordinal);
         Assert.IsGreaterThan(0, aspireStep);
+        StringAssert.Contains(workflow[aspireStep..], "id: aspire_mesh");
         var diagnosticsStep = workflow.IndexOf("Aspire Mesh Diagnostics (on failure)", StringComparison.Ordinal);
         Assert.IsGreaterThan(aspireStep, diagnosticsStep, "the diagnostics step must follow the Aspire Mesh Tests step");
         var diagnosticsBlock = workflow[diagnosticsStep..];
-        StringAssert.Contains(diagnosticsBlock, "if: failure() && ((github.event_name == 'workflow_dispatch' && inputs.includeAspireMesh == true) || github.event_name == 'schedule')");
+        // Keyed off the Aspire step's own conclusion, not a re-evaluated copy of its if: - a skipped or
+        // successful mesh step, or an earlier unrelated failure, must not trigger this step.
+        StringAssert.Contains(diagnosticsBlock, "if: ${{ steps.aspire_mesh.conclusion == 'failure' }}");
+        StringAssert.Contains(diagnosticsBlock, "continue-on-error: true");
         StringAssert.Contains(diagnosticsBlock, "free -m");
         StringAssert.Contains(diagnosticsBlock, "docker ps -a");
         StringAssert.Contains(diagnosticsBlock, "docker logs --tail 200");
-        StringAssert.Contains(diagnosticsBlock, "grep -iE 'sql|mssql'");
+        // Non-fatal container-name match: no grep in a pipeline that could fail the step, and it reports
+        // when nothing matches instead of silently emitting nothing.
+        Assert.IsFalse(diagnosticsBlock.Contains("grep", StringComparison.Ordinal), "diagnostics must not rely on grep exit status");
+        StringAssert.Contains(diagnosticsBlock, "docker ps -a --format '{{.Names}}'");
+        StringAssert.Contains(diagnosticsBlock, "no sql containers");
     }
 
     /// <summary>

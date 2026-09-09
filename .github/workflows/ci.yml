@@ -171,6 +171,7 @@ jobs:
           --results-directory ./TestResults
 
       - name: Aspire Mesh Tests (manual or scheduled, full graph)
+        id: aspire_mesh
         if: ${{ (github.event_name == 'workflow_dispatch' && inputs.includeAspireMesh == true) || github.event_name == 'schedule' }}
         timeout-minutes: 30
         env:
@@ -186,17 +187,29 @@ jobs:
           --results-directory ./TestResults
 
       # Best-effort: the 2026-09-08 failure (SqlException pre-login handshake, sql_check Unhealthy
-      # throughout) had no runner-side evidence to explain it. Same gating as the Aspire step above,
-      # combined with failure() so it only runs when that step actually ran and failed.
+      # throughout) had no runner-side evidence to explain it. Keyed off the Aspire step's own outcome
+      # (not re-evaluating its if:) so a skipped or successful mesh step, or an earlier unrelated
+      # failure, cannot trigger this; continue-on-error so best-effort diagnostics can never fail the job.
       - name: Aspire Mesh Diagnostics (on failure)
-        if: failure() && ((github.event_name == 'workflow_dispatch' && inputs.includeAspireMesh == true) || github.event_name == 'schedule')
+        if: ${{ steps.aspire_mesh.conclusion == 'failure' }}
+        continue-on-error: true
         run: |
           free -m
           docker ps -a
-          for name in $(docker ps -a --format '{{.Names}}' | grep -iE 'sql|mssql'); do
-            echo "=== docker logs --tail 200 $name ==="
-            docker logs --tail 200 "$name" || true
-          done
+          found=0
+          while IFS= read -r name; do
+            lower=$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')
+            case "$lower" in
+              *sql*)
+                found=1
+                echo "=== docker logs --tail 200 $name ==="
+                docker logs --tail 200 "$name" || true
+                ;;
+            esac
+          done < <(docker ps -a --format '{{.Names}}')
+          if [ "$found" -eq 0 ]; then
+            echo "no sql containers"
+          fi
 
       - name: Foundry Local Tests (manual, live local)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeFoundryLocal == true }}
