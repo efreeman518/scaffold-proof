@@ -87,6 +87,21 @@ jobs:
           blockers=$(jq '[.check_runs[] | select(.status == "completed" and (.conclusion | IN("failure", "cancelled", "timed_out", "action_required")))] | length' <<< "$checks")
           [[ "$blockers" -eq 0 ]] || { echo "::error::$TARGET_SHA has failed required checks"; exit 1; }
 
+  # The five container images are built by the shared reusable workflow, so the Azure lane and the Portable
+  # lane (deploy-vps.yml) cannot drift apart in how an image is produced or pinned.
+  build-images:
+    if: needs.validate-entry.outputs.operation == 'deploy'
+    needs: validate-entry
+    uses: ./.github/workflows/build-images.yml
+    with:
+      ref: ${{ needs.validate-entry.outputs.sha }}
+    secrets: inherit
+    permissions:
+      contents: read
+      packages: write
+
+  # Everything the Azure lane needs that is not a container image: the Functions package and the Uno WASM
+  # bundle, both uploaded as immutable artifacts the rollback path replays without rebuilding.
   build-release:
     if: needs.validate-entry.outputs.operation == 'deploy'
     needs: validate-entry
@@ -94,11 +109,6 @@ jobs:
     env:
       NuGetPackageSourceCredentials_efreeman518-github: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
     outputs:
-      gateway-image: ${{ steps.images.outputs.gateway }}
-      api-image: ${{ steps.images.outputs.api }}
-      scheduler-image: ${{ steps.images.outputs.scheduler }}
-      migrator-image: ${{ steps.images.outputs.migrator }}
-      blazor-image: ${{ steps.images.outputs.blazor }}
       functions-id: ${{ steps.functions.outputs.artifact-id }}
       functions-digest: ${{ steps.functions.outputs.artifact-digest }}
       uno-id: ${{ steps.uno.outputs.artifact-id }}
@@ -116,32 +126,6 @@ jobs:
           NUGET_PAT: ${{ secrets.NUGET_PAT }}
         run: |
           [[ -n "$NUGET_PAT" ]] || { echo "::error::NUGET_PAT is required"; exit 1; }
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build each image once and record registry digest
-        id: images
-        env:
-          TARGET_SHA: ${{ needs.validate-entry.outputs.sha }}
-        run: |
-          set -euo pipefail
-          build_image() {
-            local key="$1" image="$2" dockerfile="$3"
-            local tag="${REGISTRY}/${GITHUB_REPOSITORY_OWNER}/${image}:${TARGET_SHA}"
-            docker buildx build . --file "$dockerfile" --push --tag "$tag" \
-              --secret id=nuget_credentials,env=NuGetPackageSourceCredentials_efreeman518-github
-            digest=$(docker buildx imagetools inspect "$tag" --format '{{json .Manifest.Digest}}' | tr -d '"')
-            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::Missing digest for $image"; exit 1; }
-            echo "$key=${REGISTRY}/${GITHUB_REPOSITORY_OWNER}/${image}@${digest}" >> "$GITHUB_OUTPUT"
-          }
-          build_image gateway taskflow-gateway ./src/Host/TaskFlow.Gateway/Dockerfile
-          build_image api taskflow-api ./src/Host/TaskFlow.Api/Dockerfile
-          build_image scheduler taskflow-scheduler ./src/Host/TaskFlow.Scheduler/Dockerfile
-          build_image migrator taskflow-db-migrator ./src/Host/TaskFlow.DatabaseMigrator/Dockerfile
-          build_image blazor taskflow-blazor ./src/UI/TaskFlow.Blazor/Dockerfile
       - name: Publish Functions once
         run: dotnet publish src/Host/TaskFlow.Functions/TaskFlow.Functions.csproj -c Release -o ./release/functions
       - name: Publish Uno WASM Release once
@@ -173,7 +157,7 @@ jobs:
 
   deploy-infrastructure:
     if: needs.validate-entry.outputs.operation == 'deploy'
-    needs: [validate-entry, build-release]
+    needs: [validate-entry, build-images, build-release]
     runs-on: ubuntu-latest
     environment: dev
     outputs:
@@ -212,11 +196,11 @@ jobs:
             resourcePrefix=${{ env.RESOURCE_PREFIX }} environmentName=${{ env.ENVIRONMENT_NAME }} location=${{ env.AZURE_LOCATION }}
             sqlAdminPrincipalId=${{ secrets.SQL_ADMIN_PRINCIPAL_ID }} sqlAdminPrincipalName=${{ secrets.SQL_ADMIN_PRINCIPAL_NAME }} sqlAdminPrincipalType=User
             gatewayImage=${{ steps.stable.outputs.gateway }} apiImage=${{ steps.stable.outputs.api }} schedulerImage=${{ steps.stable.outputs.scheduler }}
-            migratorImage=${{ needs.build-release.outputs.migrator-image }} blazorImage=${{ steps.stable.outputs.blazor }}
+            migratorImage=${{ needs.build-images.outputs.migrator-image }} blazorImage=${{ steps.stable.outputs.blazor }}
 
   run-migrations:
     if: needs.validate-entry.outputs.operation == 'deploy'
-    needs: [validate-entry, build-release, deploy-infrastructure]
+    needs: [validate-entry, build-images, build-release, deploy-infrastructure]
     runs-on: ubuntu-latest
     environment: dev
     steps:
@@ -241,7 +225,7 @@ jobs:
 
   activate-release:
     if: needs.validate-entry.outputs.operation == 'deploy'
-    needs: [validate-entry, build-release, deploy-infrastructure, run-migrations]
+    needs: [validate-entry, build-images, build-release, deploy-infrastructure, run-migrations]
     runs-on: ubuntu-latest
     environment: dev
     steps:
@@ -264,10 +248,10 @@ jobs:
       - name: Activate digest-pinned revisions after migrations
         env:
           RG: ${{ needs.deploy-infrastructure.outputs.resource-group }}
-          API: ${{ needs.build-release.outputs.api-image }}
-          SCHEDULER: ${{ needs.build-release.outputs.scheduler-image }}
-          BLAZOR: ${{ needs.build-release.outputs.blazor-image }}
-          GATEWAY: ${{ needs.build-release.outputs.gateway-image }}
+          API: ${{ needs.build-images.outputs.api-image }}
+          SCHEDULER: ${{ needs.build-images.outputs.scheduler-image }}
+          BLAZOR: ${{ needs.build-images.outputs.blazor-image }}
+          GATEWAY: ${{ needs.build-images.outputs.gateway-image }}
         run: |
           set -euo pipefail
           wait_healthy() {
@@ -309,7 +293,7 @@ jobs:
 
   record-release:
     if: needs.validate-entry.outputs.operation == 'deploy'
-    needs: [validate-entry, build-release, activate-release]
+    needs: [validate-entry, build-images, build-release, activate-release]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -317,11 +301,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ needs.validate-entry.outputs.sha }}
-          GATEWAY: ${{ needs.build-release.outputs.gateway-image }}
-          API: ${{ needs.build-release.outputs.api-image }}
-          SCHEDULER: ${{ needs.build-release.outputs.scheduler-image }}
-          MIGRATOR: ${{ needs.build-release.outputs.migrator-image }}
-          BLAZOR: ${{ needs.build-release.outputs.blazor-image }}
+          GATEWAY: ${{ needs.build-images.outputs.gateway-image }}
+          API: ${{ needs.build-images.outputs.api-image }}
+          SCHEDULER: ${{ needs.build-images.outputs.scheduler-image }}
+          MIGRATOR: ${{ needs.build-images.outputs.migrator-image }}
+          BLAZOR: ${{ needs.build-images.outputs.blazor-image }}
           FUNCTIONS_ID: ${{ needs.build-release.outputs.functions-id }}
           FUNCTIONS_DIGEST: ${{ needs.build-release.outputs.functions-digest }}
           UNO_ID: ${{ needs.build-release.outputs.uno-id }}
