@@ -605,7 +605,7 @@
 <tr>
 <td><code>GET</code></td>
 <td><code>/api/v1/task-views</code></td>
-<td>Cosmos DB denormalized views (<code>?tenantId=...&amp;pageSize=20</code>)</td>
+<td>Denormalized views (<code>?tenantId=...&amp;pageSize=20</code>) - Cosmos DB or the relational <code>TaskView</code> table depending on <code>ReadModel:Provider</code> (D-038, <a href="#55-dual-provider-data-layer">Section 5.5</a>); the relational arm&#39;s opaque keyset token replaces the Cosmos continuation token behind the same contract</td>
 </tr>
 <tr>
 <td><code>GET</code></td>
@@ -644,6 +644,7 @@
 </tr>
 </tbody></table>
 <p>The Azure Functions app keeps the Functions host default <code>/api</code> prefix. Its business HTTP triggers mirror the public versioned contract (<code>/api/v1/*</code>); its host health trigger remains <code>/api/health</code>.</p>
+<p><strong>Internal gRPC parity (D-054):</strong> the <code>/api/v1/task-items/summary</code>, <code>/api/v1/task-metadata</code>, and single-item read above also exist as <code>GetTaskItemSummary</code>, <code>GetTaskMetadata</code>, and <code>GetTaskItem</code> on the Api&#39;s internal gRPC port (Kestrel <code>8081</code>, HTTP/2, alongside REST on <code>8080</code>), delegating to the same application read service so the two transports cannot drift. This is not a second public contract: only Blazor Server calls it, over service discovery, and only when <code>Clients:UseGrpcReads</code> resolves an address; every other caller keeps using the REST routes in the table above. See <a href="#133-gateway-as-bff">Section 13.3</a> for the client-side switch.</p>
 <h3 id="73-openapi-documents">7.3 OpenAPI Documents</h3>
 <p>OpenAPI is available when <code>OpenApiSettings:Enable=true</code>. The JSON document route is <code>GET /openapi/{documentName}.json</code>; the current baseline document is <code>GET /openapi/v1.json</code>.</p>
 <p><code>ApiContract.SupportedDocuments</code> is the source of truth for registered OpenAPI documents. Each document is registered separately and filtered by the API Explorer group name, so simultaneous endpoint versions can coexist: a v1-only endpoint appears in <code>/openapi/v1.json</code>, a v2-only endpoint appears in <code>/openapi/v2.json</code> once <code>v2</code> is added, and shared endpoints can opt into both versions. Scalar is mapped by <code>MapScalarApiReference()</code> when OpenAPI is enabled.</p>
