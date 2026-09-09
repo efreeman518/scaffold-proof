@@ -115,6 +115,11 @@ internal sealed class UploadAttachmentHandler(
     /// <summary>Handles upload attachment requests and returns the application result.</summary>
     public async Task<Result<DefaultResponse<AttachmentDto>>> HandleAsync(UploadAttachmentCommand command, CancellationToken ct = default)
     {
+        // GR-17: the upload form carries its own optional caller id, so it needs the same UUIDv7
+        // check as the JSON create path - it was missing here, which let Guid.Empty and v4 ids through.
+        var idCheck = UuidV7.ValidateCallerId(command.Id);
+        if (idCheck.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(idCheck.ErrorMessage!);
+
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             logger, requestContext.TenantId, requestContext.Roles, requestContext.TenantId,
             "Attachment:Upload", nameof(Attachment));

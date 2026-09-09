@@ -85,6 +85,25 @@ public class AttachmentServiceTests
         Assert.IsTrue(result.IsFailure);
     }
 
+    /// <summary>
+    /// Verifies the upload path enforces GR-17 before anything else - it used to skip UuidV7 validation
+    /// entirely, so a caller-supplied Guid.Empty (or any v4) reached DomainId.FromNullable unchecked.
+    /// blobStorage stays unconfigured (null) here specifically to prove the id check runs first: a stale
+    /// fix that reordered the checks would surface as "Blob storage is not configured" instead.
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public async Task Given_EmptyGuidCallerId_When_UploadAsync_Then_ReturnsFailureBeforeBlobStorageCheck()
+    {
+        using var stream = new MemoryStream();
+        var result = await CreateService().UploadAsync(
+            stream, "doc.pdf", "application/pdf", 0,
+            AttachmentOwnerType.TaskItem, Guid.NewGuid(), id: Guid.Empty, ct: TestContext.CancellationToken);
+
+        Assert.IsTrue(result.IsFailure);
+        Assert.Contains("not a UUIDv7", result.ErrorMessage!, StringComparison.Ordinal);
+    }
+
     /// <summary>Verifies that given existing entity, when get, then returns mapped DTO.</summary>
     [TestMethod]
     [TestCategory("Unit")]
