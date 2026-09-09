@@ -331,6 +331,33 @@ public class ConcurrencyEndpointTests
         Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    /// <summary>
+    /// Verifies Guid.Empty is refused with 400, the same as any other non-v7 id (GR-17). Guid.Empty is
+    /// present, not absent - an absent id is the null JSON case, which the server fills in itself - so
+    /// it must fail the UUIDv7 check rather than slip through as "unset".
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_EmptyGuidCallerId_When_Create_Then_Returns400(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
+
+        using var response = await client.PostAsJsonAsync("/api/v1/task-items",
+            new DefaultRequest<TaskItemDto>
+            {
+                Item = new TaskItemDto { Id = Guid.Empty, Title = $"Empty-{Guid.NewGuid():N}" }
+            },
+            cancellationToken: TestContext.CancellationToken);
+
+        var body = await response.Content.ReadAsStringAsync(TestContext.CancellationToken);
+        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode, body);
+        // Confirms the 400 comes from the UUIDv7 check (ERROR_ID_NOT_UUID_V7), not some other validation failure.
+        Assert.Contains("not a UUIDv7", body, StringComparison.Ordinal);
+    }
+
     /// <summary>Verifies an equivalent replay returns 200 with the stored entity instead of creating a second row.</summary>
     [TestCategory("Endpoint")]
     [DataRow(EndpointStyles.Service)]

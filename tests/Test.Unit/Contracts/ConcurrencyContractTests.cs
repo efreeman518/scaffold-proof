@@ -59,11 +59,13 @@ public class ConcurrencyContractTests
     {
         Assert.IsTrue(UuidV7.IsV7(Guid.CreateVersion7()));
         Assert.IsFalse(UuidV7.IsV7(Guid.NewGuid()));
+        Assert.IsFalse(UuidV7.IsV7(Guid.Empty), "Guid.Empty carries no version nibble and is not a v7 id.");
 
         Assert.IsTrue(UuidV7.ValidateCallerId(null).IsSuccess, "An absent id is valid: the server generates one.");
-        Assert.IsTrue(UuidV7.ValidateCallerId(Guid.Empty).IsSuccess, "Guid.Empty means 'unset', not 'bad v4'.");
         Assert.IsTrue(UuidV7.ValidateCallerId(Guid.CreateVersion7()).IsSuccess);
-        Assert.IsTrue(UuidV7.ValidateCallerId(Guid.NewGuid()).IsFailure);
+        Assert.IsTrue(UuidV7.ValidateCallerId(Guid.NewGuid()).IsFailure, "A v4 id is not a v7 id.");
+        Assert.IsTrue(UuidV7.ValidateCallerId(Guid.Empty).IsFailure,
+            "Guid.Empty is present, not absent (that is Guid?.HasValue == false), and is not a v7 id.");
     }
 
     /// <summary>Verifies replay equivalence compares scalars and ignores id, version, tenant, and children.</summary>

@@ -122,6 +122,11 @@ internal class AttachmentService(
         Stream fileStream, string fileName, string contentType, long fileSizeBytes,
         AttachmentOwnerType ownerType, Guid ownerId, Guid? id = null, CancellationToken ct = default)
     {
+        // GR-17: the upload form carries its own optional caller id, so it needs the same UUIDv7
+        // check as the JSON create path - it was missing here, which let Guid.Empty and v4 ids through.
+        var idCheck = UuidV7.ValidateCallerId(id);
+        if (idCheck.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(idCheck.ErrorMessage!);
+
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             logger, RequestTenantId, RequestRoles, RequestTenantId,
             "Attachment:Upload", nameof(Attachment));
