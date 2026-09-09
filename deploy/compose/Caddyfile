@@ -1,0 +1,34 @@
+# TaskFlow Portable lane edge (D-036). TLS is automatic: Caddy solves an ACME challenge for
+# {$CADDY_DOMAIN} on first start and renews on its own, which is the entire reason this is the only
+# container publishing 80 and 443.
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$CADDY_DOMAIN} {
+	encode zstd gzip
+
+	# Health and the public API both terminate at the YARP gateway, which owns the edge rate limiter
+	# (D-050) and the Api's readiness view (D-049).
+	@gateway path /healthz* /health/* /api/*
+	handle @gateway {
+		reverse_proxy gateway:8080 {
+			health_uri /healthz/ready
+			health_interval 10s
+			health_timeout 5s
+			health_status 200
+		}
+	}
+
+	# Everything else is the Blazor Server UI. Its circuits are per-connection server state, so a
+	# second replica would need affinity here - see README.md "Single-node ceiling".
+	handle {
+		reverse_proxy blazor:8080 {
+			health_uri /healthz/ready
+			health_interval 10s
+			health_timeout 5s
+			health_status 200
+		}
+	}
+}

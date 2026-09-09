@@ -1,0 +1,142 @@
+# Local / CI overlay for the Portable lane stack.
+#
+# Adds containerised stand-ins for the three services a real VPS deployment gets from outside the stack
+# (PostgreSQL, RabbitMQ, MinIO) and builds the five app images from the repo Dockerfiles instead of pulling
+# digests. Everything here is under the `local` profile, including the app services, so that a bare
+# `docker compose -f docker-compose.yml -f docker-compose.override.local.yml config` stays valid and no
+# production run can accidentally start a container database.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.override.local.yml --profile local up -d --wait
+#
+# Credentials below are dev-only, hard-coded on purpose so CI needs no secret for them. They are not, and
+# must never become, real credentials.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    profiles: ["local"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: taskflowdb
+      POSTGRES_USER: taskflow
+      # dev-only credential for a local container
+      POSTGRES_PASSWORD: taskflow-dev-password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taskflow -d taskflowdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - taskflow
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    profiles: ["local"]
+    restart: unless-stopped
+    environment:
+      # dev-only credential for a local container
+      RABBITMQ_DEFAULT_USER: taskflow
+      RABBITMQ_DEFAULT_PASS: taskflow-dev-password
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - taskflow
+
+  # No init container: the attachments bucket is created by the Api/Scheduler startup task
+  # (IS3BucketProvisioner), the same way the Azure lane creates its blob container.
+  minio:
+    image: minio/minio:latest
+    profiles: ["local"]
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      # dev-only credentials for a local container
+      MINIO_ROOT_USER: taskflowminio
+      MINIO_ROOT_PASSWORD: taskflowminio-dev-secret
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - taskflow
+
+  caddy:
+    profiles: ["local"]
+    # Plain :80, no ACME: a CI runner has no public DNS name to answer an ACME challenge with.
+    volumes:
+      - ./Caddyfile.local:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  redis:
+    profiles: ["local"]
+
+  otel-lgtm:
+    profiles: ["local"]
+
+  migrator:
+    profiles: ["local"]
+    image: taskflow-db-migrator:local
+    build: &nuget-build
+      context: ../..
+      dockerfile: src/Host/TaskFlow.DatabaseMigrator/Dockerfile
+      secrets:
+        - nuget_credentials
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    profiles: ["local"]
+    image: taskflow-api:local
+    build:
+      <<: *nuget-build
+      dockerfile: src/Host/TaskFlow.Api/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  gateway:
+    profiles: ["local"]
+    image: taskflow-gateway:local
+    build:
+      <<: *nuget-build
+      dockerfile: src/Host/TaskFlow.Gateway/Dockerfile
+
+  scheduler:
+    profiles: ["local"]
+    image: taskflow-scheduler:local
+    build:
+      <<: *nuget-build
+      dockerfile: src/Host/TaskFlow.Scheduler/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  blazor:
+    profiles: ["local"]
+    image: taskflow-blazor:local
+    build:
+      <<: *nuget-build
+      dockerfile: src/UI/TaskFlow.Blazor/Dockerfile
+
+secrets:
+  # Same BuildKit secret the deploy image build uses: the private EF.* feed credential never becomes a
+  # build arg or an image layer.
+  nuget_credentials:
+    environment: NuGetPackageSourceCredentials_efreeman518-github

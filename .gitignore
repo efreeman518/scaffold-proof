@@ -446,3 +446,8 @@ test-results/
 
 # Windows artifact created by shell redirections to NUL in Git Bash
 NUL
+
+# Portable lane compose secrets and digest pins (written on the VPS / by CI, never committed)
+deploy/compose/.env
+deploy/compose/images.env
+deploy/compose/pgbouncer/userlist.txt
