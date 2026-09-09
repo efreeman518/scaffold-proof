@@ -1,5 +1,6 @@
 using Aspire.Hosting.Testing;
 using System.Net;
+using System.Net.Http;
 using System.Net.Http.Json;
 using TaskFlow.Application.Models;
 
@@ -82,7 +83,20 @@ public class AppSurfaceAspireTests
         var ct = TestContext.CancellationToken;
         await AspireTestHost.WaitForResourceHealthyAsync("taskflowblazor", ct);
 
-        using var client = AspireTestHost.AspireApp!.CreateHttpClient("taskflowblazor", "http");
+        // TaskFlow.Blazor unconditionally calls app.UseHttpsRedirection() (production behavior, not test-only),
+        // so a request to its "http" endpoint gets a 307 to the https endpoint. On the ubuntu CI runner that
+        // https endpoint carries the untrusted ASP.NET dev certificate, and CreateHttpClient's default handler
+        // follows the redirect and fails the TLS handshake. Accept the dev cert on this test-only handler only -
+        // production code and every other surface test (Gateway, API, Uno WASM, which do not redirect) are
+        // untouched.
+        using var handler = new HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+        };
+        using var client = new HttpClient(handler)
+        {
+            BaseAddress = AspireTestHost.AspireApp!.GetEndpoint("taskflowblazor", "http")
+        };
         using var response = await client.GetAsync("/", ct);
         var body = await response.Content.ReadAsStringAsync(ct);
 

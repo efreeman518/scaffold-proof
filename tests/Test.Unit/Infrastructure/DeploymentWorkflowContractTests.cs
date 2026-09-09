@@ -150,6 +150,14 @@ public sealed class DeploymentWorkflowContractTests
     public void CiWorkflow_ValidatesComposeAlwaysAndSmokesItOnlyOnDispatch()
     {
         var workflow = ReadWorkflow("ci.yml");
+
+        // PR runs are the merge gate and both deploy workflows are workflow_dispatch only, so a main-push
+        // run of ci.yml would only re-test the identical tree the PR run already verified.
+        Assert.IsFalse(workflow.Contains("\n  push:", StringComparison.Ordinal), "ci.yml must not run on push");
+        StringAssert.Contains(workflow, "  pull_request:");
+        StringAssert.Contains(workflow, "  schedule:");
+        StringAssert.Contains(workflow, "  workflow_dispatch:");
+
         // Uno.Sdk conditions implicit package references (DevServer, HotDesign, MCP) on Optimize: a Debug restore
         // followed by a Release --no-restore build fails with UNOB0019, so every restore names the Release configuration.
         StringAssert.Contains(workflow, "dotnet restore TaskFlow.slnx -p:Configuration=Release");
