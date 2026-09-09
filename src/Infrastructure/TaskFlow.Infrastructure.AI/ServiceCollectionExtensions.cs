@@ -1,4 +1,4 @@
-using Azure.Identity;
+﻿using Azure.Identity;
 using Azure.Search.Documents;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
@@ -8,7 +8,6 @@ using TaskFlow.Application.Contracts.Configuration;
 using TaskFlow.Infrastructure.AI.Agents;
 using TaskFlow.Infrastructure.AI.Agents.Tools;
 using TaskFlow.Infrastructure.AI.Search;
-using TaskFlow.Infrastructure.Data.Provider;
 
 namespace TaskFlow.Infrastructure.AI;
 
@@ -76,24 +75,18 @@ public static class AiServiceCollectionExtensions
     public const int PgVectorDefaultDimensions = 1536;
 
     /// <summary>
-    /// Wires the PgVector arm (D-040), failing at startup rather than degrading, because both prerequisites
-    /// are deployment facts a running app cannot recover from:
-    /// <list type="bullet">
-    /// <item>the entity is mapped only on Npgsql, so a SqlServer deployment has no table to query;</item>
-    /// <item>without an <see cref="IEmbeddingGenerator{TInput,TEmbedding}"/> there is nothing to embed the
-    /// query with, and a silent fall back to prefix search would report semantic results that are not.</item>
-    /// </list>
+    /// Wires the PgVector arm (D-040), failing at startup rather than degrading: without an
+    /// <see cref="IEmbeddingGenerator{TInput,TEmbedding}"/> there is nothing to embed the query with, and a
+    /// silent fall back to prefix search would report semantic results that are not.
+    /// <para>
+    /// The arm's other prerequisite - the relational provider must be PostgreSQL, because the
+    /// <c>TaskItemEmbedding</c> table is mapped only on Npgsql - is checked by the Bootstrapper
+    /// (<c>RegisterServices.VectorSearch.cs</c>), which runs first and already knows the database switch.
+    /// Asking it here would mean this AI adapter referencing the data layer.
+    /// </para>
     /// </summary>
     private static void AddPgVectorSearch(IServiceCollection services, IConfiguration config)
     {
-        var dbProvider = TaskFlowDbProviderSelector.Resolve(config);
-        if (dbProvider != TaskFlowDbProvider.PostgreSql)
-            throw new InvalidOperationException(
-                $"{SearchProviderConfigKey}=PgVector requires {TaskFlowDbProviderSelector.ConfigurationKey}=PostgreSql; "
-                + $"this deployment resolved {dbProvider}. The TaskItemEmbedding table is mapped only on the Npgsql "
-                + "provider. A SQL Server 2025 VECTOR arm is the intended future alternative and does not exist yet - "
-                + $"until then use {SearchProviderConfigKey}=Sql or AzureAiSearch on SQL Server.");
-
         if (!services.Any(d => d.ServiceType == typeof(IEmbeddingGenerator<string, Embedding<float>>)))
             throw new InvalidOperationException(
                 $"{SearchProviderConfigKey}=PgVector requires an IEmbeddingGenerator<string, Embedding<float>>, and none "

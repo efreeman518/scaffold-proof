@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <PackageReference Include="Azure.Identity" />
@@ -13,15 +13,10 @@
 
   <ItemGroup>
     <!-- D-040: the Search:Provider switch resolves the hosting lane default via HostingLaneSelector,
-         which lives in Application.Contracts (already referenced below). -->
+         which lives in Application.Contracts (already referenced below), precisely so this AI adapter needs
+         no ProjectReference to Infrastructure.Data. PgVectorSearchService reaches storage only through the
+         ITaskEmbeddingRepository port, and the arm's PostgreSQL prerequisite is checked in the Bootstrapper. -->
     <ProjectReference Include="..\..\Application\TaskFlow.Application.Contracts\TaskFlow.Application.Contracts.csproj" />
-    <!-- D-040: the PgVector arm's startup guard asks TaskFlowDbProviderSelector which relational provider
-         this deployment resolved, because the TaskItemEmbedding table exists only on Npgsql. Re-deriving
-         that from configuration here would fork the database switch's own env/config/lane precedence
-         (A.1). Costs nothing at deployment: every host that composes Infrastructure.AI (Api, Functions,
-         Scheduler through Bootstrapper) already carries Infrastructure.Data. PgVectorSearchService itself
-         reaches storage only through the ITaskEmbeddingRepository port. -->
-    <ProjectReference Include="..\TaskFlow.Infrastructure.Data\TaskFlow.Infrastructure.Data.csproj" />
     <ProjectReference Include="..\..\Application\TaskFlow.Application.Models\TaskFlow.Application.Models.csproj" />
     <ProjectReference Include="..\..\Shared\TaskFlow.Observability\TaskFlow.Observability.csproj" />
   </ItemGroup>
