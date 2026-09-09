@@ -187,9 +187,11 @@ internal static class AspireTestHost
         AiProvider = SelectRequestedAiProviderForTesting();
 
         // Bounded by whatever remains of the ~900 s (15 min) cumulative startup budget (StartupTimeoutEnvironmentVariable,
-        // default 900) - already well over 4 minutes, so this wait is not the bottleneck. It also only gates the
-        // sql_check health signal, not whether SQL Server accepts new connections without a pre-login handshake
-        // error immediately after; see the deadline comments in ApiAuditPipelineTests.cs for that race.
+        // default 900) - far more than the audit tests' own 2-minute windows below, so this wait was never the
+        // bottleneck. The 2026-09 CI failures traced to ApiAuditPipelineTests.cs querying Table Storage by the
+        // bare tenant id instead of AuditLogRepository's "{tenantId}|{yyyyMMdd}" partition key, not to SQL
+        // Server startup timing - the pre-login handshake lines seen in diagnostics were unrelated health-check
+        // probing dumped at failure time, not the actual cause.
         await hostContext.WaitForResourceHealthyAsync("taskflowdb", ct);
 
         ConnectionString = await hostContext.RunStartupStepAsync(

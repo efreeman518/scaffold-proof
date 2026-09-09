@@ -89,10 +89,13 @@ public class FunctionAuditPipelineTests
                 tableClient,
                 FunctionFallbackTenantId.ToString(),
                 auditWindowStartUtc,
+                response.StatusCode,
                 ct);
 
             Assert.IsNotNull(auditEntity);
-            Assert.AreEqual(FunctionFallbackTenantId.ToString(), auditEntity.PartitionKey);
+            // AuditLogRepository.PartitionKey (TaskFlow.Infrastructure.Storage) writes "{tenantId}|{yyyyMMdd}",
+            // not the bare tenant id - assert the prefix, not exact equality.
+            StringAssert.StartsWith(auditEntity.PartitionKey, $"{FunctionFallbackTenantId}|");
             Assert.AreEqual(FunctionFallbackTenantId.ToString(), auditEntity.TenantId);
             Assert.AreEqual("Category", auditEntity.EntityType);
             Assert.IsFalse(string.IsNullOrWhiteSpace(auditEntity.AuditId));
@@ -192,34 +195,37 @@ public class FunctionAuditPipelineTests
     /// <summary>Verifies wait for audit entity behavior and protects the expected test contract.</summary>
     private static async Task<AuditLogTableEntity> WaitForAuditEntityAsync(
         TableClient tableClient,
-        string partitionKey,
+        string tenantId,
         DateTimeOffset auditWindowStartUtc,
+        HttpStatusCode lastRequestStatusCode,
         CancellationToken ct)
     {
+        // AuditLogRepository.PartitionKey (TaskFlow.Infrastructure.Storage) writes "{tenantId}|{yyyyMMdd}",
+        // not the bare tenant id - retention deletes a whole expired day per tenant in one transaction.
+        // Query the tenant's whole partition-key range (Azure Tables string-prefix technique: ge the
+        // prefix, lt the prefix + the highest printable ASCII character) instead of an exact day key, so a
+        // UTC day boundary crossed mid-poll cannot make an otherwise-correct row invisible.
+        var partitionPrefix = $"{tenantId}|";
+        var filter = TableClient.CreateQueryFilter($"PartitionKey ge {partitionPrefix} and PartitionKey lt {partitionPrefix + "~"}");
+
         var deadline = DateTimeOffset.UtcNow.AddSeconds(45);
-        List<AuditLogTableEntity> recentPartitionEntities = [];
-        List<AuditLogTableEntity> recentEntitiesAcrossPartitions = [];
+        var tableFound = true;
+        List<AuditLogTableEntity> recentEntities = [];
 
         while (DateTimeOffset.UtcNow < deadline)
         {
             try
             {
-                recentPartitionEntities.Clear();
-                recentEntitiesAcrossPartitions.Clear();
+                recentEntities.Clear();
 
-                await foreach (var entity in tableClient.QueryAsync<AuditLogTableEntity>(
-                    cancellationToken: ct))
+                await foreach (var entity in tableClient.QueryAsync<AuditLogTableEntity>(filter, cancellationToken: ct))
                 {
                     if (entity.RecordedUtc < auditWindowStartUtc)
                         continue;
 
-                    recentEntitiesAcrossPartitions.Add(entity);
+                    recentEntities.Add(entity);
 
-                    if (entity.PartitionKey == partitionKey)
-                        recentPartitionEntities.Add(entity);
-
-                    if (entity.PartitionKey == partitionKey &&
-                        entity.EntityType == "Category" &&
+                    if (entity.EntityType == "Category" &&
                         entity.Action == "Added" &&
                         entity.Status == AuditStatus.Success.ToString())
                     {
@@ -229,31 +235,27 @@ public class FunctionAuditPipelineTests
             }
             catch (RequestFailedException ex) when (ex.Status == 404)
             {
+                tableFound = false;
             }
 
             await Task.Delay(TimeSpan.FromSeconds(1), ct);
         }
 
-        var recentPartitionSummary = recentPartitionEntities.Count == 0
+        var recentEntitySummary = recentEntities.Count == 0
             ? "none"
             : string.Join(
                 "; ",
-                recentPartitionEntities
+                recentEntities
                     .OrderByDescending(entity => entity.RecordedUtc)
                     .Take(5)
                     .Select(entity => $"{entity.PartitionKey}|{entity.RecordedUtc:O}|{entity.EntityType}|{entity.Action}|{entity.Status}|{entity.AuditId}|{entity.EntityKey}"));
 
-        var recentGlobalSummary = recentEntitiesAcrossPartitions.Count == 0
-            ? "none"
-            : string.Join(
-                "; ",
-                recentEntitiesAcrossPartitions
-                    .OrderByDescending(entity => entity.RecordedUtc)
-                    .Take(10)
-                    .Select(entity => $"{entity.PartitionKey}|{entity.RecordedUtc:O}|{entity.EntityType}|{entity.Action}|{entity.Status}|{entity.AuditId}|{entity.EntityKey}"));
-
+        // Self-explaining failure: table existence and the triggering request's own status rule out an API
+        // or storage-provisioning problem before anyone has to re-run with diagnostics.
         Assert.Fail(
-            $"Expected recent audit entity for partition '{partitionKey}' since '{auditWindowStartUtc:O}'. Recent partition entities: {recentPartitionSummary}. Recent entities across all partitions: {recentGlobalSummary}.");
+            $"Expected recent audit entity for tenant '{tenantId}' (partition prefix '{partitionPrefix}') "
+            + $"since '{auditWindowStartUtc:O}'. Table 'taskflowaudit' found: {tableFound}. Triggering "
+            + $"request status: {(int)lastRequestStatusCode} {lastRequestStatusCode}. Recent entities: {recentEntitySummary}.");
         throw new InvalidOperationException("Unreachable");
     }
 }
