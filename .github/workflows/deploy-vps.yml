@@ -1,0 +1,360 @@
+name: Deploy TaskFlow (Portable lane, VPS)
+
+# Portable lane release (D-036): the same five digest-pinned images the Azure lane ships, brought up on one
+# VPS by Docker Compose behind Caddy. Manual only - a VPS deploy is a deliberate act, and nothing here is
+# cheap enough to run on every push.
+#
+# Secrets (names only; documented in deploy/compose/README.md):
+#   VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_KNOWN_HOSTS, CADDY_DOMAIN, NUGET_PAT
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Release operation
+        type: choice
+        options: [deploy, rollback]
+        default: deploy
+      commit_sha:
+        description: Full green commit SHA. Required for deploy; ignored for rollback.
+        type: string
+        required: false
+
+# Never cancel a deploy in flight: a half-applied compose stack is worse than paying for the run.
+concurrency:
+  group: taskflow-deploy-vps
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  checks: read
+  contents: read
+  packages: write
+
+env:
+  REMOTE_DIR: taskflow
+  COMPOSE: docker compose -f docker-compose.yml
+
+jobs:
+  validate-entry:
+    runs-on: ubuntu-latest
+    outputs:
+      operation: ${{ steps.resolve.outputs.operation }}
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Resolve operation and exact commit
+        id: resolve
+        env:
+          OPERATION: ${{ inputs.operation }}
+          REQUESTED_SHA: ${{ inputs.commit_sha }}
+        run: |
+          set -euo pipefail
+          operation="${OPERATION:-deploy}"
+          [[ "$operation" == "deploy" || "$operation" == "rollback" ]] || {
+            echo "::error::operation must be deploy or rollback"; exit 1;
+          }
+          if [[ "$operation" == "rollback" ]]; then
+            echo "operation=rollback" >> "$GITHUB_OUTPUT"
+            echo "sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          requested="$REQUESTED_SHA"
+          [[ -n "$requested" ]] || { echo "::error::commit_sha is required for a manual deploy"; exit 1; }
+          git fetch origin main
+          sha=$(git rev-parse "${requested}^{commit}")
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Invalid commit SHA"; exit 1; }
+          git merge-base --is-ancestor "$sha" origin/main || {
+            echo "::error::$sha is not reachable from origin/main"; exit 1;
+          }
+          echo "operation=deploy" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: Require successful CI for exact deploy SHA
+        if: steps.resolve.outputs.operation == 'deploy'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ steps.resolve.outputs.sha }}
+        run: |
+          checks=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/commits/${TARGET_SHA}/check-runs" -f per_page=100)
+          count=$(jq '[.check_runs[] | select(.name == "build-and-test" and .conclusion == "success")] | length' <<< "$checks")
+          [[ "$count" -gt 0 ]] || { echo "::error::$TARGET_SHA has no successful build-and-test check"; exit 1; }
+          blockers=$(jq '[.check_runs[] | select(.status == "completed" and (.conclusion | IN("failure", "cancelled", "timed_out", "action_required")))] | length' <<< "$checks")
+          [[ "$blockers" -eq 0 ]] || { echo "::error::$TARGET_SHA has failed required checks"; exit 1; }
+
+  build-release:
+    if: needs.validate-entry.outputs.operation == 'deploy'
+    needs: validate-entry
+    uses: ./.github/workflows/build-images.yml
+    with:
+      ref: ${{ needs.validate-entry.outputs.sha }}
+    secrets: inherit
+    permissions:
+      contents: read
+      packages: write
+
+  deploy:
+    if: needs.validate-entry.outputs.operation == 'deploy'
+    needs: [validate-entry, build-release]
+    runs-on: ubuntu-latest
+    environment: vps
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate-entry.outputs.sha }}
+      # Plain ssh with a pinned known_hosts, not a third-party action: this step holds a key that can run
+      # docker on the host, so the fewer third parties in that path the better. StrictHostKeyChecking stays
+      # on, which is the entire point of the VPS_KNOWN_HOSTS secret.
+      - name: Configure ssh
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [[ -n "$VPS_SSH_KEY" && -n "$VPS_KNOWN_HOSTS" ]] || {
+            echo "::error::VPS_SSH_KEY and VPS_KNOWN_HOSTS are required"; exit 1;
+          }
+          mkdir -m 700 -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<'CFG'
+          Host taskflow-vps
+            IdentityFile ~/.ssh/id_deploy
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            BatchMode yes
+            ServerAliveInterval 30
+          CFG
+          {
+            echo "  HostName ${{ secrets.VPS_HOST }}"
+            echo "  User ${{ secrets.VPS_USER }}"
+          } >> ~/.ssh/config
+      - name: Ship compose assets and the digest pins
+        env:
+          GATEWAY: ${{ needs.build-release.outputs.gateway-image }}
+          API: ${{ needs.build-release.outputs.api-image }}
+          SCHEDULER: ${{ needs.build-release.outputs.scheduler-image }}
+          MIGRATOR: ${{ needs.build-release.outputs.migrator-image }}
+          BLAZOR: ${{ needs.build-release.outputs.blazor-image }}
+        run: |
+          set -euo pipefail
+          for image in "$GATEWAY" "$API" "$SCHEDULER" "$MIGRATOR" "$BLAZOR"; do
+            [[ "$image" =~ @sha256:[0-9a-f]{64}$ ]] || {
+              echo "::error::Refusing to deploy an image that is not digest-pinned: $image"; exit 1;
+            }
+          done
+          cat > images.env <<ENV
+          TASKFLOW_GATEWAY_IMAGE=$GATEWAY
+          TASKFLOW_API_IMAGE=$API
+          TASKFLOW_SCHEDULER_IMAGE=$SCHEDULER
+          TASKFLOW_MIGRATOR_IMAGE=$MIGRATOR
+          TASKFLOW_BLAZOR_IMAGE=$BLAZOR
+          ENV
+          ssh taskflow-vps "mkdir -p ~/${REMOTE_DIR}/pgbouncer"
+          scp deploy/compose/docker-compose.yml deploy/compose/Caddyfile images.env \
+            "taskflow-vps:~/${REMOTE_DIR}/"
+          scp deploy/compose/pgbouncer/pgbouncer.ini "taskflow-vps:~/${REMOTE_DIR}/pgbouncer/"
+      - name: Pull and bring the stack up
+        run: |
+          set -euo pipefail
+          # .env.base holds the operator-managed settings; .env is that plus the digest pins, because
+          # compose interpolates image names only from .env in the project directory.
+          ssh taskflow-vps "set -euo pipefail
+            cd ~/${REMOTE_DIR}
+            [[ -f .env.base ]] || cp .env .env.base
+            cp images.env images.env.current
+            cat .env.base images.env > .env
+            chmod 600 .env .env.base
+            ${COMPOSE} pull
+            ${COMPOSE} up -d --wait --remove-orphans
+            ${COMPOSE} ps"
+      - name: Verify public readiness and one CRUD round trip
+        env:
+          CADDY_DOMAIN: ${{ secrets.CADDY_DOMAIN }}
+        run: |
+          set -euo pipefail
+          base="https://${CADDY_DOMAIN}"
+          curl -fsS --retry 12 --retry-delay 5 --retry-all-errors "${base}/healthz/ready" > /dev/null
+          # Scaffold auth succeeds every request with a fixed identity (D-002), so the smoke needs no
+          # header - the same convention infra/scripts/Invoke-DeploymentSmoke.ps1 relies on.
+          created=$(curl -fsS -X POST "${base}/api/v1/task-items" -H 'Content-Type: application/json' \
+            -d "{\"item\":{\"title\":\"vps-smoke-${GITHUB_SHA:0:12}\",\"priority\":\"Medium\"}}")
+          id=$(jq -er '.item.id' <<< "$created")
+          curl -fsS "${base}/api/v1/task-items/${id}" | jq -er --arg id "$id" 'select(.item.id == $id)' > /dev/null
+          curl -fsS -X DELETE "${base}/api/v1/task-items/${id}" > /dev/null
+          echo "VPS readiness and create/read/delete smoke passed."
+
+  record-release:
+    if: needs.validate-entry.outputs.operation == 'deploy'
+    needs: [validate-entry, build-release, deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Create validated current release manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.validate-entry.outputs.sha }}
+          GATEWAY: ${{ needs.build-release.outputs.gateway-image }}
+          API: ${{ needs.build-release.outputs.api-image }}
+          SCHEDULER: ${{ needs.build-release.outputs.scheduler-image }}
+          MIGRATOR: ${{ needs.build-release.outputs.migrator-image }}
+          BLAZOR: ${{ needs.build-release.outputs.blazor-image }}
+        run: |
+          set -euo pipefail
+          previous=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/artifacts" -f name=taskflow-release-manifest-vps -f per_page=100 \
+            --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .id // empty')
+          jq -n --arg sha "$SHA" --arg gateway "$GATEWAY" --arg api "$API" --arg scheduler "$SCHEDULER" --arg migrator "$MIGRATOR" --arg blazor "$BLAZOR" \
+            --argjson previous "${previous:-null}" \
+            '{schemaVersion:1,operation:"deploy",commitSha:$sha,images:{gateway:$gateway,api:$api,scheduler:$scheduler,migrator:$migrator,blazor:$blazor},previousManifestArtifactId:$previous}' > release-manifest.json
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path release-manifest.json -ImagesOnly
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: taskflow-release-manifest-vps
+          path: release-manifest.json
+          if-no-files-found: error
+          retention-days: 90
+
+  resolve-rollback:
+    if: needs.validate-entry.outputs.operation == 'rollback'
+    needs: validate-entry
+    runs-on: ubuntu-latest
+    outputs:
+      current-id: ${{ steps.release.outputs.current-id }}
+      sha: ${{ steps.release.outputs.sha }}
+      gateway: ${{ steps.release.outputs.gateway }}
+      api: ${{ steps.release.outputs.api }}
+      scheduler: ${{ steps.release.outputs.scheduler }}
+      migrator: ${{ steps.release.outputs.migrator }}
+      blazor: ${{ steps.release.outputs.blazor }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: release
+        name: Resolve authoritative previous manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          current=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/artifacts" -f name=taskflow-release-manifest-vps -f per_page=100 \
+            --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .id // empty')
+          [[ -n "$current" ]] || { echo "::error::No current release manifest"; exit 1; }
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${current}/zip" > current.zip
+          unzip -q current.zip -d current
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path current/release-manifest.json -ImagesOnly
+          previous=$(jq -r '.previousManifestArtifactId // empty' current/release-manifest.json)
+          [[ -n "$previous" ]] || { echo "::error::No previous release manifest"; exit 1; }
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${previous}/zip" > previous.zip
+          unzip -q previous.zip -d previous
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path previous/release-manifest.json -ImagesOnly
+          m=previous/release-manifest.json
+          echo "current-id=$current" >> "$GITHUB_OUTPUT"
+          echo "sha=$(jq -r .commitSha "$m")" >> "$GITHUB_OUTPUT"
+          for key in gateway api scheduler migrator blazor; do echo "$key=$(jq -r ".images.$key" "$m")" >> "$GITHUB_OUTPUT"; done
+
+  rollback:
+    if: needs.validate-entry.outputs.operation == 'rollback'
+    needs: [validate-entry, resolve-rollback]
+    runs-on: ubuntu-latest
+    environment: vps
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Configure ssh
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [[ -n "$VPS_SSH_KEY" && -n "$VPS_KNOWN_HOSTS" ]] || {
+            echo "::error::VPS_SSH_KEY and VPS_KNOWN_HOSTS are required"; exit 1;
+          }
+          mkdir -m 700 -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<'CFG'
+          Host taskflow-vps
+            IdentityFile ~/.ssh/id_deploy
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            BatchMode yes
+            ServerAliveInterval 30
+          CFG
+          {
+            echo "  HostName ${{ secrets.VPS_HOST }}"
+            echo "  User ${{ secrets.VPS_USER }}"
+          } >> ~/.ssh/config
+      - name: Restore the recorded images without rebuilding or migrating
+        env:
+          GATEWAY: ${{ needs.resolve-rollback.outputs.gateway }}
+          API: ${{ needs.resolve-rollback.outputs.api }}
+          SCHEDULER: ${{ needs.resolve-rollback.outputs.scheduler }}
+          MIGRATOR: ${{ needs.resolve-rollback.outputs.migrator }}
+          BLAZOR: ${{ needs.resolve-rollback.outputs.blazor }}
+        run: |
+          set -euo pipefail
+          # Application-only rollback. Database migrations remain forward-applied and must be backward
+          # compatible - the migrator image is restored, not re-run against an older schema.
+          for image in "$GATEWAY" "$API" "$SCHEDULER" "$MIGRATOR" "$BLAZOR"; do
+            [[ "$image" =~ @sha256:[0-9a-f]{64}$ ]] || {
+              echo "::error::Recorded image is not digest-pinned: $image"; exit 1;
+            }
+          done
+          cat > images.env <<ENV
+          TASKFLOW_GATEWAY_IMAGE=$GATEWAY
+          TASKFLOW_API_IMAGE=$API
+          TASKFLOW_SCHEDULER_IMAGE=$SCHEDULER
+          TASKFLOW_MIGRATOR_IMAGE=$MIGRATOR
+          TASKFLOW_BLAZOR_IMAGE=$BLAZOR
+          ENV
+          scp images.env "taskflow-vps:~/${REMOTE_DIR}/images.env"
+          ssh taskflow-vps "set -euo pipefail
+            cd ~/${REMOTE_DIR}
+            cat .env.base images.env > .env
+            chmod 600 .env
+            ${COMPOSE} pull
+            ${COMPOSE} up -d --wait --remove-orphans"
+      - name: Verify rollback readiness and one CRUD round trip
+        env:
+          CADDY_DOMAIN: ${{ secrets.CADDY_DOMAIN }}
+        run: |
+          set -euo pipefail
+          base="https://${CADDY_DOMAIN}"
+          curl -fsS --retry 12 --retry-delay 5 --retry-all-errors "${base}/healthz/ready" > /dev/null
+          created=$(curl -fsS -X POST "${base}/api/v1/task-items" -H 'Content-Type: application/json' \
+            -d '{"item":{"title":"vps-rollback-smoke","priority":"Medium"}}')
+          id=$(jq -er '.item.id' <<< "$created")
+          curl -fsS -X DELETE "${base}/api/v1/task-items/${id}" > /dev/null
+          echo "VPS rollback readiness and CRUD smoke passed."
+
+  record-rollback:
+    if: needs.validate-entry.outputs.operation == 'rollback'
+    needs: [validate-entry, resolve-rollback, rollback]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Record rollback as current manifest
+        env:
+          SHA: ${{ needs.resolve-rollback.outputs.sha }}
+          GATEWAY: ${{ needs.resolve-rollback.outputs.gateway }}
+          API: ${{ needs.resolve-rollback.outputs.api }}
+          SCHEDULER: ${{ needs.resolve-rollback.outputs.scheduler }}
+          MIGRATOR: ${{ needs.resolve-rollback.outputs.migrator }}
+          BLAZOR: ${{ needs.resolve-rollback.outputs.blazor }}
+          PREVIOUS_ID: ${{ needs.resolve-rollback.outputs.current-id }}
+        run: |
+          set -euo pipefail
+          jq -n --arg sha "$SHA" --arg gateway "$GATEWAY" --arg api "$API" --arg scheduler "$SCHEDULER" --arg migrator "$MIGRATOR" --arg blazor "$BLAZOR" \
+            --argjson previous "$PREVIOUS_ID" \
+            '{schemaVersion:1,operation:"rollback",commitSha:$sha,images:{gateway:$gateway,api:$api,scheduler:$scheduler,migrator:$migrator,blazor:$blazor},previousManifestArtifactId:$previous}' > release-manifest.json
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path release-manifest.json -ImagesOnly
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: taskflow-release-manifest-vps
+          path: release-manifest.json
+          if-no-files-found: error
+          retention-days: 90

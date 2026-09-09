@@ -1,0 +1,213 @@
+# TaskFlow Portable lane - production stack for a single VPS (D-036).
+#
+# This file alone is what runs on the VPS: the database, the broker and the object store are external
+# managed services there, and their addresses arrive through .env. docker-compose.override.local.yml adds
+# containerised stand-ins for them under the `local` profile so the same stack can be smoke-tested in CI.
+#
+# Images are digest-pinned by the deploy job, which writes deploy/compose/images.env on the VPS. Compose
+# interpolates only from .env, so the deploy job appends images.env into .env - see README.md.
+#
+# App containers are chiseled (no shell, no curl), so they carry no compose healthcheck on purpose. Caddy's
+# active upstream health checks against /healthz/ready are what gate traffic, and the migrator's
+# service_completed_successfully is what gates startup. See README.md "Why the app services have no healthcheck".
+
+name: taskflow
+
+x-app-common: &app-common
+  restart: unless-stopped
+  env_file:
+    - .env
+  environment:
+    ASPNETCORE_ENVIRONMENT: Production
+    DOTNET_gcServer: "1"
+  depends_on:
+    redis:
+      condition: service_healthy
+    migrator:
+      condition: service_completed_successfully
+  networks:
+    - taskflow
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    # The only published ports in the stack. Everything else talks over the internal network.
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      CADDY_DOMAIN: ${CADDY_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    healthcheck:
+      test: ["CMD", "caddy", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+    networks:
+      - taskflow
+
+  # Single migration owner (same rule as the AppHost): runs to completion, every app service waits for it.
+  migrator:
+    image: ${TASKFLOW_MIGRATOR_IMAGE}
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 512M
+    networks:
+      - taskflow
+
+  api:
+    <<: *app-common
+    image: ${TASKFLOW_API_IMAGE}
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      DOTNET_gcServer: "1"
+      # 8080 REST, 8081 cleartext HTTP/2 for the internal gRPC read service (D-054). Both come from the
+      # image's own Kestrel:Endpoints section; nothing here overrides them.
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 1G
+
+  gateway:
+    <<: *app-common
+    image: ${TASKFLOW_GATEWAY_IMAGE}
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      DOTNET_gcServer: "1"
+      ReverseProxy__Clusters__api-cluster__Destinations__api__Address: http://api:8080
+      AggregateHealthCheck__TaskFlowApiHealthUrl: http://api:8080/health/full
+      # Caddy terminates TLS, so the gateway must trust one hop of forwarded headers to see the real scheme.
+      Proxy__ForwardedHeaders__Enabled: "true"
+      Proxy__ForwardedHeaders__ForwardLimit: "1"
+    depends_on:
+      redis:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+      api:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 512M
+
+  scheduler:
+    <<: *app-common
+    image: ${TASKFLOW_SCHEDULER_IMAGE}
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 768M
+
+  blazor:
+    <<: *app-common
+    image: ${TASKFLOW_BLAZOR_IMAGE}
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      DOTNET_gcServer: "1"
+      # Gateway__BaseUrl comes from .env: it is the public origin a browser talks to (https://<domain>
+      # on the VPS, http://gateway:8080 in the CI smoke), so it is not derivable from CADDY_DOMAIN alone.
+      # D-054: the one in-cluster service-to-service hop, cleartext HTTP/2 on the internal network.
+      Grpc__TaskFlowRead__Address: ${Grpc__TaskFlowRead__Address:-http://api:8081}
+    depends_on:
+      redis:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+      gateway:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 768M
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+    networks:
+      - taskflow
+
+  # Grafana/Loki/Tempo/Mimir in one container. Bound to loopback: reachable over an ssh tunnel only,
+  # never published to the internet (it has no authentication worth exposing).
+  otel-lgtm:
+    image: grafana/otel-lgtm:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - lgtm-data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1G
+    networks:
+      - taskflow
+
+  # D-045 opt-in: `docker compose --profile pooler up -d`. Point the app connection strings at
+  # pgbouncer:6432 and set Database__PostgreSql__PoolerMode=Transaction in .env when this runs.
+  pgbouncer:
+    image: ${PGBOUNCER_IMAGE:-edoburu/pgbouncer:latest}
+    profiles: ["pooler"]
+    restart: unless-stopped
+    volumes:
+      - ./pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - ./pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 -U ${PGBOUNCER_HEALTH_USER:-pgbouncer} || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+    networks:
+      - taskflow
+
+volumes:
+  caddy-data:
+  caddy-config:
+  redis-data:
+  lgtm-data:
+
+networks:
+  taskflow:
+    driver: bridge

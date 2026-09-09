@@ -42,6 +42,10 @@ on:
         type: boolean
         default: false
         description: "Run unfiltered serial solution acceptance, including Aspire, Playwright, and WASM"
+      includeComposeSmoke:
+        type: boolean
+        default: false
+        description: "Build the app images and smoke the Portable lane compose stack through Caddy (requires Docker)"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -72,6 +76,17 @@ jobs:
           echo "Scaffold validation commit: $scaffold_commit"
           echo "Scaffold validation commit: \`$scaffold_commit\`" >> "$GITHUB_STEP_SUMMARY"
           python .scaffold-source/scripts/validate-reference.py --reference-root .
+
+      # Seconds, no daemon work: catches a broken compose file or a variable removed from .env.example on
+      # every run, instead of only when someone dispatches the compose smoke.
+      - name: Portable lane compose config check
+        run: |
+          set -euo pipefail
+          cd deploy/compose
+          cat .env.example images.env.example > .env
+          docker compose -f docker-compose.yml config -q
+          docker compose -f docker-compose.yml -f docker-compose.override.local.yml config -q
+          rm .env
 
       # Aspire/Integration tests pull several large container images (two SQL Server tags, azurite,
       # service bus emulator, redis). The hosted runner's ~14 GB free disk overflows mid-pull
@@ -317,6 +332,117 @@ jobs:
         with:
           name: test-results-${{ matrix.dbProvider }}
           path: ./TestResults/*.trx
+
+  # Portable lane end-to-end proof (D-036). Dispatch-gated: it builds all five app images from source, so
+  # it is the most expensive job in this file and nothing about it belongs on a push.
+  compose-smoke:
+    needs: build-and-test
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeComposeSmoke == true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: deploy/compose
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: false
+          dotnet: false
+          android: true
+          haskell: true
+          large-packages: true
+          swap-storage: false
+
+      - name: Require private NuGet feed credential
+        env:
+          NUGET_PAT: ${{ secrets.NUGET_PAT }}
+        run: |
+          [[ -n "$NUGET_PAT" ]] || { echo "::error::NUGET_PAT secret is required to build the app images."; exit 1; }
+
+      # CI-only environment. Every credential here matches the dev-only values hard-coded in the local
+      # override, so nothing secret is written and nothing here resembles a deployment .env.
+      - name: Write the CI environment
+        run: |
+          set -euo pipefail
+          cat > .env <<ENV
+          TASKFLOW_LANE=Portable
+          # The lane already defaults AI to OpenAICompatible, which wants a real endpoint. A CI runner has
+          # none, and this switch is exactly the escape hatch for that.
+          TASKFLOW_AI_PROVIDER=None
+          Database__PostgreSql__PoolerMode=None
+          ConnectionStrings__TaskFlowDbContextTrxn=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow;Password=taskflow-dev-password
+          ConnectionStrings__TaskFlowDbContextQuery=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow;Password=taskflow-dev-password
+          ConnectionStrings__TaskFlowFlowEngineDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow;Password=taskflow-dev-password
+          ConnectionStrings__TickerQDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow;Password=taskflow-dev-password
+          ConnectionStrings__Redis1=redis:6379
+          ConnectionStrings__RabbitMq1=amqp://taskflow:taskflow-dev-password@rabbitmq:5672
+          Storage__S3__ServiceUrl=http://minio:9000
+          Storage__S3__PublicServiceUrl=http://minio:9000
+          Storage__S3__Region=us-east-1
+          Storage__S3__AccessKeyId=taskflowminio
+          Storage__S3__SecretAccessKey=taskflowminio-dev-secret
+          Storage__S3__ForcePathStyle=true
+          Database__Encryption__LocalKeyBase64=$(openssl rand -base64 32)
+          Database__Encryption__BlindIndexKeyBase64=$(openssl rand -base64 32)
+          Gateway__BaseUrl=http://gateway:8080
+          Grpc__TaskFlowRead__Address=http://api:8081
+          OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-lgtm:4317
+          CADDY_DOMAIN=localhost
+          ACME_EMAIL=ci@example.invalid
+          ENV
+          cat images.env.example >> .env
+          chmod 600 .env
+
+      - name: Build the five app images
+        env:
+          NuGetPackageSourceCredentials_efreeman518-github: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.override.local.yml --profile local build
+
+      - name: Start the local-profile stack
+        run: |
+          set -euo pipefail
+          # Deliberately not --wait here: the migrator is a one-shot service and `up --wait` semantics for a
+          # container that exits 0 have moved between Compose versions. The readiness poll below is the
+          # actual gate, and it is the same URL Caddy health-checks its upstreams with.
+          docker compose -f docker-compose.yml -f docker-compose.override.local.yml --profile local up -d
+          docker compose -f docker-compose.yml -f docker-compose.override.local.yml --profile local ps
+
+      - name: Wait for readiness through Caddy
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://localhost/healthz/ready > /dev/null 2>&1; then
+              echo "Ready after ${attempt} attempt(s)."; exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::/healthz/ready never answered through Caddy"; exit 1
+
+      - name: One CRUD round trip through the gateway
+        run: |
+          set -euo pipefail
+          # Scaffold auth succeeds every request with a fixed identity (D-002), so no header is needed -
+          # the same convention infra/scripts/Invoke-DeploymentSmoke.ps1 relies on.
+          created=$(curl -fsS -X POST http://localhost/api/v1/task-items -H 'Content-Type: application/json'             -d '{"item":{"title":"compose-smoke","priority":"Medium"}}')
+          id=$(jq -er '.item.id' <<< "$created")
+          curl -fsS "http://localhost/api/v1/task-items/${id}" | jq -er --arg id "$id" 'select(.item.id == $id)' > /dev/null
+          curl -fsS -X DELETE "http://localhost/api/v1/task-items/${id}" > /dev/null
+          echo "Compose lane create/read/delete round trip passed."
+
+      - name: Dump stack logs
+        if: always()
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.override.local.yml --profile local logs --no-color --tail 400
+
+      - name: Tear the stack down
+        if: always()
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.override.local.yml --profile local down -v --remove-orphans
+          rm -f .env
 
   # TODO: Enable auto-deploy after running bootstrap.ps1 and configuring GitHub secrets/variables.
   # Remove workflow_dispatch from deploy.yml once this is enabled - manual trigger won't be needed.

@@ -1,0 +1,29 @@
+# Local / CI variant: plain :80, no ACME. A CI runner has no public DNS name to answer an ACME challenge
+# with, so this is the same routing with automatic HTTPS switched off. Never used on the VPS.
+
+{
+	auto_https off
+}
+
+:80 {
+	encode zstd gzip
+
+	@gateway path /healthz* /health/* /api/*
+	handle @gateway {
+		reverse_proxy gateway:8080 {
+			health_uri /healthz/ready
+			health_interval 5s
+			health_timeout 5s
+			health_status 200
+		}
+	}
+
+	handle {
+		reverse_proxy blazor:8080 {
+			health_uri /healthz/ready
+			health_interval 5s
+			health_timeout 5s
+			health_status 200
+		}
+	}
+}

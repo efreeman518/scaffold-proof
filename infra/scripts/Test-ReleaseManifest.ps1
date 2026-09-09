@@ -1,7 +1,11 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [string] $Path
+    [string] $Path,
+
+    # Portable lane (deploy-vps.yml) manifests carry container images only: that lane ships no Functions
+    # package and no Uno WASM bundle, so there are no upload-artifact ids to validate.
+    [switch] $ImagesOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -23,13 +27,15 @@ foreach ($name in $expectedImages) {
     }
 }
 
-foreach ($artifactName in 'functions', 'uno') {
-    $artifact = $manifest.artifacts.$artifactName
-    if (-not $artifact.id -or [long]$artifact.id -le 0) {
-        throw "Release manifest artifact '$artifactName' must have a positive immutable artifact ID."
-    }
-    if ($artifact.digest -notmatch '^[0-9a-f]{64}$') {
-        throw "Release manifest artifact '$artifactName' must match actions/upload-artifact's 64-character SHA-256 digest output."
+if (-not $ImagesOnly) {
+    foreach ($artifactName in 'functions', 'uno') {
+        $artifact = $manifest.artifacts.$artifactName
+        if (-not $artifact.id -or [long]$artifact.id -le 0) {
+            throw "Release manifest artifact '$artifactName' must have a positive immutable artifact ID."
+        }
+        if ($artifact.digest -notmatch '^[0-9a-f]{64}$') {
+            throw "Release manifest artifact '$artifactName' must match actions/upload-artifact's 64-character SHA-256 digest output."
+        }
     }
 }
 

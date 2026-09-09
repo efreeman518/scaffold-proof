@@ -17,7 +17,8 @@ RUN --mount=type=secret,id=nuget_credentials,required=true \
 # chiseled aspnet base still supplies the shared framework and the image only grows by the R2R native
 # code. -r linux-x64 is required for R2R and must be on the restore above too, or --no-restore here
 # fails with no assets for net10.0/linux-x64.
-RUN dotnet publish src/Host/TaskFlow.Gateway/TaskFlow.Gateway.csproj -c Release -r linux-x64 --self-contained false \n    -p:PublishReadyToRun=true -o /app --no-restore
+RUN dotnet publish src/Host/TaskFlow.Gateway/TaskFlow.Gateway.csproj -c Release -r linux-x64 --self-contained false \
+    -p:PublishReadyToRun=true -o /app --no-restore
 
 # Runtime
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled AS runtime

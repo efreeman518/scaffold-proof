@@ -1,0 +1,7 @@
+; PgBouncer credentials. Copy to userlist.txt (git-ignored, never committed) and replace the placeholder.
+;
+; The hash is what Postgres already stores, so copy it straight out rather than inventing one:
+;   psql -Atc "select rolname, rolpassword from pg_authid where rolname = 'taskflow'"
+;
+; Format: "user" "SCRAM-SHA-256$<iterations>:<salt>$<StoredKey>:<ServerKey>"
+"taskflow" "SCRAM-SHA-256$4096:REPLACE_WITH_SALT$REPLACE_WITH_STORED_KEY:REPLACE_WITH_SERVER_KEY"

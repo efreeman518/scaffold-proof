@@ -104,6 +104,9 @@ param pgHighAvailabilityMode string = 'Disabled'
 @description('Deploy a PostgreSQL prod-only read replica')
 param pgDeployReadReplica bool = false
 
+@description('Enable the built-in PgBouncer on PostgreSQL Flexible Server (D-045). Not available on the Burstable tier - use GeneralPurpose or MemoryOptimized. When true the app connection strings target port 6432 and every host gets Database__PostgreSql__PoolerMode=Transaction.')
+param postgresPgBouncerEnabled bool = false
+
 @description('Redis Enterprise SKU name: small Balanced tier for dev, HA tier for prod')
 param redisSkuName string = 'Balanced_B0'
 
@@ -280,6 +283,7 @@ module postgres 'modules/postgres-flexible-server.bicep' = if (databaseProvider 
     storageSizeGB: pgStorageSizeGB
     highAvailabilityMode: pgHighAvailabilityMode
     deployReadReplica: pgDeployReadReplica
+    pgBouncerEnabled: postgresPgBouncerEnabled
     maxPoolSize: dbMaxPoolSize
     // Deterministic name, not a module output - avoids a circular dependency with the api container app module.
     entraConnectingPrincipalName: '${prefix}-api'
@@ -375,6 +379,13 @@ var commonEnvVars = [
   { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
   { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.outputs.connectionString }
   { name: 'Database__Provider', value: databaseProvider }
+  // D-045: the app half of transaction pooling. The Npgsql string only becomes pooler-safe
+  // ("No Reset On Close=true;Max Auto Prepare=0") when this says Transaction, so it must move together with
+  // the 6432 port the postgres module emits - one flag drives both.
+  {
+    name: 'Database__PostgreSql__PoolerMode'
+    value: databaseProvider == 'PostgreSql' && postgresPgBouncerEnabled ? 'Transaction' : 'None'
+  }
 ]
 
 // Resolved from whichever database module deployed for the selected provider. SQL Hyperscale routes read
@@ -511,7 +522,10 @@ module blazor 'modules/container-app.bicep' = {
     // reconnect landing on another replica loses it; every other app here is stateless across replicas.
     stickySessions: 'sticky'
     envVars: [
-      { name: 'ApiBaseUrl', value: 'https://${gateway.outputs.fqdn}' }
+      // The key the Blazor host actually reads is Gateway:BaseUrl (src/UI/TaskFlow.Blazor/Program.cs), and it
+      // throws at startup when it is missing. This used to be spelled ApiBaseUrl, which nothing binds -
+      // BicepInfrastructureContractTests now pins the name against the source that reads it.
+      { name: 'Gateway__BaseUrl', value: 'https://${gateway.outputs.fqdn}' }
       // D-054: the internal gRPC read hop. Plain http on the additional port mapping, not the https
       // ingress FQDN: the listener is cleartext HTTP/2 inside the environment, and the Api app is
       // external:false so the address is only reachable from within it.

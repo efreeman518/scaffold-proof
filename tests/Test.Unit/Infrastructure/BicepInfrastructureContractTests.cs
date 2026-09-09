@@ -199,6 +199,48 @@ public sealed class BicepInfrastructureContractTests
         StringAssert.Contains(prodParams, "concurrentRequests: 50");
     }
 
+    /// <summary>
+    /// D-045: PgBouncer is a server parameter on Flexible Server, not a sidecar, so enabling it moves the
+    /// client port to 6432 and requires the app to switch to pooler-safe Npgsql settings. Both halves come
+    /// from one flag; this pins that they cannot drift apart, and that the Burstable limitation stays written
+    /// down where someone setting the flag will read it.
+    /// </summary>
+    [TestMethod]
+    public void PostgresModule_SupportsOptInPgBouncerOnPortSixFourThreeTwo()
+    {
+        var module = ReadInfraFile(Path.Combine("modules", "postgres-flexible-server.bicep"));
+
+        StringAssert.Contains(module, "param pgBouncerEnabled bool = false");
+        StringAssert.Contains(module, "name: 'pgbouncer.enabled'");
+        StringAssert.Contains(module, "if (pgBouncerEnabled)");
+        StringAssert.Contains(module, "var pgPort = pgBouncerEnabled ? 6432 : 5432");
+        StringAssert.Contains(module, "Port=${pgPort};");
+        StringAssert.Contains(module, "Burstable");
+        Assert.IsFalse(module.Contains("Port=5432;", StringComparison.Ordinal));
+
+        var main = ReadInfraFile("main.bicep");
+        StringAssert.Contains(main, "param postgresPgBouncerEnabled bool = false");
+        StringAssert.Contains(main, "pgBouncerEnabled: postgresPgBouncerEnabled");
+        StringAssert.Contains(main, "name: 'Database__PostgreSql__PoolerMode'");
+        StringAssert.Contains(main, "postgresPgBouncerEnabled ? 'Transaction' : 'None'");
+    }
+
+    /// <summary>
+    /// The Blazor host throws at startup when its gateway address is missing, and the template used to set a
+    /// name nothing binds. Pinned against the source that reads it so the two can only be renamed together.
+    /// </summary>
+    [TestMethod]
+    public void MainBicep_SetsTheGatewayAddressUnderTheKeyBlazorReads()
+    {
+        var blazorProgram = File.ReadAllText(
+            RepoRoot.Combine("src", "UI", "TaskFlow.Blazor", "Program.cs"));
+        StringAssert.Contains(blazorProgram, "Configuration[\"Gateway:BaseUrl\"]");
+
+        var main = ReadInfraFile("main.bicep");
+        StringAssert.Contains(main, "{ name: 'Gateway__BaseUrl', value: 'https://${gateway.outputs.fqdn}' }");
+        Assert.IsFalse(main.Contains("name: 'ApiBaseUrl'", StringComparison.Ordinal));
+    }
+
     private static string ReadInfraFile(string relativePath) =>
         File.ReadAllText(RepoRoot.Combine("infra", relativePath));
 }

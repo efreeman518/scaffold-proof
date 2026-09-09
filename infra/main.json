@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "16608783060016009895"
+      "templateHash": "16899074585721004178"
     }
   },
   "parameters": {
@@ -224,6 +224,13 @@
       "defaultValue": false,
       "metadata": {
         "description": "Deploy a PostgreSQL prod-only read replica"
+      }
+    },
+    "postgresPgBouncerEnabled": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Enable the built-in PgBouncer on PostgreSQL Flexible Server (D-045). Not available on the Burstable tier - use GeneralPurpose or MemoryOptimized. When true the app connection strings target port 6432 and every host gets Database__PostgreSql__PoolerMode=Transaction."
       }
     },
     "redisSkuName": {
@@ -1106,6 +1113,9 @@
           "deployReadReplica": {
             "value": "[parameters('pgDeployReadReplica')]"
           },
+          "pgBouncerEnabled": {
+            "value": "[parameters('postgresPgBouncerEnabled')]"
+          },
           "maxPoolSize": {
             "value": "[parameters('dbMaxPoolSize')]"
           },
@@ -1123,7 +1133,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "16138272398031523069"
+              "templateHash": "2103795624463452919"
             }
           },
           "parameters": {
@@ -1214,6 +1224,13 @@
                 "description": "Deploy a prod-only read replica"
               }
             },
+            "pgBouncerEnabled": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Enable the built-in PgBouncer (D-045). Requires GeneralPurpose or MemoryOptimized: the Burstable tier does not offer the pgbouncer.* server parameters and the deployment fails if this is set there."
+              }
+            },
             "maxPoolSize": {
               "type": "int",
               "defaultValue": 100,
@@ -1237,7 +1254,8 @@
             }
           },
           "variables": {
-            "uniqueSuffix": "[uniqueString(resourceGroup().id)]"
+            "uniqueSuffix": "[uniqueString(resourceGroup().id)]",
+            "pgPort": "[if(parameters('pgBouncerEnabled'), 6432, 5432)]"
           },
           "resources": [
             {
@@ -1303,6 +1321,19 @@
               ]
             },
             {
+              "condition": "[parameters('pgBouncerEnabled')]",
+              "type": "Microsoft.DBforPostgreSQL/flexibleServers/configurations",
+              "apiVersion": "2025-08-01",
+              "name": "[format('{0}/{1}', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), 'pgbouncer.enabled')]",
+              "properties": {
+                "source": "user-override",
+                "value": "true"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')))]"
+              ]
+            },
+            {
               "type": "Microsoft.DBforPostgreSQL/flexibleServers/firewallRules",
               "apiVersion": "2025-08-01",
               "name": "[format('{0}/{1}', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), 'AllowAzureServices')]",
@@ -1347,13 +1378,17 @@
               "type": "string",
               "value": "taskflowdb"
             },
+            "poolerMode": {
+              "type": "string",
+              "value": "[if(parameters('pgBouncerEnabled'), 'Transaction', 'None')]"
+            },
             "connectionString": {
               "type": "string",
-              "value": "[format('Host={0};Port=5432;Database={1};Username={2};SSL Mode=Require;Trust Server Certificate=False;Maximum Pool Size={3}', reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))), '2025-08-01').fullyQualifiedDomainName, 'taskflowdb', parameters('entraConnectingPrincipalName'), parameters('maxPoolSize'))]"
+              "value": "[format('Host={0};Port={1};Database={2};Username={3};SSL Mode=Require;Trust Server Certificate=False;Maximum Pool Size={4}', reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))), '2025-08-01').fullyQualifiedDomainName, variables('pgPort'), 'taskflowdb', parameters('entraConnectingPrincipalName'), parameters('maxPoolSize'))]"
             },
             "readConnectionString": {
               "type": "string",
-              "value": "[format('Host={0};Port=5432;Database={1};Username={2};SSL Mode=Require;Trust Server Certificate=False;Maximum Pool Size={3}', coalesce(tryGet(tryGet(if(parameters('deployReadReplica'), reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-replica-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))), '2025-08-01', 'full'), null()), 'properties'), 'fullyQualifiedDomainName'), reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))), '2025-08-01').fullyQualifiedDomainName), 'taskflowdb', parameters('entraConnectingPrincipalName'), parameters('maxPoolSize'))]"
+              "value": "[format('Host={0};Port={1};Database={2};Username={3};SSL Mode=Require;Trust Server Certificate=False;Maximum Pool Size={4}', coalesce(tryGet(tryGet(if(parameters('deployReadReplica'), reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-replica-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))), '2025-08-01', 'full'), null()), 'properties'), 'fullyQualifiedDomainName'), reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))), '2025-08-01').fullyQualifiedDomainName), variables('pgPort'), 'taskflowdb', parameters('entraConnectingPrincipalName'), parameters('maxPoolSize'))]"
             }
           }
         }
@@ -2323,7 +2358,7 @@
             "value": "0.5Gi"
           },
           "envVars": {
-            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value), createObject('name', 'Database__Provider', 'value', parameters('databaseProvider'))), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TickerQDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), '')))))]"
+            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value), createObject('name', 'Database__Provider', 'value', parameters('databaseProvider')), createObject('name', 'Database__PostgreSql__PoolerMode', 'value', if(and(equals(parameters('databaseProvider'), 'PostgreSql'), parameters('postgresPgBouncerEnabled')), 'Transaction', 'None'))), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TickerQDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), '')))))]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -2508,7 +2543,7 @@
             "value": "[parameters('gatewayProfile').concurrentRequests]"
           },
           "envVars": {
-            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value), createObject('name', 'Database__Provider', 'value', parameters('databaseProvider'))), createArray(createObject('name', 'ReverseProxy__Clusters__api__Destinations__default__Address', 'value', format('https://{0}', reference('api').outputs.fqdn.value)), createObject('name', 'AggregateHealthCheck__TaskFlowApiHealthUrl', 'value', format('https://{0}/health/full', reference('api').outputs.fqdn.value)), createObject('name', 'AggregateHealthCheck__TaskFlowApiClusterId', 'value', '')))]"
+            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value), createObject('name', 'Database__Provider', 'value', parameters('databaseProvider')), createObject('name', 'Database__PostgreSql__PoolerMode', 'value', if(and(equals(parameters('databaseProvider'), 'PostgreSql'), parameters('postgresPgBouncerEnabled')), 'Transaction', 'None'))), createArray(createObject('name', 'ReverseProxy__Clusters__api__Destinations__default__Address', 'value', format('https://{0}', reference('api').outputs.fqdn.value)), createObject('name', 'AggregateHealthCheck__TaskFlowApiHealthUrl', 'value', format('https://{0}/health/full', reference('api').outputs.fqdn.value)), createObject('name', 'AggregateHealthCheck__TaskFlowApiClusterId', 'value', '')))]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -2819,7 +2854,7 @@
             "value": "[parameters('apiProfile').concurrentRequests]"
           },
           "envVars": {
-            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value), createObject('name', 'Database__Provider', 'value', parameters('databaseProvider'))), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), format('{0}ApplicationIntent=ReadOnly;', coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), '')), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'readConnectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__CosmosDb1', 'value', reference('cosmosDb').outputs.accountEndpoint.value), createObject('name', 'ConnectionStrings__BlobStorage1', 'value', reference('storage').outputs.appStorageBlobEndpoint.value), createObject('name', 'ConnectionStrings__TableStorage1', 'value', reference('storage').outputs.appStorageTableEndpoint.value), createObject('name', 'ConnectionStrings__Redis1', 'value', listOutputsWithSecureValues('redis', '2025-04-01').connectionString)), if(equals(parameters('messagingProvider'), 'RabbitMq'), createArray(createObject('name', 'Messaging__Provider', 'value', parameters('messagingProvider')), createObject('name', 'ConnectionStrings__RabbitMq1', 'value', if(equals(parameters('messagingProvider'), 'RabbitMq'), format('amqp://taskflow:{0}@{1}:5672/', parameters('rabbitMqPassword'), reference('rabbitMq').outputs.host.value), '')), createObject('name', 'Messaging__RabbitMq__ConnectionString', 'value', if(equals(parameters('messagingProvider'), 'RabbitMq'), format('amqp://taskflow:{0}@{1}:5672/', parameters('rabbitMqPassword'), reference('rabbitMq').outputs.host.value), ''))), createArray(createObject('name', 'Messaging__Provider', 'value', parameters('messagingProvider')), createObject('name', 'SERVICEBUS__fullyQualifiedNamespace', 'value', reference('serviceBus').outputs.namespaceEndpoint.value))))]"
+            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value), createObject('name', 'Database__Provider', 'value', parameters('databaseProvider')), createObject('name', 'Database__PostgreSql__PoolerMode', 'value', if(and(equals(parameters('databaseProvider'), 'PostgreSql'), parameters('postgresPgBouncerEnabled')), 'Transaction', 'None'))), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), format('{0}ApplicationIntent=ReadOnly;', coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), '')), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'readConnectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__CosmosDb1', 'value', reference('cosmosDb').outputs.accountEndpoint.value), createObject('name', 'ConnectionStrings__BlobStorage1', 'value', reference('storage').outputs.appStorageBlobEndpoint.value), createObject('name', 'ConnectionStrings__TableStorage1', 'value', reference('storage').outputs.appStorageTableEndpoint.value), createObject('name', 'ConnectionStrings__Redis1', 'value', listOutputsWithSecureValues('redis', '2025-04-01').connectionString)), if(equals(parameters('messagingProvider'), 'RabbitMq'), createArray(createObject('name', 'Messaging__Provider', 'value', parameters('messagingProvider')), createObject('name', 'ConnectionStrings__RabbitMq1', 'value', if(equals(parameters('messagingProvider'), 'RabbitMq'), format('amqp://taskflow:{0}@{1}:5672/', parameters('rabbitMqPassword'), reference('rabbitMq').outputs.host.value), '')), createObject('name', 'Messaging__RabbitMq__ConnectionString', 'value', if(equals(parameters('messagingProvider'), 'RabbitMq'), format('amqp://taskflow:{0}@{1}:5672/', parameters('rabbitMqPassword'), reference('rabbitMq').outputs.host.value), ''))), createArray(createObject('name', 'Messaging__Provider', 'value', parameters('messagingProvider')), createObject('name', 'SERVICEBUS__fullyQualifiedNamespace', 'value', reference('serviceBus').outputs.namespaceEndpoint.value))))]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -3124,7 +3159,7 @@
             "value": "[parameters('schedulerProfile').maxReplicas]"
           },
           "envVars": {
-            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value), createObject('name', 'Database__Provider', 'value', parameters('databaseProvider'))), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), format('{0}ApplicationIntent=ReadOnly;', coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), '')), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'readConnectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TickerQDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__Redis1', 'value', listOutputsWithSecureValues('redis', '2025-04-01').connectionString)), if(equals(parameters('messagingProvider'), 'RabbitMq'), createArray(createObject('name', 'Messaging__Provider', 'value', parameters('messagingProvider')), createObject('name', 'ConnectionStrings__RabbitMq1', 'value', if(equals(parameters('messagingProvider'), 'RabbitMq'), format('amqp://taskflow:{0}@{1}:5672/', parameters('rabbitMqPassword'), reference('rabbitMq').outputs.host.value), '')), createObject('name', 'Messaging__RabbitMq__ConnectionString', 'value', if(equals(parameters('messagingProvider'), 'RabbitMq'), format('amqp://taskflow:{0}@{1}:5672/', parameters('rabbitMqPassword'), reference('rabbitMq').outputs.host.value), ''))), createArray(createObject('name', 'Messaging__Provider', 'value', parameters('messagingProvider')), createObject('name', 'SERVICEBUS__fullyQualifiedNamespace', 'value', reference('serviceBus').outputs.namespaceEndpoint.value))))]"
+            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value), createObject('name', 'Database__Provider', 'value', parameters('databaseProvider')), createObject('name', 'Database__PostgreSql__PoolerMode', 'value', if(and(equals(parameters('databaseProvider'), 'PostgreSql'), parameters('postgresPgBouncerEnabled')), 'Transaction', 'None'))), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), format('{0}ApplicationIntent=ReadOnly;', coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), '')), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'readConnectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TickerQDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__Redis1', 'value', listOutputsWithSecureValues('redis', '2025-04-01').connectionString)), if(equals(parameters('messagingProvider'), 'RabbitMq'), createArray(createObject('name', 'Messaging__Provider', 'value', parameters('messagingProvider')), createObject('name', 'ConnectionStrings__RabbitMq1', 'value', if(equals(parameters('messagingProvider'), 'RabbitMq'), format('amqp://taskflow:{0}@{1}:5672/', parameters('rabbitMqPassword'), reference('rabbitMq').outputs.host.value), '')), createObject('name', 'Messaging__RabbitMq__ConnectionString', 'value', if(equals(parameters('messagingProvider'), 'RabbitMq'), format('amqp://taskflow:{0}@{1}:5672/', parameters('rabbitMqPassword'), reference('rabbitMq').outputs.host.value), ''))), createArray(createObject('name', 'Messaging__Provider', 'value', parameters('messagingProvider')), createObject('name', 'SERVICEBUS__fullyQualifiedNamespace', 'value', reference('serviceBus').outputs.namespaceEndpoint.value))))]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -3435,7 +3470,7 @@
           "envVars": {
             "value": [
               {
-                "name": "ApiBaseUrl",
+                "name": "Gateway__BaseUrl",
                 "value": "[format('https://{0}', reference('gateway').outputs.fqdn.value)]"
               },
               {
