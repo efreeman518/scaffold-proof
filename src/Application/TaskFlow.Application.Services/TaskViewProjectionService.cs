@@ -41,7 +41,7 @@ public class TaskViewProjectionService : ITaskViewProjectionService
         var entity = await _taskItemRepo.GetTaskItemAsync(DomainId.From<TaskItemId>(taskItemId), ct);
         if (entity is null)
         {
-            _logger.LogWarning("TaskItem {Id} not found for projection", taskItemId);
+            _logger.TaskViewNotFoundForProjection(taskItemId);
             return;
         }
 

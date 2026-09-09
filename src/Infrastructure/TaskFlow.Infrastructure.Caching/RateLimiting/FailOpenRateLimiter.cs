@@ -68,7 +68,7 @@ public sealed class FailOpenRateLimiter(
     private RateLimitLease Admit(Exception ex)
     {
         meter.RecordBackendFailure();
-        logger.LogWarning(ex, "Rate limiter backend unavailable; admitting the request unmetered.");
+        logger.RateLimiterBackendUnavailable(ex);
         return AdmittedLease.Instance;
     }
 

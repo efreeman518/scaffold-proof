@@ -100,7 +100,7 @@ internal class TaskItemService(
         }
         catch (OperationCanceledException)
         {
-            logger.LogDebug("TaskItem search cancelled by client.");
+            logger.TaskItemSearchCancelled();
             return new CursorPage<TaskItemDto>();
         }
     }
@@ -168,7 +168,7 @@ internal class TaskItemService(
         }
         catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
-            logger.LogError(ex, "Error creating TaskItem");
+            logger.TaskItemCreateFailed(ex);
             return Result<DefaultResponse<TaskItemDto>>.Failure(ex.GetBaseException().Message);
         }
 
@@ -250,7 +250,7 @@ internal class TaskItemService(
         }
         catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
-            logger.LogError(ex, "Error updating TaskItem {Id}", dto.Id);
+            logger.TaskItemUpdateFailed(ex, dto.Id);
             return Result<DefaultResponse<TaskItemDto>>.Failure(ex.GetBaseException().Message);
         }
 
@@ -295,7 +295,7 @@ internal class TaskItemService(
         }
         catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
-            logger.LogError(ex, "Error patching TaskItem {Id}", id);
+            logger.TaskItemPatchFailed(ex, id);
             return Result<DefaultResponse<TaskItemDto>>.Failure(ex.GetBaseException().Message);
         }
 
@@ -326,7 +326,7 @@ internal class TaskItemService(
         }
         catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
-            logger.LogError(ex, "Error deleting TaskItem {Id}", id);
+            logger.TaskItemDeleteFailed(ex, id);
             return Result.Failure(ex.GetBaseException().Message);
         }
 
@@ -346,7 +346,7 @@ internal class TaskItemService(
         }
         catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
-            logger.LogError(ex, "{ErrorMessage} {@Args}", errorMessage, args);
+            logger.AggregateSaveFailed(ex, errorMessage, args);
             return Result.Failure(ex.GetBaseException().Message);
         }
     }

@@ -139,7 +139,7 @@ public static class RegisterSchedulerServices
         var usePersistence = config.GetValue("Scheduling:UsePersistence", true);
         if (!usePersistence)
         {
-            logger.LogInformation("TickerQ running without persisted operational store.");
+            logger.TickerQPersistenceDisabled();
             return;
         }
 
@@ -159,7 +159,7 @@ public static class RegisterSchedulerServices
                 "TickerQ schema is missing or incomplete. Run TaskFlow.DatabaseMigrator before starting Scheduler.");
         }
 
-        logger.LogInformation("TickerQ operational-store schema validated.");
+        logger.TickerQSchemaValidated();
     }
 
     public static async Task SeedCronJobs(this WebApplication app)
@@ -168,7 +168,7 @@ public static class RegisterSchedulerServices
         var cronManager = scope.ServiceProvider.GetService<ICronTickerManager<CronTickerEntity>>();
         if (cronManager is null)
         {
-            app.Logger.LogWarning("ICronTickerManager not available - cron seeding skipped.");
+            app.Logger.TickerQCronManagerUnavailable();
             return;
         }
 
@@ -194,6 +194,6 @@ public static class RegisterSchedulerServices
             });
         }
 
-        app.Logger.LogInformation("TickerQ cron jobs seeded successfully");
+        app.Logger.TickerQCronJobsSeeded();
     }
 }

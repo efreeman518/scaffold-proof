@@ -1,0 +1,141 @@
+<svg width="100%" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" class="flowchart" style="max-width: 1180px; background-color: transparent;" viewBox="0 0 1180 800" role="graphics-document document" aria-roledescription="flowchart">
+<defs>
+<marker id="d23-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto">
+<path d="M 0 0 L 10 5 L 0 10 z" fill="lightgrey"/>
+</marker>
+</defs>
+<style>
+text { font-family: "trebuchet ms", verdana, arial, sans-serif; fill: #ccc; }
+.node rect { fill: #1f2020; stroke: #ccc; stroke-width: 1px; }
+.node text { text-anchor: middle; font-size: 14px; }
+.node .small { font-size: 11px; fill: #9a9a9a; }
+.edge { stroke: lightgrey; stroke-width: 1px; fill: none; marker-end: url(#d23-arrow); }
+.edge-dashed { stroke: lightgrey; stroke-width: 1px; stroke-dasharray: 4 3; fill: none; marker-end: url(#d23-arrow); }
+.cluster-vps rect { fill: hsl(180, 2%, 28%); stroke: rgba(255,255,255,0.25); stroke-width: 1px; }
+.cluster-vps text { fill: #F9FFFE; font-size: 13px; font-weight: bold; }
+.cluster-azure rect { fill: #0078d4; stroke: #005a9e; stroke-width: 1px; }
+.cluster-azure text { fill: #fff; font-size: 13px; font-weight: bold; }
+.cluster-ext rect { fill: #1f2020; stroke: #ccc; stroke-width: 1px; stroke-dasharray: 5 3; }
+.title { font-size: 16px; text-anchor: middle; }
+</style>
+
+<text x="590" y="18" class="title">9.3 Portable Topology (Docker Compose + Caddy)</text>
+
+<!-- VPS cluster -->
+<g class="cluster-vps">
+<rect x="250" y="60" width="680" height="520" rx="8"/>
+<text x="264" y="80">VPS (Docker Compose, D-036)</text>
+</g>
+
+<!-- Azure cluster -->
+<g class="cluster-azure">
+<rect x="960" y="300" width="200" height="200" rx="8"/>
+<text x="974" y="320">Azure (retained surface, D-044)</text>
+</g>
+
+<!-- External Postgres cluster -->
+<g class="cluster-ext">
+<rect x="270" y="640" width="220" height="70" rx="8"/>
+</g>
+<text x="380" y="668" class="node" text-anchor="middle" font-size="14">External PostgreSQL</text>
+<text x="380" y="686" text-anchor="middle" class="small">managed, outside the VPS</text>
+
+<!-- Nodes -->
+<g class="node"><rect x="500" y="30" width="180" height="40" rx="6" transform="translate(0,60)"/></g>
+
+<g class="node">
+<rect x="500" y="90" width="180" height="50" rx="6"/>
+<text x="590" y="112">Clients</text>
+<text x="590" y="130" class="small">browser / API caller</text>
+</g>
+
+<g class="node">
+<rect x="500" y="160" width="180" height="50" rx="6"/>
+<text x="590" y="182">Caddy</text>
+<text x="590" y="200" class="small">TLS edge, :80 / :443</text>
+</g>
+
+<g class="node">
+<rect x="500" y="230" width="180" height="50" rx="6"/>
+<text x="590" y="252">Gateway</text>
+<text x="590" y="270" class="small">YARP reverse proxy</text>
+</g>
+
+<g class="node">
+<rect x="280" y="320" width="170" height="50" rx="6"/>
+<text x="365" y="342">Api</text>
+<text x="365" y="360" class="small">Kestrel :8080 / gRPC :8081</text>
+</g>
+
+<g class="node">
+<rect x="505" y="320" width="170" height="50" rx="6"/>
+<text x="590" y="342">Blazor Server</text>
+<text x="590" y="360" class="small">gRPC read client to Api</text>
+</g>
+
+<g class="node">
+<rect x="730" y="320" width="180" height="60" rx="6"/>
+<text x="820" y="342">Scheduler</text>
+<text x="820" y="358" class="small">RabbitMQ consumers,</text>
+<text x="820" y="372" class="small">outbox dispatcher, jobs</text>
+</g>
+
+<g class="node">
+<rect x="280" y="400" width="170" height="50" rx="6"/>
+<text x="365" y="422">PgBouncer</text>
+<text x="365" y="440" class="small">:6432, transaction pooling</text>
+</g>
+
+<g class="node">
+<rect x="505" y="400" width="170" height="50" rx="6"/>
+<text x="590" y="422">Redis</text>
+<text x="590" y="440" class="small">L2 cache, rate limiter, lock</text>
+</g>
+
+<g class="node">
+<rect x="730" y="400" width="180" height="50" rx="6"/>
+<text x="820" y="422">RabbitMQ</text>
+<text x="820" y="440" class="small">taskflow.* queues</text>
+</g>
+
+<g class="node">
+<rect x="280" y="480" width="170" height="50" rx="6"/>
+<text x="365" y="502">MinIO</text>
+<text x="365" y="520" class="small">S3-compatible object storage</text>
+</g>
+
+<g class="node">
+<rect x="505" y="480" width="170" height="50" rx="6"/>
+<text x="590" y="502">otel-lgtm</text>
+<text x="590" y="520" class="small">OTLP traces/metrics/logs</text>
+</g>
+
+<g class="node">
+<rect x="975" y="335" width="170" height="50" rx="6"/>
+<text x="1060" y="357">Key Vault</text>
+<text x="1060" y="373" class="small" fill="#dfe9f5">DEK wrap, Data Protection</text>
+</g>
+
+<g class="node">
+<rect x="975" y="420" width="170" height="50" rx="6"/>
+<text x="1060" y="442">App Configuration</text>
+<text x="1060" y="458" class="small" fill="#dfe9f5">config + feature flags</text>
+</g>
+
+<!-- Edges -->
+<path class="edge" d="M590,140 L590,160"/>
+<path class="edge" d="M590,210 L590,230"/>
+<path class="edge" d="M545,280 C 470,300 420,300 385,320"/>
+<path class="edge" d="M590,280 L590,320"/>
+<path class="edge" d="M635,280 C 700,300 760,300 800,320"/>
+<path class="edge" d="M365,370 L365,400"/>
+<path class="edge" d="M820,380 C820,395 700,398 460,410"/>
+<path class="edge" d="M590,370 L590,400"/>
+<path class="edge" d="M820,380 L820,400"/>
+<path class="edge" d="M365,450 L365,480"/>
+<path class="edge" d="M365,450 C365,600 365,620 375,640"/>
+<path class="edge-dashed" d="M450,345 C700,410 900,420 975,370"/>
+<path class="edge-dashed" d="M450,355 C700,440 900,450 975,445"/>
+
+<text x="700" y="600" text-anchor="middle" class="small" font-style="italic">Api, Gateway, and Scheduler all export OTLP to otel-lgtm and depend on Key Vault + App Configuration via Entra client secret/certificate (EnvironmentCredential inside DefaultAzureCredential, D-044); only Api's edges to Azure are drawn above to keep the diagram legible.</text>
+</svg>

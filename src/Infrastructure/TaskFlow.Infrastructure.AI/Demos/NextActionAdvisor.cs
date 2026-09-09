@@ -55,7 +55,7 @@ public sealed class NextActionAdvisor(
         var session = await agent.CreateSessionAsync(ct);
         var response = await agent.RunAsync("What should I work on next, and why?", session, cancellationToken: ct);
 
-        logger.LogDebug("NextActionAdvisor produced a recommendation.");
+        logger.NextActionAdvisorProduced();
         return new NextActionResponse(response.ToString(), true);
     }
 }

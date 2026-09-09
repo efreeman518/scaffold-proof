@@ -110,7 +110,7 @@ internal class AttachmentService(
         }
         catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
-            logger.LogError(ex, "Error creating Attachment");
+            logger.AttachmentCreateFailed(ex);
             return Result<DefaultResponse<AttachmentDto>>.Failure(ex.GetBaseException().Message);
         }
 
@@ -139,7 +139,7 @@ internal class AttachmentService(
         }
         catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
-            logger.LogError(ex, "Error uploading blob for Attachment {FileName}", fileName);
+            logger.AttachmentBlobUploadFailed(ex, fileName);
             return Result<DefaultResponse<AttachmentDto>>.Failure($"Blob upload failed: {ex.GetBaseException().Message}");
         }
 
@@ -158,7 +158,7 @@ internal class AttachmentService(
         }
         catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
-            logger.LogError(ex, "Error persisting Attachment after upload");
+            logger.AttachmentPersistAfterUploadFailed(ex);
             return Result<DefaultResponse<AttachmentDto>>.Failure(ex.GetBaseException().Message);
         }
 
@@ -199,7 +199,7 @@ internal class AttachmentService(
         }
         catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
-            logger.LogError(ex, "Error updating Attachment {Id}", dto.Id);
+            logger.AttachmentUpdateFailed(ex, dto.Id);
             return Result<DefaultResponse<AttachmentDto>>.Failure(ex.GetBaseException().Message);
         }
 
@@ -227,7 +227,7 @@ internal class AttachmentService(
         }
         catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
-            logger.LogError(ex, "Error deleting Attachment {Id}", id);
+            logger.AttachmentDeleteFailed(ex, id);
             return Result.Failure(ex.GetBaseException().Message);
         }
 
@@ -241,7 +241,7 @@ internal class AttachmentService(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Failed to delete blob for Attachment {Id}", id);
+                logger.AttachmentBlobDeleteFailed(ex, id);
             }
         }
 

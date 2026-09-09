@@ -69,7 +69,7 @@ internal static class CqrsHandlerSupport
         }
         catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
-            logger.LogError(ex, "{ErrorMessage} {@Args}", errorMessage, args);
+            logger.SaveFailed(ex, errorMessage, args);
             return Result.Failure(ex.GetBaseException().Message);
         }
     }

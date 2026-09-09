@@ -99,7 +99,6 @@
     <PackageVersion Include="Aspire.Npgsql.EntityFrameworkCore.PostgreSQL" Version="13.5.3" />
     <PackageVersion Include="Aspire.Hosting.Redis" Version="13.5.3" />
     <PackageVersion Include="Aspire.Hosting.Azure.Functions" Version="13.5.3" />
-    <PackageVersion Include="Aspire.Hosting.Azure.KeyVault" Version="13.5.3" />
     <PackageVersion Include="KubernetesClient" Version="19.0.2" />
   </ItemGroup>
   <ItemGroup Label="RabbitMQ (EF.Messaging.RabbitMq package project)">
@@ -236,7 +235,6 @@
     <PackageVersion Include="Microsoft.FeatureManagement" Version="4.7.0" />
   </ItemGroup>
   <ItemGroup Label="AI Services">
-    <PackageVersion Include="Azure.AI.OpenAI" Version="2.9.0-beta.1" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
     <!-- D-023 column encryption: Key Vault RSA-OAEP unwrap of the data-encryption key. -->
     <PackageVersion Include="Azure.Security.KeyVault.Keys" Version="4.10.0" />

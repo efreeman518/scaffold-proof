@@ -114,7 +114,7 @@ internal class TagService(
         }
         catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
-            logger.LogError(ex, "Error creating Tag");
+            logger.TagCreateFailed(ex);
             return Result<DefaultResponse<TagDto>>.Failure(ex.GetBaseException().Message);
         }
 
@@ -156,7 +156,7 @@ internal class TagService(
         }
         catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
-            logger.LogError(ex, "Error updating Tag {Id}", dto.Id);
+            logger.TagUpdateFailed(ex, dto.Id);
             return Result<DefaultResponse<TagDto>>.Failure(ex.GetBaseException().Message);
         }
 
@@ -185,7 +185,7 @@ internal class TagService(
         }
         catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
-            logger.LogError(ex, "Error deleting Tag {Id}", id);
+            logger.TagDeleteFailed(ex, id);
             return Result.Failure(ex.GetBaseException().Message);
         }
 

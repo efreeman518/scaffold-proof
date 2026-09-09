@@ -17,7 +17,7 @@ public enum SearchProvider
     /// <summary>Azure AI Search.</summary>
     AzureAiSearch,
 
-    /// <summary>Postgres pgvector similarity search. Requires Database:Provider=PostgreSql. Not implemented yet (slice P7).</summary>
+    /// <summary>Postgres pgvector similarity search (D-040). Requires Database:Provider=PostgreSql.</summary>
     PgVector,
 
     /// <summary>SQL prefix search fallback (<see cref="NoOpSearchService"/>).</summary>

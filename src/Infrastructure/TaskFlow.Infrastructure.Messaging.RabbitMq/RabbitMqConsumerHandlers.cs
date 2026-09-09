@@ -23,9 +23,7 @@ public abstract class RabbitMqConsumerHandler(IntegrationEventConsumer consumer,
 
         if (!IntegrationEnvelopeReader.TryRead(delivery.Body.Span, out var envelope, out var failure))
         {
-            logger.LogWarning(
-                "Consumer {Consumer} rejected message {MessageId} from {Queue}: {Reason}",
-                consumer.ConsumerName, delivery.MessageId, delivery.Queue, failure);
+            logger.ConsumerMessageRejected(consumer.ConsumerName, delivery.MessageId, delivery.Queue, failure!);
             return ConsumeResult.Reject(failure!);
         }
 

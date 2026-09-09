@@ -35,16 +35,19 @@ dotnet test TaskFlow.slnx --no-build -m:1                     # unfiltered seria
 # TASKFLOW_TEST_DB_PROVIDER=SqlServer|PostgreSql selects the container-backed test lane (default SqlServer); rerun Integration/E2E/FlowEngine-integration with both values
 # TASKFLOW_MESSAGING_PROVIDER=ServiceBus|RabbitMq selects the messaging transport (default ServiceBus); RabbitMq needs no code change, only config
 # TASKFLOW_LANE=Azure|Portable seeds the DEFAULT of every switch below (each switch's own env/config still wins; default Azure) - D-035
-# TASKFLOW_STORAGE_PROVIDER=AzureBlob|S3 selects the object-storage backend (default AzureBlob; S3 not implemented yet, slice P4) - D-037
-# TASKFLOW_READMODEL_PROVIDER=Cosmos|Relational selects the read-model backend (default Cosmos; Relational not implemented yet, slice P3) - D-038
-# TASKFLOW_AUDIT_PROVIDER=AzureTable|Relational selects the audit-sink backend (default AzureTable; Relational not implemented yet, slice P3) - D-039
-# TASKFLOW_SEARCH_PROVIDER=AzureAiSearch|PgVector|Sql selects the search backend (default derived from AiServices:UseSearch; PgVector not implemented yet, slice P7) - D-040
-# TASKFLOW_AI_PROVIDER=AzureInference|OpenAICompatible|FoundryLocal|None selects the LLM client (default derived from ConnectionStrings:chat; OpenAICompatible not implemented yet, slice P5) - D-041
+# TASKFLOW_STORAGE_PROVIDER=AzureBlob|S3 selects the object-storage backend (default AzureBlob) - D-037
+# TASKFLOW_READMODEL_PROVIDER=Cosmos|Relational selects the read-model backend (default Cosmos) - D-038
+# TASKFLOW_AUDIT_PROVIDER=AzureTable|Relational selects the audit-sink backend (default AzureTable) - D-039
+# TASKFLOW_SEARCH_PROVIDER=AzureAiSearch|PgVector|Sql selects the search backend (default: Portable lane -> Sql, Azure lane -> AzureAiSearch when AiServices:UseSearch else Sql; PgVector requires Database:Provider=PostgreSql, fails fast otherwise) - D-040
+# TASKFLOW_AI_PROVIDER=AzureInference|OpenAICompatible|FoundryLocal|None selects the LLM client (default derived from ConnectionStrings:chat) - D-041
 # TASKFLOW_DATAPROTECTION_PERSISTENCE=AzureBlob|Redis|None selects the Data Protection key-ring persistence (default derived from DataProtectionKeysFileUrl) - D-043
 # Database:PostgreSql:PoolerMode=None|Transaction (config only, no env var) appends the PgBouncer transaction-pooling connection-string flags (default None) - D-045
+# Health probes (D-049): /healthz/live (self only, restart-worthy), /healthz/ready (database, outbox, scheduler, broker on consumer hosts), /healthz (aggregate, humans + Compose healthchecks); /readyz removed
 # E2E/Integration/RabbitMq-container tests need a container runtime. This machine runs Podman, and Podman WSL2 does not forward container ports to localhost:
+#   podman machine ssh -- ip route get 1.1.1.1             # prints "1.1.1.1 via <gw> dev eth0 src <ip>"; use the src address
 #   TESTCONTAINERS_HOST_OVERRIDE=<podman machine ip>       # run-scoped only, changes on reboot, never commit
-dotnet run --project src/Host/Aspire/AppHost                   # full local stack
+dotnet run --project src/Host/Aspire/AppHost                   # full local stack (Azure lane, default)
+$env:TASKFLOW_LANE = "Portable"; dotnet run --project src/Host/Aspire/AppHost   # Portable topology locally (Postgres+RabbitMQ+MinIO, no Azure emulators); deploy/compose/README.md is the VPS Docker Compose runbook
 ```
 
 ## Pointers

@@ -132,7 +132,7 @@ internal sealed class UploadAttachmentHandler(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error uploading blob for Attachment {FileName}", command.FileName);
+            logger.AttachmentBlobUploadFailed(ex, command.FileName);
             return Result<DefaultResponse<AttachmentDto>>.Failure($"Blob upload failed: {ex.GetBaseException().Message}");
         }
 
@@ -239,7 +239,7 @@ internal sealed class DeleteAttachmentHandler(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Failed to delete blob for Attachment {Id}", command.Id);
+                logger.AttachmentBlobDeleteFailed(ex, command.Id);
             }
         }
 

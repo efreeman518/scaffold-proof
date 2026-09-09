@@ -30,26 +30,20 @@ internal static class ValidationHelper
 
         if (callerRoles is null || callerRoles.Count == 0)
         {
-            logger.LogWarning(
-                "Tenant boundary violation attempt: Caller without roles attempted access. Operation={Operation}, Entity={EntityName}, EntityId={EntityId}",
-                operation, entityName, entityId);
+            logger.LogTenantBoundaryNoRoles(operation, entityName, entityId);
             return Result.Failure($"Forbidden: Tenant boundary violation for operation: {operation}.");
         }
 
         if (entityTenantId is null)
         {
-            logger.LogWarning(
-                "Tenant boundary violation attempt: Non-GlobalAdmin tried to access a global entity. Operation={Operation}, Entity={EntityName}, EntityId={EntityId}",
-                operation, entityName, entityId);
+            logger.LogTenantBoundaryGlobalEntity(operation, entityName, entityId);
             return Result.Failure($"Forbidden: Tenant boundary violation for operation: {operation}.");
         }
 
         if (callerTenantId.HasValue && callerTenantId.Value == entityTenantId)
             return Result.Success();
 
-        logger.LogWarning(
-            "Tenant boundary violation attempt: CallerTenantId={CallerTenantId}, EntityTenantId={EntityTenantId}, Operation={Operation}, Entity={EntityName}, EntityId={EntityId}",
-            callerTenantId, entityTenantId, operation, entityName, entityId);
+        logger.LogTenantBoundaryMismatch(callerTenantId, entityTenantId, operation, entityName, entityId);
 
         return Result.Failure($"Forbidden: Tenant boundary violation for operation: {operation}.");
     }

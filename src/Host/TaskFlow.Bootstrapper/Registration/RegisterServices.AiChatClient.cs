@@ -135,11 +135,7 @@ public static partial class RegisterServices
             if (requireFoundryLocal)
                 throw;
 
-            logger.LogWarning(
-                ex,
-                "{AppName} {Environment} - Foundry Local unavailable. Falling back to no-op AI client.",
-                appName,
-                env);
+            logger.FoundryLocalUnavailable(ex, appName, env);
         }
     }
 
