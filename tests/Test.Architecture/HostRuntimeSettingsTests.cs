@@ -82,20 +82,38 @@ public class HostRuntimeSettingsTests
         AssertOverrideAfterImport(
             "src/Host/TaskFlow.Functions/TaskFlow.Functions.csproj",
             "<InvariantGlobalization>false</InvariantGlobalization>");
+
+        // SqlClient-dependent hosts (D-047): Microsoft.Data.SqlClient throws NotSupportedException under
+        // invariant globalization, so these three also turn it off and move to -chiseled-extra.
+        AssertOverrideAfterImport(
+            "src/Host/TaskFlow.Api/TaskFlow.Api.csproj",
+            "<InvariantGlobalization>false</InvariantGlobalization>");
+        AssertOverrideAfterImport(
+            "src/Host/TaskFlow.Scheduler/TaskFlow.Scheduler.csproj",
+            "<InvariantGlobalization>false</InvariantGlobalization>");
+        AssertOverrideAfterImport(
+            "src/Host/TaskFlow.DatabaseMigrator/TaskFlow.DatabaseMigrator.csproj",
+            "<InvariantGlobalization>false</InvariantGlobalization>");
     }
 
     /// <summary>
-    /// Verifies the two hosts that turn invariant globalization off run on an image that carries ICU.
-    /// The pairing is the whole point: InvariantGlobalization=false on a plain chiseled base fails at
-    /// startup with "Couldn't find a valid ICU package", which no build or unit test would catch.
+    /// Verifies every host that turns invariant globalization off runs on an image that carries ICU. The
+    /// pairing is the whole point: InvariantGlobalization=false on a plain chiseled base fails at startup
+    /// with "Couldn't find a valid ICU package", which no build or unit test would catch. Two independent
+    /// reasons land a host here (see the D-047 comment in TaskFlow.Host.props): rendering user-facing
+    /// cultures (Blazor), or depending on Microsoft.Data.SqlClient (Api, Scheduler, DatabaseMigrator,
+    /// Functions), which throws NotSupportedException under invariant globalization.
     /// </summary>
     [TestMethod]
-    public void Given_CultureRenderingHosts_When_DockerfileRead_Then_BaseImageCarriesIcu()
+    public void Given_InvariantGlobalizationOffHosts_When_DockerfileRead_Then_BaseImageCarriesIcu()
     {
         foreach (var dockerfile in new[]
         {
             "src/UI/TaskFlow.Blazor/Dockerfile",
-            "src/Host/TaskFlow.Functions/Dockerfile"
+            "src/Host/TaskFlow.Functions/Dockerfile",
+            "src/Host/TaskFlow.Api/Dockerfile",
+            "src/Host/TaskFlow.Scheduler/Dockerfile",
+            "src/Host/TaskFlow.DatabaseMigrator/Dockerfile"
         })
         {
             var text = ReadRepoFile(dockerfile);
@@ -202,6 +220,40 @@ public class HostRuntimeSettingsTests
                     $"{project} marks {package} PrivateAssets=\"all\", which keeps its dll out of the "
                     + "publish output.");
             }
+        }
+    }
+
+    /// <summary>
+    /// Hosts whose dependency closure includes Microsoft.Data.SqlClient: Api, Scheduler, and Functions
+    /// reach TaskFlow.Infrastructure.Data's Microsoft.EntityFrameworkCore.SqlServer package reference
+    /// through TaskFlow.Bootstrapper; DatabaseMigrator references TaskFlow.Infrastructure.Data directly.
+    /// Gateway and Blazor have neither a Bootstrapper nor an Infrastructure.Data reference.
+    /// </summary>
+    private static readonly string[] SqlClientDependentHosts =
+    [
+        "src/Host/TaskFlow.Api/TaskFlow.Api.csproj",
+        "src/Host/TaskFlow.Scheduler/TaskFlow.Scheduler.csproj",
+        "src/Host/TaskFlow.DatabaseMigrator/TaskFlow.DatabaseMigrator.csproj",
+        "src/Host/TaskFlow.Functions/TaskFlow.Functions.csproj"
+    ];
+
+    /// <summary>
+    /// Verifies no SqlClient-dependent host declares InvariantGlobalization=true (D-047).
+    /// Microsoft.Data.SqlClient throws NotSupportedException under invariant globalization, so leaving
+    /// the shared profile's default in place - or a rewrite that flips the override back to true - would
+    /// build and pass every other test, then fail only when the host actually opens a SqlConnection.
+    /// </summary>
+    [TestMethod]
+    public void Given_SqlClientDependentHosts_When_ProjectFileRead_Then_InvariantGlobalizationIsNotTrue()
+    {
+        foreach (var project in SqlClientDependentHosts)
+        {
+            var text = ReadRepoFile(project);
+            Assert.IsFalse(
+                text.Contains("<InvariantGlobalization>true</InvariantGlobalization>", StringComparison.Ordinal),
+                $"{project} depends on Microsoft.Data.SqlClient and must not declare "
+                + "InvariantGlobalization=true; SqlClient throws NotSupportedException under invariant "
+                + "globalization.");
         }
     }
 

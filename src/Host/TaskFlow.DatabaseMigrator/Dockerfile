@@ -13,7 +13,7 @@ RUN --mount=type=secret,id=nuget_credentials,required=true \
 
 RUN dotnet publish src/Host/TaskFlow.DatabaseMigrator/TaskFlow.DatabaseMigrator.csproj -c Release -o /app --no-restore
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled-extra AS runtime
 WORKDIR /app
 USER $APP_UID
 COPY --from=build /app .

@@ -9,6 +9,11 @@
          would reserve per-core heaps and spin up GC threads for a process that exits in seconds, which
          costs startup time and container memory for no throughput it can use. -->
     <ServerGarbageCollection>false</ServerGarbageCollection>
+    <!-- This host applies the SqlServer provider's migrations directly (Microsoft.Data.SqlClient, via
+         TaskFlow.Infrastructure.Data), and SqlClient throws NotSupportedException under invariant
+         globalization. Paired with the -chiseled-extra runtime image in this project's Dockerfile,
+         which carries ICU. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>

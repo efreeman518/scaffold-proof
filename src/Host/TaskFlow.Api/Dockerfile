@@ -21,7 +21,7 @@ RUN dotnet publish src/Host/TaskFlow.Api/TaskFlow.Api.csproj -c Release -r linux
     -p:PublishReadyToRun=true -o /app --no-restore
 
 # Runtime
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled-extra AS runtime
 WORKDIR /app
 # D-054: 8080 REST/HTTP1.1, 8081 cleartext HTTP/2 for the internal gRPC read service. Both listeners are
 # declared in appsettings Kestrel:Endpoints, and no ASPNETCORE_URLS is set here on purpose: with both

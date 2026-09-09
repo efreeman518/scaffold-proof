@@ -15,7 +15,7 @@ RUN --mount=type=secret,id=nuget_credentials,required=true \
 RUN dotnet publish src/Host/TaskFlow.Scheduler/TaskFlow.Scheduler.csproj -c Release -o /app --no-restore
 
 # Runtime - no port exposed (background worker)
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled-extra AS runtime
 WORKDIR /app
 USER $APP_UID
 
