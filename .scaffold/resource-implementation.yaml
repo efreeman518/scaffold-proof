@@ -253,7 +253,7 @@ entities:
   # TaskView (read-model projection, not a domain aggregate)
   # =========================================================================
   - name: TaskView
-    dataStore: readModel   # ReadModel:Provider = Cosmos | Relational, see D-038; readModelProviders above
+    dataStore: sql   # relational read-model table (ReadModel:Provider=Relational, D-038); the Cosmos arm is the Azure-lane default   # ReadModel:Provider = Cosmos | Relational, see D-038; readModelProviders above
     properties:
       - { name: TenantId, type: "Guid", required: true }
       - { name: Title, type: "nvarchar", maxLength: 200, required: true }
@@ -278,7 +278,7 @@ entities:
   # AuditLog (audit-sink projection, not a domain aggregate)
   # =========================================================================
   - name: AuditLog
-    dataStore: audit   # Audit:Provider = AzureTable | Relational, see D-039; auditProviders above
+    dataStore: sql   # relational audit table (Audit:Provider=Relational, D-039); the Table Storage arm is the Azure-lane default   # Audit:Provider = AzureTable | Relational, see D-039; auditProviders above
     properties:
       - { name: TenantId, type: "nvarchar", maxLength: 64, required: true, note: "NullTenantPartitionKey sentinel for system-scoped audit rows" }
       - { name: RecordedUtc, type: "DateTimeOffset", required: true }
@@ -297,7 +297,7 @@ entities:
   # TaskItemEmbedding (search projection, Postgres-only)
   # =========================================================================
   - name: TaskItemEmbedding
-    dataStore: postgresOnly   # Search:Provider = PgVector, requires Database:Provider = PostgreSql, see D-040
+    dataStore: sql   # PostgreSQL-only table (pgvector, Search:Provider=PgVector, D-040); absent from the SQL Server model   # Search:Provider = PgVector, requires Database:Provider = PostgreSql, see D-040
     properties:
       - { name: TenantId, type: "Guid", required: true }
       - { name: TaskItemId, type: "Guid", required: true }
@@ -445,7 +445,7 @@ aiServices:
     useFoundryAgentService: false
 
   search:
-    provider: [AzureAiSearch, PgVector, Sql]   # Search:Provider switch, was a single AzureAISearch value; see D-040, searchProviders above
+    provider: AzureAISearch   # schema scalar = the Azure-lane default arm; every arm of the Search:Provider switch is listed under searchProviders (D-040)
     indexes:
       - name: taskitems-index
         sourceEntity: TaskItem
