@@ -174,6 +174,37 @@ public class HostRuntimeSettingsTests
         }
     }
 
+    /// <summary>Project files that reference the OpenAI SDK packages (D-041): must stay deployed dependencies.</summary>
+    private static readonly string[] OpenAiReferencingProjects =
+    [
+        "src/Host/TaskFlow.Api/TaskFlow.Api.csproj",
+        "src/Host/TaskFlow.Bootstrapper/TaskFlow.Bootstrapper.csproj",
+        "src/Host/TaskFlow.Functions/TaskFlow.Functions.csproj"
+    ];
+
+    /// <summary>
+    /// Verifies no host keeps OpenAI or Microsoft.Extensions.AI.OpenAI out of its publish output via
+    /// PrivateAssets="all" (D-041). P5 made both a deployed dependency in Api and Bootstrapper so the
+    /// OpenAICompatible arm's OpenAI.dll reaches the publish output; F1 did the same for Functions. A
+    /// regression here silently drops OpenAI.dll from just that host's publish output, which no build or
+    /// unit test would catch - only a `dotnet publish` inspection would.
+    /// </summary>
+    [TestMethod]
+    public void Given_OpenAiReferencingProjects_When_Read_Then_NeitherPackageIsPrivateAssets()
+    {
+        foreach (var project in OpenAiReferencingProjects)
+        {
+            var text = ReadRepoFile(project);
+            foreach (var package in new[] { "OpenAI", "Microsoft.Extensions.AI.OpenAI" })
+            {
+                Assert.IsFalse(
+                    text.Contains($"Include=\"{package}\" PrivateAssets=\"all\"", StringComparison.Ordinal),
+                    $"{project} marks {package} PrivateAssets=\"all\", which keeps its dll out of the "
+                    + "publish output.");
+            }
+        }
+    }
+
     private static string ReadRepoFile(string relativePath) =>
         File.ReadAllText(RepoFiles.Path(relativePath.Split('/')));
 

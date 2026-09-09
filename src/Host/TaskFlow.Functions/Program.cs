@@ -1,6 +1,7 @@
 using Azure.Core.Serialization;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Builder;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -10,6 +11,19 @@ using TaskFlow.Application.Models.Serialization;
 using TaskFlow.Bootstrapper;
 
 var builder = FunctionsApplication.CreateBuilder(args);
+
+// Azure App Configuration (D-042) parity with the other hosts: dynamic config + feature flags, no-op
+// unless AppConfig:Endpoint (or ConnectionStrings:AppConfig) is set. Runs first so every later
+// configuration read sees values it overrides. The isolated worker needs its own refresh middleware
+// package (Microsoft.Azure.AppConfiguration.Functions.Worker) rather than the ASP.NET Core
+// UseAzureAppConfiguration(IApplicationBuilder) Api/Gateway use; guarded by the same condition
+// AddTaskFlowAppConfiguration checked, so registering it without the provider added cannot throw.
+builder.AddTaskFlowAppConfiguration();
+if (!string.IsNullOrWhiteSpace(builder.Configuration[RegisterServices.AppConfigEndpointConfigKey])
+    || !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("AppConfig")))
+{
+    builder.UseAzureAppConfiguration();
+}
 
 builder.ConfigureFunctionsWebApplication();
 
