@@ -18,3 +18,5 @@
 - No trace-context propagation guidance for message brokers; a scaffolded consumer starts a disconnected trace instead of joining the producer's.
 - No feature-flag guidance (dynamic flags, targeting, HTTP-surface gating vs consumer-side gating); scaffolds default to static env-var kill switches only.
 
+- support/taskflow-proof-map.md in the scaffold repo still cites tests/Test.E2E/SqlApiFactory.cs and tests/Test.Integration/Infrastructure/SqlContainerFixture.cs; the dual-provider refactor renamed them to tests/Test.E2E/DbApiFactory.cs and tests/Test.Integration/Infrastructure/DbContainerFixture.cs (validate-reference.py fails on the stale paths until the map is updated).
+- domain-specification event trigger pattern (afterCreate|afterUpdate|afterStatusChange|afterAction(...)|afterDelete|scheduled) cannot express a conditional trigger such as afterUpdate only when Title or Description changed; the condition has to live in notes.

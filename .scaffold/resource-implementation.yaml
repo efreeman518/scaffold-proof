@@ -42,7 +42,7 @@ includeAzd: false
 includeAiServices: true
 
 database: SQLServer+PostgreSQL
-migrationLifecycle: reset-baseline
+migrationLifecycle: unreleased-resettable   # scaffold schema value; the migration sets were reset as a fresh baseline (D-025) and nothing is released yet
 databaseProviders: [SqlServer, PostgreSql]
 caching: FusionCache+Redis
 includeKeyVault: true

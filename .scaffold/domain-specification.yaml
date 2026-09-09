@@ -267,7 +267,7 @@ events:
 
   - name: TaskItemContentChanged
     raisedBy: TaskItem
-    trigger: afterAction(Update) when Title or Description changed value
+    trigger: afterUpdate
     payload: [TenantId, TaskItemId, OccurredAtUtc]
     notes: "Embedding-pipeline signal (D-040, GR-19). Raised only when the embeddable text actually changed - a status-only, priority-only or link-only update raises nothing, so no model call and no vector rewrite."
 
