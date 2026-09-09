@@ -1,3 +1,4 @@
+using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -179,7 +180,7 @@ public class PgVectorSearchTests
         db.TenantId = TenantId;
         var task = TaskItem.Create(DomainId.From<TaskFlow.Domain.Shared.TenantId>(TenantId), title).Value!;
         db.Add(task);
-        await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: ct);
         return task.Id.Value;
     }
 
@@ -209,12 +210,25 @@ public class PgVectorSearchTests
     private sealed class StubEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<float>>
     {
         public const string ModelName = "stub-embed";
-        public const int Dimensions = 4;
+
+        /// <summary>Must match the deployed column type: pgvector rejects any other length outright.</summary>
+        public const int Dimensions = TaskItemEmbedding.DefaultDimensions;
+
         public const string DatabaseQuery = "database migration";
 
-        public static readonly float[] DatabaseVector = [1f, 0f, 0f, 0f];
-        public static readonly float[] DesignVector = [0f, 1f, 0f, 0f];
-        private static readonly float[] QueryVector = [0.9f, 0.1f, 0f, 0f];
+        // Two orthogonal unit vectors and a query leaning heavily toward the first, so the expected ranking
+        // follows from the geometry rather than from anything the search service does.
+        public static readonly float[] DatabaseVector = Axis(0, 1f);
+        public static readonly float[] DesignVector = Axis(1, 1f);
+        private static readonly float[] QueryVector = Axis(0, 0.9f, 1, 0.1f);
+
+        private static float[] Axis(int index, float value, int? secondIndex = null, float secondValue = 0f)
+        {
+            var vector = new float[Dimensions];
+            vector[index] = value;
+            if (secondIndex is int i) vector[i] = secondValue;
+            return vector;
+        }
 
         public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
             IEnumerable<string> values,
