@@ -150,6 +150,13 @@ public sealed class DeploymentWorkflowContractTests
     public void CiWorkflow_ValidatesComposeAlwaysAndSmokesItOnlyOnDispatch()
     {
         var workflow = ReadWorkflow("ci.yml");
+        // Uno.Sdk conditions implicit package references (DevServer, HotDesign, MCP) on Optimize: a Debug restore
+        // followed by a Release --no-restore build fails with UNOB0019, so every restore names the Release configuration.
+        StringAssert.Contains(workflow, "dotnet restore TaskFlow.slnx -p:Configuration=Release");
+        Assert.AreEqual(
+            workflow.Split("dotnet restore TaskFlow.slnx").Length,
+            workflow.Split("dotnet restore TaskFlow.slnx -p:Configuration=Release").Length,
+            "every solution restore in ci.yml must name the Release configuration");
 
         StringAssert.Contains(workflow, "docker compose -f docker-compose.yml config -q");
         StringAssert.Contains(

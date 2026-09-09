@@ -123,7 +123,10 @@ jobs:
       - name: Restore
         env:
           NuGetPackageSourceCredentials_efreeman518-github: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
-        run: dotnet restore TaskFlow.slnx
+        # Restore in the configuration the Release build below uses: Uno.Sdk conditions its implicit DevServer,
+        # HotDesign and MCP package references on Optimize, so a Debug restore followed by a Release build with
+        # --no-restore imports the DevServer targets and fails with UNOB0019.
+        run: dotnet restore TaskFlow.slnx -p:Configuration=Release
 
       - name: Build
         # Static web assets writes shared obj caches and can race when the same web project is in
@@ -300,7 +303,7 @@ jobs:
         if: ${{ github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider }}
         env:
           NuGetPackageSourceCredentials_efreeman518-github: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
-        run: dotnet restore TaskFlow.slnx
+        run: dotnet restore TaskFlow.slnx -p:Configuration=Release
 
       - name: Build test lanes
         if: ${{ github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider }}
