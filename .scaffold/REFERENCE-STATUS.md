@@ -31,12 +31,12 @@ Fast lane (`TestCategory=Unit|TestCategory=Architecture|TestCategory=Endpoint`) 
 | Project | Category filter | Verified count | Notes |
 |---|---|---:|---|
 | Test.Unit | `TestCategory=Unit` | 423 | Rerun in-worktree |
-| Test.Architecture | `TestCategory=Architecture` | 50 | Rerun in-worktree |
+| Test.Architecture | `TestCategory=Architecture` | 52 | Rerun in-worktree; +2 since the prior refresh (slice F1: no host csproj marks OpenAI PrivateAssets; no SqlClient-dependent host declares InvariantGlobalization=true) |
 | Test.Endpoints | `TestCategory=Endpoint` | 164 | Rerun in-worktree |
 | EF.Messaging.RabbitMq.Tests | `TestCategory=Unit` | 15 | Rerun in-worktree; topology/channel-pool unit coverage against a fake channel |
 | Test.PlaywrightUI | `TestCategory=Unit` (one stray-tagged class, `WasmHostContractTests`) | 5 | Rerun in-worktree; contributes to the combined fast-lane total even though the project as a whole needs the full-stack Aspire mesh |
 
-**Combined fast lane: 423 + 50 + 164 + 15 + 5 = 657 passed, 0 failed.** Matches the count the orchestrator reported from the acceptance run on the merged tree at commit `d4d42ee` (2026-09-08) before this doc-only G4 slice added its own commit on top - rerunning it in-worktree after the LoggerMessage/CA1848 commit produced the identical 657, so the sweep did not change fast-lane behavior.
+**Combined fast lane: 423 + 52 + 164 + 15 + 5 = 659 passed, 0 failed.** Matches the count the orchestrator reported from the acceptance run on the merged tree at commit `d4d42ee` (2026-09-08) before this doc-only G4 slice added its own commit on top - rerunning it in-worktree after the LoggerMessage/CA1848 commit produced the identical 657, so the sweep did not change fast-lane behavior. Slice F1 (2026-09-09) added 2 Test.Architecture cases (657 -> 659; see the row above).
 
 Docker/Testcontainers-backed lanes below were run by the orchestrator's acceptance pass on the merged tree at commit `d4d42ee` (run-scoped `TESTCONTAINERS_HOST_OVERRIDE`, not committed) and reported to this session; not independently rerun in this worktree (G4 is a docs-only slice and does not touch the code these lanes exercise).
 
