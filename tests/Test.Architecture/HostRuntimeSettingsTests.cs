@@ -257,6 +257,45 @@ public class HostRuntimeSettingsTests
         }
     }
 
+    /// <summary>Matches an actual middleware call, not the method name appearing in a comment or a message string.</summary>
+    private static readonly System.Text.RegularExpressions.Regex UseHttpsRedirectionCall = new(
+        @"\.UseHttpsRedirection\s*\(", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// Verifies no deployable host calls UseHttpsRedirection. Every deployment lane terminates TLS at the
+    /// edge (Container Apps ingress in the Azure lane, Caddy in the portable lane, D-036/D-049), so every
+    /// host container only ever serves plain http; a reintroduced redirect would 307 the edge's own
+    /// health/proxy probes and, on a host with no locally trusted certificate (as TaskFlow.Blazor was before
+    /// this rule), break any client that follows the redirect.
+    /// </summary>
+    [TestMethod]
+    public void Given_HostSourceFiles_When_Read_Then_NoneCallUseHttpsRedirection()
+    {
+        var hostDirectories = Hosts
+            .Select(h => System.IO.Path.GetDirectoryName(RepoFiles.Path(h.Project.Split('/')))!)
+            .ToArray();
+
+        foreach (var file in RepoFiles.SourceFiles)
+        {
+            if (!hostDirectories.Any(dir => file.StartsWith(dir, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            var lines = File.ReadAllLines(file);
+            for (var lineNumber = 0; lineNumber < lines.Length; lineNumber++)
+            {
+                // A simple per-line strip of anything after "//" is enough to skip comments here; this rule
+                // does not need a real C# parser.
+                var commentStart = lines[lineNumber].IndexOf("//", StringComparison.Ordinal);
+                var codeOnly = commentStart >= 0 ? lines[lineNumber][..commentStart] : lines[lineNumber];
+
+                Assert.IsFalse(
+                    UseHttpsRedirectionCall.IsMatch(codeOnly),
+                    $"{file}:{lineNumber + 1} calls UseHttpsRedirection, but every lane terminates TLS at "
+                    + "the edge (D-036/D-049) and hosts only ever serve plain http.");
+            }
+        }
+    }
+
     private static string ReadRepoFile(string relativePath) =>
         File.ReadAllText(RepoFiles.Path(relativePath.Split('/')));
 

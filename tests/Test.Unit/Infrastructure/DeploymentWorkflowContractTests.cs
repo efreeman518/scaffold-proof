@@ -150,6 +150,28 @@ public sealed class DeploymentWorkflowContractTests
     public void CiWorkflow_ValidatesComposeAlwaysAndSmokesItOnlyOnDispatch()
     {
         var workflow = ReadWorkflow("ci.yml");
+
+        // PR runs are the merge gate and both deploy workflows are workflow_dispatch only, so a main-push
+        // run of ci.yml would only re-test the identical tree the PR run already verified. Anchored at line
+        // start (not a fixed-indentation substring) so a reflowed "on:" block still gets checked correctly.
+        const System.Text.RegularExpressions.RegexOptions Multiline = System.Text.RegularExpressions.RegexOptions.Multiline;
+        Assert.IsFalse(
+            System.Text.RegularExpressions.Regex.IsMatch(workflow, @"^\s*push:\s*$", Multiline),
+            "ci.yml must not run on push");
+        Assert.IsTrue(
+            System.Text.RegularExpressions.Regex.IsMatch(workflow, @"^\s*pull_request:\s*$", Multiline));
+        Assert.IsTrue(
+            System.Text.RegularExpressions.Regex.IsMatch(workflow, @"^\s*schedule:\s*$", Multiline));
+        Assert.IsTrue(
+            System.Text.RegularExpressions.Regex.IsMatch(workflow, @"^\s*workflow_dispatch:\s*$", Multiline));
+
+        // Monthly, not weekly: GitHub Actions cron has no "last day of month" syntax, so the 28th (the one
+        // day that exists in every month) stands in for it - minimal Actions-minute cost for the deep lanes.
+        Assert.IsTrue(
+            System.Text.RegularExpressions.Regex.IsMatch(
+                workflow, @"^\s*-\s*cron:\s*""17 6 28 \* \*""\s*$", Multiline),
+            "ci.yml must run the deep lane monthly on the 28th at 06:17 UTC.");
+
         // Uno.Sdk conditions implicit package references (DevServer, HotDesign, MCP) on Optimize: a Debug restore
         // followed by a Release --no-restore build fails with UNOB0019, so every restore names the Release configuration.
         StringAssert.Contains(workflow, "dotnet restore TaskFlow.slnx -p:Configuration=Release");

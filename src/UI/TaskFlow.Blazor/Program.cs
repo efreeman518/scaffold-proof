@@ -158,7 +158,9 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-app.UseHttpsRedirection();
+// No HTTPS-redirect middleware here: every deployment lane terminates TLS at the edge (Container Apps
+// ingress in the Azure lane, Caddy in the portable lane, D-036/D-049), so this container only ever serves
+// plain http, same as the Api and Gateway hosts.
 app.UseStaticFiles();
 app.UseAntiforgery();
 

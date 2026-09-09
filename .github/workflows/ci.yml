@@ -1,16 +1,19 @@
 name: CI
 
 on:
-  push:
-    branches: [main, develop]
+  # No push trigger: PR runs are the merge gate (both deploy workflows are workflow_dispatch only), so a
+  # main-push run would only re-test the identical tree the PR run already verified.
   pull_request:
     branches: [main, develop]
-  # Weekly deep-lane run (Mon 06:17 UTC): keeps the Docker-backed E2E/Integration/
-  # Aspire lanes continuously green instead of only when manually dispatched.
+  # Monthly deep-lane run (28th 06:17 UTC): keeps the Docker-backed E2E/Integration/
+  # Aspire lanes green with minimal Actions-minute cost, leaving the rest of the
+  # monthly minute pool to on-demand work. The 28th is used instead of the last
+  # calendar day because GitHub Actions cron has no "last day of month" syntax and
+  # the 28th is the one day that exists in every month.
   # FoundryLocal (model download) and PlaywrightUI (browser + full stack) stay
   # dispatch-only for cost/flakiness reasons.
   schedule:
-    - cron: "17 6 * * 1"
+    - cron: "17 6 28 * *"
   workflow_dispatch:
     inputs:
       includeE2E:
@@ -449,6 +452,9 @@ jobs:
 
   # TODO: Enable auto-deploy after running bootstrap.ps1 and configuring GitHub secrets/variables.
   # Remove workflow_dispatch from deploy.yml once this is enabled - manual trigger won't be needed.
+  # ci.yml no longer has a push trigger (PR runs are the merge gate), so the condition below would never be
+  # true as written; wire this job to a trigger that actually fires after a merge to main (e.g. a
+  # workflow_run trigger on this workflow's pull_request completion) before enabling it.
   # deploy:
   #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
   #   needs: build-and-test
