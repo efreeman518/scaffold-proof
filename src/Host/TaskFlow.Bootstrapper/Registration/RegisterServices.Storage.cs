@@ -1,14 +1,14 @@
+using EF.Storage.Contracts;
+using EF.Storage.S3;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using TaskFlow.Application.Contracts.Storage;
-using TaskFlow.Infrastructure.Storage.S3;
 
 namespace TaskFlow.Bootstrapper;
 
 /// <summary>Object-storage backend selected for this deployment (D-037).</summary>
 public enum StorageProvider
 {
-    /// <summary>Azure Blob Storage behind the unchanged <see cref="IBlobStorageRepository"/>.</summary>
+    /// <summary>Azure Blob Storage behind <see cref="IObjectStorageRepository"/>.</summary>
     AzureBlob,
 
     /// <summary>S3-compatible storage (MinIO locally/on the VPS, any S3 provider in production).</summary>
@@ -42,7 +42,7 @@ public static partial class RegisterServices
                 $"Unknown storage provider '{value}'. Allowed values: {string.Join(", ", Enum.GetNames<StorageProvider>())}.");
 
     /// <summary>Dispatches to the selected object-storage backend.</summary>
-    [ProviderSwitch(typeof(IBlobStorageRepository))]
+    [ProviderSwitch(typeof(IObjectStorageRepository))]
     private static void AddStorageServices(IServiceCollection services, IConfiguration config)
     {
         switch (ResolveStorageProvider(config))
@@ -57,7 +57,8 @@ public static partial class RegisterServices
     }
 
     /// <summary>
-    /// Registers the S3-compatible object-storage arm (D-037). <see cref="S3StorageSettings.PublicServiceUrl"/>
+    /// Registers the S3-compatible object-storage arm (D-037) from <c>EF.Storage.S3</c>.
+    /// <see cref="S3StorageSettings.PublicServiceUrl"/>
     /// is required and validated eagerly here (not deferred to <c>ValidateOnStart</c>): presigned download
     /// URLs are host-bound, so a missing public endpoint is a configuration error the moment this arm is
     /// selected, not a surprise on the first attachment download.
@@ -74,8 +75,8 @@ public static partial class RegisterServices
                 $"{StorageProviderConfigKey}=S3 requires {S3StorageSettings.ConfigSectionName}:PublicServiceUrl " +
                 "(presigned download URLs are signed against a host, so a public, browser-reachable endpoint must be configured).");
 
-        // AWS SDK types stay out of this assembly (Test.Architecture: only TaskFlow.Infrastructure.Storage
-        // may reference Amazon.*); the client/repository wiring lives in the Infrastructure.Storage extension.
+        // EF.Storage.S3 owns the two IAmazonS3 clients, the repository, and the bucket provisioner; no
+        // Amazon.* type appears in this assembly's own signatures (Test.Architecture asserts that).
         services.AddS3ObjectStorage(settings);
     }
 }

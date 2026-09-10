@@ -23,7 +23,13 @@
     <PackageVersion Include="EF.Messaging" Version="1.1.102" />
     <PackageVersion Include="EF.Messaging.RabbitMq" Version="1.1.102" />
     <PackageVersion Include="EF.Storage" Version="1.1.102" />
+    <!-- Provider-neutral object-storage contract both storage arms implement (D-037, package request 25). -->
+    <PackageVersion Include="EF.Storage.Contracts" Version="1.1.102" />
+    <!-- D-037 Portable-lane object-storage arm: the published S3 repository, bucket provisioner, and DI wiring. -->
+    <PackageVersion Include="EF.Storage.S3" Version="1.1.102" />
     <PackageVersion Include="EF.Table" Version="1.1.102" />
+    <!-- Backend-neutral audit sink contract both audit arms implement (D-039, package request 26). -->
+    <PackageVersion Include="EF.Audit.Contracts" Version="1.1.102" />
     <PackageVersion Include="EF.CosmosDb" Version="1.1.102" />
     <PackageVersion Include="EF.KeyVault" Version="1.1.102" />
     <PackageVersion Include="EF.Grpc" Version="1.1.102" />
@@ -213,7 +219,9 @@
     <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.5.3" />
   </ItemGroup>
   <ItemGroup Label="AWS S3 (D-037 Portable-lane object-storage arm: MinIO locally/on the VPS, any S3-compatible provider in production)">
-    <PackageVersion Include="AWSSDK.S3" Version="4.0.102.5" />
+    <!-- The S3 arm itself is EF.Storage.S3; this direct reference exists for Test.Integration, which drives
+         MinIO with its own IAmazonS3 client. Version tracks EF.Storage.S3's own dependency (no downgrade). -->
+    <PackageVersion Include="AWSSDK.S3" Version="4.0.103.1" />
   </ItemGroup>
   <ItemGroup Label="Azure Service Bus">
     <PackageVersion Include="Azure.Messaging.ServiceBus" Version="7.20.2" />

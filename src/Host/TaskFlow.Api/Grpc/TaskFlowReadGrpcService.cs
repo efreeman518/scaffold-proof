@@ -20,8 +20,10 @@ namespace TaskFlow.Api.Grpc;
 /// IRequestContext is built from IHttpContextAccessor.HttpContext.User exactly as it is for a REST
 /// call. The tenant a caller sees over gRPC is therefore the tenant it would see over REST.
 ///
-/// Exception mapping mirrors DefaultExceptionHandler's HTTP status choices one for one, so a client
-/// that understands the REST failure modes understands these:
+/// Failures are translated by <c>EF.Grpc.ServiceErrorInterceptor</c>, registered in RegisterApiServices
+/// with <see cref="StatusFor"/> as its <c>StatusCodeMapper</c>. The mapping mirrors
+/// DefaultExceptionHandler's HTTP status choices one for one, so a client that understands the REST
+/// failure modes understands these:
 /// <list type="table">
 /// <item><term>ConcurrencyMismatchException / DbUpdateConcurrencyException</term><description>412 -> FailedPrecondition</description></item>
 /// <item><term>IdempotentCreateConflictException</term><description>409 -> Aborted</description></item>
@@ -45,33 +47,51 @@ internal sealed class TaskFlowReadGrpcService(
     : TaskFlowRead.TaskFlowReadBase
 {
     /// <inheritdoc />
-    public override Task<TaskItemSummary> GetTaskItemSummary(
+    public override async Task<TaskItemSummary> GetTaskItemSummary(
         GetTaskItemSummaryRequest request, ServerCallContext context) =>
-        ReadAsync(async ct => (await reads.GetTaskItemSummaryAsync(ct)).ToProto(), context);
+        (await reads.GetTaskItemSummaryAsync(context.CancellationToken)).ToProto();
 
     /// <inheritdoc />
-    public override Task<TaskMetadata> GetTaskMetadata(
+    public override async Task<TaskMetadata> GetTaskMetadata(
         GetTaskMetadataRequest request, ServerCallContext context) =>
-        ReadAsync(async ct => (await reads.GetTaskMetadataAsync(ct)).ToProto(), context);
+        (await reads.GetTaskMetadataAsync(context.CancellationToken)).ToProto();
 
     /// <inheritdoc />
-    public override Task<Contracts.Grpc.TaskItem> GetTaskItem(
-        GetTaskItemRequest request, ServerCallContext context) =>
-        ReadAsync(async ct =>
-        {
-            if (!Guid.TryParse(request.Id, out var id))
-                throw new RpcException(new Status(StatusCode.InvalidArgument, $"'{request.Id}' is not a task id."));
+    public override async Task<Contracts.Grpc.TaskItem> GetTaskItem(
+        GetTaskItemRequest request, ServerCallContext context)
+    {
+        if (!Guid.TryParse(request.Id, out var id))
+            throw new RpcException(new Status(StatusCode.InvalidArgument, $"'{request.Id}' is not a task id."));
 
-            var result = await GetTaskItemResultAsync(id, ct);
+        var result = await GetTaskItemResultAsync(id, context.CancellationToken);
 
-            return result.Match(
-                response => response.Item is null
-                    ? throw new RpcException(new Status(StatusCode.NotFound, $"Task item {id} was not found."))
-                    : response.Item.ToProto(),
-                errors => throw new RpcException(new Status(
-                    StatusCode.InvalidArgument, string.Join("; ", errors.Select(e => e.Message)))),
-                () => throw new RpcException(new Status(StatusCode.NotFound, $"Task item {id} was not found.")));
-        }, context);
+        return result.Match(
+            response => response.Item is null
+                ? throw new RpcException(new Status(StatusCode.NotFound, $"Task item {id} was not found."))
+                : response.Item.ToProto(),
+            errors => throw new RpcException(new Status(
+                StatusCode.InvalidArgument, string.Join("; ", errors.Select(e => e.Message)))),
+            () => throw new RpcException(new Status(StatusCode.NotFound, $"Task item {id} was not found.")));
+    }
+
+    /// <summary>
+    /// The gRPC equivalent of DefaultExceptionHandler's HTTP status selection, handed to
+    /// <c>EF.Grpc.ErrorInterceptorSettings.StatusCodeMapper</c>. An <see cref="RpcException"/> a handler
+    /// raised deliberately keeps the status it chose; the interceptor re-wraps it with a generic detail so
+    /// no exception text reaches the wire.
+    /// </summary>
+    internal static StatusCode StatusFor(Exception exception) => exception switch
+    {
+        RpcException rpcException => rpcException.StatusCode,
+        ConcurrencyMismatchException => StatusCode.FailedPrecondition,
+        DbUpdateConcurrencyException => StatusCode.FailedPrecondition,
+        IdempotentCreateConflictException => StatusCode.Aborted,
+        UnauthorizedAccessException => StatusCode.PermissionDenied,
+        KeyNotFoundException => StatusCode.NotFound,
+        OperationCanceledException => StatusCode.Cancelled,
+        ArgumentException or FormatException or InvalidOperationException => StatusCode.InvalidArgument,
+        _ => StatusCode.Internal
+    };
 
     /// <summary>Routes the by-id read to whichever application style this host was configured with.</summary>
     private Task<Result<DefaultResponse<TaskItemDto>>> GetTaskItemResultAsync(Guid id, CancellationToken ct)
@@ -85,37 +105,4 @@ internal sealed class TaskFlowReadGrpcService(
             "Neither ITaskItemService nor the GetTaskItemByIdQuery handler is registered; " +
             "Application:Style must select one of them.");
     }
-
-    /// <summary>
-    /// Runs one read under the call's cancellation token and translates failures into the status codes
-    /// documented on this type. An RpcException a handler raised deliberately passes straight through.
-    /// </summary>
-    private static async Task<T> ReadAsync<T>(Func<CancellationToken, Task<T>> read, ServerCallContext context)
-    {
-        try
-        {
-            return await read(context.CancellationToken);
-        }
-        catch (RpcException)
-        {
-            throw;
-        }
-        catch (Exception exception)
-        {
-            throw new RpcException(new Status(StatusFor(exception), exception.Message), exception.Message);
-        }
-    }
-
-    /// <summary>The gRPC equivalent of DefaultExceptionHandler's HTTP status selection.</summary>
-    private static StatusCode StatusFor(Exception exception) => exception switch
-    {
-        ConcurrencyMismatchException => StatusCode.FailedPrecondition,
-        DbUpdateConcurrencyException => StatusCode.FailedPrecondition,
-        IdempotentCreateConflictException => StatusCode.Aborted,
-        UnauthorizedAccessException => StatusCode.PermissionDenied,
-        KeyNotFoundException => StatusCode.NotFound,
-        OperationCanceledException => StatusCode.Cancelled,
-        ArgumentException or FormatException or InvalidOperationException => StatusCode.InvalidArgument,
-        _ => StatusCode.Internal
-    };
 }

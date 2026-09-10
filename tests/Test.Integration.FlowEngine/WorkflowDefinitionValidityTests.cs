@@ -1,4 +1,5 @@
 using EF.FlowEngine.Definition;
+using EF.FlowEngine.Definition.NodeConfigs;
 using EF.FlowEngine.Impl;
 using System.Text.Json;
 
@@ -147,6 +148,40 @@ public class WorkflowDefinitionValidityTests
             Assert.IsTrue(config.TryGetProperty("headers", out var headers), $"{nodeId} is missing the headers config key.");
             Assert.AreEqual("*", headers.GetProperty("If-Match").GetString());
         }
+    }
+
+    /// <summary>
+    /// Package request 19 asked for a stable per-iteration id so a retried loop iteration recreates the
+    /// same subtask instead of a duplicate. It shipped as <c>LoopNodeConfig.IdAs</c>, but the value
+    /// <c>LoopNodeExecutor.IterationId</c> stores is a deterministic RFC 4122 <b>version 5</b> UUID over
+    /// instance id + loop node id + index. TaskFlow cannot send that as a create id: GR-17 rejects any
+    /// caller-supplied id that is not a UUIDv7, because a hash-ordered key fragments the clustered index
+    /// every create lands in - the exact cost GR-17 exists to avoid. The create endpoint answers 400 and
+    /// the loop lands on <c>n-output-failed</c>.
+    /// <para>
+    /// So the body must keep sending no <c>Id</c> and rely on the integration node's own
+    /// <c>idempotencyKey</c>, which is already keyed by task id + iteration index. This test fails if
+    /// someone re-adds the id without first getting a UUIDv7-shaped iteration id from the package.
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Integration")]
+    public void AiTaskDecomposer_LoopBody_DoesNotSendThePerIterationIdAsTheSubtaskId()
+    {
+        using var document = JsonDocument.Parse(ReadWorkflowFile("ai-task-decomposer.json"));
+        var nodes = document.RootElement.GetProperty("nodes");
+
+        var loopConfig = nodes.GetProperty("n-create-subtasks").GetProperty("config");
+        var loop = loopConfig.Deserialize<LoopNodeConfig>(JsonOpts)!;
+        Assert.AreEqual("n-loop-create-one", loop.BodyEntryNodeId, "the loop must execute the create node inline");
+
+        var body = nodes.GetProperty(loop.BodyEntryNodeId!).GetProperty("config");
+        Assert.IsFalse(
+            body.GetProperty("body").GetProperty("item").TryGetProperty("Id", out _),
+            "the created subtask must not carry the loop's per-iteration id while that id is a UUIDv5 (GR-17)");
+        Assert.IsTrue(
+            body.TryGetProperty("idempotencyKey", out var key) && !string.IsNullOrWhiteSpace(key.GetString()),
+            "retry idempotency for the create must come from the integration node's idempotencyKey instead");
     }
 
     /// <summary>Verifies read workflow file behavior and protects the expected test contract.</summary>

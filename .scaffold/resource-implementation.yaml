@@ -370,7 +370,7 @@ scheduledJobs:
   - name: AuditRetention
     schedule: "0 40 4 * * *"
     description: "Batch-delete audit log entries older than 30 days (100-row single-partition transactions, PartitionKey = tenantId|yyyyMMdd)"
-    targetService: IAuditLogRepository
+    targetService: EF.Audit.Contracts.IAuditLogRepository
     method: PurgeOlderThanAsync
 
 # ---------------------------------------------------------------------------

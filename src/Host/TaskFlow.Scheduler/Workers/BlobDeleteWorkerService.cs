@@ -1,4 +1,5 @@
 using EF.Common.Extensions;
+using EF.Storage.Contracts;
 using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
 using TaskFlow.Application.Contracts.Storage;
@@ -20,9 +21,9 @@ public sealed class BlobDeleteWorkerService(
     protected override async Task HandleBatchAsync(
         IServiceProvider scope, IOperationalWorkRepository work, LeasedBatch<BlobDeleteWork> batch, CancellationToken ct)
     {
-        // IBlobStorageRepository always resolves - a no-op fallback stands in when no object-storage
+        // IObjectStorageRepository always resolves - a no-op fallback stands in when no object-storage
         // backend is configured and treats a delete as already-gone (D-037), so no null guard is needed here.
-        var blobs = scope.GetRequiredService<IBlobStorageRepository>();
+        var blobs = scope.GetRequiredService<IObjectStorageRepository>();
 
         var outcome = await DeleteBatchAsync(blobs, batch.Items, Options.MaxConcurrency, ct)
             .ConfigureAwait(false);
@@ -53,7 +54,7 @@ public sealed class BlobDeleteWorkerService(
     /// <returns>Ids to complete, and the rows to release with the error that stopped them.</returns>
     public static async Task<(IReadOnlyCollection<Guid> Deleted, IReadOnlyCollection<(BlobDeleteWork Item, Exception Error)> Failed)>
         DeleteBatchAsync(
-            IBlobStorageRepository blobs,
+            IObjectStorageRepository blobs,
             IReadOnlyList<BlobDeleteWork> items,
             int maxConcurrency,
             CancellationToken ct)

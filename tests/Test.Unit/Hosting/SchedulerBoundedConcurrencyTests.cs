@@ -1,3 +1,4 @@
+using EF.Storage.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Infrastructure.Data.Messaging;
@@ -175,7 +176,7 @@ public class SchedulerBoundedConcurrencyTests
 
     /// <summary>Blob store that records peak concurrent deletes and can fail a chosen blob.</summary>
     private sealed class ConcurrencyObservingBlobStore(TimeSpan hold, Func<string, bool>? failOn = null)
-        : IBlobStorageRepository
+        : IObjectStorageRepository
     {
         private int _inFlight;
         private int _maxInFlight;
@@ -184,7 +185,7 @@ public class SchedulerBoundedConcurrencyTests
         public int MaxInFlight => Volatile.Read(ref _maxInFlight);
         public int Calls => Volatile.Read(ref _calls);
 
-        public async Task DeleteAsync(string containerName, string blobName, CancellationToken ct = default)
+        public async Task DeleteAsync(string containerName, string objectName, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _calls);
             var current = Interlocked.Increment(ref _inFlight);
@@ -194,9 +195,9 @@ public class SchedulerBoundedConcurrencyTests
                 // A real delete is a network round trip. The hold is what makes overlap observable: with an
                 // instantly-completing fake, a correct concurrent implementation and a sequential one both
                 // show a peak of 1. The bound assertion itself is exact and does not depend on timing.
-                if (hold > TimeSpan.Zero) await Task.Delay(hold, ct);
-                if (failOn?.Invoke(blobName) == true)
-                    throw new InvalidOperationException($"delete failed for {blobName}");
+                if (hold > TimeSpan.Zero) await Task.Delay(hold, cancellationToken);
+                if (failOn?.Invoke(objectName) == true)
+                    throw new InvalidOperationException($"delete failed for {objectName}");
             }
             finally
             {
@@ -204,18 +205,23 @@ public class SchedulerBoundedConcurrencyTests
             }
         }
 
-        public Task UploadAsync(string containerName, string blobName, Stream content,
+        public Task UploadAsync(string containerName, string objectName, Stream content,
             string? contentType = null, IDictionary<string, string>? metadata = null,
-            CancellationToken ct = default) => throw new NotSupportedException();
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
-        public Task<Stream> DownloadAsync(string containerName, string blobName, CancellationToken ct = default) =>
+        public Task<Stream> DownloadAsync(string containerName, string objectName, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
-        public Task<bool> ExistsAsync(string containerName, string blobName, CancellationToken ct = default) =>
+        public Task<bool> ExistsAsync(string containerName, string objectName, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
-        public Task<Uri> GetBlobUriAsync(string containerName, string blobName, CancellationToken ct = default) =>
-            throw new NotSupportedException();
+        public Task<Uri> GetPresignedUrlAsync(string containerName, string objectName, TimeSpan lifetime,
+            ObjectStoragePermissions permissions = ObjectStoragePermissions.Read,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<ObjectStoragePage> ListAsync(string containerName, string? prefix = null,
+            string? continuationToken = null, int pageSize = 100,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     /// <summary>Transport that records what was sent per destination and peak concurrent sends.</summary>

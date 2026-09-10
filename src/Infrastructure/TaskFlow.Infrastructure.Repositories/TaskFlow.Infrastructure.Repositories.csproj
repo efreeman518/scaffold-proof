@@ -1,8 +1,9 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <PackageReference Include="EF.Data" />
     <PackageReference Include="EF.Data.Contracts" />
+    <PackageReference Include="EF.Audit.Contracts" />
   </ItemGroup>
 
   <ItemGroup>

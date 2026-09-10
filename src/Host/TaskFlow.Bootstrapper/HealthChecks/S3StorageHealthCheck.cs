@@ -1,5 +1,5 @@
+using EF.Storage.S3;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using TaskFlow.Infrastructure.Storage.S3;
 
 namespace TaskFlow.Bootstrapper.HealthChecks;
 

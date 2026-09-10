@@ -3,6 +3,7 @@
     <Project Path="src/Shared/TaskFlow.Observability/TaskFlow.Observability.csproj" />
     <Project Path="src/Shared/TaskFlow.Contracts.Grpc/TaskFlow.Contracts.Grpc.csproj" />
   </Folder>
+  <Folder Name="/Packages/" />
   <Folder Name="/Domain/">
     <Project Path="src/Domain/TaskFlow.Domain.Shared/TaskFlow.Domain.Shared.csproj" />
     <Project Path="src/Domain/TaskFlow.Domain.Model/TaskFlow.Domain.Model.csproj" />

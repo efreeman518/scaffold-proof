@@ -29,10 +29,6 @@ internal static partial class LogMessages
     [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 5, Level = LogLevel.Information, Message = "External resource ready: {ResourceKind} {ResourceName}")]
     public static partial void ExternalResourceReady(this ILogger logger, string resourceKind, string resourceName);
 
-    /// <summary>Logs that FlowEngineIfMatchOverrideHandler applied the D-032 trusted-automation If-Match override.</summary>
-    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 6, Level = LogLevel.Information, Message = "FlowEngine If-Match override applied: {Method} {Route}")]
-    public static partial void FlowEngineIfMatchOverrideApplied(this ILogger logger, string method, string route);
-
     /// <summary>Logs which Data Protection key-ring persistence backend was configured.</summary>
     [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 7, Level = LogLevel.Information, Message = "{AppName} {Environment} - Configure Data Protection key-ring persistence: {Persistence}.")]
     public static partial void ConfigureDataProtectionPersistence(this ILogger logger, string appName, string environment, string persistence);

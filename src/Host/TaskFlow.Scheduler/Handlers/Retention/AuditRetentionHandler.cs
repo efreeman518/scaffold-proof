@@ -1,5 +1,5 @@
+using EF.Audit.Contracts;
 using Microsoft.Extensions.Options;
-using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Infrastructure.Storage;
 using TaskFlow.Observability.Meters;
 using TaskFlow.Scheduler.Abstractions;
@@ -7,9 +7,10 @@ using TaskFlow.Scheduler.Abstractions;
 namespace TaskFlow.Scheduler.Handlers.Retention;
 
 /// <summary>
-/// Trims the Table Storage audit log to its retention window. Deletion goes through single-partition
-/// transactions of 100, which is why the audit partition key carries the day: an expired day is one partition
-/// per tenant and drops in whole batches instead of one round trip per row.
+/// Trims the audit log to its retention window, on whichever arm the Audit:Provider switch selected. On
+/// Table Storage deletion goes through single-partition transactions, which is why the audit partition key
+/// carries the day: an expired day is one partition per tenant and drops in whole batches instead of one
+/// round trip per row. On the relational arm it is a batched delete over the RecordedUtc index.
 /// </summary>
 public sealed class AuditRetentionHandler(
     IAuditLogRepository auditLog,
@@ -22,7 +23,7 @@ public sealed class AuditRetentionHandler(
     /// <summary>Handles audit retention requests.</summary>
     public async Task HandleAsync(CancellationToken ct)
     {
-        var cutoffUtc = timeProvider.GetUtcNow().AddDays(-settings.Value.RetentionDays);
+        var cutoffUtc = timeProvider.GetUtcNow().AddDays(-settings.Value.Audit.RetentionDays);
         meter.RecordRetention("audit", await auditLog.PurgeOlderThanAsync(cutoffUtc, ct));
     }
 }

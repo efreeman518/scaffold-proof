@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <IsTestProject>true</IsTestProject>
@@ -15,6 +15,9 @@
     <PackageReference Include="EF.BackgroundServices" />
     <PackageReference Include="EF.Cache" />
     <PackageReference Include="EF.Common" />
+    <PackageReference Include="EF.Audit.Contracts" />
+    <PackageReference Include="EF.Storage.Contracts" />
+    <PackageReference Include="EF.Storage.S3" />
     <PackageReference Include="EF.FlowEngine.Testing" />
     <PackageReference Include="EF.FlowEngine.Clients.AI" />
   </ItemGroup>

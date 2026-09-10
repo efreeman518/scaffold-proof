@@ -1,3 +1,5 @@
+using EF.AI.Chat;
+using EF.AI.Embeddings;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,6 +29,15 @@ public static partial class RegisterServices
 {
     public const string AiProviderConfigKey = "AiServices:Provider";
     public const string AiProviderEnvVar = "TASKFLOW_AI_PROVIDER";
+
+    /// <summary>Endpoint of the OpenAI-compatible gateway; bound by EF.AI straight out of AiServices.</summary>
+    public const string EndpointConfigKey = "AiServices:Endpoint";
+
+    /// <summary>Chat model/deployment name, defaulting to <c>TaskFlowAiSettings.AgentModelDeployment</c>.</summary>
+    public const string ChatModelConfigKey = "AiServices:ChatModel";
+
+    /// <summary>Embedding model/deployment name, defaulting to <c>TaskFlowAiSettings.EmbeddingModelDeployment</c>.</summary>
+    public const string EmbeddingModelConfigKey = "AiServices:EmbeddingModel";
 
     /// <summary>
     /// Resolves an explicit AI provider selection. Null means "unset": the caller derives today's default
@@ -73,11 +84,7 @@ public static partial class RegisterServices
 
         if (explicitProvider == AiProvider.OpenAICompatible)
         {
-            var clients = OpenAICompatibleChatClientFactory.Create(config);
-            logger.ConfigureOpenAICompatibleChatClient(appName, env, clients.Endpoint);
-            builder.Services.AddSingleton(clients.ChatClient);
-            builder.Services.AddSingleton(clients.EmbeddingGenerator);
-            builder.Services.AddSingleton(new AiProviderInfo("openai-compatible"));
+            AddOpenAICompatibleClients(builder, config, logger, appName, env);
             return;
         }
 
@@ -137,6 +144,46 @@ public static partial class RegisterServices
 
             logger.FoundryLocalUnavailable(ex, appName, env);
         }
+    }
+
+    /// <summary>
+    /// The OpenAICompatible arm (D-041): one endpoint plus an API key covers OpenAI, OpenRouter, Ollama,
+    /// vLLM, and any other OpenAI-wire-protocol gateway. <c>EF.AI</c> owns the client construction and its
+    /// resilience pipeline; this method only maps the app's own <c>AiServices</c> vocabulary onto
+    /// <see cref="EFChatClientSettings"/>, whose <c>Endpoint</c> and <c>ApiKey</c> already bind by name.
+    /// <para>
+    /// <c>validateOnStart</c> keeps the fail-fast: an explicitly selected provider with no endpoint, key,
+    /// or model is a configuration bug, and without validation EF.AI would instead hand every caller a
+    /// disabled client. The failure moves from registration to host start, which is still before the host
+    /// serves a request.
+    /// </para>
+    /// </summary>
+    private static void AddOpenAICompatibleClients(
+        IHostApplicationBuilder builder, IConfiguration config, ILogger logger, string appName, string env)
+    {
+        var aiSection = config.GetSection(TaskFlowAiSettings.ConfigSectionName);
+        var aiSettings = aiSection.Get<TaskFlowAiSettings>() ?? new TaskFlowAiSettings();
+
+        builder.Services.AddEFChatClient(aiSection, validateOnStart: true);
+        builder.Services.PostConfigure<EFChatClientSettings>(settings =>
+        {
+            settings.Provider = EFChatClientProvider.OpenAICompatible;
+            settings.ModelId = config[ChatModelConfigKey] is { Length: > 0 } chatModel
+                ? chatModel
+                : aiSettings.AgentModelDeployment;
+        });
+
+        builder.Services.AddEFEmbeddingGenerator(aiSection, validateOnStart: true);
+        builder.Services.PostConfigure<EFEmbeddingGeneratorSettings>(settings =>
+        {
+            settings.Provider = EFEmbeddingGeneratorProvider.OpenAICompatible;
+            settings.ModelId = config[EmbeddingModelConfigKey] is { Length: > 0 } embeddingModel
+                ? embeddingModel
+                : aiSettings.EmbeddingModelDeployment;
+        });
+
+        logger.ConfigureOpenAICompatibleChatClient(appName, env, config[EndpointConfigKey] ?? string.Empty);
+        builder.Services.AddSingleton(new AiProviderInfo("openai-compatible"));
     }
 
     /// <summary>
