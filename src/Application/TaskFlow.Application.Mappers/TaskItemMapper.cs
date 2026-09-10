@@ -117,10 +117,7 @@ public static class TaskItemMapper
     public static readonly Expression<Func<TaskItem, TaskItemDto>> ProjectorSearch =
         entity => new TaskItemDto
         {
-            // Implicit TaskItemId -> Guid conversion, not .Value: EF Core can order and filter the
-            // projected id (the keyset pager does both) only when it reaches SQL as the converted
-            // column; a .Value member access into the domain-id struct is refused instead.
-            Id = entity.Id,
+            Id = entity.Id.Value,
             Version = entity.Version,
             TenantId = entity.TenantId.Value,
             Title = entity.Title,

@@ -59,11 +59,11 @@ public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryption
     /// <remarks>
     /// The cursor is <c>EF.Data.Contracts.CursorCodec</c> through <c>KeysetCursor</c> (package requests 6
     /// and 27): tenant-and-sort-mode-scoped, HMAC-signed, schema-versioned, fails closed. The ORDER BY,
-    /// the resume predicate and the cursor round trip are the package's <c>KeysetPageAsync</c> (request 6).
-    /// It pages whatever <c>IQueryable&lt;T&gt;</c> it is given, so it is applied to the projected
-    /// <see cref="TaskItemDto"/> query rather than to the entity: order, resume predicate and page limit
-    /// compose on top of the projection and reach SQL as one statement, which keeps the projection
-    /// server-side. Paging the entity instead would return entities and force the projection client-side.
+    /// the resume predicate, the projection and the cursor round trip are the package's
+    /// <c>KeysetPageProjectionAsync</c> (request 6, 1.1.102). It applies the selector after the resume
+    /// predicate and the ordering, so the database projects the DTO columns instead of selecting the whole
+    /// entity, and it mints the next cursor from the entity's own sort and tie-break keys in the same
+    /// statement - a DTO that drops a sort column still pages correctly, with no second query.
     /// </remarks>
     public async Task<CursorPage<TaskItemDto>> SearchTaskItemsAsync(
         TaskItemCursorSearchRequest request, Guid tenantId, CancellationToken ct = default)
@@ -79,34 +79,34 @@ public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryption
         if (!string.IsNullOrEmpty(request.Cursor) && !cursorCodec.TryDecode(request.Cursor, cursor.TenantKey, out _))
             throw new ArgumentException(ErrorConstants.ERROR_CURSOR_INVALID, nameof(request));
 
-        var q = ApplyFilters(DB.Set<TaskItem>().AsNoTracking(), request.Filter)
-            .Select(TaskItemMapper.ProjectorSearch);
+        var q = ApplyFilters(DB.Set<TaskItem>().AsNoTracking(), request.Filter);
+        var projector = TaskItemMapper.ProjectorSearch;
 
         // Each arm names the index its ORDER BY must hit; a mode whose ORDER BY does not match an index
         // turns this into a full scan at depth, which is exactly what cursor paging exists to avoid. The
         // pager orders a nullable key by (key IS NULL) first, so an unscheduled task never hides a
-        // scheduled one; ModifiedAtUtc is non-nullable on the entity and is read through .Value so the
-        // pager does not add that term in front of IX_TaskItem_TenantId_ModifiedAtUtc_Id.
+        // scheduled one. The tie-break key is TaskItemId itself: the package resolves an IDomainId key to
+        // its underlying Guid column for both the ORDER BY and the resume comparison.
         var page = request.SortMode switch
         {
             // IX: the clustered primary key (TenantId, Id).
             TaskItemSortMode.IdAsc =>
-                await q.KeysetPageAsync(TieBreaker, TieBreaker, cursor, request.PageSize, false, ct)
+                await q.KeysetPageProjectionAsync(projector, TieBreaker, TieBreaker, cursor, request.PageSize, false, ct)
                     .ConfigureAwait(ConfigureAwaitOptions.None),
             // IX_TaskItem_TenantId_DueDate_Id, forwards and backwards.
             TaskItemSortMode.DueDateAsc =>
-                await q.KeysetPageAsync(d => d.DueDate, TieBreaker, cursor, request.PageSize, false, ct)
+                await q.KeysetPageProjectionAsync(projector, e => e.DueDate, TieBreaker, cursor, request.PageSize, false, ct)
                     .ConfigureAwait(ConfigureAwaitOptions.None),
             TaskItemSortMode.DueDateDesc =>
-                await q.KeysetPageAsync(d => d.DueDate, TieBreaker, cursor, request.PageSize, true, ct)
+                await q.KeysetPageProjectionAsync(projector, e => e.DueDate, TieBreaker, cursor, request.PageSize, true, ct)
                     .ConfigureAwait(ConfigureAwaitOptions.None),
             // IX_TaskItem_TenantId_ModifiedAtUtc_Id, scanned backwards.
             TaskItemSortMode.ModifiedDesc =>
-                await q.KeysetPageAsync(d => d.ModifiedAtUtc!.Value, TieBreaker, cursor, request.PageSize, true, ct)
+                await q.KeysetPageProjectionAsync(projector, e => e.ModifiedAtUtc, TieBreaker, cursor, request.PageSize, true, ct)
                     .ConfigureAwait(ConfigureAwaitOptions.None),
             // IX_TaskItem_TenantId_Status_Id.
             _ =>
-                await q.KeysetPageAsync(d => d.Status, TieBreaker, cursor, request.PageSize, false, ct)
+                await q.KeysetPageProjectionAsync(projector, e => e.Status, TieBreaker, cursor, request.PageSize, false, ct)
                     .ConfigureAwait(ConfigureAwaitOptions.None)
         };
 
@@ -114,11 +114,12 @@ public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryption
     }
 
     /// <summary>
-    /// Tie-break key for every sort mode: the projected task id, always ascending. It is the DTO's
-    /// <see cref="Guid"/> rather than <c>TaskItemId</c> because the pager's domain-id overload needs the
-    /// key on the paged type, and the paged type here is the projection.
+    /// Tie-break key for every sort mode: the task id, always ascending. <c>TaskItemId</c> is used
+    /// directly - the package's domain-id overload formats it as its underlying <see cref="Guid"/> in the
+    /// cursor (the same text a raw <see cref="Guid"/> key produced) and compares the converted column in
+    /// the query.
     /// </summary>
-    private static readonly Expression<Func<TaskItemDto, Guid>> TieBreaker = d => d.Id!.Value;
+    private static readonly Expression<Func<TaskItem, TaskItemId>> TieBreaker = e => e.Id;
 
     /// <summary>
     /// Scope key the cursor is bound to. <c>CursorCodec</c> re-checks its tenant key on decode and fails
