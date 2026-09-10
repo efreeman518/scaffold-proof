@@ -30,9 +30,8 @@ internal static partial class LogMessages
     [LoggerMessage(EventId = LogEventIds.SchedulerBase + 5, Level = LogLevel.Information, Message = "Found {Count} stale tasks (cancelled > {StaleDays} days ago)")]
     public static partial void StaleTasksFound(this ILogger logger, int count, int staleDays);
 
-    /// <summary>Logs a failure inside a leased worker poll; the loop backs off and retries.</summary>
-    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 6, Level = LogLevel.Error, Message = "Leased worker poll for {WorkType} failed")]
-    public static partial void LeasedWorkerPollFailed(this ILogger logger, string workType, Exception exception);
+    // EventId SchedulerBase + 6 was LeasedWorkerPollFailed; EF.BackgroundServices.LeasedWorkerBase logs the
+    // failed batch itself (package request 11). Not reused - a shipped EventId is retired, never renumbered.
 
     /// <summary>Logs that the outbox dispatcher did not start because no broker is configured.</summary>
     [LoggerMessage(EventId = LogEventIds.SchedulerBase + 7, Level = LogLevel.Warning, Message = "No messaging transport configured: outbox dispatcher not started, staged rows remain pending")]

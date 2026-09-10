@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using System.Diagnostics;
 using TaskFlow.Infrastructure.Data.Messaging;
 using TaskFlow.Infrastructure.Data.Operational;
@@ -14,15 +15,16 @@ public sealed class OutboxDispatcherService(
     IServiceScopeFactory scopeFactory,
     IIntegrationEventTransport transport,
     MessagingMetrics metrics,
-    ILogger<OutboxDispatcherService> logger)
-    : LeasedWorkerBase<OutboxMessage>(scopeFactory, logger)
+    IOptionsMonitor<OutboxDispatcherSettings> options,
+    ILoggerFactory loggerFactory)
+    : OperationalLeasedWorker<OutboxMessage, OutboxDispatcherSettings>(scopeFactory, options, loggerFactory)
 {
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!transport.CanDispatch)
         {
-            logger.OutboxDispatcherDisabled();
+            Logger.OutboxDispatcherDisabled();
             return;
         }
 
@@ -34,7 +36,7 @@ public sealed class OutboxDispatcherService(
         IServiceProvider scope, IOperationalWorkRepository work, LeasedBatch<OutboxMessage> batch, CancellationToken ct)
     {
         metrics.RecordClaimBatch(batch.Items.Count);
-        return DispatchBatchAsync(batch, transport, work, metrics, logger, ct);
+        return DispatchBatchAsync(batch, transport, work, metrics, Logger, ct);
     }
 
     /// <summary>
