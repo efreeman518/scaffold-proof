@@ -4,63 +4,57 @@ Canonical current evidence for the TaskFlow reference application. Historical ph
 
 > Update this file only from observed results. TaskFlow CI records the scaffold checkout commit used for cross-repository validation so failures remain diagnosable without creating a compatibility pin.
 
-This refresh follows the Portable-lane + scale-guidance-alignment refactor (`docs/plans/portable-lane-guidance-plan.md`, decisions D-035 through D-056; slices P1-P7, G1-G4). All code slices are merged; this is the G4 closing slice's docs pass.
+This refresh follows the `feature/ef-packages-1-1-100` package-refactor: EF.* pinned at 1.1.102, EF.FlowEngine.*/EF.FilterBuilder at 1.0.173, app-local fallbacks for the landed package requests deleted. Numbers below are the orchestrator's gate on the merged tree, detached worktree, dated 2026-09-10.
 
 ## Build Status
 
 | Field | Value |
 |---|---|
-| Last verified | 2026-09-08 |
+| Last verified | 2026-09-10 (orchestrator's gate on the merged tree, detached worktree) |
 | Solution | `TaskFlow.slnx` |
 | Target framework | .NET 10 |
-| Solution projects declared (`dotnet sln list`) | 49 |
-| Solution projects built (`dotnet build` summary line) | 52 |
+| Configuration | Release |
+| Solution projects declared (`dotnet sln list` / slnx `<Project Path=` count) | 47 (two projects deleted this refactor: `src/Packages/EF.Messaging.RabbitMq`, `tests/EF.Messaging.RabbitMq.Tests`) |
+| Solution build units (`dotnet build TaskFlow.slnx -c Release -m:1` summary line) | 50 |
 | Errors | 0 |
 | Warnings | 0 |
 
-`src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj` builds separately (3 projects: `TaskFlow.Uno`, `TaskFlow.Uno.Core`, `TaskFlow.Uno.Presentation`) because the Uno SDK requires explicit invocation; 0 errors, 0 warnings.
+`src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj` builds separately (Release, 3 projects: `TaskFlow.Uno`, `TaskFlow.Uno.Core`, `TaskFlow.Uno.Presentation`) because the Uno SDK requires explicit invocation; 0 errors, 0 warnings.
 
-Note on the project count: the same 3-project delta observed at the previous refresh (2026-09-04: 48 declared / 51 built) persists at the new counts (49 declared / 52 built) - `dotnet sln TaskFlow.slnx list` and a `grep -c '<Project Path=' TaskFlow.slnx` both agree on 49, but `dotnet build`'s own summary line reports 52 projects built. Still observed, not root-caused (likely a transitively-built project not itself an `.slnx` entry), flagged rather than reconciled.
+`dotnet ef migrations has-pending-model-changes` is clean for all 6 context/provider pairs (the app `DbContext` and the FlowEngine `DbContext`, each against SqlServer and PostgreSql, plus the TickerQ context pairing where applicable).
 
-New project since the previous refresh: `src/Shared/TaskFlow.Contracts.Grpc` (the internal gRPC read service's proto + generated client/server code + `TaskFlowReadGrpcMapper`, D-054, slice G3). `dotnet_diagnostic.CA1848.severity = error` is now enforced for every `.cs` file under `src/` via the new (non-root) `src/.editorconfig`, closing out the LoggerMessage sweep (D-053, slice G4): all 58 remaining raw `ILogger.Log*()` call sites were converted to source-generated `[LoggerMessage]` delegates.
 
 ## Test Status
 
-Fast lane (`TestCategory=Unit|TestCategory=Architecture|TestCategory=Endpoint`) rerun in this worktree after a full serial build (`dotnet build TaskFlow.slnx -m:1`, 0 warnings/errors) on the final G4 tree:
+Numbers below are the orchestrator's gate on the merged tree (4f6a5d0), detached worktree, dated 2026-09-10.
+
+**Fast lane** (`TestCategory=Unit|TestCategory=Architecture|TestCategory=Endpoint`, `dotnet test TaskFlow.slnx`): **651 passed, 0 failed, across 13 projects.**
+
+Fast-lane delta vs the 664-passed baseline recorded before this refactor's wave 2: +1 (E2 cross-version cursor test) - 15 (deleted `EF.Messaging.RabbitMq.Tests` unit tests, project removed) + 3 (E3 architecture tests: cached types public, etc.) - 4 (deleted `FlowEngineIfMatchOverrideHandler` tests, D-032 superseded) + 1 (A2, `ClientGeneratedKeyTests` pinning `ValueGenerated.Never`) + 1 (`UuidV7.TimestampOf` case) = 664 - 13 = **651**. Per-project breakdown for the individual fast-lane projects was not independently recomputed this pass; the total above is the verified figure.
+
+Docker/Testcontainers-backed lanes (run-scoped `TESTCONTAINERS_HOST_OVERRIDE`, not committed):
 
 | Project | Category filter | Verified count | Notes |
 |---|---|---:|---|
-| Test.Unit | `TestCategory=Unit` | 423 | Rerun in-worktree |
-| Test.Architecture | `TestCategory=Architecture` | 52 | Rerun in-worktree; +2 since the prior refresh (slice F1: no host csproj marks OpenAI PrivateAssets; no SqlClient-dependent host declares InvariantGlobalization=true) |
-| Test.Endpoints | `TestCategory=Endpoint` | 164 | Rerun in-worktree |
-| EF.Messaging.RabbitMq.Tests | `TestCategory=Unit` | 15 | Rerun in-worktree; topology/channel-pool unit coverage against a fake channel |
-| Test.PlaywrightUI | `TestCategory=Unit` (one stray-tagged class, `WasmHostContractTests`) | 5 | Rerun in-worktree; contributes to the combined fast-lane total even though the project as a whole needs the full-stack Aspire mesh |
-
-**Combined fast lane: 423 + 52 + 164 + 15 + 5 = 659 passed, 0 failed.** Matches the count the orchestrator reported from the acceptance run on the merged tree at commit `d4d42ee` (2026-09-08) before this doc-only G4 slice added its own commit on top - rerunning it in-worktree after the LoggerMessage/CA1848 commit produced the identical 657, so the sweep did not change fast-lane behavior. Slice F1 (2026-09-09) added 2 Test.Architecture cases (657 -> 659; see the row above).
-
-Docker/Testcontainers-backed lanes below were run by the orchestrator's acceptance pass on the merged tree at commit `d4d42ee` (run-scoped `TESTCONTAINERS_HOST_OVERRIDE`, not committed) and reported to this session; not independently rerun in this worktree (G4 is a docs-only slice and does not touch the code these lanes exercise).
-
-| Project | Category filter | Verified count | Notes |
-|---|---|---:|---|
-| Test.Integration | `TestCategory=Integration` | 63 (SqlServer) / 65 (PostgreSql) | Includes the new `RelationalTaskViewRepositoryTests`, `RelationalAuditLogRepositoryTests`, `S3ObjectStorageRepositoryTests` (MinIO Testcontainers), `RedisDistributedLockTests`, `MessagePackCacheTests`, (PostgreSql only) `PgVectorSearchTests`, the three keyset walks added with the package pager (due date ascending and descending over mixed null/set due dates, modified descending), and the server-side projection round-trip proof for `KeysetPageProjectionAsync`. The 3-skipped-on-SqlServer / 1-skipped-on-PostgreSql split is deliberate provider-split assertions (e.g. pgvector tests skip on SqlServer), not flakiness |
-| Test.E2E | `TestCategory=E2E` | 10 (SqlServer) / 10 (PostgreSql) | Unchanged shape from the previous refresh |
-| Test.Integration.FlowEngine | `TestCategory=Integration` | 18 (SqlServer) / 18 (PostgreSql) | Unchanged shape from the previous refresh |
-| EF.Messaging.RabbitMq.Tests | `TestCategory=Integration` | 16 | Testcontainers.RabbitMq lane; provider-independent of the DB provider selection |
+| Test.Integration | `TestCategory=Integration` | 63 (SqlServer) / 65 (PostgreSql) | Includes the relational read-model, relational audit, S3 storage, distributed-lock, MessagePack cache, pgvector (PostgreSql only), and keyset/projection round-trip coverage carried over from the prior refresh, plus the cross-version cursor-token compatibility case (a token minted by EF.Data.Contracts 1.1.101 decodes and resumes under 1.1.102) |
+| Test.E2E | `TestCategory=E2E` | 10 (SqlServer) / 10 (PostgreSql) | Unchanged shape |
+| Test.Integration.FlowEngine | `TestCategory=Integration` | 18 (SqlServer) / 18 (PostgreSql) | Includes the workflow-definition test pinning the absence of a UUIDv7 loop-iteration id (request 19 rejection) |
 | Test.UI | `UI`, `Presentation` | 56 | Headless UI and presentation contracts |
-| Test.Aspire | non-DCP model tests | 12 | Includes 7 new Portable-lane topology tests (`AppHostLaneTopologyTests`: MinIO/Postgres/RabbitMQ present, Azure emulators/Cosmos/Functions/Service Bus absent, expected `*__Provider` env values). DCP-dependent lanes remain unrunnable on this machine (see below) |
-| Vulnerability audit | `dotnet list package --vulnerable --include-transitive`, per-project over every csproj under `src/` and `tests/` | 0 projects with vulnerable packages | Reported by the orchestrator's acceptance pass; not rerun in this worktree |
+| Vulnerability audit | `dotnet list TaskFlow.slnx package --vulnerable --include-transitive` | 47 projects, 0 with vulnerable packages | Per-project audit over the full solution |
+
+`EF.Messaging.RabbitMq.Tests` (both the unit and Testcontainers.RabbitMq integration lanes, 31 tests total) no longer exists in this repo: the package shipped and the in-repo project was deleted (request 23; see `docs/plans/ef-messaging-rabbitmq-package-spec.md`). Its coverage now lives in the published `EF.Messaging.RabbitMq` package's own test suite, outside this repo.
 
 Not rerun this pass, last observed values only: **Test.Mutation** last observed 33 (mutation-target contract tests; not part of this refactor's changed surface, not rerun to save time).
 
-Not runnable on this machine (recorded with reason, not treated as failing): **Test.Aspire** DCP-dependent lanes and the full-stack **Test.PlaywrightUI** lane (Aspire/DCP binds published container ports to `127.0.0.1` inside the Podman WSL VM, unreachable from the Windows host, independent of the Testcontainers host-override workaround used by the other container lanes), **Test.Mobile** (dedicated Appium/emulator runner), **Test.FoundryLocal** (live local-model lane, RID-bound runtime), **Test.Load** (manual; the 5,000 RPS gate is deployment-only), **Test.Benchmarks** (BenchmarkDotNet console runner, build-verified only), **compose-smoke** and **deploy-vps** (CI-only: `compose-smoke` is a `workflow_dispatch`-gated job in `ci.yml`, `deploy-vps.yml` is `workflow_dispatch`-only; nothing in the compose/VPS path has executed on this dev machine - CI's `compose-smoke` run is the first real execution of the Portable topology end to end).
+Not runnable on this machine (recorded with reason, not treated as failing): **Test.Aspire** and the full-stack **Test.PlaywrightUI** lane (Aspire/DCP binds published container ports to `127.0.0.1` inside the Podman WSL VM, unreachable from the Windows host, independent of the Testcontainers host-override workaround used by the other container lanes), **Test.Mobile** (dedicated Appium/emulator runner), **Test.FoundryLocal** (live local-model lane, RID-bound runtime), **Test.Load** (manual; the 5,000 RPS gate is deployment-only), **Test.Benchmarks** (BenchmarkDotNet console runner, build-verified only), **compose-smoke** and **deploy-vps** (CI-only: `compose-smoke` is a `workflow_dispatch`-gated job in `ci.yml`, `deploy-vps.yml` is `workflow_dispatch`-only; nothing in the compose/VPS path has executed on this dev machine).
 
-Published Release Uno cold-start and normal browser projects pass from empty browser state without refresh, retry, sleep, or exception suppression. Browser WASM Release temporarily sets `PublishTrimmed=false` because the current Navigation, Toolkit, and WinUI package set emits upstream `IL2104` under warnings-as-errors. Removal condition: those packages become trim-clean. This was not re-verified in the current pass (no Uno-affecting code changed in this refactor); see the 2026-09-04 entry in Git history for the last direct re-verification.
+Published Release Uno cold-start and normal browser projects pass from empty browser state without refresh, retry, sleep, or exception suppression. Browser WASM Release temporarily sets `PublishTrimmed=false` because the current Navigation, Toolkit, and WinUI package set emits upstream `IL2104` under warnings-as-errors. Removal condition: those packages become trim-clean. Not re-verified in this pass (no Uno-affecting code changed in this refactor).
 
 ## Vulnerability Status
 
 Run `dotnet list package --vulnerable --include-transitive` and capture findings here. Severity policy: [scaffold execution gates](https://github.com/efreeman518/scaffold-ai/blob/main/support/execution-gates.md#vulnerability-audit).
 
-Last audit (2026-09-08, orchestrator's acceptance pass on the merged tree, reported to this session - not independently rerun in this worktree): per-project `dotnet list package --vulnerable --include-transitive` over every csproj under `src/` and `tests/` reported no vulnerable packages or advisories, direct or transitive, for any project.
+Last audit (2026-09-10, orchestrator's gate on the merged tree, detached worktree): `dotnet list TaskFlow.slnx package --vulnerable --include-transitive` over 47 projects reported no vulnerable packages or advisories, direct or transitive, for any project.
 
 | Package | Severity | Direct/Transitive | Advisory | Notes |
 |---|---|---|---|---|
@@ -88,8 +82,8 @@ Status meanings:
 | Cursor paging (task items) | proven | `CursorSearchRequest`/`CursorPage`/`ICursorProtector`; Endpoint/E2E cases |
 | App-layer column encryption + blind index | proven | `Infrastructure.Data/Encryption/*` on both providers; Always Encrypted (D-019) kept documented-only |
 | Transactional outbox + consumer inbox | proven | `OutboxStagingInterceptor`, lease claim, `OutboxDispatcherService`; `ConsumerInbox`/`IInboxStore.TryClaimAsync` |
-| Messaging transport switch (Service Bus / RabbitMQ) | proven | `Messaging:Provider`; `EF.Messaging.RabbitMq` (own 31 tests) + adapter tests |
-| Redis cache (FusionCache) and rate limiter | proven | `FusionTaskFlowCache`, `FailOpenRateLimiter` over `RedisRateLimiting` |
+| Messaging transport switch (Service Bus / RabbitMQ) | proven | `Messaging:Provider`; `EF.Messaging.RabbitMq` (published package, own test suite outside this repo) + adapter tests |
+| Redis cache (FusionCache) and rate limiter | proven | `EF.Cache.ITypedCache`/`CacheSettings` injected directly (app-local `ITaskFlowCache`/`FusionTaskFlowCache` deleted); `FailOpenRateLimiter` over `RedisRateLimiting` |
 | Generated API clients (Refitter, openapi-typescript) | proven | `src/UI/TaskFlow.ApiClient` and React `types.ts` regenerate from the committed OpenAPI document |
 | Aspire, Gateway, Scheduler, Functions | proven (mesh unverified here) | Build, topology, unit, endpoint coverage; the DCP-dependent Aspire mesh lane cannot run on this machine |
 | Uno, Blazor, React | proven | Build, Test.UI, and dedicated mobile evidence; full-stack Playwright blocked here by the same Aspire limitation |
@@ -122,7 +116,7 @@ Status meanings:
 | Postgres pooler mode (D-045) | proven | `Test.Unit/Infrastructure/TaskFlowDbProviderSelectorTests.cs` (`PoolerModeSelector`, connection-string flag appending) |
 | Runtime profile per host (D-047) | proven | `Test.Architecture/HostRuntimeSettingsTests.cs` (every host csproj imports `TaskFlow.Host.props`) |
 | Source-generated JSON contexts (D-048) | proven | `Test.Architecture/JsonContextCompletenessTests.cs`; `Test.UI/Uno/TaskFlowApiJsonContextTests.cs` |
-| Health probe contract (D-049) | proven | `Test.Endpoints/HealthProbeContractTests.cs`; `Test.Unit/Gateway/GatewayHealthCheckRegistrationTests.cs`; `EF.Messaging.RabbitMq.Tests/Integration/HealthCheckIntegrationTests.cs` |
+| Health probe contract (D-049) | proven | `Test.Endpoints/HealthProbeContractTests.cs`; `Test.Unit/Gateway/GatewayHealthCheckRegistrationTests.cs` |
 | Edge rate limiter + YARP active/passive health (D-050) | proven | `Test.Unit/Gateway/GatewayEdgeRateLimitTests.cs` (burst over the token bucket -> 429) |
 | GET-only hedging (D-051) | proven | `Test.Unit/Hosting/ReadHedgingTests.cs` (GET hedges, POST never does); `Test.Unit/Infrastructure/CosmosHedgingOptionsTests.cs` (config-gated, deployment-only for the live behavior) |
 | Distributed lock (D-052) | proven | `Test.Integration/RedisDistributedLockTests.cs` (two contenders, one wins, second wins after release); `Test.Unit/Infrastructure/InProcessDistributedLockTests.cs` (fallback) |
@@ -149,7 +143,7 @@ Validate locally with `az bicep build --file infra/main.bicep` and `docker compo
 ## Outstanding Follow-Ups
 
 1. Aspire mesh (`Test.Aspire` DCP-dependent lanes) and the full-stack `Test.PlaywrightUI` lane are unverified on this machine: Aspire/DCP binds published container ports to `127.0.0.1` inside the Podman WSL VM, unreachable from the Windows host, independent of the Testcontainers `TESTCONTAINERS_HOST_OVERRIDE` workaround used by the other container lanes. Needs either Docker Desktop or a podman machine networking change before these lanes can run here.
-2. EF.* package requests from `docs/plans/ef-package-requests.md` remain open against the EF.* package feed: 32 items total after this refresh (requests 25-32 added by G4, verified by decompiling the installed package DLLs with `ilspycmd` since none of EF.Storage/EF.Table/EF.Data.Contracts/EF.Common/EF.Grpc/EF.Messaging/EF.Cache ship XML docs). Requests 3 and 4 (from the earlier refresh) remain genuinely open with no fallback. The new EF.Grpc findings (request 29) explain why `TaskFlowReadGrpcService` (D-054) was built directly on `Grpc.AspNetCore` rather than the EF.Grpc package: `ServiceErrorInterceptor` hardcodes every exception to `StatusCode.Internal` and leaks `ex.Message` into the wire-visible `Status.Detail` regardless of `IncludeLogDataInResponse` (which itself defaults to `true`), and `AddGrpcClient2` forces an `HttpClientHandler`.
+2. EF.* package requests from `docs/plans/ef-package-requests.md`: all REQUIRED items landed as of EF.* 1.1.102 / EF.FlowEngine.*/EF.FilterBuilder 1.0.173, except request 3 (partial - EF.Data.SqlServer split shipped, `Microsoft.Data.SqlClient` stays transitive until EF.Data 2.0, open by design) and request 4 (landed, not adopted - D-004, no repository asks for NOLOCK). Request 19 (a UUIDv7-shaped FlowEngine loop iteration id) is rejected for now: `LoopNodeExecutor.IterationId` is a deterministic UUIDv5 and GR-17 rejects a non-UUIDv7 client create id with 400, so the decomposer loop keeps its own `idempotencyKey` instead. `EF.Audit.Data` and `EF.Audit.AzureTable` (published 1.1.101/1.1.102) are rejected: both stamp the consumer clock into `RecordedUtc`/`PartitionKey`/`RowKey`, reproducing the A1 replay-duplicate defect, and `EF.Audit.Data` additionally mandates its own `AuditDbContext`; reconciliation stays contracts-only via `EF.Audit.Contracts`, with the id-derived key scheme (D-058) implemented app-side. See the dated "Feedback after adoption (2026-09-10)" section in `ef-package-requests.md` for the remaining post-merge findings (KeysetProjection selector shape, envelope tenant slot, sender-pool enumeration, envelope serializer JsonTypeInfo support, trace-context Baggage, EF.Messaging's Azure SDK footprint).
 3. The 5,000 RPS load gate is deployment-only by design (`Test.Load` is manual/NBomber); local proof is Testcontainers plus the million-row fixture, not a live RPS measurement.
 4. Authenticated Azure AI persistence and enqueue scenarios remain deployment-only.
 5. Browser WASM trimming remains disabled for Release because upstream Uno dependencies emit `IL2104` under warnings-as-errors; unaffected by this refactor, not re-verified this pass.
