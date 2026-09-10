@@ -65,9 +65,11 @@ public static class WebApplicationBuilderExtensions
         // OpenAPI / Scalar
         if (app.Configuration.GetValue<bool>("OpenApiSettings:Enable", true))
         {
-            // .WithDocumentPerVersion() is required by EF.AspNetCore 1.1.100 AddEfVersionedOpenApi: the
+            // .WithDocumentPerVersion() is required by EF.AspNetCore AddEfVersionedOpenApi: the
             // documents now come from AddApiVersioning().AddOpenApi(), and a plain MapOpenApi() serves none
-            // of them (every document URL 404s). Document names are unchanged.
+            // of them (every document URL 404s). Document names are unchanged. 1.1.101 also restored the
+            // per-document group-name ShouldInclude predicate, so version-neutral routes (/alive, the
+            // FlowEngine admin group) are excluded from every versioned document without app-side opt-outs.
             app.MapOpenApi()
                 .WithDocumentPerVersion()
                 .AllowAnonymous();
@@ -106,10 +108,7 @@ public static class WebApplicationBuilderExtensions
 
         app.MapGet("/alive", () => Results.Ok("Alive"))
             .AllowAnonymous()
-            .RequireRateLimiting("HealthMemory")
-            // Unversioned operational route: version-neutral endpoints now land in every versioned OpenAPI
-            // document (see the MapOpenApi comment above), and the v1 contract has never described this one.
-            .ExcludeFromDescription();
+            .RequireRateLimiting("HealthMemory");
 
         // D-054 internal gRPC read service, served on the dedicated cleartext HTTP/2 Kestrel endpoint
         // (Kestrel:Endpoints:Grpc). RequireAuthorization is redundant with the authenticated-user
@@ -123,12 +122,10 @@ public static class WebApplicationBuilderExtensions
 
         // FlowEngine admin API - instance/registry/circuit-breaker/human-task operations.
         // Fronted by YARP gateway; consumed by EF.FlowEngine.Dashboard hosted in TaskFlow.Blazor.
-        // Mapped inside an excluded group: these routes carry no API version, and version-neutral
-        // endpoints are described by every versioned document under EF.AspNetCore 1.1.100 document-per-
-        // version generation. The published v1 contract is the domain API, not the admin surface.
-        app.MapGroup(string.Empty)
-            .ExcludeFromDescription()
-            .MapFlowEngineAdmin(prefix: "/api/flowengine");
+        // These routes carry no API version and are therefore excluded from every versioned document by
+        // EF.AspNetCore's group-name predicate; the published v1 contract is the domain API, not the
+        // admin surface.
+        app.MapFlowEngineAdmin(prefix: "/api/flowengine");
 
         return app;
     }
