@@ -13,6 +13,8 @@
     <PackageReference Include="OpenAI" PrivateAssets="all" />
     <PackageReference Include="EF.Data" />
     <PackageReference Include="EF.BackgroundServices" />
+    <PackageReference Include="EF.Cache" />
+    <PackageReference Include="EF.Common" />
     <PackageReference Include="EF.FlowEngine.Testing" />
     <PackageReference Include="EF.FlowEngine.Clients.AI" />
   </ItemGroup>

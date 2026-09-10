@@ -1,7 +1,7 @@
+using EF.Common.Contracts;
 using EF.Messaging.RabbitMq;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using TaskFlow.Application.Contracts.Locking;
 using TaskFlow.Observability;
 
 namespace TaskFlow.Infrastructure.Messaging.RabbitMq;

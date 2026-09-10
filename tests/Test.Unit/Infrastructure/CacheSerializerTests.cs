@@ -1,12 +1,12 @@
+using EF.Cache;
 using TaskFlow.Application.Models;
 using TaskFlow.Application.Models.Reads;
 using TaskFlow.Domain.Shared.Enums;
-using TaskFlow.Infrastructure.Caching;
 
 namespace Test.Unit.Infrastructure;
 
 /// <summary>
-/// D-048: pins both arms of <c>CacheSettings:Serializer</c> against the shapes actually cached - the
+/// D-048: pins both arms of EF.Cache's <c>CacheSettings:Serializer</c> against the shapes actually cached - the
 /// metadata and summary snapshots. The MessagePack arm is contractless, so nothing on the DTOs declares
 /// how they serialize; the only thing standing between a config flip and an L2 that silently refactories
 /// every entry is that these types round-trip through both formats.
@@ -24,14 +24,14 @@ public class CacheSerializerTests
     public void Given_DefaultSettings_When_SerializerCreated_Then_ItIsJson()
     {
         Assert.AreEqual(CacheSerializer.Json, new CacheSettings().Serializer);
-        Assert.Contains("SystemTextJson", RegisterCachingServices.CreateSerializer(new CacheSettings()).GetType().FullName!);
+        Assert.Contains("SystemTextJson", CacheServiceCollectionExtensions.CreateSerializer(new CacheSettings()).GetType().FullName!);
     }
 
     /// <summary>The MessagePack arm resolves to the Neuecc serializer, not silently back to JSON.</summary>
     [TestMethod]
     public void Given_MessagePackSettings_When_SerializerCreated_Then_ItIsMessagePack()
     {
-        var serializer = RegisterCachingServices.CreateSerializer(
+        var serializer = CacheServiceCollectionExtensions.CreateSerializer(
             new CacheSettings { Serializer = CacheSerializer.MessagePack });
 
         Assert.Contains("NeueccMessagePack", serializer.GetType().FullName!);
@@ -127,11 +127,11 @@ public class CacheSerializerTests
     }
 
     private static byte[] Serialize<T>(T value, CacheSerializer format) =>
-        RegisterCachingServices.CreateSerializer(new CacheSettings { Serializer = format }).Serialize(value);
+        CacheServiceCollectionExtensions.CreateSerializer(new CacheSettings { Serializer = format }).Serialize(value);
 
     private static T RoundTrip<T>(T value, CacheSerializer format)
     {
-        var serializer = RegisterCachingServices.CreateSerializer(new CacheSettings { Serializer = format });
+        var serializer = CacheServiceCollectionExtensions.CreateSerializer(new CacheSettings { Serializer = format });
         var actual = serializer.Deserialize<T>(serializer.Serialize(value));
         Assert.IsNotNull(actual);
         return actual!;

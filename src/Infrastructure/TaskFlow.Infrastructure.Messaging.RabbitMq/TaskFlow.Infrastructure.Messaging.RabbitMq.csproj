@@ -5,6 +5,8 @@
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
     <!-- D-034: the published portable transport (package request 23). -->
     <PackageReference Include="EF.Messaging.RabbitMq" />
+    <!-- D-052: IDistributedLock serializes topology declaration across replicas (package request 32). -->
+    <PackageReference Include="EF.Common.Contracts" />
   </ItemGroup>
 
   <ItemGroup>

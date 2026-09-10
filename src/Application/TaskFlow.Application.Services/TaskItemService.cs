@@ -1,4 +1,5 @@
-﻿using EF.Common.Contracts;
+﻿using EF.Cache;
+using EF.Common.Contracts;
 using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
@@ -29,7 +30,7 @@ internal class TaskItemService(
     ITaskItemRepositoryTrxn repoTrxn,
     ITaskItemRepositoryQuery repoQuery,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    ITaskFlowCache cache) : ITaskItemService
+    ITypedCache cache) : ITaskItemService
 {
     private Guid? RequestTenantId => requestContext.TenantId;
     private IReadOnlyCollection<string> RequestRoles => requestContext.Roles;

@@ -1,4 +1,5 @@
-﻿using EF.Common.Contracts;
+﻿using EF.Cache;
+using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
@@ -58,7 +59,7 @@ internal sealed class CreateCategoryHandler(
     IRequestContext<string, Guid?> requestContext,
     ICategoryRepositoryTrxn repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    ITaskFlowCache cache)
+    ITypedCache cache)
     : IRequestHandler<CreateCategoryCommand, Result<DefaultResponse<CategoryDto>>>
 {
     /// <summary>Handles create category requests and returns the application result.</summary>
@@ -110,7 +111,7 @@ internal sealed class UpdateCategoryHandler(
     IRequestContext<string, Guid?> requestContext,
     ICategoryRepositoryTrxn repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    ITaskFlowCache cache)
+    ITypedCache cache)
     : IRequestHandler<UpdateCategoryCommand, Result<DefaultResponse<CategoryDto>>>
 {
     /// <summary>Handles update category requests and returns the application result.</summary>
@@ -158,7 +159,7 @@ internal sealed class DeleteCategoryHandler(
     IRequestContext<string, Guid?> requestContext,
     ICategoryRepositoryTrxn repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    ITaskFlowCache cache)
+    ITypedCache cache)
     : IRequestHandler<DeleteCategoryCommand, Result>
 {
     /// <summary>Handles delete category requests and returns the application result.</summary>

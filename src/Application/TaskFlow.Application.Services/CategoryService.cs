@@ -1,4 +1,5 @@
-﻿using EF.Common.Contracts;
+﻿using EF.Cache;
+using EF.Common.Contracts;
 using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
@@ -21,7 +22,7 @@ internal class CategoryService(
     ICategoryRepositoryTrxn repoTrxn,
     ICategoryRepositoryQuery repoQuery,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    ITaskFlowCache cache) : ICategoryService
+    ITypedCache cache) : ICategoryService
 {
     private Guid? RequestTenantId => requestContext.TenantId;
     private IReadOnlyCollection<string> RequestRoles => requestContext.Roles;

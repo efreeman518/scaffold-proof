@@ -1,3 +1,4 @@
+using EF.Cache;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -37,7 +38,8 @@ public class RedisCacheAndLimiterTests
     public async Task RemoveByTagAsync_EvictsTheOtherReplicasL1()
     {
         var tenantId = Guid.NewGuid();
-        var key = new CacheKey(CacheKind.TaskMetadata, tenantId);
+        var key = TaskFlowCache.Key(CacheKind.TaskMetadata, tenantId);
+        var tags = TaskFlowCache.TagsFor(CacheKind.TaskMetadata, tenantId);
 
         var replicaA = BuildCache();
         var replicaB = BuildCache();
@@ -49,9 +51,9 @@ public class RedisCacheAndLimiterTests
             return Task.FromResult($"value-{factoryCalls}");
         }
 
-        var first = await replicaA.GetOrSetAsync(key, Factory, CacheProfile.Metadata, TestContext.CancellationToken);
+        var first = await replicaA.GetOrSetAsync(key, Factory, CacheProfiles.Metadata, tags, TestContext.CancellationToken);
         // The second replica has an empty L1 but reads the shared L2, so the factory does not run again.
-        var second = await replicaB.GetOrSetAsync(key, Factory, CacheProfile.Metadata, TestContext.CancellationToken);
+        var second = await replicaB.GetOrSetAsync(key, Factory, CacheProfiles.Metadata, tags, TestContext.CancellationToken);
 
         Assert.AreEqual(first, second);
         Assert.AreEqual(1, factoryCalls, "the distributed cache served the second replica");
@@ -62,7 +64,7 @@ public class RedisCacheAndLimiterTests
         // Backplane notifications are asynchronous; poll rather than sleeping a fixed interval.
         var evicted = await WaitUntilAsync(async () =>
         {
-            var value = await replicaB.GetOrSetAsync(key, Factory, CacheProfile.Metadata, TestContext.CancellationToken);
+            var value = await replicaB.GetOrSetAsync(key, Factory, CacheProfiles.Metadata, tags, TestContext.CancellationToken);
             return value != first;
         });
 
@@ -115,7 +117,7 @@ public class RedisCacheAndLimiterTests
     }
 
     /// <summary>Builds one cache "replica" over the shared Redis.</summary>
-    private static ITaskFlowCache BuildCache()
+    private static ITypedCache BuildCache()
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -131,7 +133,7 @@ public class RedisCacheAndLimiterTests
         services.AddSingleton<IHostEnvironment>(new TestHostEnvironment());
         services.AddTaskFlowCaching(config);
 
-        return services.BuildServiceProvider().GetRequiredService<ITaskFlowCache>();
+        return services.BuildServiceProvider().GetRequiredService<ITypedCache>();
     }
 
     /// <summary>Builds one limiter "replica" against the given Redis connection string.</summary>
