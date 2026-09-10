@@ -74,9 +74,8 @@ public class AiProviderSelectorTests
             ["AiServices:ApiKey"] = "fake-key"
         });
 
-        var ex = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
-            builder.RegisterAiChatClientAsync(NullLogger.Instance, TestContext.CancellationToken));
-        StringAssert.Contains(ex.Message, "AiServices:Endpoint");
+        var ex = await AssertStartupValidationFailsAsync(builder);
+        StringAssert.Contains(ex.Message, "Endpoint");
     }
 
     [TestMethod]
@@ -88,9 +87,26 @@ public class AiProviderSelectorTests
             ["AiServices:Endpoint"] = "https://api.example.com/v1"
         });
 
-        var ex = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
-            builder.RegisterAiChatClientAsync(NullLogger.Instance, TestContext.CancellationToken));
-        StringAssert.Contains(ex.Message, "AiServices:ApiKey");
+        var ex = await AssertStartupValidationFailsAsync(builder);
+        StringAssert.Contains(ex.Message, "ApiKey");
+    }
+
+    /// <summary>
+    /// EF.AI validates the bound settings through <c>ValidateOnStart</c>, so an explicitly selected
+    /// OpenAICompatible provider with a missing endpoint, key, or model fails at host start rather than at
+    /// registration. That is still before the host serves a request, and it is what keeps EF.AI from
+    /// silently handing every caller a disabled client.
+    /// </summary>
+    private async Task<AggregateException> AssertStartupValidationFailsAsync(
+        HostApplicationBuilder builder)
+    {
+        await builder.RegisterAiChatClientAsync(NullLogger.Instance, TestContext.CancellationToken);
+
+        using var host = builder.Build();
+        // Both the chat client and the embedding generator validate, so StartupValidator aggregates the
+        // two OptionsValidationExceptions rather than surfacing one.
+        return await Assert.ThrowsExactlyAsync<AggregateException>(
+            () => host.StartAsync(TestContext.CancellationToken));
     }
 
     [TestMethod]
