@@ -40,10 +40,13 @@ FlowEngine,TickerQ}/`, fresh baseline, no history-compat shim.
 **Problem**: a native concurrency token (`rowversion`/`xmin`) differs by provider, is opaque as an
 `ETag`, and can't be exercised on the InMemory provider.
 
-**Shape**: `TaskFlowEntityBase<TId>` implements `IVersionedEntity { long Version; DateTimeOffset
-CreatedAtUtc, ModifiedAtUtc; }` (private setters). `VersionTimestampInterceptor`
-(`Infrastructure.Data/Interceptors/`) stamps both timestamps and increments `Version` from its
-pre-save original value for every Added/Modified root. Aggregate-level ETag (D-031): only the root's
+**Shape**: `Version` comes from the package: `EF.Domain.EntityBase<TId>.Version` (a `long`
+implementing `EF.Domain.Contracts.IVersionedEntity`), incremented for every Modified entry by
+`EF.Data.DbContextBase.SaveChangesAsync`, which sets the property's OriginalValue to the pre-increment
+value so EF emits `WHERE Version = @original` (EF.* 1.1.100, package requests 1-2).
+`TaskFlowEntityBase<TId>` adds only `ITimestampedEntity { DateTimeOffset CreatedAtUtc, ModifiedAtUtc; }`
+(private setters), and `VersionTimestampInterceptor` (`Infrastructure.Data/Interceptors/`) stamps the
+timestamps plus the insert baseline `Version = 1`, which the package does not do for Added entries. Aggregate-level ETag (D-031): only the root's
 `Version` is If-Match currency; child mutations call a private `MarkAggregateChanged()` touching
 `ModifiedAtUtc` so the root bumps. HTTP pipeline (`Host/TaskFlow.Api/Filters/`):
 `IfMatchEndpointFilter` first - missing/blank -> **428**, unparseable -> 400, `If-Match: *` passes as
@@ -89,21 +92,31 @@ entity with a caller-id create path.
 **Problem**: offset paging degrades under concurrent inserts (dup/skipped rows) and forces a
 `COUNT(*)` per page.
 
-**Shape** (`Application.Models/Paging/`): `CursorSearchRequest<TFilter,TSortMode>{ Filter, SortMode,
-PageSize<=100 default 50, Cursor? }`; `TaskItemSortMode { IdAsc, DueDateAsc, DueDateDesc,
-ModifiedDesc, StatusThenId }`; `CursorPage<T>{ Data, NextCursor, HasMore }` - no Total, no page
-number. `Contracts/Paging/ICursorProtector` + `CursorToken(SortMode, TenantId, SortKey, LastId)`;
-`DataProtectionCursorProtector` wraps `IDataProtector` (purpose `"TaskFlow.Cursor.v1"`) - tamper,
-cross-tenant, sort-mode mismatch all fail closed to 400. `TaskItemRepositoryQuery.ApplyKeyset`: one
-switch per sort mode building the `ORDER BY`/`WHERE` shape, each arm commented with the index it must
-hit; null `DueDate` sorts last; `Take(PageSize + 1)` computes `HasMore` without a second query.
+**Shape**: the request, page and limits are package types (EF.* 1.1.100, package request 21):
+`EF.Common.Contracts.CursorSearchRequest<TFilter,TSortMode>{ Filter, SortMode, PageSize, Cursor? }`,
+`CursorPage<T>{ Items, NextCursor, HasMore }` - no Total, no page number - and `PageSizeLimits`
+(1..100, default 50). App-local: `Application.Models/Paging/TaskItemCursorSearchRequest` (derives from
+the generic and sets the default page size, which the package record leaves at 0) and
+`TaskItemSortMode { IdAsc, DueDateAsc, DueDateDesc, ModifiedDesc, StatusThenId }`. The token is
+`EF.Data.Contracts.CursorCodec` through `KeysetCursor`/`CursorPosition` (package request 27):
+HMAC-SHA256 signed, schema-version byte, scope key re-checked on decode. TaskFlow's scope key is
+`TaskItemRepositoryQuery.CursorScope` = `{tenantId:N}|{(int)sortMode}`, because the codec has no
+sort-mode field - so tamper, cross-tenant and sort-mode mismatch all fail closed to 400
+(`ERROR_CURSOR_INVALID`). `TaskItemRepositoryQuery.ApplyKeyset` stays app-local: one switch per sort
+mode building the `ORDER BY`/`WHERE` shape, each arm commented with the index it must hit; null
+`DueDate` sorts last; `Take(PageSize + 1)` computes `HasMore` without a second query. The package's
+own pager (`KeysetPageAsync`) is not usable here - it types the tie-break key as
+`Expression<Func<T,Guid>>` and every TaskFlow key is an `IDomainId<T>` struct behind a value
+converter, which no Guid-typed selector can translate.
 
 **Proof**: page-through with no dup/gap, `HasMore=false` at the end, tamper/cross-tenant/sort-mode
 mismatch -> 400, one case per sort mode.
 
-**Customize**: production needs the persisted Data Protection key ring (comment in `Program.cs`) or
-cursors break across restarts/replicas; documented alternative is an HMAC over
-`Paging:CursorKey`.
+**Customize**: the cursor signing key is HKDF over the column-encryption DEK under the info label
+`"TaskFlow.Cursor.v1"` (`RegisterServices.AddSharedApplicationServices`), so every replica agrees
+without a second configured secret and a DEK rotation invalidates outstanding cursors. With
+`Database:Encryption:Enabled=false` there is no shared secret and the key is per-process: cursors stop
+validating after a restart or on a sibling replica (400, never a silent reset to page one).
 
 ## 5. Read service: summary, metadata, NDJSON export
 
@@ -496,7 +509,8 @@ source-generated `TaskViewBodyJsonContext` - a plain string, not `jsonb`, to sta
 (D-030). `AuditLogRecord` (`Infrastructure.Data/Operational/AuditLogRecord.cs`) is likewise plain, PK
 `(TenantId, RecordedUtc, Id)`, `TenantId` non-null (a system entry carries
 `AuditLogStorageSettings.NullTenantPartitionKey`). The keyset continuation token
-(`Infrastructure.Repositories/TaskViewKeysetToken.cs`) is Base64Url over
+(`Infrastructure.Repositories/TaskViewKeysetToken.cs`, still app-local: `EF.Data.Contracts.CursorCodec`
+carries a `Guid` tie-break key and this one is the Cosmos-parity string document id) is Base64Url over
 `v1|tenantId|lastModifiedUtcTicks|id` (raw UTC ticks, not `"O"`, because the value round-trips into a
 `WHERE` clause and PostgreSQL `timestamptz` keeps microseconds while SQL Server keeps 100ns); the
 tenant is re-checked against the caller's tenant on decode, and a malformed, truncated, or
@@ -728,7 +742,8 @@ which builds metadata at runtime instead of compile time and cannot participate 
 already respects. `TaskFlowJsonContext` (`Application.Models/Serialization/TaskFlowJsonContext.cs`)
 covers every HTTP/cache/UI DTO, request, and response shape (entity DTOs, read-model DTOs, search
 filters, the closed generic `DefaultRequest<T>`/`SearchRequest<TFilter>`/`DefaultResponse<T>`/
-`PagedResponse<T>`/`CursorPage<TaskItemDto>` instantiations actually bound by the endpoints, listed
+`PagedResponse<T>`/`CursorPage<TaskItemDto>` instantiations actually bound by the endpoints - the last
+three from `EF.Common.Contracts` - listed
 again in `RegisteredClosedGenerics` since a generic type definition has no `JsonTypeInfo` a scan could
 discover). `TaskFlowMessagingJsonContext` (`Application.Contracts/Messaging/
 TaskFlowMessagingJsonContext.cs`) is separate because `IntegrationEventEnvelope` lives in

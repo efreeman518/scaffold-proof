@@ -103,7 +103,7 @@
     private async Task LoadAsync()
     {
         // Full category list, not a search page: /task-metadata is uncapped by the [1,100] search
-        // PageSize clamp (up to PageSizeLimits.MetadataMax), which a PageSize=500 search would now reject.
+        // PageSize clamp (up to TaskMetadataDto.MetadataMax), which a PageSize=500 search would now reject.
         // D-054: gRPC when the internal read hop is configured, REST through the gateway otherwise.
         var result = await FloatService.ExecuteWithProgressAsync(
             () => ReadSettings.UseGrpcReads
