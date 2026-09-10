@@ -1,7 +1,7 @@
 using Amazon.Runtime;
 using Amazon.S3;
+using EF.Storage.S3;
 using System.Text;
-using TaskFlow.Infrastructure.Storage.S3;
 using Test.Integration.Infrastructure;
 
 namespace Test.Integration;
@@ -83,10 +83,10 @@ public class S3ObjectStorageRepositoryTests
             const string blobName = "tenant/owner/presigned.txt";
             using (var upload = new MemoryStream(Encoding.UTF8.GetBytes("presigned content")))
             {
-                await repository.UploadAsync(bucket, blobName, upload, "text/plain", ct: ct);
+                await repository.UploadAsync(bucket, blobName, upload, "text/plain", cancellationToken: ct);
             }
 
-            var uri = await repository.GetBlobUriAsync(bucket, blobName, ct);
+            var uri = await repository.GetPresignedUrlAsync(bucket, blobName, TimeSpan.FromHours(1), cancellationToken: ct);
             StringAssert.StartsWith(uri.ToString(), MinioContainerFixture.ServiceUrl,
                 "the presigned URL must be signed for and reachable at Storage:S3:PublicServiceUrl");
 

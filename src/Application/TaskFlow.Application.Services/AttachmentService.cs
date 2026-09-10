@@ -1,5 +1,6 @@
 using EF.Common.Contracts;
 using EF.Data.Contracts;
+using EF.Storage.Contracts;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Concurrency;
@@ -24,7 +25,7 @@ internal class AttachmentService(
     ITenantBoundaryValidator tenantBoundaryValidator,
     // No cache dependency: no cached snapshot is built from attachments, so an attachment write has nothing
     // to invalidate. Add one here the day a snapshot starts counting them.
-    IBlobStorageRepository? blobStorage = null) : IAttachmentService
+    IObjectStorageRepository? blobStorage = null) : IAttachmentService
 {
     private Guid? RequestTenantId => requestContext.TenantId;
     private IReadOnlyCollection<string> RequestRoles => requestContext.Roles;
@@ -140,7 +141,7 @@ internal class AttachmentService(
 
         try
         {
-            await blobStorage.UploadAsync(AttachmentBlobs.ContainerName, blobName, fileStream, contentType, ct: ct);
+            await blobStorage.UploadAsync(AttachmentBlobs.ContainerName, blobName, fileStream, contentType, cancellationToken: ct);
         }
         catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
         {
@@ -148,7 +149,8 @@ internal class AttachmentService(
             return Result<DefaultResponse<AttachmentDto>>.Failure($"Blob upload failed: {ex.GetBaseException().Message}");
         }
 
-        var storageUri = (await blobStorage.GetBlobUriAsync(AttachmentBlobs.ContainerName, blobName, ct)).ToString();
+        var storageUri = (await blobStorage.GetPresignedUrlAsync(
+            AttachmentBlobs.ContainerName, blobName, AttachmentBlobs.DownloadUrlLifetime, cancellationToken: ct)).ToString();
         var entityResult = Domain.Model.Attachment.Create(
             DomainId.From<TenantId>(tenantId), fileName, contentType, fileSizeBytes, storageUri, ownerType, ownerId,
             DomainId.FromNullable<AttachmentId>(id));

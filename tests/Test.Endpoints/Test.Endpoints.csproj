@@ -10,6 +10,7 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <PackageReference Include="Newtonsoft.Json" />
     <PackageReference Include="EF.Common.Contracts" />
+    <PackageReference Include="EF.Storage.Contracts" />
   </ItemGroup>
 
   <ItemGroup>
