@@ -43,7 +43,7 @@ FlowEngine,TickerQ}/`, fresh baseline, no history-compat shim.
 **Shape**: `Version` comes from the package: `EF.Domain.EntityBase<TId>.Version` (a `long`
 implementing `EF.Domain.Contracts.IVersionedEntity`), incremented for every Modified entry by
 `EF.Data.DbContextBase.SaveChangesAsync`, which sets the property's OriginalValue to the pre-increment
-value so EF emits `WHERE Version = @original` (EF.* 1.1.100, package requests 1-2).
+value so EF emits `WHERE Version = @original` (EF.* 1.1.102, package requests 1-2).
 `TaskFlowEntityBase<TId>` adds only `ITimestampedEntity { DateTimeOffset CreatedAtUtc, ModifiedAtUtc; }`
 (private setters), and `VersionTimestampInterceptor` (`Infrastructure.Data/Interceptors/`) stamps the
 timestamps plus the insert baseline `Version = 1`, which the package does not do for Added entries. Aggregate-level ETag (D-031): only the root's
@@ -92,7 +92,7 @@ entity with a caller-id create path.
 **Problem**: offset paging degrades under concurrent inserts (dup/skipped rows) and forces a
 `COUNT(*)` per page.
 
-**Shape**: the request, page and limits are package types (EF.* 1.1.100, package request 21):
+**Shape**: the request, page and limits are package types (EF.* 1.1.102, package request 21):
 `EF.Common.Contracts.CursorSearchRequest<TFilter,TSortMode>{ Filter, SortMode, PageSize, Cursor? }`,
 `CursorPage<T>{ Items, NextCursor, HasMore }` - no Total, no page number - and `PageSizeLimits`
 (1..100, default 50). App-local: `Application.Models/Paging/TaskItemCursorSearchRequest` (derives from
@@ -153,7 +153,7 @@ candidate ids (lease free/expired, ordered, `Take(n)`) -> `ExecuteUpdateAsync` r
 predicate with a new `LeaseToken`/`LeaseOwner`/`LeaseExpiresUtc`/`AttemptCount+1` -> read back
 `WHERE LeaseToken == token` (never key on a timestamp - rounding differs per provider). A
 single-statement upgrade (`UPDLOCK, READPAST` / `SKIP LOCKED`) is a code comment, not implemented.
-`LeasedWorkerBase<TWork>`: adaptive poll 1s backing off to 5s idle, `LeaseOwner =
+`EF.BackgroundServices.LeasedWorkerBase<TWork>`: adaptive poll 1s backing off to 5s idle, `LeaseOwner =
 "{MachineName}:{ProcessId}"`; `OutboxDispatcherService`/`BlobDeleteWorkerService` derive from it, run
 on every Scheduler replica (not a TickerQ cron job). `AttemptCount >= 10` sets `DeadLetteredAtUtc`
 (row kept - the only surviving copy); admin `POST /api/v1/admin/outbox/{id}/retry` clears it.
@@ -219,19 +219,20 @@ message-bus framework that duplicates the outbox already owned here.
 same one-enum/one-resolver/one-branch shape as pattern 1. `IIntegrationEventTransport { bool
 CanDispatch; Task SendBatchAsync(destination, messages, ct) }` has `ServiceBusEventTransport`,
 `RabbitMqEventTransport`, `NoOpEventTransport` (`CanDispatch=false`, rows accumulate - local runs
-proceed with no broker). RabbitMQ is split in two: `src/Packages/EF.Messaging.RabbitMq` is a
-**portable, TaskFlow-free** package (connection multiplexer with a publisher-confirm channel pool,
-topology declarer, `RabbitMqConsumerHostedService<THandler>` with per-queue prefetch, health check,
-OTel metrics), candidate for the EF.* feed (request 23); `Infrastructure.Messaging.RabbitMq` is the
-thin adapter (transport, topology constants, handler wrappers) via `ProjectReference` today -
-swapping to a `PackageReference` once published is the entire porting step. Hosting: RabbitMq
+proceed with no broker). RabbitMQ ships as two projects: the published `EF.Messaging.RabbitMq`
+package (connection multiplexer with a publisher-confirm channel pool, topology declarer,
+`RabbitMqConsumerHostedService<THandler>` with per-queue prefetch, health check, OTel metrics;
+request 23, landed at 1.1.101+) and `Infrastructure.Messaging.RabbitMq`, the thin TaskFlow adapter
+(transport, topology constants, handler wrappers) consuming it via `PackageReference`. The in-repo
+`src/Packages/EF.Messaging.RabbitMq` project and its `tests/EF.Messaging.RabbitMq.Tests` were removed
+2026-09-10 once the package published. Hosting: RabbitMq
 selected -> Scheduler registers the three consumer hosted services and Aspire disables the matching
 Functions triggers (`AzureWebJobs.<name>.Disabled=true`); ServiceBus selected -> nothing RabbitMQ-side
 registers.
 
-**Proof**: `EF.Messaging.RabbitMq.Tests` (31: 15 unit against a fake channel, 16 Testcontainers
-integration) prove publisher confirms, prefetch bound, malformed-message DLX, requeue-then-DLX, with
-zero TaskFlow dependencies.
+**Proof**: the package's own test suite (15 unit against a fake channel, 16 Testcontainers
+integration) proves publisher confirms, prefetch bound, malformed-message DLX, requeue-then-DLX, with
+zero TaskFlow dependencies; the adapter's own tests cover the TaskFlow-specific wiring.
 
 **Customize**: a third transport needs a new `IIntegrationEventTransport` impl and enum value; outbox
 and consumer-side inbox don't change.
@@ -972,12 +973,13 @@ must never be added to a client that also issues writes without the same GET-onl
 topology at startup would either double-provision or race on a `CREATE`; leases and conditional updates
 already solve this for work-table rows but not for one-time startup work.
 
-**Shape**: `IDistributedLock` (`Application.Contracts/Locking/IDistributedLock.cs`) - one method,
+**Shape**: `EF.Common.Contracts.IDistributedLock` - one method,
 `ValueTask<IAsyncDisposable?> TryAcquireAsync(string key, TimeSpan ttl, CancellationToken ct)`,
 non-blocking by design (every caller has something better to do than queue), returning null when
 another holder has it. Explicitly scoped to one-time startup tasks (external resource provisioning,
 broker topology declaration), not work tables, which already coordinate through leases (pattern 6).
-`RedisDistributedLock` (`Infrastructure.Caching/Locking/RedisDistributedLock.cs`): acquire is
+The app-local `Application.Contracts/Locking/` and `Infrastructure.Caching/Locking/` copies (request
+32) are deleted; `EF.Cache.RedisDistributedLock`: acquire is
 `StringSetAsync(key, token, ttl, When.NotExists)` (`SET key token NX PX`) with a random per-acquisition
 token; release is a Lua script comparing the token before deleting (`if redis.call('get', KEYS[1]) ==
 ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end`) so a holder whose TTL already
@@ -986,9 +988,9 @@ quorum - acceptable here because every covered caller is idempotent, so the lock
 conflicting work rather than guaranteeing exactly-once; PostgreSQL `pg_try_advisory_lock` was considered
 and rejected as the default because it is provider-specific and the dual-provider rule (D-030) forbids
 a PostgreSQL-only code path for something Redis already covers on both providers.
-`InProcessDistributedLock` (`Infrastructure.Caching/Locking/InProcessDistributedLock.cs`, a
+`EF.Common.InProcessDistributedLock` (a
 `ConcurrentDictionary<string, SemaphoreSlim>` with a zero-timeout `WaitAsync`) is the fallback when no
-Redis connection is configured; `RegisterCachingServices` chooses between the two based on whether a
+Redis connection is configured; `RegisterCachingServices` (`Infrastructure.Caching/`) chooses between the two based on whether a
 Redis connection string resolves. The two real call sites: `EnsureExternalResources`
 (`Bootstrapper/StartupTasks/EnsureExternalResources.cs`, lock key `"taskflow:provision"`, pattern 13)
 and `TaskFlowRabbitMqTopologyStartup` (`Infrastructure.Messaging.RabbitMq/
@@ -1272,9 +1274,11 @@ Mirrors `.scaffold/INSTRUCTION-GAPS.md` (source repo owns the fix):
 
 ## Package dependencies
 
-- `docs/plans/ef-package-requests.md` - full EF.* package change request list (32 items); 9 of 11
-  REQUIRED requests already have an app-local fallback marked `// fallback:` at the call site, so
-  this repo is not blocked, but the fallback is the natural first replacement once each ships.
-- `docs/plans/ef-messaging-rabbitmq-package-spec.md` - the exact public-API spec
-  `src/Packages/EF.Messaging.RabbitMq` implements today as a portable, dependency-free project;
-  porting it to the real package feed is a move-and-republish, not a rewrite.
+- `docs/plans/ef-package-requests.md` - full EF.* package change request list (32 items plus a
+  2026-09-10 feedback section); all REQUIRED items have landed as of EF.* 1.1.102 /
+  EF.FlowEngine.* 1.0.173 except request 3 (partial - SqlClient stays transitive until EF.Data 2.0)
+  and request 4 (landed, not adopted - D-004, no repository needs it). App-local fallbacks and
+  `// fallback:` markers are gone from `src/` and `tests/`.
+- `docs/plans/ef-messaging-rabbitmq-package-spec.md` - the public-API spec the package now
+  implements as published `EF.Messaging.RabbitMq` 1.1.101+; the in-repo `src/Packages/
+EF.Messaging.RabbitMq` project and its tests were removed 2026-09-10 once the package shipped.
