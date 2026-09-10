@@ -6,6 +6,9 @@
     <!-- Package request 13/32: ITypedCache and CacheKey are the cache boundary the application layer codes
          against, and IDistributedLock (EF.Common.Contracts) is the D-052 mutual-exclusion contract. -->
     <PackageReference Include="EF.Cache" />
+    <!-- Package request 14: IntegrationEventEnvelope and EnvelopeSerializer are the wire shape the whole
+         messaging path codes against, so the boundary assembly is where the reference belongs. -->
+    <PackageReference Include="EF.Messaging" />
   </ItemGroup>
 
   <ItemGroup>

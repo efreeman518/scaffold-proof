@@ -39,11 +39,11 @@ public sealed class RabbitMqTransportTests
         await provider.GetRequiredService<IRabbitMqTopologyDeclarer>()
             .DeclareAsync(TaskFlowRabbitMqTopology.Build(), ct);
 
-        var envelope = IntegrationEventEnvelope.From(
+        var envelope = TaskFlowIntegrationEvents.Envelope(
             new TaskItemCreatedEvent(Guid.CreateVersion7(), TestConstants.TenantId, "over rabbit"),
             DateTimeOffset.UtcNow,
             correlationId: "corr-1");
-        var row = OutboxStagingInterceptor.ToRow(envelope, DateTimeOffset.UtcNow);
+        var row = OutboxStagingInterceptor.ToRow(envelope, TestConstants.TenantId, DateTimeOffset.UtcNow);
 
         var transport = provider.GetRequiredService<IIntegrationEventTransport>();
         Assert.IsTrue(transport.CanDispatch);
@@ -70,7 +70,10 @@ public sealed class RabbitMqTransportTests
             Assert.IsNull(failure);
             Assert.AreEqual(envelope.Id, read!.Id);
             Assert.AreEqual(envelope.Type, read.Type);
-            Assert.AreEqual(TestConstants.TenantId, read.TenantId);
+            // The envelope frame carries no tenant; it travels in the payload and on the broker header above.
+            Assert.AreEqual(
+                TestConstants.TenantId,
+                read.Payload.GetProperty(nameof(TaskFlow.Domain.Shared.IDomainEvent.TenantId)).GetGuid());
         }
     }
 
@@ -86,14 +89,14 @@ public sealed class RabbitMqTransportTests
             .DeclareAsync(TaskFlowRabbitMqTopology.Build(), ct);
         await DrainAsync(broker, ct);
 
-        var envelope = IntegrationEventEnvelope.From(
+        var envelope = TaskFlowIntegrationEvents.Envelope(
             new TaskItemStatusChangedEvent(
                 Guid.CreateVersion7(), TestConstants.TenantId,
                 TaskFlow.Domain.Shared.Enums.TaskItemStatus.Open,
                 TaskFlow.Domain.Shared.Enums.TaskItemStatus.InProgress),
             DateTimeOffset.UtcNow,
             correlationId: null);
-        var row = OutboxStagingInterceptor.ToRow(envelope, DateTimeOffset.UtcNow);
+        var row = OutboxStagingInterceptor.ToRow(envelope, TestConstants.TenantId, DateTimeOffset.UtcNow);
 
         await provider.GetRequiredService<IIntegrationEventTransport>()
             .SendBatchAsync(row.Destination, [row], ct);

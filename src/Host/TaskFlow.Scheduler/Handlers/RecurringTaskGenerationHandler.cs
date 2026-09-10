@@ -114,13 +114,13 @@ public sealed class RecurringTaskGenerationHandler(
     private void Stage(TaskItem occurrence, DateTimeOffset asOfUtc)
     {
         var messageId = occurrence.Id.Value;
-        var envelope = IntegrationEventEnvelope.From(
+        var envelope = TaskFlowIntegrationEvents.Envelope(
             new TaskItemCreatedEvent(messageId, occurrence.TenantId.Value, occurrence.Title),
             asOfUtc,
             correlationId: null,
             id: messageId);
 
-        outbox.Stage(envelope, messageId);
+        outbox.Stage(envelope, occurrence.TenantId.Value, messageId);
     }
 
     /// <summary>UUIDv5 over (tenant, template, occurrence): the same occurrence always gets the same id.</summary>

@@ -1,3 +1,4 @@
+using EF.Messaging;
 using EF.Messaging.RabbitMq;
 using Microsoft.Extensions.Logging.Abstractions;
 using OpenTelemetry;
@@ -136,10 +137,9 @@ public sealed class BrokerTracePropagationTests
             messageId,
             "TaskItemCreatedEvent",
             1,
-            Guid.NewGuid(),
             DateTimeOffset.UtcNow,
             CorrelationId: null,
-            Payload: JsonDocument.Parse("{}").RootElement);
+            Payload: JsonDocument.Parse($$"""{"TenantId":"{{Guid.NewGuid()}}"}""").RootElement);
 
         return new RabbitMqDelivery(
             Queue: "taskflow.projection",

@@ -1,3 +1,5 @@
+using EF.Messaging;
+
 namespace TaskFlow.Application.Contracts.Messaging;
 
 /// <summary>
@@ -11,9 +13,13 @@ public interface IOutboxStaging
     /// Adds one outbox row to the write context without saving.
     /// </summary>
     /// <param name="envelope">The envelope to persist; its <c>Id</c> becomes the outbox row id and the MessageId.</param>
+    /// <param name="tenantId">
+    /// Owning tenant. The package envelope frame carries no tenant, so the writer denormalizes it onto the
+    /// outbox row, which is what the dispatcher reads to set the broker message property.
+    /// </param>
     /// <param name="deterministicId">
     /// Overrides the envelope id so a job that re-runs stages the same MessageId (for example a UUIDv5 of
     /// tenant + entity + occurrence), which the ConsumerInbox then rejects as a duplicate.
     /// </param>
-    void Stage(IntegrationEventEnvelope envelope, Guid? deterministicId = null);
+    void Stage(IntegrationEventEnvelope envelope, Guid tenantId, Guid? deterministicId = null);
 }

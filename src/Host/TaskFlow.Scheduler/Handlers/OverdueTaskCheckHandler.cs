@@ -87,12 +87,12 @@ public sealed class OverdueTaskCheckHandler(
             row.Id.ToString(),
             row.DueDate.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
 
-        var envelope = IntegrationEventEnvelope.From(
+        var envelope = TaskFlowIntegrationEvents.Envelope(
             new TaskItemOverdueSuspectedEvent(row.Id, row.TenantId, row.DueDate),
             asOfUtc,
             correlationId: null,
             id: messageId);
 
-        outbox.Stage(envelope, messageId);
+        outbox.Stage(envelope, row.TenantId, messageId);
     }
 }

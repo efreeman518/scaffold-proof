@@ -188,7 +188,7 @@ Terms used by the workflow orchestration layer. These are FlowEngine-runtime con
 
 - Use `TaskItem` everywhere source-level naming needs the aggregate; do not shorten it to `Task`.
 - Use `Attachment` for metadata and blob reference. Do not model file bytes on the domain entity.
-- Use the shared lifecycle event records in `Domain.Shared.Events` as both the raised domain event and the integration-event payload (one record, wrapped by `IntegrationEventEnvelope`); do not define a second parallel set.
+- Use the shared lifecycle event records in `Domain.Shared.Events` as both the raised domain event and the integration-event payload (one record, wrapped by `EF.Messaging.IntegrationEventEnvelope`); do not define a second parallel set.
 - Use integration event records raised by the aggregate; do not publish domain namespace events over transport.
 - Use `OwnerType` and `OwnerId` for polymorphic attachment ownership; do not add EF navigation collections to owners.
 - Use `WorkflowDefinition` for the persisted FlowEngine document; reserve unqualified `Workflow` for prose, never as a C# type name.

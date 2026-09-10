@@ -188,10 +188,15 @@ instance, `createdUtc` unchanged.
 **Problem**: one wire shape regardless of transport, one processing path per concern (projection,
 AI review, workflow) instead of one handler `switch`ing on event type.
 
-**Shape**: `IntegrationEventEnvelope(Guid Id, string Type, int Version, Guid TenantId,
-DateTimeOffset OccurredAtUtc, string? CorrelationId, JsonElement Payload)` - the full envelope is
+**Shape**: `EF.Messaging.IntegrationEventEnvelope(Guid Id, string Type, int Version,
+DateTimeOffset OccurredAtUtc, string? CorrelationId, JsonElement Payload)` (package request 14; the
+frame carries no tenant - TaskFlow's tenant travels in the payload, which every `IDomainEvent` has,
+and the writer denormalizes it onto the outbox row and the broker message properties) - the full
+envelope is
 always the wire body; broker-native fields are populate-on-publish only, never reconstructed on
-receive. Three destinations - `projection` (Created/StatusChanged/Completed), `ai-review` (Created
+receive. The app keeps `TaskFlowIntegrationEvents` (`Application.Contracts/Messaging/`), which owns
+the per-type `Versions` table, `IsKnownType`, and the one place a raised domain event becomes an
+envelope. Three destinations - `projection` (Created/StatusChanged/Completed), `ai-review` (Created
 only), `workflow` (Created only) - map to three Service Bus subscriptions (SQL filter on `EventType`,
 topic dup detection, `maxDeliveryCount=5`, dead-letter on expiry/filter error) or three RabbitMQ
 queues bound to a topic exchange with a shared DLX. Both readers: malformed -> dead-letter with a
@@ -261,9 +266,10 @@ duplicates events.
 **Problem**: FusionCache and its Redis backplane were fully registered but never injected - every
 call site only ever called `RemoveAsync` against a no-op provider.
 
-**Shape**: `Contracts/Caching/ITaskFlowCache { GetOrSetAsync<T>(key, factory, profile, ct);
-RemoveByTagAsync(tag, ct); RemoveAsync(key, ct) }`, one impl (`FusionTaskFlowCache`).
-`CacheKey(CacheKind, TenantId, Discriminator?)` renders `"{env}:{schemaVersion}:{tenantId:N}:
+**Shape**: `EF.Cache.ITypedCache` is injected directly (package requests 13/31; the app-local
+`ITaskFlowCache`/`FusionTaskFlowCache` are deleted). `TaskFlowCache` (`Application.Contracts/Caching/`)
+keeps what the package cannot know: `CacheKind`, the profile names, the tag vocabulary and the
+kind-to-`CacheKey` mapping, rendering `"{env}:{schemaVersion}:{tenantId:N}:
 {kind}[:{discriminator}]"`. Two profiles only - `Metadata` (L1 5m/L2 30m/fail-safe 2h/0.8 eager
 refresh) and `Summary` (L1 5s/L2 15s/fail-safe 1m/500ms soft timeout) - deliberately narrow: caches
 immutable snapshots only, never a single mutable entity. Invalidation is tag-based
@@ -746,11 +752,11 @@ filters, the closed generic `DefaultRequest<T>`/`SearchRequest<TFilter>`/`Defaul
 three from `EF.Common.Contracts` - listed
 again in `RegisteredClosedGenerics` since a generic type definition has no `JsonTypeInfo` a scan could
 discover). `TaskFlowMessagingJsonContext` (`Application.Contracts/Messaging/
-TaskFlowMessagingJsonContext.cs`) is separate because `IntegrationEventEnvelope` lives in
+`TaskFlowMessagingJsonContext.cs`) is separate because the messaging wire shape is declared in
 Application.Contracts, which Application.Models does not reference the other way; it declares no
 `PropertyNamingPolicy` (PascalCase, byte-identical to what reflection produced) and
 `PropertyNameCaseInsensitive=true` so a payload from an older/newer build's naming still deserializes
-during a rolling deploy - it covers `IntegrationEventEnvelope` plus every registered event payload
+during a rolling deploy - it covers `EF.Messaging.IntegrationEventEnvelope` plus every registered event payload
 record (`TaskItemCreatedEvent`, `TaskItemContentChangedEvent`, `TaskItemStatusChangedEvent`,
 `TaskItemCompletedEvent`, `TaskItemOverdueSuspectedEvent`, `TaskItemRescheduledEvent`,
 `CommentAddedEvent`, `AttachmentUploadedEvent`). `TaskFlowApiJsonContext`
@@ -761,8 +767,8 @@ because `ProblemDetails` comes from the ASP.NET Core shared framework. All three
 same order at `Host/TaskFlow.Api/RegisterApiServices.cs:70-72` -
 `TypeInfoResolverChain.Insert(0, TaskFlowJsonContext.Default)`, `Insert(1, TaskFlowApiJsonContext.
 Default)`, `Insert(2, TaskFlowMessagingJsonContext.Default)` - with the reflection resolver left behind
-them for third-party types. The envelope throw rule: `IntegrationEventEnvelope.From`'s private
-`PayloadTypeInfo` calls `TaskFlowMessagingJsonContext.Default.GetTypeInfo(eventType)` and throws
+them for third-party types. The envelope throw rule: `TaskFlowIntegrationEvents.Envelope` calls
+`TaskFlowMessagingJsonContext.Default.GetTypeInfo(eventType)` and throws
 `InvalidOperationException` ("... is not registered on TaskFlowMessagingJsonContext (D-048). Add a
 [JsonSerializable] entry for it alongside its Versions entry.") when the concrete event record has no
 generated metadata - a build-time omission, not a runtime condition, hence a throw rather than a
@@ -774,7 +780,7 @@ response/page type in `TaskFlow.Application.Models` resolves through
 at build time rather than at first serialization.
 
 **Customize**: a new event record needs both a `[JsonSerializable]` entry on
-`TaskFlowMessagingJsonContext` and a `Versions` dictionary entry on `IntegrationEventEnvelope` (the
+`TaskFlowMessagingJsonContext` and a `Versions` dictionary entry on `TaskFlowIntegrationEvents` (the
 context's own doc comment calls out that the two lists must match, or a type is either dropped as
 unknown or silently falls back to reflection); a new DTO/request/response type needs a
 `[JsonSerializable]` entry on `TaskFlowJsonContext`, enforced by `JsonContextCompletenessTests`.

@@ -1,4 +1,5 @@
 using EF.BackgroundServices.Leased;
+using EF.Messaging;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Text;
 using System.Text.Json;
@@ -123,7 +124,7 @@ public sealed class MessagingConsumerTests
 
     public TestContext TestContext { get; set; } = null!;
 
-    private static IntegrationEventEnvelope Envelope() => IntegrationEventEnvelope.From(
+    private static IntegrationEventEnvelope Envelope() => TaskFlowIntegrationEvents.Envelope(
         new TaskItemCreatedEvent(Guid.CreateVersion7(), TestConstants.TenantId, "guarded"),
         new DateTimeOffset(2026, 9, 4, 12, 0, 0, TimeSpan.Zero),
         correlationId: null,
