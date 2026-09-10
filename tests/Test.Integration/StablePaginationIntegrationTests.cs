@@ -1,5 +1,7 @@
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using System.Data.Common;
 using TaskFlow.Application.Models;
 using TaskFlow.Application.Models.Paging;
 using TaskFlow.Infrastructure.Repositories;
@@ -52,14 +54,50 @@ public sealed class StablePaginationIntegrationTests
         await AssertKeysetWalkAsync(TaskItemSortMode.StatusThenId);
     }
 
-    private async Task AssertKeysetWalkAsync(TaskItemSortMode sortMode)
+    /// <summary>Verifies the due-date ascending keyset walk stays total with a mix of null and set due dates.</summary>
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task DueDateAscKeyset_WithNullAndSetDueDates_ReturnsStableCompletePages()
+    {
+        await AssertKeysetWalkAsync(TaskItemSortMode.DueDateAsc, mixedDueDates: true);
+    }
+
+    /// <summary>Verifies the due-date descending keyset walk stays total with a mix of null and set due dates.</summary>
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task DueDateDescKeyset_WithNullAndSetDueDates_ReturnsStableCompletePages()
+    {
+        await AssertKeysetWalkAsync(TaskItemSortMode.DueDateDesc, mixedDueDates: true);
+    }
+
+    /// <summary>Verifies the modified-descending keyset walk stays total when every row shares a save timestamp.</summary>
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task ModifiedDescKeyset_WithSharedTimestamps_ReturnsStableCompletePages()
+    {
+        await AssertKeysetWalkAsync(TaskItemSortMode.ModifiedDesc);
+    }
+
+    private async Task AssertKeysetWalkAsync(TaskItemSortMode sortMode, bool mixedDueDates = false)
     {
         var title = $"StablePaging-{Guid.NewGuid():N}";
+        // Whole seconds: SQL Server keeps 100ns ticks, PostgreSQL timestamptz keeps microseconds.
+        var dueBase = new DateTimeOffset(2027, 3, 1, 8, 0, 0, TimeSpan.Zero);
         var seeded = Enumerable.Range(0, 7)
-            .Select(_ => new TaskItemBuilder()
-                .WithTenantId(QueryTenantId)
-                .WithTitle(title)
-                .Build())
+            .Select(index =>
+            {
+                var task = new TaskItemBuilder()
+                    .WithTenantId(QueryTenantId)
+                    .WithTitle(title)
+                    .Build();
+
+                // Every second row keeps a null due date, and two rows share one due date, so the walk
+                // crosses the null boundary and a duplicate leading key on the same page break.
+                if (mixedDueDates && index % 2 == 0)
+                    task.UpdateDateRange(null, dueBase.AddDays(index / 4));
+
+                return task;
+            })
             .ToArray();
 
         await using var writeDb = DbContainerFixture.CreateTrxnContext();
@@ -113,6 +151,102 @@ public sealed class StablePaginationIntegrationTests
             await writeDb.SaveChangesAsync(
                 OptimisticConcurrencyWinner.ClientWins,
                 cancellationToken: CancellationToken.None);
+        }
+    }
+
+    /// <summary>
+    /// Proves the page is projected by the database and costs one round trip: the pager applies the DTO
+    /// selector after the resume predicate and the ordering (package 1.1.102 <c>KeysetPageProjectionAsync</c>),
+    /// so the SELECT list must carry the DTO's columns and none of the entity-only ones, and the whole page
+    /// must be a single command. A regression to client evaluation shows up as extra columns; a regression
+    /// to entity paging plus an in-memory Select shows up as entity-only columns in the SELECT list.
+    /// </summary>
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task KeysetPage_ProjectsServerSide_InOneRoundTrip()
+    {
+        var title = $"KeysetProjection-{Guid.NewGuid():N}";
+        var seeded = Enumerable.Range(0, 3)
+            .Select(_ => new TaskItemBuilder().WithTenantId(QueryTenantId).WithTitle(title).Build())
+            .ToArray();
+
+        await using var writeDb = DbContainerFixture.CreateTrxnContext();
+        writeDb.TaskItems.AddRange(seeded);
+        await writeDb.SaveChangesAsync(
+            OptimisticConcurrencyWinner.ClientWins,
+            cancellationToken: TestContext.CancellationToken);
+
+        try
+        {
+            var recorder = new CommandRecordingInterceptor();
+            await using var queryDb = DbContainerFixture.CreateQueryContext(null, recorder);
+            var repository = new TaskItemRepositoryQuery(queryDb, TestColumnEncryption.Keys, TestCursorCodec.Instance);
+
+            var page = await repository.SearchTaskItemsAsync(
+                new TaskItemCursorSearchRequest
+                {
+                    Filter = new TaskItemSearchFilter { SearchTerm = title, TenantId = QueryTenantId },
+                    SortMode = TaskItemSortMode.ModifiedDesc,
+                    PageSize = 2
+                },
+                QueryTenantId,
+                TestContext.CancellationToken);
+
+            Assert.AreEqual(2, page.Items.Count);
+            Assert.IsTrue(page.HasMore);
+            Assert.HasCount(1, recorder.Commands, "One page must be one command, not a page query plus a count or a second read.");
+
+            var sql = recorder.Commands[0];
+            var selectList = sql[..sql.IndexOf("FROM", StringComparison.OrdinalIgnoreCase)];
+
+            // Projected: on the DTO. Not projected: written by the entity but absent from TaskItemDto.
+            StringAssert.Contains(selectList, "Title");
+            StringAssert.Contains(selectList, "EstimatedEffort");
+            Assert.IsFalse(selectList.Contains("CreatedAtUtc", StringComparison.Ordinal),
+                $"CreatedAtUtc is not on TaskItemDto; selecting it means the entity was materialized. SQL: {sql}");
+            Assert.IsFalse(selectList.Contains("RecurrencePattern", StringComparison.Ordinal),
+                $"RecurrencePattern is not on TaskItemDto; selecting it means the entity was materialized. SQL: {sql}");
+
+            // The resume predicate and the order must be in the same statement as the projection.
+            StringAssert.Contains(sql, "ORDER BY");
+        }
+        finally
+        {
+            writeDb.TaskItems.RemoveRange(seeded);
+            await writeDb.SaveChangesAsync(
+                OptimisticConcurrencyWinner.ClientWins,
+                cancellationToken: CancellationToken.None);
+        }
+    }
+
+    /// <summary>Records the SQL of every reader command executed on the context it is attached to.</summary>
+    private sealed class CommandRecordingInterceptor : DbCommandInterceptor
+    {
+        private readonly List<string> _commands = [];
+
+        public IReadOnlyList<string> Commands
+        {
+            get { lock (_commands) return [.. _commands]; }
+        }
+
+        public override InterceptionResult<DbDataReader> ReaderExecuting(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
+        {
+            Record(command);
+            return base.ReaderExecuting(command, eventData, result);
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            Record(command);
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        private void Record(DbCommand command)
+        {
+            lock (_commands) _commands.Add(command.CommandText);
         }
     }
 

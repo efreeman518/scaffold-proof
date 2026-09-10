@@ -99,6 +99,28 @@ public class CursorPagingContractTests
     }
 
     /// <summary>
+    /// Verifies a cursor minted by the previous package release still resumes. The literal below was
+    /// produced by <c>EF.Data.Contracts 1.1.101</c>'s codec with this suite's signing key, for the IdAsc
+    /// scope, at a point where the sort key was a raw <see cref="Guid"/>; 1.1.102 mints the same sort key
+    /// from a <c>TaskItemId</c> instead, so this pins that the wire format and the sort-key text did not
+    /// move underneath outstanding tokens. A failure here means live cursors break on deploy.
+    /// </summary>
+    [TestMethod]
+    public void Given_TokenMintedByThePreviousPackageRelease_When_Decoded_Then_StillResumes()
+    {
+        const string mintedOn1_1_101 =
+            "ASIxMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMXwwASQwMTk5YTBkMC0xMTExLTcwMDAtODAwMC0wMDAwMDAwMDBhYmPQoJkBEREAcIAAAAAAAAq8SLhEN41CfsuSzjO9nGeFvJtN_bmoGkn86QrJBS-93p8";
+        var expectedId = Guid.Parse("0199a0d0-1111-7000-8000-000000000abc");
+
+        var position = Codec.Decode(mintedOn1_1_101, Scope(TaskItemSortMode.IdAsc));
+
+        // The id sort key is the underlying Guid in "D" form: what 1.1.101 wrote for a Guid key and what
+        // 1.1.102 writes for the TaskItemId key, which is why the two are interchangeable.
+        Assert.AreEqual(expectedId.ToString("D"), position.SortKey);
+        Assert.AreEqual(expectedId, position.TieBreaker);
+    }
+
+    /// <summary>
     /// Verifies a cursor signed with another key is refused. This is the rotation caveat: rotating the
     /// column-encryption DEK the signing key is derived from invalidates outstanding cursors, and they
     /// must fail closed rather than decode into a position in someone else's ordering.

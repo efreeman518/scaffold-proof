@@ -102,12 +102,13 @@ the generic and sets the default page size, which the package record leaves at 0
 HMAC-SHA256 signed, schema-version byte, scope key re-checked on decode. TaskFlow's scope key is
 `TaskItemRepositoryQuery.CursorScope` = `{tenantId:N}|{(int)sortMode}`, because the codec has no
 sort-mode field - so tamper, cross-tenant and sort-mode mismatch all fail closed to 400
-(`ERROR_CURSOR_INVALID`). `TaskItemRepositoryQuery.ApplyKeyset` stays app-local: one switch per sort
-mode building the `ORDER BY`/`WHERE` shape, each arm commented with the index it must hit; null
-`DueDate` sorts last; `Take(PageSize + 1)` computes `HasMore` without a second query. The package's
-own pager (`KeysetPageAsync`) is not usable here - it types the tie-break key as
-`Expression<Func<T,Guid>>` and every TaskFlow key is an `IDomainId<T>` struct behind a value
-converter, which no Guid-typed selector can translate.
+(`ERROR_CURSOR_INVALID`). The ORDER BY, the resume predicate and the cursor round trip are the
+package's `EF.Data.Contracts.IQueryableExtensions.KeysetPageAsync` (package request 6). It is applied
+to the projected `IQueryable<TaskItemDto>` rather than to the entity, so the DTO projection stays
+server-side and order, resume and `PageSize + 1` compose on top of it in one statement; the tie-break
+key is the projected `Guid` id in every mode, and `TaskItemRepositoryQuery` keeps only the sort-mode
+switch that chooses the leading key and its direction, each arm commented with the index it must hit.
+Null `DueDate` sorts last because the pager orders a nullable key by `(key IS NULL)` first.
 
 **Proof**: page-through with no dup/gap, `HasMore=false` at the end, tamper/cross-tenant/sort-mode
 mismatch -> 400, one case per sort mode.
@@ -244,10 +245,11 @@ events, running as global admin regardless of tenant.
 jobs by design): `StreamOverdueAsync`, `MarkOverdueNotifiedAsync`, `StreamDueTemplatesAsync`,
 `UpsertOccurrencesAsync`, `AdvanceNextOccurrenceAsync(tenantId, templateId, expectedNext, newNext)`,
 `GetStaleBatchAsync`, `StageBlobDeletesAsync`, `DeleteStaleBatchAsync`. Every staged event uses a
-deterministic id (`DeterministicGuid.Create(ns, ...parts)`, real UUIDv5/SHA-1) so a re-run over the
-same data produces zero new rows: `overdue` keys on `(tenant, task, dueDate)`, `recurrence` keys on
-`(tenant, template, occurrenceUtc)`. Occurrences upsert via FlexLabs `UpsertRange(...).On(...)
-.NoUpdate()` (D-028); the template pointer only advances when `expectedNext` still matches - a lost
+deterministic id (`EF.Common.DeterministicGuid.Create(DomainConstants.DETERMINISTIC_ID_NAMESPACE,
+label, ...parts)`, real UUIDv5/SHA-1) so a re-run over the same data produces zero new rows: the
+`overdue` label keys on `(tenant, task, dueDate)`, `recurrence` on `(tenant, template,
+occurrenceUtc)`. Occurrences upsert via `EF.Data` `IRepositoryBase.UpsertRangeAsync(occurrences,
+match)` with no `whenMatched`, which is DO NOTHING (D-028); the template pointer only advances when `expectedNext` still matches - a lost
 race skips that tick instead of double-advancing. Stale cleanup stages `BlobDeleteWork` before
 deleting the task row (blob cleanup happens via pattern 6, not inline). Four retention jobs purge
 dead-lettered outbox/blob-delete rows (>7d, `Scheduling:Retention:OutboxDays`), processed inbox rows

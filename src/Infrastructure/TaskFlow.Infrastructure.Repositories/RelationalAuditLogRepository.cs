@@ -1,4 +1,6 @@
 using EF.Common.Contracts;
+using EF.Data;
+using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Infrastructure.Data;
@@ -20,7 +22,8 @@ namespace TaskFlow.Infrastructure.Repositories;
 public sealed class RelationalAuditLogRepository(
     TaskFlowDbContextTrxn db,
     string systemTenantId,
-    int purgeBatchSize = BatchedExecute.DefaultBatchSize) : IAuditLogRepository
+    int purgeBatchSize = BatchedExecute.DefaultBatchSize)
+    : RepositoryBase<TaskFlowDbContextTrxn, string, Guid?>(db), IAuditLogRepository
 {
     /// <inheritdoc />
     public Task AppendAsync<TTenantId>(AuditEntry<string, TTenantId> entry, CancellationToken ct = default)
@@ -48,20 +51,15 @@ public sealed class RelationalAuditLogRepository(
         // connection instead of flushing whatever else the shared write context happens to be tracking, and
         // a replayed entry (same key) is absorbed the way the Table arm's UpsertEntity absorbs it. Insert
         // only - an audit row is written once and never edited, so there is nothing to update.
-        return db.AuditLog
-            .Upsert(record)
-            .On(e => new { e.TenantId, e.RecordedUtc, e.Id })
-            .NoUpdate()
-            .RunAsync(ct);
+        return UpsertAsync(record, e => new { e.TenantId, e.RecordedUtc, e.Id }, cancellationToken: ct);
     }
 
     /// <inheritdoc />
     public Task<int> PurgeOlderThanAsync(DateTimeOffset cutoffUtc, CancellationToken ct = default) =>
         // Batched so one retention run cannot lock the audit table for its whole window; Id is the batch key
         // because it is unique on its own, unlike either half of the composite primary key.
-        db.AuditLog
-            .Where(e => e.RecordedUtc < cutoffUtc)
-            .ExecuteDeleteBatchedAsync(e => e.Id, purgeBatchSize, ct: ct);
+        DB.AuditLog.ExecuteDeleteBatchedAsync(
+            e => e.RecordedUtc < cutoffUtc, e => e.Id, purgeBatchSize, ct: ct);
 
     /// <summary>Mirrors the Table arm: a null or empty GUID tenant means "no tenant".</summary>
     private static string? GetTenantId<TTenantId>(TTenantId tenantId)

@@ -1,12 +1,11 @@
-﻿using EF.IntegrationTesting.Testcontainers;
+﻿using EF.Data.Encryption;
+using EF.IntegrationTesting.Testcontainers;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Npgsql;
-using TaskFlow.Infrastructure.Data.Encryption;
 using TaskFlow.Infrastructure.Data.Interceptors;
 using TaskFlow.Infrastructure.Data.Provider;
-using Testcontainers.PostgreSql;
 
 namespace Test.Support.Hosting;
 
@@ -19,32 +18,6 @@ public static class TestDbProvider
         Environment.GetEnvironmentVariable(EnvironmentVariable) is { Length: > 0 } value
             ? Enum.Parse<TaskFlowDbProvider>(value, ignoreCase: true)
             : TaskFlowDbProvider.SqlServer;
-}
-
-// fallback: replace with EF.IntegrationTesting.PostgreSqlContainerFixture when published (package request 8).
-/// <summary>PostgreSQL 17 + pgvector Testcontainer with the same surface as the package MsSqlContainerFixture.</summary>
-public sealed class PostgreSqlContainerFixture(string image = PostgreSqlContainerFixture.DefaultImage) : IAsyncDisposable
-{
-    public const string DefaultImage = "pgvector/pgvector:pg17";
-
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder(image).Build();
-
-    public bool IsStarted { get; private set; }
-
-    public string ConnectionString => _container.GetConnectionString();
-
-    public async Task StartAsync()
-    {
-        await _container.StartAsync();
-        IsStarted = true;
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        if (!IsStarted) return;
-        await _container.DisposeAsync();
-        IsStarted = false;
-    }
 }
 
 /// <summary>

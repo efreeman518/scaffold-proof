@@ -1,3 +1,4 @@
+using EF.Data;
 using EF.Domain.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Pgvector;
@@ -20,7 +21,7 @@ namespace TaskFlow.Infrastructure.Repositories;
 /// </para>
 /// </summary>
 public sealed class PgVectorTaskEmbeddingRepository(TaskFlowDbContextTrxn write, TaskFlowDbContextQuery read)
-    : ITaskEmbeddingRepository
+    : RepositoryBase<TaskFlowDbContextTrxn, string, Guid?>(write), ITaskEmbeddingRepository
 {
     /// <inheritdoc />
     public async Task<TaskEmbeddingSource?> GetSourceAsync(
@@ -58,15 +59,22 @@ public sealed class PgVectorTaskEmbeddingRepository(TaskFlowDbContextTrxn write,
             UpdatedUtc = updatedUtc
         };
 
-        return write.Set<TaskItemEmbedding>()
-            .Upsert(row)
-            .On(e => new { e.TenantId, e.TaskItemId })
-            .RunAsync(ct);
+        return UpsertAsync(
+            row,
+            e => new { e.TenantId, e.TaskItemId },
+            (existing, proposed) => new TaskItemEmbedding
+            {
+                Embedding = proposed.Embedding,
+                Dimensions = proposed.Dimensions,
+                ModelId = proposed.ModelId,
+                UpdatedUtc = proposed.UpdatedUtc
+            },
+            ct);
     }
 
     /// <inheritdoc />
     public Task DeleteAsync(Guid tenantId, Guid taskItemId, CancellationToken ct = default) =>
-        write.Set<TaskItemEmbedding>()
+        DB.Set<TaskItemEmbedding>()
             .Where(e => e.TenantId == tenantId && e.TaskItemId == taskItemId)
             .ExecuteDeleteAsync(ct);
 

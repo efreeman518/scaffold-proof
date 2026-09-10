@@ -1,10 +1,13 @@
-﻿using EF.Data.Contracts;
+﻿using EF.Common;
+using EF.Data;
+using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using System.Runtime.CompilerServices;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
+using TaskFlow.Domain.Shared.Constants;
 using TaskFlow.Domain.Shared.Enums;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Operational;
@@ -17,7 +20,7 @@ namespace TaskFlow.Infrastructure.Repositories;
 /// job's cost is bounded by the rows it actually touches, not by how far into the table it has walked.
 /// </summary>
 public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvider? timeProvider = null)
-    : ITaskItemSystemRepository
+    : RepositoryBase<TaskFlowDbContextTrxn, string, Guid?>(db), ITaskItemSystemRepository
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
@@ -76,19 +79,14 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
     }
 
     /// <inheritdoc />
-    public Task<int> UpsertOccurrencesAsync(IReadOnlyCollection<TaskItem> occurrences, CancellationToken ct = default)
-    {
-        if (occurrences.Count == 0) return Task.FromResult(0);
-
-        // fallback: replace with EF.Data IRepositoryBase.UpsertAsync when published (package request 7).
-        // D-028: MERGE on SQL Server, ON CONFLICT DO NOTHING on PostgreSQL, keyed on the unique
-        // IX_TaskItem_TenantId_RecurrenceTemplateId_OccurrenceUtc.
-        return db.Set<TaskItem>()
-            .UpsertRange(occurrences)
-            .On(e => new { e.TenantId, e.RecurrenceTemplateId, e.OccurrenceUtc })
-            .NoUpdate()
-            .RunAsync(ct);
-    }
+    // D-028: MERGE on SQL Server, ON CONFLICT DO NOTHING on PostgreSQL, keyed on the unique
+    // IX_TaskItem_TenantId_RecurrenceTemplateId_OccurrenceUtc. A null whenMatched is the package's
+    // insert-if-absent arm, so a template that already produced this occurrence is left untouched.
+    public Task<int> UpsertOccurrencesAsync(IReadOnlyCollection<TaskItem> occurrences, CancellationToken ct = default) =>
+        UpsertRangeAsync(
+            occurrences,
+            e => new { e.TenantId, e.RecurrenceTemplateId, e.OccurrenceUtc },
+            cancellationToken: ct);
 
     /// <inheritdoc />
     public async Task<bool> AdvanceNextOccurrenceAsync(
@@ -97,7 +95,7 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
         var typedTenantId = DomainId.From<TenantId>(tenantId);
         var typedTemplateId = DomainId.From<TaskItemId>(templateId);
 
-        var affected = await db.Set<TaskItem>()
+        var affected = await DB.Set<TaskItem>()
             .IgnoreQueryFilters()
             .Where(e => e.TenantId == typedTenantId && e.Id == typedTemplateId
                 && e.NextOccurrenceAtUtc == expectedNextUtc)
@@ -127,7 +125,7 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
         var typedTenantId = DomainId.From<TenantId>(tenantId);
         var ids = taskIds.ToList();
 
-        var attachments = await db.Set<Attachment>()
+        var attachments = await DB.Set<Attachment>()
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(a => a.TenantId == typedTenantId
@@ -142,11 +140,15 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
         var now = _timeProvider.GetUtcNow();
         foreach (var attachment in attachments)
         {
-            db.BlobDeleteWork.Add(new BlobDeleteWork
+            DB.BlobDeleteWork.Add(new BlobDeleteWork
             {
                 // Deterministic: a retried cleanup batch reuses the same work row instead of queueing the
                 // same blob twice. The drainer treats a 404 as success anyway, but duplicates are noise.
-                Id = DeterministicGuid.Create("blob-delete", tenantId.ToString(), attachment.AttachmentId.ToString()),
+                Id = DeterministicGuid.Create(
+                    DomainConstants.DETERMINISTIC_ID_NAMESPACE,
+                    "blob-delete",
+                    tenantId.ToString(),
+                    attachment.AttachmentId.ToString()),
                 TenantId = tenantId,
                 AvailableAtUtc = now,
                 ContainerName = AttachmentBlobs.ContainerName,
@@ -154,7 +156,7 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
             });
         }
 
-        await db.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct)
+        await DB.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct)
             .ConfigureAwait(ConfigureAwaitOptions.None);
         return attachments.Count;
     }
@@ -169,7 +171,7 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
         var typedIds = taskIds.Select(DomainId.From<TaskItemId>).ToList();
 
         // Attachments hang off a polymorphic owner, not a foreign key, so nothing cascades them.
-        await db.Set<Attachment>()
+        await DB.Set<Attachment>()
             .IgnoreQueryFilters()
             .Where(a => a.TenantId == typedTenantId
                 && a.OwnerType == AttachmentOwnerType.TaskItem
@@ -186,9 +188,9 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
 
     /// <inheritdoc />
     public Task ExecuteInTransactionAsync(Func<CancellationToken, Task> work, CancellationToken ct = default) =>
-        db.Database.CreateExecutionStrategy().ExecuteAsync(async token =>
+        DB.Database.CreateExecutionStrategy().ExecuteAsync(async token =>
         {
-            await using var transaction = await db.Database.BeginTransactionAsync(token).ConfigureAwait(false);
+            await using var transaction = await DB.Database.BeginTransactionAsync(token).ConfigureAwait(false);
             await work(token).ConfigureAwait(false);
             await transaction.CommitAsync(token).ConfigureAwait(false);
         }, ct);
@@ -196,12 +198,14 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
     /// <inheritdoc />
     // Throw, not ClientWins: the rows saved here are operational (outbox, blob-delete work) and carry no
     // concurrency token, so a conflict would mean the unit of work is not what this job thinks it is.
-    public Task<int> SaveChangesAsync(CancellationToken ct = default) =>
-        db.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct);
+    // `new` because RepositoryBase.SaveChangesAsync(ct) is the policy-free overload (plain
+    // DbContext.SaveChangesAsync); every save on this path has to carry the Throw policy (D-032).
+    public new Task<int> SaveChangesAsync(CancellationToken ct = default) =>
+        DB.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct);
 
     /// <summary>Past due, still open, and not yet announced for this particular due date.</summary>
     private IQueryable<TaskItem> OverdueCandidates(DateTimeOffset asOfUtc) =>
-        db.Set<TaskItem>()
+        DB.Set<TaskItem>()
             .IgnoreQueryFilters()
             .Where(e => e.DueDate != null && e.DueDate < asOfUtc
                 && e.Status != TaskItemStatus.Completed
@@ -212,7 +216,7 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
 
     /// <summary>Recurring templates whose next occurrence has come due. Uses IX_TaskItem_TenantId_NextOccurrenceAtUtc.</summary>
     private IQueryable<TaskItem> DueTemplates(DateTimeOffset asOfUtc) =>
-        db.Set<TaskItem>()
+        DB.Set<TaskItem>()
             .IgnoreQueryFilters()
             .Where(e => (e.Features & TaskFeatures.Recurring) == TaskFeatures.Recurring
                 && e.NextOccurrenceAtUtc != null
@@ -221,7 +225,7 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
 
     /// <summary>Cancelled past retention, with no surviving subtask. Uses IX_TaskItem_TenantId_TerminalAtUtc_Status.</summary>
     private IQueryable<TaskItem> StaleCandidates(DateTimeOffset cutoffUtc) =>
-        db.Set<TaskItem>()
+        DB.Set<TaskItem>()
             .IgnoreQueryFilters()
             .Where(e => e.Status == TaskItemStatus.Cancelled
                 && e.TerminalAtUtc != null

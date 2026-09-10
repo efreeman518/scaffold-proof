@@ -4,29 +4,31 @@
   </PropertyGroup>
   <ItemGroup Label="EF.Packages (Private Feed - github.com/efreeman518/EF.Packages)">
     <!-- Core packages - always available -->
-    <PackageVersion Include="EF.CQRS" Version="1.1.101" />
-    <PackageVersion Include="EF.Domain" Version="1.1.101" />
-    <PackageVersion Include="EF.Domain.Contracts" Version="1.1.101" />
-    <PackageVersion Include="EF.Data" Version="1.1.101" />
-    <PackageVersion Include="EF.Data.Contracts" Version="1.1.101" />
-    <PackageVersion Include="EF.Common" Version="1.1.101" />
-    <PackageVersion Include="EF.Common.Contracts" Version="1.1.101" />
-    <PackageVersion Include="EF.Host" Version="1.1.101" />
-    <PackageVersion Include="EF.AspNetCore" Version="1.1.101" />
-    <PackageVersion Include="EF.BackgroundServices" Version="1.1.101" />
-    <PackageVersion Include="EF.Cache" Version="1.1.101" />
-    <PackageVersion Include="EF.IntegrationTesting" Version="1.1.101" />
+    <PackageVersion Include="EF.CQRS" Version="1.1.102" />
+    <PackageVersion Include="EF.Domain" Version="1.1.102" />
+    <PackageVersion Include="EF.Domain.Contracts" Version="1.1.102" />
+    <PackageVersion Include="EF.Data" Version="1.1.102" />
+    <PackageVersion Include="EF.Data.Contracts" Version="1.1.102" />
+    <!-- D-023 column encryption: provider-neutral AES-GCM converter, blind index, Key Vault DEK unwrap (package request 5). -->
+    <PackageVersion Include="EF.Data.Encryption" Version="1.1.102" />
+    <PackageVersion Include="EF.Common" Version="1.1.102" />
+    <PackageVersion Include="EF.Common.Contracts" Version="1.1.102" />
+    <PackageVersion Include="EF.Host" Version="1.1.102" />
+    <PackageVersion Include="EF.AspNetCore" Version="1.1.102" />
+    <PackageVersion Include="EF.BackgroundServices" Version="1.1.102" />
+    <PackageVersion Include="EF.Cache" Version="1.1.102" />
+    <PackageVersion Include="EF.IntegrationTesting" Version="1.1.102" />
     <!-- Extended packages - add to individual .csproj when needed -->
-    <PackageVersion Include="EF.Auth" Version="1.1.101" />
-    <PackageVersion Include="EF.Messaging" Version="1.1.101" />
-    <PackageVersion Include="EF.Messaging.RabbitMq" Version="1.1.101" />
-    <PackageVersion Include="EF.Storage" Version="1.1.101" />
-    <PackageVersion Include="EF.Table" Version="1.1.101" />
-    <PackageVersion Include="EF.CosmosDb" Version="1.1.101" />
-    <PackageVersion Include="EF.KeyVault" Version="1.1.101" />
-    <PackageVersion Include="EF.Grpc" Version="1.1.101" />
-    <PackageVersion Include="EF.AI" Version="1.1.101" />
-    <PackageVersion Include="EF.MSGraph" Version="1.1.101" />
+    <PackageVersion Include="EF.Auth" Version="1.1.102" />
+    <PackageVersion Include="EF.Messaging" Version="1.1.102" />
+    <PackageVersion Include="EF.Messaging.RabbitMq" Version="1.1.102" />
+    <PackageVersion Include="EF.Storage" Version="1.1.102" />
+    <PackageVersion Include="EF.Table" Version="1.1.102" />
+    <PackageVersion Include="EF.CosmosDb" Version="1.1.102" />
+    <PackageVersion Include="EF.KeyVault" Version="1.1.102" />
+    <PackageVersion Include="EF.Grpc" Version="1.1.102" />
+    <PackageVersion Include="EF.AI" Version="1.1.102" />
+    <PackageVersion Include="EF.MSGraph" Version="1.1.102" />
     <PackageVersion Include="Testcontainers.MsSql" Version="4.14.0" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.14.0" />
     <PackageVersion Include="Testcontainers.Azurite" Version="4.14.0" />
@@ -239,8 +241,6 @@
   </ItemGroup>
   <ItemGroup Label="AI Services">
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
-    <!-- D-023 column encryption: Key Vault RSA-OAEP unwrap of the data-encryption key. -->
-    <PackageVersion Include="Azure.Security.KeyVault.Keys" Version="4.10.0" />
     <PackageVersion Include="Azure.Search.Documents" Version="12.0.0" />
     <PackageVersion Include="Microsoft.Agents.AI" Version="1.20.0" />
     <PackageVersion Include="Microsoft.Agents.AI.OpenAI" Version="1.20.0" />
