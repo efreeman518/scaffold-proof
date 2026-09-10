@@ -415,7 +415,7 @@ void AddMessagingServices(IServiceCollection, IConfiguration)` dispatcher.
 Method)]`, one `Type ContractType` property) tags every switch dispatcher so `Test.Architecture` can
 discover it by reflection. Five switches carry the attribute and copy the shape exactly:
 `RegisterServices.Storage.cs` (`StorageProvider { AzureBlob, S3 }`, `[ProviderSwitch(typeof
-(IBlobStorageRepository))]`), `RegisterServices.ReadModel.cs` (`ReadModelProvider { Cosmos, Relational }`,
+(IObjectStorageRepository))]`), `RegisterServices.ReadModel.cs` (`ReadModelProvider { Cosmos, Relational }`,
 `ITaskViewRepository`), `RegisterServices.Audit.cs` (`AuditProvider { AzureTable, Relational }`,
 `IAuditLogRepository`), `RegisterServices.DataProtection.cs` (`DataProtectionPersistence { AzureBlob,
 Redis, None }`, `IDataProtectionProvider` - here the dispatcher is an `IHostApplicationBuilder`+`ILogger`
@@ -544,26 +544,30 @@ a read-modify-write.
 
 **Problem**: the Portable lane has no Azure Blob Storage, so attachments need an S3-compatible arm
 (MinIO locally/on the VPS, any S3-compatible provider in production) behind the unchanged
-`IBlobStorageRepository` contract, including presigned download URLs a browser can actually reach.
+`EF.Storage.Contracts.IObjectStorageRepository` contract, including presigned download URLs a browser
+can actually reach.
 
-**Shape**: `S3ObjectStorageRepository` (`Infrastructure.Storage/S3/S3ObjectStorageRepository.cs`) takes
+**Shape**: this is now the published `EF.Storage.S3` package (package request 25); the app-local
+`Infrastructure.Storage/S3/` copy this pattern originally described is deleted. The shape survives
+unchanged in the package. `EF.Storage.S3.S3ObjectStorageRepository` takes
 two `IAmazonS3` clients - the plain one for upload/download/delete/exists against
-`S3StorageSettings.ServiceUrl`, and a keyed one (`[FromKeyedServices(S3ObjectStorageRepository.
-PublicClientKey)]`, key `"s3-public"`) used only to sign presigned URLs against
+`S3StorageSettings.ServiceUrl`, and a keyed one (key `"s3-public"`) used only to sign presigned URLs
+against
 `S3StorageSettings.PublicServiceUrl` - because SigV4 signs the `Host` header into the signature, a URL
 signed against an in-network host like `http://minio:9000` would be unreachable and unfixable by
-rewriting the host afterward. `GetBlobUriAsync` derives `Protocol` from whether `PublicServiceUrl`
+rewriting the host afterward. `GetPresignedUrlAsync` derives `Protocol` from whether `PublicServiceUrl`
 starts with `http://` (MinIO/local without TLS) rather than always defaulting to HTTPS. Bucket = the
 existing `containerName` argument (the Azure arm's container concept carries over unchanged); key =
-the existing `{tenantId}/{ownerId}/{fileName}` convention (referenced from `IBlobStorageRepository`'s
-`AttachmentBlobs` helper) - this repository applies no further transformation. `S3StorageSettings`
-(`ConfigSectionName = "Storage:S3"`) requires `PublicServiceUrl` and fails fast eagerly in
+the existing `{tenantId}/{ownerId}/{fileName}` convention (owned by the app's
+`AttachmentBlobs` helper) - this repository applies no further transformation.
+`EF.Storage.S3.S3StorageSettings`
+(`ConfigSectionName = "Storage:S3"`) requires `PublicServiceUrl`, and the app still fails fast eagerly in
 `RegisterServices.AddS3StorageServices` (not deferred to `ValidateOnStart`) with an
 `InvalidOperationException` naming the missing key, since a missing public endpoint is a configuration
 error the moment the `S3` arm is selected, not a surprise on the first download; `ForcePathStyle`
 defaults `true` (required by MinIO and most non-AWS S3-compatible servers); `DownloadUrlLifetime`
-defaults one hour. Bucket provisioning is `IS3BucketProvisioner`/`S3BucketProvisioner`
-(`internal`, keeps `Amazon.*` out of Bootstrapper), invoked from `EnsureExternalResources` (pattern 13)
+defaults one hour. Bucket provisioning is the package's `IS3BucketProvisioner`/`S3BucketProvisioner`,
+which keeps `Amazon.*` out of Bootstrapper, invoked from `EnsureExternalResources` (pattern 13)
 with a null guard exactly like the existing blob-container check, not a separate one-shot container.
 
 **Proof**: `tests/Test.Integration/S3ObjectStorageRepositoryTests.cs` against
