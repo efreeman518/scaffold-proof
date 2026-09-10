@@ -1,6 +1,6 @@
+using EF.Common.Contracts;
 using EF.Data.Contracts;
 using TaskFlow.Application.Models;
-using TaskFlow.Application.Contracts.Paging;
 using TaskFlow.Application.Models.Paging;
 using TaskFlow.Application.Models.Reads;
 using TaskFlow.Domain.Model;
@@ -15,11 +15,12 @@ public interface ITaskItemRepositoryQuery : IRepositoryQuery<TaskItem, TaskItemI
     Task<TaskItem?> GetTaskItemAsync(TaskItemId id, CancellationToken ct = default);
 
     /// <summary>
-    /// Keyset page of task items. <paramref name="after"/> is the decoded cursor position; null starts
-    /// at the first page. Returns one extra row internally to decide <c>HasMore</c> without a count.
+    /// Keyset page of task items. The cursor in <paramref name="request"/> is decoded and the next one
+    /// minted here, bound to <paramref name="tenantId"/> and the request sort mode, so a token from
+    /// another tenant or another ordering fails closed with <see cref="ArgumentException"/> (400).
     /// </summary>
-    Task<(IReadOnlyList<TaskItemDto> Data, bool HasMore)> SearchTaskItemsAsync(
-        TaskItemCursorSearchRequest request, CursorToken? after, CancellationToken ct = default);
+    Task<CursorPage<TaskItemDto>> SearchTaskItemsAsync(
+        TaskItemCursorSearchRequest request, Guid tenantId, CancellationToken ct = default);
 
     /// <summary>Tenant task counts by status plus overdue and total in a single aggregate query.</summary>
     Task<TaskItemSummaryDto> GetSummaryAsync(Guid tenantId, CancellationToken ct = default);

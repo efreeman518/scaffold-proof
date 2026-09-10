@@ -113,7 +113,7 @@
                 PageSize = 8
             }),
             "Failed to load recent tasks.");
-        _recent = recent?.Data?.ToList() ?? [];
+        _recent = recent?.Items.ToList() ?? [];
 
         _loading = false;
     }

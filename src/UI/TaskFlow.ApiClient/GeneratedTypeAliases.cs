@@ -35,4 +35,4 @@ global using SearchRequestOfCategorySearchFilter = EF.Common.Contracts.SearchReq
 global using SearchRequestOfTagSearchFilter = EF.Common.Contracts.SearchRequest<TaskFlow.Application.Models.TagSearchFilter>;
 global using SearchRequestOfAttachmentSearchFilter = EF.Common.Contracts.SearchRequest<TaskFlow.Application.Models.AttachmentSearchFilter>;
 
-global using CursorPageOfTaskItemDto = TaskFlow.Application.Models.Paging.CursorPage<TaskFlow.Application.Models.TaskItemDto>;
+global using CursorPageOfTaskItemDto = EF.Common.Contracts.CursorPage<TaskFlow.Application.Models.TaskItemDto>;

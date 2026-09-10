@@ -1,8 +1,10 @@
+using EF.Common.Contracts;
 using EF.Data;
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
 using System.Runtime.CompilerServices;
-using TaskFlow.Application.Contracts.Paging;
+using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Mappers;
 using TaskFlow.Application.Models;
@@ -21,7 +23,7 @@ namespace TaskFlow.Infrastructure.Repositories;
 /// Read-side TaskItem repository. It uses the no-tracking query DbContext and projects search
 /// results server-side so list endpoints avoid hydrating child collections.
 /// </summary>
-public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryptionKeys encryptionKeys)
+public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryptionKeys encryptionKeys, CursorCodec cursorCodec)
     : TaskFlowRepositoryQuery<TaskItem, TaskItemId>(db), ITaskItemRepositoryQuery
 {
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
@@ -53,18 +55,34 @@ public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryption
     }
 
     /// <inheritdoc />
-    // fallback: replace with EF.Data.Contracts KeysetPageAsync/CursorPage when published (package request 6).
-    // Hand-rolled keyset: ORDER BY <sortKey>, Id with a WHERE that re-states the same tuple comparison,
-    // Take(pageSize + 1) to learn HasMore without a COUNT. Every arm names the index it must hit; a mode
-    // whose ORDER BY does not match an index turns this into a full scan at depth, which is exactly what
-    // cursor paging exists to avoid.
-    public async Task<(IReadOnlyList<TaskItemDto> Data, bool HasMore)> SearchTaskItemsAsync(
-        TaskItemCursorSearchRequest request, CursorToken? after, CancellationToken ct = default)
+    /// <remarks>
+    /// The cursor is <c>EF.Data.Contracts.CursorCodec</c> through <c>KeysetCursor</c> (package requests 6
+    /// and 27): tenant-and-sort-mode-scoped, HMAC-signed, schema-versioned, fails closed. The ORDER BY and
+    /// the resume predicate stay app-local. <c>KeysetPageAsync</c>, the pager beside the codec, takes the
+    /// tie-break key as <c>Expression&lt;Func&lt;T, Guid&gt;&gt;</c>, and every TaskFlow key is an
+    /// <c>IDomainId&lt;T&gt;</c> struct behind the EF.Data domain-id value converter: no Guid-typed
+    /// selector over such a key translates (<c>t.Id.Value</c> reaches SQL as a member access into a
+    /// converted CLR type and the whole ORDER BY is refused), so the pager cannot page this model. See the
+    /// slice report; the fix is a generic tie-break key on the package side.
+    /// </remarks>
+    public async Task<CursorPage<TaskItemDto>> SearchTaskItemsAsync(
+        TaskItemCursorSearchRequest request, Guid tenantId, CancellationToken ct = default)
     {
-        var q = DB.Set<TaskItem>().AsNoTracking();
-        q = ApplyFilters(q, request.Filter);
-        q = ApplyKeyset(q, request.SortMode, after);
+        ArgumentNullException.ThrowIfNull(request);
 
+        var cursor = new KeysetCursor(cursorCodec, CursorScope(tenantId, request.SortMode), request.Cursor);
+
+        // Fail closed with the app's own message. The codec rejects a tampered, wrongly-signed,
+        // stale-schema or foreign-scope token; DecodePosition would throw its own ArgumentException, which
+        // the global handler also answers 400, but the tamper / cross-tenant / sort-mode-mismatch contract
+        // is asserted on this constant.
+        if (!string.IsNullOrEmpty(request.Cursor) && !cursorCodec.TryDecode(request.Cursor, cursor.TenantKey, out _))
+            throw new ArgumentException(ErrorConstants.ERROR_CURSOR_INVALID, nameof(request));
+
+        var q = ApplyFilters(DB.Set<TaskItem>().AsNoTracking(), request.Filter);
+        q = ApplyKeyset(q, request.SortMode, cursor.DecodePosition());
+
+        // One row past the page: its existence, not a COUNT, is what says another page exists.
         var rows = await q
             .Take(request.PageSize + 1)
             .Select(TaskItemMapper.ProjectorSearch)
@@ -73,8 +91,54 @@ public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryption
 
         var hasMore = rows.Count > request.PageSize;
         if (hasMore) rows.RemoveAt(rows.Count - 1);
-        return (rows, hasMore);
+
+        var nextCursor = hasMore && rows.Count > 0
+            ? cursor.EncodePosition(SortKey(request.SortMode, rows[^1]), rows[^1].Id!.Value)
+            : null;
+
+        return new CursorPage<TaskItemDto>(rows, nextCursor, hasMore);
     }
+
+    /// <summary>
+    /// Scope key the cursor is bound to. <c>CursorCodec</c> re-checks its tenant key on decode and fails
+    /// closed on a mismatch; folding the sort mode into that key is what makes a cursor minted under one
+    /// ordering unusable in another, which the codec's own payload has no field for.
+    /// </summary>
+    public static string CursorScope(Guid tenantId, TaskItemSortMode sortMode) =>
+        string.Create(CultureInfo.InvariantCulture, $"{tenantId:N}|{(int)sortMode}");
+
+    /// <summary>
+    /// Serializes the leading sort-column value of the last row on a page. Ticks and invariant integers,
+    /// matching the encoding the package codec's own sort keys use, so a later move to its pager needs no
+    /// token format change; null when the column is null, which the codec models natively.
+    /// </summary>
+    private static string? SortKey(TaskItemSortMode sortMode, TaskItemDto last) => sortMode switch
+    {
+        TaskItemSortMode.IdAsc => null,
+        TaskItemSortMode.DueDateAsc or TaskItemSortMode.DueDateDesc =>
+            last.DueDate?.UtcTicks.ToString(CultureInfo.InvariantCulture),
+        TaskItemSortMode.ModifiedDesc =>
+            (last.ModifiedAtUtc ?? default).UtcTicks.ToString(CultureInfo.InvariantCulture),
+        _ => ((int)last.Status).ToString(CultureInfo.InvariantCulture)
+    };
+
+    /// <summary>Reads a timestamp sort key back. Invalid text is a caller error, not a silent first page.</summary>
+    private static bool TryTicks(string? sortKey, out DateTimeOffset value)
+    {
+        value = default;
+        if (!long.TryParse(sortKey, NumberStyles.Integer, CultureInfo.InvariantCulture, out var ticks)
+            || ticks < 0 || ticks > DateTimeOffset.MaxValue.UtcTicks)
+        {
+            return false;
+        }
+
+        value = new DateTimeOffset(ticks, TimeSpan.Zero);
+        return true;
+    }
+
+    /// <summary>Reads an integer (enum) sort key back.</summary>
+    private static bool TryInt(string? sortKey, out int value) =>
+        int.TryParse(sortKey, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
 
     /// <inheritdoc />
     // One GroupBy(_ => 1) with conditional SUMs: a single round trip for the whole dashboard instead of
@@ -227,20 +291,22 @@ public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryption
 
         return q;
     }
-
     /// <summary>
     /// Applies the ordering and the resume predicate for one sort mode. Both halves live in the same
-    /// switch so an ORDER BY can never drift from the WHERE that is supposed to continue it.
+    /// switch so an ORDER BY can never drift from the WHERE that is supposed to continue it, and the sort
+    /// key each arm reads is the one <see cref="SortKey"/> wrote. Every arm names the index it must hit; a
+    /// mode whose ORDER BY does not match an index turns this into a full scan at depth, which is exactly
+    /// what cursor paging exists to avoid.
     /// </summary>
-    private static IQueryable<TaskItem> ApplyKeyset(IQueryable<TaskItem> q, TaskItemSortMode sortMode, CursorToken? after)
+    private static IQueryable<TaskItem> ApplyKeyset(IQueryable<TaskItem> q, TaskItemSortMode sortMode, CursorPosition? after)
     {
         switch (sortMode)
         {
             case TaskItemSortMode.IdAsc:
                 // IX: the clustered primary key (TenantId, Id).
-                if (after is not null)
+                if (after is CursorPosition idPosition)
                 {
-                    var lastId = DomainId.From<TaskItemId>(after.LastId);
+                    var lastId = DomainId.From<TaskItemId>(idPosition.TieBreaker);
                     q = q.Where(e => e.Id > lastId);
                 }
                 return q.OrderBy(e => e.Id);
@@ -249,12 +315,12 @@ public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryption
                 {
                     // IX_TaskItem_TenantId_DueDate_Id. Null DueDate sorts last through the leading
                     // (DueDate == null) key, so an unscheduled task never hides a scheduled one.
-                    if (after is not null)
+                    if (after is CursorPosition position)
                     {
-                        var lastId = DomainId.From<TaskItemId>(after.LastId);
-                        if (CursorKey.IsNull(after.SortKey))
+                        var lastId = DomainId.From<TaskItemId>(position.TieBreaker);
+                        if (position.SortKey is null)
                             q = q.Where(e => e.DueDate == null && e.Id > lastId);
-                        else if (CursorKey.TryDate(after.SortKey, out var lastDue))
+                        else if (TryTicks(position.SortKey, out var lastDue))
                             q = q.Where(e => e.DueDate == null
                                 || e.DueDate > lastDue
                                 || (e.DueDate == lastDue && e.Id > lastId));
@@ -265,12 +331,12 @@ public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryption
             case TaskItemSortMode.DueDateDesc:
                 {
                     // IX_TaskItem_TenantId_DueDate_Id, scanned backwards; nulls still sort last.
-                    if (after is not null)
+                    if (after is CursorPosition position)
                     {
-                        var lastId = DomainId.From<TaskItemId>(after.LastId);
-                        if (CursorKey.IsNull(after.SortKey))
+                        var lastId = DomainId.From<TaskItemId>(position.TieBreaker);
+                        if (position.SortKey is null)
                             q = q.Where(e => e.DueDate == null && e.Id > lastId);
-                        else if (CursorKey.TryDate(after.SortKey, out var lastDue))
+                        else if (TryTicks(position.SortKey, out var lastDue))
                             q = q.Where(e => e.DueDate == null
                                 || e.DueDate < lastDue
                                 || (e.DueDate == lastDue && e.Id > lastId));
@@ -281,9 +347,9 @@ public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryption
             case TaskItemSortMode.ModifiedDesc:
                 {
                     // IX_TaskItem_TenantId_ModifiedAtUtc_Id, scanned backwards.
-                    if (after is not null && CursorKey.TryDate(after.SortKey, out var lastModified))
+                    if (after is CursorPosition position && TryTicks(position.SortKey, out var lastModified))
                     {
-                        var lastId = DomainId.From<TaskItemId>(after.LastId);
+                        var lastId = DomainId.From<TaskItemId>(position.TieBreaker);
                         q = q.Where(e => e.ModifiedAtUtc < lastModified
                             || (e.ModifiedAtUtc == lastModified && e.Id > lastId));
                     }
@@ -294,10 +360,10 @@ public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryption
             default:
                 {
                     // IX_TaskItem_TenantId_Status_Id.
-                    if (after is not null && CursorKey.TryInt(after.SortKey, out var lastStatusValue))
+                    if (after is CursorPosition position && TryInt(position.SortKey, out var lastStatusValue))
                     {
                         var lastStatus = (TaskItemStatus)lastStatusValue;
-                        var lastId = DomainId.From<TaskItemId>(after.LastId);
+                        var lastId = DomainId.From<TaskItemId>(position.TieBreaker);
                         q = q.Where(e => e.Status > lastStatus
                             || (e.Status == lastStatus && e.Id > lastId));
                     }

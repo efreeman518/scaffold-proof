@@ -1,3 +1,4 @@
+using EF.Common.Contracts;
 using Microsoft.Extensions.AI;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Models.Paging;

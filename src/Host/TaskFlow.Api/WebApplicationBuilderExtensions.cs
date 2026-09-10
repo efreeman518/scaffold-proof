@@ -65,7 +65,11 @@ public static class WebApplicationBuilderExtensions
         // OpenAPI / Scalar
         if (app.Configuration.GetValue<bool>("OpenApiSettings:Enable", true))
         {
+            // .WithDocumentPerVersion() is required by EF.AspNetCore 1.1.100 AddEfVersionedOpenApi: the
+            // documents now come from AddApiVersioning().AddOpenApi(), and a plain MapOpenApi() serves none
+            // of them (every document URL 404s). Document names are unchanged.
             app.MapOpenApi()
+                .WithDocumentPerVersion()
                 .AllowAnonymous();
             app.MapScalarApiReference(options =>
             {
@@ -102,7 +106,10 @@ public static class WebApplicationBuilderExtensions
 
         app.MapGet("/alive", () => Results.Ok("Alive"))
             .AllowAnonymous()
-            .RequireRateLimiting("HealthMemory");
+            .RequireRateLimiting("HealthMemory")
+            // Unversioned operational route: version-neutral endpoints now land in every versioned OpenAPI
+            // document (see the MapOpenApi comment above), and the v1 contract has never described this one.
+            .ExcludeFromDescription();
 
         // D-054 internal gRPC read service, served on the dedicated cleartext HTTP/2 Kestrel endpoint
         // (Kestrel:Endpoints:Grpc). RequireAuthorization is redundant with the authenticated-user
@@ -116,7 +123,12 @@ public static class WebApplicationBuilderExtensions
 
         // FlowEngine admin API - instance/registry/circuit-breaker/human-task operations.
         // Fronted by YARP gateway; consumed by EF.FlowEngine.Dashboard hosted in TaskFlow.Blazor.
-        app.MapFlowEngineAdmin(prefix: "/api/flowengine");
+        // Mapped inside an excluded group: these routes carry no API version, and version-neutral
+        // endpoints are described by every versioned document under EF.AspNetCore 1.1.100 document-per-
+        // version generation. The published v1 contract is the domain API, not the admin surface.
+        app.MapGroup(string.Empty)
+            .ExcludeFromDescription()
+            .MapFlowEngineAdmin(prefix: "/api/flowengine");
 
         return app;
     }

@@ -1,6 +1,6 @@
 ﻿using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
-using TaskFlow.Application.Contracts.Paging;
+using EF.Common.Contracts;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Models;
 using TaskFlow.Application.Models.Paging;
@@ -35,11 +35,11 @@ public class NoOpSearchServiceTests
         var tenantId = Guid.NewGuid();
         var taskId = Guid.CreateVersion7();
         _repoMock.Setup(r => r.SearchTaskItemsAsync(
-                It.IsAny<TaskItemCursorSearchRequest>(), It.IsAny<CursorToken?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(((IReadOnlyList<TaskItemDto>)
+                It.IsAny<TaskItemCursorSearchRequest>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CursorPage<TaskItemDto>(
             [
                 new() { Id = taskId, Title = "Quarterly report", Status = TaskItemStatus.Open, Priority = Priority.High }
-            ], false));
+            ], null, false));
 
         var results = await _service.SearchTaskItemsAsync(
             "Quarter", SearchMode.Keyword, tenantId, maxResults: 5, ct: TestContext.CancellationToken);
@@ -51,7 +51,7 @@ public class NoOpSearchServiceTests
         _repoMock.Verify(r => r.SearchTaskItemsAsync(
             It.Is<TaskItemCursorSearchRequest>(q =>
                 q.Filter!.SearchTerm == "Quarter" && q.Filter.TenantId == tenantId && q.PageSize == 5),
-            null,
+            tenantId,
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -60,14 +60,16 @@ public class NoOpSearchServiceTests
     public async Task SearchTaskItemsAsync_ClampsPageSize()
     {
         _repoMock.Setup(r => r.SearchTaskItemsAsync(
-                It.IsAny<TaskItemCursorSearchRequest>(), It.IsAny<CursorToken?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(((IReadOnlyList<TaskItemDto>)[], false));
+                It.IsAny<TaskItemCursorSearchRequest>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CursorPage<TaskItemDto>([], null, false));
 
         await _service.SearchTaskItemsAsync("x", SearchMode.Semantic, null, maxResults: 0, ct: TestContext.CancellationToken);
 
+        // No tenant on the request means Guid.Empty as the cursor scope: the codec still binds one, and an
+        // unscoped search is a caller mistake, not a licence to page across tenants.
         _repoMock.Verify(r => r.SearchTaskItemsAsync(
             It.Is<TaskItemCursorSearchRequest>(q => q.PageSize == PageSizeLimits.Min),
-            null,
+            Guid.Empty,
             It.IsAny<CancellationToken>()), Times.Once);
     }
 

@@ -859,9 +859,9 @@ export interface components {
             tenantId?: null | string;
         };
         CursorPageOfTaskItemDto: {
-            data?: components["schemas"]["TaskItemDto"][];
-            nextCursor?: null | string;
-            hasMore?: boolean;
+            items: components["schemas"]["TaskItemDto"][];
+            nextCursor: null | string;
+            hasMore: boolean;
         };
         DefaultRequestOfAttachmentDto: {
             item: null | components["schemas"]["AttachmentDto"];
@@ -2841,6 +2841,15 @@ export interface operations {
             };
             /** @description Bad Request */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

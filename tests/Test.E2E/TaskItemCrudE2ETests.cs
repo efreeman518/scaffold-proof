@@ -190,7 +190,7 @@ public class TaskItemCrudE2ETests
 
         using var document = await JsonDocument.ParseAsync(await searchResp.Content.ReadAsStreamAsync(TestContext.CancellationToken), cancellationToken: TestContext.CancellationToken);
         var root = document.RootElement;
-        var titles = root.GetProperty("data")
+        var titles = root.GetProperty("items")
             .EnumerateArray()
             .Select(item => item.GetProperty("title").GetString())
             .Where(title => !string.IsNullOrWhiteSpace(title))
@@ -239,7 +239,7 @@ public class TaskItemCrudE2ETests
                 await response.Content.ReadAsStreamAsync(TestContext.CancellationToken),
                 cancellationToken: TestContext.CancellationToken);
             var root = document.RootElement;
-            var titles = root.GetProperty("data")
+            var titles = root.GetProperty("items")
                 .EnumerateArray()
                 .Select(item => item.GetProperty("title").GetString())
                 .Where(title => !string.IsNullOrWhiteSpace(title))

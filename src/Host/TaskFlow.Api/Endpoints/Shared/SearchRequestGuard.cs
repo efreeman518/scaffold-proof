@@ -1,6 +1,6 @@
 using EF.AspNetCore;
+using EF.Common.Contracts;
 using TaskFlow.Application.Contracts;
-using TaskFlow.Application.Models.Paging;
 
 namespace TaskFlow.Api.Endpoints.Shared;
 

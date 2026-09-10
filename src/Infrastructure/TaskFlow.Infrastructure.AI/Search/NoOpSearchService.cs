@@ -1,3 +1,4 @@
+using EF.Common.Contracts;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Models;
@@ -34,9 +35,9 @@ public class NoOpSearchService(
             }
         };
 
-        var (data, _) = await taskItemRepoQuery.SearchTaskItemsAsync(request, after: null, ct);
+        var page = await taskItemRepoQuery.SearchTaskItemsAsync(request, tenantId ?? Guid.Empty, ct);
 
-        return [.. data.Select(t => new TaskItemSearchResult
+        return [.. page.Items.Select(t => new TaskItemSearchResult
         {
             Id = t.Id?.ToString() ?? string.Empty,
             Title = t.Title,

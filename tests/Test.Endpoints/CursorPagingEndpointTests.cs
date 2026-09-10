@@ -1,11 +1,13 @@
+using EF.Common.Contracts;
+using EF.Data.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
-using TaskFlow.Application.Contracts.Paging;
 using TaskFlow.Application.Models;
 using TaskFlow.Application.Models.Paging;
 using TaskFlow.Domain.Shared.Enums;
+using TaskFlow.Infrastructure.Repositories;
 
 namespace Test.Endpoints;
 
@@ -48,7 +50,7 @@ public class CursorPagingEndpointTests
     }
 
     /// <summary>Posts one search page and returns the parsed document.</summary>
-    private async Task<(HttpStatusCode Status, JsonDocument? Document)> SearchAsync(
+    private async Task<(HttpStatusCode Status, JsonDocument? Document, string Body)> SearchAsync(
         HttpClient client, string marker, TaskItemSortMode sortMode, int pageSize, string? cursor)
     {
         var request = new TaskItemCursorSearchRequest
@@ -62,10 +64,10 @@ public class CursorPagingEndpointTests
         using var response = await client.PostAsJsonAsync("/api/v1/task-items/search", request,
             cancellationToken: TestContext.CancellationToken);
 
-        if (!response.IsSuccessStatusCode) return (response.StatusCode, null);
-
         var body = await response.Content.ReadAsStringAsync(TestContext.CancellationToken);
-        return (response.StatusCode, JsonDocument.Parse(body));
+        return response.IsSuccessStatusCode
+            ? (response.StatusCode, JsonDocument.Parse(body), body)
+            : (response.StatusCode, null, body);
     }
 
     /// <summary>Verifies a full page-through returns every seeded row exactly once and ends with HasMore false.</summary>
@@ -93,11 +95,11 @@ public class CursorPagingEndpointTests
 
         while (pages++ < 10)
         {
-            var (status, document) = await SearchAsync(client, marker, (TaskItemSortMode)sortMode, 3, cursor);
-            Assert.AreEqual(HttpStatusCode.OK, status);
+            var (status, document, body) = await SearchAsync(client, marker, (TaskItemSortMode)sortMode, 3, cursor);
+            Assert.AreEqual(HttpStatusCode.OK, status, body);
             using var doc = document!;
 
-            seen.AddRange(doc.RootElement.GetProperty("data").EnumerateArray()
+            seen.AddRange(doc.RootElement.GetProperty("items").EnumerateArray()
                 .Select(e => e.GetProperty("id").GetGuid()));
 
             if (!doc.RootElement.GetProperty("hasMore").GetBoolean())
@@ -127,9 +129,9 @@ public class CursorPagingEndpointTests
         using var client = _fixture.CreateClient(style);
         var marker = await SeedAsync(client, 6);
 
-        var (_, byDueAsc) = await SearchAsync(client, marker, TaskItemSortMode.DueDateAsc, 50, null);
+        var (_, byDueAsc, _) = await SearchAsync(client, marker, TaskItemSortMode.DueDateAsc, 50, null);
         using var asc = byDueAsc!;
-        var ascDates = asc.RootElement.GetProperty("data").EnumerateArray()
+        var ascDates = asc.RootElement.GetProperty("items").EnumerateArray()
             .Select(e => e.TryGetProperty("dueDate", out var d) && d.ValueKind != JsonValueKind.Null
                 ? d.GetDateTimeOffset()
                 : (DateTimeOffset?)null)
@@ -142,9 +144,9 @@ public class CursorPagingEndpointTests
         var nonNullAsc = ascDates.Where(d => d is not null).Select(d => d!.Value).ToList();
         CollectionAssert.AreEqual(nonNullAsc.OrderBy(d => d).ToList(), nonNullAsc);
 
-        var (_, byDueDesc) = await SearchAsync(client, marker, TaskItemSortMode.DueDateDesc, 50, null);
+        var (_, byDueDesc, _) = await SearchAsync(client, marker, TaskItemSortMode.DueDateDesc, 50, null);
         using var desc = byDueDesc!;
-        var descDates = desc.RootElement.GetProperty("data").EnumerateArray()
+        var descDates = desc.RootElement.GetProperty("items").EnumerateArray()
             .Select(e => e.TryGetProperty("dueDate", out var d) && d.ValueKind != JsonValueKind.Null
                 ? d.GetDateTimeOffset()
                 : (DateTimeOffset?)null)
@@ -162,7 +164,7 @@ public class CursorPagingEndpointTests
         EndpointStyles.SkipWhenStyleForced();
         using var client = _fixture.CreateClient(style);
 
-        var (status, _) = await SearchAsync(client, "anything", TaskItemSortMode.IdAsc, 0, null);
+        var (status, _, _) = await SearchAsync(client, "anything", TaskItemSortMode.IdAsc, 0, null);
 
         Assert.AreEqual(HttpStatusCode.BadRequest, status);
     }
@@ -177,7 +179,7 @@ public class CursorPagingEndpointTests
         EndpointStyles.SkipWhenStyleForced();
         using var client = _fixture.CreateClient(style);
 
-        var (status, _) = await SearchAsync(client, "anything", TaskItemSortMode.IdAsc, PageSizeLimits.Max + 1, null);
+        var (status, _, _) = await SearchAsync(client, "anything", TaskItemSortMode.IdAsc, PageSizeLimits.Max + 1, null);
 
         Assert.AreEqual(HttpStatusCode.BadRequest, status);
     }
@@ -246,14 +248,14 @@ public class CursorPagingEndpointTests
         using var client = _fixture.CreateClient(style);
         var marker = await SeedAsync(client, 4);
 
-        var (_, first) = await SearchAsync(client, marker, TaskItemSortMode.IdAsc, 2, null);
+        var (_, first, _) = await SearchAsync(client, marker, TaskItemSortMode.IdAsc, 2, null);
         using var page = first!;
         var cursor = page.RootElement.GetProperty("nextCursor").GetString()!;
 
         // Flip one character of the protected payload.
         var tampered = cursor[..^2] + (cursor[^2] == 'A' ? 'B' : 'A') + cursor[^1];
 
-        var (status, _) = await SearchAsync(client, marker, TaskItemSortMode.IdAsc, 2, tampered);
+        var (status, _, _) = await SearchAsync(client, marker, TaskItemSortMode.IdAsc, 2, tampered);
 
         Assert.AreEqual(HttpStatusCode.BadRequest, status);
     }
@@ -268,12 +270,13 @@ public class CursorPagingEndpointTests
         EndpointStyles.SkipWhenStyleForced();
         using var client = _fixture.CreateClient(style);
 
-        // Minted with the app's own protector, so it is cryptographically valid - only the tenant is wrong.
-        var protector = _fixture.Factory(style).Services.GetRequiredService<ICursorProtector>();
-        var foreign = protector.Protect(new CursorToken(
-            TaskItemSortMode.IdAsc, Guid.NewGuid(), string.Empty, Guid.CreateVersion7()));
+        // Minted with the host's own codec, so the signature is valid - only the tenant in the scope key is wrong.
+        var codec = _fixture.Factory(style).Services.GetRequiredService<CursorCodec>();
+        var foreign = codec.Encode(
+            TaskItemRepositoryQuery.CursorScope(Guid.NewGuid(), TaskItemSortMode.IdAsc),
+            new CursorPosition(null, Guid.CreateVersion7()));
 
-        var (status, _) = await SearchAsync(client, "anything", TaskItemSortMode.IdAsc, 2, foreign);
+        var (status, _, _) = await SearchAsync(client, "anything", TaskItemSortMode.IdAsc, 2, foreign);
 
         Assert.AreEqual(HttpStatusCode.BadRequest, status);
     }
@@ -289,12 +292,12 @@ public class CursorPagingEndpointTests
         using var client = _fixture.CreateClient(style);
         var marker = await SeedAsync(client, 4);
 
-        var (_, first) = await SearchAsync(client, marker, TaskItemSortMode.IdAsc, 2, null);
+        var (_, first, _) = await SearchAsync(client, marker, TaskItemSortMode.IdAsc, 2, null);
         using var page = first!;
         var cursor = page.RootElement.GetProperty("nextCursor").GetString();
 
         // Same cursor, different ordering: the position it names means nothing in the new order.
-        var (status, _) = await SearchAsync(client, marker, TaskItemSortMode.DueDateAsc, 2, cursor);
+        var (status, _, _) = await SearchAsync(client, marker, TaskItemSortMode.DueDateAsc, 2, cursor);
 
         Assert.AreEqual(HttpStatusCode.BadRequest, status);
     }

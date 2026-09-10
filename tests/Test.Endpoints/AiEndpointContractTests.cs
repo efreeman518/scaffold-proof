@@ -270,7 +270,7 @@ public sealed class AiEndpointContractTests
             });
         using var payload = await ReadJsonAsync(response);
 
-        return payload.RootElement.GetProperty("data").EnumerateArray()
+        return payload.RootElement.GetProperty("items").EnumerateArray()
             .Any(item => string.Equals(item.GetProperty("title").GetString(), title, StringComparison.Ordinal));
     }
 

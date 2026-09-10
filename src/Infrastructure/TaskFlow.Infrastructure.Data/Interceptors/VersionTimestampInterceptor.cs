@@ -6,12 +6,17 @@ using TaskFlow.Domain.Model;
 namespace TaskFlow.Infrastructure.Data.Interceptors;
 
 /// <summary>
-/// D-021 / D-024: maintains the app-managed concurrency token and UTC timestamps for every
-/// <see cref="IVersionedEntity"/>. Added: CreatedAtUtc = ModifiedAtUtc = now, Version = 1.
-/// Modified: ModifiedAtUtc = now, Version = original + 1 with the original left untouched so EF emits
-/// <c>WHERE Version = @original</c>. Deriving from the ORIGINAL value (not the current one) keeps the
-/// bump correct when the package ClientWins retry refreshes originals from the database and saves again.
-/// fallback: replace with EF.Data DbContextBase Version handling when published (package request 2).
+/// D-024: maintains the UTC timestamps of every <see cref="ITimestampedEntity"/>, plus the insert baseline
+/// of the D-021 concurrency token. Added: CreatedAtUtc = ModifiedAtUtc = now, Version = 1. Modified:
+/// ModifiedAtUtc = now.
+/// <para>
+/// The version INCREMENT is not here: <c>EF.Data.DbContextBase.SaveChangesAsync</c> walks every Modified
+/// <c>EF.Domain.Contracts.IVersionedEntity</c> entry, sets the property's OriginalValue to the pre-increment
+/// value and its CurrentValue to that value plus one, which is what makes EF emit
+/// <c>WHERE Version = @original</c> (package request 2). It does not touch Added entries, so the
+/// "1 after insert, +1 per successful update" contract still needs the baseline stamped here - the package
+/// alone would leave a fresh row at 0.
+/// </para>
 /// </summary>
 public sealed class VersionTimestampInterceptor(TimeProvider? timeProvider = null) : SaveChangesInterceptor
 {
@@ -37,19 +42,17 @@ public sealed class VersionTimestampInterceptor(TimeProvider? timeProvider = nul
         if (context is null) return;
 
         var now = _timeProvider.GetUtcNow();
-        foreach (var entry in context.ChangeTracker.Entries<IVersionedEntity>())
+        foreach (var entry in context.ChangeTracker.Entries<ITimestampedEntity>())
         {
             switch (entry.State)
             {
                 case EntityState.Added:
-                    entry.Property<DateTimeOffset>(nameof(IVersionedEntity.CreatedAtUtc)).CurrentValue = now;
-                    entry.Property<DateTimeOffset>(nameof(IVersionedEntity.ModifiedAtUtc)).CurrentValue = now;
-                    entry.Property<long>(nameof(IVersionedEntity.Version)).CurrentValue = 1;
+                    entry.Property<DateTimeOffset>(nameof(ITimestampedEntity.CreatedAtUtc)).CurrentValue = now;
+                    entry.Property<DateTimeOffset>(nameof(ITimestampedEntity.ModifiedAtUtc)).CurrentValue = now;
+                    entry.Property<long>(nameof(EF.Domain.Contracts.IVersionedEntity.Version)).CurrentValue = 1;
                     break;
                 case EntityState.Modified:
-                    entry.Property<DateTimeOffset>(nameof(IVersionedEntity.ModifiedAtUtc)).CurrentValue = now;
-                    var version = entry.Property<long>(nameof(IVersionedEntity.Version));
-                    version.CurrentValue = version.OriginalValue + 1;
+                    entry.Property<DateTimeOffset>(nameof(ITimestampedEntity.ModifiedAtUtc)).CurrentValue = now;
                     break;
             }
         }
