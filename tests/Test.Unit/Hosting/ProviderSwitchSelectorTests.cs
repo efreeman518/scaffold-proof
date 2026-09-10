@@ -1,3 +1,6 @@
+using EF.Audit.Contracts;
+using EF.Storage.Contracts;
+using EF.Storage.S3;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System.Reflection;
@@ -7,7 +10,6 @@ using TaskFlow.Bootstrapper;
 using Microsoft.Extensions.Options;
 using TaskFlow.Infrastructure.Repositories;
 using TaskFlow.Infrastructure.Storage;
-using TaskFlow.Infrastructure.Storage.S3;
 
 namespace Test.Unit.Hosting;
 
@@ -108,7 +110,7 @@ public class ProviderSwitchSelectorTests
         method.Invoke(null, [services, config]);
 
         using var provider = services.BuildServiceProvider();
-        Assert.IsInstanceOfType<S3ObjectStorageRepository>(provider.GetRequiredService<IBlobStorageRepository>());
+        Assert.IsInstanceOfType<S3ObjectStorageRepository>(provider.GetRequiredService<IObjectStorageRepository>());
     }
 
     [TestMethod]
@@ -116,8 +118,8 @@ public class ProviderSwitchSelectorTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton<IBlobStorageRepository, NoOpBlobStorageRepository>();
-        var repo = services.BuildServiceProvider().GetRequiredService<IBlobStorageRepository>();
+        services.AddSingleton<IObjectStorageRepository, NoOpBlobStorageRepository>();
+        var repo = services.BuildServiceProvider().GetRequiredService<IObjectStorageRepository>();
         var ct = TestContext.CancellationToken;
 
         // Delete is a real no-op success (already-gone semantics) so BlobDeleteWorkerService can complete leases.
@@ -125,11 +127,11 @@ public class ProviderSwitchSelectorTests
         Assert.IsFalse(await repo.ExistsAsync("attachments", "missing", ct));
 
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(
-            () => repo.UploadAsync("attachments", "x", Stream.Null, ct: ct));
+            () => repo.UploadAsync("attachments", "x", Stream.Null, cancellationToken: ct));
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(
             () => repo.DownloadAsync("attachments", "x", ct));
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(
-            () => repo.GetBlobUriAsync("attachments", "x", ct));
+            () => repo.GetPresignedUrlAsync("attachments", "x", TimeSpan.FromMinutes(5), cancellationToken: ct));
     }
 
     public TestContext TestContext { get; set; } = null!;

@@ -1,8 +1,8 @@
+using EF.Audit.Contracts;
 using EF.BackgroundServices.Attributes;
 using EF.BackgroundServices.InternalMessageBus;
 using EF.Common.Contracts;
 using Microsoft.Extensions.Logging;
-using TaskFlow.Application.Contracts.Storage;
 
 namespace TaskFlow.Application.MessageHandlers;
 

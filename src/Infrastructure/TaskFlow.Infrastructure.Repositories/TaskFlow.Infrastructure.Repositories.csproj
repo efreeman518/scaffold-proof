@@ -3,6 +3,7 @@
   <ItemGroup>
     <PackageReference Include="EF.Data" />
     <PackageReference Include="EF.Data.Contracts" />
+    <PackageReference Include="EF.Audit.Contracts" />
     <!-- D-028 provider-neutral upsert (MERGE / ON CONFLICT) for the consumer inbox. -->
     <PackageReference Include="FlexLabs.EntityFrameworkCore.Upsert" />
   </ItemGroup>

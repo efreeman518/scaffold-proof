@@ -68,6 +68,28 @@ public class ConcurrencyContractTests
             "Guid.Empty is present, not absent (that is Guid?.HasValue == false), and is not a v7 id.");
     }
 
+    /// <summary>
+    /// Verifies the UUIDv7 timestamp read the audit sinks key their rows on: the embedded instant matches
+    /// the id's creation time, it is stable for a given id (so a replayed audit message rewrites its own
+    /// row), and a non-v7 id fails instead of yielding an invented instant.
+    /// </summary>
+    [TestMethod]
+    public void Given_UuidV7_When_TimestampRead_Then_ItMatchesCreationTimeAndIsStable()
+    {
+        var before = DateTimeOffset.UtcNow.AddSeconds(-1);
+        var id = Guid.CreateVersion7();
+        var after = DateTimeOffset.UtcNow.AddSeconds(1);
+
+        var timestamp = UuidV7.TimestampOf(id);
+
+        Assert.IsGreaterThanOrEqualTo(before, timestamp, "the embedded instant precedes the id's creation");
+        Assert.IsLessThanOrEqualTo(after, timestamp, "the embedded instant follows the id's creation");
+        Assert.AreEqual(timestamp, UuidV7.TimestampOf(id), "the same id must always yield the same instant");
+
+        Assert.ThrowsExactly<ArgumentException>(() => UuidV7.TimestampOf(Guid.NewGuid()),
+            "a v4 id carries no timestamp to read");
+    }
+
     /// <summary>Verifies replay equivalence compares scalars and ignores id, version, tenant, and children.</summary>
     [TestMethod]
     public void Given_TaskItemPayloads_When_Compared_Then_ScalarsDecideEquivalence()
