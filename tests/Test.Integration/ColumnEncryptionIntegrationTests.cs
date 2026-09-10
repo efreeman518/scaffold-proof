@@ -1,9 +1,9 @@
 using EF.Data.Contracts;
+using EF.Data.Encryption;
 using Microsoft.EntityFrameworkCore;
 using System.Text;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
-using TaskFlow.Infrastructure.Data.Encryption;
 using TaskFlow.Infrastructure.Repositories;
 using Test.Integration.Infrastructure;
 using Test.Support;

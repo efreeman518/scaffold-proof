@@ -98,11 +98,14 @@ public sealed class DbApiFactory : WebApplicationFactoryBase<Program, TaskFlowDb
         config.AddInMemoryCollection(TestColumnEncryption.Configuration);
     }
 
-    /// <summary>Builds trxn options used by focused test cases.</summary>
-    protected override DbContextOptions BuildTrxnOptions() =>
-        Db.BuildOptions<TaskFlowDbContextTrxn>(null, TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName);
+    /// <summary>Connection string both contexts are built against (package request 16 override point).</summary>
+    protected override string ConnectionString => Db.ConnectionString;
 
-    /// <summary>Builds query options used by focused test cases.</summary>
-    protected override DbContextOptions BuildQueryOptions() =>
-        Db.BuildOptions<TaskFlowDbContextQuery>(null, TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName);
+    /// <summary>
+    /// One override for both contexts instead of a BuildTrxnOptions/BuildQueryOptions pair: the package base
+    /// routes both through here, and TaskFlow's two contexts share a migrations history table and schema.
+    /// </summary>
+    protected override DbContextOptions BuildOptionsFor<TContext>(string connectionString) =>
+        Db.BuildOptions<TContext>(
+            connectionString, TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName);
 }

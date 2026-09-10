@@ -1,8 +1,8 @@
+using EF.Data.Encryption;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
-using TaskFlow.Infrastructure.Data.Encryption;
 
 namespace TaskFlow.Infrastructure.Data.Configurations;
 

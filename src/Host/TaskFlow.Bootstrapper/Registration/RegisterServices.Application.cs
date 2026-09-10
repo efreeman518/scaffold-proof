@@ -1,6 +1,7 @@
 ﻿using EF.BackgroundServices.InternalMessageBus;
 using EF.Common.Contracts;
 using EF.Data.Contracts;
+using EF.Data.Encryption;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,7 +13,6 @@ using TaskFlow.Application.Cqrs.Registration;
 using TaskFlow.Application.MessageHandlers;
 using TaskFlow.Application.MessageHandlers.Consumers;
 using TaskFlow.Application.Services;
-using TaskFlow.Infrastructure.Data.Encryption;
 using TaskFlow.Observability.Meters;
 
 namespace TaskFlow.Bootstrapper;

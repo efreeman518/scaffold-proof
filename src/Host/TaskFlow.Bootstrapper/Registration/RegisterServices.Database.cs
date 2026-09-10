@@ -1,5 +1,6 @@
 ﻿using EF.Data;
 using EF.Data.Contracts;
+using EF.Data.Encryption;
 using EF.Data.Interceptors;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -7,7 +8,6 @@ using Microsoft.Extensions.DependencyInjection;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Infrastructure.Data;
-using TaskFlow.Infrastructure.Data.Encryption;
 using TaskFlow.Infrastructure.Data.Interceptors;
 using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Infrastructure.Data.Provider;

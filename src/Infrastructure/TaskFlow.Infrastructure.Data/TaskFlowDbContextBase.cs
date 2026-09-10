@@ -1,11 +1,11 @@
 using EF.Data;
+using EF.Data.Encryption;
 using EF.Domain.Contracts;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
 using TaskFlow.Infrastructure.Data.Configurations;
 using TaskFlow.Infrastructure.Data.Conventions;
-using TaskFlow.Infrastructure.Data.Encryption;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Infrastructure.Data.ReadModel;

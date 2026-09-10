@@ -2,9 +2,8 @@
 
   <ItemGroup>
     <PackageReference Include="EF.Data" />
-    <!-- D-023 Key Vault RSA-OAEP unwrap of the column data-encryption key (KeyVaultDekProvider). -->
-    <PackageReference Include="Azure.Identity" />
-    <PackageReference Include="Azure.Security.KeyVault.Keys" />
+    <!-- D-023 column encryption: the package owns the AES-GCM converter, blind index and Key Vault DEK unwrap. -->
+    <PackageReference Include="EF.Data.Encryption" />
     <PackageReference Include="EF.Common.Contracts" />
     <PackageReference Include="EF.Domain.Contracts" />
     <PackageReference Include="EF.FlowEngine.StateStore.Sql" />

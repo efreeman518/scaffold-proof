@@ -1,6 +1,7 @@
 using EF.Common.Contracts;
 using EF.Data;
 using EF.Data.Contracts;
+using EF.Data.Encryption;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
 using System.Runtime.CompilerServices;
@@ -15,7 +16,6 @@ using TaskFlow.Domain.Shared;
 using TaskFlow.Domain.Shared.Enums;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Configurations;
-using TaskFlow.Infrastructure.Data.Encryption;
 
 namespace TaskFlow.Infrastructure.Repositories;
 
