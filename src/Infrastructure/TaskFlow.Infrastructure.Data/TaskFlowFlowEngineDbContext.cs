@@ -50,11 +50,5 @@ public sealed class TaskFlowFlowEngineDbContext(DbContextOptions<TaskFlowFlowEng
         modelBuilder.ApplyFlowEngineState();
         modelBuilder.ApplyFlowEngineOutbox();
         modelBuilder.ApplyFlowEngineCircuitBreaker();
-
-        // fallback: remove when EF.FlowEngine drops the SQL Server column type (package request 9).
-        // The row types hardcode [Column(TypeName = "nvarchar(max)")], which PostgreSQL rejects; clearing
-        // the store type lets each provider pick its own unbounded text type (nvarchar(max) / text).
-        modelBuilder.Entity<FlowEngineOutboxRow>().Property(r => r.Payload).HasColumnType(null);
-        modelBuilder.Entity<FlowEngineCircuitBreakerRow>().Property(r => r.FailureTimestampsJson).HasColumnType(null);
     }
 }
