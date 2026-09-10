@@ -239,10 +239,11 @@ events, running as global admin regardless of tenant.
 jobs by design): `StreamOverdueAsync`, `MarkOverdueNotifiedAsync`, `StreamDueTemplatesAsync`,
 `UpsertOccurrencesAsync`, `AdvanceNextOccurrenceAsync(tenantId, templateId, expectedNext, newNext)`,
 `GetStaleBatchAsync`, `StageBlobDeletesAsync`, `DeleteStaleBatchAsync`. Every staged event uses a
-deterministic id (`DeterministicGuid.Create(ns, ...parts)`, real UUIDv5/SHA-1) so a re-run over the
-same data produces zero new rows: `overdue` keys on `(tenant, task, dueDate)`, `recurrence` keys on
-`(tenant, template, occurrenceUtc)`. Occurrences upsert via FlexLabs `UpsertRange(...).On(...)
-.NoUpdate()` (D-028); the template pointer only advances when `expectedNext` still matches - a lost
+deterministic id (`EF.Common.DeterministicGuid.Create(DomainConstants.DETERMINISTIC_ID_NAMESPACE,
+label, ...parts)`, real UUIDv5/SHA-1) so a re-run over the same data produces zero new rows: the
+`overdue` label keys on `(tenant, task, dueDate)`, `recurrence` on `(tenant, template,
+occurrenceUtc)`. Occurrences upsert via `EF.Data` `IRepositoryBase.UpsertRangeAsync(occurrences,
+match)` with no `whenMatched`, which is DO NOTHING (D-028); the template pointer only advances when `expectedNext` still matches - a lost
 race skips that tick instead of double-advancing. Stale cleanup stages `BlobDeleteWork` before
 deleting the task row (blob cleanup happens via pattern 6, not inline). Four retention jobs purge
 dead-lettered outbox/blob-delete rows (>7d, `Scheduling:Retention:OutboxDays`), processed inbox rows

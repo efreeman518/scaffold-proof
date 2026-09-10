@@ -1,3 +1,4 @@
+using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Repositories;
@@ -30,8 +31,7 @@ public sealed class TickerQOccurrenceRetentionHandler(
 
         // Only executed occurrences: a row still queued or in flight is live scheduling state.
         var deleted = await db.Set<CronTickerOccurrenceEntity<CronTickerEntity>>()
-            .Where(o => o.ExecutedAt != null && o.ExecutedAt < cutoff)
-            .ExecuteDeleteBatchedAsync(o => o.Id, ct: ct);
+            .ExecuteDeleteBatchedAsync(o => o.ExecutedAt != null && o.ExecutedAt < cutoff, o => o.Id, ct: ct);
 
         meter.RecordRetention("tickerq", deleted);
     }

@@ -1,3 +1,4 @@
+using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Operational;
@@ -135,9 +136,8 @@ public sealed class OperationalWorkRepository(TaskFlowDbContextTrxn db, TimeProv
     /// <inheritdoc />
     public Task<int> PurgeDeadLetteredAsync<TWork>(DateTimeOffset cutoffUtc, CancellationToken ct)
         where TWork : OperationalWorkBase =>
-        db.Set<TWork>()
-            .Where(w => w.DeadLetteredAtUtc != null && w.DeadLetteredAtUtc < cutoffUtc)
-            .ExecuteDeleteBatchedAsync(w => w.Id, ct: ct);
+        db.Set<TWork>().ExecuteDeleteBatchedAsync(
+            w => w.DeadLetteredAtUtc != null && w.DeadLetteredAtUtc < cutoffUtc, w => w.Id, ct: ct);
 
     /// <inheritdoc />
     public async Task<OutboxBacklog> GetOutboxBacklogAsync(CancellationToken ct)

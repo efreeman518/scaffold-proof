@@ -18,4 +18,12 @@ public static class DomainConstants
 
     // Max UTF8 plaintext bytes for the encrypted secure properties (D-023): ciphertext = 12 nonce + plaintext + 16 tag <= 256.
     public const int RULE_SECURE_PROPERTY_MAX_BYTES = 200;
+
+    /// <summary>
+    /// Root UUIDv5 namespace for every TaskFlow deterministic id, passed to
+    /// <c>EF.Common.DeterministicGuid.Create</c> with a short label as the first name part ("overdue",
+    /// "recurrence", "blob-delete"). Changing it invalidates every id already derived from it, which is
+    /// what makes a replayed scheduler job re-stage the row it staged last time instead of a second copy.
+    /// </summary>
+    public static readonly Guid DETERMINISTIC_ID_NAMESPACE = new("8f1b1f3e-1a2c-4e58-9a5b-6f0f2e3d4c5a");
 }
