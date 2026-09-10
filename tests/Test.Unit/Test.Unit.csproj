@@ -12,6 +12,9 @@
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" PrivateAssets="all" />
     <PackageReference Include="OpenAI" PrivateAssets="all" />
     <PackageReference Include="EF.Data" />
+    <PackageReference Include="EF.Audit.Contracts" />
+    <PackageReference Include="EF.Storage.Contracts" />
+    <PackageReference Include="EF.Storage.S3" />
     <PackageReference Include="EF.FlowEngine.Testing" />
     <PackageReference Include="EF.FlowEngine.Clients.AI" />
   </ItemGroup>
