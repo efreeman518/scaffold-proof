@@ -52,14 +52,50 @@ public sealed class StablePaginationIntegrationTests
         await AssertKeysetWalkAsync(TaskItemSortMode.StatusThenId);
     }
 
-    private async Task AssertKeysetWalkAsync(TaskItemSortMode sortMode)
+    /// <summary>Verifies the due-date ascending keyset walk stays total with a mix of null and set due dates.</summary>
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task DueDateAscKeyset_WithNullAndSetDueDates_ReturnsStableCompletePages()
+    {
+        await AssertKeysetWalkAsync(TaskItemSortMode.DueDateAsc, mixedDueDates: true);
+    }
+
+    /// <summary>Verifies the due-date descending keyset walk stays total with a mix of null and set due dates.</summary>
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task DueDateDescKeyset_WithNullAndSetDueDates_ReturnsStableCompletePages()
+    {
+        await AssertKeysetWalkAsync(TaskItemSortMode.DueDateDesc, mixedDueDates: true);
+    }
+
+    /// <summary>Verifies the modified-descending keyset walk stays total when every row shares a save timestamp.</summary>
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task ModifiedDescKeyset_WithSharedTimestamps_ReturnsStableCompletePages()
+    {
+        await AssertKeysetWalkAsync(TaskItemSortMode.ModifiedDesc);
+    }
+
+    private async Task AssertKeysetWalkAsync(TaskItemSortMode sortMode, bool mixedDueDates = false)
     {
         var title = $"StablePaging-{Guid.NewGuid():N}";
+        // Whole seconds: SQL Server keeps 100ns ticks, PostgreSQL timestamptz keeps microseconds.
+        var dueBase = new DateTimeOffset(2027, 3, 1, 8, 0, 0, TimeSpan.Zero);
         var seeded = Enumerable.Range(0, 7)
-            .Select(_ => new TaskItemBuilder()
-                .WithTenantId(QueryTenantId)
-                .WithTitle(title)
-                .Build())
+            .Select(index =>
+            {
+                var task = new TaskItemBuilder()
+                    .WithTenantId(QueryTenantId)
+                    .WithTitle(title)
+                    .Build();
+
+                // Every second row keeps a null due date, and two rows share one due date, so the walk
+                // crosses the null boundary and a duplicate leading key on the same page break.
+                if (mixedDueDates && index % 2 == 0)
+                    task.UpdateDateRange(null, dueBase.AddDays(index / 4));
+
+                return task;
+            })
             .ToArray();
 
         await using var writeDb = DbContainerFixture.CreateTrxnContext();
