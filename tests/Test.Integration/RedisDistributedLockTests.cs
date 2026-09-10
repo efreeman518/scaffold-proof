@@ -1,4 +1,4 @@
-using TaskFlow.Infrastructure.Caching.Locking;
+using EF.Cache;
 using Test.Integration.Infrastructure;
 
 namespace Test.Integration;

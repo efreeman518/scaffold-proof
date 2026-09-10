@@ -1,3 +1,4 @@
+using EF.Cache;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -39,7 +40,6 @@ public class MessagePackCacheTests
     public async Task Given_MessagePackSerializer_When_MetadataCrossesReplicas_Then_EveryFieldSurvives()
     {
         var tenantId = Guid.NewGuid();
-        var key = new CacheKey(CacheKind.TaskMetadata, tenantId);
         var snapshot = new TaskMetadataDto
         {
             Categories =
@@ -70,8 +70,10 @@ public class MessagePackCacheTests
             return Task.FromResult(snapshot);
         }
 
-        await writer.GetOrSetAsync(key, Factory, CacheProfile.Metadata, TestContext.CancellationToken);
-        var actual = await reader.GetOrSetAsync(key, Factory, CacheProfile.Metadata, TestContext.CancellationToken);
+        await writer.GetOrSetAsync(
+            CacheKind.TaskMetadata, tenantId, Factory, CacheProfiles.Metadata, ct: TestContext.CancellationToken);
+        var actual = await reader.GetOrSetAsync(
+            CacheKind.TaskMetadata, tenantId, Factory, CacheProfiles.Metadata, ct: TestContext.CancellationToken);
 
         Assert.AreEqual(1, factoryCalls,
             "the second replica read the MessagePack payload out of L2 instead of rebuilding it");
@@ -93,7 +95,6 @@ public class MessagePackCacheTests
         CacheSerializer format)
     {
         var tenantId = Guid.NewGuid();
-        var key = new CacheKey(CacheKind.TaskSummary, tenantId);
         var snapshot = new TaskItemSummaryDto
         {
             ByStatus =
@@ -117,8 +118,10 @@ public class MessagePackCacheTests
             return Task.FromResult(snapshot);
         }
 
-        await writer.GetOrSetAsync(key, Factory, CacheProfile.Summary, TestContext.CancellationToken);
-        var actual = await reader.GetOrSetAsync(key, Factory, CacheProfile.Summary, TestContext.CancellationToken);
+        await writer.GetOrSetAsync(
+            CacheKind.TaskSummary, tenantId, Factory, CacheProfiles.Summary, ct: TestContext.CancellationToken);
+        var actual = await reader.GetOrSetAsync(
+            CacheKind.TaskSummary, tenantId, Factory, CacheProfiles.Summary, ct: TestContext.CancellationToken);
 
         Assert.AreEqual(1, factoryCalls, "the second replica read the payload out of L2 instead of rebuilding it");
         Assert.AreEqual(snapshot.Total, actual.Total);
@@ -128,7 +131,7 @@ public class MessagePackCacheTests
     }
 
     /// <summary>Builds one cache "replica" over the shared Redis with the given L2 serializer.</summary>
-    private static ITaskFlowCache BuildCache(CacheSerializer format)
+    private static ITypedCache BuildCache(CacheSerializer format)
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -145,7 +148,7 @@ public class MessagePackCacheTests
         services.AddSingleton<IHostEnvironment>(new MessagePackTestHostEnvironment());
         services.AddTaskFlowCaching(config);
 
-        return services.BuildServiceProvider().GetRequiredService<ITaskFlowCache>();
+        return services.BuildServiceProvider().GetRequiredService<ITypedCache>();
     }
 
     /// <summary>Minimal host environment: the cache only reads the environment name for its key prefix.</summary>

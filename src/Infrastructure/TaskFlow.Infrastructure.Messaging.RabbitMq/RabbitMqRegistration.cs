@@ -1,9 +1,9 @@
+using EF.Common.Contracts;
 using EF.Messaging.RabbitMq;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using TaskFlow.Application.Contracts.Locking;
 using TaskFlow.Infrastructure.Data.Messaging;
 
 namespace TaskFlow.Infrastructure.Messaging.RabbitMq;

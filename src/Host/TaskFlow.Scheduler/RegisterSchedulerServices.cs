@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using EF.BackgroundServices;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using TaskFlow.Infrastructure.AI;
 using TaskFlow.Infrastructure.Data;
@@ -43,12 +44,16 @@ public static class RegisterSchedulerServices
         // Already added by the shared application registration; TryAdd keeps one meter per process.
         services.TryAddSingleton<MessagingMetrics>();
 
-        // D-055: the blob-delete drain's in-flight bound, per environment.
-        services.Configure<BlobDeleteSettings>(config.GetSection(BlobDeleteSettings.ConfigSectionName));
-
         // D-026: both drains run on every replica; the lease, not a leader election, keeps them apart.
-        services.AddHostedService<OutboxDispatcherService>();
-        services.AddHostedService<BlobDeleteWorkerService>();
+        // EF.BackgroundServices owns the loop; the sections retune poll, lease, batch and (D-055) the
+        // blob-delete in-flight bound per environment.
+        services.AddOptions<OutboxDispatcherSettings>()
+            .Bind(config.GetSection(OutboxDispatcherSettings.ConfigSectionName));
+        services.AddLeasedWorkerService<OutboxDispatcherService, OutboxDispatcherSettings>();
+
+        services.AddOptions<BlobDeleteSettings>()
+            .Bind(config.GetSection(BlobDeleteSettings.ConfigSectionName));
+        services.AddLeasedWorkerService<BlobDeleteWorkerService, BlobDeleteSettings>();
 
         // D-034: the Scheduler is the RabbitMQ consumer host; the Functions runtime has no RabbitMQ trigger.
         if (RegisterServices.ResolveMessagingProvider(config) == MessagingProvider.RabbitMq)

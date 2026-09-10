@@ -1,4 +1,5 @@
-﻿using EF.Common.Contracts;
+﻿using EF.Cache;
+using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
@@ -59,7 +60,7 @@ internal sealed class CreateTagHandler(
     IRequestContext<string, Guid?> requestContext,
     IRepositoryTrxn<Tag, TagId> repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    ITaskFlowCache cache)
+    ITypedCache cache)
     : IRequestHandler<CreateTagCommand, Result<DefaultResponse<TagDto>>>
 {
     /// <summary>Handles create tag requests and returns the application result.</summary>
@@ -111,7 +112,7 @@ internal sealed class UpdateTagHandler(
     IRequestContext<string, Guid?> requestContext,
     IRepositoryTrxn<Tag, TagId> repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    ITaskFlowCache cache)
+    ITypedCache cache)
     : IRequestHandler<UpdateTagCommand, Result<DefaultResponse<TagDto>>>
 {
     /// <summary>Handles update tag requests and returns the application result.</summary>
@@ -157,7 +158,7 @@ internal sealed class DeleteTagHandler(
     IRequestContext<string, Guid?> requestContext,
     IRepositoryTrxn<Tag, TagId> repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    ITaskFlowCache cache)
+    ITypedCache cache)
     : IRequestHandler<DeleteTagCommand, Result>
 {
     /// <summary>Handles delete tag requests and returns the application result.</summary>

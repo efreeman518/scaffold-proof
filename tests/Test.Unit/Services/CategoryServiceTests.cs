@@ -1,3 +1,4 @@
+using EF.Cache;
 using EF.Common.Contracts;
 using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
@@ -29,7 +30,7 @@ public class CategoryServiceTests
     private readonly Mock<ICategoryRepositoryQuery> _repoQueryMock = new();
     private readonly Mock<IRequestContext<string, Guid?>> _requestContextMock = new();
     private readonly Mock<ITenantBoundaryValidator> _tenantBoundaryValidatorMock = new();
-    private readonly Mock<ITaskFlowCache> _cacheMock = new();
+    private readonly Mock<ITypedCache> _cacheMock = new();
 
     /// <summary>Prepares per-test fixtures so each test starts from a predictable state.</summary>
     [TestInitialize]

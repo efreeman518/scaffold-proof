@@ -1,3 +1,4 @@
+using EF.Messaging;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using TaskFlow.Application.Contracts.Messaging;
@@ -83,7 +84,7 @@ public sealed class TaskEmbeddingConsumerTests
             NullLogger<TaskEmbeddingConsumer>.Instance);
 
     private static IntegrationEventEnvelope Envelope(TaskFlow.Domain.Shared.IDomainEvent domainEvent) =>
-        IntegrationEventEnvelope.From(domainEvent, DateTimeOffset.UtcNow, correlationId: null);
+        TaskFlowIntegrationEvents.Envelope(domainEvent, DateTimeOffset.UtcNow, correlationId: null);
 
     private sealed class FakeInboxStore : IInboxStore
     {

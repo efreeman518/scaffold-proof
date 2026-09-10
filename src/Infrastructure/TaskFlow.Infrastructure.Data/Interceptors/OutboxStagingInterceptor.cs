@@ -1,3 +1,4 @@
+using EF.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using System.Diagnostics;
@@ -55,8 +56,8 @@ public sealed class OutboxStagingInterceptor(TimeProvider? timeProvider = null, 
         {
             foreach (var domainEvent in raiser.DomainEvents)
             {
-                var envelope = IntegrationEventEnvelope.From(domainEvent, now, correlationId);
-                context.Add(ToRow(envelope, now));
+                var envelope = TaskFlowIntegrationEvents.Envelope(domainEvent, now, correlationId);
+                context.Add(ToRow(envelope, domainEvent.TenantId, now));
                 staged++;
             }
 
@@ -66,19 +67,22 @@ public sealed class OutboxStagingInterceptor(TimeProvider? timeProvider = null, 
         metrics?.RecordStaged(staged);
     }
 
-    /// <summary>Maps an envelope to its outbox row; the row id IS the MessageId so replay is detectable.</summary>
-    public static OutboxMessage ToRow(IntegrationEventEnvelope envelope, DateTimeOffset availableAtUtc) => new()
+    /// <summary>
+    /// Maps an envelope to its outbox row; the row id IS the MessageId so replay is detectable. The tenant is
+    /// passed in because the package envelope frame does not carry one - it lives in the payload, and the row
+    /// column is the denormalized copy the dispatcher reads.
+    /// </summary>
+    public static OutboxMessage ToRow(IntegrationEventEnvelope envelope, Guid tenantId, DateTimeOffset availableAtUtc) => new()
     {
         Id = envelope.Id,
-        TenantId = envelope.TenantId,
+        TenantId = tenantId,
         AvailableAtUtc = availableAtUtc,
         Destination = DefaultDestination,
         EventType = envelope.Type,
         EventVersion = envelope.Version,
-        // D-048: generated metadata. This runs inside SaveChanges on every write that raised an event,
-        // so it is the hottest envelope serialization in the app.
-        Payload = System.Text.Json.JsonSerializer.Serialize(
-            envelope, TaskFlowMessagingJsonContext.Default.IntegrationEventEnvelope),
+        // D-048: generated metadata, reached through the context's own options. This runs inside SaveChanges
+        // on every write that raised an event, so it is the hottest envelope serialization in the app.
+        Payload = EnvelopeSerializer.Serialize(envelope, TaskFlowMessagingJsonContext.Default.Options),
         CorrelationId = envelope.CorrelationId,
         OccurredAtUtc = envelope.OccurredAtUtc
     };

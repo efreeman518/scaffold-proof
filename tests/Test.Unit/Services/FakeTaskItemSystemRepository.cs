@@ -1,3 +1,4 @@
+using EF.Messaging;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Domain.Model;
@@ -127,8 +128,8 @@ internal sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
 /// <summary>Captures staged envelopes and the message id each was staged under.</summary>
 internal sealed class FakeOutboxStaging : IOutboxStaging
 {
-    public List<(IntegrationEventEnvelope Envelope, Guid? DeterministicId)> Staged { get; } = [];
+    public List<(IntegrationEventEnvelope Envelope, Guid TenantId, Guid? DeterministicId)> Staged { get; } = [];
 
-    public void Stage(IntegrationEventEnvelope envelope, Guid? deterministicId = null) =>
-        Staged.Add((envelope, deterministicId));
+    public void Stage(IntegrationEventEnvelope envelope, Guid tenantId, Guid? deterministicId = null) =>
+        Staged.Add((envelope, tenantId, deterministicId));
 }

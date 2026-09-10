@@ -1,6 +1,5 @@
 using EF.Messaging.RabbitMq;
 using Microsoft.Extensions.Logging;
-using System.Text;
 using TaskFlow.Application.MessageHandlers.Consumers;
 using TaskFlow.Observability.Tracing;
 
@@ -34,26 +33,14 @@ public abstract class RabbitMqConsumerHandler(IntegrationEventConsumer consumer,
             delivery.Queue,
             envelope!.Type,
             delivery.MessageId,
-            key => HeaderText(delivery.Headers, key));
+            // The AMQP field table carries strings as UTF-8 byte arrays, so a plain cast to string returns
+            // null for a header that is present - which would silently drop the trace context. The package's
+            // own decoder is public as of package request 24, so every consumer no longer re-implements it.
+            key => RabbitMqHeaders.AsString(delivery.Headers.GetValueOrDefault(key)));
 
         await consumer.HandleAsync(envelope, ct).ConfigureAwait(false);
         return ConsumeResult.Ack;
     }
-
-    /// <summary>
-    /// Reads one header as text. The AMQP field table carries strings as UTF-8 byte arrays, so a plain cast to
-    /// string returns null for a header that is present - which would silently drop the trace context.
-    /// </summary>
-    private static string? HeaderText(IReadOnlyDictionary<string, object?> headers, string key) =>
-        headers.TryGetValue(key, out var value)
-            ? value switch
-            {
-                string text => text,
-                byte[] utf8 => Encoding.UTF8.GetString(utf8),
-                ReadOnlyMemory<byte> utf8 => Encoding.UTF8.GetString(utf8.Span),
-                _ => value?.ToString()
-            }
-            : null;
 }
 
 /// <summary>Feeds <see cref="TaskProjectionConsumer"/> from the projection queue.</summary>

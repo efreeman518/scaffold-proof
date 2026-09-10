@@ -1,4 +1,5 @@
-﻿using EF.Common.Contracts;
+﻿using EF.Cache;
+using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
@@ -74,7 +75,7 @@ internal sealed class CreateTaskItemHandler(
     IRequestContext<string, Guid?> requestContext,
     ITaskItemRepositoryTrxn repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    ITaskFlowCache cache)
+    ITypedCache cache)
     : IRequestHandler<CreateTaskItemCommand, Result<DefaultResponse<TaskItemDto>>>
 {
     /// <summary>Handles create task item requests and returns the application result.</summary>
@@ -127,7 +128,7 @@ internal sealed class UpdateTaskItemHandler(
     IRequestContext<string, Guid?> requestContext,
     ITaskItemRepositoryTrxn repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    ITaskFlowCache cache)
+    ITypedCache cache)
     : IRequestHandler<UpdateTaskItemCommand, Result<DefaultResponse<TaskItemDto>>>
 {
     /// <summary>Handles update task item requests and returns the application result.</summary>
@@ -204,7 +205,7 @@ internal sealed class DeleteTaskItemHandler(
     IRequestContext<string, Guid?> requestContext,
     ITaskItemRepositoryTrxn repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    ITaskFlowCache cache)
+    ITypedCache cache)
     : IRequestHandler<DeleteTaskItemCommand, Result>
 {
     /// <summary>Handles delete task item requests and returns the application result.</summary>
@@ -240,7 +241,7 @@ internal sealed class PatchTaskItemHandler(
     IRequestContext<string, Guid?> requestContext,
     ITaskItemRepositoryTrxn repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    ITaskFlowCache cache)
+    ITypedCache cache)
     : IRequestHandler<PatchTaskItemCommand, Result<DefaultResponse<TaskItemDto>>>
 {
     /// <summary>Handles patch task item requests and returns the application result.</summary>
