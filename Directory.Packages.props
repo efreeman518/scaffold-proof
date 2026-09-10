@@ -4,28 +4,28 @@
   </PropertyGroup>
   <ItemGroup Label="EF.Packages (Private Feed - github.com/efreeman518/EF.Packages)">
     <!-- Core packages - always available -->
-    <PackageVersion Include="EF.CQRS" Version="1.1.98" />
-    <PackageVersion Include="EF.Domain" Version="1.1.98" />
-    <PackageVersion Include="EF.Domain.Contracts" Version="1.1.98" />
-    <PackageVersion Include="EF.Data" Version="1.1.98" />
-    <PackageVersion Include="EF.Data.Contracts" Version="1.1.98" />
-    <PackageVersion Include="EF.Common" Version="1.1.98" />
-    <PackageVersion Include="EF.Common.Contracts" Version="1.1.98" />
-    <PackageVersion Include="EF.Host" Version="1.1.98" />
-    <PackageVersion Include="EF.AspNetCore" Version="1.1.98" />
-    <PackageVersion Include="EF.BackgroundServices" Version="1.1.98" />
-    <PackageVersion Include="EF.Cache" Version="1.0.88" />
-    <PackageVersion Include="EF.IntegrationTesting" Version="1.1.98" />
+    <PackageVersion Include="EF.CQRS" Version="1.1.100" />
+    <PackageVersion Include="EF.Domain" Version="1.1.100" />
+    <PackageVersion Include="EF.Domain.Contracts" Version="1.1.100" />
+    <PackageVersion Include="EF.Data" Version="1.1.100" />
+    <PackageVersion Include="EF.Data.Contracts" Version="1.1.100" />
+    <PackageVersion Include="EF.Common" Version="1.1.100" />
+    <PackageVersion Include="EF.Common.Contracts" Version="1.1.100" />
+    <PackageVersion Include="EF.Host" Version="1.1.100" />
+    <PackageVersion Include="EF.AspNetCore" Version="1.1.100" />
+    <PackageVersion Include="EF.BackgroundServices" Version="1.1.100" />
+    <PackageVersion Include="EF.Cache" Version="1.1.100" />
+    <PackageVersion Include="EF.IntegrationTesting" Version="1.1.100" />
     <!-- Extended packages - add to individual .csproj when needed -->
-    <PackageVersion Include="EF.Auth" Version="1.0.88" />
-    <PackageVersion Include="EF.Messaging" Version="1.1.98" />
-    <PackageVersion Include="EF.Storage" Version="1.1.98" />
-    <PackageVersion Include="EF.Table" Version="1.1.98" />
-    <PackageVersion Include="EF.CosmosDb" Version="1.0.88" />
-    <PackageVersion Include="EF.KeyVault" Version="1.0.88" />
-    <PackageVersion Include="EF.Grpc" Version="1.0.88" />
-    <PackageVersion Include="EF.AI" Version="1.0.88" />
-    <PackageVersion Include="EF.MSGraph" Version="1.0.88" />
+    <PackageVersion Include="EF.Auth" Version="1.1.100" />
+    <PackageVersion Include="EF.Messaging" Version="1.1.100" />
+    <PackageVersion Include="EF.Storage" Version="1.1.100" />
+    <PackageVersion Include="EF.Table" Version="1.1.100" />
+    <PackageVersion Include="EF.CosmosDb" Version="1.1.100" />
+    <PackageVersion Include="EF.KeyVault" Version="1.1.100" />
+    <PackageVersion Include="EF.Grpc" Version="1.1.100" />
+    <PackageVersion Include="EF.AI" Version="1.1.100" />
+    <PackageVersion Include="EF.MSGraph" Version="1.1.100" />
     <PackageVersion Include="Testcontainers.MsSql" Version="4.14.0" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.14.0" />
     <PackageVersion Include="Testcontainers.Azurite" Version="4.14.0" />
@@ -34,20 +34,20 @@
     <PackageVersion Include="Testcontainers.Minio" Version="4.14.0" />
   </ItemGroup>
   <ItemGroup Label="EF.Packages.Enterprise (Private Feed)">
-    <PackageVersion Include="EF.FilterBuilder" Version="1.0.163" />
-    <PackageVersion Include="EF.FlowEngine" Version="1.0.163" />
-    <PackageVersion Include="EF.FlowEngine.StateStore.Sql" Version="1.0.163" />
-    <PackageVersion Include="EF.FlowEngine.Locks.Sql" Version="1.0.163" />
-    <PackageVersion Include="EF.FlowEngine.WorkflowRegistry.Sql" Version="1.0.163" />
-    <PackageVersion Include="EF.FlowEngine.HumanTaskStore.Sql" Version="1.0.163" />
-    <PackageVersion Include="EF.FlowEngine.Outbox.Sql" Version="1.0.163" />
-    <PackageVersion Include="EF.FlowEngine.CircuitBreaker.Sql" Version="1.0.163" />
-    <PackageVersion Include="EF.FlowEngine.Clients.AI" Version="1.0.163" />
-    <PackageVersion Include="EF.FlowEngine.Clients.Http" Version="1.0.163" />
-    <PackageVersion Include="EF.FlowEngine.Clients.ServiceBus" Version="1.0.163" />
-    <PackageVersion Include="EF.FlowEngine.AdminApi" Version="1.0.163" />
-    <PackageVersion Include="EF.FlowEngine.Dashboard" Version="1.0.163" />
-    <PackageVersion Include="EF.FlowEngine.Testing" Version="1.0.163" />
+    <PackageVersion Include="EF.FilterBuilder" Version="1.0.169" />
+    <PackageVersion Include="EF.FlowEngine" Version="1.0.169" />
+    <PackageVersion Include="EF.FlowEngine.StateStore.Sql" Version="1.0.169" />
+    <PackageVersion Include="EF.FlowEngine.Locks.Sql" Version="1.0.169" />
+    <PackageVersion Include="EF.FlowEngine.WorkflowRegistry.Sql" Version="1.0.169" />
+    <PackageVersion Include="EF.FlowEngine.HumanTaskStore.Sql" Version="1.0.169" />
+    <PackageVersion Include="EF.FlowEngine.Outbox.Sql" Version="1.0.169" />
+    <PackageVersion Include="EF.FlowEngine.CircuitBreaker.Sql" Version="1.0.169" />
+    <PackageVersion Include="EF.FlowEngine.Clients.AI" Version="1.0.169" />
+    <PackageVersion Include="EF.FlowEngine.Clients.Http" Version="1.0.169" />
+    <PackageVersion Include="EF.FlowEngine.Clients.ServiceBus" Version="1.0.169" />
+    <PackageVersion Include="EF.FlowEngine.AdminApi" Version="1.0.169" />
+    <PackageVersion Include="EF.FlowEngine.Dashboard" Version="1.0.169" />
+    <PackageVersion Include="EF.FlowEngine.Testing" Version="1.0.169" />
   </ItemGroup>
   <ItemGroup Label="Microsoft Entity Framework Core">
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.11" />
