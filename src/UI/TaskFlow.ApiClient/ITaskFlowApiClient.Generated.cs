@@ -892,6 +892,10 @@ namespace TaskFlow.ApiClient
         /// <term>400</term>
         /// <description>Bad Request</description>
         /// </item>
+        /// <item>
+        /// <term>404</term>
+        /// <description>Not Found</description>
+        /// </item>
         /// </list>
         /// </exception>
         [Headers("Accept: application/x-ndjson, application/problem+json")]

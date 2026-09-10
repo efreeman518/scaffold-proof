@@ -138,7 +138,7 @@ export function TasksPage() {
   }
 
   const categories = metadataQuery.data?.categories ?? []
-  const tasks = tasksQuery.data?.pages.flatMap((page) => page.data) ?? []
+  const tasks = tasksQuery.data?.pages.flatMap((page) => page.items) ?? []
 
   return (
     <>

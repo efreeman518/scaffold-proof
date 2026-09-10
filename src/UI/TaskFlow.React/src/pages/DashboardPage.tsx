@@ -100,7 +100,7 @@ export function DashboardPage() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {data.recent.data.map((task) => (
+                {data.recent.items.map((task) => (
                   <TableRow
                     hover
                     key={task.id ?? task.title}
@@ -125,7 +125,7 @@ export function DashboardPage() {
                     <TableCell>{formatDate(task.dueDate)}</TableCell>
                   </TableRow>
                 ))}
-                {data.recent.data.length === 0 ? (
+                {data.recent.items.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={4}>
                       <Typography color="text.secondary" sx={{ py: 4, textAlign: 'center' }}>

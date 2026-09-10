@@ -275,7 +275,7 @@ public class MockHttpMessageHandler : HttpMessageHandler
 
         return JsonResponse(new CursorPage<TaskItemDto>
         {
-            Data = page,
+            Items = page,
             NextCursor = hasMore ? (start + page.Count).ToString() : null,
             HasMore = hasMore
         });
