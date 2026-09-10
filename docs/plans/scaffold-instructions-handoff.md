@@ -1009,15 +1009,17 @@ of what distributed tracing across a broker hop is for.
 **Shape**: `TaskFlowActivitySources` (`Shared/TaskFlow.Observability/Tracing/
 TaskFlowActivitySources.cs`) names two sources registered once in ServiceDefaults:
 `TaskFlow.Messaging` (broker publish/consume spans) and `TaskFlow.Scheduler` (scheduled-job and
-leased-drain spans, used by `BaseTickerQJob` and `LeasedWorkerBase`). `MessagingTrace`
+leased-drain spans, used by `BaseTickerQJob` and `EF.BackgroundServices.LeasedWorkerBase`).
+`MessagingTrace`
 (`.../Tracing/MessagingTrace.cs`) has two entry points: `StartPublish` starts a Producer-kind activity
-and injects the resulting W3C trace context via `Propagators.DefaultTextMapPropagator.Inject` through a
+and injects the resulting W3C trace context via `EF.Messaging.Tracing.MessagingTraceContext.Inject`
+(package request 30) through a
 caller-supplied `Action<string, string> setHeader` delegate - a delegate rather than a dictionary
 because RabbitMQ headers are `object?`-valued UTF-8 byte arrays and Service Bus application properties
 are `object`-valued strings, and neither dictionary type converts to the other. `StartProcess` extracts
-the context via `Propagators.DefaultTextMapPropagator.Extract` and starts the Consumer-kind activity
-PARENTED to that extracted context (`StartActivity(name, ActivityKind.Consumer, parent.
-ActivityContext)`) - NOT an `ActivityLink`, contrary to what a link-based design might suggest; the
+the context via `MessagingTraceContext.Extract` and starts the Consumer-kind activity
+PARENTED to that extracted context (`StartActivity(name, ActivityKind.Consumer, parent)`)
+ - NOT an `ActivityLink`, contrary to what a link-based design might suggest; the
 code comment is explicit that a parent (not a link) is deliberate, because the outbox hop is one
 business operation continuing across a process boundary and the point is a single trace from the HTTP
 request through the consumer, whereas a link would leave the consumer as its own root, exactly the

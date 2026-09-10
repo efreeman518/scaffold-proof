@@ -1,9 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <!-- D-053: Propagators/Baggage for the W3C broker hop. The API package only, not the SDK: every host
-         already brings the SDK through its exporter, and the shared library must not choose one. -->
-    <PackageReference Include="OpenTelemetry.Api" />
+    <!-- D-053 / package request 30: MessagingTraceContext writes and reads the W3C headers for the broker
+         hop, so the app no longer carries its own propagator wiring and OpenTelemetry.Api is not needed
+         here - TaskFlowActivitySources is System.Diagnostics only. -->
+    <PackageReference Include="EF.Messaging" />
   </ItemGroup>
 
 </Project>

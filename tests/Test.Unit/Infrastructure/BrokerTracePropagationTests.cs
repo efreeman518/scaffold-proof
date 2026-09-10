@@ -1,8 +1,6 @@
 using EF.Messaging;
 using EF.Messaging.RabbitMq;
 using Microsoft.Extensions.Logging.Abstractions;
-using OpenTelemetry;
-using OpenTelemetry.Context.Propagation;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
@@ -17,7 +15,9 @@ namespace Test.Unit.Infrastructure;
 /// <summary>
 /// D-053 end to end without a broker: the producer writes W3C trace context into the message it publishes, and
 /// the consumer adopts that context as its parent. The parent-id assertion is the point - equal ids are what
-/// makes one trace span the async hop instead of two disconnected traces.
+/// makes one trace span the async hop instead of two disconnected traces. Propagation is
+/// <c>EF.Messaging.Tracing.MessagingTraceContext</c>, which reads and writes the headers itself, so these
+/// tests no longer depend on an OpenTelemetry SDK propagator being installed.
 /// </summary>
 [TestClass]
 [TestCategory("Unit")]
@@ -28,14 +28,6 @@ public sealed class BrokerTracePropagationTests
 
     /// <summary>MSTest-injected context; supplies the per-test cancellation token.</summary>
     public TestContext TestContext { get; set; } = null!;
-
-    /// <summary>
-    /// Hosts set the default propagator when the OpenTelemetry SDK initializes; a unit test has no host, and
-    /// the API-only default is a no-op propagator that would silently inject and extract nothing.
-    /// </summary>
-    [ClassInitialize]
-    public static void ClassInit(TestContext _) =>
-        Sdk.SetDefaultTextMapPropagator(new TraceContextPropagator());
 
     /// <summary>The published message carries a traceparent naming the producer span.</summary>
     [TestMethod]

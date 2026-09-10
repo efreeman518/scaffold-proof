@@ -1,12 +1,16 @@
-using OpenTelemetry;
-using OpenTelemetry.Context.Propagation;
+using EF.Messaging.Tracing;
 using System.Diagnostics;
 
 namespace TaskFlow.Observability.Tracing;
 
 /// <summary>
-/// W3C trace context across the broker hop (D-053). Without this, every message starts a new root trace and
-/// the request that produced it is unreachable from the consumer that handled it.
+/// The producer and consumer spans for one broker hop (D-053). Without them, every message starts a new root
+/// trace and the request that produced it is unreachable from the consumer that handled it.
+/// <para>
+/// The W3C context itself is written and read by <see cref="MessagingTraceContext"/> (package request 30);
+/// what stays here is the part the package cannot know - the TaskFlow <c>ActivitySource</c>, the span names,
+/// and the <c>messaging.*</c> semantic-convention tags that make a span queryable.
+/// </para>
 /// <para>
 /// The carriers are passed as delegates rather than dictionaries on purpose: RabbitMQ headers are
 /// <c>object?</c> valued and arrive as UTF-8 byte arrays, Service Bus application properties are
@@ -49,14 +53,8 @@ public static class MessagingTrace
             .SetTag("messaging.destination.name", destination)
             .SetTag("messaging.message.id", messageId);
 
-        var context = activity is null
-            ? new PropagationContext(Activity.Current?.Context ?? default, Baggage.Current)
-            : new PropagationContext(activity.Context, Baggage.Current);
-
-        if (context.ActivityContext != default)
-        {
-            Propagators.DefaultTextMapPropagator.Inject(context, setHeader, static (set, key, value) => set(key, value));
-        }
+        // Null activity falls back to Activity.Current inside the package.
+        MessagingTraceContext.Inject(activity, setHeader);
 
         return activity;
     }
@@ -85,19 +83,11 @@ public static class MessagingTrace
     {
         ArgumentNullException.ThrowIfNull(getHeader);
 
-        var parent = Propagators.DefaultTextMapPropagator.Extract(
-            default,
-            getHeader,
-            static (get, key) =>
-            {
-                var value = get(key);
-                return value is null ? null : [value];
-            });
-
-        Baggage.Current = parent.Baggage;
+        // default when the message carried no usable traceparent, which starts an unparented consumer span.
+        var parent = MessagingTraceContext.Extract(getHeader);
 
         var activity = TaskFlowActivitySources.Messaging.StartActivity(
-            $"{eventType} process", ActivityKind.Consumer, parent.ActivityContext);
+            $"{eventType} process", ActivityKind.Consumer, parent);
 
         activity?.SetTag("messaging.system", system)
             .SetTag("messaging.operation.name", "process")
