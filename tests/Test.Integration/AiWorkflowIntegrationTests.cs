@@ -142,7 +142,7 @@ public sealed class AiWorkflowIntegrationTests
         var body = await response.Content.ReadAsStringAsync(ct);
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, $"Search failed: {Truncate(body)}");
         using var payload = JsonDocument.Parse(body);
-        return payload.RootElement.GetProperty("data").GetArrayLength();
+        return payload.RootElement.GetProperty("items").GetArrayLength();
     }
 
     private static async Task<string> StartWorkflowAsync(

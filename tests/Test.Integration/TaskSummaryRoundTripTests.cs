@@ -63,7 +63,7 @@ public class TaskSummaryRoundTripTests
         var counter = new CommandCountingInterceptor();
         await using var query = DbContainerFixture.CreateQueryContext(null, counter);
 
-        var summary = await new TaskItemRepositoryQuery(query, TestColumnEncryption.Keys)
+        var summary = await new TaskItemRepositoryQuery(query, TestColumnEncryption.Keys, TestCursorCodec.Instance)
             .GetSummaryAsync(tenantId, TestContext.CancellationToken);
 
         Assert.AreEqual(1, counter.Commands, "the summary must be one round trip, not one query per status");

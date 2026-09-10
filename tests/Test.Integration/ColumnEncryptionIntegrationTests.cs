@@ -65,7 +65,7 @@ public sealed class ColumnEncryptionIntegrationTests
         // Decrypted through the model, and found through the blind index.
         await using (var db = DbContainerFixture.CreateQueryContext())
         {
-            var repo = new TaskItemRepositoryQuery(db, TestColumnEncryption.Keys);
+            var repo = new TaskItemRepositoryQuery(db, TestColumnEncryption.Keys, TestCursorCodec.Instance);
             var found = await repo.FindBySecureTokenAsync(token, TestContext.CancellationToken);
 
             Assert.IsNotNull(found);

@@ -6,7 +6,6 @@ using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Caching;
 using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Contracts.Messaging;
-using TaskFlow.Application.Contracts.Paging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Cqrs.Shared;
 using TaskFlow.Application.Mappers;
@@ -23,8 +22,7 @@ namespace TaskFlow.Application.Cqrs.Features.TaskItems;
 internal sealed class SearchTaskItemsHandler(
     ILogger<SearchTaskItemsHandler> logger,
     IRequestContext<string, Guid?> requestContext,
-    ITaskItemRepositoryQuery repoQuery,
-    ICursorProtector cursorProtector)
+    ITaskItemRepositoryQuery repoQuery)
     : IRequestHandler<SearchTaskItemsQuery, CursorPage<TaskItemDto>>
 {
     /// <summary>Handles search task items requests and returns the application result.</summary>
@@ -33,7 +31,8 @@ internal sealed class SearchTaskItemsHandler(
         var request = query.Request;
 
         // Out-of-range page size and an unusable cursor are caller errors (400), not something to clamp
-        // or silently reset to page one - a reset would re-serve rows the caller already read.
+        // or silently reset to page one - a reset would re-serve rows the caller already read. The cursor
+        // half is enforced by the repository, which owns the codec (ERROR_CURSOR_INVALID).
         if (!PageSizeLimits.IsValid(request.PageSize))
             throw new ArgumentException(
                 string.Format(ErrorConstants.ERROR_PAGE_SIZE_RANGE, PageSizeLimits.Min, PageSizeLimits.Max), nameof(query));
@@ -41,26 +40,8 @@ internal sealed class SearchTaskItemsHandler(
         HandlerHelpers.EnforceCursorTenantFilter(request, requestContext.TenantId, requestContext.Roles, logger, "TaskItemSearch");
         var tenantId = request.Filter?.TenantId ?? requestContext.TenantId ?? Guid.Empty;
 
-        CursorToken? after = null;
-        if (!string.IsNullOrEmpty(request.Cursor)
-            && !cursorProtector.TryUnprotect(request.Cursor, request.SortMode, tenantId, out after))
-        {
-            throw new ArgumentException(ErrorConstants.ERROR_CURSOR_INVALID, nameof(query));
-        }
-
-        return await CqrsHandlerSupport.SearchCursorAsync(async token =>
-        {
-            var (data, hasMore) = await repoQuery.SearchTaskItemsAsync(request, after, token);
-            return new CursorPage<TaskItemDto>
-            {
-                Data = data,
-                HasMore = hasMore,
-                NextCursor = hasMore && data.Count > 0
-                    ? cursorProtector.Protect(new CursorToken(
-                        request.SortMode, tenantId, CursorKey.From(request.SortMode, data[^1]), data[^1].Id!.Value))
-                    : null
-            };
-        }, logger, "TaskItem", ct);
+        return await CqrsHandlerSupport.SearchCursorAsync(
+            token => repoQuery.SearchTaskItemsAsync(request, tenantId, token), logger, "TaskItem", ct);
     }
 }
 

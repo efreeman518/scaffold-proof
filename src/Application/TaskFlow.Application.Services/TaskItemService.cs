@@ -5,7 +5,6 @@ using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Aggregates;
 using TaskFlow.Application.Contracts.Caching;
 using TaskFlow.Application.Contracts.Concurrency;
-using TaskFlow.Application.Contracts.Paging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Mappers;
@@ -30,8 +29,7 @@ internal class TaskItemService(
     ITaskItemRepositoryTrxn repoTrxn,
     ITaskItemRepositoryQuery repoQuery,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    ITaskFlowCache cache,
-    ICursorProtector cursorProtector) : ITaskItemService
+    ITaskFlowCache cache) : ITaskItemService
 {
     private Guid? RequestTenantId => requestContext.TenantId;
     private IReadOnlyCollection<string> RequestRoles => requestContext.Roles;
@@ -78,30 +76,16 @@ internal class TaskItemService(
 
         var tenantId = request.Filter?.TenantId ?? RequestTenantId ?? Guid.Empty;
 
-        CursorToken? after = null;
-        if (!string.IsNullOrEmpty(request.Cursor)
-            && !cursorProtector.TryUnprotect(request.Cursor, request.SortMode, tenantId, out after))
-        {
-            throw new ArgumentException(ErrorConstants.ERROR_CURSOR_INVALID, nameof(request));
-        }
-
         try
         {
-            var (data, hasMore) = await repoQuery.SearchTaskItemsAsync(request, after, ct);
-            return new CursorPage<TaskItemDto>
-            {
-                Data = data,
-                HasMore = hasMore,
-                NextCursor = hasMore && data.Count > 0
-                    ? cursorProtector.Protect(new CursorToken(
-                        request.SortMode, tenantId, CursorKey.From(request.SortMode, data[^1]), data[^1].Id!.Value))
-                    : null
-            };
+            // The cursor is decoded and the next one minted by the repository, which owns the codec: a
+            // faulted cursor arrives here as ArgumentException (ERROR_CURSOR_INVALID), mapped to 400.
+            return await repoQuery.SearchTaskItemsAsync(request, tenantId, ct);
         }
         catch (OperationCanceledException)
         {
             logger.TaskItemSearchCancelled();
-            return new CursorPage<TaskItemDto>();
+            return new CursorPage<TaskItemDto>([], null, false);
         }
     }
 

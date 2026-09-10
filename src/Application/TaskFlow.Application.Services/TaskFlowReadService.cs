@@ -70,8 +70,8 @@ internal sealed class TaskFlowReadService(
     /// <summary>Builds the metadata snapshot. Immutable by construction - nothing cached is an entity.</summary>
     private async Task<TaskMetadataDto> BuildMetadataAsync(CancellationToken ct)
     {
-        var categories = await categoryRepoQuery.GetActiveCategoriesAsync(PageSizeLimits.MetadataMax, ct);
-        var tags = await tagRepoQuery.GetTagsAsync(PageSizeLimits.MetadataMax, ct);
+        var categories = await categoryRepoQuery.GetActiveCategoriesAsync(TaskMetadataDto.MetadataMax, ct);
+        var tags = await tagRepoQuery.GetTagsAsync(TaskMetadataDto.MetadataMax, ct);
 
         return new TaskMetadataDto
         {

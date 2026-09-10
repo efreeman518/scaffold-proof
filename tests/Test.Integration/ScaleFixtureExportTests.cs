@@ -58,7 +58,7 @@ public class ScaleFixtureExportTests
     public async Task StreamExportAsync_PagesTheWholeTenant_WithNoDuplicateOrGap()
     {
         await using var query = DbContainerFixture.CreateQueryContext(_connectionString);
-        var repository = new TaskItemRepositoryQuery(query, TestColumnEncryption.Keys);
+        var repository = new TaskItemRepositoryQuery(query, TestColumnEncryption.Keys, TestCursorCodec.Instance);
 
         var expected = await query.Set<TaskItem>()
             .IgnoreQueryFilters()
@@ -90,7 +90,7 @@ public class ScaleFixtureExportTests
     public async Task GetSummaryAsync_AtScale_ReportsTheSeededMix()
     {
         await using var query = DbContainerFixture.CreateQueryContext(_connectionString);
-        var repository = new TaskItemRepositoryQuery(query, TestColumnEncryption.Keys);
+        var repository = new TaskItemRepositoryQuery(query, TestColumnEncryption.Keys, TestCursorCodec.Instance);
 
         var summary = await repository.GetSummaryAsync(PrimaryTenant, TestContext.CancellationToken);
 

@@ -1,6 +1,5 @@
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
-using TaskFlow.Application.Contracts.Paging;
 using TaskFlow.Application.Models;
 using TaskFlow.Application.Models.Paging;
 using TaskFlow.Infrastructure.Repositories;
@@ -74,31 +73,33 @@ public sealed class StablePaginationIntegrationTests
             var expected = seeded.Select(task => task.Id.Value).ToHashSet();
 
             await using var queryDb = DbContainerFixture.CreateQueryContext();
-            var repository = new TaskItemRepositoryQuery(queryDb, TestColumnEncryption.Keys);
+            var repository = new TaskItemRepositoryQuery(queryDb, TestColumnEncryption.Keys, TestCursorCodec.Instance);
             var actual = new List<Guid>();
 
-            CursorToken? after = null;
+            string? cursor = null;
             for (var page = 0; page < 5; page++)
             {
                 var request = new TaskItemCursorSearchRequest
                 {
                     Filter = new TaskItemSearchFilter { SearchTerm = title, TenantId = QueryTenantId },
                     SortMode = sortMode,
-                    PageSize = 3
+                    PageSize = 3,
+                    Cursor = cursor
                 };
 
-                var (data, hasMore) = await repository.SearchTaskItemsAsync(request, after, TestContext.CancellationToken);
-                actual.AddRange(data.Select(item => item.Id!.Value));
+                var result = await repository.SearchTaskItemsAsync(request, QueryTenantId, TestContext.CancellationToken);
+                actual.AddRange(result.Items.Select(item => item.Id!.Value));
 
-                if (!hasMore)
+                if (!result.HasMore)
                 {
-                    Assert.AreEqual(1, data.Count, "The final page should carry the remainder of the seven rows.");
+                    Assert.AreEqual(1, result.Items.Count, "The final page should carry the remainder of the seven rows.");
+                    Assert.IsNull(result.NextCursor, "The final page must not hand out a cursor.");
                     break;
                 }
 
-                Assert.AreEqual(3, data.Count);
-                after = new CursorToken(
-                    sortMode, QueryTenantId, CursorKey.From(sortMode, data[^1]), data[^1].Id!.Value);
+                Assert.AreEqual(3, result.Items.Count);
+                cursor = result.NextCursor;
+                Assert.IsNotNull(cursor, "A page with HasMore must carry the cursor for the next one.");
             }
 
             Assert.AreEqual(7, actual.Count, "Keyset paging must return every seeded row.");
