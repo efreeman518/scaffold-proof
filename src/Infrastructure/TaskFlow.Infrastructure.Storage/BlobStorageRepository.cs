@@ -24,25 +24,29 @@ public class BlobStorageRepository(
         CreateContainerIfNotExist = false
     };
 
+    // EF.Storage 1.1.100 made BlobRepositoryBase implement the new EF.Storage.Contracts
+    // IObjectStorageRepository, so these four IBlobStorageRepository members now hide identically-named
+    // base members (CS0108). `new` states that intent and keeps today dispatch unchanged; reconciling the
+    // app IBlobStorageRepository with IObjectStorageRepository is package request 25 (slice E4).
     /// <summary>Uploads upload to the configured storage backend and returns metadata.</summary>
-    public Task UploadAsync(string containerName, string blobName, Stream content,
+    public new Task UploadAsync(string containerName, string blobName, Stream content,
         string? contentType = null, IDictionary<string, string>? metadata = null,
         CancellationToken ct = default) =>
         UploadBlobStreamAsync(new ContainerInfo { ContainerName = containerName, CreateContainerIfNotExist = false },
             blobName, content, contentType, false, metadata, ct);
 
     /// <summary>Downloads download from the configured storage backend.</summary>
-    public async Task<Stream> DownloadAsync(string containerName, string blobName,
+    public new async Task<Stream> DownloadAsync(string containerName, string blobName,
         CancellationToken ct = default) =>
         await StartDownloadBlobStreamAsync(new ContainerInfo { ContainerName = containerName }, blobName, false, ct);
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
-    public Task DeleteAsync(string containerName, string blobName,
+    public new Task DeleteAsync(string containerName, string blobName,
         CancellationToken ct = default) =>
         DeleteBlobAsync(new ContainerInfo { ContainerName = containerName }, blobName, ct);
 
     /// <summary>Checks whether exists exists in the configured backend.</summary>
-    public async Task<bool> ExistsAsync(string containerName, string blobName,
+    public new async Task<bool> ExistsAsync(string containerName, string blobName,
         CancellationToken ct = default)
     {
         var info = new ContainerInfo { ContainerName = containerName, CreateContainerIfNotExist = false };
