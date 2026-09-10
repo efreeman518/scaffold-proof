@@ -151,16 +151,22 @@ public class WorkflowDefinitionValidityTests
     }
 
     /// <summary>
-    /// The decomposer's loop body sends the loop's own stable per-iteration id as the created subtask's
-    /// <c>Id</c> (package request 19 shipped: <c>LoopNodeConfig.IdAs</c> stores a deterministic UUIDv5 of
-    /// instance id + loop node id + iteration index), so a retried iteration recreates the same subtask
-    /// instead of a duplicate. The context key is read back from the loop node's own config rather than
-    /// hardcoded, so a change to the package default trips this test instead of silently minting
-    /// non-idempotent subtasks.
+    /// Package request 19 asked for a stable per-iteration id so a retried loop iteration recreates the
+    /// same subtask instead of a duplicate. It shipped as <c>LoopNodeConfig.IdAs</c>, but the value
+    /// <c>LoopNodeExecutor.IterationId</c> stores is a deterministic RFC 4122 <b>version 5</b> UUID over
+    /// instance id + loop node id + index. TaskFlow cannot send that as a create id: GR-17 rejects any
+    /// caller-supplied id that is not a UUIDv7, because a hash-ordered key fragments the clustered index
+    /// every create lands in - the exact cost GR-17 exists to avoid. The create endpoint answers 400 and
+    /// the loop lands on <c>n-output-failed</c>.
+    /// <para>
+    /// So the body must keep sending no <c>Id</c> and rely on the integration node's own
+    /// <c>idempotencyKey</c>, which is already keyed by task id + iteration index. This test fails if
+    /// someone re-adds the id without first getting a UUIDv7-shaped iteration id from the package.
+    /// </para>
     /// </summary>
     [TestMethod]
     [TestCategory("Integration")]
-    public void AiTaskDecomposer_LoopBody_SendsTheStablePerIterationIdAsTheSubtaskId()
+    public void AiTaskDecomposer_LoopBody_DoesNotSendThePerIterationIdAsTheSubtaskId()
     {
         using var document = JsonDocument.Parse(ReadWorkflowFile("ai-task-decomposer.json"));
         var nodes = document.RootElement.GetProperty("nodes");
@@ -169,11 +175,13 @@ public class WorkflowDefinitionValidityTests
         var loop = loopConfig.Deserialize<LoopNodeConfig>(JsonOpts)!;
         Assert.AreEqual("n-loop-create-one", loop.BodyEntryNodeId, "the loop must execute the create node inline");
 
-        var body = nodes.GetProperty(loop.BodyEntryNodeId!).GetProperty("config").GetProperty("body");
-        Assert.AreEqual(
-            $"$.context.{loop.IdAs}",
-            body.GetProperty("item").GetProperty("Id").GetString(),
-            "the created subtask must carry the loop's stable per-iteration id");
+        var body = nodes.GetProperty(loop.BodyEntryNodeId!).GetProperty("config");
+        Assert.IsFalse(
+            body.GetProperty("body").GetProperty("item").TryGetProperty("Id", out _),
+            "the created subtask must not carry the loop's per-iteration id while that id is a UUIDv5 (GR-17)");
+        Assert.IsTrue(
+            body.TryGetProperty("idempotencyKey", out var key) && !string.IsNullOrWhiteSpace(key.GetString()),
+            "retry idempotency for the create must come from the integration node's idempotencyKey instead");
     }
 
     /// <summary>Verifies read workflow file behavior and protects the expected test contract.</summary>
