@@ -3,11 +3,11 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    <!-- D-034: the published portable transport (package request 23). -->
+    <PackageReference Include="EF.Messaging.RabbitMq" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- D-034: consumed by project reference until EF.Messaging.RabbitMq is published (package request 23). -->
-    <ProjectReference Include="..\..\Packages\EF.Messaging.RabbitMq\EF.Messaging.RabbitMq.csproj" />
     <ProjectReference Include="..\..\Application\TaskFlow.Application.MessageHandlers\TaskFlow.Application.MessageHandlers.csproj" />
     <ProjectReference Include="..\TaskFlow.Infrastructure.Data\TaskFlow.Infrastructure.Data.csproj" />
     <ProjectReference Include="..\..\Shared\TaskFlow.Observability\TaskFlow.Observability.csproj" />

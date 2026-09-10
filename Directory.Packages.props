@@ -19,6 +19,7 @@
     <!-- Extended packages - add to individual .csproj when needed -->
     <PackageVersion Include="EF.Auth" Version="1.1.101" />
     <PackageVersion Include="EF.Messaging" Version="1.1.101" />
+    <PackageVersion Include="EF.Messaging.RabbitMq" Version="1.1.101" />
     <PackageVersion Include="EF.Storage" Version="1.1.101" />
     <PackageVersion Include="EF.Table" Version="1.1.101" />
     <PackageVersion Include="EF.CosmosDb" Version="1.1.101" />
@@ -101,7 +102,7 @@
     <PackageVersion Include="Aspire.Hosting.Azure.Functions" Version="13.5.3" />
     <PackageVersion Include="KubernetesClient" Version="19.0.2" />
   </ItemGroup>
-  <ItemGroup Label="RabbitMQ (EF.Messaging.RabbitMq package project)">
+  <ItemGroup Label="RabbitMQ (Aspire hosting/client plus the integration tests' own broker client)">
     <PackageVersion Include="RabbitMQ.Client" Version="7.2.2" />
     <!-- D-034: Aspire hosting declares the local broker; the client integration registers the singleton
          IConnection that the package multiplexer reuses instead of opening a second one. -->
