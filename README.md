@@ -53,7 +53,7 @@ $env:TASKFLOW_MESSAGING_PROVIDER = "RabbitMq"  # messaging transport: ServiceBus
 dotnet test tests/Test.Integration/Test.Integration.csproj
 ```
 
-Container-backed lanes (`Test.Integration`, `Test.E2E`, `Test.Integration.FlowEngine`, `EF.Messaging.RabbitMq.Tests` integration) need a container runtime. On a Podman WSL2 setup, container ports do not forward to `localhost` from Windows: set a run-scoped `TESTCONTAINERS_HOST_OVERRIDE=<podman machine ip>` before running those lanes; never commit the value, it changes on reboot.
+Container-backed lanes (`Test.Integration`, `Test.E2E`, `Test.Integration.FlowEngine`) need a container runtime. On a Podman WSL2 setup, container ports do not forward to `localhost` from Windows: set a run-scoped `TESTCONTAINERS_HOST_OVERRIDE=<podman machine ip>` before running those lanes; never commit the value, it changes on reboot.
 
 Aspire (`dotnet run --project src/Host/Aspire/AppHost`) and the full-stack Playwright lane additionally need the AppHost's DCP to bind published container ports reachable from Windows. Podman WSL2 binds them to `127.0.0.1` inside the VM instead of the host, independent of the override above; use Docker Desktop or a podman machine networking change to run those two lanes.
 
