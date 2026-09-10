@@ -81,6 +81,7 @@
         "path": "/api/v1/task-items",
         "body": {
           "item": {
+            "Id": "$.context.currentItemId",
             "ParentTaskItemId": "$.params.taskId",
             "TenantId": "$.params.tenantId",
             "Title": "$.context.currentItem.title",

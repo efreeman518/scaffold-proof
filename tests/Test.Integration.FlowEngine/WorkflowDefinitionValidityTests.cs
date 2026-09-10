@@ -1,4 +1,5 @@
 using EF.FlowEngine.Definition;
+using EF.FlowEngine.Definition.NodeConfigs;
 using EF.FlowEngine.Impl;
 using System.Text.Json;
 
@@ -147,6 +148,32 @@ public class WorkflowDefinitionValidityTests
             Assert.IsTrue(config.TryGetProperty("headers", out var headers), $"{nodeId} is missing the headers config key.");
             Assert.AreEqual("*", headers.GetProperty("If-Match").GetString());
         }
+    }
+
+    /// <summary>
+    /// The decomposer's loop body sends the loop's own stable per-iteration id as the created subtask's
+    /// <c>Id</c> (package request 19 shipped: <c>LoopNodeConfig.IdAs</c> stores a deterministic UUIDv5 of
+    /// instance id + loop node id + iteration index), so a retried iteration recreates the same subtask
+    /// instead of a duplicate. The context key is read back from the loop node's own config rather than
+    /// hardcoded, so a change to the package default trips this test instead of silently minting
+    /// non-idempotent subtasks.
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Integration")]
+    public void AiTaskDecomposer_LoopBody_SendsTheStablePerIterationIdAsTheSubtaskId()
+    {
+        using var document = JsonDocument.Parse(ReadWorkflowFile("ai-task-decomposer.json"));
+        var nodes = document.RootElement.GetProperty("nodes");
+
+        var loopConfig = nodes.GetProperty("n-create-subtasks").GetProperty("config");
+        var loop = loopConfig.Deserialize<LoopNodeConfig>(JsonOpts)!;
+        Assert.AreEqual("n-loop-create-one", loop.BodyEntryNodeId, "the loop must execute the create node inline");
+
+        var body = nodes.GetProperty(loop.BodyEntryNodeId!).GetProperty("config").GetProperty("body");
+        Assert.AreEqual(
+            $"$.context.{loop.IdAs}",
+            body.GetProperty("item").GetProperty("Id").GetString(),
+            "the created subtask must carry the loop's stable per-iteration id");
     }
 
     /// <summary>Verifies read workflow file behavior and protects the expected test contract.</summary>
