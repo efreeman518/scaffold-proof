@@ -1,4 +1,5 @@
-﻿using EF.Common.Contracts;
+﻿using EF.Cache;
+using EF.Common.Contracts;
 using EF.Data.Contracts;
 using EF.Domain.Contracts;
 using Microsoft.Extensions.Logging;
@@ -6,7 +7,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Caching;
-using TaskFlow.Application.Contracts.Paging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Models;
 using TaskFlow.Application.Models.Paging;
@@ -34,8 +34,7 @@ public class TaskItemServiceTests
     private readonly Mock<ITaskItemRepositoryQuery> _repoQueryMock = new();
     private readonly Mock<IRequestContext<string, Guid?>> _requestContextMock = new();
     private readonly Mock<ITenantBoundaryValidator> _tenantBoundaryValidatorMock = new();
-    private readonly Mock<ITaskFlowCache> _cacheMock = new();
-    private readonly Mock<ICursorProtector> _cursorProtectorMock = new();
+    private readonly Mock<ITypedCache> _cacheMock = new();
 
     /// <summary>Prepares per-test fixtures so each test starts from a predictable state.</summary>
     [TestInitialize]
@@ -58,8 +57,7 @@ public class TaskItemServiceTests
         _repoTrxnMock.Object,
         _repoQueryMock.Object,
         _tenantBoundaryValidatorMock.Object,
-        _cacheMock.Object,
-        _cursorProtectorMock.Object);
+        _cacheMock.Object);
 
     /// <summary>Verifies that given valid DTO, when create, then returns success.</summary>
     [TestMethod]
@@ -214,13 +212,13 @@ public class TaskItemServiceTests
     {
         var dto = new TaskItemDto { Id = Guid.CreateVersion7(), Title = "Test" };
         _repoQueryMock.Setup(r => r.SearchTaskItemsAsync(
-                It.IsAny<TaskItemCursorSearchRequest>(), It.IsAny<CursorToken?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(((IReadOnlyList<TaskItemDto>)[dto], false));
+                It.IsAny<TaskItemCursorSearchRequest>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CursorPage<TaskItemDto>([dto], null, false));
 
         var request = new TaskItemCursorSearchRequest { PageSize = 10 };
         var response = await CreateService().SearchAsync(request, TestContext.CancellationToken);
 
-        Assert.HasCount(1, response.Data);
+        Assert.HasCount(1, response.Items);
         Assert.IsFalse(response.HasMore);
         Assert.IsNull(response.NextCursor);
     }

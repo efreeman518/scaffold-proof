@@ -131,33 +131,9 @@ public class WorkflowDefinitionValidityTests
     }
 
     /// <summary>
-    /// package request 18 (docs/plans/ef-package-requests.md): EF.FlowEngine 1.0.163's "integration" node
-    /// type (IntegrationNodeExecutor / IntegrationNodeConfig) has no way to set a per-node HTTP header,
-    /// unlike the "fetch" node type (FetchNodeConfig.Headers, forwarded via BuildHeaders). ai-task-triage.json's
-    /// PATCH nodes are "integration" nodes calling the TaskFlow API, which requires If-Match (428 without
-    /// it) - so today those PATCH calls cannot satisfy the API's concurrency contract, and
-    /// TriageWorkflow_AppliesSuggestedPriority_ThroughRealApi (Test.Integration) cannot pass until
-    /// IntegrationNodeConfig gains a Headers property. This test documents the gap by construction: it
-    /// fails (compile or assert) the moment a future EF.FlowEngine version adds Headers to
-    /// IntegrationNodeConfig, which is the cue to wire it up here and in TaskItemTools /
-    /// FunctionCategoryTrigger if similarly affected.
-    /// </summary>
-    [TestMethod]
-    [TestCategory("Integration")]
-    public void IntegrationNodeConfig_HasNoHeadersProperty_PackageRequest18()
-    {
-        var headersProperty = typeof(IntegrationNodeConfig).GetProperty("Headers");
-
-        Assert.IsNull(headersProperty,
-            "IntegrationNodeConfig now has a Headers property - package request 18 is resolved. " +
-            "Wire ai-task-triage.json's PATCH nodes' \"headers\": {\"If-Match\": \"*\"} through " +
-            "IntegrationNodeExecutor and drop this guard.");
-    }
-
-    /// <summary>
-    /// The PATCH nodes already carry the forward-compatible "headers" config key (currently a silent
-    /// no-op per IntegrationNodeConfig_HasNoHeadersProperty_PackageRequest18 above) so the fix in package
-    /// request 18 goes live the moment it ships, with no further workflow JSON change needed.
+    /// The PATCH nodes carry the "headers" config key that EF.FlowEngine 1.0.173 now forwards
+    /// (package request 18 shipped: IntegrationNodeConfig.Headers -> IntegrationNodeExecutor ->
+    /// ClientRequest.Headers), so If-Match travels through node config with no JSON change.
     /// </summary>
     [TestMethod]
     [TestCategory("Integration")]
@@ -172,6 +148,40 @@ public class WorkflowDefinitionValidityTests
             Assert.IsTrue(config.TryGetProperty("headers", out var headers), $"{nodeId} is missing the headers config key.");
             Assert.AreEqual("*", headers.GetProperty("If-Match").GetString());
         }
+    }
+
+    /// <summary>
+    /// Package request 19 asked for a stable per-iteration id so a retried loop iteration recreates the
+    /// same subtask instead of a duplicate. It shipped as <c>LoopNodeConfig.IdAs</c>, but the value
+    /// <c>LoopNodeExecutor.IterationId</c> stores is a deterministic RFC 4122 <b>version 5</b> UUID over
+    /// instance id + loop node id + index. TaskFlow cannot send that as a create id: GR-17 rejects any
+    /// caller-supplied id that is not a UUIDv7, because a hash-ordered key fragments the clustered index
+    /// every create lands in - the exact cost GR-17 exists to avoid. The create endpoint answers 400 and
+    /// the loop lands on <c>n-output-failed</c>.
+    /// <para>
+    /// So the body must keep sending no <c>Id</c> and rely on the integration node's own
+    /// <c>idempotencyKey</c>, which is already keyed by task id + iteration index. This test fails if
+    /// someone re-adds the id without first getting a UUIDv7-shaped iteration id from the package.
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Integration")]
+    public void AiTaskDecomposer_LoopBody_DoesNotSendThePerIterationIdAsTheSubtaskId()
+    {
+        using var document = JsonDocument.Parse(ReadWorkflowFile("ai-task-decomposer.json"));
+        var nodes = document.RootElement.GetProperty("nodes");
+
+        var loopConfig = nodes.GetProperty("n-create-subtasks").GetProperty("config");
+        var loop = loopConfig.Deserialize<LoopNodeConfig>(JsonOpts)!;
+        Assert.AreEqual("n-loop-create-one", loop.BodyEntryNodeId, "the loop must execute the create node inline");
+
+        var body = nodes.GetProperty(loop.BodyEntryNodeId!).GetProperty("config");
+        Assert.IsFalse(
+            body.GetProperty("body").GetProperty("item").TryGetProperty("Id", out _),
+            "the created subtask must not carry the loop's per-iteration id while that id is a UUIDv5 (GR-17)");
+        Assert.IsTrue(
+            body.TryGetProperty("idempotencyKey", out var key) && !string.IsNullOrWhiteSpace(key.GetString()),
+            "retry idempotency for the create must come from the integration node's idempotencyKey instead");
     }
 
     /// <summary>Verifies read workflow file behavior and protects the expected test contract.</summary>

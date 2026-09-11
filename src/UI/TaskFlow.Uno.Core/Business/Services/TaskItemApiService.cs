@@ -34,7 +34,7 @@ public class TaskItemApiService(
 
         return new TaskItemCursorPage
         {
-            Items = response.Data?.Select(MapToModel).ToList() ?? [],
+            Items = response.Items?.Select(MapToModel).ToList() ?? [],
             NextCursor = response.NextCursor,
             HasMore = response.HasMore
         };

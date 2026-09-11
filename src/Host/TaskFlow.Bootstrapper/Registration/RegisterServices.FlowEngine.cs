@@ -84,9 +84,10 @@ public static partial class RegisterServices
         var apiBaseUrl = config["FlowEngine:TaskFlowApiBaseUrl"]
             ?? config["Gateway:BaseUrl"]
             ?? "https://localhost";
-        services.AddTransient<FlowEngineIfMatchOverrideHandler>();
-        services.AddHttpClient("taskflow-api", c => c.BaseAddress = new Uri(apiBaseUrl))
-            .AddHttpMessageHandler<FlowEngineIfMatchOverrideHandler>();
+        // The If-Match: * trusted-automation override (D-032) travels in each PATCH node's own
+        // "headers" config (EF.FlowEngine 1.0.173 forwards IntegrationNodeConfig.Headers), so this
+        // client needs no message handler of its own.
+        services.AddHttpClient("taskflow-api", c => c.BaseAddress = new Uri(apiBaseUrl));
         fe.AddResilientHttpClient("taskflow-api", namedClient: "taskflow-api");
 
         // Service Bus message client - uses the same connection string as the application's

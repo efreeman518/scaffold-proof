@@ -1,15 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <!-- Package request 13/31: ITypedCache, CacheSettings (serializer switch, schema version, profiles),
+         the FusionCache/Redis registration, and the D-052 distributed lock. It carries FusionCache, the two
+         serializer packages and the Redis distributed cache and backplane transitively. -->
+    <PackageReference Include="EF.Cache" />
+    <!-- Named directly by the ITypedCache factory. -->
     <PackageReference Include="ZiggyCreatures.FusionCache" />
-    <PackageReference Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" />
-    <!-- D-048 binary L2 arm. MessagePack is a direct reference for ContractlessStandardResolver, which the
-         serializer package itself does not re-export. -->
-    <PackageReference Include="ZiggyCreatures.FusionCache.Serialization.NeueccMessagePack" />
-    <PackageReference Include="MessagePack" />
-    <PackageReference Include="ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis" />
     <PackageReference Include="ZiggyCreatures.FusionCache.OpenTelemetry" />
-    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
     <PackageReference Include="RedisRateLimiting" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />

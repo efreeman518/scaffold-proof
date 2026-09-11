@@ -1,9 +1,9 @@
 using EF.Data.Contracts;
+using EF.Data.Encryption;
 using Microsoft.EntityFrameworkCore;
 using System.Text;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
-using TaskFlow.Infrastructure.Data.Encryption;
 using TaskFlow.Infrastructure.Repositories;
 using Test.Integration.Infrastructure;
 using Test.Support;
@@ -65,7 +65,7 @@ public sealed class ColumnEncryptionIntegrationTests
         // Decrypted through the model, and found through the blind index.
         await using (var db = DbContainerFixture.CreateQueryContext())
         {
-            var repo = new TaskItemRepositoryQuery(db, TestColumnEncryption.Keys);
+            var repo = new TaskItemRepositoryQuery(db, TestColumnEncryption.Keys, TestCursorCodec.Instance);
             var found = await repo.FindBySecureTokenAsync(token, TestContext.CancellationToken);
 
             Assert.IsNotNull(found);

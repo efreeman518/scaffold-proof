@@ -69,7 +69,7 @@ public class DomainEventPipelineTests
 
         // Create a query context for the repo
         var queryCtx = DbContainerFixture.CreateQueryContext(connStr);
-        var taskItemRepo = new TaskItemRepositoryQuery(queryCtx, TestColumnEncryption.Keys);
+        var taskItemRepo = new TaskItemRepositoryQuery(queryCtx, TestColumnEncryption.Keys, TestCursorCodec.Instance);
         var attachmentRepo = new AttachmentRepositoryQuery(queryCtx);
 
         // In-memory task view store (simulates Cosmos)
@@ -126,7 +126,7 @@ public class DomainEventPipelineTests
         var queryCtx = DbContainerFixture.CreateQueryContext(connStr);
         var taskViewRepo = new InMemoryTaskViewRepository();
         var projectionService = new TaskViewProjectionService(
-            new TaskItemRepositoryQuery(queryCtx, TestColumnEncryption.Keys),
+            new TaskItemRepositoryQuery(queryCtx, TestColumnEncryption.Keys, TestCursorCodec.Instance),
             new AttachmentRepositoryQuery(queryCtx),
             taskViewRepo,
             NullLogger<TaskViewProjectionService>.Instance);

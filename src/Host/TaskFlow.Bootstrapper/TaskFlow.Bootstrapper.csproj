@@ -25,6 +25,10 @@
     <PackageReference Include="Newtonsoft.Json" />
     <PackageReference Include="Microsoft.Extensions.Azure" />
     <PackageReference Include="Azure.Storage.Blobs" />
+    <PackageReference Include="EF.Storage.Contracts" />
+    <!-- D-037: the S3 arm of the object-storage switch (repository, bucket provisioner, DI wiring). -->
+    <PackageReference Include="EF.Storage.S3" />
+    <PackageReference Include="EF.Audit.Contracts" />
     <PackageReference Include="Azure.Messaging.ServiceBus" />
     <PackageReference Include="EF.FlowEngine" />
     <PackageReference Include="EF.FlowEngine.StateStore.Sql" />
@@ -42,8 +46,10 @@
     <!-- D-042: Azure App Configuration + Microsoft.FeatureManagement, gated on AppConfig:Endpoint. -->
     <PackageReference Include="Microsoft.Azure.AppConfiguration.AspNetCore" />
     <PackageReference Include="Microsoft.FeatureManagement.AspNetCore" />
+    <PackageReference Include="EF.AI" />
     <PackageReference Include="Microsoft.Extensions.AI" />
-    <!-- Deployed (D-041): the OpenAICompatible LLM arm calls the OpenAI SDK directly at runtime. -->
+    <!-- Deployed (D-041): the FoundryLocal arm adapts its OpenAI-compatible endpoint with the OpenAI SDK
+         directly; the OpenAICompatible arm goes through EF.AI, which carries the SDK itself. -->
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
     <PackageReference Include="OpenAI" />
   </ItemGroup>

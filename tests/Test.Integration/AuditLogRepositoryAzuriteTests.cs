@@ -1,8 +1,10 @@
 ﻿using Azure.Data.Tables;
+using EF.Audit.Contracts;
 using EF.Common.Contracts;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Infrastructure.Storage;
 using Test.Integration.Infrastructure;
 
@@ -45,14 +47,14 @@ public class AuditLogRepositoryAzuriteTests
             Options.Create(new AuditLogStorageSettings
             {
                 TableName = tableName,
-                NullTenantPartitionKey = "_system"
+                Audit = new AuditSettings { SystemTenantId = "_system" }
             }),
             NullLogger<AuditLogRepository>.Instance);
 
         var tenantId = Guid.NewGuid();
         var entry = new AuditEntry<string, Guid>
         {
-            Id = Guid.NewGuid(),
+            Id = Guid.CreateVersion7(),
             AuditId = "integration-user",
             TenantId = tenantId,
             EntityType = "TaskItem",
@@ -72,13 +74,19 @@ public class AuditLogRepositoryAzuriteTests
         {
             await repository.AppendAsync(entry, ct);
 
-            var partitionKey = AuditLogRepository.PartitionKey(tenantId.ToString(), DateTimeOffset.UtcNow);
+            // Keys derive from the message's own UUIDv7 id, not the writing clock, so the partition a
+            // replay lands in is reproducible from the entry alone (A1 replay idempotency).
+            var partitionKey = AuditLogRepository.PartitionKey(
+                tenantId.ToString(), UuidV7.TimestampOf(entry.Id));
             var persisted = await ReadSingleEntityAsync(tableClient, partitionKey);
 
             Assert.IsNotNull(persisted);
             StringAssert.StartsWith(persisted.PartitionKey, $"{tenantId}|",
                 "the partition key carries the tenant and the day so retention can drop whole days");
             Assert.IsTrue(persisted.RowKey.EndsWith($"_{entry.Id:N}", StringComparison.Ordinal));
+            Assert.AreEqual(
+                AuditLogRepository.RowKey(UuidV7.TimestampOf(entry.Id), entry.Id), persisted.RowKey,
+                "the row key must be reproducible from the message alone so a redelivery overwrites its own row");
             Assert.AreEqual(entry.AuditId, persisted.AuditId);
             Assert.AreEqual(tenantId.ToString(), persisted.TenantId);
             Assert.AreEqual(entry.EntityType, persisted.EntityType);

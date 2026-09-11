@@ -203,7 +203,7 @@ else
     private async Task LoadCategoriesAsync()
     {
         // Full category list, not a search page: /task-metadata is uncapped by the [1,100] search
-        // PageSize clamp (up to PageSizeLimits.MetadataMax), which a PageSize=200 search would now reject.
+        // PageSize clamp (up to TaskMetadataDto.MetadataMax), which a PageSize=200 search would now reject.
         // D-054: gRPC when the internal read hop is configured, REST through the gateway otherwise.
         // The task load below deliberately stays on REST: it feeds an editor whose save path depends on
         // the ETag the REST response carries, and D-054 scopes the proof to the aggregate reads.

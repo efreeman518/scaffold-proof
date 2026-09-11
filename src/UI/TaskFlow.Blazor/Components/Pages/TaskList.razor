@@ -139,7 +139,7 @@
         _loading = false;
         if (response is null) return;
 
-        _items.AddRange(response.Data);
+        _items.AddRange(response.Items);
         _nextCursor = response.NextCursor;
         _hasMore = response.HasMore;
     }

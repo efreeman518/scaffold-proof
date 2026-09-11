@@ -1,4 +1,4 @@
-using System.Text.Json;
+using EF.Messaging;
 using TaskFlow.Application.Contracts.Messaging;
 
 namespace TaskFlow.Application.MessageHandlers.Consumers;
@@ -26,26 +26,17 @@ public static class IntegrationEnvelopeReader
         envelope = null;
         failure = null;
 
-        try
-        {
-            // D-048: generated metadata, so neither the Service Bus trigger nor the RabbitMQ handler
-            // builds envelope reflection metadata on the first message of a cold worker.
-            envelope = JsonSerializer.Deserialize(body, TaskFlowMessagingJsonContext.Default.IntegrationEventEnvelope);
-        }
-        catch (JsonException)
+        // D-048: the package reader deserializes through the options it is handed, and the messaging
+        // context's own options carry the generated resolver - so neither the Service Bus trigger nor the
+        // RabbitMQ handler builds envelope reflection metadata on the first message of a cold worker.
+        // A body that cannot be understood is reported, not thrown: the next delivery would fail the same way.
+        if (!EnvelopeSerializer.TryDeserialize(body, out envelope, TaskFlowMessagingJsonContext.Default.Options))
         {
             failure = MalformedReason;
             return false;
         }
 
-        if (envelope is null || string.IsNullOrEmpty(envelope.Type) || envelope.Id == Guid.Empty)
-        {
-            envelope = null;
-            failure = MalformedReason;
-            return false;
-        }
-
-        if (!IntegrationEventEnvelope.IsKnownType(envelope.Type))
+        if (!TaskFlowIntegrationEvents.IsKnownType(envelope!.Type))
         {
             envelope = null;
             failure = UnsupportedReason;

@@ -82,7 +82,7 @@ public class OutboxMeshTests
             return; // The replay leg republishes through the Service Bus topic; RabbitMQ has no topic here.
 
         // Replay: the same MessageId again must be short-circuited by the inbox, not processed a second time.
-        var replay = IntegrationEventEnvelope.From(
+        var replay = TaskFlowIntegrationEvents.Envelope(
             new TaskItemCreatedEvent(taskItemId, Guid.Empty, "replay"),
             DateTimeOffset.UtcNow,
             correlationId: null,

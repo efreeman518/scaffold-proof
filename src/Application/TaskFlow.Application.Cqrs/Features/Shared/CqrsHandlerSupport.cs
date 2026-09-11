@@ -46,7 +46,7 @@ internal static class CqrsHandlerSupport
         catch (OperationCanceledException)
         {
             logger.SearchCancelled(operation);
-            return new CursorPage<TDto>();
+            return new CursorPage<TDto>([], null, false);
         }
     }
 

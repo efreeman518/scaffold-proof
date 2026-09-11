@@ -1,4 +1,5 @@
 ﻿using EF.Data.Contracts;
+using EF.Messaging;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 using TaskFlow.Application.Contracts.Messaging;
@@ -127,7 +128,6 @@ public sealed class OutboxStagingTests
         Assert.AreEqual(row.Id, envelope.Id, "the row id IS the broker MessageId");
         Assert.AreEqual(nameof(TaskItemCreatedEvent), envelope.Type);
         Assert.AreEqual(1, envelope.Version);
-        Assert.AreEqual(TestConstants.TenantId, envelope.TenantId);
         Assert.AreEqual(Now, envelope.OccurredAtUtc);
 
         var payload = envelope.Payload.Deserialize<TaskItemCreatedEvent>();
@@ -141,9 +141,9 @@ public sealed class OutboxStagingTests
     [TestCategory("Unit")]
     public void UnknownEventType_IsRejectedBeforeAConsumerSeesIt()
     {
-        Assert.IsTrue(IntegrationEventEnvelope.IsKnownType(nameof(TaskItemCreatedEvent)));
-        Assert.IsFalse(IntegrationEventEnvelope.IsKnownType("SomeFutureEvent"));
-        Assert.AreEqual(1, IntegrationEventEnvelope.VersionFor(nameof(TaskItemCreatedEvent)));
+        Assert.IsTrue(TaskFlowIntegrationEvents.IsKnownType(nameof(TaskItemCreatedEvent)));
+        Assert.IsFalse(TaskFlowIntegrationEvents.IsKnownType("SomeFutureEvent"));
+        Assert.AreEqual(1, TaskFlowIntegrationEvents.VersionFor(nameof(TaskItemCreatedEvent)));
     }
 
     public TestContext TestContext { get; set; } = null!;

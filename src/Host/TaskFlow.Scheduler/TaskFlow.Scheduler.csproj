@@ -12,6 +12,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Package request 11: the leased-worker drain loop the outbox and blob-delete workers derive from. -->
+    <PackageReference Include="EF.BackgroundServices" />
+    <PackageReference Include="EF.Storage.Contracts" />
+    <PackageReference Include="EF.Audit.Contracts" />
     <PackageReference Include="TickerQ" />
     <PackageReference Include="TickerQ.EntityFrameworkCore" />
     <PackageReference Include="TickerQ.Dashboard" />

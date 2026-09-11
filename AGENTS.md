@@ -17,11 +17,10 @@ This file is the single source of maintainer-session instructions: CLI agents an
 |---|---|
 | Domain | `src/Domain/` |
 | Application | `src/Application/` |
-| Infrastructure | `src/Infrastructure/` (EF Core, AI, Storage, Repositories, `TaskFlow.Infrastructure.Caching` - FusionCache, `TaskFlow.Infrastructure.Messaging.RabbitMq` - RabbitMQ transport adapter, `TaskFlow.Infrastructure.Data.Migrations.{SqlServer,PostgreSql}` - per-provider migration assemblies) |
-| Packages | `src/Packages/EF.Messaging.RabbitMq` (portable RabbitMQ wrapper: connection multiplexer, topology, consumer host - no TaskFlow dependencies; candidate for the EF.* package feed) |
+| Infrastructure | `src/Infrastructure/` (EF Core, AI, Storage, Repositories, `TaskFlow.Infrastructure.Caching` - EF.Cache/FusionCache composition, `TaskFlow.Infrastructure.Messaging.RabbitMq` - RabbitMQ transport adapter over the published `EF.Messaging.RabbitMq`, `TaskFlow.Infrastructure.Data.Migrations.{SqlServer,PostgreSql}` - per-provider migration assemblies) |
 | Hosts | `src/Host/` (Api, Gateway, Scheduler, Functions, DatabaseMigrator, Bootstrapper, Aspire, Uno WASM) |
 | UI clients | `src/UI/TaskFlow.ApiClient` (Refitter-generated shared client for Blazor) alongside Blazor, React, Uno |
-| Tests | `tests/` (16 projects incl. `EF.Messaging.RabbitMq.Tests`; see REFERENCE-STATUS.md for verified counts) |
+| Tests | `tests/` (15 projects; see REFERENCE-STATUS.md for verified counts) |
 
 ## Build and test
 
@@ -59,5 +58,5 @@ $env:TASKFLOW_LANE = "Portable"; dotnet run --project src/Host/Aspire/AppHost   
 
 ## Environment facts (this machine, verified 2026-09-04)
 
-- Container runtime is Podman with a Docker-compatible context. Testcontainers-backed lanes (Test.Integration, Test.E2E, Test.Integration.FlowEngine, EF.Messaging.RabbitMq.Tests integration) work with a run-scoped `TESTCONTAINERS_HOST_OVERRIDE` set to the current podman machine IP - Podman WSL2 does not forward container ports to `localhost` from Windows.
+- Container runtime is Podman with a Docker-compatible context. Testcontainers-backed lanes (Test.Integration, Test.E2E, Test.Integration.FlowEngine) work with a run-scoped `TESTCONTAINERS_HOST_OVERRIDE` set to the current podman machine IP - Podman WSL2 does not forward container ports to `localhost` from Windows.
 - Aspire/DCP does not work on this machine: it binds published container ports to `127.0.0.1` inside the Podman WSL VM (`podman port` shows `127.0.0.1:<port>`), unreachable from the Windows host, independent of the Testcontainers override above. `Test.Aspire` and the full-stack `Test.PlaywrightUI` lanes cannot run here until either Docker Desktop replaces Podman or the podman machine networking is reconfigured for port forwarding. `.scaffold/REFERENCE-STATUS.md` records this as the reason those lanes are unverified rather than failing.

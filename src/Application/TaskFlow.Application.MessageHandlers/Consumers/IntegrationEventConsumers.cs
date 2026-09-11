@@ -1,3 +1,4 @@
+using EF.Messaging;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
@@ -5,6 +6,7 @@ using System.Text.Json;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Contracts.Services;
+using TaskFlow.Domain.Shared;
 using TaskFlow.Domain.Shared.Events;
 using TaskFlow.Observability.Meters;
 
@@ -64,6 +66,14 @@ public abstract class IntegrationEventConsumer(IInboxStore inbox, MessagingMetri
         envelope.Payload.TryGetProperty(property, out var value) && value.TryGetGuid(out var id)
             ? id
             : throw new InvalidOperationException($"Envelope {envelope.Id} ({envelope.Type}) has no {property}.");
+
+    /// <summary>
+    /// Owning tenant of the message. The package envelope frame carries no tenant, so it is read from the
+    /// payload, which every <see cref="IDomainEvent"/> carries and which is the value the producer denormalized
+    /// onto the outbox row and the broker message property.
+    /// </summary>
+    protected static Guid PayloadTenant(IntegrationEventEnvelope envelope) =>
+        PayloadGuid(envelope, nameof(IDomainEvent.TenantId));
 }
 
 /// <summary>
@@ -91,10 +101,10 @@ public sealed class TaskProjectionConsumer(
     protected override Task ConsumeAsync(IntegrationEventEnvelope envelope, CancellationToken ct) => envelope.Type switch
     {
         nameof(CommentAddedEvent) => projection.AdjustCountersAsync(
-            PayloadGuid(envelope, nameof(CommentAddedEvent.TaskItemId)), envelope.TenantId,
+            PayloadGuid(envelope, nameof(CommentAddedEvent.TaskItemId)), PayloadTenant(envelope),
             new TaskViewCounterDelta(CommentCount: 1), envelope.OccurredAtUtc, ct),
         nameof(AttachmentUploadedEvent) => projection.AdjustCountersAsync(
-            PayloadGuid(envelope, nameof(AttachmentUploadedEvent.OwnerId)), envelope.TenantId,
+            PayloadGuid(envelope, nameof(AttachmentUploadedEvent.OwnerId)), PayloadTenant(envelope),
             new TaskViewCounterDelta(AttachmentCount: 1), envelope.OccurredAtUtc, ct),
         _ => projection.ProjectTaskItemAsync(
             PayloadGuid(envelope, nameof(TaskItemCreatedEvent.TaskItemId)), envelope.OccurredAtUtc, ct)
@@ -130,14 +140,15 @@ public sealed class TaskEmbeddingConsumer(
     protected override async Task ConsumeAsync(IntegrationEventEnvelope envelope, CancellationToken ct)
     {
         var taskItemId = PayloadGuid(envelope, nameof(TaskItemCreatedEvent.TaskItemId));
+        var tenantId = PayloadTenant(envelope);
 
-        var source = await embeddings.GetSourceAsync(envelope.TenantId, taskItemId, ct).ConfigureAwait(false);
+        var source = await embeddings.GetSourceAsync(tenantId, taskItemId, ct).ConfigureAwait(false);
         if (source is null)
         {
             // Event delivery is asynchronous and races deletion. Deleting rather than skipping is what keeps
             // a deleted task from staying searchable; a missing row makes the delete a no-op.
-            await embeddings.DeleteAsync(envelope.TenantId, taskItemId, ct).ConfigureAwait(false);
-            logger.TaskEmbeddingRemovedForMissingTask(taskItemId, envelope.TenantId);
+            await embeddings.DeleteAsync(tenantId, taskItemId, ct).ConfigureAwait(false);
+            logger.TaskEmbeddingRemovedForMissingTask(taskItemId, tenantId);
             return;
         }
 
@@ -152,7 +163,7 @@ public sealed class TaskEmbeddingConsumer(
         var modelId = embedding.ModelId ?? generator.GetService<EmbeddingGeneratorMetadata>()?.DefaultModelId ?? "unknown";
 
         await embeddings.UpsertAsync(
-            envelope.TenantId, taskItemId, embedding.Vector, modelId, envelope.OccurredAtUtc, ct).ConfigureAwait(false);
+            tenantId, taskItemId, embedding.Vector, modelId, envelope.OccurredAtUtc, ct).ConfigureAwait(false);
         logger.TaskEmbeddingUpserted(taskItemId, modelId, embedding.Vector.Length);
     }
 }
@@ -176,7 +187,7 @@ public sealed class TaskAiReviewConsumer(
     /// <inheritdoc />
     protected override Task ConsumeAsync(IntegrationEventEnvelope envelope, CancellationToken ct) =>
         reviewer.ReviewNewTaskAsync(
-            PayloadGuid(envelope, nameof(TaskItemCreatedEvent.TaskItemId)), envelope.TenantId, ct);
+            PayloadGuid(envelope, nameof(TaskItemCreatedEvent.TaskItemId)), PayloadTenant(envelope), ct);
 }
 
 /// <summary>Starts the ai-task-triage workflow for a newly created task.</summary>

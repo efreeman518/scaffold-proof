@@ -68,8 +68,8 @@ export type Priority = NonNullable<components['schemas']['Priority']>
 export type TaskItemSortMode = NonNullable<components['schemas']['TaskItemSortMode']>
 
 export type TaskItemCursorSearchRequest = components['schemas']['TaskItemCursorSearchRequest']
-export type TaskItemCursorPage = Omit<components['schemas']['CursorPageOfTaskItemDto'], 'data'> & {
-  data: TaskItemDto[]
+export type TaskItemCursorPage = Omit<components['schemas']['CursorPageOfTaskItemDto'], 'items'> & {
+  items: TaskItemDto[]
 }
 
 export type TaskItemSummaryDto = Omit<components['schemas']['TaskItemSummaryDto'], 'byStatus' | 'total'> & {

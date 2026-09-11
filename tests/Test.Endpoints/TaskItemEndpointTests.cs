@@ -172,8 +172,8 @@ public class TaskItemEndpointTests
         var root = doc.RootElement;
         // Keyset pages carry no total (GR-18): HasMore replaces it.
         Assert.IsFalse(root.GetProperty("hasMore").GetBoolean());
-        var data = root.GetProperty("data");
-        Assert.Contains(e => e.GetProperty("title").GetString()!.Contains("SearchTarget"), data.EnumerateArray());
+        var items = root.GetProperty("items");
+        Assert.Contains(e => e.GetProperty("title").GetString()!.Contains("SearchTarget"), items.EnumerateArray());
     }
 
     /// <summary>Verifies that given empty database, when search, then returns empty page.</summary>
@@ -197,7 +197,7 @@ public class TaskItemEndpointTests
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, responseBody);
         var doc = JsonDocument.Parse(responseBody);
         var root = doc.RootElement;
-        Assert.IsTrue(root.TryGetProperty("data", out _));
+        Assert.IsTrue(root.TryGetProperty("items", out _));
     }
 
     /// <summary>Verifies that given full CRUD cycle, when all operations executed, then all succeed.</summary>

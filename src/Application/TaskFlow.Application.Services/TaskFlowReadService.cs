@@ -1,3 +1,4 @@
+using EF.Cache;
 using EF.Common.Contracts;
 using System.Runtime.CompilerServices;
 using TaskFlow.Application.Contracts.Caching;
@@ -22,7 +23,7 @@ internal sealed class TaskFlowReadService(
     ITaskItemRepositoryQuery taskItemRepoQuery,
     ICategoryRepositoryQuery categoryRepoQuery,
     ITagRepositoryQuery tagRepoQuery,
-    ITaskFlowCache cache) : ITaskFlowReadService
+    ITypedCache cache) : ITaskFlowReadService
 {
     private Guid TenantId => requestContext.TenantId ?? Guid.Empty;
 
@@ -31,20 +32,22 @@ internal sealed class TaskFlowReadService(
     // returns the previous snapshot rather than making every caller wait on a slow aggregate.
     public Task<TaskItemSummaryDto> GetTaskItemSummaryAsync(CancellationToken ct = default) =>
         cache.GetOrSetAsync(
-            new CacheKey(CacheKind.TaskSummary, TenantId),
+            CacheKind.TaskSummary,
+            TenantId,
             token => taskItemRepoQuery.GetSummaryAsync(TenantId, token),
-            CacheProfile.Summary,
-            ct);
+            CacheProfiles.Summary,
+            ct: ct);
 
     /// <inheritdoc />
     // Metadata profile: minutes, eagerly refreshed. Category and tag lists change rarely and every picker
     // in every client asks for them.
     public Task<TaskMetadataDto> GetTaskMetadataAsync(CancellationToken ct = default) =>
         cache.GetOrSetAsync(
-            new CacheKey(CacheKind.TaskMetadata, TenantId),
+            CacheKind.TaskMetadata,
+            TenantId,
             BuildMetadataAsync,
-            CacheProfile.Metadata,
-            ct);
+            CacheProfiles.Metadata,
+            ct: ct);
 
     /// <inheritdoc />
     public async IAsyncEnumerable<TaskItemExportDto> StreamTaskItemExportAsync(
@@ -70,8 +73,8 @@ internal sealed class TaskFlowReadService(
     /// <summary>Builds the metadata snapshot. Immutable by construction - nothing cached is an entity.</summary>
     private async Task<TaskMetadataDto> BuildMetadataAsync(CancellationToken ct)
     {
-        var categories = await categoryRepoQuery.GetActiveCategoriesAsync(PageSizeLimits.MetadataMax, ct);
-        var tags = await tagRepoQuery.GetTagsAsync(PageSizeLimits.MetadataMax, ct);
+        var categories = await categoryRepoQuery.GetActiveCategoriesAsync(TaskMetadataDto.MetadataMax, ct);
+        var tags = await tagRepoQuery.GetTagsAsync(TaskMetadataDto.MetadataMax, ct);
 
         return new TaskMetadataDto
         {

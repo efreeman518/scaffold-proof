@@ -1,11 +1,14 @@
+using EF.BackgroundServices.Leased;
+
 namespace TaskFlow.Scheduler.Workers;
 
 /// <summary>
 /// Bound on the deferred blob-delete drain (D-055). Configuration rather than a constant because the right
 /// value is a property of the storage account and the replica count, not of this code: the useful ceiling is
 /// what the account tolerates divided by the number of Scheduler replicas, and both change per environment.
+/// The inherited members carry the poll, lease and batch shape of the drain loop itself.
 /// </summary>
-public class BlobDeleteSettings
+public class BlobDeleteSettings : LeasedWorkerOptions
 {
     public const string ConfigSectionName = "BlobDelete";
 

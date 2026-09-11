@@ -1,11 +1,12 @@
-using TaskFlow.Infrastructure.Repositories;
+using EF.Data.Contracts;
 
 namespace Test.Unit.Infrastructure;
 
 /// <summary>
-/// Validates the retention batching loop. The point of the helper is that one sweep has a hard ceiling on how
-/// long it can hold the database, so the two properties worth pinning are the statement count for a known row
-/// count and the stop conditions: a short batch ends the sweep, and maxBatches ends it regardless.
+/// Validates the retention batching loop, now EF.Data.Contracts' (package request 10). The point of the helper
+/// is that one sweep has a hard ceiling on how long it can hold the database, so the two properties worth
+/// pinning are the statement count for a known row count and the stop conditions: a short batch ends the sweep,
+/// and the batch ceiling ends it by throwing rather than reporting a complete sweep that is not one.
 /// Pure-unit tier: the loop is exercised through a delegate, so no database is involved.
 /// </summary>
 [TestClass]
@@ -50,20 +51,25 @@ public class BatchedExecuteTests
         Assert.AreEqual(2000, total);
     }
 
-    /// <summary>The ceiling holds: a backlog larger than maxBatches leaves the rest for the next run.</summary>
+    /// <summary>
+    /// The ceiling holds and is reported: a backlog larger than maxBatches issues exactly maxBatches
+    /// statements and then throws, so a caller cannot mistake a truncated sweep for a finished one. The
+    /// app-local helper this replaced returned the partial total silently, which hid a retention window
+    /// that never drained.
+    /// </summary>
     [TestMethod]
-    public async Task RunBatchedAsync_StopsAtMaxBatches()
+    public async Task RunBatchedAsync_AtMaxBatches_ThrowsRatherThanReportingAFinishedSweep()
     {
         var statements = 0;
 
-        var total = await BatchedExecute.RunBatchedAsync((size, _) =>
-        {
-            statements++;
-            return Task.FromResult(size);
-        }, batchSize: 100, maxBatches: 5, ct: TestContext.CancellationToken);
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            BatchedExecute.RunBatchedAsync((size, _) =>
+            {
+                statements++;
+                return Task.FromResult(size);
+            }, batchSize: 100, maxBatches: 5, ct: TestContext.CancellationToken));
 
         Assert.AreEqual(5, statements);
-        Assert.AreEqual(500, total);
     }
 
     /// <summary>An empty window costs exactly one statement.</summary>

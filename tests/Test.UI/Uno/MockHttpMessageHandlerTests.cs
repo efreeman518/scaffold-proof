@@ -44,8 +44,8 @@ public class MockHttpMessageHandlerTests
         var result = await response.Content.ReadFromJsonAsync<CursorPage<TaskItemDto>>(TestContext.CancellationToken);
 
         Assert.IsNotNull(result);
-        Assert.IsNotEmpty(result.Data!);
-        Assert.AreEqual("Build dashboard UI", result.Data![0].Title);
+        Assert.IsNotEmpty(result.Items!);
+        Assert.AreEqual("Build dashboard UI", result.Items![0].Title);
         Assert.IsTrue(result.HasMore);
         Assert.IsNotNull(result.NextCursor);
     }

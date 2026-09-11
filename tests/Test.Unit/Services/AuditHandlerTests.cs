@@ -1,7 +1,7 @@
+using EF.Audit.Contracts;
 using EF.Common.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
-using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Application.MessageHandlers;
 
 namespace Test.Unit.Services;
@@ -45,7 +45,7 @@ public class AuditHandlerTests
         await CreateHandler().HandleAsync(message, CancellationToken.None);
 
         _auditLogRepositoryMock.Verify(
-            repository => repository.AppendAsync<Guid>(
+            repository => repository.AppendAsync<string, Guid>(
                 It.Is<AuditEntry<string, Guid>>(entry =>
                     entry.Id == message.Id &&
                     entry.TenantId == message.TenantId &&
@@ -76,7 +76,7 @@ public class AuditHandlerTests
         await CreateHandler().HandleAsync(message, CancellationToken.None);
 
         _auditLogRepositoryMock.Verify(
-            repository => repository.AppendAsync<Guid?>(
+            repository => repository.AppendAsync<string, Guid?>(
                 It.Is<AuditEntry<string, Guid?>>(entry =>
                     entry.Id == message.Id &&
                     entry.TenantId == null &&

@@ -1,19 +1,20 @@
+using EF.Storage.Contracts;
+using EF.Storage.S3;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Bootstrapper;
-using TaskFlow.Infrastructure.Storage.S3;
 
 namespace Test.Unit.Infrastructure;
 
 /// <summary>
 /// Coverage for the D-037 S3 object-storage arm: the eager <c>Storage:S3:PublicServiceUrl</c> fail-fast
 /// (presigned download URLs are host-bound, so a missing public endpoint is a configuration error the
-/// moment the arm is selected) and that the arm resolves <see cref="IBlobStorageRepository"/> to
+/// moment the arm is selected) and that the arm resolves <see cref="IObjectStorageRepository"/> to
 /// <see cref="S3ObjectStorageRepository"/> in a plain DI container. <c>RegisterServices.AddS3StorageServices</c>
 /// is internal, exercised directly here via the <c>InternalsVisibleTo</c> grant on <c>TaskFlow.Bootstrapper</c>
 /// (the same grant <c>ProviderSwitchArchitectureTests</c> relies on via reflection for every switch's default arm).
-/// Test.Endpoints exercises attachments against an in-memory fake <c>IBlobStorageRepository</c>, not this
+/// Test.Endpoints exercises attachments against an in-memory fake <c>IObjectStorageRepository</c>, not this
 /// arm, so DI-only coverage for it belongs here.
 /// Pure-unit tier (in-memory IConfiguration / ServiceCollection): no live S3/MinIO endpoint.
 /// </summary>
@@ -51,7 +52,7 @@ public class S3StorageRegistrationTests
         RegisterServices.AddS3StorageServices(services, config);
         using var provider = services.BuildServiceProvider();
 
-        Assert.IsInstanceOfType<S3ObjectStorageRepository>(provider.GetRequiredService<IBlobStorageRepository>());
+        Assert.IsInstanceOfType<S3ObjectStorageRepository>(provider.GetRequiredService<IObjectStorageRepository>());
     }
 
     [TestMethod]

@@ -1,6 +1,8 @@
+using EF.Common;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Domain.Shared;
+using TaskFlow.Domain.Shared.Constants;
 using TaskFlow.Domain.Shared.Events;
 using TaskFlow.Observability.Meters;
 using TaskFlow.Scheduler.Abstractions;
@@ -82,17 +84,18 @@ public sealed class OverdueTaskCheckHandler(
     private void Stage(OverdueTaskRow row, DateTimeOffset asOfUtc)
     {
         var messageId = DeterministicGuid.Create(
+            DomainConstants.DETERMINISTIC_ID_NAMESPACE,
             "overdue",
             row.TenantId.ToString(),
             row.Id.ToString(),
             row.DueDate.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
 
-        var envelope = IntegrationEventEnvelope.From(
+        var envelope = TaskFlowIntegrationEvents.Envelope(
             new TaskItemOverdueSuspectedEvent(row.Id, row.TenantId, row.DueDate),
             asOfUtc,
             correlationId: null,
             id: messageId);
 
-        outbox.Stage(envelope, messageId);
+        outbox.Stage(envelope, row.TenantId, messageId);
     }
 }

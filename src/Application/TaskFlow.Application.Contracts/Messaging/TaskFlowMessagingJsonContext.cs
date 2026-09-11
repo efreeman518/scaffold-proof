@@ -1,3 +1,4 @@
+using EF.Messaging;
 using System.Text.Json.Serialization;
 using TaskFlow.Domain.Shared;
 using TaskFlow.Domain.Shared.Events;
@@ -8,8 +9,9 @@ namespace TaskFlow.Application.Contracts.Messaging;
 /// D-048: source-generated serialization for the messaging wire shapes. Separate from
 /// <c>TaskFlow.Application.Models.Serialization.TaskFlowJsonContext</c> for two reasons, both structural:
 /// <list type="bullet">
-/// <item><see cref="IntegrationEventEnvelope"/> lives here, and Application.Contracts references
-/// Application.Models, not the other way round - a single context would mean an inverted reference.</item>
+/// <item><see cref="IntegrationEventEnvelope"/> is the messaging wire shape, and Application.Contracts
+/// references Application.Models, not the other way round - a single context would mean an inverted
+/// reference.</item>
 /// <item>The broker payload is a cross-service contract serialized with default (PascalCase) naming, while
 /// the HTTP context declares camelCase. These attributes apply whenever the context is used directly
 /// (<c>Default.IntegrationEventEnvelope</c>), which is every messaging call site, so the naming has to be
@@ -21,8 +23,8 @@ namespace TaskFlow.Application.Contracts.Messaging;
 /// </summary>
 [JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
 [JsonSerializable(typeof(IntegrationEventEnvelope))]
-// Payload records. IntegrationEventEnvelope.From serializes the raised event through this context, so the
-// set here must match IntegrationEventEnvelope.Versions - an event type missing from either is dropped
+// Payload records. TaskFlowIntegrationEvents.Envelope serializes the raised event through this context, so
+// the set here must match TaskFlowIntegrationEvents.Versions - an event type missing from either is dropped
 // (unknown type) or falls back to reflection.
 [JsonSerializable(typeof(IDomainEvent))]
 [JsonSerializable(typeof(TaskItemCreatedEvent))]

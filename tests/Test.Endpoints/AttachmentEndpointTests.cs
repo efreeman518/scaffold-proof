@@ -1,3 +1,4 @@
+using EF.Storage.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 using System.Net;
 using System.Net.Http.Json;
@@ -11,7 +12,7 @@ namespace Test.Endpoints;
 
 /// <summary>
 /// HTTP contract tests for <c>/api/v1/attachments</c> CRUD plus the multipart upload endpoint, which is
-/// covered using an in-memory <c>IBlobStorageRepository</c> swapped in via <c>WithWebHostBuilder</c>.
+/// covered using an in-memory <c>IObjectStorageRepository</c> swapped in via <c>WithWebHostBuilder</c>.
 /// Endpoint tier (WebApplicationFactory + EF InMemory via <c>CustomApiFactory</c>): covers routing,
 /// envelope shape, and multipart binding without an Azurite container.
 /// </summary>
@@ -200,7 +201,7 @@ public class AttachmentEndpointTests
         {
             builder.ConfigureServices(services =>
             {
-                services.AddSingleton<IBlobStorageRepository>(new InMemoryBlobStorageRepository());
+                services.AddSingleton<IObjectStorageRepository>(new InMemoryBlobStorageRepository());
             });
         });
         using var client = uploadFactory.CreateClient();
@@ -228,41 +229,56 @@ public class AttachmentEndpointTests
 }
 
 /// <summary>Supports test execution for Test.endpoints scenarios.</summary>
-internal class InMemoryBlobStorageRepository : IBlobStorageRepository
+internal class InMemoryBlobStorageRepository : IObjectStorageRepository
 {
     private readonly Dictionary<string, byte[]> _blobs = new();
 
     /// <summary>Verifies upload behavior and protects the expected test contract.</summary>
-    public async Task UploadAsync(string containerName, string blobName, Stream content,
+    public async Task UploadAsync(string containerName, string objectName, Stream content,
         string? contentType = null, IDictionary<string, string>? metadata = null,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         using var ms = new MemoryStream();
-        await content.CopyToAsync(ms, ct);
-        _blobs[$"{containerName}/{blobName}"] = ms.ToArray();
+        await content.CopyToAsync(ms, cancellationToken);
+        _blobs[$"{containerName}/{objectName}"] = ms.ToArray();
     }
 
     /// <summary>Verifies download behavior and protects the expected test contract.</summary>
-    public Task<Stream> DownloadAsync(string containerName, string blobName, CancellationToken ct = default)
+    public Task<Stream> DownloadAsync(string containerName, string objectName, CancellationToken cancellationToken = default)
     {
-        var key = $"{containerName}/{blobName}";
+        var key = $"{containerName}/{objectName}";
         if (!_blobs.TryGetValue(key, out var data))
             throw new InvalidOperationException($"Blob {key} not found");
         return Task.FromResult<Stream>(new MemoryStream(data));
     }
 
     /// <summary>Verifies delete behavior and protects the expected test contract.</summary>
-    public Task DeleteAsync(string containerName, string blobName, CancellationToken ct = default)
+    public Task DeleteAsync(string containerName, string objectName, CancellationToken cancellationToken = default)
     {
-        _blobs.Remove($"{containerName}/{blobName}");
+        _blobs.Remove($"{containerName}/{objectName}");
         return Task.CompletedTask;
     }
 
     /// <summary>Verifies exists behavior and protects the expected test contract.</summary>
-    public Task<bool> ExistsAsync(string containerName, string blobName, CancellationToken ct = default)
-        => Task.FromResult(_blobs.ContainsKey($"{containerName}/{blobName}"));
+    public Task<bool> ExistsAsync(string containerName, string objectName, CancellationToken cancellationToken = default)
+        => Task.FromResult(_blobs.ContainsKey($"{containerName}/{objectName}"));
 
-    /// <summary>Verifies get blob uri behavior and protects the expected test contract.</summary>
-    public Task<Uri> GetBlobUriAsync(string containerName, string blobName, CancellationToken ct = default)
-        => Task.FromResult(new Uri($"https://inmemory.blob.local/{containerName}/{blobName}"));
+    /// <summary>Verifies presigned URL behavior and protects the expected test contract.</summary>
+    public Task<Uri> GetPresignedUrlAsync(string containerName, string objectName, TimeSpan lifetime,
+        ObjectStoragePermissions permissions = ObjectStoragePermissions.Read,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(new Uri($"https://inmemory.blob.local/{containerName}/{objectName}"));
+
+    /// <summary>Verifies listing behavior and protects the expected test contract.</summary>
+    public Task<ObjectStoragePage> ListAsync(string containerName, string? prefix = null,
+        string? continuationToken = null, int pageSize = 100, CancellationToken cancellationToken = default)
+    {
+        var start = $"{containerName}/{prefix}";
+        var items = _blobs.Keys
+            .Where(k => k.StartsWith(start, StringComparison.Ordinal))
+            .Take(pageSize)
+            .Select(k => new ObjectStorageItem(k[(containerName.Length + 1)..], _blobs[k].LongLength, null, null))
+            .ToList();
+        return Task.FromResult(new ObjectStoragePage(items, null));
+    }
 }

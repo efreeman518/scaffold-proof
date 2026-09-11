@@ -1,6 +1,8 @@
 # EF.Messaging.RabbitMq - package definition for the EF.* package coding agent
 
-Consumer: scaffold-proof (TaskFlow) and every scaffold-ai generated app that selects `Messaging:Provider = RabbitMq`. The package is built in this repo as `src/Packages/EF.Messaging.RabbitMq` (tests in `tests/EF.Messaging.RabbitMq.Tests`) and consumed by `src/Infrastructure/TaskFlow.Infrastructure.Messaging.RabbitMq` through a ProjectReference. Porting = move both projects to the EF.* package repository, publish, and swap TaskFlow to a PackageReference; the public API below is the contract.
+**Status (2026-09-10): shipped as `EF.Messaging.RabbitMq` 1.1.101+.** The in-repo copy (`src/Packages/EF.Messaging.RabbitMq` and `tests/EF.Messaging.RabbitMq.Tests`) was removed 2026-09-10; `TaskFlow.Infrastructure.Messaging.RabbitMq` now consumes the package via `PackageReference`. The spec below is retained as the as-built API reference.
+
+Consumer: scaffold-proof (TaskFlow) and every scaffold-ai generated app that selects `Messaging:Provider = RabbitMq`. The package was originally built in this repo as `src/Packages/EF.Messaging.RabbitMq` (tests in `tests/EF.Messaging.RabbitMq.Tests`) and consumed by `src/Infrastructure/TaskFlow.Infrastructure.Messaging.RabbitMq` through a ProjectReference; porting moved both projects to the EF.* package repository, published, and swapped TaskFlow to a PackageReference - the public API below is the contract that shipped unchanged.
 
 ## Purpose
 

@@ -1,3 +1,5 @@
+using EF.BackgroundServices.Leased;
+using EF.Messaging;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Text;
 using System.Text.Json;
@@ -75,21 +77,26 @@ public sealed class MessagingConsumerTests
         var oneSecond = TimeSpan.FromSeconds(1);
         var fiveSeconds = TimeSpan.FromSeconds(5);
 
+        // The drain's own settings: a 1s floor, a 5s idle ceiling and a 50-row claim (package request 11).
+        var options = new OutboxDispatcherSettings();
+        Assert.AreEqual(oneSecond, options.PollInterval);
+        Assert.AreEqual(fiveSeconds, options.IdleBackoffMax);
+        Assert.AreEqual(50, options.BatchSize);
+
         // A full batch means more work is waiting: do not sleep at all.
-        Assert.AreEqual(TimeSpan.Zero, LeasedWorkerBase<TaskFlow.Infrastructure.Data.Operational.OutboxMessage>
-            .NextDelay(fiveSeconds, claimed: 50, batchSize: 50));
+        Assert.AreEqual(TimeSpan.Zero,
+            LeasedWorkerBase<OutboxDispatcherSettings>.NextDelay(fiveSeconds, processed: 50, options));
 
         // Partial work resets to the floor.
-        Assert.AreEqual(oneSecond, LeasedWorkerBase<TaskFlow.Infrastructure.Data.Operational.OutboxMessage>
-            .NextDelay(fiveSeconds, claimed: 7, batchSize: 50));
+        Assert.AreEqual(oneSecond,
+            LeasedWorkerBase<OutboxDispatcherSettings>.NextDelay(fiveSeconds, processed: 7, options));
 
         // Idle doubles up to the ceiling and stops there.
         var delay = oneSecond;
         var observed = new List<TimeSpan>();
         for (var i = 0; i < 5; i++)
         {
-            delay = LeasedWorkerBase<TaskFlow.Infrastructure.Data.Operational.OutboxMessage>
-                .NextDelay(delay, claimed: 0, batchSize: 50);
+            delay = LeasedWorkerBase<OutboxDispatcherSettings>.NextDelay(delay, processed: 0, options);
             observed.Add(delay);
         }
 
@@ -117,7 +124,7 @@ public sealed class MessagingConsumerTests
 
     public TestContext TestContext { get; set; } = null!;
 
-    private static IntegrationEventEnvelope Envelope() => IntegrationEventEnvelope.From(
+    private static IntegrationEventEnvelope Envelope() => TaskFlowIntegrationEvents.Envelope(
         new TaskItemCreatedEvent(Guid.CreateVersion7(), TestConstants.TenantId, "guarded"),
         new DateTimeOffset(2026, 9, 4, 12, 0, 0, TimeSpan.Zero),
         correlationId: null,

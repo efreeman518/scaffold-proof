@@ -1,11 +1,12 @@
 ﻿using EF.BackgroundServices.InternalMessageBus;
 using EF.Common.Contracts;
+using EF.Data.Contracts;
+using EF.Data.Encryption;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using TaskFlow.Application.Contracts.Paging;
-using TaskFlow.Bootstrapper.Paging;
+using System.Security.Cryptography;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Cqrs.Registration;
@@ -46,9 +47,27 @@ public static partial class RegisterServices
         services.AddScoped<ITaskFlowReadService, TaskFlowReadService>();
 
         // Idempotent - the web host may already have configured a persisted key ring (Program.cs).
+        // Still required after the cursor protector was retired (D-043): antiforgery and the Blazor
+        // server-side pipeline resolve IDataProtectionProvider.
         services.AddDataProtection();
-        services.AddSingleton<ICursorProtector, DataProtectionCursorProtector>();
+        services.AddSingleton(sp => new CursorCodec(CursorSigningKey(sp.GetRequiredService<ColumnEncryptionKeys>())));
     }
+
+    /// <summary>
+    /// Signing key for <see cref="CursorCodec"/> (package request 27). HKDF over the column-encryption DEK
+    /// under its own info label rather than a new configured secret: the DEK is already required and shared
+    /// by every replica, and a second key to rotate is a second thing to get wrong. Rotating the DEK
+    /// invalidates outstanding cursors, which is the intended effect of a rotation.
+    /// <para>
+    /// With <c>Database:Encryption:Enabled=false</c> there is no shared secret to derive from, so cursors
+    /// are signed with a per-process key and stop validating after a restart or on a sibling replica (400,
+    /// never a silent reset to page one) - the same caveat the in-memory Data Protection ring carried.
+    /// </para>
+    /// </summary>
+    private static byte[] CursorSigningKey(ColumnEncryptionKeys keys) =>
+        keys.DataEncryptionKey is byte[] dek
+            ? HKDF.DeriveKey(HashAlgorithmName.SHA256, dek, CursorCodec.SignatureSizeBytes, info: "TaskFlow.Cursor.v1"u8.ToArray())
+            : RandomNumberGenerator.GetBytes(CursorCodec.SignatureSizeBytes);
 
     /// <summary>Registers service application services dependencies in the service container.</summary>
     private static void AddServiceApplicationServices(IServiceCollection services)

@@ -1,3 +1,4 @@
+using EF.Messaging;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Interceptors;
@@ -13,10 +14,10 @@ public sealed class OutboxStaging(TaskFlowDbContextTrxn db, TimeProvider? timePr
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     /// <inheritdoc />
-    public void Stage(IntegrationEventEnvelope envelope, Guid? deterministicId = null)
+    public void Stage(IntegrationEventEnvelope envelope, Guid tenantId, Guid? deterministicId = null)
     {
         ArgumentNullException.ThrowIfNull(envelope);
         var staged = deterministicId is null ? envelope : envelope with { Id = deterministicId.Value };
-        db.OutboxMessages.Add(OutboxStagingInterceptor.ToRow(staged, _timeProvider.GetUtcNow()));
+        db.OutboxMessages.Add(OutboxStagingInterceptor.ToRow(staged, tenantId, _timeProvider.GetUtcNow()));
     }
 }

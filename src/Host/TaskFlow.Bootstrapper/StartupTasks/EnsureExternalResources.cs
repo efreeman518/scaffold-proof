@@ -1,5 +1,7 @@
+using EF.Common.Contracts;
 using Azure.Data.Tables;
 using Azure.Storage.Blobs;
+using EF.Storage.S3;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
@@ -7,10 +9,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using TaskFlow.Application.Contracts.Locking;
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Infrastructure.Storage;
-using TaskFlow.Infrastructure.Storage.S3;
 
 namespace TaskFlow.Bootstrapper.StartupTasks;
 

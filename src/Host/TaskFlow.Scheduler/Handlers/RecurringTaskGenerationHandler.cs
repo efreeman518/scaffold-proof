@@ -1,9 +1,11 @@
+using EF.Common;
 using System.Globalization;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Model.ValueObjects;
 using TaskFlow.Domain.Shared;
+using TaskFlow.Domain.Shared.Constants;
 using TaskFlow.Domain.Shared.Events;
 using TaskFlow.Observability.Meters;
 using TaskFlow.Scheduler.Abstractions;
@@ -114,18 +116,19 @@ public sealed class RecurringTaskGenerationHandler(
     private void Stage(TaskItem occurrence, DateTimeOffset asOfUtc)
     {
         var messageId = occurrence.Id.Value;
-        var envelope = IntegrationEventEnvelope.From(
+        var envelope = TaskFlowIntegrationEvents.Envelope(
             new TaskItemCreatedEvent(messageId, occurrence.TenantId.Value, occurrence.Title),
             asOfUtc,
             correlationId: null,
             id: messageId);
 
-        outbox.Stage(envelope, messageId);
+        outbox.Stage(envelope, occurrence.TenantId.Value, messageId);
     }
 
     /// <summary>UUIDv5 over (tenant, template, occurrence): the same occurrence always gets the same id.</summary>
     private static Guid OccurrenceId(Guid tenantId, Guid templateId, DateTimeOffset occurrenceUtc) =>
         DeterministicGuid.Create(
+            DomainConstants.DETERMINISTIC_ID_NAMESPACE,
             "recurrence",
             tenantId.ToString(),
             templateId.ToString(),

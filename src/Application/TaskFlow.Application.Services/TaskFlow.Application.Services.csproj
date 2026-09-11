@@ -8,6 +8,7 @@
   <ItemGroup>
     <PackageReference Include="EF.Common" />
     <PackageReference Include="EF.Common.Contracts" />
+    <PackageReference Include="EF.Storage.Contracts" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,10 +1,9 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <PackageReference Include="EF.Data" />
     <PackageReference Include="EF.Data.Contracts" />
-    <!-- D-028 provider-neutral upsert (MERGE / ON CONFLICT) for the consumer inbox. -->
-    <PackageReference Include="FlexLabs.EntityFrameworkCore.Upsert" />
+    <PackageReference Include="EF.Audit.Contracts" />
   </ItemGroup>
 
   <ItemGroup>

@@ -215,7 +215,7 @@ public class RepositorySearchTranslationTests
         }
 
         await using var queryDb = DbContainerFixture.CreateQueryContext();
-        var repo = new TaskItemRepositoryQuery(queryDb, TestColumnEncryption.Keys);
+        var repo = new TaskItemRepositoryQuery(queryDb, TestColumnEncryption.Keys, TestCursorCodec.Instance);
         var page = await repo.SearchTaskItemsAsync(new TaskItemCursorSearchRequest
         {
             PageSize = 10,
@@ -230,13 +230,13 @@ public class RepositorySearchTranslationTests
                 DueAfter = dueDate.AddDays(-2),
                 DueBefore = dueDate.AddDays(1)
             }
-        }, after: null, TestContext.CancellationToken);
+        }, TenantId, TestContext.CancellationToken);
 
-        Assert.HasCount(1, page.Data);
+        Assert.HasCount(1, page.Items);
         Assert.IsFalse(page.HasMore);
-        Assert.AreEqual($"{marker}-Child", page.Data[0].Title);
-        Assert.AreEqual(categoryId, page.Data[0].CategoryId);
-        Assert.AreEqual(dueDate, page.Data[0].DueDate);
+        Assert.AreEqual($"{marker}-Child", page.Items[0].Title);
+        Assert.AreEqual(categoryId, page.Items[0].CategoryId);
+        Assert.AreEqual(dueDate, page.Items[0].DueDate);
     }
 
     /// <summary>
@@ -259,24 +259,24 @@ public class RepositorySearchTranslationTests
         }
 
         await using var queryDb = DbContainerFixture.CreateQueryContext();
-        var repo = new TaskItemRepositoryQuery(queryDb, TestColumnEncryption.Keys);
+        var repo = new TaskItemRepositoryQuery(queryDb, TestColumnEncryption.Keys, TestCursorCodec.Instance);
 
         // 18:00 +05:00 is 13:00Z: one hour after the due instant, so the task is due before it.
         var matching = await repo.SearchTaskItemsAsync(new TaskItemCursorSearchRequest
         {
             PageSize = 10,
             Filter = new TaskItemSearchFilter { SearchTerm = marker, TenantId = TenantId, DueBefore = new DateTimeOffset(2026, 6, 1, 18, 0, 0, TimeSpan.FromHours(5)) }
-        }, after: null, TestContext.CancellationToken);
+        }, TenantId, TestContext.CancellationToken);
         // 16:00 +05:00 is 11:00Z: one hour before the due instant, so nothing matches.
         var none = await repo.SearchTaskItemsAsync(new TaskItemCursorSearchRequest
         {
             PageSize = 10,
             Filter = new TaskItemSearchFilter { SearchTerm = marker, TenantId = TenantId, DueBefore = new DateTimeOffset(2026, 6, 1, 16, 0, 0, TimeSpan.FromHours(5)) }
-        }, after: null, TestContext.CancellationToken);
+        }, TenantId, TestContext.CancellationToken);
 
-        Assert.HasCount(1, matching.Data);
-        Assert.AreEqual(dueUtc, matching.Data[0].DueDate);
-        Assert.IsEmpty(none.Data);
+        Assert.HasCount(1, matching.Items);
+        Assert.AreEqual(dueUtc, matching.Items[0].DueDate);
+        Assert.IsEmpty(none.Items);
     }
 
     /// <summary>Verifies attachment search translates tenant, enum, owner ID, and string filters against SQL.</summary>

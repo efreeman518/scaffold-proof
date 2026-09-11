@@ -1,7 +1,7 @@
+using EF.Audit.Contracts;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Repositories;
 using TaskFlow.Infrastructure.Storage;
@@ -72,6 +72,7 @@ public static partial class RegisterServices
 
         services.AddScoped<IAuditLogRepository>(sp => new RelationalAuditLogRepository(
             sp.GetRequiredService<TaskFlowDbContextTrxn>(),
-            sp.GetRequiredService<IOptions<AuditLogStorageSettings>>().Value.NullTenantPartitionKey));
+            sp.GetRequiredService<IOptions<AuditLogStorageSettings>>().Value.Audit.SystemTenantId,
+            sp.GetRequiredService<IOptions<AuditLogStorageSettings>>().Value.Audit.PurgeBatchSize));
     }
 }

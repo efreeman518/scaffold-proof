@@ -1,11 +1,7 @@
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Moq;
+using EF.Cache;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Caching;
 using TaskFlow.Infrastructure.Caching;
-using TaskFlow.Observability.Meters;
-using ZiggyCreatures.Caching.Fusion;
 
 namespace Test.Unit.Infrastructure;
 
@@ -14,7 +10,7 @@ namespace Test.Unit.Infrastructure;
 /// deployments sharing one Redis and retires entries when a snapshot's shape changes, and the tags are what
 /// a writer names when it invalidates without knowing which snapshots exist. A silent change to either is a
 /// cross-environment leak or a stale read that no other test would catch.
-/// Pure-unit tier: a real FusionCache instance with no distributed tier.
+/// Pure-unit tier: the package's static key renderer, no cache instance.
 /// </summary>
 [TestClass]
 [TestCategory("Unit")]
@@ -22,48 +18,73 @@ public class TaskFlowCacheKeyTests
 {
     private static readonly Guid TenantId = Guid.Parse("11111111-2222-3333-4444-555555555555");
 
-    /// <summary>The key carries environment, schema version, tenant, and kind, in that order.</summary>
+    /// <summary>The key carries environment, schema version, kind, and tenant, in that order.</summary>
     [TestMethod]
     public void Render_ProducesTheDocumentedKeyShape()
     {
-        var cache = Build(new CacheSettings { Name = AppConstants.DEFAULT_CACHE, SchemaVersion = 1 }, "Production");
-
         Assert.AreEqual(
-            $"Production:1:{TenantId:N}:{CacheKind.TaskSummary}",
-            cache.Render(new CacheKey(CacheKind.TaskSummary, TenantId)));
+            $"Production:1:{CacheKind.TaskSummary}:{TenantId:N}",
+            Render("Production", 1, TaskFlowCache.Key(CacheKind.TaskSummary, TenantId)));
     }
 
     /// <summary>A discriminator is appended, so variants of one kind never collide.</summary>
     [TestMethod]
     public void Render_AppendsTheDiscriminator()
     {
-        var cache = Build(new CacheSettings { Name = AppConstants.DEFAULT_CACHE, SchemaVersion = 1 }, "Development");
-
         Assert.AreEqual(
-            $"Development:1:{TenantId:N}:{CacheKind.TaskMetadata}:active",
-            cache.Render(new CacheKey(CacheKind.TaskMetadata, TenantId, "active")));
+            $"Development:1:{CacheKind.TaskMetadata}:{TenantId:N}:active",
+            Render("Development", 1, TaskFlowCache.Key(CacheKind.TaskMetadata, TenantId, "active")));
     }
 
     /// <summary>Bumping the schema version changes every key, which is how a shape change retires old entries.</summary>
     [TestMethod]
     public void Render_SchemaVersionBump_ChangesEveryKey()
     {
-        var key = new CacheKey(CacheKind.TaskSummary, TenantId);
-        var v1 = Build(new CacheSettings { Name = AppConstants.DEFAULT_CACHE, SchemaVersion = 1 }, "Production");
-        var v2 = Build(new CacheSettings { Name = AppConstants.DEFAULT_CACHE, SchemaVersion = 2 }, "Production");
+        var key = TaskFlowCache.Key(CacheKind.TaskSummary, TenantId);
 
-        Assert.AreNotEqual(v1.Render(key), v2.Render(key));
+        Assert.AreNotEqual(Render("Production", 1, key), Render("Production", 2, key));
     }
 
     /// <summary>Two environments sharing one Redis never read each other's entries.</summary>
     [TestMethod]
     public void Render_EnvironmentsAreIsolated()
     {
-        var key = new CacheKey(CacheKind.TaskSummary, TenantId);
-        var staging = Build(new CacheSettings { Name = AppConstants.DEFAULT_CACHE }, "Staging");
-        var production = Build(new CacheSettings { Name = AppConstants.DEFAULT_CACHE }, "Production");
+        var key = TaskFlowCache.Key(CacheKind.TaskSummary, TenantId);
 
-        Assert.AreNotEqual(staging.Render(key), production.Render(key));
+        Assert.AreNotEqual(Render("Staging", 2, key), Render("Production", 2, key));
+    }
+
+    /// <summary>
+    /// The registration stamps the deployment environment and the current schema version onto the settings the
+    /// cache renders keys from. Both are code decisions the CacheSettings section cannot express.
+    /// </summary>
+    [TestMethod]
+    public void ApplyTaskFlowDefaults_StampsEnvironmentSchemaVersionAndProfiles()
+    {
+        var settings = RegisterCachingServices.ApplyTaskFlowDefaults(
+            new CacheSettings { Name = AppConstants.DEFAULT_CACHE }, "Production");
+
+        Assert.AreEqual("Production", settings.KeyNamespace);
+        Assert.AreEqual(RegisterCachingServices.SchemaVersion, settings.SchemaVersion);
+
+        // The summary is held for seconds: a dashboard count is visibly wrong when stale, and the instance
+        // default of 30 minutes would serve one for the whole poll interval of every client.
+        Assert.AreEqual(5, settings.Profiles[CacheProfiles.Summary].DurationSeconds);
+        Assert.AreEqual(500, settings.Profiles[CacheProfiles.Summary].FactorySoftTimeoutMilliseconds);
+        Assert.AreEqual(300, settings.Profiles[CacheProfiles.Metadata].DurationSeconds);
+        Assert.AreEqual(0.8f, settings.Profiles[CacheProfiles.Metadata].EagerRefreshThreshold);
+    }
+
+    /// <summary>A profile already configured for a deployment wins over the code default.</summary>
+    [TestMethod]
+    public void ApplyTaskFlowDefaults_KeepsAConfiguredProfile()
+    {
+        var settings = new CacheSettings();
+        settings.Profiles[CacheProfiles.Summary] = new CacheProfileOptions { DurationSeconds = 30 };
+
+        RegisterCachingServices.ApplyTaskFlowDefaults(settings, "Production");
+
+        Assert.AreEqual(30, settings.Profiles[CacheProfiles.Summary].DurationSeconds);
     }
 
     /// <summary>The summary depends on tasks; the metadata snapshot depends on categories and tags.</summary>
@@ -72,7 +93,7 @@ public class TaskFlowCacheKeyTests
     {
         CollectionAssert.AreEquivalent(
             new[] { CacheTags.Tenant(TenantId), CacheTags.Entity(TenantId, CacheTags.TaskItem) },
-            FusionTaskFlowCache.TagsFor(new CacheKey(CacheKind.TaskSummary, TenantId)).ToArray());
+            TaskFlowCache.TagsFor(CacheKind.TaskSummary, TenantId).ToArray());
 
         CollectionAssert.AreEquivalent(
             new[]
@@ -81,7 +102,7 @@ public class TaskFlowCacheKeyTests
                 CacheTags.Entity(TenantId, CacheTags.Category),
                 CacheTags.Entity(TenantId, CacheTags.Tag)
             },
-            FusionTaskFlowCache.TagsFor(new CacheKey(CacheKind.TaskMetadata, TenantId)).ToArray());
+            TaskFlowCache.TagsFor(CacheKind.TaskMetadata, TenantId).ToArray());
     }
 
     /// <summary>Tags are tenant-scoped, so one tenant's write never evicts another tenant's snapshot.</summary>
@@ -97,20 +118,6 @@ public class TaskFlowCacheKeyTests
         Assert.StartsWith(CacheTags.Tenant(TenantId), CacheTags.Entity(TenantId, CacheTags.TaskItem));
     }
 
-    /// <summary>Builds the cache over a real named FusionCache instance with no distributed tier.</summary>
-    private static FusionTaskFlowCache Build(CacheSettings settings, string environmentName)
-    {
-        var services = new ServiceCollection();
-        services.AddFusionCache(settings.Name);
-        var provider = services.BuildServiceProvider();
-
-        var environment = new Mock<IHostEnvironment>();
-        environment.SetupGet(e => e.EnvironmentName).Returns(environmentName);
-
-        return new FusionTaskFlowCache(
-            provider.GetRequiredService<IFusionCacheProvider>(),
-            settings,
-            new CacheMeter(),
-            environment.Object);
-    }
+    private static string Render(string environmentName, int schemaVersion, CacheKey key) =>
+        TypedCache.RenderKey(environmentName, schemaVersion, key);
 }

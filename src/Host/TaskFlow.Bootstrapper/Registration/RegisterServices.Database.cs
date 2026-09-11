@@ -1,5 +1,6 @@
 ﻿using EF.Data;
 using EF.Data.Contracts;
+using EF.Data.Encryption;
 using EF.Data.Interceptors;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -7,7 +8,6 @@ using Microsoft.Extensions.DependencyInjection;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Infrastructure.Data;
-using TaskFlow.Infrastructure.Data.Encryption;
 using TaskFlow.Infrastructure.Data.Interceptors;
 using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Infrastructure.Data.Provider;
@@ -28,7 +28,9 @@ public static partial class RegisterServices
         services.AddSingleton<VersionTimestampInterceptor>();
         // D-026: stages raised domain events as outbox rows in the same SaveChanges as the domain write.
         services.AddSingleton<OutboxStagingInterceptor>();
-        services.AddTransient<ConnectionNoLockInterceptor>();
+        // No ConnectionNoLockInterceptor registration: nothing ever added it to a context (D-004 keeps the
+        // read isolation default on both providers), and EF.Data 1.1.100 marks it [Obsolete] in favor of
+        // EF.Data.SqlServer (package request 3), so the dead line was the only obsolete usage in the tree.
         // D-023: one AES-GCM column encryptor per process, bound from Database:Encryption (fails fast without a key).
         services.AddColumnEncryption(config);
 

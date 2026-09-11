@@ -1,3 +1,4 @@
+using EF.Common.Contracts;
 using System.Reflection;
 using System.Text;
 using TaskFlow.Application.Contracts.Messaging;
@@ -92,13 +93,13 @@ public class JsonContextCompletenessTests
         foreach (var eventType in eventTypes)
         {
             var generated = TaskFlowMessagingJsonContext.Default.GetTypeInfo(eventType) is not null;
-            var known = IntegrationEventEnvelope.IsKnownType(eventType.Name);
+            var known = TaskFlowIntegrationEvents.IsKnownType(eventType.Name);
 
             Assert.AreEqual(known, generated,
                 $"{eventType.Name} is {(known ? "listed in" : "absent from")} "
-                + $"IntegrationEventEnvelope.Versions but {(generated ? "is" : "is not")} registered on "
-                + "TaskFlowMessagingJsonContext. IntegrationEventEnvelope.From resolves the payload through "
-                + "that context and throws when it is missing, so the two lists have to agree.");
+                + $"TaskFlowIntegrationEvents.Versions but {(generated ? "is" : "is not")} registered on "
+                + "TaskFlowMessagingJsonContext. TaskFlowIntegrationEvents.Envelope resolves the payload "
+                + "through that context and throws when it is missing, so the two lists have to agree.");
         }
     }
 
@@ -118,9 +119,10 @@ public class JsonContextCompletenessTests
     [TestMethod]
     public void Given_StagedOutboxRow_When_Serialized_Then_KeepsPascalCaseAndRoundTrips()
     {
-        var raised = new TaskItemCreatedEvent(Guid.CreateVersion7(), Guid.CreateVersion7(), "guarded");
-        var envelope = IntegrationEventEnvelope.From(raised, DateTimeOffset.UtcNow, correlationId: null);
-        var row = OutboxStagingInterceptor.ToRow(envelope, DateTimeOffset.UtcNow);
+        var tenantId = Guid.CreateVersion7();
+        var raised = new TaskItemCreatedEvent(Guid.CreateVersion7(), tenantId, "guarded");
+        var envelope = TaskFlowIntegrationEvents.Envelope(raised, DateTimeOffset.UtcNow, correlationId: null);
+        var row = OutboxStagingInterceptor.ToRow(envelope, tenantId, DateTimeOffset.UtcNow);
 
         StringAssert.Contains(row.Payload, "\"Type\":",
             "The envelope must stay PascalCase on the wire; a camelCase context here would break every "

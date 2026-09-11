@@ -20,9 +20,11 @@ public abstract class EntityBaseConfiguration<TEntity, TId> : IEntityTypeConfigu
         builder.Property(e => e.Id).ValueGeneratedNever();
         builder.Property(e => e.TenantId).IsRequired();
 
-        // D-021: provider-neutral concurrency token maintained by VersionTimestampInterceptor; the package
-        // RowVersion (SQL Server rowversion) is never mapped.
+        // D-021: provider-neutral concurrency token, EF.Domain.EntityBase<TId>.Version, incremented by
+        // EF.Data.DbContextBase.SaveChangesAsync. Named rather than lambda-ignored for RowVersion: that
+        // member is [Obsolete] as of EF.Domain 1.1.100 (removed in 2.0) and an expression over it would be
+        // a warning, i.e. an error here. It is a SQL Server rowversion assumption and is never mapped.
         builder.Property(e => e.Version).IsConcurrencyToken();
-        builder.Ignore(e => e.RowVersion);
+        builder.Ignore("RowVersion");
     }
 }

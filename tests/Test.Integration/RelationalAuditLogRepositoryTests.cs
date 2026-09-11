@@ -38,7 +38,7 @@ public class RelationalAuditLogRepositoryTests
         var tenantId = Guid.NewGuid();
         var entry = new AuditEntry<string, Guid>
         {
-            Id = Guid.NewGuid(),
+            Id = Guid.CreateVersion7(),
             AuditId = "integration-user",
             TenantId = tenantId,
             EntityType = "TaskItem",
@@ -76,7 +76,7 @@ public class RelationalAuditLogRepositoryTests
         // part of the primary key.
         var systemEntry = new AuditEntry<string, Guid?>
         {
-            Id = Guid.NewGuid(),
+            Id = Guid.CreateVersion7(),
             AuditId = "system",
             TenantId = null,
             EntityType = "Retention",

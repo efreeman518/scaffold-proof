@@ -1,5 +1,7 @@
-﻿using EF.Common.Contracts;
+using EF.Cache;
+using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
+using EF.Storage.Contracts;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Caching;
@@ -109,7 +111,7 @@ internal sealed class UploadAttachmentHandler(
     IRequestContext<string, Guid?> requestContext,
     IAttachmentRepositoryTrxn repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    IBlobStorageRepository? blobStorage = null)
+    IObjectStorageRepository? blobStorage = null)
     : IRequestHandler<UploadAttachmentCommand, Result<DefaultResponse<AttachmentDto>>>
 {
     /// <summary>Handles upload attachment requests and returns the application result.</summary>
@@ -133,7 +135,7 @@ internal sealed class UploadAttachmentHandler(
 
         try
         {
-            await blobStorage.UploadAsync("attachments", blobName, command.FileStream, command.ContentType, ct: ct);
+            await blobStorage.UploadAsync("attachments", blobName, command.FileStream, command.ContentType, cancellationToken: ct);
         }
         catch (Exception ex)
         {
@@ -141,7 +143,8 @@ internal sealed class UploadAttachmentHandler(
             return Result<DefaultResponse<AttachmentDto>>.Failure($"Blob upload failed: {ex.GetBaseException().Message}");
         }
 
-        var storageUri = (await blobStorage.GetBlobUriAsync("attachments", blobName, ct)).ToString();
+        var storageUri = (await blobStorage.GetPresignedUrlAsync(
+            AttachmentBlobs.ContainerName, blobName, AttachmentBlobs.DownloadUrlLifetime, cancellationToken: ct)).ToString();
         var entityResult = Attachment.Create(
             DomainId.From<TenantId>(tenantId),
             command.FileName,
@@ -213,8 +216,8 @@ internal sealed class DeleteAttachmentHandler(
     IRequestContext<string, Guid?> requestContext,
     IAttachmentRepositoryTrxn repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    ITaskFlowCache cache,
-    IBlobStorageRepository? blobStorage = null)
+    ITypedCache cache,
+    IObjectStorageRepository? blobStorage = null)
     : IRequestHandler<DeleteAttachmentCommand, Result>
 {
     /// <summary>Handles delete attachment requests and returns the application result.</summary>

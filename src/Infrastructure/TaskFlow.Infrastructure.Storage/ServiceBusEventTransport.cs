@@ -1,7 +1,7 @@
 using Azure.Messaging.ServiceBus;
+using EF.Messaging.ServiceBus;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Logging;
-using System.Collections.Concurrent;
 using TaskFlow.Infrastructure.Data.Messaging;
 using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Observability.Tracing;
@@ -9,15 +9,14 @@ using TaskFlow.Observability.Tracing;
 namespace TaskFlow.Infrastructure.Storage;
 
 /// <summary>
-/// Service Bus implementation of the outbox transport (D-026). Registered as a singleton so the sender cache is
-/// process-wide: a ServiceBusSender is expensive to build and safe to share. The row id is the broker MessageId,
-/// which is what the namespace duplicate-detection window keys on.
+/// Service Bus implementation of the outbox transport (D-026). Registered as a singleton so the package sender
+/// pool is process-wide: a ServiceBusSender is expensive to build and safe to share. The row id is the broker
+/// MessageId, which is what the namespace duplicate-detection window keys on.
 /// </summary>
-public sealed class ServiceBusEventTransport : IIntegrationEventTransport, IAsyncDisposable
+public sealed class ServiceBusEventTransport : IIntegrationEventTransport
 {
-    private readonly ServiceBusClient _client;
+    private readonly ServiceBusSenderPool _senders;
     private readonly ILogger<ServiceBusEventTransport> _logger;
-    private readonly ConcurrentDictionary<string, ServiceBusSender> _senders = new(StringComparer.Ordinal);
 
     /// <summary>Initializes the transport over the named Service Bus client.</summary>
     public ServiceBusEventTransport(
@@ -25,7 +24,7 @@ public sealed class ServiceBusEventTransport : IIntegrationEventTransport, IAsyn
         ILogger<ServiceBusEventTransport> logger)
     {
         ArgumentNullException.ThrowIfNull(clientFactory);
-        _client = clientFactory.CreateClient("TaskFlowSBClient");
+        _senders = new ServiceBusSenderPool(clientFactory.CreateClient("TaskFlowSBClient"));
         _logger = logger;
     }
 
@@ -39,7 +38,7 @@ public sealed class ServiceBusEventTransport : IIntegrationEventTransport, IAsyn
         ArgumentNullException.ThrowIfNull(messages);
         if (messages.Count == 0) return;
 
-        var sender = _senders.GetOrAdd(destination, _client.CreateSender);
+        var sender = _senders.Get(destination);
 
         // D-047 hot path: one pooled UTF-8 buffer for the whole batch instead of a byte[] per row. Disposed
         // after the last send, because a message body is a slice of it.
@@ -105,13 +104,5 @@ public sealed class ServiceBusEventTransport : IIntegrationEventTransport, IAsyn
             (key, value) => message.ApplicationProperties[key] = value);
 
         return message;
-    }
-
-    /// <summary>Closes every cached sender.</summary>
-    public async ValueTask DisposeAsync()
-    {
-        foreach (var sender in _senders.Values)
-            await sender.DisposeAsync().ConfigureAwait(false);
-        _senders.Clear();
     }
 }

@@ -40,10 +40,13 @@ FlowEngine,TickerQ}/`, fresh baseline, no history-compat shim.
 **Problem**: a native concurrency token (`rowversion`/`xmin`) differs by provider, is opaque as an
 `ETag`, and can't be exercised on the InMemory provider.
 
-**Shape**: `TaskFlowEntityBase<TId>` implements `IVersionedEntity { long Version; DateTimeOffset
-CreatedAtUtc, ModifiedAtUtc; }` (private setters). `VersionTimestampInterceptor`
-(`Infrastructure.Data/Interceptors/`) stamps both timestamps and increments `Version` from its
-pre-save original value for every Added/Modified root. Aggregate-level ETag (D-031): only the root's
+**Shape**: `Version` comes from the package: `EF.Domain.EntityBase<TId>.Version` (a `long`
+implementing `EF.Domain.Contracts.IVersionedEntity`), incremented for every Modified entry by
+`EF.Data.DbContextBase.SaveChangesAsync`, which sets the property's OriginalValue to the pre-increment
+value so EF emits `WHERE Version = @original` (EF.* 1.1.102, package requests 1-2).
+`TaskFlowEntityBase<TId>` adds only `ITimestampedEntity { DateTimeOffset CreatedAtUtc, ModifiedAtUtc; }`
+(private setters), and `VersionTimestampInterceptor` (`Infrastructure.Data/Interceptors/`) stamps the
+timestamps plus the insert baseline `Version = 1`, which the package does not do for Added entries. Aggregate-level ETag (D-031): only the root's
 `Version` is If-Match currency; child mutations call a private `MarkAggregateChanged()` touching
 `ModifiedAtUtc` so the root bumps. HTTP pipeline (`Host/TaskFlow.Api/Filters/`):
 `IfMatchEndpointFilter` first - missing/blank -> **428**, unparseable -> 400, `If-Match: *` passes as
@@ -89,21 +92,32 @@ entity with a caller-id create path.
 **Problem**: offset paging degrades under concurrent inserts (dup/skipped rows) and forces a
 `COUNT(*)` per page.
 
-**Shape** (`Application.Models/Paging/`): `CursorSearchRequest<TFilter,TSortMode>{ Filter, SortMode,
-PageSize<=100 default 50, Cursor? }`; `TaskItemSortMode { IdAsc, DueDateAsc, DueDateDesc,
-ModifiedDesc, StatusThenId }`; `CursorPage<T>{ Data, NextCursor, HasMore }` - no Total, no page
-number. `Contracts/Paging/ICursorProtector` + `CursorToken(SortMode, TenantId, SortKey, LastId)`;
-`DataProtectionCursorProtector` wraps `IDataProtector` (purpose `"TaskFlow.Cursor.v1"`) - tamper,
-cross-tenant, sort-mode mismatch all fail closed to 400. `TaskItemRepositoryQuery.ApplyKeyset`: one
-switch per sort mode building the `ORDER BY`/`WHERE` shape, each arm commented with the index it must
-hit; null `DueDate` sorts last; `Take(PageSize + 1)` computes `HasMore` without a second query.
+**Shape**: the request, page and limits are package types (EF.* 1.1.102, package request 21):
+`EF.Common.Contracts.CursorSearchRequest<TFilter,TSortMode>{ Filter, SortMode, PageSize, Cursor? }`,
+`CursorPage<T>{ Items, NextCursor, HasMore }` - no Total, no page number - and `PageSizeLimits`
+(1..100, default 50). App-local: `Application.Models/Paging/TaskItemCursorSearchRequest` (derives from
+the generic and sets the default page size, which the package record leaves at 0) and
+`TaskItemSortMode { IdAsc, DueDateAsc, DueDateDesc, ModifiedDesc, StatusThenId }`. The token is
+`EF.Data.Contracts.CursorCodec` through `KeysetCursor`/`CursorPosition` (package request 27):
+HMAC-SHA256 signed, schema-version byte, scope key re-checked on decode. TaskFlow's scope key is
+`TaskItemRepositoryQuery.CursorScope` = `{tenantId:N}|{(int)sortMode}`, because the codec has no
+sort-mode field - so tamper, cross-tenant and sort-mode mismatch all fail closed to 400
+(`ERROR_CURSOR_INVALID`). The ORDER BY, the resume predicate and the cursor round trip are the
+package's `EF.Data.Contracts.IQueryableExtensions.KeysetPageAsync` (package request 6). It is applied
+to the projected `IQueryable<TaskItemDto>` rather than to the entity, so the DTO projection stays
+server-side and order, resume and `PageSize + 1` compose on top of it in one statement; the tie-break
+key is the projected `Guid` id in every mode, and `TaskItemRepositoryQuery` keeps only the sort-mode
+switch that chooses the leading key and its direction, each arm commented with the index it must hit.
+Null `DueDate` sorts last because the pager orders a nullable key by `(key IS NULL)` first.
 
 **Proof**: page-through with no dup/gap, `HasMore=false` at the end, tamper/cross-tenant/sort-mode
 mismatch -> 400, one case per sort mode.
 
-**Customize**: production needs the persisted Data Protection key ring (comment in `Program.cs`) or
-cursors break across restarts/replicas; documented alternative is an HMAC over
-`Paging:CursorKey`.
+**Customize**: the cursor signing key is HKDF over the column-encryption DEK under the info label
+`"TaskFlow.Cursor.v1"` (`RegisterServices.AddSharedApplicationServices`), so every replica agrees
+without a second configured secret and a DEK rotation invalidates outstanding cursors. With
+`Database:Encryption:Enabled=false` there is no shared secret and the key is per-process: cursors stop
+validating after a restart or on a sibling replica (400, never a silent reset to page one).
 
 ## 5. Read service: summary, metadata, NDJSON export
 
@@ -139,7 +153,7 @@ candidate ids (lease free/expired, ordered, `Take(n)`) -> `ExecuteUpdateAsync` r
 predicate with a new `LeaseToken`/`LeaseOwner`/`LeaseExpiresUtc`/`AttemptCount+1` -> read back
 `WHERE LeaseToken == token` (never key on a timestamp - rounding differs per provider). A
 single-statement upgrade (`UPDLOCK, READPAST` / `SKIP LOCKED`) is a code comment, not implemented.
-`LeasedWorkerBase<TWork>`: adaptive poll 1s backing off to 5s idle, `LeaseOwner =
+`EF.BackgroundServices.LeasedWorkerBase<TWork>`: adaptive poll 1s backing off to 5s idle, `LeaseOwner =
 "{MachineName}:{ProcessId}"`; `OutboxDispatcherService`/`BlobDeleteWorkerService` derive from it, run
 on every Scheduler replica (not a TickerQ cron job). `AttemptCount >= 10` sets `DeadLetteredAtUtc`
 (row kept - the only surviving copy); admin `POST /api/v1/admin/outbox/{id}/retry` clears it.
@@ -175,10 +189,15 @@ instance, `createdUtc` unchanged.
 **Problem**: one wire shape regardless of transport, one processing path per concern (projection,
 AI review, workflow) instead of one handler `switch`ing on event type.
 
-**Shape**: `IntegrationEventEnvelope(Guid Id, string Type, int Version, Guid TenantId,
-DateTimeOffset OccurredAtUtc, string? CorrelationId, JsonElement Payload)` - the full envelope is
+**Shape**: `EF.Messaging.IntegrationEventEnvelope(Guid Id, string Type, int Version,
+DateTimeOffset OccurredAtUtc, string? CorrelationId, JsonElement Payload)` (package request 14; the
+frame carries no tenant - TaskFlow's tenant travels in the payload, which every `IDomainEvent` has,
+and the writer denormalizes it onto the outbox row and the broker message properties) - the full
+envelope is
 always the wire body; broker-native fields are populate-on-publish only, never reconstructed on
-receive. Three destinations - `projection` (Created/StatusChanged/Completed), `ai-review` (Created
+receive. The app keeps `TaskFlowIntegrationEvents` (`Application.Contracts/Messaging/`), which owns
+the per-type `Versions` table, `IsKnownType`, and the one place a raised domain event becomes an
+envelope. Three destinations - `projection` (Created/StatusChanged/Completed), `ai-review` (Created
 only), `workflow` (Created only) - map to three Service Bus subscriptions (SQL filter on `EventType`,
 topic dup detection, `maxDeliveryCount=5`, dead-letter on expiry/filter error) or three RabbitMQ
 queues bound to a topic exchange with a shared DLX. Both readers: malformed -> dead-letter with a
@@ -200,19 +219,20 @@ message-bus framework that duplicates the outbox already owned here.
 same one-enum/one-resolver/one-branch shape as pattern 1. `IIntegrationEventTransport { bool
 CanDispatch; Task SendBatchAsync(destination, messages, ct) }` has `ServiceBusEventTransport`,
 `RabbitMqEventTransport`, `NoOpEventTransport` (`CanDispatch=false`, rows accumulate - local runs
-proceed with no broker). RabbitMQ is split in two: `src/Packages/EF.Messaging.RabbitMq` is a
-**portable, TaskFlow-free** package (connection multiplexer with a publisher-confirm channel pool,
-topology declarer, `RabbitMqConsumerHostedService<THandler>` with per-queue prefetch, health check,
-OTel metrics), candidate for the EF.* feed (request 23); `Infrastructure.Messaging.RabbitMq` is the
-thin adapter (transport, topology constants, handler wrappers) via `ProjectReference` today -
-swapping to a `PackageReference` once published is the entire porting step. Hosting: RabbitMq
+proceed with no broker). RabbitMQ ships as two projects: the published `EF.Messaging.RabbitMq`
+package (connection multiplexer with a publisher-confirm channel pool, topology declarer,
+`RabbitMqConsumerHostedService<THandler>` with per-queue prefetch, health check, OTel metrics;
+request 23, landed at 1.1.101+) and `Infrastructure.Messaging.RabbitMq`, the thin TaskFlow adapter
+(transport, topology constants, handler wrappers) consuming it via `PackageReference`. The in-repo
+`src/Packages/EF.Messaging.RabbitMq` project and its `tests/EF.Messaging.RabbitMq.Tests` were removed
+2026-09-10 once the package published. Hosting: RabbitMq
 selected -> Scheduler registers the three consumer hosted services and Aspire disables the matching
 Functions triggers (`AzureWebJobs.<name>.Disabled=true`); ServiceBus selected -> nothing RabbitMQ-side
 registers.
 
-**Proof**: `EF.Messaging.RabbitMq.Tests` (31: 15 unit against a fake channel, 16 Testcontainers
-integration) prove publisher confirms, prefetch bound, malformed-message DLX, requeue-then-DLX, with
-zero TaskFlow dependencies.
+**Proof**: the package's own test suite (15 unit against a fake channel, 16 Testcontainers
+integration) proves publisher confirms, prefetch bound, malformed-message DLX, requeue-then-DLX, with
+zero TaskFlow dependencies; the adapter's own tests cover the TaskFlow-specific wiring.
 
 **Customize**: a third transport needs a new `IIntegrationEventTransport` impl and enum value; outbox
 and consumer-side inbox don't change.
@@ -226,10 +246,11 @@ events, running as global admin regardless of tenant.
 jobs by design): `StreamOverdueAsync`, `MarkOverdueNotifiedAsync`, `StreamDueTemplatesAsync`,
 `UpsertOccurrencesAsync`, `AdvanceNextOccurrenceAsync(tenantId, templateId, expectedNext, newNext)`,
 `GetStaleBatchAsync`, `StageBlobDeletesAsync`, `DeleteStaleBatchAsync`. Every staged event uses a
-deterministic id (`DeterministicGuid.Create(ns, ...parts)`, real UUIDv5/SHA-1) so a re-run over the
-same data produces zero new rows: `overdue` keys on `(tenant, task, dueDate)`, `recurrence` keys on
-`(tenant, template, occurrenceUtc)`. Occurrences upsert via FlexLabs `UpsertRange(...).On(...)
-.NoUpdate()` (D-028); the template pointer only advances when `expectedNext` still matches - a lost
+deterministic id (`EF.Common.DeterministicGuid.Create(DomainConstants.DETERMINISTIC_ID_NAMESPACE,
+label, ...parts)`, real UUIDv5/SHA-1) so a re-run over the same data produces zero new rows: the
+`overdue` label keys on `(tenant, task, dueDate)`, `recurrence` on `(tenant, template,
+occurrenceUtc)`. Occurrences upsert via `EF.Data` `IRepositoryBase.UpsertRangeAsync(occurrences,
+match)` with no `whenMatched`, which is DO NOTHING (D-028); the template pointer only advances when `expectedNext` still matches - a lost
 race skips that tick instead of double-advancing. Stale cleanup stages `BlobDeleteWork` before
 deleting the task row (blob cleanup happens via pattern 6, not inline). Four retention jobs purge
 dead-lettered outbox/blob-delete rows (>7d, `Scheduling:Retention:OutboxDays`), processed inbox rows
@@ -248,9 +269,10 @@ duplicates events.
 **Problem**: FusionCache and its Redis backplane were fully registered but never injected - every
 call site only ever called `RemoveAsync` against a no-op provider.
 
-**Shape**: `Contracts/Caching/ITaskFlowCache { GetOrSetAsync<T>(key, factory, profile, ct);
-RemoveByTagAsync(tag, ct); RemoveAsync(key, ct) }`, one impl (`FusionTaskFlowCache`).
-`CacheKey(CacheKind, TenantId, Discriminator?)` renders `"{env}:{schemaVersion}:{tenantId:N}:
+**Shape**: `EF.Cache.ITypedCache` is injected directly (package requests 13/31; the app-local
+`ITaskFlowCache`/`FusionTaskFlowCache` are deleted). `TaskFlowCache` (`Application.Contracts/Caching/`)
+keeps what the package cannot know: `CacheKind`, the profile names, the tag vocabulary and the
+kind-to-`CacheKey` mapping, rendering `"{env}:{schemaVersion}:{tenantId:N}:
 {kind}[:{discriminator}]"`. Two profiles only - `Metadata` (L1 5m/L2 30m/fail-safe 2h/0.8 eager
 refresh) and `Summary` (L1 5s/L2 15s/fail-safe 1m/500ms soft timeout) - deliberately narrow: caches
 immutable snapshots only, never a single mutable entity. Invalidation is tag-based
@@ -402,7 +424,7 @@ void AddMessagingServices(IServiceCollection, IConfiguration)` dispatcher.
 Method)]`, one `Type ContractType` property) tags every switch dispatcher so `Test.Architecture` can
 discover it by reflection. Five switches carry the attribute and copy the shape exactly:
 `RegisterServices.Storage.cs` (`StorageProvider { AzureBlob, S3 }`, `[ProviderSwitch(typeof
-(IBlobStorageRepository))]`), `RegisterServices.ReadModel.cs` (`ReadModelProvider { Cosmos, Relational }`,
+(IObjectStorageRepository))]`), `RegisterServices.ReadModel.cs` (`ReadModelProvider { Cosmos, Relational }`,
 `ITaskViewRepository`), `RegisterServices.Audit.cs` (`AuditProvider { AzureTable, Relational }`,
 `IAuditLogRepository`), `RegisterServices.DataProtection.cs` (`DataProtectionPersistence { AzureBlob,
 Redis, None }`, `IDataProtectionProvider` - here the dispatcher is an `IHostApplicationBuilder`+`ILogger`
@@ -496,7 +518,8 @@ source-generated `TaskViewBodyJsonContext` - a plain string, not `jsonb`, to sta
 (D-030). `AuditLogRecord` (`Infrastructure.Data/Operational/AuditLogRecord.cs`) is likewise plain, PK
 `(TenantId, RecordedUtc, Id)`, `TenantId` non-null (a system entry carries
 `AuditLogStorageSettings.NullTenantPartitionKey`). The keyset continuation token
-(`Infrastructure.Repositories/TaskViewKeysetToken.cs`) is Base64Url over
+(`Infrastructure.Repositories/TaskViewKeysetToken.cs`, still app-local: `EF.Data.Contracts.CursorCodec`
+carries a `Guid` tie-break key and this one is the Cosmos-parity string document id) is Base64Url over
 `v1|tenantId|lastModifiedUtcTicks|id` (raw UTC ticks, not `"O"`, because the value round-trips into a
 `WHERE` clause and PostgreSQL `timestamptz` keeps microseconds while SQL Server keeps 100ns); the
 tenant is re-checked against the caller's tenant on decode, and a malformed, truncated, or
@@ -530,26 +553,30 @@ a read-modify-write.
 
 **Problem**: the Portable lane has no Azure Blob Storage, so attachments need an S3-compatible arm
 (MinIO locally/on the VPS, any S3-compatible provider in production) behind the unchanged
-`IBlobStorageRepository` contract, including presigned download URLs a browser can actually reach.
+`EF.Storage.Contracts.IObjectStorageRepository` contract, including presigned download URLs a browser
+can actually reach.
 
-**Shape**: `S3ObjectStorageRepository` (`Infrastructure.Storage/S3/S3ObjectStorageRepository.cs`) takes
+**Shape**: this is now the published `EF.Storage.S3` package (package request 25); the app-local
+`Infrastructure.Storage/S3/` copy this pattern originally described is deleted. The shape survives
+unchanged in the package. `EF.Storage.S3.S3ObjectStorageRepository` takes
 two `IAmazonS3` clients - the plain one for upload/download/delete/exists against
-`S3StorageSettings.ServiceUrl`, and a keyed one (`[FromKeyedServices(S3ObjectStorageRepository.
-PublicClientKey)]`, key `"s3-public"`) used only to sign presigned URLs against
+`S3StorageSettings.ServiceUrl`, and a keyed one (key `"s3-public"`) used only to sign presigned URLs
+against
 `S3StorageSettings.PublicServiceUrl` - because SigV4 signs the `Host` header into the signature, a URL
 signed against an in-network host like `http://minio:9000` would be unreachable and unfixable by
-rewriting the host afterward. `GetBlobUriAsync` derives `Protocol` from whether `PublicServiceUrl`
+rewriting the host afterward. `GetPresignedUrlAsync` derives `Protocol` from whether `PublicServiceUrl`
 starts with `http://` (MinIO/local without TLS) rather than always defaulting to HTTPS. Bucket = the
 existing `containerName` argument (the Azure arm's container concept carries over unchanged); key =
-the existing `{tenantId}/{ownerId}/{fileName}` convention (referenced from `IBlobStorageRepository`'s
-`AttachmentBlobs` helper) - this repository applies no further transformation. `S3StorageSettings`
-(`ConfigSectionName = "Storage:S3"`) requires `PublicServiceUrl` and fails fast eagerly in
+the existing `{tenantId}/{ownerId}/{fileName}` convention (owned by the app's
+`AttachmentBlobs` helper) - this repository applies no further transformation.
+`EF.Storage.S3.S3StorageSettings`
+(`ConfigSectionName = "Storage:S3"`) requires `PublicServiceUrl`, and the app still fails fast eagerly in
 `RegisterServices.AddS3StorageServices` (not deferred to `ValidateOnStart`) with an
 `InvalidOperationException` naming the missing key, since a missing public endpoint is a configuration
 error the moment the `S3` arm is selected, not a surprise on the first download; `ForcePathStyle`
 defaults `true` (required by MinIO and most non-AWS S3-compatible servers); `DownloadUrlLifetime`
-defaults one hour. Bucket provisioning is `IS3BucketProvisioner`/`S3BucketProvisioner`
-(`internal`, keeps `Amazon.*` out of Bootstrapper), invoked from `EnsureExternalResources` (pattern 13)
+defaults one hour. Bucket provisioning is the package's `IS3BucketProvisioner`/`S3BucketProvisioner`,
+which keeps `Amazon.*` out of Bootstrapper, invoked from `EnsureExternalResources` (pattern 13)
 with a null guard exactly like the existing blob-container check, not a separate one-shot container.
 
 **Proof**: `tests/Test.Integration/S3ObjectStorageRepositoryTests.cs` against
@@ -728,14 +755,15 @@ which builds metadata at runtime instead of compile time and cannot participate 
 already respects. `TaskFlowJsonContext` (`Application.Models/Serialization/TaskFlowJsonContext.cs`)
 covers every HTTP/cache/UI DTO, request, and response shape (entity DTOs, read-model DTOs, search
 filters, the closed generic `DefaultRequest<T>`/`SearchRequest<TFilter>`/`DefaultResponse<T>`/
-`PagedResponse<T>`/`CursorPage<TaskItemDto>` instantiations actually bound by the endpoints, listed
+`PagedResponse<T>`/`CursorPage<TaskItemDto>` instantiations actually bound by the endpoints - the last
+three from `EF.Common.Contracts` - listed
 again in `RegisteredClosedGenerics` since a generic type definition has no `JsonTypeInfo` a scan could
 discover). `TaskFlowMessagingJsonContext` (`Application.Contracts/Messaging/
-TaskFlowMessagingJsonContext.cs`) is separate because `IntegrationEventEnvelope` lives in
+`TaskFlowMessagingJsonContext.cs`) is separate because the messaging wire shape is declared in
 Application.Contracts, which Application.Models does not reference the other way; it declares no
 `PropertyNamingPolicy` (PascalCase, byte-identical to what reflection produced) and
 `PropertyNameCaseInsensitive=true` so a payload from an older/newer build's naming still deserializes
-during a rolling deploy - it covers `IntegrationEventEnvelope` plus every registered event payload
+during a rolling deploy - it covers `EF.Messaging.IntegrationEventEnvelope` plus every registered event payload
 record (`TaskItemCreatedEvent`, `TaskItemContentChangedEvent`, `TaskItemStatusChangedEvent`,
 `TaskItemCompletedEvent`, `TaskItemOverdueSuspectedEvent`, `TaskItemRescheduledEvent`,
 `CommentAddedEvent`, `AttachmentUploadedEvent`). `TaskFlowApiJsonContext`
@@ -746,8 +774,8 @@ because `ProblemDetails` comes from the ASP.NET Core shared framework. All three
 same order at `Host/TaskFlow.Api/RegisterApiServices.cs:70-72` -
 `TypeInfoResolverChain.Insert(0, TaskFlowJsonContext.Default)`, `Insert(1, TaskFlowApiJsonContext.
 Default)`, `Insert(2, TaskFlowMessagingJsonContext.Default)` - with the reflection resolver left behind
-them for third-party types. The envelope throw rule: `IntegrationEventEnvelope.From`'s private
-`PayloadTypeInfo` calls `TaskFlowMessagingJsonContext.Default.GetTypeInfo(eventType)` and throws
+them for third-party types. The envelope throw rule: `TaskFlowIntegrationEvents.Envelope` calls
+`TaskFlowMessagingJsonContext.Default.GetTypeInfo(eventType)` and throws
 `InvalidOperationException` ("... is not registered on TaskFlowMessagingJsonContext (D-048). Add a
 [JsonSerializable] entry for it alongside its Versions entry.") when the concrete event record has no
 generated metadata - a build-time omission, not a runtime condition, hence a throw rather than a
@@ -759,7 +787,7 @@ response/page type in `TaskFlow.Application.Models` resolves through
 at build time rather than at first serialization.
 
 **Customize**: a new event record needs both a `[JsonSerializable]` entry on
-`TaskFlowMessagingJsonContext` and a `Versions` dictionary entry on `IntegrationEventEnvelope` (the
+`TaskFlowMessagingJsonContext` and a `Versions` dictionary entry on `TaskFlowIntegrationEvents` (the
 context's own doc comment calls out that the two lists must match, or a type is either dropped as
 unknown or silently falls back to reflection); a new DTO/request/response type needs a
 `[JsonSerializable]` entry on `TaskFlowJsonContext`, enforced by `JsonContextCompletenessTests`.
@@ -945,12 +973,13 @@ must never be added to a client that also issues writes without the same GET-onl
 topology at startup would either double-provision or race on a `CREATE`; leases and conditional updates
 already solve this for work-table rows but not for one-time startup work.
 
-**Shape**: `IDistributedLock` (`Application.Contracts/Locking/IDistributedLock.cs`) - one method,
+**Shape**: `EF.Common.Contracts.IDistributedLock` - one method,
 `ValueTask<IAsyncDisposable?> TryAcquireAsync(string key, TimeSpan ttl, CancellationToken ct)`,
 non-blocking by design (every caller has something better to do than queue), returning null when
 another holder has it. Explicitly scoped to one-time startup tasks (external resource provisioning,
 broker topology declaration), not work tables, which already coordinate through leases (pattern 6).
-`RedisDistributedLock` (`Infrastructure.Caching/Locking/RedisDistributedLock.cs`): acquire is
+The app-local `Application.Contracts/Locking/` and `Infrastructure.Caching/Locking/` copies (request
+32) are deleted; `EF.Cache.RedisDistributedLock`: acquire is
 `StringSetAsync(key, token, ttl, When.NotExists)` (`SET key token NX PX`) with a random per-acquisition
 token; release is a Lua script comparing the token before deleting (`if redis.call('get', KEYS[1]) ==
 ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end`) so a holder whose TTL already
@@ -959,9 +988,9 @@ quorum - acceptable here because every covered caller is idempotent, so the lock
 conflicting work rather than guaranteeing exactly-once; PostgreSQL `pg_try_advisory_lock` was considered
 and rejected as the default because it is provider-specific and the dual-provider rule (D-030) forbids
 a PostgreSQL-only code path for something Redis already covers on both providers.
-`InProcessDistributedLock` (`Infrastructure.Caching/Locking/InProcessDistributedLock.cs`, a
+`EF.Common.InProcessDistributedLock` (a
 `ConcurrentDictionary<string, SemaphoreSlim>` with a zero-timeout `WaitAsync`) is the fallback when no
-Redis connection is configured; `RegisterCachingServices` chooses between the two based on whether a
+Redis connection is configured; `RegisterCachingServices` (`Infrastructure.Caching/`) chooses between the two based on whether a
 Redis connection string resolves. The two real call sites: `EnsureExternalResources`
 (`Bootstrapper/StartupTasks/EnsureExternalResources.cs`, lock key `"taskflow:provision"`, pattern 13)
 and `TaskFlowRabbitMqTopologyStartup` (`Infrastructure.Messaging.RabbitMq/
@@ -988,15 +1017,17 @@ of what distributed tracing across a broker hop is for.
 **Shape**: `TaskFlowActivitySources` (`Shared/TaskFlow.Observability/Tracing/
 TaskFlowActivitySources.cs`) names two sources registered once in ServiceDefaults:
 `TaskFlow.Messaging` (broker publish/consume spans) and `TaskFlow.Scheduler` (scheduled-job and
-leased-drain spans, used by `BaseTickerQJob` and `LeasedWorkerBase`). `MessagingTrace`
+leased-drain spans, used by `BaseTickerQJob` and `EF.BackgroundServices.LeasedWorkerBase`).
+`MessagingTrace`
 (`.../Tracing/MessagingTrace.cs`) has two entry points: `StartPublish` starts a Producer-kind activity
-and injects the resulting W3C trace context via `Propagators.DefaultTextMapPropagator.Inject` through a
+and injects the resulting W3C trace context via `EF.Messaging.Tracing.MessagingTraceContext.Inject`
+(package request 30) through a
 caller-supplied `Action<string, string> setHeader` delegate - a delegate rather than a dictionary
 because RabbitMQ headers are `object?`-valued UTF-8 byte arrays and Service Bus application properties
 are `object`-valued strings, and neither dictionary type converts to the other. `StartProcess` extracts
-the context via `Propagators.DefaultTextMapPropagator.Extract` and starts the Consumer-kind activity
-PARENTED to that extracted context (`StartActivity(name, ActivityKind.Consumer, parent.
-ActivityContext)`) - NOT an `ActivityLink`, contrary to what a link-based design might suggest; the
+the context via `MessagingTraceContext.Extract` and starts the Consumer-kind activity
+PARENTED to that extracted context (`StartActivity(name, ActivityKind.Consumer, parent)`)
+ - NOT an `ActivityLink`, contrary to what a link-based design might suggest; the
 code comment is explicit that a parent (not a link) is deliberate, because the outbox hop is one
 business operation continuing across a process boundary and the point is a single trace from the HTTP
 request through the consumer, whereas a link would leave the consumer as its own root, exactly the
@@ -1243,9 +1274,11 @@ Mirrors `.scaffold/INSTRUCTION-GAPS.md` (source repo owns the fix):
 
 ## Package dependencies
 
-- `docs/plans/ef-package-requests.md` - full EF.* package change request list (32 items); 9 of 11
-  REQUIRED requests already have an app-local fallback marked `// fallback:` at the call site, so
-  this repo is not blocked, but the fallback is the natural first replacement once each ships.
-- `docs/plans/ef-messaging-rabbitmq-package-spec.md` - the exact public-API spec
-  `src/Packages/EF.Messaging.RabbitMq` implements today as a portable, dependency-free project;
-  porting it to the real package feed is a move-and-republish, not a rewrite.
+- `docs/plans/ef-package-requests.md` - full EF.* package change request list (32 items plus a
+  2026-09-10 feedback section); all REQUIRED items have landed as of EF.* 1.1.102 /
+  EF.FlowEngine.* 1.0.173 except request 3 (partial - SqlClient stays transitive until EF.Data 2.0)
+  and request 4 (landed, not adopted - D-004, no repository needs it). App-local fallbacks and
+  `// fallback:` markers are gone from `src/` and `tests/`.
+- `docs/plans/ef-messaging-rabbitmq-package-spec.md` - the public-API spec the package now
+  implements as published `EF.Messaging.RabbitMq` 1.1.101+; the in-repo `src/Packages/
+EF.Messaging.RabbitMq` project and its tests were removed 2026-09-10 once the package shipped.

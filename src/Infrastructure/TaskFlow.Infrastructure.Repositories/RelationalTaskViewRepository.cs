@@ -1,3 +1,4 @@
+using EF.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 using TaskFlow.Application.Contracts.Storage;
@@ -24,7 +25,7 @@ namespace TaskFlow.Infrastructure.Repositories;
 /// nothing the projection delay has not already added.
 /// </summary>
 public sealed class RelationalTaskViewRepository(TaskFlowDbContextTrxn write, TaskFlowDbContextQuery read)
-    : ITaskViewRepository
+    : RepositoryBase<TaskFlowDbContextTrxn, string, Guid?>(write), ITaskViewRepository
 {
     // Counter names as the producer spells them: TaskViewProjectionService keys the delta dictionary on the
     // Cosmos document's JSON property names, and that contract is not this arm's to change.
@@ -38,13 +39,33 @@ public sealed class RelationalTaskViewRepository(TaskFlowDbContextTrxn write, Ta
     {
         ArgumentNullException.ThrowIfNull(taskView);
 
-        // fallback: replace with EF.Data IRepositoryBase.UpsertAsync when published (package request 7).
         // D-028: MERGE on SQL Server, ON CONFLICT DO UPDATE on PostgreSQL, keyed on the primary key. Every
-        // non-key column is replaced, which is what Cosmos UpsertItem does with the whole document.
-        return write.TaskViews
-            .Upsert(MapToRecord(taskView))
-            .On(e => new { e.TenantId, e.Id })
-            .RunAsync(ct);
+        // non-key column is replaced, which is what Cosmos UpsertItem does with the whole document, so the
+        // whenMatched projection has to name all of them - the package's default (null) is DO NOTHING, which
+        // would silently freeze an already-projected row at its first version.
+        return UpsertAsync(
+            MapToRecord(taskView),
+            e => new { e.TenantId, e.Id },
+            (existing, proposed) => new TaskViewRecord
+            {
+                Title = proposed.Title,
+                Status = proposed.Status,
+                Priority = proposed.Priority,
+                CategoryName = proposed.CategoryName,
+                StartDate = proposed.StartDate,
+                DueDate = proposed.DueDate,
+                CompletedDate = proposed.CompletedDate,
+                IsOverdue = proposed.IsOverdue,
+                CommentCount = proposed.CommentCount,
+                ChecklistTotal = proposed.ChecklistTotal,
+                ChecklistCompleted = proposed.ChecklistCompleted,
+                AttachmentCount = proposed.AttachmentCount,
+                SubTaskCount = proposed.SubTaskCount,
+                CreatedUtc = proposed.CreatedUtc,
+                LastModifiedUtc = proposed.LastModifiedUtc,
+                Document = proposed.Document
+            },
+            ct);
     }
 
     /// <inheritdoc />
@@ -109,7 +130,7 @@ public sealed class RelationalTaskViewRepository(TaskFlowDbContextTrxn write, Ta
         // same row add up instead of the later one overwriting a value the earlier one read. EF Core 10's
         // statement-bodied setter lambda is what lets the zero deltas stay out of the UPDATE entirely.
         // Affected == 0 means the row is not projected yet: a no-op, matching the Cosmos 404 arm.
-        await write.TaskViews
+        await DB.TaskViews
             .Where(e => e.TenantId == tenantId && e.Id == id)
             .ExecuteUpdateAsync(s =>
             {
@@ -125,7 +146,7 @@ public sealed class RelationalTaskViewRepository(TaskFlowDbContextTrxn write, Ta
     /// <inheritdoc />
     public Task DeleteAsync(string id, string tenantId, CancellationToken ct = default) =>
         // Zero rows deleted is success: the document is already gone, the Cosmos 404 arm's semantics.
-        write.TaskViews.Where(e => e.TenantId == tenantId && e.Id == id).ExecuteDeleteAsync(ct);
+        DB.TaskViews.Where(e => e.TenantId == tenantId && e.Id == id).ExecuteDeleteAsync(ct);
 
     private static int Delta(IReadOnlyDictionary<string, int> increments, string field) =>
         increments.TryGetValue(field, out var delta) ? delta : 0;

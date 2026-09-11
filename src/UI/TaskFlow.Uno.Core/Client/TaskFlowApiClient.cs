@@ -167,8 +167,8 @@ public class TaskItemCursorSearchRequest
 /// <summary>One keyset page. NextCursor is null exactly when HasMore is false.</summary>
 public class CursorPage<T>
 {
-    [JsonPropertyName("data")]
-    public List<T>? Data { get; set; }
+    [JsonPropertyName("items")]
+    public List<T>? Items { get; set; }
 
     [JsonPropertyName("nextCursor")]
     public string? NextCursor { get; set; }

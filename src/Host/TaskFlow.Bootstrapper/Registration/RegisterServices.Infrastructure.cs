@@ -1,3 +1,5 @@
+using EF.Audit.Contracts;
+using EF.Storage.Contracts;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -82,7 +84,7 @@ public static partial class RegisterServices
 
     /// <summary>
     /// Registers attachment blob storage when configured; otherwise a no-op repository keeps
-    /// <see cref="IBlobStorageRepository"/> resolvable so the DI graph still builds (D-037). Upload/download
+    /// <see cref="IObjectStorageRepository"/> resolvable so the DI graph still builds (D-037). Upload/download
     /// endpoints surface a service-level failure from the no-op when this optional dependency is absent.
     /// </summary>
     private static void AddBlobStorageServices(IServiceCollection services, IConfiguration config)
@@ -94,7 +96,7 @@ public static partial class RegisterServices
             "Values:BlobStorage1");
         if (string.IsNullOrEmpty(connStr))
         {
-            services.AddSingleton<IBlobStorageRepository, NoOpBlobStorageRepository>();
+            services.AddSingleton<IObjectStorageRepository, NoOpBlobStorageRepository>();
             return;
         }
 
@@ -107,7 +109,7 @@ public static partial class RegisterServices
         services.Configure<BlobStorageSettings>(
             config.GetSection("BlobStorageSettings"));
 
-        services.AddScoped<IBlobStorageRepository, BlobStorageRepository>();
+        services.AddScoped<IObjectStorageRepository, BlobStorageRepository>();
     }
 
     /// <summary>

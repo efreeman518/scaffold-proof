@@ -1,4 +1,5 @@
 using EF.Common.Extensions;
+using EF.Storage.Contracts;
 using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
 using TaskFlow.Application.Contracts.Storage;
@@ -12,26 +13,26 @@ namespace TaskFlow.Scheduler.Workers;
 /// </summary>
 public sealed class BlobDeleteWorkerService(
     IServiceScopeFactory scopeFactory,
-    IOptions<BlobDeleteSettings> settings,
-    ILogger<BlobDeleteWorkerService> logger)
-    : LeasedWorkerBase<BlobDeleteWork>(scopeFactory, logger)
+    IOptionsMonitor<BlobDeleteSettings> options,
+    ILoggerFactory loggerFactory)
+    : OperationalLeasedWorker<BlobDeleteWork, BlobDeleteSettings>(scopeFactory, options, loggerFactory)
 {
     /// <inheritdoc />
     protected override async Task HandleBatchAsync(
         IServiceProvider scope, IOperationalWorkRepository work, LeasedBatch<BlobDeleteWork> batch, CancellationToken ct)
     {
-        // IBlobStorageRepository always resolves - a no-op fallback stands in when no object-storage
+        // IObjectStorageRepository always resolves - a no-op fallback stands in when no object-storage
         // backend is configured and treats a delete as already-gone (D-037), so no null guard is needed here.
-        var blobs = scope.GetRequiredService<IBlobStorageRepository>();
+        var blobs = scope.GetRequiredService<IObjectStorageRepository>();
 
-        var outcome = await DeleteBatchAsync(blobs, batch.Items, settings.Value.MaxConcurrency, ct)
+        var outcome = await DeleteBatchAsync(blobs, batch.Items, Options.MaxConcurrency, ct)
             .ConfigureAwait(false);
 
         // Lease bookkeeping stays sequential on purpose: IOperationalWorkRepository is backed by the scoped
         // DbContext, which is not thread safe, so it must not be touched from inside the concurrent phase.
         foreach (var (item, error) in outcome.Failed)
         {
-            logger.BlobDeleteFailed(item.ContainerName, item.BlobName, error);
+            Logger.BlobDeleteFailed(item.ContainerName, item.BlobName, error);
             await work.ReleaseAsync<BlobDeleteWork>(
                 batch.LeaseToken, item.Id, item.AttemptCount, error.GetBaseException().Message, ct)
                 .ConfigureAwait(false);
@@ -53,7 +54,7 @@ public sealed class BlobDeleteWorkerService(
     /// <returns>Ids to complete, and the rows to release with the error that stopped them.</returns>
     public static async Task<(IReadOnlyCollection<Guid> Deleted, IReadOnlyCollection<(BlobDeleteWork Item, Exception Error)> Failed)>
         DeleteBatchAsync(
-            IBlobStorageRepository blobs,
+            IObjectStorageRepository blobs,
             IReadOnlyList<BlobDeleteWork> items,
             int maxConcurrency,
             CancellationToken ct)
