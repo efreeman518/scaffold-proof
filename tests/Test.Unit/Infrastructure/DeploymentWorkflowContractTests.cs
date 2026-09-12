@@ -371,10 +371,15 @@ public sealed class DeploymentWorkflowContractTests
         })
         {
             var dockerfileText = File.ReadAllText(dockerfile);
-            StringAssert.Contains(dockerfileText, "touch /usr/share/nginx/html/app-config.json");
-            StringAssert.Contains(dockerfileText, "chown 101:101 /usr/share/nginx/html/app-config.json");
+            StringAssert.Contains(dockerfileText, "RUN install -d -o 101 -g 101 /var/cache/nginx/app-config");
+            StringAssert.Contains(dockerfileText, "COPY --chown=101:101 deploy/compose/static/app-config.json.template /var/cache/nginx/app-config/app-config.json");
+            StringAssert.Contains(dockerfileText, "NGINX_ENVSUBST_OUTPUT_DIR=/var/cache/nginx/app-config");
+            Assert.IsFalse(dockerfileText.Contains("RUN touch /usr/share/nginx/html/app-config.json", StringComparison.Ordinal));
             StringAssert.Contains(dockerfileText, "USER 101");
         }
+
+        var nginxConfig = File.ReadAllText(RepoRoot.Combine("deploy", "compose", "static", "default.conf"));
+        StringAssert.Contains(nginxConfig, "alias /var/cache/nginx/app-config/app-config.json;");
 
         var bootstrap = File.ReadAllText(RepoRoot.Combine("infra", "scripts", "bootstrap.ps1"));
         StringAssert.Contains(bootstrap, "reactStaticWebAppDefaultHostname");

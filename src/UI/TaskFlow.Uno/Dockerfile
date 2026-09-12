@@ -14,9 +14,11 @@ RUN --mount=type=secret,id=nuget_credentials,required=true \
       -p:EnableUnoWasm=true -c Release -p:PublishDir=/app -m:1 --no-restore
 
 FROM nginxinc/nginx-unprivileged:1.29-alpine AS runtime
+USER root
 COPY --from=build --chown=101:101 /app/wwwroot/ /usr/share/nginx/html/
 COPY --chown=101:101 deploy/compose/static/default.conf /etc/nginx/conf.d/default.conf
 COPY --chown=101:101 deploy/compose/static/app-config.json.template /etc/nginx/templates/app-config.json.template
-RUN touch /usr/share/nginx/html/app-config.json && chown 101:101 /usr/share/nginx/html/app-config.json
-ENV NGINX_ENVSUBST_OUTPUT_DIR=/usr/share/nginx/html
+RUN install -d -o 101 -g 101 /var/cache/nginx/app-config
+COPY --chown=101:101 deploy/compose/static/app-config.json.template /var/cache/nginx/app-config/app-config.json
+ENV NGINX_ENVSUBST_OUTPUT_DIR=/var/cache/nginx/app-config
 USER 101
