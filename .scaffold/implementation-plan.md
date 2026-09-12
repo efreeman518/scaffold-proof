@@ -6,7 +6,7 @@ Historical Phase 3 execution plan. `.scaffold/resource-implementation.yaml` owns
 
 The historical implementation steps below are interpreted through D-060. The canonical input is `TASKFLOW_LANE=Azure|NonAzure`; `Portable` is accepted as a deprecated NonAzure alias for one release. Azure owns SQL Server, Service Bus, Azure Blob, Cosmos, Azure Table, and Blob Data Protection. NonAzure owns PostgreSQL, RabbitMQ, S3 via SeaweedFS, relational audit, PostgreSQL JSONB read model by default, and Redis Data Protection; MongoDB is an explicit read-model opt-in. Lane-owned core provider conflicts fail fast. Redis, DatabaseMigrator, API, Gateway, Scheduler with embedded TickerQ, Blazor, React, and Uno are common; Functions is Azure-only. Local search defaults to Sql and AI defaults to None, with lane-compatible opt-ins. Major/family image tags are centralized. Aspire, Testcontainers, Azure Bicep, Compose, and all three UIs consume the same lane contract. Expensive full-lane and UI acceptance is manual.
 
-Decisions D-035 through D-049 remain historical context and are superseded by D-060 where their Portable-era defaults conflict.
+D-060 supersedes D-035 and D-044, and updates D-038 provider naming. D-036, D-037, D-039 through D-043, and D-045 through D-049 remain confirmed decisions and are complemented by the shared lane contract.
 
 ## Inputs Summary
 

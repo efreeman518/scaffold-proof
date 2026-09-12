@@ -79,7 +79,8 @@ hostingLaneDefaults:
 localDefaults: { searchProvider: Sql, aiProvider: None }
 
 storageProviders: [AzureBlob, S3]                                   # Storage:Provider, see D-037
-readModelProviders: [Cosmos, PostgreSqlJsonb, MongoDb, Relational]    # Relational aliases PostgreSqlJsonb for one release, see D-060
+readModelProviders: [Cosmos, PostgreSqlJsonb, MongoDb]                 # Canonical providers, see D-060
+readModelProviderAliases: { Relational: PostgreSqlJsonb, expires: one-release } # Deprecated compatibility alias
 auditProviders: [AzureTable, Relational]                             # Audit:Provider, see D-039
 searchProviders: [AzureAiSearch, PgVector, Sql]                      # Search:Provider, see D-040 (Sql = NoOpSearchService prefix search)
 aiProviders: [AzureInference, OpenAICompatible, FoundryLocal, None]  # AiServices:Provider, see D-041
@@ -271,7 +272,7 @@ entities:
   # TaskView (read-model projection, not a domain aggregate)
   # =========================================================================
   - name: TaskView
-    dataStore: sql   # relational read-model table (ReadModel:Provider=Relational, D-038); the Cosmos arm is the Azure-lane default   # ReadModel:Provider = Cosmos | Relational, see D-038; readModelProviders above
+    dataStore: sql   # PostgreSQL JSONB read-model table (ReadModel:Provider=PostgreSqlJsonb, D-038); legacy Relational aliases this arm
     properties:
       - { name: TenantId, type: "Guid", required: true }
       - { name: Title, type: "nvarchar", maxLength: 200, required: true }
