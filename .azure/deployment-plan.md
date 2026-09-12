@@ -70,7 +70,7 @@ Generated: 2026-04-23
 
 | Service | Azure Resource | SKU/Tier | Est. $/mo |
 |---------|---------------|----------|-----------|
-| Database (`databaseProvider`) | Azure SQL Database (default) or PostgreSQL Flexible Server 17 | Dev: Basic DTU (5 DTU) / Postgres `Standard_B1ms` Burstable. Prod: SQL Hyperscale `HS_Gen5_2` zone-redundant + HA/read-scale replica, or Postgres `GeneralPurpose` zone-redundant + read replica | Dev ~$5; prod materially higher (Hyperscale/HA priced per vCore + replica) |
+| Database | Azure SQL Database | Dev: Basic DTU (5 DTU). Prod: SQL Hyperscale `HS_Gen5_2` zone-redundant + HA/read-scale replica | Dev ~$5; prod materially higher (Hyperscale/HA priced per vCore + replica) |
 | Cache | Azure Managed Redis (`Microsoft.Cache/redisEnterprise`), FusionCache L2 (`ConnectionStrings__Redis1`) | Dev `Balanced_B0`, no HA. Prod `Balanced_B5`+, HA | Dev ~$0 (~small Balanced tier); prod higher with HA |
 | Document Store | Cosmos DB | Serverless | ~$0-5 |
 | Messaging | Service Bus | Standard (3 filtered subscriptions: `projection`, `ai-review`, `workflow`) | ~$10 |
@@ -132,9 +132,10 @@ database user/role provisioning yet - see the module comments in `sql-database.b
 | Resource Type | Count | Notes |
 |---------------|-------|-------|
 | Microsoft.App/managedEnvironments | 1 | Consumption tier |
-| Microsoft.App/containerApps | 5 | Gateway, API, Scheduler, Blazor, Uno |
-| Microsoft.Sql/servers or Microsoft.DBforPostgreSQL/flexibleServers | 1 | Entra-only auth; whichever `databaseProvider` is selected (mutually exclusive) |
-| Microsoft.Sql/servers/databases or .../flexibleServers/databases | 1 (+1 read replica in prod) | Dev Basic DTU / Postgres Burstable; prod Hyperscale HA replica or Postgres read replica |
+| Microsoft.App/containerApps | 4 | Gateway, API, Scheduler, Blazor |
+| Microsoft.Web/staticSites | 2 | React and Uno WASM frontends |
+| Microsoft.Sql/servers | 1 | Entra-only auth |
+| Microsoft.Sql/servers/databases | 1 | Dev Basic DTU; prod Hyperscale HA replica |
 | Microsoft.Cache/redisEnterprise + /databases | 1 + 1 | Azure Managed Redis (FusionCache L2) |
 | Microsoft.DocumentDB/databaseAccounts | 1 | Serverless |
 | Microsoft.ServiceBus/namespaces | 1 | Standard, 3 topic subscriptions (`projection`, `ai-review`, `workflow`) |

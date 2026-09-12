@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "13445355836557753897"
+      "templateHash": "2877028319972546357"
     }
   },
   "parameters": {
@@ -90,45 +90,15 @@
         "description": "Blazor container image"
       }
     },
-    "databaseProvider": {
-      "type": "string",
-      "defaultValue": "SqlServer",
-      "allowedValues": [
-        "SqlServer",
-        "PostgreSql"
-      ],
-      "metadata": {
-        "description": "Active database provider"
-      }
-    },
-    "messagingProvider": {
-      "type": "string",
-      "defaultValue": "ServiceBus",
-      "allowedValues": [
-        "ServiceBus",
-        "RabbitMq"
-      ],
-      "metadata": {
-        "description": "Messaging transport: Azure Service Bus (default) or a single-node RabbitMQ container app (D-034)"
-      }
-    },
     "searchProvider": {
       "type": "string",
       "defaultValue": "AzureAiSearch",
       "allowedValues": [
         "AzureAiSearch",
-        "PgVector",
         "Sql"
       ],
       "metadata": {
-        "description": "Search backend: Azure AI Search (default), Postgres pgvector, or the SQL prefix fallback (D-040)"
-      }
-    },
-    "rabbitMqPassword": {
-      "type": "securestring",
-      "defaultValue": "",
-      "metadata": {
-        "description": "RabbitMQ broker password, used only when messagingProvider is RabbitMq"
+        "description": "Search backend: Azure AI Search (default) or the SQL prefix fallback (D-040)"
       }
     },
     "dbMaxPoolSize": {
@@ -185,52 +155,6 @@
       "defaultValue": false,
       "metadata": {
         "description": "SQL Hyperscale read-scale routing via ApplicationIntent=ReadOnly (prod)"
-      }
-    },
-    "pgSkuName": {
-      "type": "string",
-      "defaultValue": "Standard_B1ms",
-      "metadata": {
-        "description": "PostgreSQL Flexible Server compute SKU name"
-      }
-    },
-    "pgSkuTier": {
-      "type": "string",
-      "defaultValue": "Burstable",
-      "metadata": {
-        "description": "PostgreSQL Flexible Server compute SKU tier"
-      }
-    },
-    "pgStorageSizeGB": {
-      "type": "int",
-      "defaultValue": 32,
-      "metadata": {
-        "description": "PostgreSQL Flexible Server storage size in GB"
-      }
-    },
-    "pgHighAvailabilityMode": {
-      "type": "string",
-      "defaultValue": "Disabled",
-      "allowedValues": [
-        "Disabled",
-        "ZoneRedundant"
-      ],
-      "metadata": {
-        "description": "PostgreSQL high availability mode: ZoneRedundant for prod, Disabled for dev"
-      }
-    },
-    "pgDeployReadReplica": {
-      "type": "bool",
-      "defaultValue": false,
-      "metadata": {
-        "description": "Deploy a PostgreSQL prod-only read replica"
-      }
-    },
-    "postgresPgBouncerEnabled": {
-      "type": "bool",
-      "defaultValue": false,
-      "metadata": {
-        "description": "Enable the built-in PgBouncer on PostgreSQL Flexible Server (D-045). Not available on the Burstable tier - use GeneralPurpose or MemoryOptimized. When true the app connection strings target port 6432 and every host gets Database__PostgreSql__PoolerMode=Transaction."
       }
     },
     "redisSkuName": {
@@ -835,7 +759,6 @@
       ]
     },
     "sqlDatabase": {
-      "condition": "[equals(parameters('databaseProvider'), 'SqlServer')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "sqlDatabase",
@@ -1065,330 +988,6 @@
             "connectionString": {
               "type": "string",
               "value": "[format('Server=tcp:{0},1433;Database={1};Authentication=Active Directory Default;Encrypt=True;TrustServerCertificate=False;Max Pool Size={2};', reference(resourceId('Microsoft.Sql/servers', format('{0}-sql-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))), '2023-08-01-preview').fullyQualifiedDomainName, 'taskflowdb', parameters('maxPoolSize'))]"
-            }
-          }
-        }
-      },
-      "dependsOn": [
-        "rg"
-      ]
-    },
-    "postgres": {
-      "condition": "[equals(parameters('databaseProvider'), 'PostgreSql')]",
-      "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2025-04-01",
-      "name": "postgres",
-      "resourceGroup": "[format('{0}-rg', variables('prefix'))]",
-      "properties": {
-        "expressionEvaluationOptions": {
-          "scope": "inner"
-        },
-        "mode": "Incremental",
-        "parameters": {
-          "resourcePrefix": {
-            "value": "[variables('prefix')]"
-          },
-          "location": {
-            "value": "[parameters('location')]"
-          },
-          "pgAdminPrincipalId": {
-            "value": "[parameters('sqlAdminPrincipalId')]"
-          },
-          "pgAdminPrincipalName": {
-            "value": "[parameters('sqlAdminPrincipalName')]"
-          },
-          "pgAdminPrincipalType": "[if(equals(parameters('sqlAdminPrincipalType'), 'Application'), createObject('value', 'ServicePrincipal'), createObject('value', parameters('sqlAdminPrincipalType')))]",
-          "skuName": {
-            "value": "[parameters('pgSkuName')]"
-          },
-          "skuTier": {
-            "value": "[parameters('pgSkuTier')]"
-          },
-          "storageSizeGB": {
-            "value": "[parameters('pgStorageSizeGB')]"
-          },
-          "highAvailabilityMode": {
-            "value": "[parameters('pgHighAvailabilityMode')]"
-          },
-          "deployReadReplica": {
-            "value": "[parameters('pgDeployReadReplica')]"
-          },
-          "pgBouncerEnabled": {
-            "value": "[parameters('postgresPgBouncerEnabled')]"
-          },
-          "maxPoolSize": {
-            "value": "[parameters('dbMaxPoolSize')]"
-          },
-          "entraConnectingPrincipalName": {
-            "value": "[format('{0}-api', variables('prefix'))]"
-          },
-          "tags": {
-            "value": "[variables('tags')]"
-          }
-        },
-        "template": {
-          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-          "contentVersion": "1.0.0.0",
-          "metadata": {
-            "_generator": {
-              "name": "bicep",
-              "version": "0.42.1.51946",
-              "templateHash": "2103795624463452919"
-            }
-          },
-          "parameters": {
-            "resourcePrefix": {
-              "type": "string",
-              "metadata": {
-                "description": "Resource name prefix"
-              }
-            },
-            "location": {
-              "type": "string",
-              "metadata": {
-                "description": "Azure region"
-              }
-            },
-            "pgAdminPrincipalId": {
-              "type": "string",
-              "metadata": {
-                "description": "Entra admin principal ID (object ID)"
-              }
-            },
-            "pgAdminPrincipalName": {
-              "type": "string",
-              "metadata": {
-                "description": "Entra admin principal name"
-              }
-            },
-            "pgAdminPrincipalType": {
-              "type": "string",
-              "defaultValue": "User",
-              "allowedValues": [
-                "User",
-                "Group",
-                "ServicePrincipal"
-              ],
-              "metadata": {
-                "description": "Entra admin principal type"
-              }
-            },
-            "postgresVersion": {
-              "type": "string",
-              "defaultValue": "17",
-              "metadata": {
-                "description": "PostgreSQL major version"
-              }
-            },
-            "skuName": {
-              "type": "string",
-              "defaultValue": "Standard_B1ms",
-              "metadata": {
-                "description": "Compute SKU name, e.g. Standard_B1ms (dev) or Standard_D2s_v3 (prod)"
-              }
-            },
-            "skuTier": {
-              "type": "string",
-              "defaultValue": "Burstable",
-              "allowedValues": [
-                "Burstable",
-                "GeneralPurpose",
-                "MemoryOptimized"
-              ],
-              "metadata": {
-                "description": "Compute SKU tier"
-              }
-            },
-            "storageSizeGB": {
-              "type": "int",
-              "defaultValue": 32,
-              "metadata": {
-                "description": "Storage size in GB"
-              }
-            },
-            "highAvailabilityMode": {
-              "type": "string",
-              "defaultValue": "Disabled",
-              "allowedValues": [
-                "Disabled",
-                "ZoneRedundant"
-              ],
-              "metadata": {
-                "description": "High availability mode: ZoneRedundant for prod, Disabled for dev"
-              }
-            },
-            "deployReadReplica": {
-              "type": "bool",
-              "defaultValue": false,
-              "metadata": {
-                "description": "Deploy a prod-only read replica"
-              }
-            },
-            "pgBouncerEnabled": {
-              "type": "bool",
-              "defaultValue": false,
-              "metadata": {
-                "description": "Enable the built-in PgBouncer (D-045). Requires GeneralPurpose or MemoryOptimized: the Burstable tier does not offer the pgbouncer.* server parameters and the deployment fails if this is set there."
-              }
-            },
-            "maxPoolSize": {
-              "type": "int",
-              "defaultValue": 100,
-              "metadata": {
-                "description": "Maximum Npgsql connection pool size, emitted explicitly in every connection string"
-              }
-            },
-            "entraConnectingPrincipalName": {
-              "type": "string",
-              "defaultValue": "",
-              "metadata": {
-                "description": "Name of the Entra principal (managed identity display name) used as the connecting Npgsql role. Data-plane role creation is a separate step; see comment on connectionString output."
-              }
-            },
-            "tags": {
-              "type": "object",
-              "defaultValue": {},
-              "metadata": {
-                "description": "Tags"
-              }
-            }
-          },
-          "variables": {
-            "uniqueSuffix": "[uniqueString(resourceGroup().id)]",
-            "pgPort": "[if(parameters('pgBouncerEnabled'), 6432, 5432)]"
-          },
-          "resources": [
-            {
-              "type": "Microsoft.DBforPostgreSQL/flexibleServers",
-              "apiVersion": "2025-08-01",
-              "name": "[format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
-              "sku": {
-                "name": "[parameters('skuName')]",
-                "tier": "[parameters('skuTier')]"
-              },
-              "properties": {
-                "version": "[parameters('postgresVersion')]",
-                "storage": {
-                  "storageSizeGB": "[parameters('storageSizeGB')]"
-                },
-                "highAvailability": {
-                  "mode": "[parameters('highAvailabilityMode')]"
-                },
-                "authConfig": {
-                  "activeDirectoryAuth": "Enabled",
-                  "passwordAuth": "Disabled",
-                  "tenantId": "[subscription().tenantId]"
-                }
-              }
-            },
-            {
-              "type": "Microsoft.DBforPostgreSQL/flexibleServers/administrators",
-              "apiVersion": "2025-08-01",
-              "name": "[format('{0}/{1}', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), parameters('pgAdminPrincipalId'))]",
-              "properties": {
-                "principalName": "[parameters('pgAdminPrincipalName')]",
-                "principalType": "[parameters('pgAdminPrincipalType')]",
-                "tenantId": "[subscription().tenantId]"
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')))]"
-              ]
-            },
-            {
-              "type": "Microsoft.DBforPostgreSQL/flexibleServers/databases",
-              "apiVersion": "2025-08-01",
-              "name": "[format('{0}/{1}', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), 'taskflowdb')]",
-              "properties": {
-                "charset": "UTF8",
-                "collation": "en_US.utf8"
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')))]"
-              ]
-            },
-            {
-              "type": "Microsoft.DBforPostgreSQL/flexibleServers/configurations",
-              "apiVersion": "2025-08-01",
-              "name": "[format('{0}/{1}', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), 'azure.extensions')]",
-              "properties": {
-                "source": "user-override",
-                "value": "VECTOR"
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')))]"
-              ]
-            },
-            {
-              "condition": "[parameters('pgBouncerEnabled')]",
-              "type": "Microsoft.DBforPostgreSQL/flexibleServers/configurations",
-              "apiVersion": "2025-08-01",
-              "name": "[format('{0}/{1}', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), 'pgbouncer.enabled')]",
-              "properties": {
-                "source": "user-override",
-                "value": "true"
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')))]"
-              ]
-            },
-            {
-              "type": "Microsoft.DBforPostgreSQL/flexibleServers/firewallRules",
-              "apiVersion": "2025-08-01",
-              "name": "[format('{0}/{1}', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), 'AllowAzureServices')]",
-              "properties": {
-                "startIpAddress": "0.0.0.0",
-                "endIpAddress": "0.0.0.0"
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')))]"
-              ]
-            },
-            {
-              "condition": "[parameters('deployReadReplica')]",
-              "type": "Microsoft.DBforPostgreSQL/flexibleServers",
-              "apiVersion": "2025-08-01",
-              "name": "[format('{0}-pg-replica-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
-              "sku": {
-                "name": "[parameters('skuName')]",
-                "tier": "[parameters('skuTier')]"
-              },
-              "properties": {
-                "createMode": "Replica",
-                "sourceServerResourceId": "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')))]"
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix')))]"
-              ]
-            }
-          ],
-          "outputs": {
-            "serverName": {
-              "type": "string",
-              "value": "[format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))]"
-            },
-            "serverFqdn": {
-              "type": "string",
-              "value": "[reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))), '2025-08-01').fullyQualifiedDomainName]"
-            },
-            "databaseName": {
-              "type": "string",
-              "value": "taskflowdb"
-            },
-            "poolerMode": {
-              "type": "string",
-              "value": "[if(parameters('pgBouncerEnabled'), 'Transaction', 'None')]"
-            },
-            "connectionString": {
-              "type": "string",
-              "value": "[format('Host={0};Port={1};Database={2};Username={3};SSL Mode=Require;Trust Server Certificate=False;Maximum Pool Size={4}', reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))), '2025-08-01').fullyQualifiedDomainName, variables('pgPort'), 'taskflowdb', parameters('entraConnectingPrincipalName'), parameters('maxPoolSize'))]"
-            },
-            "readConnectionString": {
-              "type": "string",
-              "value": "[format('Host={0};Port={1};Database={2};Username={3};SSL Mode=Require;Trust Server Certificate=False;Maximum Pool Size={4}', coalesce(tryGet(tryGet(if(parameters('deployReadReplica'), reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-replica-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))), '2025-08-01', 'full'), null()), 'properties'), 'fullyQualifiedDomainName'), reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('{0}-pg-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))), '2025-08-01').fullyQualifiedDomainName), variables('pgPort'), 'taskflowdb', parameters('entraConnectingPrincipalName'), parameters('maxPoolSize'))]"
             }
           }
         }
@@ -1665,7 +1264,6 @@
       ]
     },
     "serviceBus": {
-      "condition": "[equals(parameters('messagingProvider'), 'ServiceBus')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "serviceBus",
@@ -1908,271 +1506,6 @@
         "rg"
       ]
     },
-    "rabbitMq": {
-      "condition": "[equals(parameters('messagingProvider'), 'RabbitMq')]",
-      "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2025-04-01",
-      "name": "rabbitMq",
-      "resourceGroup": "[format('{0}-rg', variables('prefix'))]",
-      "properties": {
-        "expressionEvaluationOptions": {
-          "scope": "inner"
-        },
-        "mode": "Incremental",
-        "parameters": {
-          "resourcePrefix": {
-            "value": "[variables('prefix')]"
-          },
-          "location": {
-            "value": "[parameters('location')]"
-          },
-          "environmentId": {
-            "value": "[reference('containerAppsEnv').outputs.id.value]"
-          },
-          "environmentName": {
-            "value": "[reference('containerAppsEnv').outputs.name.value]"
-          },
-          "storageAccountName": {
-            "value": "[reference('storage').outputs.appStorageName.value]"
-          },
-          "brokerPassword": {
-            "value": "[parameters('rabbitMqPassword')]"
-          },
-          "tags": {
-            "value": "[variables('tags')]"
-          }
-        },
-        "template": {
-          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-          "contentVersion": "1.0.0.0",
-          "metadata": {
-            "_generator": {
-              "name": "bicep",
-              "version": "0.42.1.51946",
-              "templateHash": "4817523154133430326"
-            }
-          },
-          "parameters": {
-            "resourcePrefix": {
-              "type": "string",
-              "metadata": {
-                "description": "Resource name prefix"
-              }
-            },
-            "location": {
-              "type": "string",
-              "metadata": {
-                "description": "Azure region"
-              }
-            },
-            "environmentId": {
-              "type": "string",
-              "metadata": {
-                "description": "Container Apps Environment ID"
-              }
-            },
-            "environmentName": {
-              "type": "string",
-              "metadata": {
-                "description": "Container Apps Environment name, needed to attach the Azure Files storage mount"
-              }
-            },
-            "storageAccountName": {
-              "type": "string",
-              "metadata": {
-                "description": "Storage account that hosts the file share backing the broker volume"
-              }
-            },
-            "containerImage": {
-              "type": "string",
-              "defaultValue": "rabbitmq:4.1-management",
-              "metadata": {
-                "description": "RabbitMQ container image, pinned so a broker restart cannot pick up a new major version"
-              }
-            },
-            "brokerUser": {
-              "type": "string",
-              "defaultValue": "taskflow",
-              "metadata": {
-                "description": "Broker user name"
-              }
-            },
-            "brokerPassword": {
-              "type": "securestring",
-              "metadata": {
-                "description": "Broker password"
-              }
-            },
-            "cpu": {
-              "type": "string",
-              "defaultValue": "1.0",
-              "metadata": {
-                "description": "CPU cores"
-              }
-            },
-            "memory": {
-              "type": "string",
-              "defaultValue": "2Gi",
-              "metadata": {
-                "description": "Memory"
-              }
-            },
-            "tags": {
-              "type": "object",
-              "defaultValue": {},
-              "metadata": {
-                "description": "Tags"
-              }
-            }
-          },
-          "variables": {
-            "fileShareName": "rabbitmq-data",
-            "storageMountName": "rabbitmq-storage"
-          },
-          "resources": [
-            {
-              "type": "Microsoft.Storage/storageAccounts/fileServices",
-              "apiVersion": "2023-05-01",
-              "name": "[format('{0}/{1}', parameters('storageAccountName'), 'default')]"
-            },
-            {
-              "type": "Microsoft.Storage/storageAccounts/fileServices/shares",
-              "apiVersion": "2023-05-01",
-              "name": "[format('{0}/{1}/{2}', parameters('storageAccountName'), 'default', variables('fileShareName'))]",
-              "properties": {
-                "shareQuota": 100
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Storage/storageAccounts/fileServices', parameters('storageAccountName'), 'default')]"
-              ]
-            },
-            {
-              "type": "Microsoft.App/managedEnvironments/storages",
-              "apiVersion": "2024-03-01",
-              "name": "[format('{0}/{1}', parameters('environmentName'), variables('storageMountName'))]",
-              "properties": {
-                "azureFile": {
-                  "accountName": "[parameters('storageAccountName')]",
-                  "accountKey": "[listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-05-01').keys[0].value]",
-                  "shareName": "[variables('fileShareName')]",
-                  "accessMode": "ReadWrite"
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Storage/storageAccounts/fileServices/shares', parameters('storageAccountName'), 'default', variables('fileShareName'))]"
-              ]
-            },
-            {
-              "type": "Microsoft.App/containerApps",
-              "apiVersion": "2024-03-01",
-              "name": "[format('{0}-rabbitmq', parameters('resourcePrefix'))]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
-              "identity": {
-                "type": "SystemAssigned"
-              },
-              "properties": {
-                "environmentId": "[parameters('environmentId')]",
-                "configuration": {
-                  "secrets": [
-                    {
-                      "name": "broker-password",
-                      "value": "[parameters('brokerPassword')]"
-                    }
-                  ],
-                  "ingress": {
-                    "external": false,
-                    "targetPort": 5672,
-                    "exposedPort": 5672,
-                    "transport": "tcp",
-                    "additionalPortMappings": [
-                      {
-                        "external": false,
-                        "targetPort": 15672,
-                        "exposedPort": 15672
-                      }
-                    ]
-                  }
-                },
-                "template": {
-                  "containers": [
-                    {
-                      "name": "rabbitmq",
-                      "image": "[parameters('containerImage')]",
-                      "resources": {
-                        "cpu": "[json(parameters('cpu'))]",
-                        "memory": "[parameters('memory')]"
-                      },
-                      "env": [
-                        {
-                          "name": "RABBITMQ_DEFAULT_USER",
-                          "value": "[parameters('brokerUser')]"
-                        },
-                        {
-                          "name": "RABBITMQ_DEFAULT_PASS",
-                          "secretRef": "broker-password"
-                        }
-                      ],
-                      "volumeMounts": [
-                        {
-                          "volumeName": "[variables('storageMountName')]",
-                          "mountPath": "/var/lib/rabbitmq/mnesia"
-                        }
-                      ],
-                      "probes": [
-                        {
-                          "type": "Readiness",
-                          "tcpSocket": {
-                            "port": 5672
-                          },
-                          "initialDelaySeconds": 15,
-                          "periodSeconds": 10,
-                          "timeoutSeconds": 5,
-                          "failureThreshold": 12
-                        }
-                      ]
-                    }
-                  ],
-                  "volumes": [
-                    {
-                      "name": "[variables('storageMountName')]",
-                      "storageType": "AzureFile",
-                      "storageName": "[variables('storageMountName')]"
-                    }
-                  ],
-                  "scale": {
-                    "minReplicas": 1,
-                    "maxReplicas": 1
-                  }
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.App/managedEnvironments/storages', parameters('environmentName'), variables('storageMountName'))]"
-              ]
-            }
-          ],
-          "outputs": {
-            "name": {
-              "type": "string",
-              "value": "[format('{0}-rabbitmq', parameters('resourcePrefix'))]"
-            },
-            "host": {
-              "type": "string",
-              "value": "[reference(resourceId('Microsoft.App/containerApps', format('{0}-rabbitmq', parameters('resourcePrefix'))), '2024-03-01').configuration.ingress.fqdn]"
-            },
-            "managementPort": {
-              "type": "int",
-              "value": 15672
-            }
-          }
-        }
-      },
-      "dependsOn": [
-        "containerAppsEnv",
-        "rg",
-        "storage"
-      ]
-    },
     "storage": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
@@ -2358,7 +1691,7 @@
             "value": "0.5Gi"
           },
           "envVars": {
-            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value), createObject('name', 'Database__Provider', 'value', parameters('databaseProvider')), createObject('name', 'Database__PostgreSql__PoolerMode', 'value', if(and(equals(parameters('databaseProvider'), 'PostgreSql'), parameters('postgresPgBouncerEnabled')), 'Transaction', 'None'))), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TickerQDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), '')))))]"
+            "value": "[union(createArray(createObject('name', 'Hosting__Lane', 'value', 'Azure'), createObject('name', 'Database__Provider', 'value', 'SqlServer'), createObject('name', 'Messaging__Provider', 'value', 'ServiceBus'), createObject('name', 'Storage__Provider', 'value', 'AzureBlob'), createObject('name', 'ReadModel__Provider', 'value', 'Cosmos'), createObject('name', 'Audit__Provider', 'value', 'AzureTable'), createObject('name', 'Search__Provider', 'value', parameters('searchProvider')), createObject('name', 'DataProtection__Persistence', 'value', 'AzureBlob'), createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value)), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TickerQDbContext', 'value', reference('sqlDatabase').outputs.connectionString.value)))]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -2493,7 +1826,6 @@
         "appInsights",
         "containerAppsEnv",
         "keyVault",
-        "postgres",
         "rg",
         "sqlDatabase"
       ]
@@ -2543,7 +1875,7 @@
             "value": "[parameters('gatewayProfile').concurrentRequests]"
           },
           "envVars": {
-            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value), createObject('name', 'Database__Provider', 'value', parameters('databaseProvider')), createObject('name', 'Database__PostgreSql__PoolerMode', 'value', if(and(equals(parameters('databaseProvider'), 'PostgreSql'), parameters('postgresPgBouncerEnabled')), 'Transaction', 'None'))), createArray(createObject('name', 'ReverseProxy__Clusters__api__Destinations__default__Address', 'value', format('https://{0}', reference('api').outputs.fqdn.value)), createObject('name', 'AggregateHealthCheck__TaskFlowApiHealthUrl', 'value', format('https://{0}/health/full', reference('api').outputs.fqdn.value)), createObject('name', 'AggregateHealthCheck__TaskFlowApiClusterId', 'value', ''), createObject('name', 'CorsSettings__AllowedOrigins__0', 'value', format('https://{0}-blazor.{1}', variables('prefix'), reference('containerAppsEnv').outputs.defaultDomain.value)), createObject('name', 'CorsSettings__AllowedOrigins__1', 'value', format('https://{0}', reference('reactStaticWebApp').outputs.defaultHostname.value)), createObject('name', 'CorsSettings__AllowedOrigins__2', 'value', format('https://{0}', reference('unoStaticWebApp').outputs.defaultHostname.value))))]"
+            "value": "[union(createArray(createObject('name', 'Hosting__Lane', 'value', 'Azure'), createObject('name', 'Database__Provider', 'value', 'SqlServer'), createObject('name', 'Messaging__Provider', 'value', 'ServiceBus'), createObject('name', 'Storage__Provider', 'value', 'AzureBlob'), createObject('name', 'ReadModel__Provider', 'value', 'Cosmos'), createObject('name', 'Audit__Provider', 'value', 'AzureTable'), createObject('name', 'Search__Provider', 'value', parameters('searchProvider')), createObject('name', 'DataProtection__Persistence', 'value', 'AzureBlob'), createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value)), createArray(createObject('name', 'ReverseProxy__Clusters__api__Destinations__default__Address', 'value', format('https://{0}', reference('api').outputs.fqdn.value)), createObject('name', 'AggregateHealthCheck__TaskFlowApiHealthUrl', 'value', format('https://{0}/health/full', reference('api').outputs.fqdn.value)), createObject('name', 'AggregateHealthCheck__TaskFlowApiClusterId', 'value', ''), createObject('name', 'CorsSettings__AllowedOrigins__0', 'value', format('https://{0}-blazor.{1}', variables('prefix'), reference('containerAppsEnv').outputs.defaultDomain.value)), createObject('name', 'CorsSettings__AllowedOrigins__1', 'value', format('https://{0}', reference('reactStaticWebApp').outputs.defaultHostname.value)), createObject('name', 'CorsSettings__AllowedOrigins__2', 'value', format('https://{0}', reference('unoStaticWebApp').outputs.defaultHostname.value))))]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -2856,7 +2188,7 @@
             "value": "[parameters('apiProfile').concurrentRequests]"
           },
           "envVars": {
-            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value), createObject('name', 'Database__Provider', 'value', parameters('databaseProvider')), createObject('name', 'Database__PostgreSql__PoolerMode', 'value', if(and(equals(parameters('databaseProvider'), 'PostgreSql'), parameters('postgresPgBouncerEnabled')), 'Transaction', 'None'))), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), format('{0}ApplicationIntent=ReadOnly;', coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), '')), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'readConnectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__CosmosDb1', 'value', reference('cosmosDb').outputs.accountEndpoint.value), createObject('name', 'ConnectionStrings__BlobStorage1', 'value', reference('storage').outputs.appStorageBlobEndpoint.value), createObject('name', 'Cors__AllowedOrigins__0', 'value', format('https://{0}-blazor.{1}', variables('prefix'), reference('containerAppsEnv').outputs.defaultDomain.value)), createObject('name', 'Cors__AllowedOrigins__1', 'value', format('https://{0}', reference('reactStaticWebApp').outputs.defaultHostname.value)), createObject('name', 'Cors__AllowedOrigins__2', 'value', format('https://{0}', reference('unoStaticWebApp').outputs.defaultHostname.value)), createObject('name', 'ConnectionStrings__TableStorage1', 'value', reference('storage').outputs.appStorageTableEndpoint.value), createObject('name', 'ConnectionStrings__Redis1', 'value', listOutputsWithSecureValues('redis', '2025-04-01').connectionString)), if(equals(parameters('messagingProvider'), 'RabbitMq'), createArray(createObject('name', 'Messaging__Provider', 'value', parameters('messagingProvider')), createObject('name', 'ConnectionStrings__RabbitMq1', 'value', if(equals(parameters('messagingProvider'), 'RabbitMq'), format('amqp://taskflow:{0}@{1}:5672/', parameters('rabbitMqPassword'), reference('rabbitMq').outputs.host.value), '')), createObject('name', 'Messaging__RabbitMq__ConnectionString', 'value', if(equals(parameters('messagingProvider'), 'RabbitMq'), format('amqp://taskflow:{0}@{1}:5672/', parameters('rabbitMqPassword'), reference('rabbitMq').outputs.host.value), ''))), createArray(createObject('name', 'Messaging__Provider', 'value', parameters('messagingProvider')), createObject('name', 'SERVICEBUS__fullyQualifiedNamespace', 'value', reference('serviceBus').outputs.namespaceEndpoint.value))))]"
+            "value": "[union(createArray(createObject('name', 'Hosting__Lane', 'value', 'Azure'), createObject('name', 'Database__Provider', 'value', 'SqlServer'), createObject('name', 'Messaging__Provider', 'value', 'ServiceBus'), createObject('name', 'Storage__Provider', 'value', 'AzureBlob'), createObject('name', 'ReadModel__Provider', 'value', 'Cosmos'), createObject('name', 'Audit__Provider', 'value', 'AzureTable'), createObject('name', 'Search__Provider', 'value', parameters('searchProvider')), createObject('name', 'DataProtection__Persistence', 'value', 'AzureBlob'), createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value)), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', format('{0}ApplicationIntent=ReadOnly;', reference('sqlDatabase').outputs.connectionString.value)), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__CosmosDb1', 'value', reference('cosmosDb').outputs.accountEndpoint.value), createObject('name', 'ConnectionStrings__BlobStorage1', 'value', reference('storage').outputs.appStorageBlobEndpoint.value), createObject('name', 'Cors__AllowedOrigins__0', 'value', format('https://{0}-blazor.{1}', variables('prefix'), reference('containerAppsEnv').outputs.defaultDomain.value)), createObject('name', 'Cors__AllowedOrigins__1', 'value', format('https://{0}', reference('reactStaticWebApp').outputs.defaultHostname.value)), createObject('name', 'Cors__AllowedOrigins__2', 'value', format('https://{0}', reference('unoStaticWebApp').outputs.defaultHostname.value)), createObject('name', 'ConnectionStrings__TableStorage1', 'value', reference('storage').outputs.appStorageTableEndpoint.value), createObject('name', 'ConnectionStrings__Redis1', 'value', listOutputsWithSecureValues('redis', '2025-04-01').connectionString)), createArray(createObject('name', 'SERVICEBUS__fullyQualifiedNamespace', 'value', reference('serviceBus').outputs.namespaceEndpoint.value)))]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -3110,8 +2442,6 @@
         "containerAppsEnv",
         "cosmosDb",
         "keyVault",
-        "postgres",
-        "rabbitMq",
         "reactStaticWebApp",
         "redis",
         "rg",
@@ -3163,7 +2493,7 @@
             "value": "[parameters('schedulerProfile').maxReplicas]"
           },
           "envVars": {
-            "value": "[union(createArray(createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value), createObject('name', 'Database__Provider', 'value', parameters('databaseProvider')), createObject('name', 'Database__PostgreSql__PoolerMode', 'value', if(and(equals(parameters('databaseProvider'), 'PostgreSql'), parameters('postgresPgBouncerEnabled')), 'Transaction', 'None'))), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), format('{0}ApplicationIntent=ReadOnly;', coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), '')), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'readConnectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__TickerQDbContext', 'value', if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('name', 'ConnectionStrings__Redis1', 'value', listOutputsWithSecureValues('redis', '2025-04-01').connectionString)), if(equals(parameters('messagingProvider'), 'RabbitMq'), createArray(createObject('name', 'Messaging__Provider', 'value', parameters('messagingProvider')), createObject('name', 'ConnectionStrings__RabbitMq1', 'value', if(equals(parameters('messagingProvider'), 'RabbitMq'), format('amqp://taskflow:{0}@{1}:5672/', parameters('rabbitMqPassword'), reference('rabbitMq').outputs.host.value), '')), createObject('name', 'Messaging__RabbitMq__ConnectionString', 'value', if(equals(parameters('messagingProvider'), 'RabbitMq'), format('amqp://taskflow:{0}@{1}:5672/', parameters('rabbitMqPassword'), reference('rabbitMq').outputs.host.value), ''))), createArray(createObject('name', 'Messaging__Provider', 'value', parameters('messagingProvider')), createObject('name', 'SERVICEBUS__fullyQualifiedNamespace', 'value', reference('serviceBus').outputs.namespaceEndpoint.value))))]"
+            "value": "[union(createArray(createObject('name', 'Hosting__Lane', 'value', 'Azure'), createObject('name', 'Database__Provider', 'value', 'SqlServer'), createObject('name', 'Messaging__Provider', 'value', 'ServiceBus'), createObject('name', 'Storage__Provider', 'value', 'AzureBlob'), createObject('name', 'ReadModel__Provider', 'value', 'Cosmos'), createObject('name', 'Audit__Provider', 'value', 'AzureTable'), createObject('name', 'Search__Provider', 'value', parameters('searchProvider')), createObject('name', 'DataProtection__Persistence', 'value', 'AzureBlob'), createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value)), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', format('{0}ApplicationIntent=ReadOnly;', reference('sqlDatabase').outputs.connectionString.value)), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TickerQDbContext', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__Redis1', 'value', listOutputsWithSecureValues('redis', '2025-04-01').connectionString)), createArray(createObject('name', 'SERVICEBUS__fullyQualifiedNamespace', 'value', reference('serviceBus').outputs.namespaceEndpoint.value)))]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -3416,8 +2746,6 @@
         "appInsights",
         "containerAppsEnv",
         "keyVault",
-        "postgres",
-        "rabbitMq",
         "redis",
         "rg",
         "serviceBus",
@@ -3472,24 +2800,7 @@
             "value": "sticky"
           },
           "envVars": {
-            "value": [
-              {
-                "name": "Gateway__BaseUrl",
-                "value": "[format('https://{0}', reference('gateway').outputs.fqdn.value)]"
-              },
-              {
-                "name": "Grpc__TaskFlowRead__Address",
-                "value": "[format('http://{0}:{1}', reference('api').outputs.fqdn.value, variables('apiGrpcPort'))]"
-              },
-              {
-                "name": "ASPNETCORE_ENVIRONMENT",
-                "value": "Production"
-              },
-              {
-                "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
-                "value": "[reference('appInsights').outputs.connectionString.value]"
-              }
-            ]
+            "value": "[union(createArray(createObject('name', 'Hosting__Lane', 'value', 'Azure'), createObject('name', 'Database__Provider', 'value', 'SqlServer'), createObject('name', 'Messaging__Provider', 'value', 'ServiceBus'), createObject('name', 'Storage__Provider', 'value', 'AzureBlob'), createObject('name', 'ReadModel__Provider', 'value', 'Cosmos'), createObject('name', 'Audit__Provider', 'value', 'AzureTable'), createObject('name', 'Search__Provider', 'value', parameters('searchProvider')), createObject('name', 'DataProtection__Persistence', 'value', 'AzureBlob'), createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value)), createArray(createObject('name', 'Gateway__BaseUrl', 'value', format('https://{0}', reference('gateway').outputs.fqdn.value)), createObject('name', 'Grpc__TaskFlowRead__Address', 'value', format('http://{0}:{1}', reference('api').outputs.fqdn.value, variables('apiGrpcPort'))), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value)))]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -3739,9 +3050,11 @@
       },
       "dependsOn": [
         "api",
+        "appConfig",
         "appInsights",
         "containerAppsEnv",
         "gateway",
+        "keyVault",
         "rg"
       ]
     },
@@ -3943,16 +3256,20 @@
           "searchProvider": {
             "value": "[parameters('searchProvider')]"
           },
-          "databaseProvider": {
-            "value": "[parameters('databaseProvider')]"
+          "dbConnectionString": {
+            "value": "[reference('sqlDatabase').outputs.connectionString.value]"
           },
-          "dbConnectionString": "[if(equals(parameters('databaseProvider'), 'SqlServer'), createObject('value', coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), '')), createObject('value', coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'connectionString'), 'value'), '')))]",
-          "dbReadConnectionString": "[if(equals(parameters('databaseProvider'), 'SqlServer'), createObject('value', format('{0}ApplicationIntent=ReadOnly;', coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'connectionString'), 'value'), ''))), createObject('value', coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'readConnectionString'), 'value'), '')))]",
+          "dbReadConnectionString": {
+            "value": "[format('{0}ApplicationIntent=ReadOnly;', reference('sqlDatabase').outputs.connectionString.value)]"
+          },
           "cosmosEndpoint": {
             "value": "[reference('cosmosDb').outputs.accountEndpoint.value]"
           },
           "storageBlobEndpoint": {
             "value": "[reference('storage').outputs.appStorageBlobEndpoint.value]"
+          },
+          "storageTableEndpoint": {
+            "value": "[reference('storage').outputs.appStorageTableEndpoint.value]"
           },
           "appInsightsConnectionString": {
             "value": "[reference('appInsights').outputs.connectionString.value]"
@@ -3971,7 +3288,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "12817049552883407345"
+              "templateHash": "13045046678338661666"
             }
           },
           "parameters": {
@@ -4016,22 +3333,10 @@
               "defaultValue": "AzureAiSearch",
               "allowedValues": [
                 "AzureAiSearch",
-                "PgVector",
                 "Sql"
               ],
               "metadata": {
-                "description": "Search backend (D-040); PgVector enables the embedding trigger and its subscription"
-              }
-            },
-            "databaseProvider": {
-              "type": "string",
-              "defaultValue": "SqlServer",
-              "allowedValues": [
-                "SqlServer",
-                "PostgreSql"
-              ],
-              "metadata": {
-                "description": "Active database provider (SqlServer or PostgreSql)"
+                "description": "Search backend (D-040); Azure AI Search is the Azure opt-in and SQL is the local fallback"
               }
             },
             "dbConnectionString": {
@@ -4056,6 +3361,12 @@
               "type": "string",
               "metadata": {
                 "description": "Storage blob endpoint"
+              }
+            },
+            "storageTableEndpoint": {
+              "type": "string",
+              "metadata": {
+                "description": "Storage table endpoint"
               }
             },
             "appInsightsConnectionString": {
@@ -4126,6 +3437,34 @@
                       "value": "dotnet-isolated"
                     },
                     {
+                      "name": "Hosting__Lane",
+                      "value": "Azure"
+                    },
+                    {
+                      "name": "Database__Provider",
+                      "value": "SqlServer"
+                    },
+                    {
+                      "name": "Messaging__Provider",
+                      "value": "ServiceBus"
+                    },
+                    {
+                      "name": "Storage__Provider",
+                      "value": "AzureBlob"
+                    },
+                    {
+                      "name": "ReadModel__Provider",
+                      "value": "Cosmos"
+                    },
+                    {
+                      "name": "Audit__Provider",
+                      "value": "AzureTable"
+                    },
+                    {
+                      "name": "DataProtection__Persistence",
+                      "value": "AzureBlob"
+                    },
+                    {
                       "name": "SERVICEBUS__fullyQualifiedNamespace",
                       "value": "[parameters('serviceBusNamespace')]"
                     },
@@ -4138,16 +3477,12 @@
                       "value": "[parameters('keyVaultUri')]"
                     },
                     {
-                      "name": "Database__Provider",
-                      "value": "[parameters('databaseProvider')]"
-                    },
-                    {
                       "name": "Search__Provider",
                       "value": "[parameters('searchProvider')]"
                     },
                     {
                       "name": "AzureWebJobs.ProcessTaskEmbedding.Disabled",
-                      "value": "[if(equals(parameters('searchProvider'), 'PgVector'), 'false', 'true')]"
+                      "value": "true"
                     },
                     {
                       "name": "ConnectionStrings__TaskFlowDbContextTrxn",
@@ -4168,6 +3503,10 @@
                     {
                       "name": "ConnectionStrings__BlobStorage1",
                       "value": "[parameters('storageBlobEndpoint')]"
+                    },
+                    {
+                      "name": "ConnectionStrings__TableStorage1",
+                      "value": "[parameters('storageTableEndpoint')]"
                     },
                     {
                       "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
@@ -4209,7 +3548,6 @@
         "appInsights",
         "cosmosDb",
         "keyVault",
-        "postgres",
         "rg",
         "serviceBus",
         "sqlDatabase",
@@ -4704,7 +4042,6 @@
       ]
     },
     "apiServiceBusSender": {
-      "condition": "[equals(parameters('messagingProvider'), 'ServiceBus')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "apiServiceBusSender",
@@ -5040,7 +4377,6 @@
       ]
     },
     "schedulerServiceBusSender": {
-      "condition": "[equals(parameters('messagingProvider'), 'ServiceBus')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "schedulerServiceBusSender",
@@ -5108,7 +4444,6 @@
       ]
     },
     "funcServiceBusReceiver": {
-      "condition": "[equals(parameters('messagingProvider'), 'ServiceBus')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "funcServiceBusReceiver",
@@ -5574,15 +4909,11 @@
     },
     "databaseProviderName": {
       "type": "string",
-      "value": "[parameters('databaseProvider')]"
+      "value": "SqlServer"
     },
     "sqlServerName": {
       "type": "string",
-      "value": "[if(equals(parameters('databaseProvider'), 'SqlServer'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'SqlServer'), reference('sqlDatabase'), null()), 'outputs'), 'serverName'), 'value'), ''), '')]"
-    },
-    "postgresServerName": {
-      "type": "string",
-      "value": "[if(equals(parameters('databaseProvider'), 'PostgreSql'), coalesce(tryGet(tryGet(tryGet(if(equals(parameters('databaseProvider'), 'PostgreSql'), reference('postgres'), null()), 'outputs'), 'serverName'), 'value'), ''), '')]"
+      "value": "[reference('sqlDatabase').outputs.serverName.value]"
     },
     "redisHostName": {
       "type": "string",

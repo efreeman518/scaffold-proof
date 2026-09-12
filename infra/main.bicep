@@ -1,5 +1,5 @@
 // ============================================================================
-// TaskFlow Dev Environment - Main Bicep
+// TaskFlow Azure Lane - Main Bicep
 // Single resource group, minimal SKUs, managed identities, Entra-only auth
 // ============================================================================
 
@@ -41,28 +41,12 @@ param migratorImage string = 'mcr.microsoft.com/azuredocs/containerapps-hellowor
 @description('Blazor container image')
 param blazorImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
-@description('Active database provider')
-@allowed(['SqlServer', 'PostgreSql'])
-param databaseProvider string = 'SqlServer'
-
-@description('Messaging transport: Azure Service Bus (default) or a single-node RabbitMQ container app (D-034)')
-@allowed([
-  'ServiceBus'
-  'RabbitMq'
-])
-param messagingProvider string = 'ServiceBus'
-
-@description('Search backend: Azure AI Search (default), Postgres pgvector, or the SQL prefix fallback (D-040)')
+@description('Search backend: Azure AI Search (default) or the SQL prefix fallback (D-040)')
 @allowed([
   'AzureAiSearch'
-  'PgVector'
   'Sql'
 ])
 param searchProvider string = 'AzureAiSearch'
-
-@description('RabbitMQ broker password, used only when messagingProvider is RabbitMq')
-@secure()
-param rabbitMqPassword string = ''
 
 @description('Explicit connection pool ceiling emitted in every connection string')
 param dbMaxPoolSize int = 100
@@ -87,25 +71,6 @@ param sqlHighAvailabilityReplicaCount int = 0
 
 @description('SQL Hyperscale read-scale routing via ApplicationIntent=ReadOnly (prod)')
 param sqlReadScaleEnabled bool = false
-
-@description('PostgreSQL Flexible Server compute SKU name')
-param pgSkuName string = 'Standard_B1ms'
-
-@description('PostgreSQL Flexible Server compute SKU tier')
-param pgSkuTier string = 'Burstable'
-
-@description('PostgreSQL Flexible Server storage size in GB')
-param pgStorageSizeGB int = 32
-
-@description('PostgreSQL high availability mode: ZoneRedundant for prod, Disabled for dev')
-@allowed(['Disabled', 'ZoneRedundant'])
-param pgHighAvailabilityMode string = 'Disabled'
-
-@description('Deploy a PostgreSQL prod-only read replica')
-param pgDeployReadReplica bool = false
-
-@description('Enable the built-in PgBouncer on PostgreSQL Flexible Server (D-045). Not available on the Burstable tier - use GeneralPurpose or MemoryOptimized. When true the app connection strings target port 6432 and every host gets Database__PostgreSql__PoolerMode=Transaction.')
-param postgresPgBouncerEnabled bool = false
 
 @description('Redis Enterprise SKU name: small Balanced tier for dev, HA tier for prod')
 param redisSkuName string = 'Balanced_B0'
@@ -246,7 +211,7 @@ module appConfig 'modules/app-configuration.bicep' = {
 
 // ---- Data Modules ----
 
-module sqlDatabase 'modules/sql-database.bicep' = if (databaseProvider == 'SqlServer') {
+module sqlDatabase 'modules/sql-database.bicep' = {
   name: 'sqlDatabase'
   scope: rg
   params: {
@@ -263,30 +228,6 @@ module sqlDatabase 'modules/sql-database.bicep' = if (databaseProvider == 'SqlSe
     highAvailabilityReplicaCount: sqlHighAvailabilityReplicaCount
     readScaleEnabled: sqlReadScaleEnabled
     maxPoolSize: dbMaxPoolSize
-    tags: tags
-  }
-}
-
-// Postgres Entra admin/principal params reuse the SQL admin params (one DB admin identity regardless of engine).
-// 'Application' (SQL's term) maps to Postgres' 'ServicePrincipal'.
-module postgres 'modules/postgres-flexible-server.bicep' = if (databaseProvider == 'PostgreSql') {
-  name: 'postgres'
-  scope: rg
-  params: {
-    resourcePrefix: prefix
-    location: location
-    pgAdminPrincipalId: sqlAdminPrincipalId
-    pgAdminPrincipalName: sqlAdminPrincipalName
-    pgAdminPrincipalType: any(sqlAdminPrincipalType == 'Application' ? 'ServicePrincipal' : sqlAdminPrincipalType)
-    skuName: pgSkuName
-    skuTier: pgSkuTier
-    storageSizeGB: pgStorageSizeGB
-    highAvailabilityMode: pgHighAvailabilityMode
-    deployReadReplica: pgDeployReadReplica
-    pgBouncerEnabled: postgresPgBouncerEnabled
-    maxPoolSize: dbMaxPoolSize
-    // Deterministic name, not a module output - avoids a circular dependency with the api container app module.
-    entraConnectingPrincipalName: '${prefix}-api'
     tags: tags
   }
 }
@@ -313,7 +254,7 @@ module cosmosDb 'modules/cosmos-db.bicep' = {
   }
 }
 
-module serviceBus 'modules/service-bus.bicep' = if (messagingProvider == 'ServiceBus') {
+module serviceBus 'modules/service-bus.bicep' = {
   name: 'serviceBus'
   scope: rg
   params: {
@@ -324,42 +265,14 @@ module serviceBus 'modules/service-bus.bicep' = if (messagingProvider == 'Servic
   }
 }
 
-// D-034: exactly one broker is deployed. RabbitMQ here is the dev/staging proof of the second transport;
-// production would point ConnectionStrings__RabbitMq1 at a managed broker or a cluster (infra/README.md).
-module rabbitMq 'modules/rabbitmq-container-app.bicep' = if (messagingProvider == 'RabbitMq') {
-  name: 'rabbitMq'
-  scope: rg
-  params: {
-    resourcePrefix: prefix
-    location: location
-    environmentId: containerAppsEnv.outputs.id
-    environmentName: containerAppsEnv.outputs.name
-    storageAccountName: storage.outputs.appStorageName
-    brokerPassword: rabbitMqPassword
-    tags: tags
-  }
-}
-
 // D-054: the Api's second listener. It is the container port declared in appsettings Kestrel:Endpoints:Grpc,
 // the additional ingress port mapping below, and the port Blazor dials - one constant so the three cannot
 // drift apart.
 var apiGrpcPort = 8081
 
-var rabbitMqConnectionString = messagingProvider == 'RabbitMq'
-  ? 'amqp://taskflow:${rabbitMqPassword}@${rabbitMq!.outputs.host}:5672/'
-  : ''
-
-// Every host gets the same provider choice plus the connection value the chosen transport reads.
-var messagingEnvVars = messagingProvider == 'RabbitMq'
-  ? [
-      { name: 'Messaging__Provider', value: messagingProvider }
-      { name: 'ConnectionStrings__RabbitMq1', value: rabbitMqConnectionString }
-      { name: 'Messaging__RabbitMq__ConnectionString', value: rabbitMqConnectionString }
-    ]
-  : [
-      { name: 'Messaging__Provider', value: messagingProvider }
-      { name: 'SERVICEBUS__fullyQualifiedNamespace', value: serviceBus!.outputs.namespaceEndpoint }
-    ]
+var messagingEnvVars = [
+  { name: 'SERVICEBUS__fullyQualifiedNamespace', value: serviceBus.outputs.namespaceEndpoint }
+]
 
 module storage 'modules/storage.bicep' = {
   name: 'storage'
@@ -374,32 +287,26 @@ module storage 'modules/storage.bicep' = {
 // ---- Compute: Container Apps ----
 
 var commonEnvVars = [
+  { name: 'Hosting__Lane', value: 'Azure' }
+  { name: 'Database__Provider', value: 'SqlServer' }
+  { name: 'Messaging__Provider', value: 'ServiceBus' }
+  { name: 'Storage__Provider', value: 'AzureBlob' }
+  { name: 'ReadModel__Provider', value: 'Cosmos' }
+  { name: 'Audit__Provider', value: 'AzureTable' }
+  { name: 'Search__Provider', value: searchProvider }
+  { name: 'DataProtection__Persistence', value: 'AzureBlob' }
   { name: 'AppConfig__Endpoint', value: appConfig.outputs.endpoint }
   { name: 'KeyVault__Uri', value: keyVault.outputs.uri }
   { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
   { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.outputs.connectionString }
-  { name: 'Database__Provider', value: databaseProvider }
-  // D-045: the app half of transaction pooling. The Npgsql string only becomes pooler-safe
-  // ("No Reset On Close=true;Max Auto Prepare=0") when this says Transaction, so it must move together with
-  // the 6432 port the postgres module emits - one flag drives both.
-  {
-    name: 'Database__PostgreSql__PoolerMode'
-    value: databaseProvider == 'PostgreSql' && postgresPgBouncerEnabled ? 'Transaction' : 'None'
-  }
 ]
 
-// Resolved from whichever database module deployed for the selected provider. SQL Hyperscale routes read
-// traffic to a secondary replica via ApplicationIntent=ReadOnly on the same server; Postgres uses a distinct
-// replica server/FQDN (see the postgres module's readConnectionString output).
-var dbConnectionString = databaseProvider == 'SqlServer'
-  ? (sqlDatabase.?outputs.?connectionString ?? '')
-  : (postgres.?outputs.?connectionString ?? '')
-var dbReadConnectionString = databaseProvider == 'SqlServer'
-  ? '${sqlDatabase.?outputs.?connectionString ?? ''}ApplicationIntent=ReadOnly;'
-  : (postgres.?outputs.?readConnectionString ?? '')
+// SQL Hyperscale routes read traffic to a secondary replica via ApplicationIntent=ReadOnly on the same server.
+var dbConnectionString = sqlDatabase.outputs.connectionString
+var dbReadConnectionString = '${sqlDatabase.outputs.connectionString}ApplicationIntent=ReadOnly;'
 
 // Auth gap: these apps use Entra auth connection strings, but this template does not yet create
-// database users/roles or grants for either provider. Add a data-plane step before production: migrator
+// database users/roles or grants. Add a data-plane step before production: migrator
 // identity gets schema DDL plus migration history rights; API, Scheduler, and Functions get
 // runtime DML only on taskflow, flowengine, and Scheduler schemas. Do not grant DDL to runtime apps.
 module migrator 'modules/container-app-job.bicep' = {
@@ -529,7 +436,7 @@ module blazor 'modules/container-app.bicep' = {
     // D-049: the only host that needs affinity. A Blazor Server circuit is per-connection server state, so a
     // reconnect landing on another replica loses it; every other app here is stateless across replicas.
     stickySessions: 'sticky'
-    envVars: [
+    envVars: union(commonEnvVars, [
       // The key the Blazor host actually reads is Gateway:BaseUrl (src/UI/TaskFlow.Blazor/Program.cs), and it
       // throws at startup when it is missing. This used to be spelled ApiBaseUrl, which nothing binds -
       // BicepInfrastructureContractTests now pins the name against the source that reads it.
@@ -540,7 +447,7 @@ module blazor 'modules/container-app.bicep' = {
       { name: 'Grpc__TaskFlowRead__Address', value: 'http://${api.outputs.fqdn}:${apiGrpcPort}' }
       { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.outputs.connectionString }
-    ]
+    ])
     tags: tags
   }
 }
@@ -574,15 +481,15 @@ module functions 'modules/functions.bicep' = {
     resourcePrefix: prefix
     location: location
     funcStorageAccountName: storage.outputs.funcStorageName
-    serviceBusNamespace: serviceBus!.outputs.namespaceEndpoint
+    serviceBusNamespace: serviceBus.outputs.namespaceEndpoint
     appConfigEndpoint: appConfig.outputs.endpoint
     keyVaultUri: keyVault.outputs.uri
     searchProvider: searchProvider
-    databaseProvider: databaseProvider
     dbConnectionString: dbConnectionString
     dbReadConnectionString: dbReadConnectionString
     cosmosEndpoint: cosmosDb.outputs.accountEndpoint
     storageBlobEndpoint: storage.outputs.appStorageBlobEndpoint
+    storageTableEndpoint: storage.outputs.appStorageTableEndpoint
     appInsightsConnectionString: appInsights.outputs.connectionString
     functionAppScaleLimit: functionAppScaleLimit
     tags: tags
@@ -667,7 +574,7 @@ module apiKvSecretsUser 'modules/role-assignment.bicep' = {
   }
 }
 
-module apiServiceBusSender 'modules/role-assignment.bicep' = if (messagingProvider == 'ServiceBus') {
+module apiServiceBusSender 'modules/role-assignment.bicep' = {
   name: 'apiServiceBusSender'
   scope: rg
   params: {
@@ -719,7 +626,7 @@ module schedulerKvSecretsUser 'modules/role-assignment.bicep' = {
   }
 }
 
-module schedulerServiceBusSender 'modules/role-assignment.bicep' = if (messagingProvider == 'ServiceBus') {
+module schedulerServiceBusSender 'modules/role-assignment.bicep' = {
   name: 'schedulerServiceBusSender'
   scope: rg
   params: {
@@ -731,7 +638,7 @@ module schedulerServiceBusSender 'modules/role-assignment.bicep' = if (messaging
 
 // ---- RBAC: Functions ----
 
-module funcServiceBusReceiver 'modules/role-assignment.bicep' = if (messagingProvider == 'ServiceBus') {
+module funcServiceBusReceiver 'modules/role-assignment.bicep' = {
   name: 'funcServiceBusReceiver'
   scope: rg
   params: {
@@ -815,8 +722,7 @@ output deployIdentityClientId string = deployIdentity.outputs.clientId
 output deployIdentityPrincipalId string = deployIdentity.outputs.principalId
 output keyVaultName string = keyVault.outputs.name
 output appConfigName string = appConfig.outputs.name
-output databaseProviderName string = databaseProvider
-output sqlServerName string = databaseProvider == 'SqlServer' ? (sqlDatabase.?outputs.?serverName ?? '') : ''
-output postgresServerName string = databaseProvider == 'PostgreSql' ? (postgres.?outputs.?serverName ?? '') : ''
+output databaseProviderName string = 'SqlServer'
+output sqlServerName string = sqlDatabase.outputs.serverName
 output redisHostName string = redis.outputs.hostName
 output appStorageName string = storage.outputs.appStorageName

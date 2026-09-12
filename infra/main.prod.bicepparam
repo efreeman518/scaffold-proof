@@ -17,9 +17,7 @@ param schedulerImage = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:lat
 param blazorImage = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
 // Database: SQL Hyperscale, zone-redundant, one HA secondary doubling as the read-scale replica
-// (ApplicationIntent=ReadOnly routes to it). Prod default stays SqlServer; see the commented
-// PostgreSql alternative below to switch providers instead.
-param databaseProvider = 'SqlServer'
+// (ApplicationIntent=ReadOnly routes to it).
 param dbMaxPoolSize = 200
 param sqlSkuName = 'HS_Gen5_2'
 param sqlSkuTier = 'Hyperscale'
@@ -28,13 +26,6 @@ param sqlSkuCapacity = 2
 param sqlZoneRedundant = true
 param sqlHighAvailabilityReplicaCount = 1
 param sqlReadScaleEnabled = true
-
-// -- PostgreSql alternative (uncomment and set databaseProvider = 'PostgreSql' above to switch provider) --
-// param pgSkuName = 'Standard_D2s_v3'
-// param pgSkuTier = 'GeneralPurpose'
-// param pgStorageSizeGB = 128
-// param pgHighAvailabilityMode = 'ZoneRedundant'
-// param pgDeployReadReplica = true
 
 // Redis: HA tier.
 param redisSkuName = 'Balanced_B5'

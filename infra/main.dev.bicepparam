@@ -17,7 +17,6 @@ param schedulerImage = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:lat
 param blazorImage = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
 // Database: SQL Basic DTU, no HA, no read replica.
-param databaseProvider = 'SqlServer'
 param dbMaxPoolSize = 100
 param sqlSkuName = 'Basic'
 param sqlSkuTier = 'Basic'

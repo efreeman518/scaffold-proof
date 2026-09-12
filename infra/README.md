@@ -7,12 +7,11 @@ Azure infrastructure for the TaskFlow dev environment. All resources deploy to a
 | Resource | Dev SKU | Prod SKU | Purpose |
 |----------|---------|----------|---------|
 | Container Apps Environment | Consumption | Consumption | Hosts Gateway, API, Scheduler, Blazor |
-| Database (`databaseProvider`) | SQL Basic (5 DTU) | SQL Hyperscale `HS_Gen5_2`, zone-redundant, 1 HA/read-scale replica | Transactional + query databases. `PostgreSql` (Flexible Server 17, pgvector) is a selectable alternative to `SqlServer` on both profiles - see the commented block in `main.prod.bicepparam`. |
+| Database | SQL Basic (5 DTU) | SQL Hyperscale `HS_Gen5_2`, zone-redundant, 1 HA/read-scale replica | Azure lane transactional + query databases. |
 | Cosmos DB | Serverless | Serverless | Read projections (`taskflow-db`/`task-views`, matching `TaskFlow.Api` appsettings) |
 | Service Bus | Standard | Standard | Domain events (3 filtered subscriptions: `projection`, `ai-review`, `workflow`) + command queue |
-| RabbitMQ (optional) | Container App, 1 vCPU / 2 GiB | same | Alternative broker when `messagingProvider: 'RabbitMq'`; single node, Azure Files volume, management plugin |
 | Azure Functions | Flex Consumption (FC1) | Flex Consumption (FC1) | Event-driven processing, `functionAppScaleLimit` param |
-| Static Web App | Free | Free | Uno WASM frontend |
+| Static Web Apps | Free | Free | React and Uno WASM frontends |
 | Redis | Azure Managed Redis `Balanced_B0`, no HA | Azure Managed Redis `Balanced_B5`+, HA | FusionCache L2 (`ConnectionStrings__Redis1`), API + Scheduler |
 | Storage Accounts | Standard LRS (x2) | Standard LRS (x2) | App blobs/tables + Functions runtime |
 | Key Vault | Standard | Standard | Secrets management |
@@ -26,22 +25,18 @@ Azure resource access uses **managed identities and Entra authentication** where
 
 Gateway, API, Scheduler, and Blazor each take a `<host>Profile` object param (`minReplicas`, `maxReplicas`, `concurrentRequests`, `cpu`, `memory`). `main.dev.bicepparam` keeps dev scale-to-zero with small ceilings and no HTTP concurrency rule; `main.prod.bicepparam` sets Gateway/API to min 2 / max 100 / 50 concurrent requests, Blazor to min 2 / max 30, and Scheduler to two always-on replicas (min 2 / max 2, no ingress so no concurrency rule).
 
-### Messaging provider
+### Azure lane contract
 
-`messagingProvider` selects the transport (D-034). `'ServiceBus'` (default) deploys the namespace, topic and the
-three filtered subscriptions. `'RabbitMq'` deploys `modules/rabbitmq-container-app.bicep` instead: one RabbitMQ
-container app with an Azure Files volume for the mnesia directory and the management plugin on port 15672, and
-wires `Messaging__Provider` plus `ConnectionStrings__RabbitMq1` into API, Scheduler and Functions (whose Service
-Bus triggers are then disabled by name). Exactly one broker is deployed, and the Service Bus role assignments are
-skipped under RabbitMq. That single node is a dev and staging proof of the second transport, not a production
-topology: it has no clustering, no quorum queues and no failover, so a node restart pauses delivery until the
-volume remounts. A production deployment on this provider should point `ConnectionStrings__RabbitMq1` at a managed
-broker (Azure Service Bus remains the managed option here, CloudAMQP or Amazon MQ elsewhere) or at a real
-multi-node cluster with quorum queues, and leave this module to non-production environments.
+`infra/main.bicep` is Azure-only under D-060. Every relevant host receives `Hosting__Lane=Azure` plus SQL Server,
+Service Bus, Azure Blob, Cosmos, Azure Table, and Blob Data Protection settings. Azure AI Search remains selectable
+through `searchProvider`; SQL is the non-AI fallback. PostgreSQL, RabbitMQ, S3, and MongoDB belong to the separate
+NonAzure Compose lane and are not Azure Bicep alternatives.
 
 ### Connection strings
 
-Every emitted connection string carries an explicit pool size (`Max Pool Size` for SqlClient, `Maximum Pool Size` for Npgsql). `ConnectionStrings__TaskFlowDbContextQuery` (API, Scheduler, Functions) resolves to the read/replica connection string; today all other contexts share the primary read-write string, same as before this change.
+Every emitted SQL connection string carries an explicit `Max Pool Size`. `ConnectionStrings__TaskFlowDbContextQuery`
+(API, Scheduler, Functions) resolves to the read/replica connection string; all other contexts share the primary
+read-write string.
 
 ## Prerequisites
 
@@ -220,4 +215,4 @@ To redeploy infra without pushing code, run the bootstrap script again. It's ide
 | Functions deploy fails | Functions require `allowSharedKeyAccess: true` on their storage account (already configured) |
 | SWA deploy fails | Check that `swa-name` output is correctly passed from deploy-infra job |
 
-> Portable lane (Docker Compose on a VPS): see [`deploy/compose/README.md`](../deploy/compose/README.md). The `postgresPgBouncerEnabled` param here is the Azure half of the same D-045 pooling switch.
+> NonAzure lane (Docker Compose on a VPS): see [`deploy/compose/README.md`](../deploy/compose/README.md).

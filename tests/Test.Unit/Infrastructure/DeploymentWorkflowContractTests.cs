@@ -133,6 +133,8 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(workflow, "/healthz/ready");
         StringAssert.Contains(workflow, "previousManifestArtifactId");
         StringAssert.Contains(workflow, "taskflow-release-manifest-vps");
+        StringAssert.Contains(workflow, "'{schemaVersion:2,operation:");
+        StringAssert.Contains(workflow, "-ExpectedSchemaVersion 2");
 
         // Plain ssh with a pinned host key: no third-party action holds a key that can run docker on the box.
         StringAssert.Contains(workflow, "StrictHostKeyChecking yes");
@@ -326,7 +328,7 @@ public sealed class DeploymentWorkflowContractTests
 
         StringAssert.Contains(compose, "pg_isready");
         StringAssert.Contains(compose, "rabbitmq-diagnostics");
-        StringAssert.Contains(compose, "seaweedfs:8333");
+        StringAssert.Contains(compose, "-s3.port=8333");
         StringAssert.Contains(local, "- nuget_credentials");
         StringAssert.Contains(local, "environment: NuGetPackageSourceCredentials_efreeman518-github");
 
@@ -391,6 +393,39 @@ public sealed class DeploymentWorkflowContractTests
         var gitignore = File.ReadAllText(RepoRoot.Combine(".gitignore"));
         StringAssert.Contains(gitignore, "deploy/compose/.env");
         StringAssert.Contains(gitignore, "deploy/compose/images.env");
+    }
+
+    [TestMethod]
+    public void AzureBicep_UsesOnlyTheAzureLaneContract()
+    {
+        var bicep = File.ReadAllText(RepoRoot.Combine("infra", "main.bicep"));
+        var functions = File.ReadAllText(RepoRoot.Combine("infra", "modules", "functions.bicep"));
+
+        foreach (var setting in new[]
+        {
+            "{ name: 'Hosting__Lane', value: 'Azure' }",
+            "{ name: 'Database__Provider', value: 'SqlServer' }",
+            "{ name: 'Messaging__Provider', value: 'ServiceBus' }",
+            "{ name: 'Storage__Provider', value: 'AzureBlob' }",
+            "{ name: 'ReadModel__Provider', value: 'Cosmos' }",
+            "{ name: 'Audit__Provider', value: 'AzureTable' }",
+            "{ name: 'DataProtection__Persistence', value: 'AzureBlob' }"
+        })
+        {
+            StringAssert.Contains(bicep, setting, setting);
+            StringAssert.Contains(functions, setting, setting);
+        }
+
+        StringAssert.Contains(bicep, "module blazor 'modules/container-app.bicep'");
+        StringAssert.Contains(bicep, "module reactStaticWebApp 'modules/static-web-app.bicep'");
+        StringAssert.Contains(bicep, "module unoStaticWebApp 'modules/static-web-app.bicep'");
+        StringAssert.Contains(bicep, "{ name: 'Gateway__BaseUrl', value: 'https://${gateway.outputs.fqdn}' }");
+        StringAssert.Contains(bicep, "{ name: 'Search__Provider', value: searchProvider }");
+
+        foreach (var nonAzureOnlyValue in new[] { "PostgreSql", "RabbitMq", "Storage__S3", "MongoDb" })
+        {
+            Assert.IsFalse(bicep.Contains(nonAzureOnlyValue, StringComparison.Ordinal), nonAzureOnlyValue);
+        }
     }
 
     [TestMethod]

@@ -16,17 +16,12 @@ param appConfigEndpoint string
 @description('Key Vault URI')
 param keyVaultUri string
 
-@description('Search backend (D-040); PgVector enables the embedding trigger and its subscription')
+@description('Search backend (D-040); Azure AI Search is the Azure opt-in and SQL is the local fallback')
 @allowed([
   'AzureAiSearch'
-  'PgVector'
   'Sql'
 ])
 param searchProvider string = 'AzureAiSearch'
-
-@description('Active database provider (SqlServer or PostgreSql)')
-@allowed(['SqlServer', 'PostgreSql'])
-param databaseProvider string = 'SqlServer'
 
 @description('Primary (read-write) database connection string')
 param dbConnectionString string
@@ -39,6 +34,9 @@ param cosmosEndpoint string
 
 @description('Storage blob endpoint')
 param storageBlobEndpoint string
+
+@description('Storage table endpoint')
+param storageTableEndpoint string
 
 @description('Shared Application Insights connection string')
 param appInsightsConnectionString string
@@ -87,20 +85,24 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'AzureWebJobsStorage', value: funcStorageConnectionString }
         { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
         { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'dotnet-isolated' }
+        { name: 'Hosting__Lane', value: 'Azure' }
+        { name: 'Database__Provider', value: 'SqlServer' }
+        { name: 'Messaging__Provider', value: 'ServiceBus' }
+        { name: 'Storage__Provider', value: 'AzureBlob' }
+        { name: 'ReadModel__Provider', value: 'Cosmos' }
+        { name: 'Audit__Provider', value: 'AzureTable' }
+        { name: 'DataProtection__Persistence', value: 'AzureBlob' }
         { name: 'SERVICEBUS__fullyQualifiedNamespace', value: serviceBusNamespace }
         { name: 'AppConfig__Endpoint', value: appConfigEndpoint }
         { name: 'KeyVault__Uri', value: keyVaultUri }
-        { name: 'Database__Provider', value: databaseProvider }
         { name: 'Search__Provider', value: searchProvider }
-        // D-040: the embedding subscription is created only for PgVector (service-bus.bicep). Off any other
-        // arm the trigger is switched off by name rather than removed, the same way D-034 switches off the
-        // Service Bus triggers on the RabbitMq lane, so one deployment can flip providers.
-        { name: 'AzureWebJobs.ProcessTaskEmbedding.Disabled', value: searchProvider == 'PgVector' ? 'false' : 'true' }
+        { name: 'AzureWebJobs.ProcessTaskEmbedding.Disabled', value: 'true' }
         { name: 'ConnectionStrings__TaskFlowDbContextTrxn', value: dbConnectionString }
         { name: 'ConnectionStrings__TaskFlowDbContextQuery', value: dbReadConnectionString }
         { name: 'ConnectionStrings__TaskFlowFlowEngineDbContext', value: dbConnectionString }
         { name: 'ConnectionStrings__CosmosDb1', value: cosmosEndpoint }
         { name: 'ConnectionStrings__BlobStorage1', value: storageBlobEndpoint }
+        { name: 'ConnectionStrings__TableStorage1', value: storageTableEndpoint }
         {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
           value: appInsightsConnectionString
