@@ -14,7 +14,7 @@ public enum DataProtectionPersistence
     /// <summary>Azure Blob Storage (today's only persistence option).</summary>
     AzureBlob,
 
-    /// <summary>StackExchange.Redis over the existing <c>Redis1</c> connection (Portable lane).</summary>
+    /// <summary>StackExchange.Redis over the existing <c>Redis1</c> connection (NonAzure lane).</summary>
     Redis,
 
     /// <summary>No persistence: the ephemeral in-memory ring. Cursor tokens do not survive a restart or reach other replicas.</summary>
@@ -23,23 +23,16 @@ public enum DataProtectionPersistence
 
 public static partial class RegisterServices
 {
-    public const string DataProtectionPersistenceConfigKey = "DataProtection:Persistence";
-    public const string DataProtectionPersistenceEnvVar = "TASKFLOW_DATAPROTECTION_PERSISTENCE";
+    public const string DataProtectionPersistenceConfigKey = HostingLaneResolver.DataProtectionConfigurationKey;
+    public const string DataProtectionPersistenceEnvVar = HostingLaneResolver.DataProtectionEnvironmentVariable;
 
     /// <summary>
-    /// Resolves an explicit persistence selection. Null means "unset": the caller derives today's default
-    /// (AzureBlob when <c>DataProtectionKeysFileUrl</c> is configured, else None) or the Portable lane
-    /// default (Redis) itself (D-035).
+    /// Resolves the strict lane's Data Protection persistence (D-060).
     /// </summary>
-    public static DataProtectionPersistence? ResolveDataProtectionPersistence(IConfiguration config)
+    public static DataProtectionPersistence ResolveDataProtectionPersistence(IConfiguration config)
     {
         ArgumentNullException.ThrowIfNull(config);
-        var value = Environment.GetEnvironmentVariable(DataProtectionPersistenceEnvVar) ?? config[DataProtectionPersistenceConfigKey];
-        if (!string.IsNullOrWhiteSpace(value)) return ParseDataProtectionPersistence(value);
-
-        return HostingLaneSelector.Resolve(config) == HostingLane.Portable
-            ? DataProtectionPersistence.Redis
-            : null;
+        return ParseDataProtectionPersistence(HostingLaneResolver.Resolve(config).DataProtection);
     }
 
     private static DataProtectionPersistence ParseDataProtectionPersistence(string value) =>
@@ -67,8 +60,7 @@ public static partial class RegisterServices
         var keysFileUrl = config.GetValue<string?>("DataProtectionKeysFileUrl", null);
         var encryptionKeyUrl = config.GetValue<string?>("DataProtectionEncryptionKeyUrl", null);
 
-        var persistence = ResolveDataProtectionPersistence(config)
-            ?? (!string.IsNullOrEmpty(keysFileUrl) ? DataProtectionPersistence.AzureBlob : DataProtectionPersistence.None);
+        var persistence = ResolveDataProtectionPersistence(config);
 
         var dpBuilder = services.AddDataProtection();
 

@@ -55,6 +55,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\Shared\TaskFlow.Hosting\TaskFlow.Hosting.csproj" />
     <ProjectReference Include="..\..\Application\TaskFlow.Application.Services\TaskFlow.Application.Services.csproj" />
     <ProjectReference Include="..\..\Application\TaskFlow.Application.Mappers\TaskFlow.Application.Mappers.csproj" />
     <ProjectReference Include="..\..\Application\TaskFlow.Application.MessageHandlers\TaskFlow.Application.MessageHandlers.csproj" />

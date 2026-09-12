@@ -1,6 +1,6 @@
 using AppHost;
 using Microsoft.Extensions.Configuration;
-using TaskFlow.Application.Contracts.Configuration;
+using TaskFlow.Hosting;
 
 namespace Test.Aspire;
 
@@ -32,20 +32,17 @@ public sealed class AppHostLaneTopologyTests
         "TASKFLOW_DATAPROTECTION_PERSISTENCE"
     ];
 
-    /// <summary>The AppHost restates the lane contract instead of referencing it, so the names must match.</summary>
+    /// <summary>The AppHost adapter exposes the shared contract's canonical names.</summary>
     [TestMethod]
     public void LaneContract_MatchesTheHostSideSelector()
     {
         CollectionAssert.AreEqual(
-            new[] { HostingLaneSelector.EnvironmentVariable, HostingLaneSelector.ConfigurationKey },
+            new[] { HostingLaneResolver.LaneEnvironmentVariable, HostingLaneResolver.LaneConfigurationKey },
             new[] { LaneDefaults.LaneEnvironmentVariable, LaneDefaults.LaneConfigurationKey });
-        CollectionAssert.AreEqual(
-            Enum.GetNames<TaskFlow.Application.Contracts.Configuration.HostingLane>(),
-            Enum.GetNames<AppHost.HostingLane>());
     }
 
     [TestMethod]
-    public void PortableLane_ResolvesPortableSwitchesAndHostEnvironment()
+    public void PortableAlias_ResolvesCanonicalNonAzureSwitchesAndHostEnvironment()
     {
         var switches = ResolveWithLane("Portable");
 
@@ -55,13 +52,13 @@ public sealed class AppHostLaneTopologyTests
 
         var expected = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["Hosting__Lane"] = "Portable",
+            ["Hosting__Lane"] = "NonAzure",
             ["Storage__Provider"] = "S3",
-            ["ReadModel__Provider"] = "Relational",
+            ["ReadModel__Provider"] = "PostgreSqlJsonb",
             ["Audit__Provider"] = "Relational",
             // P7 flips this to PgVector together with the Bootstrapper's LaneDefaults and the artifact.
             ["Search__Provider"] = "Sql",
-            ["AiServices__Provider"] = "OpenAICompatible",
+            ["AiServices__Provider"] = "None",
             ["DataProtection__Persistence"] = "Redis"
         };
 
@@ -73,54 +70,44 @@ public sealed class AppHostLaneTopologyTests
     }
 
     /// <summary>
-    /// Unset lane must stay byte-for-byte today's graph: the AI, Search and DataProtection defaults are
-    /// derived at runtime from other settings, so writing an "Azure" literal for them would change behavior.
+    /// Unset lane resolves the exact Azure profile from D-060.
     /// </summary>
     [TestMethod]
-    public void AzureLane_WritesOnlyTheLaneItselfAndKeepsTodaysDefaults()
+    public void AzureLane_ResolvesAndWritesExactProfile()
     {
         var switches = ResolveWithLane(lane: null);
 
         Assert.IsFalse(switches.IsPortable);
         Assert.AreEqual("SqlServer", switches.Database);
         Assert.AreEqual("ServiceBus", switches.Messaging);
-        Assert.IsNull(switches.Storage);
-        Assert.IsNull(switches.AiServices);
-        Assert.IsNull(switches.DataProtection);
-        CollectionAssert.AreEqual(new[] { "Hosting__Lane" }, switches.HostEnvironment.Keys.ToArray());
+        Assert.AreEqual("AzureBlob", switches.Storage);
+        Assert.AreEqual("None", switches.AiServices);
+        Assert.AreEqual("AzureBlob", switches.DataProtection);
         Assert.AreEqual("Azure", switches.HostEnvironment["Hosting__Lane"]);
     }
 
     [TestMethod]
-    public void SwitchEnvironmentVariable_BeatsTheLaneDefault()
+    public void CrossLaneEnvironmentValue_FailsFast()
     {
-        var switches = ResolveWithLane("Portable", ("TASKFLOW_STORAGE_PROVIDER", "AzureBlob"));
-
-        Assert.AreEqual("AzureBlob", switches.Storage);
-        Assert.AreEqual("Relational", switches.ReadModel);
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
+            ResolveWithLane("Portable", ("TASKFLOW_STORAGE_PROVIDER", "AzureBlob")));
     }
 
     [TestMethod]
-    public void SwitchConfigurationKey_BeatsTheLaneDefaultAndLosesToItsEnvironmentVariable()
+    public void CrossLaneConfigurationValue_FailsFast()
     {
-        var configured = ResolveWithLane("Portable", configuration: new()
-        {
-            ["ReadModel:Provider"] = "Cosmos"
-        });
-        Assert.AreEqual("Cosmos", configured.ReadModel);
-
-        var overridden = ResolveWithLane("Portable", ("TASKFLOW_READMODEL_PROVIDER", "Relational"), configuration: new()
-        {
-            ["ReadModel:Provider"] = "Cosmos"
-        });
-        Assert.AreEqual("Relational", overridden.ReadModel);
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
+            ResolveWithLane("Portable", configuration: new()
+            {
+                ["ReadModel:Provider"] = "Cosmos"
+            }));
     }
 
     [TestMethod]
     public void UnknownLane_FailsFastInsteadOfSilentlyRunningTheAzureGraph()
     {
         var exception = Assert.ThrowsExactly<ArgumentException>(() => ResolveWithLane("Vps"));
-        StringAssert.Contains(exception.Message, "Portable");
+        StringAssert.Contains(exception.Message, "NonAzure");
     }
 
     /// <summary>

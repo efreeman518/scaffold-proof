@@ -9,6 +9,7 @@ using TaskFlow.Bootstrapper;
 using TaskFlow.Infrastructure.AI;
 using TaskFlow.Infrastructure.AI.Agents;
 using TaskFlow.Infrastructure.AI.Search;
+using TaskFlow.Hosting;
 
 namespace Test.Unit.AI;
 
@@ -28,8 +29,8 @@ public class AiServiceRegistrationTests
     {
         var builder = CreateHostBuilder(new Dictionary<string, string?>
         {
+            [RegisterServices.AiProviderConfigKey] = "AzureInference",
             ["ConnectionStrings:chat"] = "Endpoint=https://example.services.ai.azure.com/;Key=fake",
-            ["AiServices:DisableFoundryLocal"] = "false"
         });
 
         await builder.RegisterAiChatClientAsync(NullLogger.Instance, TestContext.CancellationToken);
@@ -39,11 +40,10 @@ public class AiServiceRegistrationTests
     }
 
     [TestMethod]
-    public async Task RegisterAiChatClientAsync_WithFoundryLocalDisabled_AllowsNoOpFallback()
+    public async Task RegisterAiChatClientAsync_WithDefaultNone_AllowsNoOpFallback()
     {
         var builder = CreateHostBuilder(new Dictionary<string, string?>
         {
-            ["AiServices:DisableFoundryLocal"] = "true"
         });
 
         await builder.RegisterAiChatClientAsync(NullLogger.Instance, TestContext.CancellationToken);
@@ -59,8 +59,9 @@ public class AiServiceRegistrationTests
     {
         var builder = CreateHostBuilder(new Dictionary<string, string?>
         {
+            [HostingLaneResolver.LaneConfigurationKey] = "NonAzure",
+            [RegisterServices.AiProviderConfigKey] = "FoundryLocal",
             ["ConnectionStrings:chat"] = "",
-            ["AiServices:DisableFoundryLocal"] = "false",
             ["AiServices:LocalWebUrl"] = "not-a-url"
         });
 
@@ -77,8 +78,9 @@ public class AiServiceRegistrationTests
     {
         var builder = CreateHostBuilder(new Dictionary<string, string?>
         {
+            [HostingLaneResolver.LaneConfigurationKey] = "NonAzure",
+            [RegisterServices.AiProviderConfigKey] = "FoundryLocal",
             ["ConnectionStrings:chat"] = "",
-            ["AiServices:DisableFoundryLocal"] = "false",
             ["AiServices:RequireFoundryLocal"] = "true",
             ["AiServices:LocalModel"] = "",
             ["AiServices:LocalWebUrl"] = "not-a-url"

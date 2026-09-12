@@ -62,7 +62,13 @@ public class ProviderSwitchArchitectureTests : BaseTest
     [TestMethod]
     public void Given_ProviderSwitchDispatchers_When_InvokedUnconfigured_Then_ContractTypeResolves()
     {
-        var config = new ConfigurationBuilder().Build();
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                // D-060 fixes the Azure default to Blob Data Protection; registration requires its blob URI.
+                ["DataProtectionKeysFileUrl"] = "https://taskflow.example/keys.xml"
+            })
+            .Build();
         var tagged = GetLoadableTypes(BootstrapperAssembly)
             .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly))
             .Select(m => (Method: m, Switch: m.GetCustomAttribute<ProviderSwitchAttribute>()))
@@ -94,6 +100,10 @@ public class ProviderSwitchArchitectureTests : BaseTest
                         ApplicationName = "Test.Architecture",
                         EnvironmentName = "Testing",
                         DisableDefaults = true
+                    });
+                    builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["DataProtectionKeysFileUrl"] = "https://taskflow.example/keys.xml"
                     });
                     method.Invoke(null, [builder, NullLogger.Instance]);
                     var provider = builder.Services.BuildServiceProvider();

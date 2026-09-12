@@ -33,6 +33,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\Shared\TaskFlow.Hosting\TaskFlow.Hosting.csproj" IsAspireProjectResource="false" />
     <ProjectReference Include="..\..\TaskFlow.Api\TaskFlow.Api.csproj" />
     <ProjectReference Include="..\..\TaskFlow.DatabaseMigrator\TaskFlow.DatabaseMigrator.csproj" />
     <ProjectReference Include="..\..\TaskFlow.Scheduler\TaskFlow.Scheduler.csproj" />

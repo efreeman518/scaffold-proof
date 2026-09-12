@@ -11,28 +11,26 @@ public enum ReadModelProvider
     /// <summary>The existing denormalized Cosmos DB TaskView projection.</summary>
     Cosmos,
 
-    /// <summary>A relational TaskView table in the application database.</summary>
-    Relational
+    /// <summary>A PostgreSQL JSONB TaskView projection.</summary>
+    PostgreSqlJsonb,
+
+    /// <summary>A MongoDB TaskView projection.</summary>
+    MongoDb
 }
 
 public static partial class RegisterServices
 {
-    public const string ReadModelProviderConfigKey = "ReadModel:Provider";
-    public const string ReadModelProviderEnvVar = "TASKFLOW_READMODEL_PROVIDER";
+    public const string ReadModelProviderConfigKey = HostingLaneResolver.ReadModelConfigurationKey;
+    public const string ReadModelProviderEnvVar = HostingLaneResolver.ReadModelEnvironmentVariable;
 
     /// <summary>
-    /// Resolves the read-model backend. The environment variable wins over configuration; when neither is
-    /// set, the Portable lane defaults to Relational and the Azure lane keeps today's Cosmos default (D-035).
+    /// Resolves the strict lane's read-model backend through the shared D-060 contract. Relational input is
+    /// normalized to PostgreSqlJsonb for one release by that contract.
     /// </summary>
     public static ReadModelProvider ResolveReadModelProvider(IConfiguration config)
     {
         ArgumentNullException.ThrowIfNull(config);
-        var value = Environment.GetEnvironmentVariable(ReadModelProviderEnvVar) ?? config[ReadModelProviderConfigKey];
-        if (!string.IsNullOrWhiteSpace(value)) return ParseReadModelProvider(value);
-
-        return HostingLaneSelector.Resolve(config) == HostingLane.Portable
-            ? ReadModelProvider.Relational
-            : ReadModelProvider.Cosmos;
+        return ParseReadModelProvider(HostingLaneResolver.Resolve(config).ReadModel);
     }
 
     private static ReadModelProvider ParseReadModelProvider(string value) =>
@@ -50,9 +48,12 @@ public static partial class RegisterServices
             case ReadModelProvider.Cosmos:
                 AddCosmosDbServices(services, config);
                 break;
-            case ReadModelProvider.Relational:
+            case ReadModelProvider.PostgreSqlJsonb:
                 AddRelationalReadModelServices(services);
                 break;
+            case ReadModelProvider.MongoDb:
+                throw new NotSupportedException(
+                    $"{ReadModelProviderConfigKey}=MongoDb requires the MongoDB repository adapter.");
         }
     }
 

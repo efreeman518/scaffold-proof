@@ -19,25 +19,18 @@ public enum MessagingProvider
 public static partial class RegisterServices
 {
     /// <summary>Configuration key selecting the transport.</summary>
-    public const string MessagingProviderConfigKey = "Messaging:Provider";
+    public const string MessagingProviderConfigKey = HostingLaneResolver.MessagingConfigurationKey;
 
     /// <summary>Environment variable that overrides the configured transport, mirroring Database:Provider.</summary>
-    public const string MessagingProviderEnvVar = "TASKFLOW_MESSAGING_PROVIDER";
+    public const string MessagingProviderEnvVar = HostingLaneResolver.MessagingEnvironmentVariable;
 
     /// <summary>
-    /// Resolves the transport once for the process. The environment variable wins so a test lane or a container
-    /// can flip providers without editing configuration; when neither is set, the Portable lane defaults to
-    /// RabbitMQ and the Azure lane keeps today's Service Bus default (D-035).
+    /// Resolves the strict lane's transport through the shared D-060 contract.
     /// </summary>
     public static MessagingProvider ResolveMessagingProvider(IConfiguration config)
     {
         ArgumentNullException.ThrowIfNull(config);
-        var value = Environment.GetEnvironmentVariable(MessagingProviderEnvVar) ?? config[MessagingProviderConfigKey];
-        if (!string.IsNullOrWhiteSpace(value)) return ParseMessagingProvider(value);
-
-        return HostingLaneSelector.Resolve(config) == HostingLane.Portable
-            ? MessagingProvider.RabbitMq
-            : MessagingProvider.ServiceBus;
+        return ParseMessagingProvider(HostingLaneResolver.Resolve(config).Messaging);
     }
 
     private static MessagingProvider ParseMessagingProvider(string value) =>

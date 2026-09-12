@@ -20,22 +20,16 @@ public enum AuditProvider
 
 public static partial class RegisterServices
 {
-    public const string AuditProviderConfigKey = "Audit:Provider";
-    public const string AuditProviderEnvVar = "TASKFLOW_AUDIT_PROVIDER";
+    public const string AuditProviderConfigKey = HostingLaneResolver.AuditConfigurationKey;
+    public const string AuditProviderEnvVar = HostingLaneResolver.AuditEnvironmentVariable;
 
     /// <summary>
-    /// Resolves the audit-sink backend. The environment variable wins over configuration; when neither is
-    /// set, the Portable lane defaults to Relational and the Azure lane keeps today's Azure Table default (D-035).
+    /// Resolves the strict lane's audit-sink backend through the shared D-060 contract.
     /// </summary>
     public static AuditProvider ResolveAuditProvider(IConfiguration config)
     {
         ArgumentNullException.ThrowIfNull(config);
-        var value = Environment.GetEnvironmentVariable(AuditProviderEnvVar) ?? config[AuditProviderConfigKey];
-        if (!string.IsNullOrWhiteSpace(value)) return ParseAuditProvider(value);
-
-        return HostingLaneSelector.Resolve(config) == HostingLane.Portable
-            ? AuditProvider.Relational
-            : AuditProvider.AzureTable;
+        return ParseAuditProvider(HostingLaneResolver.Resolve(config).Audit);
     }
 
     private static AuditProvider ParseAuditProvider(string value) =>

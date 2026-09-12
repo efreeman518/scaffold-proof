@@ -26,6 +26,7 @@ public static partial class RegisterServices
     {
         ArgumentNullException.ThrowIfNull(builder);
         var config = builder.Configuration;
+        _ = HostingLaneResolver.Resolve(config);
 
         var endpoint = config[AppConfigEndpointConfigKey];
         var connectionString = config.GetConnectionString("AppConfig");

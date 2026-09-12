@@ -17,22 +17,16 @@ public enum StorageProvider
 
 public static partial class RegisterServices
 {
-    public const string StorageProviderConfigKey = "Storage:Provider";
-    public const string StorageProviderEnvVar = "TASKFLOW_STORAGE_PROVIDER";
+    public const string StorageProviderConfigKey = HostingLaneResolver.StorageConfigurationKey;
+    public const string StorageProviderEnvVar = HostingLaneResolver.StorageEnvironmentVariable;
 
     /// <summary>
-    /// Resolves the object-storage backend. The environment variable wins over configuration; when neither
-    /// is set, the Portable lane defaults to S3 and the Azure lane keeps today's Azure Blob default (D-035).
+    /// Resolves the strict lane's object-storage backend through the shared D-060 contract.
     /// </summary>
     public static StorageProvider ResolveStorageProvider(IConfiguration config)
     {
         ArgumentNullException.ThrowIfNull(config);
-        var value = Environment.GetEnvironmentVariable(StorageProviderEnvVar) ?? config[StorageProviderConfigKey];
-        if (!string.IsNullOrWhiteSpace(value)) return ParseStorageProvider(value);
-
-        return HostingLaneSelector.Resolve(config) == HostingLane.Portable
-            ? StorageProvider.S3
-            : StorageProvider.AzureBlob;
+        return ParseStorageProvider(HostingLaneResolver.Resolve(config).Storage);
     }
 
     private static StorageProvider ParseStorageProvider(string value) =>
