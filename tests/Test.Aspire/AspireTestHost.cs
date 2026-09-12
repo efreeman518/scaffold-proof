@@ -142,9 +142,15 @@ internal static class AspireTestHost
         if (ReactAvailable)
             _environment.Set("TASKFLOW_ASPIRE_REACT_AVAILABLE", "true");
 
-        UnoWasmAvailable = !IsExplicitlyDisabled("TASKFLOW_WASM_TESTS_ENABLED") && IsUnoWasmRunnable();
+        var unoWasmDistPath = IsExplicitlyDisabled("TASKFLOW_WASM_TESTS_ENABLED")
+            ? null
+            : FindUnoWasmDistPath();
+        UnoWasmAvailable = unoWasmDistPath is not null;
         if (UnoWasmAvailable)
+        {
             _environment.Set("TASKFLOW_ASPIRE_UNO_WASM_AVAILABLE", "true");
+            _environment.Set("TASKFLOW_UNO_WASM_DIST_PATH", unoWasmDistPath);
+        }
 
         ResourceLoggingEnabled = hostContext.ResourceLoggingEnabled;
         var appHostProgramType = Type.GetType("Program, AppHost", throwOnError: true)!;
@@ -322,19 +328,22 @@ internal static class AspireTestHost
             && File.Exists(viteShim);
     }
 
-    private static bool IsUnoWasmRunnable()
+    private static string? FindUnoWasmDistPath()
     {
         var repoRoot = FindRepoRoot();
         if (repoRoot is null)
-            return false;
+            return null;
 
         var outputRoot = Path.Combine(repoRoot, "src", "UI", "TaskFlow.Uno", "bin");
         if (!Directory.Exists(outputRoot))
-            return false;
+            return null;
 
         return Directory.EnumerateFiles(outputRoot, "index.html", SearchOption.AllDirectories)
-            .Any(path => path.Contains("net10.0-browserwasm", StringComparison.OrdinalIgnoreCase)
-                && path.Contains($"{Path.DirectorySeparatorChar}wwwroot{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase));
+            .Where(path => path.Contains("net10.0-browserwasm", StringComparison.OrdinalIgnoreCase)
+                && path.Contains($"{Path.DirectorySeparatorChar}wwwroot{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .Select(path => Directory.GetParent(Path.GetDirectoryName(path)!)?.FullName)
+            .FirstOrDefault(path => path is not null);
     }
 
     private static string? FindRepoRoot()

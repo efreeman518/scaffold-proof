@@ -288,7 +288,7 @@ public sealed class DeploymentWorkflowContractTests
             RepoRoot.Combine("deploy", "compose", "docker-compose.override.local.yml"));
         StringAssert.Contains(local, "pgvector/pgvector:pg17");
         StringAssert.Contains(local, "rabbitmq:4-management");
-        StringAssert.Contains(local, "minio/minio");
+        StringAssert.Contains(local, "quay.io/minio/minio");
         StringAssert.Contains(local, "pg_isready");
         StringAssert.Contains(local, "rabbitmq-diagnostics");
         StringAssert.Contains(local, "\"mc\", \"ready\", \"local\"");

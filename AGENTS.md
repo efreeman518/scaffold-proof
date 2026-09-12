@@ -42,9 +42,10 @@ dotnet test TaskFlow.slnx --no-build -m:1                     # unfiltered seria
 # TASKFLOW_DATAPROTECTION_PERSISTENCE=AzureBlob|Redis|None selects the Data Protection key-ring persistence (default derived from DataProtectionKeysFileUrl) - D-043
 # Database:PostgreSql:PoolerMode=None|Transaction (config only, no env var) appends the PgBouncer transaction-pooling connection-string flags (default None) - D-045
 # Health probes (D-049): /healthz/live (self only, restart-worthy), /healthz/ready (database, outbox, scheduler, broker on consumer hosts), /healthz (aggregate, humans + Compose healthchecks); /readyz removed
-# E2E/Integration/RabbitMq-container tests need a container runtime. This machine runs Podman, and Podman WSL2 does not forward container ports to localhost:
-#   podman machine ssh -- ip route get 1.1.1.1             # prints "1.1.1.1 via <gw> dev eth0 src <ip>"; use the src address
-#   TESTCONTAINERS_HOST_OVERRIDE=<podman machine ip>       # run-scoped only, changes on reboot, never commit
+# Container-backed tests need a Docker-compatible runtime; Docker Desktop, headless Docker Engine, and Podman are supported.
+# Podman on Windows/WSL2 uses mirrored networking on this machine, so published localhost ports work without TESTCONTAINERS_HOST_OVERRIDE.
+# Under legacy WSL NAT, only the component Testcontainers lanes can use a run-scoped TESTCONTAINERS_HOST_OVERRIDE=<podman machine ip>;
+# Aspire/DCP and full-stack Playwright require localhost forwarding and therefore need mirrored WSL networking or Docker.
 dotnet run --project src/Host/Aspire/AppHost                   # full local stack (Azure lane, default)
 $env:TASKFLOW_LANE = "Portable"; dotnet run --project src/Host/Aspire/AppHost   # Portable topology locally (Postgres+RabbitMQ+MinIO, no Azure emulators); deploy/compose/README.md is the VPS Docker Compose runbook
 ```
@@ -56,7 +57,7 @@ $env:TASKFLOW_LANE = "Portable"; dotnet run --project src/Host/Aspire/AppHost   
 - Deployment: `infra/` (Bicep), `.azure/deployment-plan.md`
 - Client regeneration (Refitter/openapi-typescript): `docs/plans/client-generation.md`
 
-## Environment facts (this machine, verified 2026-09-04)
+## Environment facts (this machine, verified 2026-09-11)
 
-- Container runtime is Podman with a Docker-compatible context. Testcontainers-backed lanes (Test.Integration, Test.E2E, Test.Integration.FlowEngine) work with a run-scoped `TESTCONTAINERS_HOST_OVERRIDE` set to the current podman machine IP - Podman WSL2 does not forward container ports to `localhost` from Windows.
-- Aspire/DCP does not work on this machine: it binds published container ports to `127.0.0.1` inside the Podman WSL VM (`podman port` shows `127.0.0.1:<port>`), unreachable from the Windows host, independent of the Testcontainers override above. `Test.Aspire` and the full-stack `Test.PlaywrightUI` lanes cannot run here until either Docker Desktop replaces Podman or the podman machine networking is reconfigured for port forwarding. `.scaffold/REFERENCE-STATUS.md` records this as the reason those lanes are unverified rather than failing.
+- On this machine only, the active container runtime is Podman with a Docker-compatible context. `%UserProfile%\.wslconfig` sets `[wsl2] networkingMode=mirrored`, and the Podman machine keeps `UserModeNetworking=false`; a Windows request to a container published on `127.0.0.1` succeeds. Testcontainers, Aspire/DCP, and Playwright therefore use localhost without `TESTCONTAINERS_HOST_OVERRIDE` here.
+- Other machines may use Docker Desktop or a headless Docker Engine; no UI-specific behavior is required. Under legacy Podman WSL NAT, component Testcontainers lanes can use a run-scoped `TESTCONTAINERS_HOST_OVERRIDE`, but Aspire/DCP and full-stack Playwright cannot because their container endpoints are loopback-bound.

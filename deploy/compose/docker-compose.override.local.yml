@@ -50,7 +50,7 @@ services:
   # No init container: the attachments bucket is created by the Api/Scheduler startup task
   # (IS3BucketProvisioner), the same way the Azure lane creates its blob container.
   minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     profiles: ["local"]
     restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]

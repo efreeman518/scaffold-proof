@@ -49,6 +49,12 @@ export async function openTaskFromList(page: Page, title: string) {
   await expect(row).toBeVisible({ timeout: 10_000 });
   await row.getByRole("link", { name: /edit task/i }).click();
   await expect(page.getByRole("heading", { name: /edit task/i })).toBeVisible({ timeout: 10_000 });
+  for (const section of [/^Checklist \(\d+\)$/, /^Comments \(\d+\)$/]) {
+    const accordion = page.getByRole("button", { name: section });
+    if ((await accordion.getAttribute("aria-expanded")) !== "true") {
+      await accordion.click();
+    }
+  }
 }
 
 /** Provides Playwright helper logic for delete task from list. */
@@ -74,24 +80,45 @@ export async function fillTaskForm(page: Page, values: {
 
 /** Provides Playwright helper logic for add checklist item. */
 export async function addChecklistItem(page: Page, title: string) {
-  await page.getByRole("button", { name: /checklist/i }).click();
+  const checklist = page.getByRole("button", { name: /^Checklist \(\d+\)$/ });
+  if ((await checklist.getAttribute("aria-expanded")) !== "true") {
+    await checklist.click();
+  }
   const input = page.locator('input[placeholder="Add item"]:visible');
   await input.fill(title);
+  const responsePromise = page.waitForResponse(
+    (response) => response.url().includes("/checklist-items") && response.request().method() === "POST" && response.status() === 201,
+  );
   await input.press("Enter");
+  await responsePromise;
   await expect(page.getByText(title)).toBeVisible({ timeout: 5_000 });
 }
 
 /** Provides Playwright helper logic for add comment. */
 export async function addComment(page: Page, body: string) {
-  await page.getByRole("button", { name: /comments/i }).click();
-  await page.locator('textarea[placeholder="Add a comment"]:visible').fill(body);
-  await page.getByRole("button", { name: /^add$/i }).last().click();
+  const comments = page.getByRole("button", { name: /^Comments \(\d+\)$/ });
+  if ((await comments.getAttribute("aria-expanded")) !== "true") {
+    await comments.click();
+  }
+  const input = page.locator('textarea[placeholder="Add a comment"]:visible');
+  await input.fill(body);
+  const responsePromise = page.waitForResponse(
+    (response) => response.url().includes("/comments") && response.request().method() === "POST" && response.status() === 201,
+  );
+  await input.locator("xpath=ancestor::*[@role='region'][1]").getByRole("button", { name: /^add$/i }).click();
+  await responsePromise;
   await expect(page.getByText(body)).toBeVisible({ timeout: 5_000 });
 }
 
 /** Provides Playwright helper logic for save task. */
-export async function saveTask(page: Page) {
+export async function saveTask(page: Page, expectedStatus?: number) {
+  const responsePromise = page.waitForResponse(
+    (response) => response.url().includes("/task-items")
+      && ["POST", "PUT"].includes(response.request().method())
+      && (expectedStatus === undefined ? response.ok() : response.status() === expectedStatus),
+  );
   await page.getByRole("button", { name: /^save$/i }).click();
+  await responsePromise;
 }
 
 /** Provides Playwright helper logic for confirm dialog. */

@@ -25,6 +25,7 @@ public sealed class DatabaseRegistrationTests
             {
                 ["ConnectionStrings:TaskFlowDbContextTrxn"] = connectionString,
                 ["ConnectionStrings:TaskFlowDbContextQuery"] = connectionString,
+                [RegisterServices.AuditProviderConfigKey] = AuditProvider.Relational.ToString(),
                 [TaskFlowDbProviderSelector.ConfigurationKey] = provider.ToString()
             })
             .AddInMemoryCollection(TestColumnEncryption.Configuration)
@@ -33,7 +34,10 @@ public sealed class DatabaseRegistrationTests
         services.AddLogging();
         services.RegisterInfrastructureServices(configuration);
 
-        using var serviceProvider = services.BuildServiceProvider();
+        using var serviceProvider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateScopes = true
+        });
         using var scope = serviceProvider.CreateScope();
         var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TaskFlowDbContextTrxn>>();
         using var db = factory.CreateDbContext();

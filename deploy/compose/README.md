@@ -16,7 +16,7 @@ not published to Compose, so nothing here is generated and nothing here needs `A
 
 Infrastructure images (`otel-lgtm`, `pgbouncer`, `minio`) are pinned to a specific published tag rather than
 `latest` (verified against the upstream registry 2026-09-09: `grafana/otel-lgtm:0.32.1`,
-`edoburu/pgbouncer:v1.25.2-p0`, `minio/minio:RELEASE.2025-09-07T16-13-09Z`). Only the five app images move
+`edoburu/pgbouncer:v1.25.2-p0`, `quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z`). Only the five app images move
 via digest through `images.env` on every deploy (see Rollback); bumping an infrastructure image tag is a
 manual edit to `docker-compose.yml` / `docker-compose.override.local.yml`, done deliberately. Digest pinning
 these three as well remains the production recommendation once the VPS path has run for real.

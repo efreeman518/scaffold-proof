@@ -288,6 +288,7 @@ public sealed class FoundryLocalLiveSmokeTests
 
         protected override void ConfigureTestConfiguration(IConfigurationBuilder config)
         {
+            config.AddInMemoryCollection(TestColumnEncryption.Configuration);
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:chat"] = string.Empty,

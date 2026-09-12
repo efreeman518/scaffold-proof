@@ -16,7 +16,9 @@ namespace Microsoft.Extensions.Hosting;
 public static class Extensions
 {
     /// <summary>Registers service defaults dependencies in the service container.</summary>
-    public static IHostApplicationBuilder AddServiceDefaults(this IHostApplicationBuilder builder)
+    public static IHostApplicationBuilder AddServiceDefaults(
+        this IHostApplicationBuilder builder,
+        bool addHeaderPropagation = true)
     {
         builder.ConfigureOpenTelemetry();
         builder.AddDefaultHealthChecks();
@@ -24,7 +26,8 @@ public static class Extensions
         builder.Services.AddServiceDiscovery();
         builder.Services.ConfigureHttpClientDefaults(http =>
         {
-            http.AddHeaderPropagation();
+            if (addHeaderPropagation)
+                http.AddHeaderPropagation();
             http.AddStandardResilienceHandler();
             http.AddServiceDiscovery();
         });
