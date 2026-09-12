@@ -374,6 +374,9 @@ public sealed class DeploymentWorkflowContractTests
             StringAssert.Contains(dockerfileText, "RUN install -d -o 101 -g 101 /var/cache/nginx/app-config");
             StringAssert.Contains(dockerfileText, "COPY --chown=101:101 deploy/compose/static/app-config.json.template /var/cache/nginx/app-config/app-config.json");
             StringAssert.Contains(dockerfileText, "NGINX_ENVSUBST_OUTPUT_DIR=/var/cache/nginx/app-config");
+            Assert.IsFalse(dockerfileText.Contains("COPY --from=build --chown=101:101", StringComparison.Ordinal));
+            Assert.IsFalse(dockerfileText.Contains("COPY --chown=101:101 deploy/compose/static/default.conf", StringComparison.Ordinal));
+            Assert.IsFalse(dockerfileText.Contains("COPY --chown=101:101 deploy/compose/static/app-config.json.template /etc/nginx/templates", StringComparison.Ordinal));
             Assert.IsFalse(dockerfileText.Contains("RUN touch /usr/share/nginx/html/app-config.json", StringComparison.Ordinal));
             StringAssert.Contains(dockerfileText, "USER 101");
         }
