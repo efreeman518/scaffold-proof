@@ -1,4 +1,4 @@
-# TaskFlow Portable lane - Docker Compose runbook
+# TaskFlow NonAzure lane - Docker Compose runbook
 
 The NonAzure hosting lane (D-060, D-036) runs the whole app as containers on one VPS: Caddy terminates TLS
 in front of the YARP gateway, PostgreSQL / RabbitMQ / S3 replace Azure data services, and the lane has no
@@ -6,26 +6,18 @@ Azure service dependency. These files are hand-written on purpose - the AppHost 
 
 | File | What it is |
 |---|---|
-| `docker-compose.yml` | The VPS stack: caddy, gateway, api, scheduler, blazor, react, uno, migrator, redis, otel-lgtm, plus `pgbouncer` under profile `pooler` |
-| `docker-compose.override.local.yml` | Containerised postgres / rabbitmq / minio and `build:` for the five app images, all under profile `local`. CI only |
+| `docker-compose.yml` | Canonical NonAzure stack: caddy, PostgreSQL, RabbitMQ, SeaweedFS, Redis, migrator, gateway, api, scheduler, Blazor, React, Uno, otel-lgtm, and optional `pgbouncer` / `mongo` profiles |
+| `docker-compose.override.local.yml` | `build:` for the app images under profile `local`; it does not replace the canonical service topology |
 | `Caddyfile` / `Caddyfile.local` | ACME TLS for `{$CADDY_DOMAIN}`, and the plain `:80` variant CI uses |
 | `.env.example` | The environment contract - names only, no values |
 | `images.env.example` | Shape of the digest-pinned image variables the deploy job writes |
 | `pgbouncer/` | Transaction-pooling config for the opt-in `pooler` profile |
 
-Infrastructure images (`otel-lgtm`, `pgbouncer`, `minio`) are pinned to a specific published tag rather than
-`latest` (verified against the upstream registry 2026-09-09: `grafana/otel-lgtm:0.32.1`,
-`edoburu/pgbouncer:v1.25.2-p0`, `quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z`). Only the five app images move
-via digest through `images.env` on every deploy (see Rollback); bumping an infrastructure image tag is a
-manual edit to `docker-compose.yml` / `docker-compose.override.local.yml`, done deliberately. Digest pinning
-these three as well remains the production recommendation once the VPS path has run for real.
-
-The `minio` image only appears in `docker-compose.override.local.yml` (CI/local, profile `local`) - the VPS
-stack in `docker-compose.yml` has no `minio` service and expects `Storage:S3:*` to point at a real S3
-endpoint. That matters because MinIO has not published a community-edition update since 2025-09 (the
-project moved the community edition to maintenance mode); do not point a production deployment's S3 target
-at this image or its successor - use a managed S3 provider or another actively maintained S3-compatible
-server instead.
+The lane uses the centralized D-060 major/family tags: `pgvector/pgvector:pg18`, `rabbitmq:4-management`,
+`chrislusf/seaweedfs:latest`, `mongo:8`, and `redis:8`. Only app images move via digest through `images.env`
+on every deploy (see Rollback); infrastructure-image tag changes are deliberate edits to `docker-compose.yml`.
+SeaweedFS exposes S3 internally at `seaweedfs:8333`; Caddy proxies its browser-facing hostname so presigned
+URLs retain a reachable signed host without publishing the S3 port directly.
 
 ## First deploy
 
@@ -37,13 +29,15 @@ server instead.
    # deploy/compose/{docker-compose.yml,Caddyfile,pgbouncer/} are copied here by the deploy job
    cp .env.example .env && chmod 600 .env
    ```
-3. Fill in `.env`. `TASKFLOW_LANE=Portable` seeds every provider default (S3, relational read model,
-   relational audit, Redis data protection, RabbitMQ, PostgreSQL); set a `TASKFLOW_*_PROVIDER` only to
-   deviate from it. Required in every deployment: the four `ConnectionStrings__*`, `ConnectionStrings__Redis1`,
-   `ConnectionStrings__RabbitMq1`, the `Storage__S3__*` block, `CADDY_DOMAIN`, `ACME_EMAIL`,
-   `Gateway__BaseUrl`, `GATEWAY_BASE_URL`, and the three `*_UI_ORIGIN` / two `*_UI_DOMAIN` values. The static
-   React and Uno images write their minimal `/app-config.json` from `GATEWAY_BASE_URL` at container start, so
-   one digest can target a changed gateway origin without a provider-specific UI build.
+3. Fill in `.env`. The checked-in D-060 contract fixes `Hosting__Lane=NonAzure`, PostgreSQL, RabbitMQ, S3,
+   PostgreSQL JSONB, relational audit and Redis Data Protection. Do not change those lane-owned settings.
+   Required values are `POSTGRES_*`, `RABBITMQ_DEFAULT_*`, the four `ConnectionStrings__*`,
+   `ConnectionStrings__Redis1`, `ConnectionStrings__RabbitMq1`, the `Storage__S3__*` block,
+   `CADDY_DOMAIN`, `S3_PUBLIC_DOMAIN`, `ACME_EMAIL`, `Gateway__BaseUrl`, `GATEWAY_BASE_URL`, and the three
+   `*_UI_ORIGIN` / two `*_UI_DOMAIN` values. Set `Storage__S3__PublicServiceUrl` to
+   `https://<S3_PUBLIC_DOMAIN>` so the browser can follow a presigned URL. The static React and Uno images
+   write their minimal `/app-config.json` from `GATEWAY_BASE_URL` at container start, so one digest can target
+   a changed gateway origin without a provider-specific UI build.
    `Storage__S3__PublicServiceUrl` must be an address a **browser** can reach: SigV4 signs the Host header
    into a presigned download URL, so signing one against an in-network-only host hands the caller a URL it
    can never resolve.
@@ -76,7 +70,7 @@ Two mechanisms cover it instead, and both are stronger than a self-reported cont
   app container starts until that owner exits 0 - the same single-migration-owner rule the AppHost enforces.
 
 Infrastructure containers do have native probes (`pg_isready`, `redis-cli ping`, `rabbitmq-diagnostics`,
-`mc ready`), which is what `--wait` and the `service_healthy` conditions above them key off.
+and SeaweedFS S3 HTTP), which is what `--wait` and the `service_healthy` conditions above them key off.
 
 ## Connection pooling (D-045)
 
@@ -94,15 +88,25 @@ Then repoint the four `ConnectionStrings__*` in `.env` at `pgbouncer:6432` and s
 `pgbouncer.enabled` parameter (`postgresPgBouncerEnabled` in `infra/main.bicep`), which is not offered on the
 Burstable tier.
 
+## MongoDB read-model alternative
+
+PostgreSQL JSONB is the default NonAzure read model. To use MongoDB instead, set
+`ReadModel__Provider=MongoDb`, set `ConnectionStrings__MongoDb1=mongodb://mongo:27017/taskflow`, then start
+the explicit profile:
+
+```bash
+docker compose --profile mongo up -d --wait
+```
+
+Do not enable the profile for the default PostgreSQL JSONB path.
+
 ## Rotating secrets
 
-Everything secret is either in `.env` (file mode 600, never committed, never baked into an image) or behind
-an App Configuration Key Vault reference. To rotate:
+Everything secret is in `.env` (file mode 600, never committed, never baked into an image). To rotate:
 
-1. Rotate at the source (Key Vault secret, Entra client secret, S3 access key, broker user).
+1. Rotate at the source (database password, S3 access key, broker user, or local encryption key).
 2. Update the corresponding line in `.env` if the value is one the container reads directly.
-3. `docker compose up -d --force-recreate <service>` for the affected services. Values that arrive through
-   App Configuration are picked up by the sentinel-key refresh (D-042) without a restart.
+3. `docker compose up -d --force-recreate <service>` for the affected services.
 
 The private NuGet feed credential is never in `.env`: it reaches the image build as a BuildKit secret
 (`--secret id=nuget_credentials`) and leaves no layer behind.

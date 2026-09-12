@@ -1,8 +1,7 @@
-# TaskFlow Portable lane - production stack for a single VPS (D-036).
+# TaskFlow NonAzure lane - production stack for a single VPS (D-060, D-036).
 #
-# This file alone is what runs on the VPS: the database, the broker and the object store are external
-# managed services there, and their addresses arrive through .env. docker-compose.override.local.yml adds
-# containerised stand-ins for them under the `local` profile so the same stack can be smoke-tested in CI.
+# This file is the canonical NonAzure stack: PostgreSQL, RabbitMQ and SeaweedFS run beside the TaskFlow
+# hosts. docker-compose.override.local.yml adds local image builds only, so CI validates the same topology.
 #
 # Images are digest-pinned by the deploy job, which writes deploy/compose/images.env on the VPS. Compose
 # interpolates only from .env, so the deploy job appends images.env into .env - see README.md.
@@ -13,14 +12,32 @@
 
 name: taskflow
 
+x-nonazure-providers: &nonazure-providers
+  Hosting__Lane: NonAzure
+  Database__Provider: PostgreSql
+  Messaging__Provider: RabbitMq
+  Storage__Provider: S3
+  ReadModel__Provider: ${ReadModel__Provider:-PostgreSqlJsonb}
+  Audit__Provider: Relational
+  Search__Provider: Sql
+  AiServices__Provider: None
+  DataProtection__Persistence: Redis
+
 x-app-common: &app-common
   restart: unless-stopped
   env_file:
     - .env
   environment:
+    <<: *nonazure-providers
     ASPNETCORE_ENVIRONMENT: Production
     DOTNET_gcServer: "1"
   depends_on:
+    postgres:
+      condition: service_healthy
+    rabbitmq:
+      condition: service_healthy
+    seaweedfs:
+      condition: service_healthy
     redis:
       condition: service_healthy
     migrator:
@@ -41,6 +58,7 @@ services:
       ACME_EMAIL: ${ACME_EMAIL}
       REACT_UI_DOMAIN: ${REACT_UI_DOMAIN}
       UNO_UI_DOMAIN: ${UNO_UI_DOMAIN}
+      S3_PUBLIC_DOMAIN: ${S3_PUBLIC_DOMAIN}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
@@ -65,7 +83,11 @@ services:
     env_file:
       - .env
     environment:
+      <<: *nonazure-providers
       ASPNETCORE_ENVIRONMENT: Production
+    depends_on:
+      postgres:
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -78,6 +100,7 @@ services:
     <<: *app-common
     image: ${TASKFLOW_API_IMAGE}
     environment:
+      <<: *nonazure-providers
       ASPNETCORE_ENVIRONMENT: Production
       DOTNET_gcServer: "1"
       Cors__AllowedOrigins__0: ${BLAZOR_UI_ORIGIN}
@@ -95,6 +118,7 @@ services:
     <<: *app-common
     image: ${TASKFLOW_GATEWAY_IMAGE}
     environment:
+      <<: *nonazure-providers
       ASPNETCORE_ENVIRONMENT: Production
       DOTNET_gcServer: "1"
       ReverseProxy__Clusters__api-cluster__Destinations__api__Address: http://api:8080
@@ -131,6 +155,7 @@ services:
     <<: *app-common
     image: ${TASKFLOW_BLAZOR_IMAGE}
     environment:
+      <<: *nonazure-providers
       ASPNETCORE_ENVIRONMENT: Production
       DOTNET_gcServer: "1"
       # Gateway__BaseUrl comes from .env: it is the public origin a browser talks to (https://<domain>
@@ -176,8 +201,77 @@ services:
     networks:
       - taskflow
 
+  postgres:
+    image: pgvector/pgvector:pg18
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - taskflow
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - taskflow
+
+  # SeaweedFS exposes its S3-compatible endpoint only on the internal network. Caddy publishes the
+  # browser-reachable S3 origin configured by Storage__S3__PublicServiceUrl.
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    restart: unless-stopped
+    command: ["server", "-s3", "-s3.port=8333", "-dir=/data"]
+    volumes:
+      - seaweedfs-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8333/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - taskflow
+
+  # Explicit NonAzure read-model alternative. It is never started unless `--profile mongo` is supplied
+  # and ReadModel__Provider is changed to MongoDb with ConnectionStrings__MongoDb1 configured.
+  mongo:
+    image: mongo:8
+    profiles: ["mongo"]
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ ping: 1 }).ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - taskflow
+
   redis:
-    image: redis:8-alpine
+    image: redis:8
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
@@ -239,6 +333,10 @@ services:
 volumes:
   caddy-data:
   caddy-config:
+  postgres-data:
+  rabbitmq-data:
+  seaweedfs-data:
+  mongo-data:
   redis-data:
   lgtm-data:
 

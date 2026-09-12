@@ -2,7 +2,7 @@ namespace Test.Unit.Infrastructure;
 
 /// <summary>
 /// Locks the checked deployment ordering and immutable rollback contract for both lanes: the Azure lane
-/// (deploy.yml), the Portable lane (deploy-vps.yml), and the reusable image build both of them call.
+/// (deploy.yml), the NonAzure lane (deploy-vps.yml), and the reusable image build both of them call.
 /// </summary>
 [TestClass]
 [TestCategory("Unit")]
@@ -106,7 +106,7 @@ public sealed class DeploymentWorkflowContractTests
     }
 
     /// <summary>
-    /// D-036: the Portable lane release must be manual, serialized, digest-pinned, verified through the
+    /// D-060/D-036: the NonAzure lane release must be manual, serialized, digest-pinned, verified through the
     /// public edge, and reversible from a recorded manifest without rebuilding anything.
     /// </summary>
     [TestMethod]
@@ -264,7 +264,7 @@ public sealed class DeploymentWorkflowContractTests
     }
 
     /// <summary>
-    /// D-036 compose invariants: only the edge is exposed, Grafana is loopback-only, app containers restart
+    /// D-060/D-036 compose invariants: only the edge is exposed, Grafana is loopback-only, app containers restart
     /// on their own, and the migrator is the single schema owner every app waits on. The app services must
     /// carry no healthcheck - the runtime images are chiseled, so a probe would have no binary to exec.
     /// </summary>
@@ -279,8 +279,17 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(compose, "limits:");
         StringAssert.Contains(compose, "\"127.0.0.1:3000:3000\"");
         StringAssert.Contains(compose, "profiles: [\"pooler\"]");
+        StringAssert.Contains(compose, "Hosting__Lane: NonAzure");
+        StringAssert.Contains(compose, "Database__Provider: PostgreSql");
+        StringAssert.Contains(compose, "Messaging__Provider: RabbitMq");
+        StringAssert.Contains(compose, "Storage__Provider: S3");
+        StringAssert.Contains(compose, "ReadModel__Provider: ${ReadModel__Provider:-PostgreSqlJsonb}");
+        StringAssert.Contains(compose, "Audit__Provider: Relational");
+        StringAssert.Contains(compose, "DataProtection__Persistence: Redis");
+        StringAssert.Contains(compose, "profiles: [\"mongo\"]");
         StringAssert.Contains(ServiceBlock(compose, "caddy").Text, "REACT_UI_DOMAIN: ${REACT_UI_DOMAIN}");
         StringAssert.Contains(ServiceBlock(compose, "caddy").Text, "UNO_UI_DOMAIN: ${UNO_UI_DOMAIN}");
+        StringAssert.Contains(ServiceBlock(compose, "caddy").Text, "S3_PUBLIC_DOMAIN: ${S3_PUBLIC_DOMAIN}");
 
         // Only caddy publishes to the outside world; the one other mapping is Grafana on loopback.
         var published = System.Text.RegularExpressions.Regex
@@ -300,29 +309,49 @@ public sealed class DeploymentWorkflowContractTests
                 appService);
         }
 
-        var local = File.ReadAllText(
-            RepoRoot.Combine("deploy", "compose", "docker-compose.override.local.yml"));
-        StringAssert.Contains(local, "pgvector/pgvector:pg17");
-        StringAssert.Contains(local, "rabbitmq:4-management");
-        StringAssert.Contains(local, "quay.io/minio/minio");
-        StringAssert.Contains(local, "pg_isready");
-        StringAssert.Contains(local, "rabbitmq-diagnostics");
-        StringAssert.Contains(local, "\"mc\", \"ready\", \"local\"");
+        var local = File.ReadAllText(RepoRoot.Combine("deploy", "compose", "docker-compose.override.local.yml"));
+        var imageCatalog = File.ReadAllText(RepoRoot.Combine("src", "Shared", "TaskFlow.Hosting", "ContainerImages.cs"));
+        foreach (var (catalogValue, composeImage) in new[]
+        {
+            ("pgvector/pgvector:pg18", "image: pgvector/pgvector:pg18"),
+            ("rabbitmq:4-management", "image: rabbitmq:4-management"),
+            ("chrislusf/seaweedfs:latest", "image: chrislusf/seaweedfs:latest"),
+            ("mongo:8", "image: mongo:8"),
+            ("redis:8", "image: redis:8")
+        })
+        {
+            StringAssert.Contains(imageCatalog, catalogValue, $"ContainerImages must own '{catalogValue}'.");
+            StringAssert.Contains(compose, composeImage, $"Compose must match ContainerImages '{catalogValue}'.");
+        }
+
+        StringAssert.Contains(compose, "pg_isready");
+        StringAssert.Contains(compose, "rabbitmq-diagnostics");
+        StringAssert.Contains(compose, "seaweedfs:8333");
         StringAssert.Contains(local, "- nuget_credentials");
         StringAssert.Contains(local, "environment: NuGetPackageSourceCredentials_efreeman518-github");
 
-        // The environment contract is names only: a committed value here would be a leaked secret.
         var envExample = File.ReadAllText(RepoRoot.Combine("deploy", "compose", ".env.example"));
+        foreach (var setting in new[]
+        {
+            "Hosting__Lane=NonAzure", "Database__Provider=PostgreSql", "Messaging__Provider=RabbitMq",
+            "Storage__Provider=S3", "ReadModel__Provider=PostgreSqlJsonb", "Audit__Provider=Relational",
+            "Search__Provider=Sql", "AiServices__Provider=None", "DataProtection__Persistence=Redis",
+            "Storage__S3__ServiceUrl=http://seaweedfs:8333", "Storage__S3__ForcePathStyle=true"
+        })
+        {
+            StringAssert.Contains(envExample, setting, setting);
+        }
+
         foreach (var name in new[]
         {
-            "TASKFLOW_LANE", "TASKFLOW_STORAGE_PROVIDER", "Database__PostgreSql__PoolerMode",
+            "Database__PostgreSql__PoolerMode", "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD",
             "ConnectionStrings__TaskFlowDbContextTrxn", "ConnectionStrings__Redis1",
-            "ConnectionStrings__RabbitMq1", "Storage__S3__PublicServiceUrl", "AppConfig__Endpoint",
-            "AZURE_CLIENT_SECRET", "AZURE_CLIENT_CERTIFICATE_PATH", "DataProtectionEncryptionKeyUrl",
-            "Database__Encryption__LocalKeyBase64", "Grpc__TaskFlowRead__Address",
+            "ConnectionStrings__RabbitMq1", "RABBITMQ_DEFAULT_USER", "RABBITMQ_DEFAULT_PASS",
+            "Storage__S3__PublicServiceUrl", "Storage__S3__AccessKeyId", "Storage__S3__SecretAccessKey",
+            "ConnectionStrings__MongoDb1", "Database__Encryption__LocalKeyBase64", "Grpc__TaskFlowRead__Address",
             "OTEL_EXPORTER_OTLP_ENDPOINT", "CADDY_DOMAIN", "ACME_EMAIL", "TASKFLOW_API_IMAGE"
             , "GATEWAY_BASE_URL", "REACT_UI_ORIGIN", "UNO_UI_ORIGIN", "REACT_UI_DOMAIN", "UNO_UI_DOMAIN",
-            "TASKFLOW_REACT_IMAGE", "TASKFLOW_UNO_IMAGE"
+            "S3_PUBLIC_DOMAIN", "TASKFLOW_REACT_IMAGE", "TASKFLOW_UNO_IMAGE"
         })
         {
             StringAssert.Contains(envExample, $"\n{name}=", name);
@@ -336,8 +365,28 @@ public sealed class DeploymentWorkflowContractTests
                 continue;
             }
 
-            Assert.EndsWith("=", trimmed, $"'{trimmed}' must declare a name without a value.");
+            if (!trimmed.StartsWith("Hosting__Lane=", StringComparison.Ordinal) &&
+                !trimmed.StartsWith("Database__Provider=", StringComparison.Ordinal) &&
+                !trimmed.StartsWith("Messaging__Provider=", StringComparison.Ordinal) &&
+                !trimmed.StartsWith("Storage__Provider=", StringComparison.Ordinal) &&
+                !trimmed.StartsWith("ReadModel__Provider=", StringComparison.Ordinal) &&
+                !trimmed.StartsWith("Audit__Provider=", StringComparison.Ordinal) &&
+                !trimmed.StartsWith("Search__Provider=", StringComparison.Ordinal) &&
+                !trimmed.StartsWith("AiServices__Provider=", StringComparison.Ordinal) &&
+                !trimmed.StartsWith("DataProtection__Persistence=", StringComparison.Ordinal) &&
+                !trimmed.StartsWith("Storage__S3__ServiceUrl=", StringComparison.Ordinal) &&
+                !trimmed.StartsWith("Storage__S3__ForcePathStyle=", StringComparison.Ordinal))
+            {
+                Assert.EndsWith("=", trimmed, $"'{trimmed}' must not commit a secret.");
+            }
         }
+
+        var nonAzureDeployment = compose + envExample + local;
+        foreach (var azureSetting in new[] { "AppConfig__", "KeyVault__", "AZURE_", "ServiceBus", "Cosmos", "AzureBlob" })
+        {
+            Assert.IsFalse(nonAzureDeployment.Contains(azureSetting, StringComparison.Ordinal), azureSetting);
+        }
+        Assert.IsFalse(nonAzureDeployment.Contains("minio", StringComparison.OrdinalIgnoreCase));
 
         var gitignore = File.ReadAllText(RepoRoot.Combine(".gitignore"));
         StringAssert.Contains(gitignore, "deploy/compose/.env");

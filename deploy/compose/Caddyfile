@@ -1,4 +1,4 @@
-# TaskFlow Portable lane edge (D-036). TLS is automatic: Caddy solves an ACME challenge for
+# TaskFlow NonAzure lane edge (D-060, D-036). TLS is automatic: Caddy solves an ACME challenge for
 # {$CADDY_DOMAIN} on first start and renews on its own, which is the entire reason this is the only
 # container publishing 80 and 443.
 
@@ -46,6 +46,18 @@
 {$UNO_UI_DOMAIN} {
 	encode zstd gzip
 	reverse_proxy uno:8080 {
+		health_uri /
+		health_interval 10s
+		health_timeout 5s
+		health_status 200
+	}
+}
+
+# S3 presigned URLs must resolve in the browser, not only on the Compose network. SeaweedFS remains
+# internal because this edge host is its sole public route.
+{$S3_PUBLIC_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy seaweedfs:8333 {
 		health_uri /
 		health_interval 10s
 		health_timeout 5s
