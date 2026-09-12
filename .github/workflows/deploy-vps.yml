@@ -4,7 +4,7 @@ name: Deploy TaskFlow (Portable lane, VPS)
 # on one VPS by Docker Compose behind Caddy. Manual only - a VPS deploy is deliberate work.
 #
 # Secrets (names only; documented in deploy/compose/README.md):
-#   VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_KNOWN_HOSTS, CADDY_DOMAIN, NUGET_PAT
+#   VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_KNOWN_HOSTS, CADDY_DOMAIN, REACT_UI_DOMAIN, UNO_UI_DOMAIN, NUGET_PAT
 
 on:
   workflow_dispatch:
@@ -179,6 +179,8 @@ jobs:
       - name: Verify public readiness and one CRUD round trip
         env:
           CADDY_DOMAIN: ${{ secrets.CADDY_DOMAIN }}
+          REACT_UI_DOMAIN: ${{ secrets.REACT_UI_DOMAIN }}
+          UNO_UI_DOMAIN: ${{ secrets.UNO_UI_DOMAIN }}
         run: |
           set -euo pipefail
           base="https://${CADDY_DOMAIN}"
@@ -190,6 +192,14 @@ jobs:
           id=$(jq -er '.item.id' <<< "$created")
           curl -fsS "${base}/api/v1/task-items/${id}" | jq -er --arg id "$id" 'select(.item.id == $id)' > /dev/null
           curl -fsS -X DELETE "${base}/api/v1/task-items/${id}" > /dev/null
+          check_ui() {
+            local domain="$1"
+            curl -fsS --retry 12 --retry-delay 5 --retry-all-errors "https://${domain}/" > /dev/null
+            curl -fsS --retry 12 --retry-delay 5 --retry-all-errors "https://${domain}/app-config.json" \
+              | jq -e --arg gateway "$base" '.gatewayBaseUrl == $gateway' > /dev/null
+          }
+          check_ui "$REACT_UI_DOMAIN"
+          check_ui "$UNO_UI_DOMAIN"
           echo "VPS readiness and create/read/delete smoke passed."
 
   record-release:
@@ -211,12 +221,23 @@ jobs:
           UNO: ${{ needs.build-release.outputs.uno-image }}
         run: |
           set -euo pipefail
-          previous=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/artifacts" -f name=taskflow-release-manifest-vps -f per_page=100 \
+          candidate=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/artifacts" -f name=taskflow-release-manifest-vps -f per_page=100 \
             --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .id // empty')
+          previous=null
+          if [[ -n "$candidate" ]]; then
+            mkdir -p previous
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${candidate}/zip" > previous.zip
+            unzip -q previous.zip -d previous
+            if pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path previous/release-manifest.json -ImagesOnly -ExpectedSchemaVersion 2; then
+              previous=$candidate
+            else
+              echo "Skipping incompatible v1 release manifest $candidate as rollback target."
+            fi
+          fi
           jq -n --arg sha "$SHA" --arg gateway "$GATEWAY" --arg api "$API" --arg scheduler "$SCHEDULER" --arg migrator "$MIGRATOR" --arg blazor "$BLAZOR" --arg react "$REACT" --arg uno "$UNO" \
-            --argjson previous "${previous:-null}" \
-            '{schemaVersion:1,operation:"deploy",commitSha:$sha,images:{gateway:$gateway,api:$api,scheduler:$scheduler,migrator:$migrator,blazor:$blazor,react:$react,uno:$uno},previousManifestArtifactId:$previous}' > release-manifest.json
-          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path release-manifest.json -ImagesOnly
+            --argjson previous "$previous" \
+            '{schemaVersion:2,operation:"deploy",commitSha:$sha,images:{gateway:$gateway,api:$api,scheduler:$scheduler,migrator:$migrator,blazor:$blazor,react:$react,uno:$uno},previousManifestArtifactId:$previous}' > release-manifest.json
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path release-manifest.json -ImagesOnly -ExpectedSchemaVersion 2
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: taskflow-release-manifest-vps
@@ -251,12 +272,12 @@ jobs:
           [[ -n "$current" ]] || { echo "::error::No current release manifest"; exit 1; }
           gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${current}/zip" > current.zip
           unzip -q current.zip -d current
-          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path current/release-manifest.json -ImagesOnly
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path current/release-manifest.json -ImagesOnly -ExpectedSchemaVersion 2
           previous=$(jq -r '.previousManifestArtifactId // empty' current/release-manifest.json)
           [[ -n "$previous" ]] || { echo "::error::No previous release manifest"; exit 1; }
           gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${previous}/zip" > previous.zip
           unzip -q previous.zip -d previous
-          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path previous/release-manifest.json -ImagesOnly
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path previous/release-manifest.json -ImagesOnly -ExpectedSchemaVersion 2
           m=previous/release-manifest.json
           echo "current-id=$current" >> "$GITHUB_OUTPUT"
           echo "sha=$(jq -r .commitSha "$m")" >> "$GITHUB_OUTPUT"
@@ -333,6 +354,8 @@ jobs:
       - name: Verify rollback readiness and one CRUD round trip
         env:
           CADDY_DOMAIN: ${{ secrets.CADDY_DOMAIN }}
+          REACT_UI_DOMAIN: ${{ secrets.REACT_UI_DOMAIN }}
+          UNO_UI_DOMAIN: ${{ secrets.UNO_UI_DOMAIN }}
         run: |
           set -euo pipefail
           base="https://${CADDY_DOMAIN}"
@@ -341,6 +364,14 @@ jobs:
             -d '{"item":{"title":"vps-rollback-smoke","priority":"Medium"}}')
           id=$(jq -er '.item.id' <<< "$created")
           curl -fsS -X DELETE "${base}/api/v1/task-items/${id}" > /dev/null
+          check_ui() {
+            local domain="$1"
+            curl -fsS --retry 12 --retry-delay 5 --retry-all-errors "https://${domain}/" > /dev/null
+            curl -fsS --retry 12 --retry-delay 5 --retry-all-errors "https://${domain}/app-config.json" \
+              | jq -e --arg gateway "$base" '.gatewayBaseUrl == $gateway' > /dev/null
+          }
+          check_ui "$REACT_UI_DOMAIN"
+          check_ui "$UNO_UI_DOMAIN"
           echo "VPS rollback readiness and CRUD smoke passed."
 
   record-rollback:
@@ -364,8 +395,8 @@ jobs:
           set -euo pipefail
           jq -n --arg sha "$SHA" --arg gateway "$GATEWAY" --arg api "$API" --arg scheduler "$SCHEDULER" --arg migrator "$MIGRATOR" --arg blazor "$BLAZOR" --arg react "$REACT" --arg uno "$UNO" \
             --argjson previous "$PREVIOUS_ID" \
-            '{schemaVersion:1,operation:"rollback",commitSha:$sha,images:{gateway:$gateway,api:$api,scheduler:$scheduler,migrator:$migrator,blazor:$blazor,react:$react,uno:$uno},previousManifestArtifactId:$previous}' > release-manifest.json
-          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path release-manifest.json -ImagesOnly
+            '{schemaVersion:2,operation:"rollback",commitSha:$sha,images:{gateway:$gateway,api:$api,scheduler:$scheduler,migrator:$migrator,blazor:$blazor,react:$react,uno:$uno},previousManifestArtifactId:$previous}' > release-manifest.json
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path release-manifest.json -ImagesOnly -ExpectedSchemaVersion 2
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: taskflow-release-manifest-vps

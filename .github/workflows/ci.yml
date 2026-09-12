@@ -554,6 +554,25 @@ jobs:
           curl -fsS -X DELETE "http://localhost/api/v1/task-items/${id}" > /dev/null
           echo "Compose lane create/read/delete round trip passed."
 
+      - name: Verify static UI roots and runtime gateway configuration
+        run: |
+          set -euo pipefail
+          check_ui() {
+            local host="$1"
+            for attempt in $(seq 1 60); do
+              if curl -fsS --resolve "${host}:80:127.0.0.1" "http://${host}/" > /dev/null 2>&1 \
+                && curl -fsS --resolve "${host}:80:127.0.0.1" "http://${host}/app-config.json" \
+                  | jq -e --arg gateway 'http://localhost' '.gatewayBaseUrl == $gateway' > /dev/null; then
+                echo "${host} passed after ${attempt} attempt(s)."
+                return 0
+              fi
+              sleep 5
+            done
+            echo "::error::${host} did not serve the expected runtime configuration"; return 1
+          }
+          check_ui react.localhost
+          check_ui uno.localhost
+
       - name: Dump stack logs
         if: always()
         run: |

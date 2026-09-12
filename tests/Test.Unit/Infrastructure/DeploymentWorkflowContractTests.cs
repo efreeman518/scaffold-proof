@@ -31,6 +31,8 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(workflow, "expected_uno_swa=\"${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-uno\"");
         StringAssert.Contains(workflow, "taskflow-react-${{ needs.validate-entry.outputs.sha }}");
         StringAssert.Contains(workflow, "app-config.json");
+        StringAssert.Contains(workflow, "-ReactUrl");
+        StringAssert.Contains(workflow, "-UnoUrl");
 
         // The image build lives in the reusable workflow now, and both lanes must consume the same one.
         StringAssert.Contains(workflow, "uses: ./.github/workflows/build-images.yml");
@@ -57,10 +59,13 @@ public sealed class DeploymentWorkflowContractTests
         var manifestValidator = File.ReadAllText(
             RepoRoot.Combine("infra", "scripts", "Test-ReleaseManifest.ps1"));
         StringAssert.Contains(manifestValidator, "'^[0-9a-f]{64}$'");
-        // The Portable lane ships no Functions/Uno artifacts, so its manifest is images-only by switch
-        // rather than by a weaker schema.
+        // v1 remains readable for historical release records; v2 is required before a React/Uno release can
+        // name a previous manifest as a rollback target.
         StringAssert.Contains(manifestValidator, "[switch] $ImagesOnly");
-        StringAssert.Contains(manifestValidator, "if (-not $ImagesOnly) {");
+        StringAssert.Contains(manifestValidator, "[int] $ExpectedSchemaVersion");
+        StringAssert.Contains(manifestValidator, "schemaVersion must be 1 or 2");
+        StringAssert.Contains(workflow, "Skipping incompatible v1 release manifest");
+        StringAssert.Contains(workflow, "-ExpectedSchemaVersion 2");
     }
 
     /// <summary>
@@ -194,6 +199,10 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(workflow, "inputs.includeComposeSmoke == true");
         StringAssert.Contains(workflow, "http://localhost/healthz/ready");
         StringAssert.Contains(workflow, "/api/v1/task-items");
+        StringAssert.Contains(workflow, "Verify static UI roots and runtime gateway configuration");
+        StringAssert.Contains(workflow, "check_ui react.localhost");
+        StringAssert.Contains(workflow, "check_ui uno.localhost");
+        StringAssert.Contains(workflow, ".gatewayBaseUrl == $gateway");
 
         var smokeJob = workflow[workflow.IndexOf("  compose-smoke:", StringComparison.Ordinal)..];
         StringAssert.Contains(smokeJob, "runs-on: ubuntu-latest");
@@ -270,6 +279,8 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(compose, "limits:");
         StringAssert.Contains(compose, "\"127.0.0.1:3000:3000\"");
         StringAssert.Contains(compose, "profiles: [\"pooler\"]");
+        StringAssert.Contains(ServiceBlock(compose, "caddy").Text, "REACT_UI_DOMAIN: ${REACT_UI_DOMAIN}");
+        StringAssert.Contains(ServiceBlock(compose, "caddy").Text, "UNO_UI_DOMAIN: ${UNO_UI_DOMAIN}");
 
         // Only caddy publishes to the outside world; the one other mapping is Grafana on loopback.
         var published = System.Text.RegularExpressions.Regex
@@ -347,6 +358,28 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(compose, "CorsSettings__AllowedOrigins__2");
         StringAssert.Contains(caddy, "reverse_proxy react:8080");
         StringAssert.Contains(caddy, "reverse_proxy uno:8080");
+
+        var reactStaticConfig = File.ReadAllText(
+            RepoRoot.Combine("src", "UI", "TaskFlow.React", "public", "staticwebapp.config.json"));
+        StringAssert.Contains(reactStaticConfig, "navigationFallback");
+        StringAssert.Contains(reactStaticConfig, "/app-config.json");
+
+        foreach (var dockerfile in new[]
+        {
+            RepoRoot.Combine("src", "UI", "TaskFlow.React", "Dockerfile"),
+            RepoRoot.Combine("src", "UI", "TaskFlow.Uno", "Dockerfile")
+        })
+        {
+            var dockerfileText = File.ReadAllText(dockerfile);
+            StringAssert.Contains(dockerfileText, "touch /usr/share/nginx/html/app-config.json");
+            StringAssert.Contains(dockerfileText, "chown 101:101 /usr/share/nginx/html/app-config.json");
+            StringAssert.Contains(dockerfileText, "USER 101");
+        }
+
+        var bootstrap = File.ReadAllText(RepoRoot.Combine("infra", "scripts", "bootstrap.ps1"));
+        StringAssert.Contains(bootstrap, "reactStaticWebAppDefaultHostname");
+        StringAssert.Contains(bootstrap, "unoStaticWebAppDefaultHostname");
+        Assert.IsFalse(bootstrap.Contains("staticWebAppDefaultHostname", StringComparison.Ordinal));
     }
 
     /// <summary>

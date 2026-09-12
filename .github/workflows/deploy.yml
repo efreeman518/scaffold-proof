@@ -176,7 +176,9 @@ jobs:
       gateway-fqdn: ${{ steps.deploy.outputs.gatewayFqdn }}
       function-name: ${{ steps.deploy.outputs.functionAppName }}
       react-swa-name: ${{ steps.deploy.outputs.reactStaticWebAppName }}
+      react-swa-hostname: ${{ steps.deploy.outputs.reactStaticWebAppDefaultHostname }}
       uno-swa-name: ${{ steps.deploy.outputs.unoStaticWebAppName }}
+      uno-swa-hostname: ${{ steps.deploy.outputs.unoStaticWebAppDefaultHostname }}
       migration-job: ${{ steps.deploy.outputs.migrationJobName }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -326,9 +328,9 @@ jobs:
           app_location: ./release/uno
           skip_app_build: true
           skip_api_build: true
-      - name: Verify public health and functional CRUD
+      - name: Verify public health, static UIs, and functional CRUD
         shell: pwsh
-        run: ./infra/scripts/Invoke-DeploymentSmoke.ps1 -GatewayUrl 'https://${{ needs.deploy-infrastructure.outputs.gateway-fqdn }}' -CommitSha '${{ needs.validate-entry.outputs.sha }}'
+        run: ./infra/scripts/Invoke-DeploymentSmoke.ps1 -GatewayUrl 'https://${{ needs.deploy-infrastructure.outputs.gateway-fqdn }}' -ReactUrl 'https://${{ needs.deploy-infrastructure.outputs.react-swa-hostname }}' -UnoUrl 'https://${{ needs.deploy-infrastructure.outputs.uno-swa-hostname }}' -CommitSha '${{ needs.validate-entry.outputs.sha }}'
 
   record-release:
     if: needs.validate-entry.outputs.operation == 'deploy'
@@ -352,12 +354,23 @@ jobs:
           REACT_ID: ${{ needs.build-release.outputs.react-id }}
           REACT_DIGEST: ${{ needs.build-release.outputs.react-digest }}
         run: |
-          previous=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/artifacts" -f name=taskflow-release-manifest-dev -f per_page=100 \
+          candidate=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/artifacts" -f name=taskflow-release-manifest-dev -f per_page=100 \
             --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .id // empty')
+          previous=null
+          if [[ -n "$candidate" ]]; then
+            mkdir -p previous
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${candidate}/zip" > previous.zip
+            unzip -q previous.zip -d previous
+            if pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path previous/release-manifest.json -ExpectedSchemaVersion 2; then
+              previous=$candidate
+            else
+              echo "Skipping incompatible v1 release manifest $candidate as rollback target."
+            fi
+          fi
           jq -n --arg sha "$SHA" --arg gateway "$GATEWAY" --arg api "$API" --arg scheduler "$SCHEDULER" --arg migrator "$MIGRATOR" --arg blazor "$BLAZOR" \
-            --argjson fid "$FUNCTIONS_ID" --arg fd "$FUNCTIONS_DIGEST" --argjson rid "$REACT_ID" --arg rd "$REACT_DIGEST" --argjson uid "$UNO_ID" --arg ud "$UNO_DIGEST" --argjson previous "${previous:-null}" \
-            '{schemaVersion:1,operation:"deploy",commitSha:$sha,images:{gateway:$gateway,api:$api,scheduler:$scheduler,migrator:$migrator,blazor:$blazor},artifacts:{functions:{id:$fid,digest:$fd},react:{id:$rid,digest:$rd},uno:{id:$uid,digest:$ud}},previousManifestArtifactId:$previous}' > release-manifest.json
-          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path release-manifest.json
+            --argjson fid "$FUNCTIONS_ID" --arg fd "$FUNCTIONS_DIGEST" --argjson rid "$REACT_ID" --arg rd "$REACT_DIGEST" --argjson uid "$UNO_ID" --arg ud "$UNO_DIGEST" --argjson previous "$previous" \
+            '{schemaVersion:2,operation:"deploy",commitSha:$sha,images:{gateway:$gateway,api:$api,scheduler:$scheduler,migrator:$migrator,blazor:$blazor},artifacts:{functions:{id:$fid,digest:$fd},react:{id:$rid,digest:$rd},uno:{id:$uid,digest:$ud}},previousManifestArtifactId:$previous}' > release-manifest.json
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path release-manifest.json -ExpectedSchemaVersion 2
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: taskflow-release-manifest-dev
@@ -396,12 +409,12 @@ jobs:
           [[ -n "$current" ]] || { echo "::error::No current release manifest"; exit 1; }
           gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${current}/zip" > current.zip
           unzip -q current.zip -d current
-          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path current/release-manifest.json
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path current/release-manifest.json -ExpectedSchemaVersion 2
           previous=$(jq -r '.previousManifestArtifactId // empty' current/release-manifest.json)
           [[ -n "$previous" ]] || { echo "::error::No previous release manifest"; exit 1; }
           gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${previous}/zip" > previous.zip
           unzip -q previous.zip -d previous
-          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path previous/release-manifest.json
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path previous/release-manifest.json -ExpectedSchemaVersion 2
           m=previous/release-manifest.json
           echo "current-id=$current" >> "$GITHUB_OUTPUT"
           echo "sha=$(jq -r .commitSha "$m")" >> "$GITHUB_OUTPUT"
@@ -447,9 +460,11 @@ jobs:
           expected_uno_swa="${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-uno"
           react_swa=$(az staticwebapp show -g "$rg" -n "$expected_react_swa" --query name -o tsv)
           uno_swa=$(az staticwebapp show -g "$rg" -n "$expected_uno_swa" --query name -o tsv)
+          react_fqdn=$(az staticwebapp show -g "$rg" -n "$expected_react_swa" --query defaultHostname -o tsv)
+          uno_fqdn=$(az staticwebapp show -g "$rg" -n "$expected_uno_swa" --query defaultHostname -o tsv)
           fqdn=$(az containerapp show -n "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-gateway" -g "$rg" --query properties.configuration.ingress.fqdn -o tsv)
-          [[ "$react_swa" == "$expected_react_swa" && "$uno_swa" == "$expected_uno_swa" && -n "$fqdn" ]]
-          echo "rg=$rg" >> "$GITHUB_OUTPUT"; echo "function=$function" >> "$GITHUB_OUTPUT"; echo "react-swa=$react_swa" >> "$GITHUB_OUTPUT"; echo "uno-swa=$uno_swa" >> "$GITHUB_OUTPUT"; echo "fqdn=$fqdn" >> "$GITHUB_OUTPUT"
+          [[ "$react_swa" == "$expected_react_swa" && "$uno_swa" == "$expected_uno_swa" && -n "$react_fqdn" && -n "$uno_fqdn" && -n "$fqdn" ]]
+          echo "rg=$rg" >> "$GITHUB_OUTPUT"; echo "function=$function" >> "$GITHUB_OUTPUT"; echo "react-swa=$react_swa" >> "$GITHUB_OUTPUT"; echo "uno-swa=$uno_swa" >> "$GITHUB_OUTPUT"; echo "react-fqdn=$react_fqdn" >> "$GITHUB_OUTPUT"; echo "uno-fqdn=$uno_fqdn" >> "$GITHUB_OUTPUT"; echo "fqdn=$fqdn" >> "$GITHUB_OUTPUT"
           mkdir -p rollback/functions rollback/react rollback/uno
           gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${FUNCTIONS_ID}/zip" > functions.zip
           gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${UNO_ID}/zip" > uno.zip
@@ -524,9 +539,9 @@ jobs:
           app_location: ./rollback/uno
           skip_app_build: true
           skip_api_build: true
-      - name: Verify rollback health and functional CRUD
+      - name: Verify rollback health, static UIs, and functional CRUD
         shell: pwsh
-        run: ./infra/scripts/Invoke-DeploymentSmoke.ps1 -GatewayUrl 'https://${{ steps.resources.outputs.fqdn }}' -CommitSha '${{ needs.resolve-rollback.outputs.sha }}'
+        run: ./infra/scripts/Invoke-DeploymentSmoke.ps1 -GatewayUrl 'https://${{ steps.resources.outputs.fqdn }}' -ReactUrl 'https://${{ steps.resources.outputs.react-fqdn }}' -UnoUrl 'https://${{ steps.resources.outputs.uno-fqdn }}' -CommitSha '${{ needs.resolve-rollback.outputs.sha }}'
 
   record-rollback:
     if: needs.validate-entry.outputs.operation == 'rollback'
@@ -552,8 +567,8 @@ jobs:
         run: |
           jq -n --arg sha "$SHA" --arg gateway "$GATEWAY" --arg api "$API" --arg scheduler "$SCHEDULER" --arg migrator "$MIGRATOR" --arg blazor "$BLAZOR" \
             --argjson fid "$FUNCTIONS_ID" --arg fd "$FUNCTIONS_DIGEST" --argjson rid "$REACT_ID" --arg rd "$REACT_DIGEST" --argjson uid "$UNO_ID" --arg ud "$UNO_DIGEST" --argjson previous "$PREVIOUS_ID" \
-            '{schemaVersion:1,operation:"rollback",commitSha:$sha,images:{gateway:$gateway,api:$api,scheduler:$scheduler,migrator:$migrator,blazor:$blazor},artifacts:{functions:{id:$fid,digest:$fd},react:{id:$rid,digest:$rd},uno:{id:$uid,digest:$ud}},previousManifestArtifactId:$previous}' > release-manifest.json
-          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path release-manifest.json
+            '{schemaVersion:2,operation:"rollback",commitSha:$sha,images:{gateway:$gateway,api:$api,scheduler:$scheduler,migrator:$migrator,blazor:$blazor},artifacts:{functions:{id:$fid,digest:$fd},react:{id:$rid,digest:$rd},uno:{id:$uid,digest:$ud}},previousManifestArtifactId:$previous}' > release-manifest.json
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path release-manifest.json -ExpectedSchemaVersion 2
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: taskflow-release-manifest-dev

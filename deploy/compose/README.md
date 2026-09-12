@@ -174,4 +174,6 @@ Names only; set them in the repository's Actions secrets.
 | `VPS_SSH_KEY` | Private key for that user (no passphrase; deploy-only) |
 | `VPS_KNOWN_HOSTS` | `ssh-keyscan` output for `VPS_HOST`, so the job never uses `StrictHostKeyChecking=no` |
 | `CADDY_DOMAIN` | Public domain, used by the post-deploy smoke |
+| `REACT_UI_DOMAIN` | React static UI public domain, used by deploy and rollback smoke |
+| `UNO_UI_DOMAIN` | Uno static UI public domain, used by deploy and rollback smoke |
 | `NUGET_PAT` | Existing secret; the private EF.* feed credential for the image build |

@@ -6,13 +6,44 @@ param(
 
     [Parameter(Mandatory)]
     [ValidatePattern('^[0-9a-fA-F]{40}$')]
-    [string] $CommitSha
+    [string] $CommitSha,
+
+    [Parameter(Mandatory)]
+    [ValidatePattern('^https://')]
+    [string] $ReactUrl,
+
+    [Parameter(Mandatory)]
+    [ValidatePattern('^https://')]
+    [string] $UnoUrl
 )
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $gateway = $GatewayUrl.TrimEnd('/')
 $createdId = $null
+
+function Assert-StaticUi([string] $Url, [string] $ExpectedGateway) {
+    $ui = $Url.TrimEnd('/')
+    $lastError = $null
+    for ($attempt = 1; $attempt -le 12; $attempt++) {
+        try {
+            $root = Invoke-WebRequest -Uri "$ui/" -Method Get -TimeoutSec 15
+            $config = Invoke-RestMethod -Uri "$ui/app-config.json" -Method Get -TimeoutSec 15
+            if ($root.StatusCode -eq 200 -and $config.gatewayBaseUrl -eq $ExpectedGateway) {
+                return
+            }
+
+            $lastError = "Unexpected static UI response or gatewayBaseUrl."
+        }
+        catch {
+            $lastError = $_.Exception.Message
+        }
+
+        Start-Sleep -Seconds 5
+    }
+
+    throw "Static UI '$ui' did not serve the expected gateway configuration after bounded retries: $lastError"
+}
 
 $health = Invoke-WebRequest -Uri "$gateway/health/full" -Method Get -TimeoutSec 60
 if ($health.StatusCode -ne 200) {
@@ -56,4 +87,7 @@ finally {
     }
 }
 
-Write-Output "Deployment health and create/read/delete smoke passed for $CommitSha."
+Assert-StaticUi -Url $ReactUrl -ExpectedGateway $gateway
+Assert-StaticUi -Url $UnoUrl -ExpectedGateway $gateway
+
+Write-Output "Deployment health, static UIs, and create/read/delete smoke passed for $CommitSha."

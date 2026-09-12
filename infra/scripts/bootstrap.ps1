@@ -133,7 +133,8 @@ Write-Host "=== Bootstrap Complete ===" -ForegroundColor Cyan
 Write-Host "Resource Group:  $rgName"
 Write-Host "Gateway URL:     https://$($outputs.gatewayFqdn.value)"
 Write-Host "Blazor URL:      https://$($outputs.blazorFqdn.value)"
-Write-Host "Uno SWA URL:     https://$($outputs.staticWebAppDefaultHostname.value)"
+Write-Host "React SWA URL:   https://$($outputs.reactStaticWebAppDefaultHostname.value)"
+Write-Host "Uno SWA URL:     https://$($outputs.unoStaticWebAppDefaultHostname.value)"
 Write-Host "Function App:    $($outputs.functionAppName.value)"
 Write-Host ""
 Write-Host "Next: push to '$GitHubBranch' branch to trigger CI/CD deployment." -ForegroundColor Yellow

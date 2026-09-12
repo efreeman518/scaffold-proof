@@ -39,6 +39,8 @@ services:
     environment:
       CADDY_DOMAIN: ${CADDY_DOMAIN}
       ACME_EMAIL: ${ACME_EMAIL}
+      REACT_UI_DOMAIN: ${REACT_UI_DOMAIN}
+      UNO_UI_DOMAIN: ${UNO_UI_DOMAIN}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
