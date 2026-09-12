@@ -152,6 +152,15 @@ public sealed class AppHostLaneTopologyTests
         StringAssert.Contains(source, "functions = WithReadModel(functions);");
     }
 
+    [TestMethod]
+    public void Scheduler_ReceivesSelectedObjectStoreInBothLanes()
+    {
+        var source = ReadAppHostSource();
+        StringAssert.Contains(source, "scheduler = WithObjectStorage(scheduler);");
+        StringAssert.Contains(source, "return host.WithReference(blobs!).WaitFor(storage!);");
+        StringAssert.Contains(source, ".WaitFor(seaweedFs);");
+    }
+
     private static void AssertHostEnvironmentMatches(LaneSwitches switches)
     {
         var expected = new Dictionary<string, string>(StringComparer.Ordinal)

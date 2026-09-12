@@ -420,11 +420,8 @@ if (!isTesting || schedulerAvailableInTesting || fullLaneAvailableInTesting)
         .WaitForCompletion(migrator)
         .WaitFor(taskflowDb);
     scheduler = WithAuditSink(scheduler);
-    // NonAzure lane only. The Scheduler runs the same S3 bucket provisioning startup task and the blob delete
-    // worker, so it needs the SeaweedFS settings; the Azure lane keeps its existing wiring, where the Scheduler
-    // deliberately holds no blob reference, so this stays a lane addition rather than a change to today's graph.
-    if (seaweedFs is not null)
-        scheduler = WithObjectStorage(scheduler);
+    // BlobDeleteWorkerService runs in Scheduler in both lanes, so it must receive the selected object store.
+    scheduler = WithObjectStorage(scheduler);
     scheduler = WithBroker(scheduler);
     scheduler = WithReadModel(scheduler);
     scheduler = WithLaneEnvironment(scheduler);
@@ -538,7 +535,7 @@ IResourceBuilder<T> WithObjectStorage<T>(IResourceBuilder<T> host)
     where T : IResourceWithEnvironment, IResourceWithWaitSupport
 {
     if (seaweedFs is null)
-        return host.WithReference(blobs!);
+        return host.WithReference(blobs!).WaitFor(storage!);
 
     return host
         .WithEnvironment("Storage__S3__ServiceUrl", seaweedFs.GetEndpoint("s3"))
