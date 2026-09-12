@@ -58,7 +58,6 @@ var usePgVector = string.Equals(lane.Search, "PgVector", StringComparison.Ordina
 // In Testing mode: non-persistent, no named volume, random port - ensures fresh container with known password.
 // In dev/prod: persistent with named volume on fixed port.
 IResourceBuilder<IResourceWithConnectionString> taskflowDb;
-IResourceBuilder<IResource> dbServer;
 if (usePostgres)
 {
     var postgresPassword = builder.AddParameter("postgres-password", defaultSqlPassword, secret: true);
@@ -70,7 +69,6 @@ if (usePostgres)
         postgres = postgres.WithLifetime(ContainerLifetime.Persistent)
                            .WithDataVolume("taskflow-postgres-data");
     taskflowDb = postgres.AddDatabase("taskflowdb");
-    dbServer = postgres;
 }
 else
 {
@@ -81,7 +79,6 @@ else
         sql = sql.WithLifetime(ContainerLifetime.Persistent)
                  .WithDataVolume("taskflow-sql-data");
     taskflowDb = sql.AddDatabase("taskflowdb");
-    dbServer = sql;
 }
 
 var redis = builder.AddRedis("redis")

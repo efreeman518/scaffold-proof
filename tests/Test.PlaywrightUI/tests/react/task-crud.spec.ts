@@ -151,7 +151,7 @@ test.describe("TaskFlow React - two-tab optimistic concurrency (412)", () => {
     // Tab B saves against its now-stale Version: the API returns 412, and the UI reports the
     // conflict and reloads instead of silently overwriting tab A's change.
     await fillTaskForm(pageB, { priority: "Low" });
-    await saveTask(pageB);
+    await saveTask(pageB, 412);
     await expectNotification(pageB, "Task changed elsewhere, reloading.");
 
     await pageB.close();

@@ -111,9 +111,11 @@ export async function addComment(page: Page, body: string) {
 }
 
 /** Provides Playwright helper logic for save task. */
-export async function saveTask(page: Page) {
+export async function saveTask(page: Page, expectedStatus?: number) {
   const responsePromise = page.waitForResponse(
-    (response) => response.url().includes("/task-items") && ["POST", "PUT"].includes(response.request().method()),
+    (response) => response.url().includes("/task-items")
+      && ["POST", "PUT"].includes(response.request().method())
+      && (expectedStatus === undefined ? response.ok() : response.status() === expectedStatus),
   );
   await page.getByRole("button", { name: /^save$/i }).click();
   await responsePromise;

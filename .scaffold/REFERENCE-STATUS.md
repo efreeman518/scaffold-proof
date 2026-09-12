@@ -4,13 +4,13 @@ Canonical current evidence for the TaskFlow reference application. Historical ph
 
 > Update this file only from observed results. TaskFlow CI records the scaffold checkout commit used for cross-repository validation so failures remain diagnosable without creating a compatibility pin.
 
-This refresh follows the `feature/ef-packages-1-1-100` package-refactor: EF.* pinned at 1.1.102, EF.FlowEngine.*/EF.FilterBuilder at 1.0.173, app-local fallbacks for the landed package requests deleted. Numbers below are the orchestrator's gate on the merged tree, detached worktree, dated 2026-09-10.
+This refresh follows the `feature/ef-packages-1-1-100` package-refactor: EF.* pinned at 1.1.102, EF.FlowEngine.*/EF.FilterBuilder at 1.0.173, app-local fallbacks for the landed package requests deleted. Numbers below include the observed local fast lane and AppHost build on 2026-09-12.
 
 ## Build Status
 
 | Field | Value |
 |---|---|
-| Last verified | 2026-09-10 (orchestrator's gate on the merged tree, detached worktree) |
+| Last verified | 2026-09-12 (local fast lane and AppHost build) |
 | Solution | `TaskFlow.slnx` |
 | Target framework | .NET 10 |
 | Configuration | Release |
@@ -26,9 +26,9 @@ This refresh follows the `feature/ef-packages-1-1-100` package-refactor: EF.* pi
 
 ## Test Status
 
-Numbers below are the orchestrator's gate on the merged tree (4f6a5d0), detached worktree, dated 2026-09-10.
+Numbers below are the observed local fast lane on 2026-09-12.
 
-**Fast lane** (`TestCategory=Unit|TestCategory=Architecture|TestCategory=Endpoint`, `dotnet test TaskFlow.slnx`): **651 passed, 0 failed, across 13 projects.**
+**Fast lane** (`TestCategory=Unit|TestCategory=Architecture|TestCategory=Endpoint`, `dotnet test TaskFlow.slnx`): **653 passed, 0 failed, 0 skipped, across 13 projects.**
 
 Fast-lane delta vs the 664-passed baseline recorded before this refactor's wave 2: +1 (E2 cross-version cursor test) - 15 (deleted `EF.Messaging.RabbitMq.Tests` unit tests, project removed) + 3 (E3 architecture tests: cached types public, etc.) - 4 (deleted `FlowEngineIfMatchOverrideHandler` tests, D-032 superseded) + 1 (A2, `ClientGeneratedKeyTests` pinning `ValueGenerated.Never`) + 1 (`UuidV7.TimestampOf` case) = 664 - 13 = **651**. Per-project breakdown for the individual fast-lane projects was not independently recomputed this pass; the total above is the verified figure.
 
@@ -46,7 +46,7 @@ Docker/Testcontainers-backed lanes (run-scoped `TESTCONTAINERS_HOST_OVERRIDE`, n
 
 Not rerun this pass, last observed values only: **Test.Mutation** last observed 33 (mutation-target contract tests; not part of this refactor's changed surface, not rerun to save time).
 
-Not runnable on this machine (recorded with reason, not treated as failing): **Test.Aspire** and the full-stack **Test.PlaywrightUI** lane (Aspire/DCP binds published container ports to `127.0.0.1` inside the Podman WSL VM, unreachable from the Windows host, independent of the Testcontainers host-override workaround used by the other container lanes), **Test.Mobile** (dedicated Appium/emulator runner), **Test.FoundryLocal** (live local-model lane, RID-bound runtime), **Test.Load** (manual; the 5,000 RPS gate is deployment-only), **Test.Benchmarks** (BenchmarkDotNet console runner, build-verified only), **compose-smoke** and **deploy-vps** (CI-only: `compose-smoke` is a `workflow_dispatch`-gated job in `ci.yml`, `deploy-vps.yml` is `workflow_dispatch`-only; nothing in the compose/VPS path has executed on this dev machine).
+Not fully rerun on this machine this pass: **Test.Aspire** (full graph), **Test.Mobile** (dedicated Appium/emulator runner), **Test.FoundryLocal** (live local-model lane, RID-bound runtime), **Test.Load** (manual; the 5,000 RPS gate is deployment-only), **Test.Benchmarks** (BenchmarkDotNet console runner, build-verified only), **compose-smoke** and **deploy-vps** (CI-only: `compose-smoke` is a `workflow_dispatch`-gated job in `ci.yml`, `deploy-vps.yml` is `workflow_dispatch`-only). Mirrored WSL networking now permits Aspire/DCP localhost publishing on this machine; the focused React Playwright suite passed after the AppHost and gateway test-configuration fixes, while a later retry encountered transient gateway startup failure before browser execution.
 
 Published Release Uno cold-start and normal browser projects pass from empty browser state without refresh, retry, sleep, or exception suppression. Browser WASM Release temporarily sets `PublishTrimmed=false` because the current Navigation, Toolkit, and WinUI package set emits upstream `IL2104` under warnings-as-errors. Removal condition: those packages become trim-clean. Not re-verified in this pass (no Uno-affecting code changed in this refactor).
 
