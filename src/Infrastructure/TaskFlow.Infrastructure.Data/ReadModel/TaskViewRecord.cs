@@ -32,8 +32,9 @@ public sealed class TaskViewRecord
 
     /// <summary>
     /// Serialized <see cref="TaskViewBody"/>: the parts of the projection nothing filters, sorts, or patches.
-    /// Plain string column, so the model stays provider-neutral (D-030); jsonb plus a GIN index on PostgreSQL
-    /// is the customization to make when tag or description search moves into the read model.
+    /// The CLR string keeps repository serialization provider-neutral (D-030). PostgreSQL maps it to native
+    /// jsonb while SQL Server retains its existing compatible string column. Scalar columns serve every
+    /// current filter and sort, so no JSON-path index is created.
     /// </summary>
     public string Document { get; set; } = null!;
 }

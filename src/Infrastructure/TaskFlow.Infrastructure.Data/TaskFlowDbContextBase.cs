@@ -46,7 +46,7 @@ public abstract class TaskFlowDbContextBase(DbContextOptions options) : DbContex
         // TaskItemConfiguration has no parameterless constructor (the assembly scan skips it): it binds the
         // secure-column converters to the process encryptor carried by the options (D-023).
         modelBuilder.ApplyConfiguration(new TaskItemConfiguration(this.GetColumnEncryptor()));
-        ConfigureVectorSearch(modelBuilder);
+        ConfigurePostgreSqlModel(modelBuilder);
         SetTableNames(modelBuilder);
         ConfigureTenantQueryFilters(modelBuilder);
     }
@@ -62,9 +62,14 @@ public abstract class TaskFlowDbContextBase(DbContextOptions options) : DbContex
     /// and <c>PgVectorSearchService</c>'s startup guard loses its reason to exist.
     /// </para>
     /// </summary>
-    private void ConfigureVectorSearch(ModelBuilder modelBuilder)
+    private void ConfigurePostgreSqlModel(ModelBuilder modelBuilder)
     {
         if (!string.Equals(Database.ProviderName, NpgsqlProviderName, StringComparison.Ordinal)) return;
+
+        // D-038/D-060: the relational read-model implementation is shared, but PostgreSQL stores its
+        // free-form JSON body in the provider-native type. Scalar filters and paging keep their existing
+        // B-tree indexes; no GIN index is useful until a query actually addresses a JSON path.
+        modelBuilder.Entity<TaskViewRecord>().Property(e => e.Document).HasColumnType("jsonb");
 
         modelBuilder.HasPostgresExtension("vector");
         modelBuilder.ApplyConfiguration(new TaskItemEmbeddingConfiguration(TaskItemEmbedding.DefaultDimensions));

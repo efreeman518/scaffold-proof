@@ -9,6 +9,7 @@ using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Bootstrapper;
 using Microsoft.Extensions.Options;
 using TaskFlow.Infrastructure.Repositories;
+using TaskFlow.Infrastructure.Repositories.MongoDb;
 using TaskFlow.Infrastructure.Storage;
 
 namespace Test.Unit.Hosting;
@@ -101,7 +102,7 @@ public class ProviderSwitchSelectorTests
         var config = Config(
             (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
             (RegisterServices.StorageProviderConfigKey, "S3"),
-            ("Storage:S3:ServiceUrl", "http://minio:9000"),
+            ("Storage:S3:ServiceUrl", "http://seaweedfs:8333"),
             ("Storage:S3:PublicServiceUrl", "http://localhost:9000"));
 
         var method = typeof(RegisterServices).GetMethod("AddStorageServices", BindingFlags.NonPublic | BindingFlags.Static)
@@ -185,6 +186,47 @@ public class ProviderSwitchSelectorTests
         Assert.AreEqual(typeof(RelationalTaskViewRepository), descriptor.ImplementationType);
         // Scoped, not singleton: it holds the two request-scoped DbContexts (D-027 write/read split).
         Assert.AreEqual(ServiceLifetime.Scoped, descriptor.Lifetime);
+    }
+
+    [TestMethod]
+    public void AddRelationalReadModelServices_SqlServer_Throws()
+    {
+        var exception = InvokeDispatcherFailure<InvalidOperationException>(
+            "AddRelationalReadModelServices",
+            Config((HostingLaneResolver.LaneConfigurationKey, "Azure")));
+
+        StringAssert.Contains(exception.Message, "requires Database:Provider=PostgreSql");
+    }
+
+    [TestMethod]
+    public void AddReadModelServices_MongoDb_RequiresConnectionString()
+    {
+        var exception = InvokeDispatcherFailure<InvalidOperationException>(
+            "AddReadModelServices",
+            Config(
+                (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
+                (RegisterServices.ReadModelProviderConfigKey, "MongoDb")));
+
+        StringAssert.Contains(exception.Message, "MongoDb1");
+    }
+
+    [TestMethod]
+    public void AddReadModelServices_MongoDb_RegistersSingletonWithDefaultNames()
+    {
+        var services = InvokeDispatcher(
+            "AddReadModelServices",
+            Config(
+                (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
+                (RegisterServices.ReadModelProviderConfigKey, "MongoDb"),
+                ("ConnectionStrings:MongoDb1", "mongodb://localhost:27017")));
+
+        using var provider = services.BuildServiceProvider();
+        var repository = provider.GetRequiredService<ITaskViewRepository>();
+        Assert.IsInstanceOfType<MongoTaskViewRepository>(repository);
+        Assert.AreSame(repository, provider.GetRequiredService<ITaskViewRepository>());
+        var settings = provider.GetRequiredService<MongoTaskViewSettings>();
+        Assert.AreEqual(MongoTaskViewSettings.DefaultDatabaseName, settings.DatabaseName);
+        Assert.AreEqual(MongoTaskViewSettings.DefaultCollectionName, settings.CollectionName);
     }
 
     // ----- Audit -----
@@ -321,16 +363,17 @@ public class ProviderSwitchSelectorTests
         return services;
     }
 
-    /// <summary>Same invocation, for an arm that is expected to fail fast.</summary>
-    private static NotSupportedException InvokeUnsupportedDispatcher(string methodName, IConfiguration config)
+    /// <summary>Invokes a dispatcher that is expected to fail fast and unwraps reflection's exception.</summary>
+    private static TException InvokeDispatcherFailure<TException>(string methodName, IConfiguration config)
+        where TException : Exception
     {
         var services = new ServiceCollection();
         services.AddLogging();
 
         var target = Assert.ThrowsExactly<TargetInvocationException>(() =>
             Dispatcher(methodName).Invoke(null, [services, config]));
-        Assert.IsInstanceOfType<NotSupportedException>(target.InnerException);
-        return (NotSupportedException)target.InnerException!;
+        Assert.IsInstanceOfType<TException>(target.InnerException);
+        return (TException)target.InnerException!;
     }
 
     private static MethodInfo Dispatcher(string methodName) =>

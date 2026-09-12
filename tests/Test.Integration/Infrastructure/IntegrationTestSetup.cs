@@ -4,7 +4,7 @@ using Test.Support.Hosting;
 
 /// <summary>
 /// Assembly-scoped lifecycle for the component tier. Starts the standalone database (SQL Server or PostgreSQL, TASKFLOW_TEST_DB_PROVIDER), Azurite,
-/// and MinIO (D-037) Testcontainers in parallel via <c>[AssemblyInitialize]</c> and disposes them via
+/// Redis, SeaweedFS, and MongoDB Testcontainers in parallel via <c>[AssemblyInitialize]</c> and disposes them via
 /// <c>[AssemblyCleanup]</c>. A bounded Docker preflight is the only inconclusive path. Each fixture captures
 /// its own <c>StartupError</c> so dependent tests fail with diagnostics without aborting assembly discovery.
 /// Component tier only - no Aspire graph, no <c>AppHost</c> reference.
@@ -28,7 +28,8 @@ public static class IntegrationTestSetup
             DbContainerFixture.StartAsync(),
             AzuriteContainerFixture.StartAsync(),
             RedisContainerFixture.StartAsync(),
-            MinioContainerFixture.StartAsync());
+            SeaweedFsContainerFixture.StartAsync(),
+            MongoDbContainerFixture.StartAsync());
     }
 
     /// <summary>Disposes the component-tier store containers after the assembly's tests complete.</summary>
@@ -41,7 +42,8 @@ public static class IntegrationTestSetup
                 DbContainerFixture.StopAsync(),
                 AzuriteContainerFixture.StopAsync(),
                 RedisContainerFixture.StopAsync(),
-                MinioContainerFixture.StopAsync(),
+                SeaweedFsContainerFixture.StopAsync(),
+                MongoDbContainerFixture.StopAsync(),
                 // Started lazily by the D-034 transport tests; a no-op when they did not run.
                 RabbitMqBrokerFixture.StopAsync());
         }

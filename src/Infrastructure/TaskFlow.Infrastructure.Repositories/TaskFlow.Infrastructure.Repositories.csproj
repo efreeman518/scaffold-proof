@@ -4,6 +4,7 @@
     <PackageReference Include="EF.Data" />
     <PackageReference Include="EF.Data.Contracts" />
     <PackageReference Include="EF.Audit.Contracts" />
+    <PackageReference Include="MongoDB.Driver" />
   </ItemGroup>
 
   <ItemGroup>

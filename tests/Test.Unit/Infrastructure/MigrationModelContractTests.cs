@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
+using TaskFlow.Infrastructure.Data.ReadModel;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Provider;
 
@@ -50,6 +52,21 @@ public sealed class MigrationModelContractTests
             transactional.Database.GenerateCreateScript(),
             query.Database.GenerateCreateScript(),
             $"The query context is covered by the transactional migration chain and must keep the same relational model on {provider}.");
+    }
+
+    [TestMethod]
+    public void TaskViewDocument_UsesJsonbOnlyOnPostgreSql()
+    {
+        using var postgreSql = CreateTransactionalContext(TaskFlowDbProvider.PostgreSql);
+        using var sqlServer = CreateTransactionalContext(TaskFlowDbProvider.SqlServer);
+
+        var postgreSqlType = postgreSql.Model.FindEntityType(typeof(TaskViewRecord))!
+            .FindProperty(nameof(TaskViewRecord.Document))!.GetColumnType();
+        var sqlServerType = sqlServer.Model.FindEntityType(typeof(TaskViewRecord))!
+            .FindProperty(nameof(TaskViewRecord.Document))!.GetColumnType();
+
+        Assert.AreEqual("jsonb", postgreSqlType);
+        Assert.AreEqual("nvarchar(max)", sqlServerType);
     }
 
     private static TaskFlowDbContextTrxn CreateTransactionalContext(TaskFlowDbProvider provider) =>

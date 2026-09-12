@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TaskFlow.Application.Contracts.Storage;
+using TaskFlow.Infrastructure.Data.Provider;
 using TaskFlow.Infrastructure.Repositories;
+using TaskFlow.Infrastructure.Repositories.MongoDb;
 
 namespace TaskFlow.Bootstrapper;
 
@@ -49,11 +51,11 @@ public static partial class RegisterServices
                 AddCosmosDbServices(services, config);
                 break;
             case ReadModelProvider.PostgreSqlJsonb:
-                AddRelationalReadModelServices(services);
+                AddRelationalReadModelServices(services, config);
                 break;
             case ReadModelProvider.MongoDb:
-                throw new NotSupportedException(
-                    $"{ReadModelProviderConfigKey}=MongoDb requires the MongoDB repository adapter.");
+                AddMongoDbReadModelServices(services, config);
+                break;
         }
     }
 
@@ -64,6 +66,29 @@ public static partial class RegisterServices
     /// check already covers this store, and a missing database connection is a startup failure for the whole
     /// host, not a degradation of this one repository.
     /// </summary>
-    private static void AddRelationalReadModelServices(IServiceCollection services) =>
+    private static void AddRelationalReadModelServices(IServiceCollection services, IConfiguration config)
+    {
+        if (TaskFlowDbProviderSelector.Resolve(config) != TaskFlowDbProvider.PostgreSql)
+            throw new InvalidOperationException(
+                $"{ReadModelProviderConfigKey}=PostgreSqlJsonb requires Database:Provider=PostgreSql.");
+
         services.AddScoped<ITaskViewRepository, RelationalTaskViewRepository>();
+    }
+
+    /// <summary>Registers the explicit NonAzure MongoDB TaskView alternative.</summary>
+    private static void AddMongoDbReadModelServices(IServiceCollection services, IConfiguration config)
+    {
+        var connectionString = config.GetConnectionString("MongoDb1");
+        if (string.IsNullOrWhiteSpace(connectionString))
+            throw new InvalidOperationException(
+                $"{ReadModelProviderConfigKey}=MongoDb requires the MongoDb1 connection string.");
+
+        var settings = new MongoTaskViewSettings(
+            config["Mongo:TaskViews:DatabaseName"] ?? MongoTaskViewSettings.DefaultDatabaseName,
+            config["Mongo:TaskViews:CollectionName"] ?? MongoTaskViewSettings.DefaultCollectionName);
+
+        services.AddSingleton(settings);
+        services.AddSingleton<MongoTaskViewRepository>(_ => new MongoTaskViewRepository(connectionString, settings));
+        services.AddSingleton<ITaskViewRepository>(sp => sp.GetRequiredService<MongoTaskViewRepository>());
+    }
 }

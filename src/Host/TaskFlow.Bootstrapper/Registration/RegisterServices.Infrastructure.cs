@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Infrastructure.Data.Messaging;
+using TaskFlow.Infrastructure.Repositories.MongoDb;
 using TaskFlow.Infrastructure.Storage;
 using TaskFlow.Infrastructure.Storage.CosmosDb;
 
@@ -208,6 +209,9 @@ public static partial class RegisterServices
 
         if (!string.IsNullOrWhiteSpace(config.GetConnectionString("CosmosDb1")))
             builder.AddCheck<HealthChecks.CosmosDbHealthCheck>("cosmos-db", tags: ["full", "extservice"]);
+
+        if (ResolveReadModelProvider(config) == ReadModelProvider.MongoDb)
+            builder.AddCheck<HealthChecks.MongoDbHealthCheck>("mongodb", tags: ["full", "extservice"]);
 
         if (!string.IsNullOrWhiteSpace(config.GetConnectionString("Redis1")))
             builder.AddCheck<HealthChecks.RedisCacheHealthCheck>("redis-cache", tags: ["full", "extservice"]);

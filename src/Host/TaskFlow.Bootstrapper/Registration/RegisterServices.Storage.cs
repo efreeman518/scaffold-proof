@@ -11,7 +11,7 @@ public enum StorageProvider
     /// <summary>Azure Blob Storage behind <see cref="IObjectStorageRepository"/>.</summary>
     AzureBlob,
 
-    /// <summary>S3-compatible storage (MinIO locally/on the VPS, any S3 provider in production).</summary>
+    /// <summary>S3-compatible storage (SeaweedFS locally/on the VPS, any S3 provider in production).</summary>
     S3
 }
 

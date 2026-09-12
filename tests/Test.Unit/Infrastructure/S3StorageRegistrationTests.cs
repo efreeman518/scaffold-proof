@@ -16,7 +16,7 @@ namespace Test.Unit.Infrastructure;
 /// (the same grant <c>ProviderSwitchArchitectureTests</c> relies on via reflection for every switch's default arm).
 /// Test.Endpoints exercises attachments against an in-memory fake <c>IObjectStorageRepository</c>, not this
 /// arm, so DI-only coverage for it belongs here.
-/// Pure-unit tier (in-memory IConfiguration / ServiceCollection): no live S3/MinIO endpoint.
+/// Pure-unit tier (in-memory IConfiguration / ServiceCollection): no live S3/SeaweedFS endpoint.
 /// </summary>
 [TestClass]
 [TestCategory("Unit")]
@@ -31,7 +31,7 @@ public class S3StorageRegistrationTests
     public void AddS3StorageServices_MissingPublicServiceUrl_Throws()
     {
         var services = new ServiceCollection();
-        var config = Config(("Storage:S3:ServiceUrl", "http://minio:9000"));
+        var config = Config(("Storage:S3:ServiceUrl", "http://seaweedfs:8333"));
 
         var ex = Assert.ThrowsExactly<InvalidOperationException>(
             () => RegisterServices.AddS3StorageServices(services, config));
@@ -44,8 +44,8 @@ public class S3StorageRegistrationTests
         var services = new ServiceCollection();
         services.AddLogging();
         var config = Config(
-            ("Storage:S3:ServiceUrl", "http://minio:9000"),
-            ("Storage:S3:PublicServiceUrl", "http://localhost:9000"),
+            ("Storage:S3:ServiceUrl", "http://seaweedfs:8333"),
+            ("Storage:S3:PublicServiceUrl", "http://localhost:8333"),
             ("Storage:S3:AccessKeyId", "test-key"),
             ("Storage:S3:SecretAccessKey", "test-secret"));
 

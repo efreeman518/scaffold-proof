@@ -10,6 +10,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TaskFlow.Application.Contracts.Storage;
+using TaskFlow.Infrastructure.Repositories.MongoDb;
 using TaskFlow.Infrastructure.Storage;
 
 namespace TaskFlow.Bootstrapper.StartupTasks;
@@ -72,6 +73,7 @@ public sealed class EnsureExternalResources(
             await EnsureS3BucketAsync(ct);
             await EnsureAuditTableAsync(ct);
             await EnsureCosmosAsync(ct);
+            await EnsureMongoDbAsync(ct);
         }
     }
 
@@ -160,5 +162,16 @@ public sealed class EnsureExternalResources(
             .ConfigureAwait(false);
 
         logger.ExternalResourceReady("cosmos container", $"{databaseName}/{containerName}");
+    }
+
+    /// <summary>Creates MongoDB TaskView indexes once under the same cross-replica provisioning lock.</summary>
+    private async Task EnsureMongoDbAsync(CancellationToken ct)
+    {
+        var repository = services.GetService<MongoTaskViewRepository>();
+        if (repository is null) return;
+
+        await repository.EnsureIndexesAsync(ct).ConfigureAwait(false);
+        var settings = services.GetRequiredService<MongoTaskViewSettings>();
+        logger.ExternalResourceReady("mongodb collection", $"{settings.DatabaseName}/{settings.CollectionName}");
     }
 }

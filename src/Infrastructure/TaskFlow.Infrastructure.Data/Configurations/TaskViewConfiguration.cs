@@ -22,8 +22,8 @@ public sealed class TaskViewConfiguration : IEntityTypeConfiguration<TaskViewRec
         builder.Property(e => e.Status).HasMaxLength(32).IsRequired();
         builder.Property(e => e.Priority).HasMaxLength(32).IsRequired();
         builder.Property(e => e.CategoryName).HasMaxLength(200);
-        // No HasColumnType: nvarchar(max) / text today. jsonb plus a GIN index (PostgreSQL) or json
-        // (SQL Server 2025) is the upgrade once anything queries inside the body.
+        // SQL Server keeps the existing nvarchar(max) compatibility mapping. TaskFlowDbContextBase applies
+        // the provider-forced PostgreSQL jsonb mapping after this shared configuration is loaded (D-030).
         builder.Property(e => e.Document).IsRequired();
 
         // The list query's keyset order. Descending on both trailing columns so the index serves the page
