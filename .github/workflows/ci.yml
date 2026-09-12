@@ -5,30 +5,26 @@ on:
   # main-push run would only re-test the identical tree the PR run already verified.
   pull_request:
     branches: [main, develop]
-  # Monthly deep-lane run (28th 06:17 UTC): keeps the Docker-backed E2E/Integration/
-  # Aspire lanes green with minimal Actions-minute cost, leaving the rest of the
-  # monthly minute pool to on-demand work. The 28th is used instead of the last
-  # calendar day because GitHub Actions cron has no "last day of month" syntax and
-  # the 28th is the one day that exists in every month.
-  # FoundryLocal (model download) and PlaywrightUI (browser + full stack) stay
-  # dispatch-only for cost/flakiness reasons.
-  schedule:
-    - cron: "17 6 28 * *"
   workflow_dispatch:
     inputs:
+      lane:
+        type: choice
+        default: both
+        options: [both, Azure, NonAzure]
+        description: "Hosting lane(s) for manually dispatched acceptance"
+      nonAzureReadModel:
+        type: choice
+        default: PostgreSqlJsonb
+        options: [PostgreSqlJsonb, MongoDb]
+        description: "NonAzure read model; MongoDb runs only when explicitly selected"
       includeE2E:
         type: boolean
         default: false
-        description: "Run Test.E2E SQL-backed HTTP workflow tests (requires Docker)"
+        description: "Run selected Azure/NonAzure Test.E2E lane(s) (requires Docker)"
       includeIntegration:
         type: boolean
         default: false
-        description: "Run Test.Integration component tests (standalone Testcontainers database + Azurite; requires Docker)"
-      dbProvider:
-        type: choice
-        default: both
-        options: [both, SqlServer, PostgreSql]
-        description: "Database provider lane(s) for the Docker-backed E2E and Integration jobs (TASKFLOW_TEST_DB_PROVIDER)"
+        description: "Run selected Azure/NonAzure Testcontainers lane(s) (requires Docker)"
       includeAspireMesh:
         type: boolean
         default: false
@@ -48,7 +44,7 @@ on:
       includeComposeSmoke:
         type: boolean
         default: false
-        description: "Build the app images and smoke the Portable lane compose stack through Caddy (requires Docker)"
+        description: "Build images and smoke the NonAzure Compose stack through Caddy (requires Docker)"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -82,7 +78,7 @@ jobs:
 
       # Seconds, no daemon work: catches a broken compose file or a variable removed from .env.example on
       # every run, instead of only when someone dispatches the compose smoke.
-      - name: Portable lane compose config check
+      - name: NonAzure lane compose config check
         run: |
           set -euo pipefail
           cd deploy/compose
@@ -97,7 +93,7 @@ jobs:
       # Reclaim ~20+ GB (Android SDK, Haskell, large apt packages) before the Docker-backed steps run.
       # Keep dotnet and the tool cache - the build depends on them.
       - name: Free disk space
-        if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.includeAspireMesh || inputs.includeFoundryLocal || inputs.includePlaywrightUI || inputs.includeFullAcceptance)) || github.event_name == 'schedule' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.includeAspireMesh || inputs.includeFoundryLocal || inputs.includePlaywrightUI || inputs.includeFullAcceptance) }}
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
@@ -143,11 +139,17 @@ jobs:
         run: dotnet format analyzers TaskFlow.slnx --severity warn --verify-no-changes --no-restore
 
       - name: Unit Tests
-        run: >
-          dotnet test tests/Test.Unit/Test.Unit.csproj
-          --no-build --configuration Release
-          --logger "trx;LogFileName=unit-results.trx"
-          --results-directory ./TestResults
+        # The project boundary intentionally includes untagged provider, migration, deployment, and deprecated
+        # alias contract tests. In runs 34718419269 and 34719228357 a relational-audit DI cycle left this testhost
+        # silent for more than 13 minutes. The inner collector names the active test; the outer timeout stays red.
+        timeout-minutes: 1
+        run: |
+          timeout --signal=INT --kill-after=5s 50s \
+            dotnet test tests/Test.Unit/Test.Unit.csproj \
+              --no-build --configuration Release \
+              --blame-hang --blame-hang-timeout 15s \
+              --logger "trx;LogFileName=unit-results.trx" \
+              --results-directory ./TestResults
 
       - name: Architecture Tests
         run: >
@@ -170,10 +172,10 @@ jobs:
           --logger "trx;LogFileName=flowengine-results.trx"
           --results-directory ./TestResults
 
-      - name: Aspire Mesh Tests (manual or scheduled, full graph)
+      - name: Aspire Mesh Tests (manual, selected full lane graph)
         id: aspire_mesh
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.includeAspireMesh == true) || github.event_name == 'schedule' }}
-        timeout-minutes: 30
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeAspireMesh == true }}
+        timeout-minutes: 70
         env:
           TASKFLOW_RUN_AZURE_FOUNDRY_TESTS: "false"
           TASKFLOW_RUN_FUNCTIONS_TESTS: "false"
@@ -224,14 +226,26 @@ jobs:
           capture_pid=$!
           trap 'kill "$capture_pid" 2>/dev/null || true; wait "$capture_pid" 2>/dev/null || true' EXIT
 
-          if dotnet test tests/Test.Aspire/Test.Aspire.csproj \
-            --no-build --configuration Release \
-            -m:1 \
-            --logger "trx;LogFileName=aspire-results.trx" \
-            --results-directory ./TestResults; then
-            test_exit=0
-          else
-            test_exit=$?
+          run_lane() {
+            local lane="$1"
+            local read_model="$2"
+            echo "Running Aspire lane ${lane} with read model ${read_model}."
+            TASKFLOW_LANE="$lane" TASKFLOW_READMODEL_PROVIDER="$read_model" \
+              dotnet test tests/Test.Aspire/Test.Aspire.csproj \
+                --no-build --configuration Release \
+                -m:1 \
+                --logger "trx;LogFileName=aspire-${lane}-${read_model}-results.trx" \
+                --results-directory ./TestResults
+          }
+
+          test_exit=0
+          if [ "${{ inputs.lane }}" = "both" ] || [ "${{ inputs.lane }}" = "Azure" ]; then
+            run_lane Azure Cosmos || test_exit=$?
+          fi
+          if [ "$test_exit" -eq 0 ]; then
+            if [ "${{ inputs.lane }}" = "both" ] || [ "${{ inputs.lane }}" = "NonAzure" ]; then
+              run_lane NonAzure "${{ inputs.nonAzureReadModel }}" || test_exit=$?
+            fi
           fi
 
           kill "$capture_pid" 2>/dev/null || true
@@ -295,8 +309,11 @@ jobs:
           fi
 
       - name: Foundry Local Tests (manual, live local)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeFoundryLocal == true }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeFoundryLocal == true && (inputs.lane == 'both' || inputs.lane == 'NonAzure') }}
         timeout-minutes: 70
+        env:
+          TASKFLOW_LANE: NonAzure
+          TASKFLOW_READMODEL_PROVIDER: ${{ inputs.nonAzureReadModel }}
         run: >
           dotnet test tests/Test.FoundryLocal/Test.FoundryLocal.csproj
           --no-build --configuration Release
@@ -329,12 +346,26 @@ jobs:
       - name: Playwright UI Tests (manual, browser)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.includePlaywrightUI == true }}
         timeout-minutes: 70
-        run: >
-          dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj
-          --no-build --configuration Release
-          -m:1
-          --logger "trx;LogFileName=playwrightui-results.trx"
-          --results-directory ./TestResults
+        run: |
+          set -euo pipefail
+          run_lane() {
+            local lane="$1"
+            local read_model="$2"
+            echo "Running browser acceptance for ${lane} with read model ${read_model}."
+            TASKFLOW_LANE="$lane" TASKFLOW_READMODEL_PROVIDER="$read_model" \
+              dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj \
+                --no-build --configuration Release \
+                -m:1 \
+                --logger "trx;LogFileName=playwrightui-${lane}-${read_model}-results.trx" \
+                --results-directory ./TestResults
+          }
+
+          if [ "${{ inputs.lane }}" = "both" ] || [ "${{ inputs.lane }}" = "Azure" ]; then
+            run_lane Azure Cosmos
+          fi
+          if [ "${{ inputs.lane }}" = "both" ] || [ "${{ inputs.lane }}" = "NonAzure" ]; then
+            run_lane NonAzure "${{ inputs.nonAzureReadModel }}"
+          fi
 
       - name: Migration model drift gate
         run: >
@@ -360,39 +391,58 @@ jobs:
           TASKFLOW_RUN_AZURE_FOUNDRY_TESTS: "false"
           TASKFLOW_RUN_FOUNDRY_LOCAL_TESTS: "false"
           TASKFLOW_RUN_FUNCTIONS_TESTS: "false"
-        run: >
-          dotnet test TaskFlow.slnx
-          --no-build --configuration Release
-          -m:1
-          --logger "trx;LogFileName=full-acceptance-results.trx"
-          --results-directory ./TestResults
+        run: |
+          set -euo pipefail
+          run_lane() {
+            local lane="$1"
+            local read_model="$2"
+            echo "Running full serial acceptance for ${lane} with read model ${read_model}."
+            TASKFLOW_LANE="$lane" TASKFLOW_READMODEL_PROVIDER="$read_model" \
+              dotnet test TaskFlow.slnx \
+                --no-build --configuration Release \
+                -m:1 \
+                --logger "trx;LogFileName=full-${lane}-${read_model}-results.trx" \
+                --results-directory ./TestResults
+          }
+
+          if [ "${{ inputs.lane }}" = "both" ] || [ "${{ inputs.lane }}" = "Azure" ]; then
+            run_lane Azure Cosmos
+          fi
+          if [ "${{ inputs.lane }}" = "both" ] || [ "${{ inputs.lane }}" = "NonAzure" ]; then
+            run_lane NonAzure "${{ inputs.nonAzureReadModel }}"
+          fi
 
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-results
-          path: ./TestResults/*.trx
+          path: |
+            ./TestResults/**/*.trx
+            ./TestResults/**/*.xml
+            ./TestResults/**/*.dmp
+          if-no-files-found: warn
 
-  # Docker-backed lanes run once per database provider (D-020). Same assemblies, TASKFLOW_TEST_DB_PROVIDER
-  # selects the Testcontainer and the host's Database:Provider; the matrix is filtered by the dbProvider input.
+  # Manual Docker-backed acceptance runs through the same canonical lane contract as Aspire and production.
+  # The full Test.Unit project above retains coverage for TASKFLOW_TEST_DB_PROVIDER as a deprecated input alias.
   database-lanes:
     needs: build-and-test
-    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.includeE2E == true || inputs.includeIntegration == true)) || github.event_name == 'schedule' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.includeE2E == true || inputs.includeIntegration == true) }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        dbProvider: [SqlServer, PostgreSql]
+        lane: [Azure, NonAzure]
     env:
-      TASKFLOW_TEST_DB_PROVIDER: ${{ matrix.dbProvider }}
+      TASKFLOW_LANE: ${{ matrix.lane }}
+      TASKFLOW_READMODEL_PROVIDER: ${{ matrix.lane == 'Azure' && 'Cosmos' || inputs.nonAzureReadModel }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: ${{ github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider }}
+        if: ${{ inputs.lane == 'both' || inputs.lane == matrix.lane }}
 
       - name: Free disk space
-        if: ${{ github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider }}
+        if: ${{ inputs.lane == 'both' || inputs.lane == matrix.lane }}
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
@@ -403,58 +453,61 @@ jobs:
           swap-storage: false
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        if: ${{ github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider }}
+        if: ${{ inputs.lane == 'both' || inputs.lane == matrix.lane }}
         with:
           global-json-file: global.json
 
       - name: Install required workloads
-        if: ${{ github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider }}
+        if: ${{ inputs.lane == 'both' || inputs.lane == matrix.lane }}
         run: dotnet workload install wasm-tools aspire
 
       - name: Restore
-        if: ${{ github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider }}
+        if: ${{ inputs.lane == 'both' || inputs.lane == matrix.lane }}
         env:
           NuGetPackageSourceCredentials_efreeman518-github: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
         run: dotnet restore TaskFlow.slnx -p:Configuration=Release
 
       - name: Build test lanes
-        if: ${{ github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider }}
+        if: ${{ inputs.lane == 'both' || inputs.lane == matrix.lane }}
         run: |
           dotnet build tests/Test.E2E/Test.E2E.csproj --no-restore --configuration Release -m:1
           dotnet build tests/Test.Integration/Test.Integration.csproj --no-restore --configuration Release -m:1
 
-      - name: E2E Tests (${{ matrix.dbProvider }})
-        if: ${{ (github.event_name == 'schedule' || inputs.includeE2E == true) && (github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider) }}
+      - name: E2E Tests (${{ matrix.lane }})
+        if: ${{ inputs.includeE2E == true && (inputs.lane == 'both' || inputs.lane == matrix.lane) }}
         timeout-minutes: 20
         run: >
           dotnet test tests/Test.E2E/Test.E2E.csproj
           --no-build --configuration Release
-          --logger "trx;LogFileName=e2e-${{ matrix.dbProvider }}-results.trx"
+          --logger "trx;LogFileName=e2e-${{ matrix.lane }}-results.trx"
           --results-directory ./TestResults
 
-      - name: Integration Tests (${{ matrix.dbProvider }}, component)
-        if: ${{ (github.event_name == 'schedule' || inputs.includeIntegration == true) && (github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider) }}
+      - name: Integration Tests (${{ matrix.lane }}, component)
+        if: ${{ inputs.includeIntegration == true && (inputs.lane == 'both' || inputs.lane == matrix.lane) }}
         timeout-minutes: 20
         run: >
           dotnet test tests/Test.Integration/Test.Integration.csproj
           --no-build --configuration Release
-          --logger "trx;LogFileName=integration-${{ matrix.dbProvider }}-results.trx"
+          --logger "trx;LogFileName=integration-${{ matrix.lane }}-results.trx"
           --results-directory ./TestResults
 
       - name: Upload Test Results
-        if: ${{ always() && (github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider) }}
+        if: ${{ always() && (inputs.lane == 'both' || inputs.lane == matrix.lane) }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: test-results-${{ matrix.dbProvider }}
-          path: ./TestResults/*.trx
+          name: test-results-${{ matrix.lane }}
+          path: ./TestResults/**/*.trx
+          if-no-files-found: warn
 
-  # Portable lane end-to-end proof (D-036). Dispatch-gated: it builds all five app images from source, so
+  # NonAzure lane end-to-end proof (D-060). Dispatch-gated: it builds the app images from source, so
   # it is the most expensive job in this file and nothing about it belongs on a push.
   compose-smoke:
     needs: build-and-test
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeComposeSmoke == true }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeComposeSmoke == true && (inputs.lane == 'both' || inputs.lane == 'NonAzure') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      COMPOSE_PROFILES: ${{ inputs.nonAzureReadModel == 'MongoDb' && 'local,mongo' || 'local' }}
     defaults:
       run:
         working-directory: deploy/compose
@@ -483,9 +536,8 @@ jobs:
         run: |
           set -euo pipefail
           cat > .env <<ENV
-          TASKFLOW_LANE=Portable
-          # The lane already defaults AI to OpenAICompatible, which wants a real endpoint. A CI runner has
-          # none, and this switch is exactly the escape hatch for that.
+          TASKFLOW_LANE=NonAzure
+          TASKFLOW_READMODEL_PROVIDER=${{ inputs.nonAzureReadModel }}
           TASKFLOW_AI_PROVIDER=None
           Database__PostgreSql__PoolerMode=None
           ConnectionStrings__TaskFlowDbContextTrxn=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow;Password=taskflow-dev-password
@@ -494,11 +546,12 @@ jobs:
           ConnectionStrings__TickerQDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow;Password=taskflow-dev-password
           ConnectionStrings__Redis1=redis:6379
           ConnectionStrings__RabbitMq1=amqp://taskflow:taskflow-dev-password@rabbitmq:5672
-          Storage__S3__ServiceUrl=http://minio:9000
-          Storage__S3__PublicServiceUrl=http://minio:9000
+          ConnectionStrings__MongoDb1=mongodb://mongo:27017/taskflow
+          Storage__S3__ServiceUrl=http://seaweedfs:8333
+          Storage__S3__PublicServiceUrl=http://s3.localhost
           Storage__S3__Region=us-east-1
-          Storage__S3__AccessKeyId=taskflowminio
-          Storage__S3__SecretAccessKey=taskflowminio-dev-secret
+          Storage__S3__AccessKeyId=taskflowseaweedfs
+          Storage__S3__SecretAccessKey=taskflowseaweedfs-dev-secret
           Storage__S3__ForcePathStyle=true
           Database__Encryption__LocalKeyBase64=$(openssl rand -base64 32)
           Database__Encryption__BlindIndexKeyBase64=$(openssl rand -base64 32)
@@ -512,6 +565,7 @@ jobs:
           UNO_UI_ORIGIN=http://uno.localhost
           REACT_UI_DOMAIN=react.localhost
           UNO_UI_DOMAIN=uno.localhost
+          S3_PUBLIC_DOMAIN=s3.localhost
           ACME_EMAIL=ci@example.invalid
           ENV
           cat images.env.example >> .env

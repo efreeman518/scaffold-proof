@@ -27,27 +27,34 @@ This file is the single source of maintainer-session instructions: CLI agents an
 ```powershell
 dotnet build TaskFlow.slnx                                     # 0 warnings expected
 dotnet build src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj           # Uno builds separately (Uno.Sdk)
-dotnet test TaskFlow.slnx --filter "TestCategory=Unit"         # fast lane
+dotnet test tests/Test.Unit/Test.Unit.csproj                    # full unit project, including untagged provider/contract tests
+dotnet test TaskFlow.slnx --filter "TestCategory=Unit"         # category-filtered solution fast lane
 dotnet test TaskFlow.slnx --filter "TestCategory=Architecture|TestCategory=Endpoint"
 dotnet test TaskFlow.slnx --no-build -m:1                     # unfiltered serial acceptance; full-stack projects are resource-heavy
 # Dual EF Core provider: TASKFLOW_DB_PROVIDER=SqlServer|PostgreSql selects the runtime provider (default SqlServer)
-# TASKFLOW_TEST_DB_PROVIDER=SqlServer|PostgreSql selects the container-backed test lane (default SqlServer); rerun Integration/E2E/FlowEngine-integration with both values
+# TASKFLOW_TEST_DB_PROVIDER=SqlServer|PostgreSql is a deprecated test-only alias for one release; new orchestration uses TASKFLOW_LANE
 # TASKFLOW_MESSAGING_PROVIDER=ServiceBus|RabbitMq selects the messaging transport (default ServiceBus); RabbitMq needs no code change, only config
-# TASKFLOW_LANE=Azure|Portable seeds the DEFAULT of every switch below (each switch's own env/config still wins; default Azure) - D-035
-# TASKFLOW_STORAGE_PROVIDER=AzureBlob|S3 selects the object-storage backend (default AzureBlob) - D-037
-# TASKFLOW_READMODEL_PROVIDER=Cosmos|Relational selects the read-model backend (default Cosmos) - D-038
-# TASKFLOW_AUDIT_PROVIDER=AzureTable|Relational selects the audit-sink backend (default AzureTable) - D-039
-# TASKFLOW_SEARCH_PROVIDER=AzureAiSearch|PgVector|Sql selects the search backend (default: Portable lane -> Sql, Azure lane -> AzureAiSearch when AiServices:UseSearch else Sql; PgVector requires Database:Provider=PostgreSql, fails fast otherwise) - D-040
-# TASKFLOW_AI_PROVIDER=AzureInference|OpenAICompatible|FoundryLocal|None selects the LLM client (default derived from ConnectionStrings:chat) - D-041
-# TASKFLOW_DATAPROTECTION_PERSISTENCE=AzureBlob|Redis|None selects the Data Protection key-ring persistence (default derived from DataProtectionKeysFileUrl) - D-043
+# TASKFLOW_LANE=Azure|NonAzure owns the core provider topology (default Azure); Portable is a deprecated NonAzure alias for one release - D-060
+# Azure: SqlServer, ServiceBus, AzureBlob/Azurite, Cosmos, AzureTable, Blob Data Protection, and Azure-only Functions
+# NonAzure: PostgreSql, RabbitMq, S3/SeaweedFS, Relational audit, Redis Data Protection, PostgreSqlJsonb read model by default, optional MongoDb
+# Lane-owned provider conflicts fail fast; NonAzure also rejects non-empty Azure App Configuration and Key Vault service settings
+# TASKFLOW_STORAGE_PROVIDER=AzureBlob|S3 selects the object-storage backend within its compatible lane - D-037/D-060
+# TASKFLOW_READMODEL_PROVIDER=Cosmos|PostgreSqlJsonb|MongoDb selects the read-model backend; Relational is a deprecated PostgreSqlJsonb alias - D-038/D-060
+# TASKFLOW_AUDIT_PROVIDER=AzureTable|Relational selects the lane-compatible audit sink - D-039/D-060
+# TASKFLOW_SEARCH_PROVIDER=AzureAiSearch|PgVector|Sql selects search; local default Sql, PgVector requires NonAzure PostgreSql - D-040/D-060
+# TASKFLOW_AI_PROVIDER=AzureInference|OpenAICompatible|FoundryLocal|None selects the lane-compatible LLM client; local default None - D-041/D-060
+# TASKFLOW_DATAPROTECTION_PERSISTENCE=AzureBlob|Redis|None selects persistence; strict lane defaults are AzureBlob and Redis - D-043/D-060
 # Database:PostgreSql:PoolerMode=None|Transaction (config only, no env var) appends the PgBouncer transaction-pooling connection-string flags (default None) - D-045
 # Health probes (D-049): /healthz/live (self only, restart-worthy), /healthz/ready (database, outbox, scheduler, broker on consumer hosts), /healthz (aggregate, humans + Compose healthchecks); /readyz removed
+# Redis, DatabaseMigrator, API, Gateway, Scheduler with embedded TickerQ, Blazor, React, and Uno WASM run in both lanes
+# CI runs the full Test.Unit project under a sub-minute timeout with blame-hang diagnostics; all container, Aspire, browser, and full-stack lanes are workflow_dispatch-only
 # Container-backed tests need a Docker-compatible runtime; Docker Desktop, headless Docker Engine, and Podman are supported.
 # Podman on Windows/WSL2 uses mirrored networking on this machine, so published localhost ports work without TESTCONTAINERS_HOST_OVERRIDE.
 # Under legacy WSL NAT, only the component Testcontainers lanes can use a run-scoped TESTCONTAINERS_HOST_OVERRIDE=<podman machine ip>;
 # Aspire/DCP and full-stack Playwright require localhost forwarding and therefore need mirrored WSL networking or Docker.
-dotnet run --project src/Host/Aspire/AppHost                   # full local stack (Azure lane, default)
-$env:TASKFLOW_LANE = "Portable"; dotnet run --project src/Host/Aspire/AppHost   # Portable topology locally (Postgres+RabbitMQ+MinIO, no Azure emulators); deploy/compose/README.md is the VPS Docker Compose runbook
+dotnet run --project src/Host/Aspire/AppHost                   # full local Azure stack (default)
+$env:TASKFLOW_LANE = "NonAzure"; dotnet run --project src/Host/Aspire/AppHost   # PostgreSQL JSONB + RabbitMQ + SeaweedFS + Redis, zero Azure
+$env:TASKFLOW_READMODEL_PROVIDER = "MongoDb"; dotnet run --project src/Host/Aspire/AppHost # explicit NonAzure document database alternative
 ```
 
 ## Pointers
