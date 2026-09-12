@@ -63,8 +63,8 @@ hostingLaneDefaults:
     storageProvider: AzureBlob
     readModelProvider: Cosmos
     auditProvider: AzureTable
-    searchProvider: AzureAiSearch
-    aiProvider: AzureInference
+    searchProvider: Sql
+    aiProvider: None
     dataProtectionPersistence: AzureBlob
   NonAzure:
     databaseProvider: PostgreSql
@@ -77,6 +77,11 @@ hostingLaneDefaults:
     dataProtectionPersistence: Redis
 
 localDefaults: { searchProvider: Sql, aiProvider: None }
+
+compatibleProviderOptIns:
+  Azure: { searchProvider: AzureAiSearch, aiProvider: AzureInference }
+  NonAzure: { searchProvider: PgVector, aiProvider: [OpenAICompatible, FoundryLocal] }
+zeroAzureNonAzure: { reject: [AppConfig:Endpoint, KeyVault:Endpoint], config: [appsettings, environment], encryptionKeyPath: local }
 
 storageProviders: [AzureBlob, S3]                                   # Storage:Provider, see D-037
 readModelProviders: [Cosmos, PostgreSqlJsonb, MongoDb]                 # Canonical providers, see D-060
@@ -444,7 +449,7 @@ externalDependencyModes:
   aiServices: deployment-only
   seaweedfs: emulator             # NonAzure S3-compatible object storage, see D-060
   appConfiguration: lazy-optional # no-op without AppConfig:Endpoint, see D-042
-  otelLgtm: emulator              # Portable lane observability stack (Grafana/Loki/Tempo/Mimir)
+  otelLgtm: emulator              # NonAzure lane observability stack (Grafana/Loki/Tempo/Mimir)
 
 # ---------------------------------------------------------------------------
 # AI Services
