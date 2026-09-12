@@ -15,12 +15,11 @@ public sealed record LaneSwitches(
     string AiServices,
     string DataProtection)
 {
-    // Compatibility for the existing graph. S4 owns topology terminology and resource changes.
-    public bool IsPortable => Lane == HostingLane.NonAzure;
-
     public IReadOnlyDictionary<string, string> HostEnvironment { get; } = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["Hosting__Lane"] = Lane.ToString(),
+        ["Database__Provider"] = Database,
+        ["Messaging__Provider"] = Messaging,
         ["Storage__Provider"] = Storage,
         ["ReadModel__Provider"] = ReadModel,
         ["Audit__Provider"] = Audit,

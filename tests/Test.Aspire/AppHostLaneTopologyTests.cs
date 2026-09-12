@@ -4,37 +4,27 @@ using TaskFlow.Hosting;
 
 namespace Test.Aspire;
 
-/// <summary>
-/// D-035: pins the Portable lane preset. Two layers, because this machine cannot start an Aspire graph
-/// (Aspire/DCP does not work under Podman here) and the repo already forbids a second
-/// <c>DistributedApplicationTestingBuilder</c> call site:
-/// <list type="number">
-/// <item>the resolver itself is a pure function, so the switch values and the exact environment every host
-/// receives are asserted directly - that is the part a started graph would only re-derive;</item>
-/// <item>the topology decisions the resolver feeds (which containers get declared) are asserted against the
-/// AppHost source, the same technique <see cref="AppHostMigratorTopologyTests"/> already uses.</item>
-/// </list>
-/// </summary>
+/// <summary>D-060 strict-lane resolver and AppHost source contract.</summary>
 [TestClass]
 [TestCategory("Aspire")]
+[DoNotParallelize]
 public sealed class AppHostLaneTopologyTests
 {
     private static readonly string[] LaneEnvironmentVariables =
     [
-        LaneDefaults.LaneEnvironmentVariable,
-        "TASKFLOW_DB_PROVIDER",
-        "TASKFLOW_MESSAGING_PROVIDER",
-        "TASKFLOW_STORAGE_PROVIDER",
-        "TASKFLOW_READMODEL_PROVIDER",
-        "TASKFLOW_AUDIT_PROVIDER",
-        "TASKFLOW_SEARCH_PROVIDER",
-        "TASKFLOW_AI_PROVIDER",
-        "TASKFLOW_DATAPROTECTION_PERSISTENCE"
+        HostingLaneResolver.LaneEnvironmentVariable,
+        HostingLaneResolver.DatabaseEnvironmentVariable,
+        HostingLaneResolver.MessagingEnvironmentVariable,
+        HostingLaneResolver.StorageEnvironmentVariable,
+        HostingLaneResolver.ReadModelEnvironmentVariable,
+        HostingLaneResolver.AuditEnvironmentVariable,
+        HostingLaneResolver.SearchEnvironmentVariable,
+        HostingLaneResolver.AiEnvironmentVariable,
+        HostingLaneResolver.DataProtectionEnvironmentVariable
     ];
 
-    /// <summary>The AppHost adapter exposes the shared contract's canonical names.</summary>
     [TestMethod]
-    public void LaneContract_MatchesTheHostSideSelector()
+    public void LaneContract_MatchesSharedSelectorNames()
     {
         CollectionAssert.AreEqual(
             new[] { HostingLaneResolver.LaneEnvironmentVariable, HostingLaneResolver.LaneConfigurationKey },
@@ -42,114 +32,143 @@ public sealed class AppHostLaneTopologyTests
     }
 
     [TestMethod]
-    public void PortableAlias_ResolvesCanonicalNonAzureSwitchesAndHostEnvironment()
+    public void PortableAlias_NormalizesToExactNonAzureProfile()
     {
         var switches = ResolveWithLane("Portable");
 
-        Assert.IsTrue(switches.IsPortable);
+        Assert.AreEqual(HostingLane.NonAzure, switches.Lane);
         Assert.AreEqual("PostgreSql", switches.Database);
         Assert.AreEqual("RabbitMq", switches.Messaging);
-
-        var expected = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["Hosting__Lane"] = "NonAzure",
-            ["Storage__Provider"] = "S3",
-            ["ReadModel__Provider"] = "PostgreSqlJsonb",
-            ["Audit__Provider"] = "Relational",
-            // P7 flips this to PgVector together with the Bootstrapper's LaneDefaults and the artifact.
-            ["Search__Provider"] = "Sql",
-            ["AiServices__Provider"] = "None",
-            ["DataProtection__Persistence"] = "Redis"
-        };
-
-        CollectionAssert.AreEquivalent(expected.Keys, switches.HostEnvironment.Keys.ToArray());
-        foreach (var (key, value) in expected)
-        {
-            Assert.AreEqual(value, switches.HostEnvironment[key], key);
-        }
+        Assert.AreEqual("S3", switches.Storage);
+        Assert.AreEqual("PostgreSqlJsonb", switches.ReadModel);
+        Assert.AreEqual("Relational", switches.Audit);
+        Assert.AreEqual("Redis", switches.DataProtection);
+        AssertHostEnvironmentMatches(switches);
     }
 
-    /// <summary>
-    /// Unset lane resolves the exact Azure profile from D-060.
-    /// </summary>
     [TestMethod]
-    public void AzureLane_ResolvesAndWritesExactProfile()
+    public void AzureLane_ResolvesExactProfile()
     {
         var switches = ResolveWithLane(lane: null);
 
-        Assert.IsFalse(switches.IsPortable);
+        Assert.AreEqual(HostingLane.Azure, switches.Lane);
         Assert.AreEqual("SqlServer", switches.Database);
         Assert.AreEqual("ServiceBus", switches.Messaging);
         Assert.AreEqual("AzureBlob", switches.Storage);
-        Assert.AreEqual("None", switches.AiServices);
+        Assert.AreEqual("Cosmos", switches.ReadModel);
+        Assert.AreEqual("AzureTable", switches.Audit);
         Assert.AreEqual("AzureBlob", switches.DataProtection);
-        Assert.AreEqual("Azure", switches.HostEnvironment["Hosting__Lane"]);
+        AssertHostEnvironmentMatches(switches);
     }
 
     [TestMethod]
-    public void CrossLaneEnvironmentValue_FailsFast()
+    public void MongoDb_IsNonAzureOptInOnly()
     {
-        Assert.ThrowsExactly<InvalidOperationException>(() =>
-            ResolveWithLane("Portable", ("TASKFLOW_STORAGE_PROVIDER", "AzureBlob")));
+        var switches = ResolveWithLane("NonAzure", configuration: new()
+        {
+            [HostingLaneResolver.ReadModelConfigurationKey] = "MongoDb"
+        });
+
+        Assert.AreEqual("MongoDb", switches.ReadModel);
+        Assert.ThrowsExactly<InvalidOperationException>(() => ResolveWithLane("Azure", configuration: new()
+        {
+            [HostingLaneResolver.ReadModelConfigurationKey] = "MongoDb"
+        }));
     }
 
     [TestMethod]
-    public void CrossLaneConfigurationValue_FailsFast()
-    {
+    public void CrossLaneEnvironmentValue_FailsFast() =>
         Assert.ThrowsExactly<InvalidOperationException>(() =>
-            ResolveWithLane("Portable", configuration: new()
-            {
-                ["ReadModel:Provider"] = "Cosmos"
-            }));
-    }
+            ResolveWithLane("NonAzure", (HostingLaneResolver.StorageEnvironmentVariable, "AzureBlob")));
 
     [TestMethod]
-    public void UnknownLane_FailsFastInsteadOfSilentlyRunningTheAzureGraph()
+    public void UnknownLane_FailsFastInsteadOfRunningAzure()
     {
         var exception = Assert.ThrowsExactly<ArgumentException>(() => ResolveWithLane("Vps"));
         StringAssert.Contains(exception.Message, "NonAzure");
     }
 
-    /// <summary>
-    /// The portable graph must drop every Azure-only resource and declare MinIO in their place. Asserted at
-    /// source level: the guards are what decide the container set before any DCP process exists.
-    /// </summary>
     [TestMethod]
-    public void PortableLane_DropsAzureResourcesAndDeclaresMinio()
+    public void StrictGraphs_UseOnlyCatalogImagesAndGuardCrossLaneResources()
     {
         var source = ReadAppHostSource();
 
-        // Postgres and RabbitMQ come from the lane defaults, and both are already declared unconditionally.
-        StringAssert.Contains(source, "AddPostgres(\"postgres\"");
-        StringAssert.Contains(source, "AddRabbitMQ(\"rabbitmq\")");
+        foreach (var name in new[]
+                 {
+                     nameof(ContainerImages.SqlServer), nameof(ContainerImages.ServiceBusEmulator),
+                     nameof(ContainerImages.ServiceBusSqlServer), nameof(ContainerImages.Azurite),
+                     nameof(ContainerImages.CosmosEmulator), nameof(ContainerImages.PostgreSql),
+                     nameof(ContainerImages.RabbitMq), nameof(ContainerImages.SeaweedFs),
+                     nameof(ContainerImages.MongoDb), nameof(ContainerImages.Redis)
+                 })
+        {
+            StringAssert.Contains(source, $"ContainerImages.{name}Repository");
+            StringAssert.Contains(source, $"ContainerImages.{name}Tag");
+        }
 
-        // MinIO: S3 endpoint plus console, dev credentials as parameters, persistent volume outside testing.
-        StringAssert.Contains(source, "AddContainer(\"minio\", \"quay.io/minio/minio\")");
-        StringAssert.Contains(source, "WithHttpEndpoint(targetPort: 9000, name: \"s3\")");
-        StringAssert.Contains(source, "WithHttpEndpoint(targetPort: 9001, name: \"console\")");
-        StringAssert.Contains(source, "AddParameter(\"minio-access-key\"");
-        StringAssert.Contains(source, "AddParameter(\"minio-secret-key\"");
-        StringAssert.Contains(source, "WithVolume(\"taskflow-minio-data\", \"/data\")");
+        Assert.IsFalse(source.Contains("minio", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(source.Contains("portableLane", StringComparison.Ordinal));
+        StringAssert.Contains(source, "if (nonAzureLane)");
+        StringAssert.Contains(source, "if (useRabbitMq)");
+        StringAssert.Contains(source, "if (!nonAzureLane && (!isTesting || fullLaneAvailableInTesting))");
+        StringAssert.Contains(source, "if (nonAzureLane && string.Equals(lane.ReadModel, \"MongoDb\"");
+        StringAssert.Contains(source, "if (!nonAzureLane && (!isTesting || functionsAvailableInTesting || fullLaneAvailableInTesting))");
+    }
 
-        // Every Azure-only resource is behind the lane guard.
-        StringAssert.Contains(source, "if (portableLane)");
-        StringAssert.Contains(source, "if (!isTesting && !portableLane)");
-        StringAssert.Contains(source, "if (!portableLane && (!isTesting || functionsAvailableInTesting))");
-        StringAssert.Contains(source, "var azureFoundryConfigured = !portableLane");
+    [TestMethod]
+    public void BothLanes_DeclareCommonHostsAndAllUserInterfaces()
+    {
+        var source = ReadAppHostSource();
 
-        // AddAzureStorage / AddAzureServiceBus stay in the else-arms, never at statement level.
-        Assert.IsFalse(
-            source.Contains("\nvar storage = builder.AddAzureStorage", StringComparison.Ordinal),
-            "AddAzureStorage must stay inside the Azure-lane arm.");
+        foreach (var resourceName in new[]
+                 {
+                     "taskflowmigrator", "taskflowapi", "taskflowgateway", "taskflowscheduler",
+                     "taskflowblazor", "taskflowreact", "taskflowuno"
+                 })
+        {
+            StringAssert.Contains(source, $"\"{resourceName}\"");
+        }
 
-        // The object-storage and lane-environment helpers are what keep a host from being forgotten.
-        StringAssert.Contains(source, "IResourceBuilder<T> WithObjectStorage<T>");
-        StringAssert.Contains(source, "IResourceBuilder<T> WithLaneEnvironment<T>");
-        StringAssert.Contains(source, "Storage__S3__ServiceUrl");
-        StringAssert.Contains(source, "Storage__S3__PublicServiceUrl");
-        StringAssert.Contains(source, "Storage__S3__ForcePathStyle");
-        StringAssert.Contains(source, "api = WithObjectStorage(api);");
-        StringAssert.Contains(source, "api = WithLaneEnvironment(api);");
+        StringAssert.Contains(source, ".WithReference(taskflowDb, connectionName: \"TickerQDbContext\")");
+    }
+
+    [TestMethod]
+    public void Uno_ReceivesGatewayBaseUrl()
+    {
+        var source = ReadAppHostSource();
+        var unoStart = source.IndexOf("var unoWasm =", StringComparison.Ordinal);
+        Assert.IsTrue(unoStart >= 0);
+        var unoBlock = source[unoStart..source.IndexOf("// The Functions host", unoStart, StringComparison.Ordinal)];
+        StringAssert.Contains(unoBlock, ".WithEnvironment(\"Gateway__BaseUrl\", gateway.GetEndpoint(\"http\"))");
+    }
+
+    [TestMethod]
+    public void ReadModelResources_AreReferencedOnlyWhenSelected()
+    {
+        var source = ReadAppHostSource();
+        StringAssert.Contains(source, "if (cosmos is not null) return host.WithReference(cosmos);");
+        StringAssert.Contains(source, "ConnectionStrings__MongoDb1");
+        StringAssert.Contains(source, "mongoDb.GetEndpoint(\"mongodb\")");
+        StringAssert.Contains(source, "functions = WithReadModel(functions);");
+    }
+
+    private static void AssertHostEnvironmentMatches(LaneSwitches switches)
+    {
+        var expected = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["Hosting__Lane"] = switches.Lane.ToString(),
+            ["Database__Provider"] = switches.Database,
+            ["Messaging__Provider"] = switches.Messaging,
+            ["Storage__Provider"] = switches.Storage,
+            ["ReadModel__Provider"] = switches.ReadModel,
+            ["Audit__Provider"] = switches.Audit,
+            ["Search__Provider"] = switches.Search,
+            ["AiServices__Provider"] = switches.AiServices,
+            ["DataProtection__Persistence"] = switches.DataProtection
+        };
+
+        CollectionAssert.AreEquivalent(expected.Keys, switches.HostEnvironment.Keys.ToArray());
+        foreach (var (key, value) in expected) Assert.AreEqual(value, switches.HostEnvironment[key], key);
     }
 
     private static LaneSwitches ResolveWithLane(
@@ -161,16 +180,9 @@ public sealed class AppHostLaneTopologyTests
             name => name, Environment.GetEnvironmentVariable, StringComparer.Ordinal);
         try
         {
-            foreach (var name in LaneEnvironmentVariables)
-            {
-                Environment.SetEnvironmentVariable(name, null);
-            }
-
+            foreach (var name in LaneEnvironmentVariables) Environment.SetEnvironmentVariable(name, null);
             Environment.SetEnvironmentVariable(LaneDefaults.LaneEnvironmentVariable, lane);
-            if (environmentOverride is { } pair)
-            {
-                Environment.SetEnvironmentVariable(pair.Key, pair.Value);
-            }
+            if (environmentOverride is { } pair) Environment.SetEnvironmentVariable(pair.Key, pair.Value);
 
             return LaneDefaults.Resolve(new ConfigurationBuilder()
                 .AddInMemoryCollection(configuration ?? [])
@@ -178,10 +190,7 @@ public sealed class AppHostLaneTopologyTests
         }
         finally
         {
-            foreach (var (name, value) in saved)
-            {
-                Environment.SetEnvironmentVariable(name, value);
-            }
+            foreach (var (name, value) in saved) Environment.SetEnvironmentVariable(name, value);
         }
     }
 
@@ -189,12 +198,9 @@ public sealed class AppHostLaneTopologyTests
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "TaskFlow.slnx")))
-        {
             directory = directory.Parent;
-        }
 
         Assert.IsNotNull(directory, "Could not locate repository root containing TaskFlow.slnx.");
-        return File.ReadAllText(Path.Combine(
-            directory.FullName, "src", "Host", "Aspire", "AppHost", "AppHost.cs"));
+        return File.ReadAllText(Path.Combine(directory.FullName, "src", "Host", "Aspire", "AppHost", "AppHost.cs"));
     }
 }

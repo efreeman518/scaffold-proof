@@ -1,4 +1,5 @@
 using Testcontainers.RabbitMq;
+using TaskFlow.Hosting;
 
 namespace Test.Integration.Infrastructure;
 
@@ -10,13 +11,16 @@ namespace Test.Integration.Infrastructure;
 /// </summary>
 internal static class RabbitMqBrokerFixture
 {
-    private const string Image = "rabbitmq:4-management";
+    private const string Image = ContainerImages.RabbitMq;
     private const string Username = "taskflow";
     private const string Password = "taskflow-password";
 
     private static readonly SemaphoreSlim Gate = new(1, 1);
     private static RabbitMqContainer? _container;
     private static string? _unavailableReason;
+
+    internal static string ConnectionString => _container?.GetConnectionString()
+        ?? throw new InvalidOperationException("RabbitMQ container has not started.");
 
     /// <summary>Starts the shared broker once, or reports why the container runtime could not provide one.</summary>
     internal static async Task<RabbitMqContainer> EnsureStartedAsync(CancellationToken ct)

@@ -3,6 +3,7 @@ using Amazon.S3.Model;
 using EF.Storage.S3;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text;
+using TaskFlow.Hosting;
 using Test.Integration.Infrastructure;
 
 namespace Test.Integration;
@@ -24,6 +25,7 @@ public class S3ObjectStorageRepositoryTests
     [TestInitialize]
     public void TestSetup()
     {
+        IntegrationTestSetup.RequireLane(HostingLane.NonAzure);
         IntegrationTestSetup.AssertAvailable("SeaweedFS", SeaweedFsContainerFixture.StartupError);
     }
 

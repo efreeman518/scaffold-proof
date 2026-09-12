@@ -19,8 +19,11 @@ public sealed class DataProtectionAzureBlobTests
     public TestContext TestContext { get; set; } = null!;
 
     [TestInitialize]
-    public void TestSetup() =>
+    public void TestSetup()
+    {
+        IntegrationTestSetup.RequireLane(HostingLane.Azure);
         IntegrationTestSetup.AssertAvailable("Azurite", AzuriteContainerFixture.StartupError);
+    }
 
     [TestMethod]
     [Timeout(300000, CooperativeCancellation = true)]

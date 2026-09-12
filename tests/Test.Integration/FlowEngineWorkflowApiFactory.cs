@@ -75,7 +75,7 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
             Environment.SetEnvironmentVariable(key, value);
         }
         // The host must open the same provider as the container the test created the database on.
-        Environment.SetEnvironmentVariable("Database__Provider", TestDbProvider.Current.ToString());
+        Environment.SetEnvironmentVariable("Database__Provider", TestHostingLane.DatabaseProvider.ToString());
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)

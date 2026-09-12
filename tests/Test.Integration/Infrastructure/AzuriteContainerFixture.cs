@@ -1,4 +1,5 @@
 using Testcontainers.Azurite;
+using TaskFlow.Hosting;
 
 namespace Test.Integration.Infrastructure;
 
@@ -13,7 +14,7 @@ internal static class AzuriteContainerFixture
     // Pass the image explicitly (the parameterless AzuriteBuilder() ctor is obsolete); pin the tag
     // to latest like every other emulator.
     private static readonly AzuriteContainer Azurite =
-        new AzuriteBuilder("mcr.microsoft.com/azure-storage/azurite:latest").Build();
+        new AzuriteBuilder(ContainerImages.Azurite).Build();
 
     /// <summary>Startup failure captured by <see cref="StartAsync"/>; null when the container started cleanly.</summary>
     internal static Exception? StartupError { get; private set; }

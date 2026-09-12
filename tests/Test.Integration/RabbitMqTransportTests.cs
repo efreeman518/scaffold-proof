@@ -11,6 +11,7 @@ using TaskFlow.Infrastructure.Data.Interceptors;
 using TaskFlow.Infrastructure.Data.Messaging;
 using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Infrastructure.Messaging.RabbitMq;
+using TaskFlow.Hosting;
 using TaskFlow.Observability.Meters;
 using Test.Integration.Infrastructure;
 using Test.Support;
@@ -28,6 +29,9 @@ namespace Test.Integration;
 [TestCategory("Integration")]
 public sealed class RabbitMqTransportTests
 {
+    [TestInitialize]
+    public void TestSetup() => IntegrationTestSetup.RequireLane(HostingLane.NonAzure);
+
     [TestMethod]
     [Timeout(300000, CooperativeCancellation = true)]
     public async Task PublishedOutboxRow_ArrivesOnEveryBoundQueue_AndReadsBackAsItsEnvelope()

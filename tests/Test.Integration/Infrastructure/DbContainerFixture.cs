@@ -6,13 +6,13 @@ namespace Test.Integration.Infrastructure;
 
 /// <summary>
 /// Standalone database Testcontainer for the component tier, SQL Server or PostgreSQL depending on
-/// <c>TASKFLOW_TEST_DB_PROVIDER</c> (the same assembly runs once per lane). Started once by
+/// <c>TASKFLOW_LANE</c> (the same assembly runs once per lane). Started once by
 /// <see cref="IntegrationTestSetup"/>; <see cref="StartupError"/> is captured so dependent tests fail with
 /// its diagnostics without aborting assembly discovery.
 /// </summary>
 internal static class DbContainerFixture
 {
-    private static readonly TestDatabaseContainer Container = new(TestDbProvider.Current);
+    private static readonly TestDatabaseContainer Container = new(TestHostingLane.DatabaseProvider);
 
     /// <summary>The provider this lane runs against.</summary>
     internal static TaskFlowDbProvider Provider => Container.Provider;

@@ -1,6 +1,7 @@
 using MongoDB.Bson;
 using MongoDB.Driver;
 using TaskFlow.Application.Contracts.Storage;
+using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Repositories.MongoDb;
 using Test.Integration.Infrastructure;
 
@@ -16,8 +17,11 @@ public sealed class MongoTaskViewRepositoryTests
     public TestContext TestContext { get; set; } = null!;
 
     [TestInitialize]
-    public void TestSetup() =>
+    public void TestSetup()
+    {
+        IntegrationTestSetup.RequireLane(HostingLane.NonAzure, requireMongoDb: true);
         IntegrationTestSetup.AssertAvailable("MongoDB", MongoDbContainerFixture.StartupError);
+    }
 
     [TestMethod]
     [Timeout(300000, CooperativeCancellation = true)]

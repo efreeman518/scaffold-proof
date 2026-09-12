@@ -40,7 +40,7 @@ public static partial class RegisterServices
 
     /// <summary>Dispatches to the selected audit-sink backend.</summary>
     [ProviderSwitch(typeof(IAuditLogRepository))]
-    private static void AddAuditServices(IServiceCollection services, IConfiguration config)
+    internal static void AddAuditServices(IServiceCollection services, IConfiguration config)
     {
         switch (ResolveAuditProvider(config))
         {

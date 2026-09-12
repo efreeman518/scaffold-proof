@@ -3,21 +3,76 @@ using EF.IntegrationTesting.Testcontainers;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Configuration;
 using Npgsql;
+using System.ComponentModel;
+using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Data.Interceptors;
 using TaskFlow.Infrastructure.Data.Provider;
 
 namespace Test.Support.Hosting;
 
-/// <summary>Lane selection for container-backed tests: env <c>TASKFLOW_TEST_DB_PROVIDER</c>, default SqlServer.</summary>
+/// <summary>Strict D-060 lane selection for container-backed tests.</summary>
+public static class TestHostingLane
+{
+    public const string LegacyDatabaseProviderEnvironmentVariable = "TASKFLOW_TEST_DB_PROVIDER";
+
+    public static HostingLaneSettings Current
+    {
+        get
+        {
+            var configuredLane = Environment.GetEnvironmentVariable(HostingLaneResolver.LaneEnvironmentVariable);
+            var legacyDatabase = Environment.GetEnvironmentVariable(LegacyDatabaseProviderEnvironmentVariable);
+            var legacyProvider = string.IsNullOrWhiteSpace(legacyDatabase)
+                ? (TaskFlowDbProvider?)null
+                : legacyDatabase.Trim() switch
+                {
+                    var value when value.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) =>
+                        TaskFlowDbProvider.SqlServer,
+                    var value when value.Equals("PostgreSql", StringComparison.OrdinalIgnoreCase) =>
+                        TaskFlowDbProvider.PostgreSql,
+                    _ => throw new ArgumentException(
+                        $"Unknown legacy test database provider '{legacyDatabase}'. Allowed values: SqlServer, PostgreSql.")
+                };
+
+            var lane = string.IsNullOrWhiteSpace(configuredLane) && legacyProvider is not null
+                ? legacyProvider == TaskFlowDbProvider.SqlServer ? "Azure" : "NonAzure"
+                : configuredLane;
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    [HostingLaneResolver.LaneConfigurationKey] = lane
+                })
+                .Build();
+            var settings = HostingLaneResolver.Resolve(configuration);
+
+            if (legacyProvider is not null && legacyProvider != DatabaseProviderFor(settings))
+            {
+                throw new InvalidOperationException(
+                    $"{LegacyDatabaseProviderEnvironmentVariable}={legacyProvider} conflicts with " +
+                    $"{HostingLaneResolver.LaneEnvironmentVariable}={settings.Lane}. Remove the deprecated variable.");
+            }
+
+            return settings;
+        }
+    }
+
+    public static TaskFlowDbProvider DatabaseProvider => DatabaseProviderFor(Current);
+
+    public static bool UsesMongoDb => Current.ReadModel.Equals("MongoDb", StringComparison.Ordinal);
+
+    private static TaskFlowDbProvider DatabaseProviderFor(HostingLaneSettings settings) =>
+        settings.Lane == HostingLane.Azure ? TaskFlowDbProvider.SqlServer : TaskFlowDbProvider.PostgreSql;
+}
+
+/// <summary>Deprecated database-only selector retained for external test extensions.</summary>
+[Obsolete("Use TASKFLOW_LANE=Azure|NonAzure through TestHostingLane.")]
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class TestDbProvider
 {
-    public const string EnvironmentVariable = "TASKFLOW_TEST_DB_PROVIDER";
+    public const string EnvironmentVariable = TestHostingLane.LegacyDatabaseProviderEnvironmentVariable;
 
-    public static TaskFlowDbProvider Current =>
-        Environment.GetEnvironmentVariable(EnvironmentVariable) is { Length: > 0 } value
-            ? Enum.Parse<TaskFlowDbProvider>(value, ignoreCase: true)
-            : TaskFlowDbProvider.SqlServer;
+    public static TaskFlowDbProvider Current => TestHostingLane.DatabaseProvider;
 }
 
 /// <summary>
@@ -27,8 +82,12 @@ public static class TestDbProvider
 /// </summary>
 public sealed class TestDatabaseContainer(TaskFlowDbProvider provider) : IAsyncDisposable
 {
-    private readonly MsSqlContainerFixture? _sql = provider == TaskFlowDbProvider.SqlServer ? new() : null;
-    private readonly PostgreSqlContainerFixture? _postgres = provider == TaskFlowDbProvider.PostgreSql ? new() : null;
+    private readonly MsSqlContainerFixture? _sql = provider == TaskFlowDbProvider.SqlServer
+        ? new(ContainerImages.SqlServer)
+        : null;
+    private readonly PostgreSqlContainerFixture? _postgres = provider == TaskFlowDbProvider.PostgreSql
+        ? new(ContainerImages.PostgreSql)
+        : null;
 
     public TaskFlowDbProvider Provider { get; } = provider;
 

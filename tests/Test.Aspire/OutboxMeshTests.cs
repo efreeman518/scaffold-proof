@@ -199,7 +199,7 @@ public class OutboxMeshTests
     private static TaskFlowDbContextTrxn CreateContext() =>
         new(new DbContextOptionsBuilder<TaskFlowDbContextTrxn>()
             .UseTaskFlowProvider(new TaskFlowProviderOptions(
-                TestDbProvider.Current,
+                TestHostingLane.DatabaseProvider,
                 AspireTestHost.ConnectionString,
                 TaskFlowDbContextBase.MigrationHistoryTable,
                 TaskFlowDbContextBase.SchemaName))

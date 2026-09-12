@@ -10,13 +10,13 @@ namespace Test.E2E;
 
 /// <summary>
 /// Real-database WebApplicationFactory backed by a Testcontainer for the provider selected by
-/// <c>TASKFLOW_TEST_DB_PROVIDER</c> (SQL Server default, PostgreSQL lane). Exercises the full stack:
+/// <c>TASKFLOW_LANE</c> (Azure default, NonAzure alternate). Exercises the full stack:
 /// HTTP -> endpoint style -> application layer -> EF -> database.
 /// Set TASKFLOW_APPLICATION_STYLE=Cqrs to run the same workflow tests against CQRS endpoint mappings.
 /// </summary>
 public sealed class DbApiFactory : WebApplicationFactoryBase<Program, TaskFlowDbContextTrxn, TaskFlowDbContextQuery>
 {
-    private static readonly TestDatabaseContainer Db = new(TestDbProvider.Current);
+    private static readonly TestDatabaseContainer Db = new(TestHostingLane.DatabaseProvider);
 
     // The container is shared by every test class in this assembly and cannot be restarted once
     // disposed, so it is started on first use and torn down once from [AssemblyCleanup]. Disposing it

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using TaskFlow.Application.Contracts.Storage;
+using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Repositories;
 using Test.Integration.Infrastructure;
@@ -10,7 +11,7 @@ namespace Test.Integration;
 
 /// <summary>
 /// D-038 relational read model against a real database, on whichever provider the lane selected
-/// (TASKFLOW_TEST_DB_PROVIDER). Everything asserted here is provider-generated SQL that cannot be reasoned
+/// (TASKFLOW_LANE). Everything asserted here is provider-generated SQL that cannot be reasoned
 /// about from the C#: the FlexLabs upsert (MERGE / ON CONFLICT), the server-side counter deltas that keep
 /// two concurrent projection events from overwriting each other, and the keyset page whose WHERE clause has
 /// to agree with its ORDER BY or a client silently loses rows.
@@ -24,7 +25,11 @@ public class RelationalTaskViewRepositoryTests
 
     /// <summary>Marks the test Inconclusive when the database container failed to start.</summary>
     [TestInitialize]
-    public void TestSetup() => IntegrationTestSetup.AssertAvailable("SQL", DbContainerFixture.StartupError);
+    public void TestSetup()
+    {
+        IntegrationTestSetup.RequireLane(HostingLane.NonAzure);
+        IntegrationTestSetup.AssertAvailable("PostgreSQL", DbContainerFixture.StartupError);
+    }
 
     [TestMethod]
     [Timeout(300000, CooperativeCancellation = true)]

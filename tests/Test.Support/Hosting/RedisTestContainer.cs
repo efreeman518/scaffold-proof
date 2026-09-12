@@ -1,4 +1,5 @@
 using Testcontainers.Redis;
+using TaskFlow.Hosting;
 
 namespace Test.Support.Hosting;
 
@@ -9,8 +10,8 @@ namespace Test.Support.Hosting;
 /// </summary>
 public sealed class RedisTestContainer : IAsyncDisposable
 {
-    /// <summary>Pinned image so a lane failure is a code change, not an upstream tag moving.</summary>
-    public const string DefaultImage = "redis:7.4-alpine";
+    /// <summary>Shared D-060 image catalog entry.</summary>
+    public const string DefaultImage = ContainerImages.Redis;
 
     private readonly RedisContainer _container = new RedisBuilder(DefaultImage).Build();
 
