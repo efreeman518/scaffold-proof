@@ -64,7 +64,8 @@ if (usePostgres)
     var postgresPassword = builder.AddParameter("postgres-password", defaultSqlPassword, secret: true);
     var postgres = builder.AddPostgres("postgres", password: postgresPassword, port: isTesting ? null : 35432)
         .WithImage("pgvector/pgvector")
-        .WithImageTag("pg17");
+        .WithImageTag("pg17")
+        .WithEnvironment("POSTGRES_DB", "taskflowdb");
     if (!isTesting)
         postgres = postgres.WithLifetime(ContainerLifetime.Persistent)
                            .WithDataVolume("taskflow-postgres-data");
@@ -110,7 +111,7 @@ if (portableLane)
     minioAccessKey = builder.AddParameter("minio-access-key", "taskflowminio");
     minioSecretKey = builder.AddParameter("minio-secret-key", "taskflowminio-dev-secret", secret: true);
 
-    minio = builder.AddContainer("minio", "minio/minio")
+    minio = builder.AddContainer("minio", "quay.io/minio/minio")
         .WithImageTag("RELEASE.2025-09-07T16-13-09Z")
         .WithArgs("server", "/data", "--console-address", ":9001")
         .WithEnvironment("MINIO_ROOT_USER", minioAccessKey)
@@ -268,7 +269,7 @@ var migrator = builder.AddProject<Projects.TaskFlow_DatabaseMigrator>("taskflowm
     .WithEnvironment("Database__Provider", dbProviderName)
     .WithEnvironment("Database__Encryption__LocalKeyBase64", columnEncryptionKey)
     .WithEnvironment("Database__Encryption__BlindIndexKeyBase64", blindIndexKey)
-    .WaitFor(dbServer);
+    .WaitFor(taskflowDb);
 migrator = WithLaneEnvironment(migrator);
 
 // API host.
@@ -291,7 +292,7 @@ var api = builder.AddProject<Projects.TaskFlow_Api>("taskflowapi")
     .WithEnvironment("Database__Encryption__LocalKeyBase64", columnEncryptionKey)
     .WithEnvironment("Database__Encryption__BlindIndexKeyBase64", blindIndexKey)
     .WaitForCompletion(migrator)
-    .WaitFor(dbServer)
+    .WaitFor(taskflowDb)
     .WaitFor(redis);
 api = WithAuditSink(api);
 api = WithObjectStorage(api);
@@ -362,6 +363,8 @@ var gateway = builder.AddProject<Projects.TaskFlow_Gateway>("taskflowgateway")
     .WithEnvironment("ReverseProxy__Routes__api-route__Match__Path", "/api/{**catch-all}")
     .WithEnvironment("ReverseProxy__Clusters__api-cluster__Destinations__api__Address", api.GetEndpoint("http"))
     .WaitFor(api);
+if (isTesting)
+    gateway = gateway.WithEnvironment("RateLimiting__Edge__Enabled", "false");
 gateway = WithLaneEnvironment(gateway);
 
 var blazor = builder.AddProject<Projects.TaskFlow_Blazor>("taskflowblazor")
@@ -396,7 +399,7 @@ if (!isTesting || schedulerAvailableInTesting)
         // up. One replica under test so the graph boot stays inside the mesh startup budget.
         .WithReplicas(isTesting ? 1 : 2)
         .WaitForCompletion(migrator)
-        .WaitFor(dbServer);
+        .WaitFor(taskflowDb);
     scheduler = WithAuditSink(scheduler);
     // Portable lane only. The Scheduler runs the same S3 bucket provisioning startup task and the blob delete
     // worker, so it needs the MinIO settings; the Azure lane keeps its existing wiring, where the Scheduler
@@ -456,7 +459,7 @@ if (!portableLane && (!isTesting || functionsAvailableInTesting))
         .WithEnvironment("Database__Encryption__LocalKeyBase64", columnEncryptionKey)
         .WithEnvironment("Database__Encryption__BlindIndexKeyBase64", blindIndexKey)
         .WaitForCompletion(migrator)
-        .WaitFor(dbServer)
+        .WaitFor(taskflowDb)
         .WaitFor(storage!);
     functions = WithBroker(functions);
     functions = WithLaneEnvironment(functions);

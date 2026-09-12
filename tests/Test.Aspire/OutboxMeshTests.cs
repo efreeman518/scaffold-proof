@@ -13,6 +13,7 @@ using TaskFlow.Application.Models;
 using TaskFlow.Domain.Shared.Events;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Provider;
+using Test.Support;
 using Test.Support.Hosting;
 
 namespace Test.Aspire;
@@ -139,7 +140,7 @@ public class OutboxMeshTests
             "api/v1/task-items", new DefaultRequest<TaskItemDto> { Item = new TaskItemDto { Title = title } }, ct);
         Assert.AreEqual(HttpStatusCode.Created, response.StatusCode, await response.Content.ReadAsStringAsync(ct));
 
-        var body = await response.Content.ReadFromJsonAsync<DefaultResponse<TaskItemDto>>(ct);
+        var body = await response.Content.ReadFromJsonAsync<DefaultResponse<TaskItemDto>>(JsonTestOptions.Default, ct);
         Assert.IsNotNull(body?.Item);
         return body.Item.Id!.Value;
     }

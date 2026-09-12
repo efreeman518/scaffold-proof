@@ -296,6 +296,16 @@ public class HostRuntimeSettingsTests
         }
     }
 
+    [TestMethod]
+    public void Given_FunctionsBackgroundTriggers_When_ServiceDefaultsAdded_Then_HeaderPropagationIsDisabled()
+    {
+        var program = ReadRepoFile("src/Host/TaskFlow.Functions/Program.cs");
+
+        StringAssert.Contains(program, "AddServiceDefaults(addHeaderPropagation: false)",
+            "Functions background triggers have no HTTP request context, so the inherited header propagation "
+            + "handler would break worker gRPC calls used to complete or dead-letter Service Bus messages.");
+    }
+
     private static string ReadRepoFile(string relativePath) =>
         File.ReadAllText(RepoFiles.Path(relativePath.Split('/')));
 

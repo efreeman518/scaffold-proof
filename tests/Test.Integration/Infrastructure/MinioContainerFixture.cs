@@ -10,7 +10,8 @@ namespace Test.Integration.Infrastructure;
 /// </summary>
 internal static class MinioContainerFixture
 {
-    private static readonly MinioContainer Minio = new MinioBuilder("minio/minio:latest").Build();
+    private static readonly MinioContainer Minio = new MinioBuilder(
+        "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z").Build();
 
     /// <summary>Startup failure captured by <see cref="StartAsync"/>; null when the container started cleanly.</summary>
     internal static Exception? StartupError { get; private set; }

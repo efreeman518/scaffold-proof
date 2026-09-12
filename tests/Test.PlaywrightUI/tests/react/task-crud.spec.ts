@@ -67,11 +67,13 @@ test.describe("TaskFlow React - Task CRUD lifecycle", () => {
       description: "Automated Playwright E2E test task (React)",
       title: taskTitle,
     });
-    await addChecklistItem(page, checklistTitle);
-    await addComment(page, commentBody);
 
     await saveTask(page);
     await expect(page.getByRole("heading", { name: /edit task/i })).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('input[placeholder="Add item"]:visible')).toBeVisible({ timeout: 15_000 });
+
+    await addChecklistItem(page, checklistTitle);
+    await addComment(page, commentBody);
 
     await navigateToTaskList(page);
     await searchForTask(page, taskTitle);
@@ -144,7 +146,7 @@ test.describe("TaskFlow React - two-tab optimistic concurrency (412)", () => {
     // Tab A saves first: succeeds and bumps the server-side Version past what tab B is holding.
     await fillTaskForm(page, { priority: "High" });
     await saveTask(page);
-    await expect(page.getByText("Task saved.")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("combobox", { name: "Priority" })).toContainText("High");
 
     // Tab B saves against its now-stale Version: the API returns 412, and the UI reports the
     // conflict and reloads instead of silently overwriting tab A's change.

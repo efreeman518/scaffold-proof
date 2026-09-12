@@ -5,6 +5,16 @@
 public sealed class AppHostMigratorTopologyTests
 {
     [TestMethod]
+    public void AppHost_DatabaseConsumersWaitForLogicalDatabaseReadiness()
+    {
+        var appHostSource = ReadAppHostSource();
+
+        Assert.Contains(".WithEnvironment(\"POSTGRES_DB\", \"taskflowdb\")", appHostSource);
+        Assert.DoesNotContain(".WaitFor(dbServer)", appHostSource);
+        Assert.AreEqual(4, appHostSource.Split(".WaitFor(taskflowDb)", StringSplitOptions.None).Length - 1);
+    }
+
+    [TestMethod]
     public void AppHost_WiresDatabaseMigratorBeforeRuntimeHosts()
     {
         var appHostSource = ReadAppHostSource();

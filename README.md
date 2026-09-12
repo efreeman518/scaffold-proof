@@ -31,7 +31,7 @@ Multi-tenant (row-level tenancy). Event-driven async via Service Bus. IaC via Bi
 
 - **.NET 10 SDK** - the exact version is pinned by [`global.json`](global.json).
 - **Workloads:** `dotnet workload install wasm-tools aspire` (required for the Uno WASM host and the Aspire AppHost).
-- **Container runtime** (Docker or Podman) - the Aspire AppHost runs SQL Server, Azurite, Service Bus, Redis, and Cosmos DB emulators locally, and the Docker-backed test lanes need it.
+- **Docker-compatible container runtime** (Docker Desktop, headless Docker Engine, or Podman) - no desktop UI is required. The Aspire AppHost runs SQL Server, Azurite, Service Bus, Redis, and Cosmos DB emulators locally, and the container-backed test lanes need published ports reachable from the test process.
 - **Private NuGet feed access:** the `EF.*` (FlowEngine) packages restore from GitHub Packages via the `efreeman518-github` source in [`nuget.config`](nuget.config). Supply a `NUGET_PAT` (a GitHub token with `read:packages`) before restoring.
 - **Local tools:** `dotnet tool restore` restores Stryker.NET and the other tools declared in the tool manifest.
 
@@ -53,9 +53,15 @@ $env:TASKFLOW_MESSAGING_PROVIDER = "RabbitMq"  # messaging transport: ServiceBus
 dotnet test tests/Test.Integration/Test.Integration.csproj
 ```
 
-Container-backed lanes (`Test.Integration`, `Test.E2E`, `Test.Integration.FlowEngine`) need a container runtime. On a Podman WSL2 setup, container ports do not forward to `localhost` from Windows: set a run-scoped `TESTCONTAINERS_HOST_OVERRIDE=<podman machine ip>` before running those lanes; never commit the value, it changes on reboot.
+Docker Desktop and headless Docker Engine work without repository-specific configuration when their published ports are reachable on `localhost`. For Podman on Windows/WSL2, use WSL mirrored networking so DCP's loopback-bound ports reach Windows:
 
-Aspire (`dotnet run --project src/Host/Aspire/AppHost`) and the full-stack Playwright lane additionally need the AppHost's DCP to bind published container ports reachable from Windows. Podman WSL2 binds them to `127.0.0.1` inside the VM instead of the host, independent of the override above; use Docker Desktop or a podman machine networking change to run those two lanes.
+```ini
+# %UserProfile%\.wslconfig
+[wsl2]
+networkingMode=mirrored
+```
+
+Apply it with `podman machine stop`, `podman machine set --user-mode-networking=false`, `wsl --shutdown`, then `podman machine start`. With mirrored networking, do not set `TESTCONTAINERS_HOST_OVERRIDE`. Under legacy WSL NAT, the component Testcontainers lanes can instead use a run-scoped `TESTCONTAINERS_HOST_OVERRIDE=<podman machine ip>`, but Aspire and full-stack Playwright remain unavailable because DCP publishes container ports to VM loopback.
 
 Generated API clients (Blazor Refit, React `openapi-typescript`) regenerate per [`docs/plans/client-generation.md`](docs/plans/client-generation.md).
 

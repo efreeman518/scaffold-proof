@@ -163,4 +163,14 @@ public class JsonContextCompletenessTests
         Assert.AreSame(typeof(TaskItemDto).Assembly, typeof(TaskFlowJsonContext).Assembly,
             "TaskFlowJsonContext must ship in TaskFlow.Application.Models, or the completeness scan above "
             + $"covers the wrong assembly: {typeof(TaskFlowJsonContext).Assembly.GetName().Name}.");
+
+    [TestMethod]
+    public void Given_FunctionsWorkerJson_When_Configured_Then_UsesWebDefaults()
+    {
+        var source = File.ReadAllText(RepoFiles.Path(
+            "src", "Host", "TaskFlow.Functions", "Program.cs"));
+
+        StringAssert.Contains(source, "new JsonSerializerOptions(JsonSerializerDefaults.Web)",
+            "Functions HTTP payloads must remain camelCase and case-insensitive like the API and generated clients.");
+    }
 }

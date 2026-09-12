@@ -27,7 +27,9 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration[RegisterServices.AppConfigE
 
 builder.ConfigureFunctionsWebApplication();
 
-builder.AddServiceDefaults();
+// Service Bus triggers execute outside an HTTP request. HeaderPropagationMessageHandler throws in that
+// context and prevents explicit complete/dead-letter settlement through the worker's internal gRPC client.
+builder.AddServiceDefaults(addHeaderPropagation: false);
 
 var startupLogger = LoggerFactory
     .Create(logging => logging.AddConsole())
@@ -36,12 +38,11 @@ await builder.RegisterAiChatClientAsync(startupLogger);
 
 // D-048: source-generated metadata for the DTOs the HTTP-triggered functions read and write, with the
 // reflection resolver kept behind it - the triggers also serialize anonymous error shapes, which only
-// reflection can handle. The options are otherwise the worker's own defaults (verified against
-// WorkerOptions resolved from AddFunctionsWorkerCore: no naming policy, case-sensitive, no converters), so
-// the request and response format is unchanged; this registration runs after the built-in setup and wins.
+// reflection can handle. Web defaults keep HTTP payloads camelCase and case-insensitive, matching the API
+// and clients; this registration runs after the built-in setup and wins.
 builder.Services.Configure<WorkerOptions>(options =>
 {
-    var json = new JsonSerializerOptions();
+    var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     json.TypeInfoResolverChain.Insert(0, TaskFlowJsonContext.Default);
     json.TypeInfoResolverChain.Add(new DefaultJsonTypeInfoResolver());
     options.Serializer = new JsonObjectSerializer(json);

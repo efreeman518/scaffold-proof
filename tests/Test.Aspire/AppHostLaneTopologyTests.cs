@@ -137,7 +137,7 @@ public sealed class AppHostLaneTopologyTests
         StringAssert.Contains(source, "AddRabbitMQ(\"rabbitmq\")");
 
         // MinIO: S3 endpoint plus console, dev credentials as parameters, persistent volume outside testing.
-        StringAssert.Contains(source, "AddContainer(\"minio\", \"minio/minio\")");
+        StringAssert.Contains(source, "AddContainer(\"minio\", \"quay.io/minio/minio\")");
         StringAssert.Contains(source, "WithHttpEndpoint(targetPort: 9000, name: \"s3\")");
         StringAssert.Contains(source, "WithHttpEndpoint(targetPort: 9001, name: \"console\")");
         StringAssert.Contains(source, "AddParameter(\"minio-access-key\"");

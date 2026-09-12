@@ -42,7 +42,7 @@ public static partial class RegisterServices
         var dbConnectionStringFlowEngine =
             config.GetConnectionString("TaskFlowFlowEngineDbContext") ?? dbConnectionStringTrxn;
 
-        services.AddPooledDbContextFactory<TaskFlowDbContextTrxn>((sp, options) =>
+        services.AddDbContextFactory<TaskFlowDbContextTrxn>((sp, options) =>
         {
             UseTaskFlowProviderIfConfigured(options, config, dbConnectionStringTrxn,
                 TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName);
@@ -52,7 +52,7 @@ public static partial class RegisterServices
                 sp.GetRequiredService<VersionTimestampInterceptor>(),
                 sp.GetRequiredService<OutboxStagingInterceptor>(),
                 sp.GetRequiredService<BlindIndexInterceptor>());
-        });
+            }, ServiceLifetime.Scoped);
         services.AddScoped<DbContextScopedFactory<TaskFlowDbContextTrxn, string, Guid?>>();
         services.AddScoped(sp => sp.GetRequiredService<DbContextScopedFactory<TaskFlowDbContextTrxn, string, Guid?>>()
             .CreateDbContext());
