@@ -306,6 +306,30 @@ public class HostRuntimeSettingsTests
             + "handler would break worker gRPC calls used to complete or dead-letter Service Bus messages.");
     }
 
+    /// <summary>
+    /// MongoDB's unique tenant/task index is created by a startup task. Every host that resolves the shared
+    /// projection consumer must finish those tasks before RunAsync activates its transport consumers.
+    /// </summary>
+    [TestMethod]
+    [DataRow("src/Host/TaskFlow.Api/Program.cs")]
+    [DataRow("src/Host/TaskFlow.Scheduler/Program.cs")]
+    [DataRow("src/Host/TaskFlow.Functions/Program.cs")]
+    public void Given_ProjectionConsumingHost_When_Started_Then_ExternalResourcesExistBeforeConsumerActivation(
+        string programPath)
+    {
+        var program = ReadRepoFile(programPath);
+        var applicationRegistration = program.IndexOf(".RegisterApplicationServices(", StringComparison.Ordinal);
+        var build = program.IndexOf("builder.Build()", StringComparison.Ordinal);
+        var provisioning = program.IndexOf("await app.RunStartupTasks()", StringComparison.Ordinal);
+        var activation = program.IndexOf("await app.RunAsync()", StringComparison.Ordinal);
+
+        Assert.IsTrue(applicationRegistration >= 0, $"{programPath} must register TaskProjectionConsumer.");
+        Assert.IsTrue(build >= 0 && build < provisioning,
+            $"{programPath} must build the host before running external-resource startup tasks.");
+        Assert.IsTrue(provisioning < activation,
+            $"{programPath} must provision MongoDB indexes before RunAsync activates projection consumers.");
+    }
+
     private static string ReadRepoFile(string relativePath) =>
         File.ReadAllText(RepoFiles.Path(relativePath.Split('/')));
 

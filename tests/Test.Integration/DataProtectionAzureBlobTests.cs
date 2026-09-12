@@ -32,7 +32,7 @@ public sealed class DataProtectionAzureBlobTests
 
         try
         {
-            await using var firstServices = BuildProvider("host-a", containerName);
+            await using var firstServices = BuildProvider("TaskFlow.Api", containerName);
             var first = firstServices.GetRequiredService<IDataProtectionProvider>().CreateProtector("shared-purpose");
             var protectedPayload = first.Protect("shared payload");
 
@@ -41,7 +41,7 @@ public sealed class DataProtectionAzureBlobTests
             Assert.IsTrue((await container.ExistsAsync(TestContext.CancellationToken)).Value,
                 "registration must create the configured container before Data Protection writes its key ring");
 
-            await using var secondServices = BuildProvider("host-b", containerName);
+            await using var secondServices = BuildProvider("TaskFlow.Api", containerName);
             var second = secondServices.GetRequiredService<IDataProtectionProvider>().CreateProtector("shared-purpose");
             Assert.AreEqual("shared payload", second.Unprotect(protectedPayload));
 
@@ -49,6 +49,38 @@ public sealed class DataProtectionAzureBlobTests
         }
         finally
         {
+            Environment.SetEnvironmentVariable(HostingLaneResolver.LaneEnvironmentVariable, originalLane);
+        }
+    }
+
+    [TestMethod]
+    [Timeout(300000, CooperativeCancellation = true)]
+    public async Task ConnectionStringPersistence_PreservesPreChangeApplicationDiscriminator()
+    {
+        var originalLane = Environment.GetEnvironmentVariable(HostingLaneResolver.LaneEnvironmentVariable);
+        Environment.SetEnvironmentVariable(HostingLaneResolver.LaneEnvironmentVariable, "Azure");
+        var containerName = $"dp-{Guid.NewGuid():N}";
+        var container = new BlobServiceClient(AzuriteContainerFixture.ConnectionString)
+            .GetBlobContainerClient(containerName);
+
+        try
+        {
+            await container.CreateAsync(cancellationToken: TestContext.CancellationToken);
+            await using (var preChangeServices = BuildPreChangeProvider("TaskFlow.Api", containerName))
+            {
+                var preChange = preChangeServices.GetRequiredService<IDataProtectionProvider>()
+                    .CreateProtector("compatibility-purpose");
+                var protectedPayload = preChange.Protect("existing payload");
+
+                await using var currentServices = BuildProvider("TaskFlow.Api", containerName);
+                var current = currentServices.GetRequiredService<IDataProtectionProvider>()
+                    .CreateProtector("compatibility-purpose");
+                Assert.AreEqual("existing payload", current.Unprotect(protectedPayload));
+            }
+        }
+        finally
+        {
+            await container.DeleteIfExistsAsync(cancellationToken: TestContext.CancellationToken);
             Environment.SetEnvironmentVariable(HostingLaneResolver.LaneEnvironmentVariable, originalLane);
         }
     }
@@ -71,6 +103,21 @@ public sealed class DataProtectionAzureBlobTests
             ["AppName"] = "TaskFlow.DataProtection.Integration"
         });
         builder.AddTaskFlowDataProtection(NullLogger.Instance);
+        return builder.Services.BuildServiceProvider();
+    }
+
+    private static ServiceProvider BuildPreChangeProvider(string hostApplicationName, string containerName)
+    {
+        var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
+        {
+            ApplicationName = hostApplicationName,
+            EnvironmentName = Environments.Development,
+            DisableDefaults = true
+        });
+        var blob = new BlobServiceClient(AzuriteContainerFixture.ConnectionString)
+            .GetBlobContainerClient(containerName)
+            .GetBlobClient("shared-keys.xml");
+        builder.Services.AddDataProtection().PersistKeysToAzureBlobStorage(blob);
         return builder.Services.BuildServiceProvider();
     }
 }

@@ -69,7 +69,9 @@ public static partial class RegisterServices
 
         var persistence = ResolveDataProtectionPersistence(config);
 
-        var dpBuilder = services.AddDataProtection().SetApplicationName(appName);
+        // Keep the framework's implicit application discriminator. Changing it here would invalidate
+        // cookies and antiforgery payloads protected before this persistence-only change.
+        var dpBuilder = services.AddDataProtection();
 
         switch (persistence)
         {

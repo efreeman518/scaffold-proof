@@ -30,6 +30,9 @@ builder.AddTickerQConfig();
 
 var app = builder.Build();
 
+// Provision shared external resources before RunAsync starts the RabbitMQ projection consumer.
+await app.RunStartupTasks();
+
 await app.ValidateTickerQDatabase();
 
 app.UseTickerQ();
