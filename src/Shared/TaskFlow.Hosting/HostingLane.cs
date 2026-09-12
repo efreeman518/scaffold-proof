@@ -51,6 +51,7 @@ public static class HostingLaneResolver
     public const string AppConfigConnectionStringConfigurationKey = "ConnectionStrings:AppConfig";
     public const string KeyVaultEndpointConfigurationKey = "KeyVault:Endpoint";
     public const string KeyVaultUriConfigurationKey = "KeyVault:Uri";
+    public const string DataProtectionEncryptionKeyUrlConfigurationKey = "DataProtectionEncryptionKeyUrl";
 
     private static readonly string[] DatabaseValues = ["SqlServer", "PostgreSql"];
     private static readonly string[] MessagingValues = ["ServiceBus", "RabbitMq"];
@@ -90,6 +91,7 @@ public static class HostingLaneResolver
                 configuration, AppConfigConnectionStringConfigurationKey, redactValue: true);
             RejectAzureServiceConfiguration(configuration, KeyVaultEndpointConfigurationKey);
             RejectAzureServiceConfiguration(configuration, KeyVaultUriConfigurationKey);
+            RejectAzureServiceConfiguration(configuration, DataProtectionEncryptionKeyUrlConfigurationKey);
         }
 
         var azure = lane == HostingLane.Azure;
@@ -125,8 +127,10 @@ public static class HostingLaneResolver
     private static HostingLane ParseLane(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return HostingLane.Azure;
-        if (value.Equals("Portable", StringComparison.OrdinalIgnoreCase)) return HostingLane.NonAzure;
-        if (Enum.TryParse<HostingLane>(value, ignoreCase: true, out var lane)) return lane;
+        var normalized = value.Trim();
+        if (normalized.Equals("Azure", StringComparison.OrdinalIgnoreCase)) return HostingLane.Azure;
+        if (normalized.Equals("NonAzure", StringComparison.OrdinalIgnoreCase)) return HostingLane.NonAzure;
+        if (normalized.Equals("Portable", StringComparison.OrdinalIgnoreCase)) return HostingLane.NonAzure;
 
         throw new ArgumentException(
             $"Unknown hosting lane '{value}'. Allowed values: Azure, NonAzure. Portable is a deprecated alias for NonAzure.");

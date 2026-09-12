@@ -58,7 +58,8 @@ public static partial class RegisterServices
         var env = builder.Environment.EnvironmentName;
 
         var keysFileUrl = config.GetValue<string?>("DataProtectionKeysFileUrl", null);
-        var encryptionKeyUrl = config.GetValue<string?>("DataProtectionEncryptionKeyUrl", null);
+        var encryptionKeyUrl = config.GetValue<string?>(
+            HostingLaneResolver.DataProtectionEncryptionKeyUrlConfigurationKey, null);
 
         var persistence = ResolveDataProtectionPersistence(config);
 

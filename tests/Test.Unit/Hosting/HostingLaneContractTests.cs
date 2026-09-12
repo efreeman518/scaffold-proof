@@ -65,6 +65,21 @@ public sealed class HostingLaneContractTests
     }
 
     [TestMethod]
+    [DataRow("0")]
+    [DataRow("1")]
+    [DataRow("99")]
+    [DataRow("OnPrem")]
+    public void Resolve_NumericOrUndefinedLane_Throws(string lane)
+    {
+        var exception = Assert.ThrowsExactly<ArgumentException>(() =>
+            Resolve((HostingLaneResolver.LaneConfigurationKey, lane)));
+
+        StringAssert.Contains(exception.Message, lane);
+        StringAssert.Contains(exception.Message, "Azure");
+        StringAssert.Contains(exception.Message, "NonAzure");
+    }
+
+    [TestMethod]
     public void Resolve_SameLaneOptIns_AreAccepted()
     {
         var azure = Resolve(
@@ -146,6 +161,7 @@ public sealed class HostingLaneContractTests
     [DataRow(HostingLaneResolver.AppConfigConnectionStringConfigurationKey)]
     [DataRow(HostingLaneResolver.KeyVaultEndpointConfigurationKey)]
     [DataRow(HostingLaneResolver.KeyVaultUriConfigurationKey)]
+    [DataRow(HostingLaneResolver.DataProtectionEncryptionKeyUrlConfigurationKey)]
     public void Resolve_NonAzureAzureServiceSetting_Throws(string setting)
     {
         var exception = Assert.ThrowsExactly<InvalidOperationException>(() =>
@@ -166,7 +182,8 @@ public sealed class HostingLaneContractTests
             (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
             (HostingLaneResolver.AppConfigEndpointConfigurationKey, " "),
             (HostingLaneResolver.KeyVaultEndpointConfigurationKey, ""),
-            (HostingLaneResolver.KeyVaultUriConfigurationKey, null));
+            (HostingLaneResolver.KeyVaultUriConfigurationKey, null),
+            (HostingLaneResolver.DataProtectionEncryptionKeyUrlConfigurationKey, " "));
 
         Assert.AreEqual(HostingLane.NonAzure, settings.Lane);
     }
