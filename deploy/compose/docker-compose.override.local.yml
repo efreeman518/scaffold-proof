@@ -135,6 +135,20 @@ services:
       <<: *nuget-build
       dockerfile: src/UI/TaskFlow.Blazor/Dockerfile
 
+  react:
+    profiles: ["local"]
+    image: taskflow-react:local
+    build:
+      context: ../..
+      dockerfile: src/UI/TaskFlow.React/Dockerfile
+
+  uno:
+    profiles: ["local"]
+    image: taskflow-uno:local
+    build:
+      <<: *nuget-build
+      dockerfile: src/UI/TaskFlow.Uno/Dockerfile
+
 secrets:
   # Same BuildKit secret the deploy image build uses: the private EF.* feed credential never becomes a
   # build arg or an image layer.

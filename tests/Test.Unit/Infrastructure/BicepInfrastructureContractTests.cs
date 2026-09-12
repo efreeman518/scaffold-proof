@@ -241,6 +241,21 @@ public sealed class BicepInfrastructureContractTests
         Assert.IsFalse(main.Contains("name: 'ApiBaseUrl'", StringComparison.Ordinal));
     }
 
+    [TestMethod]
+    public void MainBicep_DeploysBothStaticUisAndAllowsEveryUiOrigin()
+    {
+        var main = ReadInfraFile("main.bicep");
+
+        StringAssert.Contains(main, "appName: '${prefix}-react'");
+        StringAssert.Contains(main, "appName: '${prefix}-uno'");
+        StringAssert.Contains(main, "output reactStaticWebAppName");
+        StringAssert.Contains(main, "output unoStaticWebAppName");
+        StringAssert.Contains(main, "CorsSettings__AllowedOrigins__1");
+        StringAssert.Contains(main, "CorsSettings__AllowedOrigins__2");
+        StringAssert.Contains(main, "Cors__AllowedOrigins__1");
+        StringAssert.Contains(main, "Cors__AllowedOrigins__2");
+    }
+
     private static string ReadInfraFile(string relativePath) =>
         File.ReadAllText(RepoRoot.Combine("infra", relativePath));
 }

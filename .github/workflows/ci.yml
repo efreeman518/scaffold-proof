@@ -503,15 +503,21 @@ jobs:
           Database__Encryption__LocalKeyBase64=$(openssl rand -base64 32)
           Database__Encryption__BlindIndexKeyBase64=$(openssl rand -base64 32)
           Gateway__BaseUrl=http://gateway:8080
+          GATEWAY_BASE_URL=http://localhost
           Grpc__TaskFlowRead__Address=http://api:8081
           OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-lgtm:4317
           CADDY_DOMAIN=localhost
+          BLAZOR_UI_ORIGIN=http://localhost
+          REACT_UI_ORIGIN=http://react.localhost
+          UNO_UI_ORIGIN=http://uno.localhost
+          REACT_UI_DOMAIN=react.localhost
+          UNO_UI_DOMAIN=uno.localhost
           ACME_EMAIL=ci@example.invalid
           ENV
           cat images.env.example >> .env
           chmod 600 .env
 
-      - name: Build the five app images
+      - name: Build the seven app images
         env:
           NuGetPackageSourceCredentials_efreeman518-github: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
         run: |

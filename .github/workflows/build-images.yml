@@ -1,8 +1,8 @@
 name: Build container images
 
-# Reusable image build shared by the Azure lane (deploy.yml) and the Portable lane (deploy-vps.yml).
-# Both lanes ship the same five images from the same commit, so building them twice would double the
-# minutes and, worse, allow the two lanes to diverge.
+# Reusable image build shared by the Azure lane (deploy.yml) and the NonAzure lane (deploy-vps.yml).
+# Both lanes ship the same five host images from the same commit. The NonAzure caller additionally opts
+# into the two static UI images it alone needs, avoiding duplicate Azure-lane image builds.
 #
 # No concurrency group here on purpose: a workflow_call job runs inside the caller's concurrency group,
 # and declaring a second group would let a caller cancel itself.
@@ -14,6 +14,10 @@ on:
         description: Exact commit SHA to build.
         type: string
         required: true
+      include-static-ui:
+        description: Build the Compose-only React and Uno static images.
+        type: boolean
+        default: false
     secrets:
       NUGET_PAT:
         description: Credential for the private EF.* GitHub Packages feed.
@@ -29,6 +33,10 @@ on:
         value: ${{ jobs.build.outputs.migrator-image }}
       blazor-image:
         value: ${{ jobs.build.outputs.blazor-image }}
+      react-image:
+        value: ${{ jobs.build.outputs.react-image }}
+      uno-image:
+        value: ${{ jobs.build.outputs.uno-image }}
 
 permissions:
   contents: read
@@ -48,6 +56,8 @@ jobs:
       scheduler-image: ${{ steps.images.outputs.scheduler }}
       migrator-image: ${{ steps.images.outputs.migrator }}
       blazor-image: ${{ steps.images.outputs.blazor }}
+      react-image: ${{ steps.images.outputs.react }}
+      uno-image: ${{ steps.images.outputs.uno }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -83,3 +93,7 @@ jobs:
           build_image scheduler taskflow-scheduler ./src/Host/TaskFlow.Scheduler/Dockerfile
           build_image migrator taskflow-db-migrator ./src/Host/TaskFlow.DatabaseMigrator/Dockerfile
           build_image blazor taskflow-blazor ./src/UI/TaskFlow.Blazor/Dockerfile
+          if [[ "${{ inputs.include-static-ui }}" == "true" ]]; then
+            build_image react taskflow-react ./src/UI/TaskFlow.React/Dockerfile
+            build_image uno taskflow-uno ./src/UI/TaskFlow.Uno/Dockerfile
+          fi

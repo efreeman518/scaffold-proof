@@ -27,3 +27,23 @@
 		}
 	}
 }
+
+http://{$REACT_UI_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy react:8080 {
+		health_uri /
+		health_interval 5s
+		health_timeout 5s
+		health_status 200
+	}
+}
+
+http://{$UNO_UI_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy uno:8080 {
+		health_uri /
+		health_interval 5s
+		health_timeout 5s
+		health_status 200
+	}
+}

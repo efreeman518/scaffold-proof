@@ -1,13 +1,12 @@
 # TaskFlow Portable lane - Docker Compose runbook
 
-The Portable hosting lane (D-035, D-036) runs the whole app as containers on one VPS: Caddy terminates TLS
-in front of the YARP gateway, PostgreSQL / RabbitMQ / S3 replace the Azure data services, and Azure is kept
-only for Key Vault and App Configuration (D-044). These files are hand-written on purpose - the AppHost is
-not published to Compose, so nothing here is generated and nothing here needs `Aspire.Hosting.Docker`.
+The NonAzure hosting lane (D-060, D-036) runs the whole app as containers on one VPS: Caddy terminates TLS
+in front of the YARP gateway, PostgreSQL / RabbitMQ / S3 replace Azure data services, and the lane has no
+Azure service dependency. These files are hand-written on purpose - the AppHost is not published to Compose.
 
 | File | What it is |
 |---|---|
-| `docker-compose.yml` | The VPS stack: caddy, gateway, api, scheduler, blazor, migrator, redis, otel-lgtm, plus `pgbouncer` under profile `pooler` |
+| `docker-compose.yml` | The VPS stack: caddy, gateway, api, scheduler, blazor, react, uno, migrator, redis, otel-lgtm, plus `pgbouncer` under profile `pooler` |
 | `docker-compose.override.local.yml` | Containerised postgres / rabbitmq / minio and `build:` for the five app images, all under profile `local`. CI only |
 | `Caddyfile` / `Caddyfile.local` | ACME TLS for `{$CADDY_DOMAIN}`, and the plain `:80` variant CI uses |
 | `.env.example` | The environment contract - names only, no values |
@@ -42,13 +41,14 @@ server instead.
    relational audit, Redis data protection, RabbitMQ, PostgreSQL); set a `TASKFLOW_*_PROVIDER` only to
    deviate from it. Required in every deployment: the four `ConnectionStrings__*`, `ConnectionStrings__Redis1`,
    `ConnectionStrings__RabbitMq1`, the `Storage__S3__*` block, `CADDY_DOMAIN`, `ACME_EMAIL`,
-   `Gateway__BaseUrl`, and the `AZURE_*` client credential that `DefaultAzureCredential` picks up through
-   `EnvironmentCredential` for Key Vault and App Configuration.
+   `Gateway__BaseUrl`, `GATEWAY_BASE_URL`, and the three `*_UI_ORIGIN` / two `*_UI_DOMAIN` values. The static
+   React and Uno images write their minimal `/app-config.json` from `GATEWAY_BASE_URL` at container start, so
+   one digest can target a changed gateway origin without a provider-specific UI build.
    `Storage__S3__PublicServiceUrl` must be an address a **browser** can reach: SigV4 signs the Host header
    into a presigned download URL, so signing one against an in-network-only host hands the caller a URL it
    can never resolve.
 4. Run `gh workflow run deploy-vps.yml -f operation=deploy -f commit_sha=<green sha>`. The job builds the
-   five images, writes `images.env` with their digests, appends it into `.env`, then runs
+   seven images, writes `images.env` with their digests, appends it into `.env`, then runs
    `docker compose pull && docker compose up -d --wait` and smokes `https://$CADDY_DOMAIN/healthz/ready`.
 
 Manual equivalent, from `~/taskflow`:

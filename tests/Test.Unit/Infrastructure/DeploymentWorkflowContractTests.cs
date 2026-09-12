@@ -27,7 +27,10 @@ public sealed class DeploymentWorkflowContractTests
         Assert.IsFalse(workflow.Contains("--query '[0].name'", StringComparison.Ordinal));
         StringAssert.Contains(workflow, "Test-ReleaseManifest.ps1 -Path current/release-manifest.json");
         StringAssert.Contains(workflow, "Expected exactly one Function App matching");
-        StringAssert.Contains(workflow, "expected_swa=\"${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-uno\"");
+        StringAssert.Contains(workflow, "expected_react_swa=\"${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-react\"");
+        StringAssert.Contains(workflow, "expected_uno_swa=\"${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-uno\"");
+        StringAssert.Contains(workflow, "taskflow-react-${{ needs.validate-entry.outputs.sha }}");
+        StringAssert.Contains(workflow, "app-config.json");
 
         // The image build lives in the reusable workflow now, and both lanes must consume the same one.
         StringAssert.Contains(workflow, "uses: ./.github/workflows/build-images.yml");
@@ -83,7 +86,9 @@ public sealed class DeploymentWorkflowContractTests
             "build_image api taskflow-api ./src/Host/TaskFlow.Api/Dockerfile",
             "build_image scheduler taskflow-scheduler ./src/Host/TaskFlow.Scheduler/Dockerfile",
             "build_image migrator taskflow-db-migrator ./src/Host/TaskFlow.DatabaseMigrator/Dockerfile",
-            "build_image blazor taskflow-blazor ./src/UI/TaskFlow.Blazor/Dockerfile"
+            "build_image blazor taskflow-blazor ./src/UI/TaskFlow.Blazor/Dockerfile",
+            "build_image react taskflow-react ./src/UI/TaskFlow.React/Dockerfile",
+            "build_image uno taskflow-uno ./src/UI/TaskFlow.Uno/Dockerfile"
         })
         {
             StringAssert.Contains(workflow, image);
@@ -277,7 +282,7 @@ public sealed class DeploymentWorkflowContractTests
 
         // Chiseled runtime images have no shell and no curl, so the only healthchecks belong to the
         // infrastructure containers and to caddy's own binary.
-        foreach (var appService in new[] { "api", "gateway", "scheduler", "blazor", "migrator" })
+        foreach (var appService in new[] { "api", "gateway", "scheduler", "blazor", "migrator", "react", "uno" })
         {
             Assert.IsFalse(
                 ServiceBlock(compose, appService).Text.Contains("healthcheck:", StringComparison.Ordinal),
@@ -305,6 +310,8 @@ public sealed class DeploymentWorkflowContractTests
             "AZURE_CLIENT_SECRET", "AZURE_CLIENT_CERTIFICATE_PATH", "DataProtectionEncryptionKeyUrl",
             "Database__Encryption__LocalKeyBase64", "Grpc__TaskFlowRead__Address",
             "OTEL_EXPORTER_OTLP_ENDPOINT", "CADDY_DOMAIN", "ACME_EMAIL", "TASKFLOW_API_IMAGE"
+            , "GATEWAY_BASE_URL", "REACT_UI_ORIGIN", "UNO_UI_ORIGIN", "REACT_UI_DOMAIN", "UNO_UI_DOMAIN",
+            "TASKFLOW_REACT_IMAGE", "TASKFLOW_UNO_IMAGE"
         })
         {
             StringAssert.Contains(envExample, $"\n{name}=", name);
@@ -324,6 +331,22 @@ public sealed class DeploymentWorkflowContractTests
         var gitignore = File.ReadAllText(RepoRoot.Combine(".gitignore"));
         StringAssert.Contains(gitignore, "deploy/compose/.env");
         StringAssert.Contains(gitignore, "deploy/compose/images.env");
+    }
+
+    [TestMethod]
+    public void StaticUiDeployment_UsesOneRuntimeGatewayContract()
+    {
+        var reactConfig = File.ReadAllText(RepoRoot.Combine("src", "UI", "TaskFlow.React", "src", "api", "runtimeConfig.ts"));
+        var unoConfig = File.ReadAllText(RepoRoot.Combine("src", "UI", "TaskFlow.Uno.Core", "Client", "RuntimeGatewayConfiguration.cs"));
+        var compose = File.ReadAllText(RepoRoot.Combine("deploy", "compose", "docker-compose.yml"));
+        var caddy = File.ReadAllText(RepoRoot.Combine("deploy", "compose", "Caddyfile"));
+
+        StringAssert.Contains(reactConfig, "/app-config.json");
+        StringAssert.Contains(unoConfig, "gatewayBaseUrl");
+        StringAssert.Contains(compose, "GATEWAY_BASE_URL");
+        StringAssert.Contains(compose, "CorsSettings__AllowedOrigins__2");
+        StringAssert.Contains(caddy, "reverse_proxy react:8080");
+        StringAssert.Contains(caddy, "reverse_proxy uno:8080");
     }
 
     /// <summary>

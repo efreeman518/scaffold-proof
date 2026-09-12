@@ -440,6 +440,9 @@ module gateway 'modules/container-app.bicep' = {
       { name: 'ReverseProxy__Clusters__api__Destinations__default__Address', value: 'https://${api.outputs.fqdn}' }
       { name: 'AggregateHealthCheck__TaskFlowApiHealthUrl', value: 'https://${api.outputs.fqdn}/health/full' }
       { name: 'AggregateHealthCheck__TaskFlowApiClusterId', value: '' }
+      { name: 'CorsSettings__AllowedOrigins__0', value: 'https://${prefix}-blazor.${containerAppsEnv.outputs.defaultDomain}' }
+      { name: 'CorsSettings__AllowedOrigins__1', value: 'https://${reactStaticWebApp.outputs.defaultHostname}' }
+      { name: 'CorsSettings__AllowedOrigins__2', value: 'https://${unoStaticWebApp.outputs.defaultHostname}' }
     ])
     tags: tags
   }
@@ -471,6 +474,11 @@ module api 'modules/container-app.bicep' = {
       { name: 'ConnectionStrings__TaskFlowFlowEngineDbContext', value: dbConnectionString }
       { name: 'ConnectionStrings__CosmosDb1', value: cosmosDb.outputs.accountEndpoint }
       { name: 'ConnectionStrings__BlobStorage1', value: storage.outputs.appStorageBlobEndpoint }
+      // Container Apps public FQDNs are stable app-name subdomains of the environment domain. Referencing
+      // the Blazor module here would make Api -> Blazor -> Api through the internal gRPC dependency.
+      { name: 'Cors__AllowedOrigins__0', value: 'https://${prefix}-blazor.${containerAppsEnv.outputs.defaultDomain}' }
+      { name: 'Cors__AllowedOrigins__1', value: 'https://${reactStaticWebApp.outputs.defaultHostname}' }
+      { name: 'Cors__AllowedOrigins__2', value: 'https://${unoStaticWebApp.outputs.defaultHostname}' }
       { name: 'ConnectionStrings__TableStorage1', value: storage.outputs.appStorageTableEndpoint }
       { name: 'ConnectionStrings__Redis1', value: redis.outputs.connectionString }
     ], messagingEnvVars)
@@ -537,8 +545,18 @@ module blazor 'modules/container-app.bicep' = {
   }
 }
 
-module staticWebApp 'modules/static-web-app.bicep' = {
-  name: 'staticWebApp'
+module reactStaticWebApp 'modules/static-web-app.bicep' = {
+  name: 'reactStaticWebApp'
+  scope: rg
+  params: {
+    appName: '${prefix}-react'
+    location: location
+    tags: tags
+  }
+}
+
+module unoStaticWebApp 'modules/static-web-app.bicep' = {
+  name: 'unoStaticWebApp'
   scope: rg
   params: {
     appName: '${prefix}-uno'
@@ -787,8 +805,10 @@ output resourceGroupName string = rg.name
 output gatewayFqdn string = gateway.outputs.fqdn
 output apiFqdn string = api.outputs.fqdn
 output blazorFqdn string = blazor.outputs.fqdn
-output staticWebAppName string = staticWebApp.outputs.name
-output staticWebAppDefaultHostname string = staticWebApp.outputs.defaultHostname
+output reactStaticWebAppName string = reactStaticWebApp.outputs.name
+output reactStaticWebAppDefaultHostname string = reactStaticWebApp.outputs.defaultHostname
+output unoStaticWebAppName string = unoStaticWebApp.outputs.name
+output unoStaticWebAppDefaultHostname string = unoStaticWebApp.outputs.defaultHostname
 output functionAppName string = functions.outputs.functionAppName
 output migrationJobName string = migrator.outputs.name
 output deployIdentityClientId string = deployIdentity.outputs.clientId

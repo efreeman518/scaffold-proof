@@ -89,8 +89,14 @@ public partial class App : Application
     }
 
     /// <summary>Provides the resolve gateway URL operation for app.</summary>
-    private static string ResolveGatewayUrl(IConfiguration configuration)
+    private string ResolveGatewayUrl(IConfiguration configuration)
     {
+#if __WASM__
+        if (!string.IsNullOrWhiteSpace(RuntimeGatewayUrl))
+        {
+            return RuntimeGatewayUrl;
+        }
+#endif
 #if __ANDROID__
         const string platformGatewayKey = "AndroidGatewayBaseUrl";
 #elif __IOS__ && !__MACCATALYST__

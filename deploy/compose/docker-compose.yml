@@ -78,6 +78,9 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       DOTNET_gcServer: "1"
+      Cors__AllowedOrigins__0: ${BLAZOR_UI_ORIGIN}
+      Cors__AllowedOrigins__1: ${REACT_UI_ORIGIN}
+      Cors__AllowedOrigins__2: ${UNO_UI_ORIGIN}
       # 8080 REST, 8081 cleartext HTTP/2 for the internal gRPC read service (D-054). Both come from the
       # image's own Kestrel:Endpoints section; nothing here overrides them.
     deploy:
@@ -97,6 +100,9 @@ services:
       # Caddy terminates TLS, so the gateway must trust one hop of forwarded headers to see the real scheme.
       Proxy__ForwardedHeaders__Enabled: "true"
       Proxy__ForwardedHeaders__ForwardLimit: "1"
+      CorsSettings__AllowedOrigins__0: ${BLAZOR_UI_ORIGIN}
+      CorsSettings__AllowedOrigins__1: ${REACT_UI_ORIGIN}
+      CorsSettings__AllowedOrigins__2: ${UNO_UI_ORIGIN}
     depends_on:
       redis:
         condition: service_healthy
@@ -141,6 +147,32 @@ services:
         limits:
           cpus: "1.00"
           memory: 768M
+
+  react:
+    image: ${TASKFLOW_REACT_IMAGE}
+    restart: unless-stopped
+    environment:
+      GATEWAY_BASE_URL: ${GATEWAY_BASE_URL}
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+    networks:
+      - taskflow
+
+  uno:
+    image: ${TASKFLOW_UNO_IMAGE}
+    restart: unless-stopped
+    environment:
+      GATEWAY_BASE_URL: ${GATEWAY_BASE_URL}
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+    networks:
+      - taskflow
 
   redis:
     image: redis:8-alpine

@@ -20,6 +20,9 @@ if ($manifest.commitSha -notmatch '^[0-9a-f]{40}$') {
 }
 
 $expectedImages = 'gateway', 'api', 'scheduler', 'migrator', 'blazor'
+if ($ImagesOnly) {
+    $expectedImages += 'react', 'uno'
+}
 foreach ($name in $expectedImages) {
     $reference = $manifest.images.$name
     if ($reference -notmatch '^ghcr\.io/.+@sha256:[0-9a-f]{64}$') {
@@ -28,7 +31,7 @@ foreach ($name in $expectedImages) {
 }
 
 if (-not $ImagesOnly) {
-    foreach ($artifactName in 'functions', 'uno') {
+    foreach ($artifactName in 'functions', 'react', 'uno') {
         $artifact = $manifest.artifacts.$artifactName
         if (-not $artifact.id -or [long]$artifact.id -le 0) {
             throw "Release manifest artifact '$artifactName' must have a positive immutable artifact ID."
