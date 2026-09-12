@@ -2,6 +2,12 @@
 
 Historical Phase 3 execution plan. `.scaffold/resource-implementation.yaml` owns current declared capabilities and `.scaffold/REFERENCE-STATUS.md` owns current evidence.
 
+## Current Hosting-Lane Contract
+
+The historical implementation steps below are interpreted through D-060. The canonical input is `TASKFLOW_LANE=Azure|NonAzure`; `Portable` is accepted as a deprecated NonAzure alias for one release. Azure owns SQL Server, Service Bus, Azure Blob, Cosmos, Azure Table, and Blob Data Protection. NonAzure owns PostgreSQL, RabbitMQ, S3 via SeaweedFS, relational audit, PostgreSQL JSONB read model by default, and Redis Data Protection; MongoDB is an explicit read-model opt-in. Lane-owned core provider conflicts fail fast. Redis, DatabaseMigrator, API, Gateway, Scheduler with embedded TickerQ, Blazor, React, and Uno are common; Functions is Azure-only. Local search defaults to Sql and AI defaults to None, with lane-compatible opt-ins. Major/family image tags are centralized. Aspire, Testcontainers, Azure Bicep, Compose, and all three UIs consume the same lane contract. Expensive full-lane and UI acceptance is manual.
+
+Decisions D-035 through D-049 remain historical context and are superseded by D-060 where their Portable-era defaults conflict.
+
 ## Inputs Summary
 
 - Domain specification: `.scaffold/domain-specification.yaml`
@@ -216,7 +222,7 @@ flowchart TD
 | 7 | TaskItem self-referencing max 3 levels | Domain rule enforced; keeps queries/UI manageable |
 | 8 | Category self-referencing max 5 levels | Business requirement for organizational hierarchy depth |
 | 9 | Comprehensive testing profile | Reference app demonstrates all test types |
-| 10 | All emulators | No Azure subscription required; clone-and-run via Aspire |
+| 10 | Lane-specific local services | Azure and NonAzure use the shared lane contract; NonAzure uses PostgreSQL, RabbitMQ, SeaweedFS, and Redis, with expensive full-lane/UI acceptance manual |
 
 ## Tooling & Environment Readiness
 
