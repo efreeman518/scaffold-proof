@@ -1,4 +1,5 @@
 using Azure.Identity;
+using Azure.Storage.Blobs;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,6 +24,11 @@ public enum DataProtectionPersistence
 
 public static partial class RegisterServices
 {
+    internal const string DataProtectionBlobContainerConfigKey = "DataProtection:AzureBlob:ContainerName";
+    internal const string DataProtectionBlobNameConfigKey = "DataProtection:AzureBlob:BlobName";
+    internal const string DefaultDataProtectionBlobContainerName = "data-protection";
+    internal const string DefaultDataProtectionBlobName = "keys.xml";
+
     public const string DataProtectionPersistenceConfigKey = HostingLaneResolver.DataProtectionConfigurationKey;
     public const string DataProtectionPersistenceEnvVar = HostingLaneResolver.DataProtectionEnvironmentVariable;
 
@@ -63,16 +69,49 @@ public static partial class RegisterServices
 
         var persistence = ResolveDataProtectionPersistence(config);
 
-        var dpBuilder = services.AddDataProtection();
+        var dpBuilder = services.AddDataProtection().SetApplicationName(appName);
 
         switch (persistence)
         {
             case DataProtectionPersistence.AzureBlob:
-                if (string.IsNullOrEmpty(keysFileUrl))
+                var credential = CreateAzureCredential(config);
+                if (!string.IsNullOrWhiteSpace(keysFileUrl))
+                {
+                    var keysFileUri = new Uri(keysFileUrl);
+                    // Preserve the deployed full-blob URI plus DefaultAzureCredential path. Infrastructure
+                    // owns its container; the connection-string arm below provisions its local container.
+                    dpBuilder.PersistKeysToAzureBlobStorage(keysFileUri, credential);
+                    logger.ConfigureDataProtectionPersistence(appName, env, nameof(DataProtectionPersistence.AzureBlob));
+                    break;
+                }
+
+                var blobStorage = ResolveConnectionString(config, "BlobStorage1", "BlobStorage1", "Values:BlobStorage1");
+                if (string.IsNullOrWhiteSpace(blobStorage))
                     throw new InvalidOperationException(
-                        $"{DataProtectionPersistenceConfigKey}=AzureBlob requires DataProtectionKeysFileUrl.");
+                        $"{DataProtectionPersistenceConfigKey}=AzureBlob requires DataProtectionKeysFileUrl or the BlobStorage1 connection string.");
+
+                var containerName = config[DataProtectionBlobContainerConfigKey] ?? DefaultDataProtectionBlobContainerName;
+                var blobName = config[DataProtectionBlobNameConfigKey] ?? DefaultDataProtectionBlobName;
+                ArgumentException.ThrowIfNullOrWhiteSpace(containerName, DataProtectionBlobContainerConfigKey);
+                ArgumentException.ThrowIfNullOrWhiteSpace(blobName, DataProtectionBlobNameConfigKey);
+
+                BlobServiceClient blobServiceClient;
+                if (Uri.TryCreate(blobStorage, UriKind.Absolute, out var blobServiceUri)
+                    && (blobServiceUri.Scheme == Uri.UriSchemeHttp || blobServiceUri.Scheme == Uri.UriSchemeHttps))
+                {
+                    // Azure deployments can provide the passwordless service endpoint in the same key that
+                    // Azurite supplies as a connection string.
+                    blobServiceClient = new BlobServiceClient(blobServiceUri, credential);
+                }
+                else
+                {
+                    blobServiceClient = new BlobServiceClient(blobStorage);
+                }
+
+                var container = blobServiceClient.GetBlobContainerClient(containerName);
+                container.CreateIfNotExists();
+                dpBuilder.PersistKeysToAzureBlobStorage(container.GetBlobClient(blobName));
                 logger.ConfigureDataProtectionPersistence(appName, env, nameof(DataProtectionPersistence.AzureBlob));
-                dpBuilder.PersistKeysToAzureBlobStorage(new Uri(keysFileUrl), CreateAzureCredential(config));
                 break;
 
             case DataProtectionPersistence.Redis:
