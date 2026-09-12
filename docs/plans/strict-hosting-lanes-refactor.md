@@ -18,14 +18,14 @@ Deliver two coherent hosting and container profiles, `Azure` and `NonAzure`, acr
 
 ## Slice Status
 
-Active delegated workers: 0. Queue order: S0, then S1/S2/S3 in parallel, then S4, then S5 review.
+Active delegated workers: 0. Queue order: S1/S3 in parallel, then S2 after S1, then S4, then S5 review.
 
 | ID | Scope | Model | Why | Status | Branch | Worktree | PID | Thread | JSONL log | Final report | Worker handoff | Queue |
 |---|---|---|---|---|---|---|---|---|---|---|---|---:|
-| S0 | Binding `.scaffold` design decisions and vocabulary | gpt-5.6-luna | Explicit path list and documentation-only change | queued | docs/strict-hosting-lanes-design | `../scaffold-proof-lanes-design` | pending | pending | `.codex/scratch/strict-hosting-lanes-20260912/s0.jsonl` | `.codex/scratch/strict-hosting-lanes-20260912/s0.report.md` | `.tmp/orchestrated-refactor/s0-handoff.md` | 1 |
+| S0 | Binding `.scaffold` design decisions and vocabulary | gpt-5.6-luna through native agent transport | Explicit path list and documentation-only change; CLI 0.141.0 rejected luna and terra, so native same-model transport avoids a machine-wide upgrade | complete, reviewed, integrated through `d53d7f7` | docs/strict-hosting-lanes-design | `../scaffold-proof-lanes-design` | native agent | `/root/s0_lane_design`; failed CLI threads `01a0978c-7f8a-7972-a284-c9c1377a88f4`, `01a0978d-e463-70a2-8edd-c4a55a4efa4b` | not applicable for native transport | agent final message | `.tmp/orchestrated-refactor/s0-handoff.md` | 1 |
 | S1 | Canonical hosting contract, strict lane validation, aliases, image catalog, unit/architecture tests | gpt-5.6-sol | Cross-layer configuration contract and compatibility behavior | queued | feature/strict-lane-core | `../scaffold-proof-lane-core` | pending | pending | `.codex/scratch/strict-hosting-lanes-20260912/s1.jsonl` | `.codex/scratch/strict-hosting-lanes-20260912/s1.report.md` | `.tmp/orchestrated-refactor/s1-handoff.md` | 2 |
-| S2 | PostgreSQL JSONB default, MongoDB alternative, SeaweedFS and Data Protection provider changes with tests | gpt-5.6-sol | Migrations, persistence semantics, and provider boundaries | queued | feature/nonazure-data-providers | `../scaffold-proof-data-providers` | pending | pending | `.codex/scratch/strict-hosting-lanes-20260912/s2.jsonl` | `.codex/scratch/strict-hosting-lanes-20260912/s2.report.md` | `.tmp/orchestrated-refactor/s2-handoff.md` | 3 |
-| S3 | React/Uno runtime config and Azure/Compose deployment parity | gpt-5.6-terra | Well-specified multi-file UI and deployment implementation | queued | feature/lane-ui-deployment | `../scaffold-proof-ui-deployment` | pending | pending | `.codex/scratch/strict-hosting-lanes-20260912/s3.jsonl` | `.codex/scratch/strict-hosting-lanes-20260912/s3.report.md` | `.tmp/orchestrated-refactor/s3-handoff.md` | 4 |
+| S2 | PostgreSQL JSONB default, MongoDB alternative, SeaweedFS and Data Protection provider changes with tests | gpt-5.6-sol | Migrations, persistence semantics, and provider boundaries | queued after S1 | feature/nonazure-data-providers | `../scaffold-proof-data-providers` | pending | pending | `.codex/scratch/strict-hosting-lanes-20260912/s2.jsonl` | `.codex/scratch/strict-hosting-lanes-20260912/s2.report.md` | `.tmp/orchestrated-refactor/s2-handoff.md` | 4 |
+| S3 | React/Uno runtime config and Azure/Compose deployment parity | gpt-5.6-terra | Well-specified multi-file UI and deployment implementation | queued | feature/lane-ui-deployment | `../scaffold-proof-ui-deployment` | pending | pending | `.codex/scratch/strict-hosting-lanes-20260912/s3.jsonl` | `.codex/scratch/strict-hosting-lanes-20260912/s3.report.md` | `.tmp/orchestrated-refactor/s3-handoff.md` | 3 |
 | S4 | Aspire resource graphs, Testcontainers lane fixtures, CI manual matrix, and end-to-end topology tests | gpt-5.6-sol | Dependent architecture-sensitive integration and CI work | queued | feature/lane-orchestration-tests | `../scaffold-proof-lane-orchestration` | pending | pending | `.codex/scratch/strict-hosting-lanes-20260912/s4.jsonl` | `.codex/scratch/strict-hosting-lanes-20260912/s4.report.md` | `.tmp/orchestrated-refactor/s4-handoff.md` | 5 |
 | S5 | Fresh-context integrated diff review and corrections | gpt-5.6-sol | Final cross-slice recall and regression gate | queued | feature/strict-hosting-lanes | main orchestration worktree | pending | pending | `.codex/scratch/strict-hosting-lanes-20260912/s5.jsonl` | `.codex/scratch/strict-hosting-lanes-20260912/s5.report.md` | not applicable | 6 |
 
@@ -41,4 +41,5 @@ Active delegated workers: 0. Queue order: S0, then S1/S2/S3 in parallel, then S4
 - Base: `origin/main` at `249c33674510523fd21d41655afcfeca61f0848a`.
 - Orchestration branch: `feature/strict-hosting-lanes`.
 - No Graphify graph exists.
-- Next: dispatch S0, review and integrate it, then dispatch S1-S3 from that design baseline.
+- Headless Codex CLI 0.141.0 cannot run current 5.6 worker models; native model-matched agent transport is used without changing machine tooling.
+- Next: dispatch S1 and S3 from the integrated design baseline; dispatch S2 after S1 defines the shared lane contract.
