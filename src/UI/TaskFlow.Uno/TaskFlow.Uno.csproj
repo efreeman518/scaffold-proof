@@ -46,7 +46,8 @@
     <!-- Default to the real gateway. Enable mock mode explicitly with /p:UseMocks=true when needed. -->
     <UseMocks Condition="'$(UseMocks)'==''">false</UseMocks>
 
-    <!-- Release artifacts must not carry interactive design/MCP tooling. -->
+    <!-- Optimized Release selects Uno.Sdk's non-development asset groups. -->
+    <Optimize Condition="'$(Configuration)'=='Release'">true</Optimize>
     <UnoDisableHotDesign Condition="'$(Configuration)'=='Release'">true</UnoDisableHotDesign>
     <UnoDisableMCPSupport Condition="'$(Configuration)'=='Release'">true</UnoDisableMCPSupport>
   </PropertyGroup>
@@ -85,17 +86,6 @@
     <ProjectReference Include="..\TaskFlow.Uno.Core\TaskFlow.Uno.Core.csproj" />
     <ProjectReference Include="..\TaskFlow.Uno.Presentation\TaskFlow.Uno.Presentation.csproj" />
   </ItemGroup>
-
-  <!-- Uno.Sdk adds DevServer implicitly before restore. Remove it after that
-       resolution for optimized artifacts while retaining the Debug dev server. -->
-  <Target Name="_RemoveUnoDevServerFromRelease"
-          AfterTargets="UnoImplicitPackages"
-          BeforeTargets="CollectPackageReferences"
-          Condition="'$(Configuration)' == 'Release'">
-    <ItemGroup>
-      <PackageReference Remove="Uno.WinUI.DevServer" />
-    </ItemGroup>
-  </Target>
 
   <!-- Workaround: Resizetizer sets WasmPWAManifestFile to a directory when
        no PWA manifest is configured. Clear it so ShellTask doesn't crash. -->
