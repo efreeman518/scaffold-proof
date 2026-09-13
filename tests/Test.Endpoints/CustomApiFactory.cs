@@ -16,6 +16,8 @@ namespace Test.Endpoints;
 /// </summary>
 public sealed class CustomApiFactory : WebApplicationFactoryBase<Program, TaskFlowDbContextTrxn, TaskFlowDbContextQuery>
 {
+    private const string TestDataProtectionKeysFileUrl =
+        "https://taskflowtest.blob.core.windows.net/data-protection/keys.xml";
     private readonly string _applicationStyle;
     private readonly string _dbName = $"TestDb_{Guid.NewGuid()}";
 
@@ -36,6 +38,7 @@ public sealed class CustomApiFactory : WebApplicationFactoryBase<Program, TaskFl
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting(ApplicationStyleResolver.ConfigKey, _applicationStyle);
+        builder.UseSetting("DataProtectionKeysFileUrl", TestDataProtectionKeysFileUrl);
         base.ConfigureWebHost(builder);
     }
 
@@ -45,7 +48,8 @@ public sealed class CustomApiFactory : WebApplicationFactoryBase<Program, TaskFl
         AddFoundryLocalDisabled(config);
         config.AddInMemoryCollection(new Dictionary<string, string?>
         {
-            [ApplicationStyleResolver.ConfigKey] = _applicationStyle
+            [ApplicationStyleResolver.ConfigKey] = _applicationStyle,
+            ["DataProtectionKeysFileUrl"] = TestDataProtectionKeysFileUrl
         });
         config.AddInMemoryCollection(TestColumnEncryption.Configuration);
     }
