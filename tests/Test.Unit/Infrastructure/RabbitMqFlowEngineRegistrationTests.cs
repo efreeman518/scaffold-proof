@@ -2,6 +2,8 @@ using EF.FlowEngine.Clients;
 using EF.FlowEngine.Model;
 using EF.Messaging.RabbitMq;
 using Moq;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using TaskFlow.Bootstrapper;
 using TaskFlow.Infrastructure.Messaging.RabbitMq;
@@ -13,6 +15,28 @@ namespace Test.Unit.Infrastructure;
 [TestCategory("Unit")]
 public sealed class RabbitMqFlowEngineRegistrationTests
 {
+    [TestMethod]
+    public async Task NonAzureApplicationServices_RegisterIntegrationEventsClient()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Hosting:Lane"] = "NonAzure",
+                [$"{RabbitMqRegistration.OptionsSection}:ConnectionString"] = "amqp://guest:guest@localhost:5672/"
+            })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddTaskFlowRabbitMqMessaging(config);
+        services.RegisterApplicationServices(config);
+
+        await using var provider = services.BuildServiceProvider();
+        var client = provider.GetServices<EF.FlowEngine.Abstractions.IFlowClient>()
+            .Single(value => value.ClientRef == "integration-events");
+
+        Assert.IsInstanceOfType<DelegatingMessageClient>(client);
+    }
+
     [TestMethod]
     public async Task IntegrationEventsClient_PublishesToTaskFlowExchangeWithWorkflowRoutingMetadata()
     {
