@@ -86,6 +86,17 @@
     <ProjectReference Include="..\TaskFlow.Uno.Presentation\TaskFlow.Uno.Presentation.csproj" />
   </ItemGroup>
 
+  <!-- Uno.Sdk adds DevServer implicitly before restore. Remove it after that
+       resolution for optimized artifacts while retaining the Debug dev server. -->
+  <Target Name="_RemoveUnoDevServerFromRelease"
+          AfterTargets="UnoImplicitPackages"
+          BeforeTargets="CollectPackageReferences"
+          Condition="'$(Configuration)' == 'Release'">
+    <ItemGroup>
+      <PackageReference Remove="Uno.WinUI.DevServer" />
+    </ItemGroup>
+  </Target>
+
   <!-- Workaround: Resizetizer sets WasmPWAManifestFile to a directory when
        no PWA manifest is configured. Clear it so ShellTask doesn't crash. -->
   <Target Name="_FixWasmPwaManifestPath"
