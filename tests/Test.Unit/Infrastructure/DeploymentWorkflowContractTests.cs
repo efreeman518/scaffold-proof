@@ -166,11 +166,11 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(workflow, "Remove COMPOSE_PROFILES from .env.base; it is derived from provider settings.");
         Assert.AreEqual(
             2,
-            System.Text.RegularExpressions.Regex.Matches(workflow, @"^\s+compose_profiles=mongo$", System.Text.RegularExpressions.RegexOptions.Multiline).Count,
+            System.Text.RegularExpressions.Regex.Matches(workflow, @"^\s+compose_profiles=mongo\r?$", System.Text.RegularExpressions.RegexOptions.Multiline).Count,
             "deploy and rollback must derive the Mongo profile");
         Assert.AreEqual(
             2,
-            System.Text.RegularExpressions.Regex.Matches(workflow, @"^\s+compose_profiles=pooler$", System.Text.RegularExpressions.RegexOptions.Multiline).Count,
+            System.Text.RegularExpressions.Regex.Matches(workflow, @"^\s+compose_profiles=pooler\r?$", System.Text.RegularExpressions.RegexOptions.Multiline).Count,
             "deploy and rollback must derive the PgBouncer profile");
         Assert.AreEqual(
             2,
