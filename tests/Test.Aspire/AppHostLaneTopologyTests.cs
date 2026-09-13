@@ -1,4 +1,5 @@
 using AppHost;
+using Aspire.Hosting.Testing;
 using Microsoft.Extensions.Configuration;
 using TaskFlow.Hosting;
 
@@ -21,6 +22,16 @@ public sealed class AppHostLaneTopologyTests
         HostingLaneResolver.SearchEnvironmentVariable,
         HostingLaneResolver.AiEnvironmentVariable,
         HostingLaneResolver.DataProtectionEnvironmentVariable
+    ];
+
+    private static readonly string[] GraphEnvironmentVariables =
+    [
+        .. LaneEnvironmentVariables,
+        "TASKFLOW_ASPIRE_TESTING",
+        "TASKFLOW_ASPIRE_FULL_LANE",
+        "TASKFLOW_ASPIRE_FUNCTIONS_AVAILABLE",
+        "TASKFLOW_ASPIRE_REACT_AVAILABLE",
+        "TASKFLOW_ASPIRE_UNO_WASM_AVAILABLE"
     ];
 
     [TestMethod]
@@ -113,6 +124,8 @@ public sealed class AppHostLaneTopologyTests
         StringAssert.Contains(source, "if (!nonAzureLane && (!isTesting || fullLaneAvailableInTesting))");
         StringAssert.Contains(source, "if (nonAzureLane && string.Equals(lane.ReadModel, \"MongoDb\"");
         StringAssert.Contains(source, "if (!nonAzureLane && (!isTesting || functionsAvailableInTesting || fullLaneAvailableInTesting))");
+        StringAssert.Contains(source, "if (!isTesting || reactAvailableInTesting || fullLaneAvailableInTesting)");
+        StringAssert.Contains(source, "if (!isTesting || unoWasmAvailableInTesting || fullLaneAvailableInTesting)");
     }
 
     [TestMethod]
@@ -159,6 +172,57 @@ public sealed class AppHostLaneTopologyTests
         StringAssert.Contains(source, "scheduler = WithObjectStorage(scheduler);");
         StringAssert.Contains(source, "return host.WithReference(blobs!).WaitFor(storage!);");
         StringAssert.Contains(source, ".WaitFor(seaweedFs);");
+    }
+
+    [TestMethod]
+    public void RabbitMqHosts_ReceivePackageConnectionString()
+    {
+        var source = ReadAppHostSource();
+        StringAssert.Contains(source,
+            ".WithEnvironment(\"Messaging__RabbitMq__ConnectionString\", rabbitMq.Resource.ConnectionStringExpression)");
+    }
+
+    [TestMethod]
+    public async Task FullLane_AzureGraph_ContainsEveryHostAndNoNonAzureResource()
+    {
+        var resources = await BuildResourceGraphAsync("Azure");
+
+        AssertPresent(resources, "sql", "taskflowdb", "redis", "AzureStorage", "BlobStorage1",
+            "TableStorage1", "ServiceBus1", "ServiceBus1-mssql", "CosmosDb1", "taskflowmigrator",
+            "taskflowapi", "taskflowgateway", "taskflowscheduler", "taskflowblazor", "taskflowreact",
+            "taskflowuno", "taskflowfunctions");
+        AssertAbsent(resources, "postgres", "rabbitmq", "seaweedfs", "mongodb");
+    }
+
+    [TestMethod]
+    public async Task FullLane_NonAzureGraph_ContainsEveryCommonHostAndNoAzureResource()
+    {
+        var resources = await BuildResourceGraphAsync("NonAzure");
+
+        AssertPresent(resources, "postgres", "taskflowdb", "redis", "rabbitmq", "seaweedfs",
+            "taskflowmigrator", "taskflowapi", "taskflowgateway", "taskflowscheduler", "taskflowblazor",
+            "taskflowreact", "taskflowuno");
+        AssertAbsent(resources, "sql", "AzureStorage", "BlobStorage1", "TableStorage1", "ServiceBus1",
+            "ServiceBus1-mssql", "CosmosDb1", "mongodb", "taskflowfunctions");
+    }
+
+    [TestMethod]
+    public async Task FullLane_NonAzureMongoOptIn_AddsOnlyMongoResource()
+    {
+        var resources = await BuildResourceGraphAsync("NonAzure", readModel: "MongoDb");
+
+        AssertPresent(resources, "mongodb");
+        AssertAbsent(resources, "AzureStorage", "BlobStorage1", "TableStorage1", "ServiceBus1",
+            "ServiceBus1-mssql", "CosmosDb1", "taskflowfunctions");
+    }
+
+    [TestMethod]
+    public async Task AzureManifestMode_BuildsWithoutEmulatorSidecarLookupFailure()
+    {
+        var resources = await BuildResourceGraphAsync("Azure", manifestMode: true);
+
+        AssertPresent(resources, "ServiceBus1", "taskflowfunctions", "taskflowreact", "taskflowuno");
+        AssertAbsent(resources, "ServiceBus1-mssql", "rabbitmq", "seaweedfs");
     }
 
     private static void AssertHostEnvironmentMatches(LaneSwitches switches)
@@ -211,5 +275,48 @@ public sealed class AppHostLaneTopologyTests
 
         Assert.IsNotNull(directory, "Could not locate repository root containing TaskFlow.slnx.");
         return File.ReadAllText(Path.Combine(directory.FullName, "src", "Host", "Aspire", "AppHost", "AppHost.cs"));
+    }
+
+    private static async Task<HashSet<string>> BuildResourceGraphAsync(
+        string lane,
+        string? readModel = null,
+        bool manifestMode = false)
+    {
+        var saved = GraphEnvironmentVariables.ToDictionary(
+            name => name, Environment.GetEnvironmentVariable, StringComparer.Ordinal);
+        try
+        {
+            foreach (var name in GraphEnvironmentVariables) Environment.SetEnvironmentVariable(name, null);
+            Environment.SetEnvironmentVariable(HostingLaneResolver.LaneEnvironmentVariable, lane);
+            Environment.SetEnvironmentVariable(HostingLaneResolver.ReadModelEnvironmentVariable, readModel);
+            Environment.SetEnvironmentVariable("TASKFLOW_ASPIRE_TESTING", "true");
+            Environment.SetEnvironmentVariable("TASKFLOW_ASPIRE_FULL_LANE", "true");
+
+            var programType = Type.GetType("Program, AppHost", throwOnError: true)!;
+            var builder = await DistributedApplicationTestingBuilder.CreateAsync(
+                programType,
+                args: manifestMode ? ["--publisher", "manifest"] : [],
+                configureBuilder: (appOptions, _) => appOptions.DisableDashboard = true);
+
+            return builder.Resources.Select(resource => resource.Name).ToHashSet(StringComparer.Ordinal);
+        }
+        finally
+        {
+            foreach (var (name, value) in saved) Environment.SetEnvironmentVariable(name, value);
+        }
+    }
+
+    private static void AssertPresent(IReadOnlySet<string> resources, params string[] expected)
+    {
+        foreach (var resource in expected)
+            Assert.IsTrue(resources.Contains(resource),
+                $"missing {resource}; actual resources: {string.Join(", ", resources.Order())}");
+    }
+
+    private static void AssertAbsent(IReadOnlySet<string> resources, params string[] expected)
+    {
+        foreach (var resource in expected)
+            Assert.IsFalse(resources.Contains(resource),
+                $"unexpected {resource}; actual resources: {string.Join(", ", resources.Order())}");
     }
 }

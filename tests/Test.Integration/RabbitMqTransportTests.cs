@@ -30,14 +30,18 @@ namespace Test.Integration;
 public sealed class RabbitMqTransportTests
 {
     [TestInitialize]
-    public void TestSetup() => IntegrationTestSetup.RequireLane(HostingLane.NonAzure);
+    public void TestSetup()
+    {
+        IntegrationTestSetup.RequireLane(HostingLane.NonAzure);
+        IntegrationTestSetup.AssertAvailable("RabbitMQ", RabbitMqBrokerFixture.StartupError);
+    }
 
     [TestMethod]
     [Timeout(300000, CooperativeCancellation = true)]
     public async Task PublishedOutboxRow_ArrivesOnEveryBoundQueue_AndReadsBackAsItsEnvelope()
     {
         var ct = TestContext.CancellationToken;
-        var broker = await RabbitMqBrokerFixture.EnsureStartedAsync(ct);
+        var broker = RabbitMqBrokerFixture.Container;
 
         await using var provider = BuildProvider(broker, $"transport-{Guid.NewGuid():N}");
         await provider.GetRequiredService<IRabbitMqTopologyDeclarer>()
@@ -86,7 +90,7 @@ public sealed class RabbitMqTransportTests
     public async Task StatusChangedEvent_ReachesOnlyTheProjectionQueue()
     {
         var ct = TestContext.CancellationToken;
-        var broker = await RabbitMqBrokerFixture.EnsureStartedAsync(ct);
+        var broker = RabbitMqBrokerFixture.Container;
 
         await using var provider = BuildProvider(broker, $"routing-{Guid.NewGuid():N}");
         await provider.GetRequiredService<IRabbitMqTopologyDeclarer>()
@@ -116,7 +120,7 @@ public sealed class RabbitMqTransportTests
     public async Task MalformedBody_IsRejectedByTheHandler_BeforeAnyConsumerRuns()
     {
         var ct = TestContext.CancellationToken;
-        var broker = await RabbitMqBrokerFixture.EnsureStartedAsync(ct);
+        var broker = RabbitMqBrokerFixture.Container;
 
         await using var provider = BuildProvider(broker, $"malformed-{Guid.NewGuid():N}");
         await provider.GetRequiredService<IRabbitMqTopologyDeclarer>()

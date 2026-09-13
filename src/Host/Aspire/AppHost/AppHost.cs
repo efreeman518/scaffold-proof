@@ -172,10 +172,15 @@ else
     // The Service Bus emulator bundles its own SQL Server sidecar (ServiceBus1-mssql); the Aspire package
     // hardcodes that image, and RunAsEmulator's callback cannot reach it. D-060 intentionally keeps the
     // sidecar on SQL Server 2022 while the application database runs SQL Server 2025.
-    builder.CreateResourceBuilder(
-            (ContainerResource)builder.Resources.Single(r => r.Name == "ServiceBus1-mssql"))
-        .WithImage(ContainerImages.ServiceBusSqlServerRepository)
-        .WithImageTag(ContainerImages.ServiceBusSqlServerTag);
+    var serviceBusSqlSidecar = builder.Resources
+        .OfType<ContainerResource>()
+        .SingleOrDefault(r => r.Name == "ServiceBus1-mssql");
+    if (serviceBusSqlSidecar is not null)
+    {
+        builder.CreateResourceBuilder(serviceBusSqlSidecar)
+            .WithImage(ContainerImages.ServiceBusSqlServerRepository)
+            .WithImageTag(ContainerImages.ServiceBusSqlServerTag);
+    }
 
     serviceBus = sb;
 }
@@ -522,7 +527,10 @@ IResourceBuilder<T> WithBroker<T>(IResourceBuilder<T> host)
     where T : IResourceWithEnvironment, IResourceWithWaitSupport
 {
     if (rabbitMq is not null)
-        return host.WithReference(rabbitMq, connectionName: "RabbitMq1").WaitFor(rabbitMq);
+        return host
+            .WithReference(rabbitMq, connectionName: "RabbitMq1")
+            .WithEnvironment("Messaging__RabbitMq__ConnectionString", rabbitMq.Resource.ConnectionStringExpression)
+            .WaitFor(rabbitMq);
 
     return host.WithReference(serviceBus!).WaitFor(serviceBus!);
 }

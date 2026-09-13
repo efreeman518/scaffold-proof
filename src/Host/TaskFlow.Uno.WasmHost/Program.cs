@@ -10,6 +10,15 @@ var builder = WebApplication.CreateBuilder(args);
 // when configured) and health alongside the other .NET hosts. No-ops cleanly without Azure config.
 builder.AddServiceDefaults();
 
+var gatewayBaseUrl = builder.Configuration["Gateway:BaseUrl"]
+    ?? throw new InvalidOperationException("Gateway:BaseUrl not configured.");
+if (!Uri.TryCreate(gatewayBaseUrl, UriKind.Absolute, out var gatewayUri)
+    || (gatewayUri.Scheme != Uri.UriSchemeHttp && gatewayUri.Scheme != Uri.UriSchemeHttps))
+{
+    throw new InvalidOperationException("Gateway:BaseUrl must be an absolute HTTP(S) URL.");
+}
+gatewayBaseUrl = gatewayUri.ToString().TrimEnd('/');
+
 var configuredDistPath = builder.Configuration["UnoWasm:DistPath"];
 var distPath = configuredDistPath;
 
@@ -46,6 +55,11 @@ if (File.Exists(staticWebAssetsManifestPath))
 var app = builder.Build();
 
 app.MapDefaultEndpoints();
+app.MapGet("/app-config.json", (HttpContext context) =>
+{
+    context.Response.Headers[HeaderNames.CacheControl] = "no-store";
+    return Results.Json(new { gatewayBaseUrl });
+});
 
 var indexPath = Path.Combine(distPath, "wwwroot", "index.html");
 var requirePublishedAssets = (builder.Configuration.GetValue<bool?>("UnoWasm:RequirePublishedAssets")
@@ -133,7 +147,9 @@ app.UseStaticFiles(new StaticFileOptions
 });
 app.Use(async (context, next) =>
 {
-    if (PublishedAssetContract.LooksLikeAssetRequest(context.Request.Path.Value ?? string.Empty))
+    var requestPath = context.Request.Path.Value ?? string.Empty;
+    if (!string.Equals(requestPath, "/app-config.json", StringComparison.OrdinalIgnoreCase)
+        && PublishedAssetContract.LooksLikeAssetRequest(requestPath))
     {
         context.Response.StatusCode = StatusCodes.Status404NotFound;
         return;

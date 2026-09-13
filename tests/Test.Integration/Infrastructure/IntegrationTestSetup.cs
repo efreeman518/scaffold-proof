@@ -45,7 +45,7 @@ public static class IntegrationTestSetup
         else
         {
             starts.Add(SeaweedFsContainerFixture.StartAsync());
-            starts.Add(RabbitMqBrokerFixture.EnsureStartedAsync(context.CancellationToken));
+            starts.Add(RabbitMqBrokerFixture.StartAsync(context.CancellationToken));
             if (_usesMongoDb) starts.Add(MongoDbContainerFixture.StartAsync());
         }
 

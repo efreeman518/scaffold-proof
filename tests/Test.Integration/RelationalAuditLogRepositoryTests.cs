@@ -51,6 +51,7 @@ public class RelationalAuditLogRepositoryTests
     {
         IntegrationTestSetup.AssertAvailable("Redis", RedisContainerFixture.StartupError);
         IntegrationTestSetup.AssertAvailable("SeaweedFS", SeaweedFsContainerFixture.StartupError);
+        IntegrationTestSetup.AssertAvailable("RabbitMQ", RabbitMqBrokerFixture.StartupError);
 
         var ct = TestContext.CancellationToken;
         var connectionString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("auditpipeline");
