@@ -3,16 +3,25 @@ param(
     [Parameter(Mandatory)]
     [string] $Path,
 
-    # Portable lane (deploy-vps.yml) manifests carry container images only: that lane ships no Functions
-    # package and no Uno WASM bundle, so there are no upload-artifact ids to validate.
-    [switch] $ImagesOnly
+    # NonAzure lane (deploy-vps.yml) manifests carry all UI and host container images. It ships no Functions
+    # package or standalone UI bundles, so there are no upload-artifact ids to validate.
+    [switch] $ImagesOnly,
+
+    # Omit when reading historical manifests. New release and rollback paths require v2 so a v1 manifest
+    # cannot become a rollback target after React was added.
+    [ValidateSet(1, 2)]
+    [int] $ExpectedSchemaVersion
 )
 
 $ErrorActionPreference = 'Stop'
 $manifest = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
 
-if ($manifest.schemaVersion -ne 1) {
-    throw 'Release manifest schemaVersion must be 1.'
+if ($manifest.schemaVersion -notin 1, 2) {
+    throw 'Release manifest schemaVersion must be 1 or 2.'
+}
+
+if ($ExpectedSchemaVersion -and $manifest.schemaVersion -ne $ExpectedSchemaVersion) {
+    throw "Release manifest schemaVersion must be $ExpectedSchemaVersion."
 }
 
 if ($manifest.commitSha -notmatch '^[0-9a-f]{40}$') {
@@ -20,6 +29,9 @@ if ($manifest.commitSha -notmatch '^[0-9a-f]{40}$') {
 }
 
 $expectedImages = 'gateway', 'api', 'scheduler', 'migrator', 'blazor'
+if ($ImagesOnly -and $manifest.schemaVersion -eq 2) {
+    $expectedImages += 'react', 'uno'
+}
 foreach ($name in $expectedImages) {
     $reference = $manifest.images.$name
     if ($reference -notmatch '^ghcr\.io/.+@sha256:[0-9a-f]{64}$') {
@@ -28,7 +40,8 @@ foreach ($name in $expectedImages) {
 }
 
 if (-not $ImagesOnly) {
-    foreach ($artifactName in 'functions', 'uno') {
+    $artifactNames = $manifest.schemaVersion -eq 1 ? @('functions', 'uno') : @('functions', 'react', 'uno')
+    foreach ($artifactName in $artifactNames) {
         $artifact = $manifest.artifacts.$artifactName
         if (-not $artifact.id -or [long]$artifact.id -le 0) {
             throw "Release manifest artifact '$artifactName' must have a positive immutable artifact ID."

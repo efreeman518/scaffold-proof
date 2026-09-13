@@ -1,13 +1,22 @@
 using EF.FlowEngine;
 using EF.FlowEngine.AdminApi;
+using EF.FlowEngine.Clients;
 using EF.FlowEngine.Clients.AI;
 using EF.FlowEngine.Clients.Http;
 using EF.FlowEngine.Clients.ServiceBus;
 using EF.FlowEngine.Model;
+using EF.Messaging.RabbitMq;
+using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using RabbitMQ.Client;
 using TaskFlow.Infrastructure.Data;
+using TaskFlow.Infrastructure.Data.Interceptors;
+using TaskFlow.Infrastructure.Messaging.RabbitMq;
+using TaskFlow.Observability.Tracing;
 
 namespace TaskFlow.Bootstrapper;
 
@@ -90,20 +99,177 @@ public static partial class RegisterServices
         services.AddHttpClient("taskflow-api", c => c.BaseAddress = new Uri(apiBaseUrl));
         fe.AddResilientHttpClient("taskflow-api", namedClient: "taskflow-api");
 
-        // Service Bus message client - uses the same connection string as the application's
-        // integration event publisher. Workflow `message` nodes publish through this; the
-        // existing FunctionServiceBusTrigger picks them up alongside domain events.
-        var sbConnStr = ResolveConnectionString(config, "ServiceBus1", "Values:ServiceBus1");
-        if (!string.IsNullOrEmpty(sbConnStr))
+        if (ResolveMessagingProvider(config) == MessagingProvider.RabbitMq)
         {
-            var topic = config["FlowEngine:ServiceBusTopic"] ?? "taskflow-integration-events";
-            fe.AddServiceBusClient("integration-events", sbConnStr, topic);
+            // Workflow messages are topic publications and may intentionally have no subscriber. Reuse the
+            // package's confirmed publisher-channel pool, but publish mandatory:false so that zero bindings is
+            // accepted just like a Service Bus topic with zero subscriptions.
+            fe.AddClient(sp => CreateRabbitMqFlowEngineMessageClient(
+                sp.GetRequiredService<IRabbitMqConnectionMultiplexer>(),
+                sp.GetRequiredService<IOptionsMonitor<RabbitMqOptions>>()));
+        }
+        else
+        {
+            // Service Bus message client - reuses the application's named client for either a local
+            // connection string or deployed managed identity. AddServiceBusServices has already enforced
+            // the strict Azure requirement that one of those connection forms exists.
+            var sbConnStr = ResolveConnectionString(config, "ServiceBus1", "Values:ServiceBus1");
+            var fullyQualifiedNamespace = ResolveServiceBusFullyQualifiedNamespace(config);
+            if (!string.IsNullOrEmpty(sbConnStr) || !string.IsNullOrWhiteSpace(fullyQualifiedNamespace))
+            {
+                var topic = ResolveFlowEngineServiceBusTopic(config);
+                fe.AddServiceBusClient(
+                    "integration-events",
+                    sp => sp.GetRequiredService<IAzureClientFactory<ServiceBusClient>>()
+                        .CreateClient("TaskFlowSBClient"),
+                    topic);
+            }
         }
 
         // Agent workflow nodes share the same host-provided IChatClient as the rest of the AI demos.
         fe.AddChatClientAgentClient(
             clientRef: "ai-agent",
             chatClientFactory: sp => sp.GetRequiredService<IChatClient>());
+    }
+
+    internal static string ResolveFlowEngineServiceBusTopic(IConfiguration config) =>
+        config["FlowEngine:ServiceBusTopic"]
+        ?? config["DomainEventsTopic"]
+        ?? OutboxStagingInterceptor.DefaultDestination;
+
+    internal static DelegatingMessageClient CreateRabbitMqFlowEngineMessageClient(
+        IRabbitMqConnectionMultiplexer multiplexer,
+        IOptionsMonitor<RabbitMqOptions> options)
+    {
+        ArgumentNullException.ThrowIfNull(multiplexer);
+        ArgumentNullException.ThrowIfNull(options);
+
+        return new DelegatingMessageClient(
+            "integration-events",
+            async (request, ct) =>
+            {
+                if (request.DeliveryMode != MessageDeliveryMode.FireAndForget)
+                {
+                    throw new NotSupportedException(
+                        "The RabbitMQ integration-events client supports only fire-and-forget workflow messages.");
+                }
+
+                var messageId = string.IsNullOrWhiteSpace(request.IdempotencyKey)
+                    ? Guid.CreateVersion7().ToString()
+                    : request.IdempotencyKey;
+                var message = CreateRabbitMqFlowEngineMessage(request, messageId, out var publishActivity);
+                using (publishActivity)
+                {
+                    await PublishRabbitMqFlowEngineMessageAsync(multiplexer, options, message, ct)
+                        .ConfigureAwait(false);
+                }
+
+                return new MessageResult
+                {
+                    Sent = true,
+                    MessageId = messageId,
+                    CorrelationId = request.CorrelationId,
+                    Outcome = DecisionOutcome.Match
+                };
+            });
+    }
+
+    /// <summary>
+    /// Maps one FlowEngine request to the shared RabbitMQ wire shape and starts its D-053 producer span.
+    /// The caller owns the returned activity and must keep it alive through the confirmed publish.
+    /// </summary>
+    internal static RabbitMqMessage CreateRabbitMqFlowEngineMessage(
+        MessageRequest request,
+        string messageId,
+        out System.Diagnostics.Activity? publishActivity)
+    {
+        var binaryBody = request.BinaryBody;
+        var body = binaryBody ?? System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(request.Body);
+        var contentType = request.ContentType
+            ?? (binaryBody is null ? "application/json" : "application/octet-stream");
+        var headers = request.Properties?.ToDictionary(
+                pair => pair.Key,
+                pair => (object?)pair.Value,
+                StringComparer.Ordinal)
+            ?? new Dictionary<string, object?>(StringComparer.Ordinal);
+
+        publishActivity = MessagingTrace.StartPublish(
+            MessagingTrace.RabbitMqSystem,
+            TaskFlowRabbitMqTopology.Exchange,
+            request.Subject,
+            messageId,
+            (key, value) => headers[key] = value);
+
+        return new RabbitMqMessage(
+            body,
+            RoutingKey: request.Subject,
+            MessageId: messageId,
+            ContentType: contentType,
+            CorrelationId: request.CorrelationId,
+            Headers: headers);
+    }
+
+    /// <summary>
+    /// Uses EF.Messaging.RabbitMq's pooled, confirm-tracking channel while allowing topic publications
+    /// that currently have no binding. Awaiting BasicPublishAsync retains publisher-confirm semantics.
+    /// </summary>
+    private static async Task PublishRabbitMqFlowEngineMessageAsync(
+        IRabbitMqConnectionMultiplexer multiplexer,
+        IOptionsMonitor<RabbitMqOptions> options,
+        RabbitMqMessage message,
+        CancellationToken ct)
+    {
+        using var pooledChannel = await multiplexer.RentPublisherChannelAsync(ct).ConfigureAwait(false);
+        var properties = new BasicProperties
+        {
+            MessageId = message.MessageId,
+            CorrelationId = message.CorrelationId,
+            ContentType = message.ContentType,
+            // FlowEngine properties and W3C propagation values are strings, which are valid AMQP
+            // field-table values. Copy them into the mutable table required by RabbitMQ.Client.
+            Headers = message.Headers?.ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value,
+                StringComparer.Ordinal),
+            Persistent = message.Persistent
+        };
+
+        await AwaitRabbitMqPublisherConfirmAsync(
+            publishCancellation => pooledChannel.Channel.BasicPublishAsync(
+                TaskFlowRabbitMqTopology.Exchange,
+                message.RoutingKey,
+                mandatory: false,
+                properties,
+                message.Body,
+                publishCancellation),
+            options.CurrentValue.PublisherConfirmTimeout,
+            ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Bounds RabbitMQ.Client's confirm-tracking await with the package's configured timeout. Caller
+    /// cancellation remains an OperationCanceledException; only expiration of this timeout is translated.
+    /// </summary>
+    internal static async Task AwaitRabbitMqPublisherConfirmAsync(
+        Func<CancellationToken, ValueTask> publish,
+        TimeSpan confirmTimeout,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(publish);
+        using var confirmCancellation = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        confirmCancellation.CancelAfter(confirmTimeout);
+
+        try
+        {
+            await publish(confirmCancellation.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException exception)
+            when (!ct.IsCancellationRequested && confirmCancellation.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"RabbitMQ publisher confirmation was not received within {confirmTimeout}.",
+                exception);
+        }
     }
 
     // JSON workflow definitions live in TaskFlow.Api/Workflows/. The seeding service is a

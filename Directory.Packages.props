@@ -25,7 +25,7 @@
     <PackageVersion Include="EF.Storage" Version="1.1.102" />
     <!-- Provider-neutral object-storage contract both storage arms implement (D-037, package request 25). -->
     <PackageVersion Include="EF.Storage.Contracts" Version="1.1.102" />
-    <!-- D-037 Portable-lane object-storage arm: the published S3 repository, bucket provisioner, and DI wiring. -->
+    <!-- D-037 NonAzure object-storage arm: the published S3 repository, bucket provisioner, and DI wiring. -->
     <PackageVersion Include="EF.Storage.S3" Version="1.1.102" />
     <PackageVersion Include="EF.Table" Version="1.1.102" />
     <!-- Backend-neutral audit sink contract both audit arms implement (D-039, package request 26). -->
@@ -39,8 +39,8 @@
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.14.0" />
     <PackageVersion Include="Testcontainers.Azurite" Version="4.14.0" />
     <PackageVersion Include="Testcontainers.Redis" Version="4.14.0" />
-    <!-- D-037 Portable-lane object-storage arm test fixture; pinned to the same Testcontainers family version. -->
-    <PackageVersion Include="Testcontainers.Minio" Version="4.14.0" />
+    <!-- Generic containers host SeaweedFS and MongoDB without provider-specific fixture packages. -->
+    <PackageVersion Include="Testcontainers" Version="4.14.0" />
   </ItemGroup>
   <ItemGroup Label="EF.Packages.Enterprise (Private Feed)">
     <PackageVersion Include="EF.FilterBuilder" Version="1.0.173" />
@@ -215,9 +215,9 @@
     <PackageVersion Include="Microsoft.Extensions.Azure" Version="1.14.1" />
     <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.5.3" />
   </ItemGroup>
-  <ItemGroup Label="AWS S3 (D-037 Portable-lane object-storage arm: MinIO locally/on the VPS, any S3-compatible provider in production)">
+  <ItemGroup Label="AWS S3 (D-037 NonAzure object-storage arm: SeaweedFS locally/on the VPS, any S3-compatible provider in production)">
     <!-- The S3 arm itself is EF.Storage.S3; this direct reference exists for Test.Integration, which drives
-         MinIO with its own IAmazonS3 client. Version tracks EF.Storage.S3's own dependency (no downgrade). -->
+         SeaweedFS with its own IAmazonS3 client. Version tracks EF.Storage.S3's own dependency (no downgrade). -->
     <PackageVersion Include="AWSSDK.S3" Version="4.0.103.1" />
   </ItemGroup>
   <ItemGroup Label="Azure Service Bus">
@@ -229,10 +229,14 @@
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.5.3" />
   </ItemGroup>
+  <ItemGroup Label="MongoDB">
+    <!-- D-038/D-060 explicit NonAzure TaskView alternative. -->
+    <PackageVersion Include="MongoDB.Driver" Version="3.11.1" />
+  </ItemGroup>
   <ItemGroup Label="Data Protection">
     <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.4" />
     <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Keys" Version="1.6.4" />
-    <!-- D-043 Portable-lane key-ring persistence (DataProtection:Persistence=Redis). -->
+    <!-- D-043 NonAzure key-ring persistence (DataProtection:Persistence=Redis). -->
     <PackageVersion Include="Microsoft.AspNetCore.DataProtection.StackExchangeRedis" Version="10.0.12" />
   </ItemGroup>
   <ItemGroup Label="Configuration and feature flags">

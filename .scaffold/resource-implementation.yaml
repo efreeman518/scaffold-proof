@@ -50,36 +50,60 @@ deployTarget: ContainerApps   # kept as-is for compatibility; see deployTargets 
 useAspire: true
 
 # ---------------------------------------------------------------------------
-# Hosting Lanes (Portable lane, see DESIGN-DECISIONS D-035..D-045)
+# Hosting Lanes (strict Azure/NonAzure contract, see DESIGN-DECISIONS D-060)
 # ---------------------------------------------------------------------------
-hostingLanes: [Azure, Portable]
+hostingLanes: [Azure, NonAzure]
 
-# TASKFLOW_LANE seeds these as the DEFAULT of each independent provider switch;
-# each switch's own env/config key still wins. See D-035.
+# TASKFLOW_LANE selects a strict lane. Portable is a deprecated input alias for
+# NonAzure for one release. Lane-owned core conflicts fail fast. See D-060.
 hostingLaneDefaults:
   Azure:
+    databaseProvider: SqlServer
+    messagingProvider: ServiceBus
     storageProvider: AzureBlob
     readModelProvider: Cosmos
     auditProvider: AzureTable
-    searchProvider: AzureAiSearch
-    aiProvider: AzureInference
+    searchProvider: Sql
+    aiProvider: None
     dataProtectionPersistence: AzureBlob
-  Portable:
+  NonAzure:
+    databaseProvider: PostgreSql
+    messagingProvider: RabbitMq
     storageProvider: S3
-    readModelProvider: Relational
+    readModelProvider: PostgreSqlJsonb
     auditProvider: Relational
-    searchProvider: Sql                # PgVector is the opt-in Postgres arm (Search:Provider=PgVector): it needs an embedding endpoint, so it is not a lane default. See D-040.
-    aiProvider: OpenAICompatible
+    searchProvider: Sql
+    aiProvider: None
     dataProtectionPersistence: Redis
 
+localDefaults: { searchProvider: Sql, aiProvider: None }
+
+compatibleProviderOptIns:
+  Azure: { searchProvider: AzureAiSearch, aiProvider: AzureInference }
+  NonAzure: { searchProvider: PgVector, aiProvider: [OpenAICompatible, FoundryLocal] }
+zeroAzureNonAzure: { reject: [AppConfig:Endpoint, KeyVault:Endpoint], config: [appsettings, environment], encryptionKeyPath: local }
+
 storageProviders: [AzureBlob, S3]                                   # Storage:Provider, see D-037
-readModelProviders: [Cosmos, Relational]                            # ReadModel:Provider, see D-038
+readModelProviders: [Cosmos, PostgreSqlJsonb, MongoDb]                 # Canonical providers, see D-060
+readModelProviderAliases: { Relational: PostgreSqlJsonb, expires: one-release } # Deprecated compatibility alias
 auditProviders: [AzureTable, Relational]                             # Audit:Provider, see D-039
 searchProviders: [AzureAiSearch, PgVector, Sql]                      # Search:Provider, see D-040 (Sql = NoOpSearchService prefix search)
 aiProviders: [AzureInference, OpenAICompatible, FoundryLocal, None]  # AiServices:Provider, see D-041
 dataProtectionPersistence: [AzureBlob, Redis, None]                  # DataProtection:Persistence, see D-043 (None logs a warning)
 
 deployTargets: [ContainerApps, DockerCompose]
+commonHosts: [Redis, DatabaseMigrator, Api, Gateway, Scheduler, Blazor, React, Uno]
+azureOnlyHosts: [Functions]
+
+# Major/family image tags are defined once and consumed by every lane.
+imageTagPolicy: { source: centralized, allowedTags: [major, family] }
+
+# SeaweedFS is the NonAzure S3-compatible object-storage service.
+nonAzureObjectStorage: SeaweedFS
+
+# Aspire, Testcontainers, Bicep, Compose, and all UI lanes consume hostingLanes.
+laneContractConsumers: [Aspire, Testcontainers, AzureBicep, Compose, Blazor, React, Uno]
+expensiveAcceptance: manual
 
 # ---------------------------------------------------------------------------
 # Runtime / Operations (guidance alignment, see DESIGN-DECISIONS D-047..D-055)
@@ -253,7 +277,7 @@ entities:
   # TaskView (read-model projection, not a domain aggregate)
   # =========================================================================
   - name: TaskView
-    dataStore: sql   # relational read-model table (ReadModel:Provider=Relational, D-038); the Cosmos arm is the Azure-lane default   # ReadModel:Provider = Cosmos | Relational, see D-038; readModelProviders above
+    dataStore: sql   # PostgreSQL JSONB read-model table (ReadModel:Provider=PostgreSqlJsonb, D-038); legacy Relational aliases this arm
     properties:
       - { name: TenantId, type: "Guid", required: true }
       - { name: Title, type: "nvarchar", maxLength: 200, required: true }
@@ -423,9 +447,9 @@ externalDependencyModes:
   blobStorage: emulator
   cosmosDb: emulator
   aiServices: deployment-only
-  minio: emulator                # Portable lane object-storage emulator (S3 arm), see D-037
+  seaweedfs: emulator             # NonAzure S3-compatible object storage, see D-060
   appConfiguration: lazy-optional # no-op without AppConfig:Endpoint, see D-042
-  otelLgtm: emulator              # Portable lane observability stack (Grafana/Loki/Tempo/Mimir)
+  otelLgtm: emulator              # NonAzure lane observability stack (Grafana/Loki/Tempo/Mimir)
 
 # ---------------------------------------------------------------------------
 # AI Services

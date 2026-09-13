@@ -5,6 +5,7 @@ using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using TaskFlow.Application.Contracts.Concurrency;
+using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Storage;
 using Test.Integration.Infrastructure;
 
@@ -27,6 +28,7 @@ public class AuditLogRepositoryAzuriteTests
     [TestInitialize]
     public void TestSetup()
     {
+        IntegrationTestSetup.RequireLane(HostingLane.Azure);
         IntegrationTestSetup.AssertAvailable("Azurite", AzuriteContainerFixture.StartupError);
     }
 

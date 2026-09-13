@@ -10,7 +10,7 @@
 - Scaffolded domain events publish post-commit best-effort with a random MessageId, with no inbox/idempotency guidance for consumers.
 - No server-side page-size clamp scaffolded; a caller-supplied page size is passed through unbounded.
 - ClientWins is the scaffolded concurrency default, which makes the framework's 409 concurrency-conflict mapping unreachable in practice.
-- No portable/non-Azure hosting lane in the instruction set; every scaffolded provider is Azure-only with no S3/Postgres/OpenAI-compatible arm.
+- Hosting guidance, schema, and proof validation previously lacked the strict NonAzure lane, PostgreSQL JSONB/MongoDB read-model arms, and the shared selector path; addressed by scaffold-ai PR #5.
 - Provider-switch anatomy (enum + config key + env var + resolver + dispatcher, env wins, unknown falls back to default) is not described as a reusable recipe; each scaffold session reinvents it.
 - No runtime/GC profile guidance per host (Server GC vs Workstation GC, DATAS, TieredPGO, ReadyToRun) for the scaffolded host set.
 - No source-generated JSON (`JsonSerializerContext`) guidance for scaffolded hosts; scaffolds default to reflection-based System.Text.Json everywhere.

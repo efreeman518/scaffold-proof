@@ -1,5 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using TaskFlow.Application.Contracts.Storage;
+using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Repositories;
 using Test.Integration.Infrastructure;
@@ -8,7 +11,7 @@ namespace Test.Integration;
 
 /// <summary>
 /// D-038 relational read model against a real database, on whichever provider the lane selected
-/// (TASKFLOW_TEST_DB_PROVIDER). Everything asserted here is provider-generated SQL that cannot be reasoned
+/// (TASKFLOW_LANE). Everything asserted here is provider-generated SQL that cannot be reasoned
 /// about from the C#: the FlexLabs upsert (MERGE / ON CONFLICT), the server-side counter deltas that keep
 /// two concurrent projection events from overwriting each other, and the keyset page whose WHERE clause has
 /// to agree with its ORDER BY or a client silently loses rows.
@@ -22,7 +25,57 @@ public class RelationalTaskViewRepositoryTests
 
     /// <summary>Marks the test Inconclusive when the database container failed to start.</summary>
     [TestInitialize]
-    public void TestSetup() => IntegrationTestSetup.AssertAvailable("SQL", DbContainerFixture.StartupError);
+    public void TestSetup()
+    {
+        IntegrationTestSetup.RequireLane(HostingLane.NonAzure);
+        IntegrationTestSetup.AssertAvailable("PostgreSQL", DbContainerFixture.StartupError);
+    }
+
+    [TestMethod]
+    [Timeout(300000, CooperativeCancellation = true)]
+    public async Task PostgreSqlMigration_ConvertsExistingJsonText_AndPreservesScalarPagingIndex()
+    {
+        if (DbContainerFixture.Provider != TaskFlow.Infrastructure.Data.Provider.TaskFlowDbProvider.PostgreSql)
+            Assert.Inconclusive("PostgreSql lane.");
+
+        var ct = TestContext.CancellationToken;
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("taskviewjsonb");
+        await using var db = DbContainerFixture.CreateTrxnContext(connString);
+        var migrator = db.GetService<IMigrator>();
+        await migrator.MigrateAsync("20260908232538_AddTaskItemEmbedding", ct);
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            INSERT INTO taskflow."TaskView"
+                ("TenantId", "Id", "Title", "Status", "Priority", "IsOverdue", "CommentCount",
+                 "ChecklistTotal", "ChecklistCompleted", "AttachmentCount", "SubTaskCount", "CreatedUtc",
+                 "LastModifiedUtc", "Document")
+            VALUES
+                ('legacy-tenant', 'legacy-id', 'legacy', 'Open', 'Normal', false, 0, 0, 0, 0, 0,
+                 '2026-09-12T12:00:00Z', '2026-09-12T12:00:00Z',
+                 '{{"description":"legacy body","tags":["legacy"]}}');
+            """, ct);
+
+        await migrator.MigrateAsync(null, ct);
+
+        var columnType = await ExecuteScalarAsync(db,
+            "SELECT data_type FROM information_schema.columns WHERE table_schema = 'taskflow' AND table_name = 'TaskView' AND column_name = 'Document'",
+            ct);
+        Assert.AreEqual("jsonb", columnType);
+
+        var indexDefinition = await ExecuteScalarAsync(db,
+            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'taskflow' AND indexname = 'IX_TaskView_TenantId_LastModifiedUtc_Id'",
+            ct);
+        StringAssert.Contains(indexDefinition, "\"TenantId\", \"LastModifiedUtc\" DESC, \"Id\" DESC");
+        Assert.IsFalse(indexDefinition.Contains("gin", StringComparison.OrdinalIgnoreCase));
+
+        await using var read = DbContainerFixture.CreateQueryContext(connString);
+        var repository = new RelationalTaskViewRepository(db, read);
+        var legacy = await repository.GetAsync("legacy-id", "legacy-tenant", ct);
+        Assert.IsNotNull(legacy);
+        Assert.AreEqual("legacy body", legacy.Description);
+        CollectionAssert.AreEqual(new[] { "legacy" }, legacy.Tags);
+    }
 
     [TestMethod]
     [Timeout(300000, CooperativeCancellation = true)]
@@ -258,6 +311,17 @@ public class RelationalTaskViewRepositoryTests
         var write = DbContainerFixture.CreateTrxnContext(connString);
         var read = DbContainerFixture.CreateQueryContext(connString);
         return new RepositoryScope(write, read, new RelationalTaskViewRepository(write, read));
+    }
+
+    private static async Task<string> ExecuteScalarAsync(DbContext context, string sql, CancellationToken ct)
+    {
+        var connection = context.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open)
+            await connection.OpenAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        return (string)(await command.ExecuteScalarAsync(ct)
+            ?? throw new InvalidOperationException("Expected the provider contract query to return one scalar value."));
     }
 
     private sealed record RepositoryScope(

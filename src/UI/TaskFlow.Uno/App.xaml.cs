@@ -10,10 +10,13 @@ public partial class App : Application
     public static IHost? Host { get; private set; }
 
     /// <summary>Initializes app with required dependencies and default state.</summary>
-    public App()
+    public App(string? runtimeGatewayUrl = null)
     {
+        RuntimeGatewayUrl = runtimeGatewayUrl;
         this.InitializeComponent();
     }
+
+    private string? RuntimeGatewayUrl { get; }
 
     /// <summary>Handles launched events for app.</summary>
     protected override async void OnLaunched(LaunchActivatedEventArgs args)

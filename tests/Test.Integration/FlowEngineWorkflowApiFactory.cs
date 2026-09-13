@@ -3,6 +3,7 @@ using EF.FlowEngine.Clients;
 using EF.FlowEngine.Model;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -10,6 +11,12 @@ using Microsoft.Extensions.Logging;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 
+using TaskFlow.Application.Contracts.Storage;
+using TaskFlow.Bootstrapper;
+using TaskFlow.Infrastructure.Data.Messaging;
+using TaskFlow.Infrastructure.Storage;
+using TaskFlow.Infrastructure.Storage.CosmosDb;
+using Test.Integration.Infrastructure;
 using Test.Support;
 using Test.Support.Hosting;
 
@@ -22,11 +29,12 @@ namespace Test.Integration;
 /// workflow JSON seeding, startup migrations) - the workflows are driven by the background engine, not
 /// a synchronous call - and points all three EF contexts at SQL via connection strings.
 ///
-/// Only three seams are swapped to stay deterministic and offline:
+/// Test seams keep the workflow deterministic while strict lane dependencies remain explicit:
 ///  - IChatClient -> a fixed reply, so no Foundry/Azure model is needed;
-///  - the "integration-events" connector -> an in-memory sink, so no Service Bus is needed;
+///  - Azure's unavailable Cosmos/Service Bus data planes -> no-op test adapters after valid registration;
 ///  - the "taskflow-api" self-call connector -> this same in-process server, so workflow writes hit
 ///    the real endpoints (and therefore the real SQL database) that the tests then assert against.
+/// NonAzure uses the assembly's real Redis, RabbitMQ, and SeaweedFS containers.
 /// </summary>
 internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Program>
 {
@@ -46,6 +54,18 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
         "Database__Encryption__LocalKeyBase64",
         "Database__Encryption__BlindIndexKeyBase64",
         "Database__Provider",
+        "DataProtectionKeysFileUrl",
+        "ConnectionStrings__BlobStorage1",
+        "ConnectionStrings__TableStorage1",
+        "ConnectionStrings__CosmosDb1",
+        "ServiceBus1__fullyQualifiedNamespace",
+        "ConnectionStrings__Redis1",
+        "Storage__S3__ServiceUrl",
+        "Storage__S3__PublicServiceUrl",
+        "Storage__S3__AccessKeyId",
+        "Storage__S3__SecretAccessKey",
+        "Messaging__RabbitMq__ConnectionString",
+        "ConnectionStrings__MongoDb1",
     ];
 
     private readonly Func<string, string> _chatReply;
@@ -75,7 +95,8 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
             Environment.SetEnvironmentVariable(key, value);
         }
         // The host must open the same provider as the container the test created the database on.
-        Environment.SetEnvironmentVariable("Database__Provider", TestDbProvider.Current.ToString());
+        Environment.SetEnvironmentVariable("Database__Provider", TestHostingLane.DatabaseProvider.ToString());
+        ConfigureStrictLaneEnvironment();
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -94,7 +115,26 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
             services.RemoveAll<IChatClient>();
             services.AddSingleton<IChatClient>(new FixedChatClient(_chatReply));
 
-            // No Service Bus in tests: stub the message connector the workflows' message nodes use.
+            if (TestHostingLane.Current.Lane == TaskFlow.Hosting.HostingLane.Azure)
+            {
+                // Cosmos and Service Bus have no component emulator in this lane. Their strict endpoint
+                // shapes are validated during registration, then only those two clients are replaced.
+                services.RemoveAll<CosmosClient>();
+                services.RemoveAll<ITaskViewRepository>();
+                services.AddSingleton<ITaskViewRepository, NoOpTaskViewRepository>();
+                services.RemoveAll<IIntegrationEventTransport>();
+                services.AddSingleton<IIntegrationEventTransport, NoOpEventTransport>();
+            }
+
+            // These workflow tests cover engine state and real API/database self-calls. Dedicated transport
+            // tests cover Service Bus and RabbitMQ; replace only the broker connector after strict registration
+            // so this host does not require the Scheduler-owned RabbitMQ topology or a Service Bus emulator.
+            var integrationEventsRegistration = services
+                .Where(IsIntegrationEventsClientRegistration)
+                .SingleOrDefault()
+                ?? throw new InvalidOperationException(
+                    "The strict lane test host did not register its integration-events FlowEngine client.");
+            services.Remove(integrationEventsRegistration);
             services.AddSingleton<IFlowClient>(new DelegatingMessageClient(
                 "integration-events",
                 (_, _) => Task.FromResult(new MessageResult { Sent = true, Outcome = DecisionOutcome.Match })));
@@ -105,6 +145,39 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
             services.AddHttpClient("taskflow-api")
                 .ConfigurePrimaryHttpMessageHandler(() => Server.CreateHandler());
         });
+    }
+
+    private static void ConfigureStrictLaneEnvironment()
+    {
+        if (TestHostingLane.Current.Lane == TaskFlow.Hosting.HostingLane.Azure)
+        {
+            var azurite = AzuriteContainerFixture.ConnectionString;
+            Environment.SetEnvironmentVariable("ConnectionStrings__BlobStorage1", azurite);
+            Environment.SetEnvironmentVariable("ConnectionStrings__TableStorage1", azurite);
+            Environment.SetEnvironmentVariable(
+                "ConnectionStrings__CosmosDb1", "https://taskflow-integration.documents.azure.com:443/");
+            Environment.SetEnvironmentVariable(
+                "ServiceBus1__fullyQualifiedNamespace", "taskflow-integration.servicebus.windows.net");
+            return;
+        }
+
+        Environment.SetEnvironmentVariable("ConnectionStrings__Redis1", RedisContainerFixture.ConnectionString);
+        Environment.SetEnvironmentVariable("Storage__S3__ServiceUrl", SeaweedFsContainerFixture.ServiceUrl);
+        Environment.SetEnvironmentVariable("Storage__S3__PublicServiceUrl", SeaweedFsContainerFixture.ServiceUrl);
+        Environment.SetEnvironmentVariable("Storage__S3__AccessKeyId", SeaweedFsContainerFixture.AccessKey);
+        Environment.SetEnvironmentVariable("Storage__S3__SecretAccessKey", SeaweedFsContainerFixture.SecretKey);
+        Environment.SetEnvironmentVariable(
+            "Messaging__RabbitMq__ConnectionString", RabbitMqBrokerFixture.ConnectionString);
+        if (TestHostingLane.UsesMongoDb)
+            Environment.SetEnvironmentVariable("ConnectionStrings__MongoDb1", MongoDbContainerFixture.ConnectionString);
+    }
+
+    private static bool IsIntegrationEventsClientRegistration(ServiceDescriptor descriptor)
+    {
+        if (descriptor.ServiceType != typeof(IFlowClient)) return false;
+        var methodName = descriptor.ImplementationFactory?.Method.Name;
+        return methodName?.Contains("AddServiceBusClient", StringComparison.Ordinal) == true
+            || methodName?.Contains("AddTaskFlowConnectorClients", StringComparison.Ordinal) == true;
     }
 
     protected override void Dispose(bool disposing)

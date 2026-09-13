@@ -1,6 +1,7 @@
 using Azure.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.AzureAppConfiguration;
+using TaskFlow.Hosting;
 
 namespace TaskFlow.Gateway;
 
@@ -22,6 +23,7 @@ internal static class GatewayAppConfiguration
     internal static IHostApplicationBuilder AddGatewayAppConfiguration(this IHostApplicationBuilder builder)
     {
         var config = builder.Configuration;
+        _ = HostingLaneResolver.Resolve(config);
         var endpoint = config[EndpointConfigKey];
         var connectionString = config.GetConnectionString("AppConfig");
         if (string.IsNullOrWhiteSpace(endpoint) && string.IsNullOrWhiteSpace(connectionString))

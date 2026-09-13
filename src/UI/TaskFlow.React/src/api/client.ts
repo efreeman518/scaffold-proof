@@ -11,9 +11,9 @@ import type {
   TaskItemSummaryDto,
   TaskMetadataDto,
 } from './models'
+import { gatewayBaseUrl } from './runtimeConfig'
 
 const apiVersionRoot = '/api/v1'
-const configuredBaseUrl = (import.meta.env.PROD ? import.meta.env.VITE_API_BASE_URL : '')?.replace(/\/$/, '') ?? ''
 
 /**
  * Error shape used by React Query callers. It preserves ProblemDetails when the API returns
@@ -38,9 +38,7 @@ export function isPreconditionFailed(error: unknown): error is ApiError {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  // Production calls the Aspire-provided gateway URL. Development leaves the origin empty so
-  // Vite proxying can route API traffic without baking a dynamic port into the bundle.
-  const response = await fetch(`${configuredBaseUrl}${path}`, {
+  const response = await fetch(`${gatewayBaseUrl()}${path}`, {
     ...init,
     credentials: 'include',
     headers: {
@@ -242,6 +240,10 @@ export const taskFlowApi = {
 }
 
 export const apiRuntime = {
-  apiRoot: `${configuredBaseUrl}${apiVersionRoot}`,
-  devProxyTarget: import.meta.env.DEV ? import.meta.env.VITE_API_BASE_URL : undefined,
+  get apiRoot() {
+    return `${gatewayBaseUrl()}${apiVersionRoot}`
+  },
+  get devProxyTarget() {
+    return import.meta.env.DEV ? import.meta.env.VITE_API_BASE_URL : undefined
+  },
 }

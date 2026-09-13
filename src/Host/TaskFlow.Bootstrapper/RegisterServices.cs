@@ -16,8 +16,8 @@ public static partial class RegisterServices
 {
     /// <summary>
     /// Registers cross-cutting infrastructure first: request context, persistence, cache,
-    /// Azure service adapters, health checks, and startup tasks. Several adapters fall back
-    /// to no-op implementations when local or cloud resources are absent.
+    /// provider-selected service adapters, health checks, and startup tasks. Strict lane providers
+    /// reject missing core configuration; tests must opt into or register explicit replacements.
     /// </summary>
     public static IServiceCollection RegisterInfrastructureServices(
         this IServiceCollection services, IConfiguration config)

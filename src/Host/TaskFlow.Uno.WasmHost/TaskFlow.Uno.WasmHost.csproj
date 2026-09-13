@@ -22,7 +22,7 @@
     </PropertyGroup>
     <Exec Command="dotnet restore &quot;$(UnoWasmProject)&quot; -p:BuildAllUnoTargets=true -p:EnableUnoWasm=true -p:Configuration=$(Configuration)$(_UseMocksProperty)"
           Timeout="$(UnoWasmRestoreTimeoutMilliseconds)" />
-    <Exec Command="dotnet $(_UnoWasmCommand) &quot;$(UnoWasmProject)&quot; -p:TargetFrameworkOverride=$(UnoWasmTargetFramework) -p:EnableUnoWasm=true -p:Configuration=$(Configuration)$(_UseMocksProperty)$(_UnoWasmPublishProperty) --no-restore -m:1"
+    <Exec Command="dotnet $(_UnoWasmCommand) &quot;$(UnoWasmProject)&quot; --framework $(UnoWasmTargetFramework) -p:TargetFrameworkOverride=$(UnoWasmTargetFramework) -p:EnableUnoWasm=true -p:Configuration=$(Configuration)$(_UseMocksProperty)$(_UnoWasmPublishProperty) --no-restore -m:1"
           Timeout="$(UnoWasmBuildTimeoutMilliseconds)" />
   </Target>
 

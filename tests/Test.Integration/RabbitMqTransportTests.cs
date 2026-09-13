@@ -1,16 +1,21 @@
 using EF.Messaging.RabbitMq;
+using EF.FlowEngine.Clients;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.MessageHandlers.Consumers;
+using TaskFlow.Bootstrapper;
 using TaskFlow.Domain.Shared.Events;
 using TaskFlow.Infrastructure.Data.Interceptors;
 using TaskFlow.Infrastructure.Data.Messaging;
 using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Infrastructure.Messaging.RabbitMq;
+using TaskFlow.Hosting;
 using TaskFlow.Observability.Meters;
 using Test.Integration.Infrastructure;
 using Test.Support;
@@ -28,12 +33,19 @@ namespace Test.Integration;
 [TestCategory("Integration")]
 public sealed class RabbitMqTransportTests
 {
+    [TestInitialize]
+    public void TestSetup()
+    {
+        IntegrationTestSetup.RequireLane(HostingLane.NonAzure);
+        IntegrationTestSetup.AssertAvailable("RabbitMQ", RabbitMqBrokerFixture.StartupError);
+    }
+
     [TestMethod]
     [Timeout(300000, CooperativeCancellation = true)]
     public async Task PublishedOutboxRow_ArrivesOnEveryBoundQueue_AndReadsBackAsItsEnvelope()
     {
         var ct = TestContext.CancellationToken;
-        var broker = await RabbitMqBrokerFixture.EnsureStartedAsync(ct);
+        var broker = RabbitMqBrokerFixture.Container;
 
         await using var provider = BuildProvider(broker, $"transport-{Guid.NewGuid():N}");
         await provider.GetRequiredService<IRabbitMqTopologyDeclarer>()
@@ -82,7 +94,7 @@ public sealed class RabbitMqTransportTests
     public async Task StatusChangedEvent_ReachesOnlyTheProjectionQueue()
     {
         var ct = TestContext.CancellationToken;
-        var broker = await RabbitMqBrokerFixture.EnsureStartedAsync(ct);
+        var broker = RabbitMqBrokerFixture.Container;
 
         await using var provider = BuildProvider(broker, $"routing-{Guid.NewGuid():N}");
         await provider.GetRequiredService<IRabbitMqTopologyDeclarer>()
@@ -112,7 +124,7 @@ public sealed class RabbitMqTransportTests
     public async Task MalformedBody_IsRejectedByTheHandler_BeforeAnyConsumerRuns()
     {
         var ct = TestContext.CancellationToken;
-        var broker = await RabbitMqBrokerFixture.EnsureStartedAsync(ct);
+        var broker = RabbitMqBrokerFixture.Container;
 
         await using var provider = BuildProvider(broker, $"malformed-{Guid.NewGuid():N}");
         await provider.GetRequiredService<IRabbitMqTopologyDeclarer>()
@@ -130,6 +142,82 @@ public sealed class RabbitMqTransportTests
         Assert.IsNotNull(delivered);
         Assert.IsFalse(IntegrationEnvelopeReader.TryRead(delivered.Body.Span, out _, out var failure));
         Assert.AreEqual(IntegrationEnvelopeReader.MalformedReason, failure);
+    }
+
+    [TestMethod]
+    [Timeout(300000, CooperativeCancellation = true)]
+    public async Task FlowEngineIntegrationEventsClient_SucceedsWithoutWorkflowBinding()
+    {
+        var ct = TestContext.CancellationToken;
+        var broker = RabbitMqBrokerFixture.Container;
+
+        await using var provider = BuildProvider(broker, $"flowengine-unbound-{Guid.NewGuid():N}");
+        await provider.GetRequiredService<IRabbitMqTopologyDeclarer>().DeclareAsync(
+            new RabbitMqTopology(
+                [new RabbitMqExchange(TaskFlowRabbitMqTopology.Exchange)],
+                [],
+                []),
+            ct);
+
+        var client = RegisterServices.CreateRabbitMqFlowEngineMessageClient(
+            provider.GetRequiredService<IRabbitMqConnectionMultiplexer>(),
+            provider.GetRequiredService<IOptionsMonitor<RabbitMqOptions>>());
+        var result = await client.SendAsync(new MessageRequest
+        {
+            Subject = $"workflow.unbound.{Guid.NewGuid():N}",
+            Body = JsonSerializer.SerializeToElement(new { taskId = "task-42" }),
+            IdempotencyKey = "task-42-unbound-event"
+        }, ct);
+
+        Assert.IsTrue(result.Sent);
+        Assert.AreEqual("task-42-unbound-event", result.MessageId);
+    }
+
+    [TestMethod]
+    [Timeout(300000, CooperativeCancellation = true)]
+    public async Task FlowEngineIntegrationEventsClient_OptionalBindingReceivesConfirmedPublish()
+    {
+        var ct = TestContext.CancellationToken;
+        var broker = RabbitMqBrokerFixture.Container;
+        var queue = $"taskflow.workflow-message-test-{Guid.NewGuid():N}";
+
+        await using var provider = BuildProvider(broker, $"flowengine-{Guid.NewGuid():N}");
+        await provider.GetRequiredService<IRabbitMqTopologyDeclarer>().DeclareAsync(
+            new RabbitMqTopology(
+                [new RabbitMqExchange(TaskFlowRabbitMqTopology.Exchange)],
+                // RabbitMQ 4 rejects non-exclusive transient queues. This durable test queue is
+                // explicitly deleted in finally and never becomes part of the deployed topology.
+                [new RabbitMqQueue(queue)],
+                [new RabbitMqBinding(queue, TaskFlowRabbitMqTopology.Exchange, "taskitem.triaged")]),
+            ct);
+
+        try
+        {
+            var client = RegisterServices.CreateRabbitMqFlowEngineMessageClient(
+                provider.GetRequiredService<IRabbitMqConnectionMultiplexer>(),
+                provider.GetRequiredService<IOptionsMonitor<RabbitMqOptions>>());
+            using var parent = new Activity("flowengine-live-test").SetIdFormat(ActivityIdFormat.W3C).Start();
+            await client.SendAsync(new MessageRequest
+            {
+                Subject = "taskitem.triaged",
+                Body = JsonSerializer.SerializeToElement(new { taskId = "task-42" }),
+                CorrelationId = "correlation-42",
+                IdempotencyKey = "task-42-triage-event"
+            }, ct);
+
+            var delivered = await GetAsync(broker, queue, ct);
+            Assert.IsNotNull(delivered);
+            Assert.AreEqual("taskitem.triaged", delivered.RoutingKey);
+            Assert.AreEqual("task-42-triage-event", delivered.BasicProperties.MessageId);
+            Assert.AreEqual("correlation-42", delivered.BasicProperties.CorrelationId);
+            Assert.AreEqual("application/json", delivered.BasicProperties.ContentType);
+            Assert.IsNotNull(Header(delivered, "traceparent"));
+            Assert.AreEqual("task-42", JsonDocument.Parse(delivered.Body).RootElement.GetProperty("taskId").GetString());
+        }
+        finally
+        {
+            await DeleteQueueAsync(broker, queue);
+        }
     }
 
     public TestContext TestContext { get; set; } = null!;
@@ -181,6 +269,14 @@ public sealed class RabbitMqTransportTests
         {
             await channel.QueuePurgeAsync(queue, ct);
         }
+    }
+
+    private static async Task DeleteQueueAsync(RabbitMqContainer broker, string queue)
+    {
+        var factory = new ConnectionFactory { Uri = new Uri(broker.GetConnectionString()) };
+        await using var connection = await factory.CreateConnectionAsync();
+        await using var channel = await connection.CreateChannelAsync();
+        await channel.QueueDeleteAsync(queue);
     }
 
     private static string? Header(BasicGetResult delivered, string name)

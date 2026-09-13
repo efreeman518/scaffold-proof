@@ -2,7 +2,7 @@ namespace Test.Unit.Infrastructure;
 
 /// <summary>
 /// Locks the checked deployment ordering and immutable rollback contract for both lanes: the Azure lane
-/// (deploy.yml), the Portable lane (deploy-vps.yml), and the reusable image build both of them call.
+/// (deploy.yml), the NonAzure lane (deploy-vps.yml), and the reusable image build both of them call.
 /// </summary>
 [TestClass]
 [TestCategory("Unit")]
@@ -27,7 +27,28 @@ public sealed class DeploymentWorkflowContractTests
         Assert.IsFalse(workflow.Contains("--query '[0].name'", StringComparison.Ordinal));
         StringAssert.Contains(workflow, "Test-ReleaseManifest.ps1 -Path current/release-manifest.json");
         StringAssert.Contains(workflow, "Expected exactly one Function App matching");
-        StringAssert.Contains(workflow, "expected_swa=\"${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-uno\"");
+        StringAssert.Contains(workflow, "expected_react_swa=\"${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-react\"");
+        StringAssert.Contains(workflow, "expected_uno_swa=\"${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-uno\"");
+        StringAssert.Contains(workflow, "taskflow-react-${{ needs.validate-entry.outputs.sha }}");
+        StringAssert.Contains(workflow, "app-config.json");
+        StringAssert.Contains(workflow, "-ReactUrl");
+        StringAssert.Contains(workflow, "-UnoUrl");
+        StringAssert.Contains(workflow, "az functionapp deployment source config-zip");
+        StringAssert.Contains(workflow, "released-package.zip");
+        Assert.IsFalse(workflow.Contains("azure/functions-action", StringComparison.Ordinal));
+
+        var stableImageLookup = workflow[
+            workflow.IndexOf("name: Keep current runtime images", StringComparison.Ordinal)..
+            workflow.IndexOf("      - id: deploy", StringComparison.Ordinal)];
+        StringAssert.Contains(stableImageLookup, "ResourceNotFound|ResourceGroupNotFound");
+        StringAssert.Contains(stableImageLookup, "cat \"$error_file\" >&2");
+        StringAssert.Contains(stableImageLookup, "return \"$status\"");
+        Assert.AreEqual(4, stableImageLookup.Split("=$(current ").Length - 1);
+        StringAssert.Contains(stableImageLookup, "printf 'gateway=%s\\n' \"$gateway\"");
+        Assert.IsFalse(stableImageLookup.Split('\n').Any(
+            line => line.Contains("echo ", StringComparison.Ordinal) &&
+                    line.Contains("$(current ", StringComparison.Ordinal)));
+        Assert.IsFalse(stableImageLookup.Contains("2>/dev/null ||", StringComparison.Ordinal));
 
         // The image build lives in the reusable workflow now, and both lanes must consume the same one.
         StringAssert.Contains(workflow, "uses: ./.github/workflows/build-images.yml");
@@ -54,10 +75,13 @@ public sealed class DeploymentWorkflowContractTests
         var manifestValidator = File.ReadAllText(
             RepoRoot.Combine("infra", "scripts", "Test-ReleaseManifest.ps1"));
         StringAssert.Contains(manifestValidator, "'^[0-9a-f]{64}$'");
-        // The Portable lane ships no Functions/Uno artifacts, so its manifest is images-only by switch
-        // rather than by a weaker schema.
+        // v1 remains readable for historical release records; v2 is required before a React/Uno release can
+        // name a previous manifest as a rollback target.
         StringAssert.Contains(manifestValidator, "[switch] $ImagesOnly");
-        StringAssert.Contains(manifestValidator, "if (-not $ImagesOnly) {");
+        StringAssert.Contains(manifestValidator, "[int] $ExpectedSchemaVersion");
+        StringAssert.Contains(manifestValidator, "schemaVersion must be 1 or 2");
+        StringAssert.Contains(workflow, "Skipping incompatible v1 release manifest");
+        StringAssert.Contains(workflow, "-ExpectedSchemaVersion 2");
     }
 
     /// <summary>
@@ -83,7 +107,9 @@ public sealed class DeploymentWorkflowContractTests
             "build_image api taskflow-api ./src/Host/TaskFlow.Api/Dockerfile",
             "build_image scheduler taskflow-scheduler ./src/Host/TaskFlow.Scheduler/Dockerfile",
             "build_image migrator taskflow-db-migrator ./src/Host/TaskFlow.DatabaseMigrator/Dockerfile",
-            "build_image blazor taskflow-blazor ./src/UI/TaskFlow.Blazor/Dockerfile"
+            "build_image blazor taskflow-blazor ./src/UI/TaskFlow.Blazor/Dockerfile",
+            "build_image react taskflow-react ./src/UI/TaskFlow.React/Dockerfile",
+            "build_image uno taskflow-uno ./src/UI/TaskFlow.Uno/Dockerfile"
         })
         {
             StringAssert.Contains(workflow, image);
@@ -96,7 +122,7 @@ public sealed class DeploymentWorkflowContractTests
     }
 
     /// <summary>
-    /// D-036: the Portable lane release must be manual, serialized, digest-pinned, verified through the
+    /// D-060/D-036: the NonAzure lane release must be manual, serialized, digest-pinned, verified through the
     /// public edge, and reversible from a recorded manifest without rebuilding anything.
     /// </summary>
     [TestMethod]
@@ -123,6 +149,44 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(workflow, "/healthz/ready");
         StringAssert.Contains(workflow, "previousManifestArtifactId");
         StringAssert.Contains(workflow, "taskflow-release-manifest-vps");
+        StringAssert.Contains(workflow, "'{schemaVersion:2,operation:");
+        StringAssert.Contains(workflow, "-ExpectedSchemaVersion 2");
+        StringAssert.Contains(workflow, "name: Deploy TaskFlow (NonAzure lane, VPS)");
+        Assert.IsFalse(workflow.Contains("Portable lane", StringComparison.Ordinal));
+
+        // .env.base is the only operator-managed source. Generated .env is rebuilt from it and immutable
+        // image pins; a clean VPS receives the current template but deployment never promotes generated
+        // output back into the operator source.
+        StringAssert.Contains(workflow, "deploy/compose/.env.example \"taskflow-vps:~/${REMOTE_DIR}/.env.base.example\"");
+        StringAssert.Contains(workflow, "deploy/compose/pgbouncer/userlist.txt.example");
+        StringAssert.Contains(workflow, "[[ -f .env.base ]]");
+        StringAssert.Contains(workflow, "Refusing deployment while .env.base contains a CHANGE_ME value.");
+        StringAssert.Contains(workflow, "printf 'COMPOSE_PROFILES=%s\\n'");
+        StringAssert.Contains(workflow, "Remove image variables from .env.base; images.env is workflow-managed.");
+        StringAssert.Contains(workflow, "Remove COMPOSE_PROFILES from .env.base; it is derived from provider settings.");
+        Assert.AreEqual(
+            2,
+            System.Text.RegularExpressions.Regex.Matches(workflow, @"^\s+compose_profiles=mongo\r?$", System.Text.RegularExpressions.RegexOptions.Multiline).Count,
+            "deploy and rollback must derive the Mongo profile");
+        Assert.AreEqual(
+            2,
+            System.Text.RegularExpressions.Regex.Matches(workflow, @"^\s+compose_profiles=pooler\r?$", System.Text.RegularExpressions.RegexOptions.Multiline).Count,
+            "deploy and rollback must derive the PgBouncer profile");
+        Assert.AreEqual(
+            2,
+            System.Text.RegularExpressions.Regex.Matches(
+                workflow,
+                System.Text.RegularExpressions.Regex.Escape("compose_profiles=\\\"\\${compose_profiles},pooler\\\"")).Count,
+            "deploy and rollback must combine Mongo and PgBouncer profiles");
+        Assert.AreEqual(
+            2,
+            System.Text.RegularExpressions.Regex.Matches(
+                workflow,
+                @"ReadModel__Provider=\(PostgreSqlJsonb\|Relational\)").Count,
+            "deploy and rollback must leave JSONB and its deprecated alias profile-free");
+        StringAssert.Contains(workflow, "Database__PostgreSql__PoolerMode must be empty, None, or Transaction.");
+        StringAssert.Contains(workflow, "${COMPOSE} config -q");
+        Assert.IsFalse(workflow.Contains("cp .env .env.base", StringComparison.Ordinal));
 
         // Plain ssh with a pinned host key: no third-party action holds a key that can run docker on the box.
         StringAssert.Contains(workflow, "StrictHostKeyChecking yes");
@@ -140,6 +204,102 @@ public sealed class DeploymentWorkflowContractTests
         var rollback = workflow[workflow.IndexOf("  rollback:", StringComparison.Ordinal)..];
         Assert.IsFalse(rollback.Contains("docker buildx build", StringComparison.Ordinal));
         Assert.IsFalse(rollback.Contains("dotnet publish", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void CiWorkflow_UnitGateRunsWholeProjectWithHardHangCeilings()
+    {
+        var workflow = ReadWorkflow("ci.yml");
+        var unitStart = workflow.IndexOf("      - name: Unit Tests", StringComparison.Ordinal);
+        var architectureStart = workflow.IndexOf("      - name: Architecture Tests", StringComparison.Ordinal);
+        Assert.IsGreaterThanOrEqualTo(0, unitStart);
+        Assert.IsGreaterThan(unitStart, architectureStart);
+
+        var unitStep = workflow[unitStart..architectureStart];
+        StringAssert.Contains(unitStep, "timeout-minutes: 1");
+        StringAssert.Contains(unitStep, "timeout --signal=INT --kill-after=5s 50s");
+        StringAssert.Contains(unitStep, "dotnet test tests/Test.Unit/Test.Unit.csproj");
+        StringAssert.Contains(unitStep, "--blame-hang --blame-hang-timeout 15s");
+        Assert.IsFalse(
+            unitStep.Contains("TestCategory=Unit", StringComparison.Ordinal),
+            "The complete Test.Unit project includes untagged provider and regression contracts.");
+        StringAssert.Contains(workflow, "./TestResults/**/*.dmp");
+    }
+
+    [TestMethod]
+    public void CiWorkflow_SeparatesDeterministicTopologyFromManualRunnableFullLanes()
+    {
+        var workflow = ReadWorkflow("ci.yml");
+        var topologyStart = workflow.IndexOf("      - name: Aspire lane topology contracts", StringComparison.Ordinal);
+        var meshStart = workflow.IndexOf("      - name: Aspire Core Lane Mesh Tests (manual)", StringComparison.Ordinal);
+        Assert.IsGreaterThanOrEqualTo(0, topologyStart);
+        Assert.IsGreaterThan(topologyStart, meshStart);
+
+        var topologyStep = workflow[topologyStart..meshStart];
+        StringAssert.Contains(topologyStep, "FullyQualifiedName~AppHostLaneTopologyTests");
+        StringAssert.Contains(topologyStep, "FullyQualifiedName~AppHostMigratorTopologyTests");
+        Assert.IsFalse(topologyStep.Contains("if:", StringComparison.Ordinal),
+            "Deterministic graph contracts must run on pull requests.");
+
+        var fullStart = workflow.IndexOf("  full-lane-acceptance:", StringComparison.Ordinal);
+        var databaseStart = workflow.IndexOf("  database-lanes:", StringComparison.Ordinal);
+        Assert.IsGreaterThanOrEqualTo(0, fullStart);
+        Assert.IsGreaterThan(fullStart, databaseStart);
+        var fullJob = workflow[fullStart..databaseStart];
+
+        StringAssert.Contains(fullJob, "inputs.includeFullAcceptance == true");
+        StringAssert.Contains(fullJob, "runs-on: [self-hosted, workstation]");
+        StringAssert.Contains(fullJob, "TASKFLOW_ASPIRE_FULL_LANE: \"true\"");
+        StringAssert.Contains(fullJob, "TASKFLOW_ASPIRE_SCHEDULER_AVAILABLE: \"true\"");
+        StringAssert.Contains(fullJob, "TASKFLOW_REACT_TESTS_ENABLED: \"true\"");
+        StringAssert.Contains(fullJob, "TASKFLOW_WASM_TESTS_ENABLED: \"true\"");
+        StringAssert.Contains(fullJob, "TASKFLOW_PLAYWRIGHT_TESTS_ENABLED: \"true\"");
+        StringAssert.Contains(fullJob, "dotnet test tests/Test.Aspire/Test.Aspire.csproj");
+        StringAssert.Contains(fullJob, "FullyQualifiedName~AppSurfaceAspireTests");
+        StringAssert.Contains(fullJob, "FullyQualifiedName~OutboxMeshTests");
+        StringAssert.Contains(fullJob, "FullyQualifiedName~FunctionAuditPipelineTests");
+        StringAssert.Contains(fullJob, "dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj");
+        StringAssert.Contains(fullJob, "TestCategory=PlaywrightUI|TestCategory=WasmUI");
+        StringAssert.Contains(fullJob, "Invoke-LaneAcceptance -Lane Azure -ReadModel Cosmos -RunFunctions $true");
+        StringAssert.Contains(fullJob, "Invoke-LaneAcceptance -Lane NonAzure");
+        StringAssert.Contains(fullJob, "-RunFunctions $false");
+        StringAssert.Contains(fullJob, "docker info | Out-Null");
+        StringAssert.Contains(fullJob, "Docker runtime is required for complete lane acceptance.");
+        Assert.IsTrue(
+            System.Text.RegularExpressions.Regex.IsMatch(
+                fullJob,
+                @"docker info \| Out-Null\r?\n\s+if \(\$LASTEXITCODE -ne 0\)"),
+            "Docker failure must be checked before any later command can replace LASTEXITCODE.");
+        StringAssert.Contains(fullJob, "dotnet workload list");
+        StringAssert.Contains(fullJob, "@(\"wasm-tools\") | Where-Object");
+        StringAssert.Contains(fullJob, "Run: dotnet workload install wasm-tools");
+        Assert.IsFalse(fullJob.Contains("dotnet workload install wasm-tools aspire", StringComparison.Ordinal),
+            ".NET 10 Aspire is package-based and has no workload ID.");
+        Assert.IsFalse(
+            System.Text.RegularExpressions.Regex.IsMatch(
+                fullJob,
+                "^\\s+dotnet workload install wasm-tools\\s*$",
+                System.Text.RegularExpressions.RegexOptions.Multiline),
+            "A self-hosted CI job must not mutate machine-wide workloads.");
+        StringAssert.Contains(fullJob, "$azureSelected = \"${{ inputs.lane }}\" -in @(\"both\", \"Azure\")");
+        StringAssert.Contains(fullJob, "if ($azureSelected -and -not (Get-Command func");
+        Assert.IsFalse(fullJob.Contains("runs-on: ubuntu-latest", StringComparison.Ordinal));
+
+        Assert.IsFalse(
+            System.Text.RegularExpressions.Regex.IsMatch(
+                workflow,
+                @"dotnet workload install[^\r\n]*\baspire\b",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase),
+            ".NET 10 Aspire is package-based; no CI job may try to install an Aspire workload.");
+        StringAssert.Contains(workflow, "run: dotnet workload install wasm-tools");
+
+        var databaseLanes = workflow[databaseStart..workflow.IndexOf("  compose-smoke:", StringComparison.Ordinal)];
+        StringAssert.Contains(databaseLanes, "dotnet restore tests/Test.E2E/Test.E2E.csproj -p:Configuration=Release");
+        StringAssert.Contains(databaseLanes, "dotnet restore tests/Test.Integration/Test.Integration.csproj -p:Configuration=Release");
+        Assert.IsFalse(databaseLanes.Contains("dotnet workload install", StringComparison.Ordinal),
+            "Project-scoped database lanes do not build Uno and must not install workloads.");
+        Assert.IsFalse(databaseLanes.Contains("dotnet restore TaskFlow.slnx", StringComparison.Ordinal),
+            "Database lanes must restore only the projects they build.");
     }
 
     /// <summary>
@@ -160,17 +320,11 @@ public sealed class DeploymentWorkflowContractTests
             "ci.yml must not run on push");
         Assert.IsTrue(
             System.Text.RegularExpressions.Regex.IsMatch(workflow, @"^\s*pull_request:\s*$", Multiline));
-        Assert.IsTrue(
-            System.Text.RegularExpressions.Regex.IsMatch(workflow, @"^\s*schedule:\s*$", Multiline));
+        Assert.IsFalse(
+            System.Text.RegularExpressions.Regex.IsMatch(workflow, @"^\s*schedule:\s*$", Multiline),
+            "ci.yml must not spend Actions minutes on scheduled runs.");
         Assert.IsTrue(
             System.Text.RegularExpressions.Regex.IsMatch(workflow, @"^\s*workflow_dispatch:\s*$", Multiline));
-
-        // Monthly, not weekly: GitHub Actions cron has no "last day of month" syntax, so the 28th (the one
-        // day that exists in every month) stands in for it - minimal Actions-minute cost for the deep lanes.
-        Assert.IsTrue(
-            System.Text.RegularExpressions.Regex.IsMatch(
-                workflow, @"^\s*-\s*cron:\s*""17 6 28 \* \*""\s*$", Multiline),
-            "ci.yml must run the deep lane monthly on the 28th at 06:17 UTC.");
 
         // Uno.Sdk conditions implicit package references (DevServer, HotDesign, MCP) on Optimize: a Debug restore
         // followed by a Release --no-restore build fails with UNOB0019, so every restore names the Release configuration.
@@ -189,19 +343,46 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(workflow, "inputs.includeComposeSmoke == true");
         StringAssert.Contains(workflow, "http://localhost/healthz/ready");
         StringAssert.Contains(workflow, "/api/v1/task-items");
+        StringAssert.Contains(workflow, "Verify static UI roots and runtime gateway configuration");
+        StringAssert.Contains(workflow, "check_ui react.localhost");
+        StringAssert.Contains(workflow, "check_ui uno.localhost");
+        StringAssert.Contains(workflow, ".gatewayBaseUrl == $gateway");
 
         var smokeJob = workflow[workflow.IndexOf("  compose-smoke:", StringComparison.Ordinal)..];
         StringAssert.Contains(smokeJob, "runs-on: ubuntu-latest");
+        StringAssert.Contains(smokeJob, "ReadModel__Provider=${{ inputs.nonAzureReadModel }}");
+        StringAssert.Contains(smokeJob, "POSTGRES_DB=taskflowdb");
+        StringAssert.Contains(smokeJob, "POSTGRES_USER=taskflow-ci");
+        StringAssert.Contains(smokeJob, "POSTGRES_PASSWORD=$postgres_password");
+        StringAssert.Contains(smokeJob, "ConnectionStrings__TaskFlowDbContextTrxn=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password");
+        StringAssert.Contains(smokeJob, "ConnectionStrings__TaskFlowDbContextQuery=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password");
+        StringAssert.Contains(smokeJob, "ConnectionStrings__TaskFlowFlowEngineDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password");
+        StringAssert.Contains(smokeJob, "ConnectionStrings__TickerQDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password");
+        StringAssert.Contains(smokeJob, "RABBITMQ_DEFAULT_USER=taskflow-ci");
+        StringAssert.Contains(smokeJob, "RABBITMQ_DEFAULT_PASS=$rabbitmq_password");
+        StringAssert.Contains(smokeJob, "ConnectionStrings__RabbitMq1=amqp://taskflow-ci:$rabbitmq_password@rabbitmq:5672");
+        StringAssert.Contains(smokeJob, "Messaging__RabbitMq__ConnectionString=amqp://taskflow-ci:$rabbitmq_password@rabbitmq:5672");
+        StringAssert.Contains(smokeJob, "REDIS_PASSWORD=$redis_password");
+        StringAssert.Contains(smokeJob, "ConnectionStrings__Redis1=redis:6379,password=$redis_password,abortConnect=false");
+        StringAssert.Contains(smokeJob, "MONGO_INITDB_ROOT_USERNAME=taskflow-ci");
+        StringAssert.Contains(smokeJob, "MONGO_INITDB_ROOT_PASSWORD=$mongo_password");
+        StringAssert.Contains(smokeJob, "ConnectionStrings__MongoDb1=mongodb://taskflow-ci:$mongo_password@mongo:27017/taskflow?authSource=admin");
+        StringAssert.Contains(smokeJob, "openssl rand -hex 24");
+        StringAssert.Contains(smokeJob, "::add-mask::$postgres_password");
+        StringAssert.Contains(smokeJob, "::add-mask::$rabbitmq_password");
+        StringAssert.Contains(smokeJob, "::add-mask::$redis_password");
+        StringAssert.Contains(smokeJob, "::add-mask::$mongo_password");
+        Assert.IsFalse(smokeJob.Contains("taskflow-dev-password", StringComparison.Ordinal));
         StringAssert.Contains(smokeJob, "logs --no-color --tail 400");
         var logDump = smokeJob.IndexOf("Dump stack logs", StringComparison.Ordinal);
         Assert.IsGreaterThan(0, logDump);
         StringAssert.Contains(smokeJob[logDump..], "if: always()");
 
-        // The Aspire mesh lane's own container logs are the only lead into a failure like the 2026-09-08
+        // The manually-dispatched Aspire mesh lane's container logs are the only lead into a failure like the 2026-09-08
         // SqlException pre-login handshake run, where the sql_check health probe stayed Unhealthy with no
         // other explanation on the runner - the diagnostics step must exist, run only after that lane
         // actually ran and failed, and cover both the sql/mssql containers and host memory pressure.
-        var aspireStep = workflow.IndexOf("Aspire Mesh Tests (manual or scheduled, full graph)", StringComparison.Ordinal);
+        var aspireStep = workflow.IndexOf("Aspire Core Lane Mesh Tests (manual)", StringComparison.Ordinal);
         Assert.IsGreaterThan(0, aspireStep);
         StringAssert.Contains(workflow[aspireStep..], "id: aspire_mesh");
         var diagnosticsStep = workflow.IndexOf("Aspire Mesh Diagnostics (on failure)", StringComparison.Ordinal);
@@ -250,7 +431,7 @@ public sealed class DeploymentWorkflowContractTests
     }
 
     /// <summary>
-    /// D-036 compose invariants: only the edge is exposed, Grafana is loopback-only, app containers restart
+    /// D-060/D-036 compose invariants: only the edge is exposed, Grafana is loopback-only, app containers restart
     /// on their own, and the migrator is the single schema owner every app waits on. The app services must
     /// carry no healthcheck - the runtime images are chiseled, so a probe would have no binary to exec.
     /// </summary>
@@ -265,6 +446,76 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(compose, "limits:");
         StringAssert.Contains(compose, "\"127.0.0.1:3000:3000\"");
         StringAssert.Contains(compose, "profiles: [\"pooler\"]");
+        StringAssert.Contains(compose, "Hosting__Lane: NonAzure");
+        StringAssert.Contains(compose, "Database__Provider: PostgreSql");
+        StringAssert.Contains(compose, "Messaging__Provider: RabbitMq");
+        StringAssert.Contains(compose, "Storage__Provider: S3");
+        StringAssert.Contains(compose, "ReadModel__Provider: ${ReadModel__Provider:-PostgreSqlJsonb}");
+        StringAssert.Contains(compose, "Audit__Provider: Relational");
+        StringAssert.Contains(compose, "DataProtection__Persistence: Redis");
+        StringAssert.Contains(compose, "profiles: [\"mongo\"]");
+        StringAssert.Contains(compose, "required: false");
+        StringAssert.Contains(ServiceBlock(compose, "caddy").Text, "REACT_UI_DOMAIN: ${REACT_UI_DOMAIN:");
+        StringAssert.Contains(ServiceBlock(compose, "caddy").Text, "UNO_UI_DOMAIN: ${UNO_UI_DOMAIN:");
+        StringAssert.Contains(ServiceBlock(compose, "caddy").Text, "S3_PUBLIC_DOMAIN: ${S3_PUBLIC_DOMAIN:");
+
+        Assert.IsFalse(compose.Contains("env_file:", StringComparison.Ordinal), "services must receive only explicit settings");
+        foreach (var publicService in new[] { "caddy", "gateway", "blazor", "react", "uno" })
+        {
+            var block = ServiceBlock(compose, publicService).Text;
+            foreach (var sensitiveSetting in new[]
+            {
+                "POSTGRES_PASSWORD", "ConnectionStrings__TaskFlowDbContext", "ConnectionStrings__Redis1",
+                "RabbitMq__ConnectionString", "RABBITMQ_DEFAULT_PASS", "Storage__S3__AccessKeyId",
+                "Storage__S3__SecretAccessKey", "ConnectionStrings__MongoDb1", "Database__Encryption__"
+            })
+            {
+                Assert.IsFalse(block.Contains(sensitiveSetting, StringComparison.Ordinal), $"{publicService}: {sensitiveSetting}");
+            }
+        }
+
+        var migrator = ServiceBlock(compose, "migrator").Text;
+        foreach (var unrelatedSecret in new[] { "Redis1", "RabbitMq", "Storage__S3", "MongoDb1" })
+        {
+            Assert.IsFalse(migrator.Contains(unrelatedSecret, StringComparison.Ordinal), $"migrator: {unrelatedSecret}");
+        }
+        StringAssert.Contains(migrator, "ConnectionStrings__TaskFlowDbContextTrxn");
+        StringAssert.Contains(migrator, "Database__Encryption__LocalKeyBase64");
+        StringAssert.Contains(migrator, "pgbouncer:");
+        StringAssert.Contains(migrator, "required: false");
+
+        var redis = ServiceBlock(compose, "redis").Text;
+        StringAssert.Contains(redis, "--requirepass");
+        StringAssert.Contains(redis, "REDISCLI_AUTH");
+        var mongo = ServiceBlock(compose, "mongo").Text;
+        StringAssert.Contains(mongo, "MONGO_INITDB_ROOT_USERNAME");
+        StringAssert.Contains(mongo, "MONGO_INITDB_ROOT_PASSWORD");
+        StringAssert.Contains(mongo, "--authenticationDatabase admin");
+        StringAssert.Contains(ServiceBlock(compose, "gateway").Text, "<<: *nonazure-providers");
+        foreach (var internalNetwork in new[] { "app", "data", "cache", "telemetry" })
+        {
+            Assert.IsTrue(
+                System.Text.RegularExpressions.Regex.IsMatch(
+                    compose,
+                    $"^  {internalNetwork}:\\r?$\\n    driver: bridge\\r?$\\n    internal: true\\r?$",
+                    System.Text.RegularExpressions.RegexOptions.Multiline),
+                internalNetwork);
+        }
+        var caddy = ServiceBlock(compose, "caddy").Text;
+        StringAssert.Contains(caddy, "      - edge");
+        foreach (var internalNetwork in new[] { "app", "data", "cache", "telemetry" })
+        {
+            Assert.IsFalse(caddy.Contains($"      - {internalNetwork}", StringComparison.Ordinal), internalNetwork);
+        }
+        var api = ServiceBlock(compose, "api").Text;
+        StringAssert.Contains(api, "      - app");
+        Assert.IsFalse(api.Contains("      - edge", StringComparison.Ordinal));
+        foreach (var frontend in new[] { "gateway", "blazor" })
+        {
+            var block = ServiceBlock(compose, frontend).Text;
+            StringAssert.Contains(block, "      - edge");
+            StringAssert.Contains(block, "      - app");
+        }
 
         // Only caddy publishes to the outside world; the one other mapping is Grafana on loopback.
         var published = System.Text.RegularExpressions.Regex
@@ -277,53 +528,236 @@ public sealed class DeploymentWorkflowContractTests
 
         // Chiseled runtime images have no shell and no curl, so the only healthchecks belong to the
         // infrastructure containers and to caddy's own binary.
-        foreach (var appService in new[] { "api", "gateway", "scheduler", "blazor", "migrator" })
+        foreach (var appService in new[] { "api", "gateway", "scheduler", "blazor", "migrator", "react", "uno" })
         {
             Assert.IsFalse(
                 ServiceBlock(compose, appService).Text.Contains("healthcheck:", StringComparison.Ordinal),
                 appService);
         }
 
-        var local = File.ReadAllText(
-            RepoRoot.Combine("deploy", "compose", "docker-compose.override.local.yml"));
-        StringAssert.Contains(local, "pgvector/pgvector:pg17");
-        StringAssert.Contains(local, "rabbitmq:4-management");
-        StringAssert.Contains(local, "quay.io/minio/minio");
-        StringAssert.Contains(local, "pg_isready");
-        StringAssert.Contains(local, "rabbitmq-diagnostics");
-        StringAssert.Contains(local, "\"mc\", \"ready\", \"local\"");
+        var local = File.ReadAllText(RepoRoot.Combine("deploy", "compose", "docker-compose.override.local.yml"));
+        var imageCatalog = File.ReadAllText(RepoRoot.Combine("src", "Shared", "TaskFlow.Hosting", "ContainerImages.cs"));
+        foreach (var (repositoryConstant, repository, tagConstant, tag, imageConstant, composeImage) in new[]
+        {
+            ("PostgreSqlRepository", "pgvector/pgvector", "PostgreSqlTag", "pg18", "PostgreSql", "image: pgvector/pgvector:pg18"),
+            ("RabbitMqRepository", "rabbitmq", "RabbitMqTag", "4-management", "RabbitMq", "image: rabbitmq:4-management"),
+            ("SeaweedFsRepository", "chrislusf/seaweedfs", "SeaweedFsTag", "latest", "SeaweedFs", "image: chrislusf/seaweedfs:latest"),
+            ("MongoDbRepository", "mongo", "MongoDbTag", "8", "MongoDb", "image: mongo:8"),
+            ("RedisRepository", "redis", "RedisTag", "8", "Redis", "image: redis:8")
+        })
+        {
+            StringAssert.Contains(imageCatalog, $"public const string {repositoryConstant} = \"{repository}\";");
+            StringAssert.Contains(imageCatalog, $"public const string {tagConstant} = \"{tag}\";");
+            StringAssert.Contains(imageCatalog, $"public const string {imageConstant} = $\"{{{repositoryConstant}}}:{{{tagConstant}}}\";");
+            StringAssert.Contains(compose, composeImage, $"Compose must match ContainerImages '{imageConstant}'.");
+        }
+
+        StringAssert.Contains(compose, "pg_isready");
+        StringAssert.Contains(compose, "rabbitmq-diagnostics");
+        var seaweedfs = ServiceBlock(compose, "seaweedfs").Text;
+        StringAssert.Contains(seaweedfs, "command: [\"mini\", \"-dir=/data\"]");
+        StringAssert.Contains(seaweedfs, "AWS_ACCESS_KEY_ID: ${Storage__S3__AccessKeyId:");
+        StringAssert.Contains(seaweedfs, "AWS_SECRET_ACCESS_KEY: ${Storage__S3__SecretAccessKey:");
+        StringAssert.Contains(seaweedfs, "http://127.0.0.1:9333/cluster/healthz");
+        var seaweedFixture = File.ReadAllText(
+            RepoRoot.Combine("tests", "Test.Integration", "Infrastructure", "SeaweedFsContainerFixture.cs"));
+        StringAssert.Contains(seaweedFixture, ".WithCommand(\"mini\", \"-dir=/data\")");
+        StringAssert.Contains(seaweedFixture, ".WithEnvironment(\"AWS_ACCESS_KEY_ID\", AccessKey)");
+        StringAssert.Contains(seaweedFixture, ".WithEnvironment(\"AWS_SECRET_ACCESS_KEY\", SecretKey)");
         StringAssert.Contains(local, "- nuget_credentials");
         StringAssert.Contains(local, "environment: NuGetPackageSourceCredentials_efreeman518-github");
 
-        // The environment contract is names only: a committed value here would be a leaked secret.
         var envExample = File.ReadAllText(RepoRoot.Combine("deploy", "compose", ".env.example"));
+        foreach (var setting in new[]
+        {
+            "Hosting__Lane=NonAzure", "Database__Provider=PostgreSql", "Messaging__Provider=RabbitMq",
+            "Storage__Provider=S3", "ReadModel__Provider=PostgreSqlJsonb", "Audit__Provider=Relational",
+            "Search__Provider=Sql", "AiServices__Provider=None", "DataProtection__Persistence=Redis",
+            "Storage__S3__ServiceUrl=http://seaweedfs:8333", "Storage__S3__ForcePathStyle=true"
+        })
+        {
+            StringAssert.Contains(envExample, setting, setting);
+        }
+
         foreach (var name in new[]
         {
-            "TASKFLOW_LANE", "TASKFLOW_STORAGE_PROVIDER", "Database__PostgreSql__PoolerMode",
+            "Database__PostgreSql__PoolerMode", "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD",
+            "REDIS_PASSWORD", "MONGO_INITDB_ROOT_USERNAME", "MONGO_INITDB_ROOT_PASSWORD",
             "ConnectionStrings__TaskFlowDbContextTrxn", "ConnectionStrings__Redis1",
-            "ConnectionStrings__RabbitMq1", "Storage__S3__PublicServiceUrl", "AppConfig__Endpoint",
-            "AZURE_CLIENT_SECRET", "AZURE_CLIENT_CERTIFICATE_PATH", "DataProtectionEncryptionKeyUrl",
-            "Database__Encryption__LocalKeyBase64", "Grpc__TaskFlowRead__Address",
-            "OTEL_EXPORTER_OTLP_ENDPOINT", "CADDY_DOMAIN", "ACME_EMAIL", "TASKFLOW_API_IMAGE"
+            "Messaging__RabbitMq__ConnectionString", "ConnectionStrings__RabbitMq1", "RABBITMQ_DEFAULT_USER",
+            "RABBITMQ_DEFAULT_PASS",
+            "Storage__S3__PublicServiceUrl", "Storage__S3__AccessKeyId", "Storage__S3__SecretAccessKey",
+            "ConnectionStrings__MongoDb1", "Database__Encryption__LocalKeyBase64", "Grpc__TaskFlowRead__Address",
+            "OTEL_EXPORTER_OTLP_ENDPOINT", "CADDY_DOMAIN", "ACME_EMAIL", "GATEWAY_BASE_URL",
+            "REACT_UI_ORIGIN", "UNO_UI_ORIGIN", "REACT_UI_DOMAIN", "UNO_UI_DOMAIN",
+            "S3_PUBLIC_DOMAIN"
         })
         {
             StringAssert.Contains(envExample, $"\n{name}=", name);
         }
 
-        foreach (var line in envExample.Split('\n'))
+        foreach (var name in new[]
         {
-            var trimmed = line.Trim();
-            if (trimmed.Length == 0 || trimmed.StartsWith('#'))
-            {
-                continue;
-            }
-
-            Assert.EndsWith("=", trimmed, $"'{trimmed}' must declare a name without a value.");
+            "POSTGRES_PASSWORD", "ConnectionStrings__TaskFlowDbContextTrxn",
+            "ConnectionStrings__TaskFlowDbContextQuery", "ConnectionStrings__TaskFlowFlowEngineDbContext",
+            "ConnectionStrings__TickerQDbContext", "REDIS_PASSWORD", "ConnectionStrings__Redis1",
+            "RABBITMQ_DEFAULT_PASS", "Messaging__RabbitMq__ConnectionString", "ConnectionStrings__RabbitMq1",
+            "Storage__S3__AccessKeyId", "Storage__S3__SecretAccessKey", "MONGO_INITDB_ROOT_PASSWORD",
+            "Database__Encryption__LocalKeyBase64", "Database__Encryption__BlindIndexKeyBase64"
+        })
+        {
+            var line = envExample.Split('\n').Single(candidate => candidate.StartsWith($"{name}=", StringComparison.Ordinal));
+            StringAssert.Contains(line, "CHANGE_ME_", $"{name} must use an obvious non-production value");
         }
+
+        var nonAzureDeployment = compose + envExample + local;
+        foreach (var azureSetting in new[] { "AppConfig__", "KeyVault__", "AZURE_", "ServiceBus", "Cosmos", "AzureBlob" })
+        {
+            Assert.IsFalse(nonAzureDeployment.Contains(azureSetting, StringComparison.Ordinal), azureSetting);
+        }
+        Assert.IsFalse(nonAzureDeployment.Contains("minio", StringComparison.OrdinalIgnoreCase));
 
         var gitignore = File.ReadAllText(RepoRoot.Combine(".gitignore"));
         StringAssert.Contains(gitignore, "deploy/compose/.env");
+        StringAssert.Contains(gitignore, "deploy/compose/.env.base");
         StringAssert.Contains(gitignore, "deploy/compose/images.env");
+    }
+
+    [TestMethod]
+    public void Caddy_ProbesSeaweedMasterWithoutUnsignedS3Request()
+    {
+        foreach (var name in new[] { "Caddyfile", "Caddyfile.local" })
+        {
+            var caddy = File.ReadAllText(RepoRoot.Combine("deploy", "compose", name));
+            var s3Start = caddy.IndexOf("{$S3_PUBLIC_DOMAIN}", StringComparison.Ordinal);
+            Assert.IsGreaterThanOrEqualTo(0, s3Start, name);
+            var s3Site = caddy[s3Start..];
+
+            StringAssert.Contains(s3Site, "reverse_proxy seaweedfs:8333", name);
+            StringAssert.Contains(s3Site, "health_port 9333", name);
+            StringAssert.Contains(s3Site, "health_uri /cluster/healthz", name);
+            Assert.IsFalse(
+                System.Text.RegularExpressions.Regex.IsMatch(
+                    s3Site,
+                    @"^\s*health_uri\s+/$",
+                    System.Text.RegularExpressions.RegexOptions.Multiline),
+                $"{name} must not probe authenticated S3 root without SigV4.");
+        }
+    }
+
+    [TestMethod]
+    public void AzureBicep_UsesOnlyTheAzureLaneContract()
+    {
+        var bicep = File.ReadAllText(RepoRoot.Combine("infra", "main.bicep"));
+        var functions = File.ReadAllText(RepoRoot.Combine("infra", "modules", "functions.bicep"));
+
+        foreach (var setting in new[]
+        {
+            "{ name: 'Hosting__Lane', value: 'Azure' }",
+            "{ name: 'Database__Provider', value: 'SqlServer' }",
+            "{ name: 'Messaging__Provider', value: 'ServiceBus' }",
+            "{ name: 'Storage__Provider', value: 'AzureBlob' }",
+            "{ name: 'ReadModel__Provider', value: 'Cosmos' }",
+            "{ name: 'Audit__Provider', value: 'AzureTable' }",
+            "{ name: 'DataProtection__Persistence', value: 'AzureBlob' }"
+        })
+        {
+            StringAssert.Contains(bicep, setting, setting);
+            StringAssert.Contains(functions, setting, setting);
+        }
+
+        StringAssert.Contains(bicep, "module blazor 'modules/container-app.bicep'");
+        StringAssert.Contains(bicep, "module reactStaticWebApp 'modules/static-web-app.bicep'");
+        StringAssert.Contains(bicep, "module unoStaticWebApp 'modules/static-web-app.bicep'");
+        StringAssert.Contains(bicep, "{ name: 'Gateway__BaseUrl', value: 'https://${gateway.outputs.fqdn}' }");
+        StringAssert.Contains(bicep, "{ name: 'Search__Provider', value: searchProvider }");
+        StringAssert.Contains(bicep, "param searchProvider string = 'Sql'");
+        StringAssert.Contains(bicep, "{ name: 'ServiceBus1__fullyQualifiedNamespace', value: serviceBus.outputs.namespaceEndpoint }");
+        StringAssert.Contains(functions, "{ name: 'ServiceBus1__fullyQualifiedNamespace', value: serviceBusNamespace }");
+        StringAssert.Contains(functions, "{ name: 'DomainEventsTopic', value: 'DomainEvents' }");
+        Assert.IsFalse(bicep.Contains("SERVICEBUS__fullyQualifiedNamespace", StringComparison.Ordinal));
+        Assert.IsFalse(functions.Contains("SERVICEBUS__fullyQualifiedNamespace", StringComparison.Ordinal));
+
+        var functionTableRbac = bicep[bicep.IndexOf("module funcTableContributor", StringComparison.Ordinal)..];
+        StringAssert.Contains(functionTableRbac, "principalId: functions.outputs.functionAppPrincipalId");
+        StringAssert.Contains(functionTableRbac, "roleDefinitionId: roles.storageTableDataContributor");
+        StringAssert.Contains(bicep, "storageTableEndpoint: storage.outputs.appStorageTableEndpoint");
+        StringAssert.Contains(functions, "{ name: 'ConnectionStrings__TableStorage1', value: storageTableEndpoint }");
+        StringAssert.Contains(functions, "{ name: 'BlobStorage1__blobServiceUri', value: storageBlobEndpoint }");
+        StringAssert.Contains(functions, "{ name: 'BlobStorage1__queueServiceUri', value: storageQueueEndpoint }");
+
+        var apiBlock = bicep[
+            bicep.IndexOf("module api 'modules/container-app.bicep'", StringComparison.Ordinal)..
+            bicep.IndexOf("module scheduler 'modules/container-app.bicep'", StringComparison.Ordinal)];
+        StringAssert.Contains(apiBlock, "{ name: 'ConnectionStrings__TableStorage1', value: storage.outputs.appStorageTableEndpoint }");
+        var apiTableRbac = bicep[bicep.IndexOf("module apiTableContributor", StringComparison.Ordinal)..];
+        StringAssert.Contains(apiTableRbac, "principalId: api.outputs.principalId");
+        StringAssert.Contains(apiTableRbac, "roleDefinitionId: roles.storageTableDataContributor");
+
+        var schedulerBlock = bicep[
+            bicep.IndexOf("module scheduler 'modules/container-app.bicep'", StringComparison.Ordinal)..
+            bicep.IndexOf("module blazor 'modules/container-app.bicep'", StringComparison.Ordinal)];
+        StringAssert.Contains(schedulerBlock, "{ name: 'ConnectionStrings__BlobStorage1', value: storage.outputs.appStorageBlobEndpoint }");
+        StringAssert.Contains(schedulerBlock, "{ name: 'ConnectionStrings__TableStorage1', value: storage.outputs.appStorageTableEndpoint }");
+        StringAssert.Contains(schedulerBlock, "{ name: 'ConnectionStrings__CosmosDb1', value: cosmosDb.outputs.accountEndpoint }");
+        var schedulerBlobRbac = bicep[bicep.IndexOf("module schedulerBlobContributor", StringComparison.Ordinal)..];
+        StringAssert.Contains(schedulerBlobRbac, "principalId: scheduler.outputs.principalId");
+        StringAssert.Contains(schedulerBlobRbac, "roleDefinitionId: roles.storageBlobDataContributor");
+        var schedulerTableRbac = bicep[bicep.IndexOf("module schedulerTableContributor", StringComparison.Ordinal)..];
+        StringAssert.Contains(schedulerTableRbac, "principalId: scheduler.outputs.principalId");
+        StringAssert.Contains(schedulerTableRbac, "roleDefinitionId: roles.storageTableDataContributor");
+        var cosmosRbac = bicep[bicep.IndexOf("module cosmosRbac", StringComparison.Ordinal)..];
+        StringAssert.Contains(cosmosRbac, "scheduler.outputs.principalId");
+
+        foreach (var nonAzureOnlyValue in new[] { "PostgreSql", "RabbitMq", "Storage__S3", "MongoDb" })
+        {
+            Assert.IsFalse(bicep.Contains(nonAzureOnlyValue, StringComparison.Ordinal), nonAzureOnlyValue);
+        }
+    }
+
+    [TestMethod]
+    public void StaticUiDeployment_UsesOneRuntimeGatewayContract()
+    {
+        var reactConfig = File.ReadAllText(RepoRoot.Combine("src", "UI", "TaskFlow.React", "src", "api", "runtimeConfig.ts"));
+        var unoConfig = File.ReadAllText(RepoRoot.Combine("src", "UI", "TaskFlow.Uno.Core", "Client", "RuntimeGatewayConfiguration.cs"));
+        var compose = File.ReadAllText(RepoRoot.Combine("deploy", "compose", "docker-compose.yml"));
+        var caddy = File.ReadAllText(RepoRoot.Combine("deploy", "compose", "Caddyfile"));
+
+        StringAssert.Contains(reactConfig, "/app-config.json");
+        StringAssert.Contains(unoConfig, "gatewayBaseUrl");
+        StringAssert.Contains(compose, "GATEWAY_BASE_URL");
+        StringAssert.Contains(compose, "CorsSettings__AllowedOrigins__2");
+        StringAssert.Contains(caddy, "reverse_proxy react:8080");
+        StringAssert.Contains(caddy, "reverse_proxy uno:8080");
+
+        var reactStaticConfig = File.ReadAllText(
+            RepoRoot.Combine("src", "UI", "TaskFlow.React", "public", "staticwebapp.config.json"));
+        StringAssert.Contains(reactStaticConfig, "navigationFallback");
+        StringAssert.Contains(reactStaticConfig, "/app-config.json");
+
+        foreach (var dockerfile in new[]
+        {
+            RepoRoot.Combine("src", "UI", "TaskFlow.React", "Dockerfile"),
+            RepoRoot.Combine("src", "UI", "TaskFlow.Uno", "Dockerfile")
+        })
+        {
+            var dockerfileText = File.ReadAllText(dockerfile);
+            StringAssert.Contains(dockerfileText, "RUN install -d -o 101 -g 101 /var/cache/nginx/app-config");
+            StringAssert.Contains(dockerfileText, "COPY --chown=101:101 deploy/compose/static/app-config.json.template /var/cache/nginx/app-config/app-config.json");
+            StringAssert.Contains(dockerfileText, "NGINX_ENVSUBST_OUTPUT_DIR=/var/cache/nginx/app-config");
+            Assert.IsFalse(dockerfileText.Contains("COPY --from=build --chown=101:101", StringComparison.Ordinal));
+            Assert.IsFalse(dockerfileText.Contains("COPY --chown=101:101 deploy/compose/static/default.conf", StringComparison.Ordinal));
+            Assert.IsFalse(dockerfileText.Contains("COPY --chown=101:101 deploy/compose/static/app-config.json.template /etc/nginx/templates", StringComparison.Ordinal));
+            Assert.IsFalse(dockerfileText.Contains("RUN touch /usr/share/nginx/html/app-config.json", StringComparison.Ordinal));
+            StringAssert.Contains(dockerfileText, "USER 101");
+        }
+
+        var nginxConfig = File.ReadAllText(RepoRoot.Combine("deploy", "compose", "static", "default.conf"));
+        StringAssert.Contains(nginxConfig, "alias /var/cache/nginx/app-config/app-config.json;");
+
+        var bootstrap = File.ReadAllText(RepoRoot.Combine("infra", "scripts", "bootstrap.ps1"));
+        Assert.IsFalse(bootstrap.Contains("--template-file \"$PSScriptRoot/../main.bicep\"", StringComparison.Ordinal));
+        Assert.IsFalse(bootstrap.Contains("StaticWebAppDefaultHostname", StringComparison.Ordinal));
     }
 
     /// <summary>

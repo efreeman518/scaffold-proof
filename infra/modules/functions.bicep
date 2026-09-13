@@ -7,6 +7,9 @@ param location string
 @description('Functions storage account name')
 param funcStorageAccountName string
 
+@description('Existing Blob container URI used by Flex Consumption OneDeploy')
+param functionDeploymentContainerUri string
+
 @description('Service Bus namespace FQDN')
 param serviceBusNamespace string
 
@@ -16,17 +19,12 @@ param appConfigEndpoint string
 @description('Key Vault URI')
 param keyVaultUri string
 
-@description('Search backend (D-040); PgVector enables the embedding trigger and its subscription')
+@description('Search backend (D-040); Azure AI Search is the Azure opt-in and SQL is the local fallback')
 @allowed([
   'AzureAiSearch'
-  'PgVector'
   'Sql'
 ])
 param searchProvider string = 'AzureAiSearch'
-
-@description('Active database provider (SqlServer or PostgreSql)')
-@allowed(['SqlServer', 'PostgreSql'])
-param databaseProvider string = 'SqlServer'
 
 @description('Primary (read-write) database connection string')
 param dbConnectionString string
@@ -40,11 +38,20 @@ param cosmosEndpoint string
 @description('Storage blob endpoint')
 param storageBlobEndpoint string
 
+@description('Storage queue endpoint used by the Blob trigger for poison blobs')
+param storageQueueEndpoint string
+
+@description('Storage table endpoint')
+param storageTableEndpoint string
+
 @description('Shared Application Insights connection string')
 param appInsightsConnectionString string
 
 @description('Maximum function app instance count (Flex Consumption scale-out ceiling); pair with host.json serviceBus.maxConcurrentCalls')
 param functionAppScaleLimit int = 20
+
+@description('User-assigned managed identity resource ID used for Azure SQL')
+param userAssignedIdentityId string
 
 @description('Tags')
 param tags object = {}
@@ -77,7 +84,10 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
   tags: tags
   kind: 'functionapp,linux'
   identity: {
-    type: 'SystemAssigned'
+    type: 'SystemAssigned, UserAssigned'
+    userAssignedIdentities: {
+      '${userAssignedIdentityId}': {}
+    }
   }
   properties: {
     serverFarmId: flexPlan.id
@@ -85,22 +95,29 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
     siteConfig: {
       appSettings: [
         { name: 'AzureWebJobsStorage', value: funcStorageConnectionString }
-        { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
-        { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'dotnet-isolated' }
-        { name: 'SERVICEBUS__fullyQualifiedNamespace', value: serviceBusNamespace }
+        { name: 'Hosting__Lane', value: 'Azure' }
+        { name: 'Database__Provider', value: 'SqlServer' }
+        { name: 'Messaging__Provider', value: 'ServiceBus' }
+        { name: 'Storage__Provider', value: 'AzureBlob' }
+        { name: 'ReadModel__Provider', value: 'Cosmos' }
+        { name: 'Audit__Provider', value: 'AzureTable' }
+        { name: 'DataProtection__Persistence', value: 'AzureBlob' }
+        { name: 'ServiceBus1__fullyQualifiedNamespace', value: serviceBusNamespace }
+        { name: 'DomainEventsTopic', value: 'DomainEvents' }
         { name: 'AppConfig__Endpoint', value: appConfigEndpoint }
         { name: 'KeyVault__Uri', value: keyVaultUri }
-        { name: 'Database__Provider', value: databaseProvider }
         { name: 'Search__Provider', value: searchProvider }
-        // D-040: the embedding subscription is created only for PgVector (service-bus.bicep). Off any other
-        // arm the trigger is switched off by name rather than removed, the same way D-034 switches off the
-        // Service Bus triggers on the RabbitMq lane, so one deployment can flip providers.
-        { name: 'AzureWebJobs.ProcessTaskEmbedding.Disabled', value: searchProvider == 'PgVector' ? 'false' : 'true' }
+        { name: 'AzureWebJobs.ProcessTaskEmbedding.Disabled', value: 'true' }
         { name: 'ConnectionStrings__TaskFlowDbContextTrxn', value: dbConnectionString }
         { name: 'ConnectionStrings__TaskFlowDbContextQuery', value: dbReadConnectionString }
         { name: 'ConnectionStrings__TaskFlowFlowEngineDbContext', value: dbConnectionString }
         { name: 'ConnectionStrings__CosmosDb1', value: cosmosEndpoint }
-        { name: 'ConnectionStrings__BlobStorage1', value: storageBlobEndpoint }
+        // Azure Functions identity-based Blob bindings require the connection prefix plus blobServiceUri.
+        { name: 'BlobStorage1__blobServiceUri', value: storageBlobEndpoint }
+        { name: 'BlobStorage1__queueServiceUri', value: storageQueueEndpoint }
+        { name: 'BlobStorage1__credential', value: 'managedidentity' }
+        { name: 'AttachmentBlobContainer', value: 'attachments' }
+        { name: 'ConnectionStrings__TableStorage1', value: storageTableEndpoint }
         {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
           value: appInsightsConnectionString
@@ -110,8 +127,25 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'TASKFLOW_SUPPRESS_ASPNETCORE_INSTRUMENTATION', value: 'true' }
       ]
       minTlsVersion: '1.2'
-      ftpsState: 'Disabled'
-      functionAppScaleLimit: functionAppScaleLimit
+    }
+    functionAppConfig: {
+      deployment: {
+        storage: {
+          type: 'blobContainer'
+          value: functionDeploymentContainerUri
+          authentication: {
+            type: 'SystemAssignedIdentity'
+          }
+        }
+      }
+      runtime: {
+        name: 'dotnet-isolated'
+        version: '10.0'
+      }
+      scaleAndConcurrency: {
+        maximumInstanceCount: functionAppScaleLimit
+        instanceMemoryMB: 2048
+      }
     }
   }
 }

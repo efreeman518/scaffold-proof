@@ -658,7 +658,7 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.TaskFlow
 
                     b.Property<string>("Document")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("jsonb");
 
                     b.Property<DateTimeOffset?>("DueDate")
                         .HasColumnType("timestamp with time zone");

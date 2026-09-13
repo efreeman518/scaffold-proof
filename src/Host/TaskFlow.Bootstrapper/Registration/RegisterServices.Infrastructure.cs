@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Infrastructure.Data.Messaging;
+using TaskFlow.Infrastructure.Repositories.MongoDb;
 using TaskFlow.Infrastructure.Storage;
 using TaskFlow.Infrastructure.Storage.CosmosDb;
 
@@ -15,26 +16,32 @@ namespace TaskFlow.Bootstrapper;
 public static partial class RegisterServices
 {
     /// <summary>
-    /// Registers audit persistence when a Table Storage connection exists; otherwise keeps
-    /// audit message handling alive with a no-op repository for local and test hosts.
+    /// Registers the strict Azure audit sink. Missing Table Storage configuration is a startup error.
     /// </summary>
     private static void AddTableStorageServices(IServiceCollection services, IConfiguration config)
     {
-        var connStr = ResolveConnectionString(
+        var connection = ResolveConnectionString(
             config,
             "TableStorage1",
             "Values:TableStorage1",
             "Aspire:Azure:Data:Tables:TableStorage1:ConnectionString");
-        if (string.IsNullOrEmpty(connStr))
-        {
-            services.AddSingleton<IAuditLogRepository, NoOpAuditLogRepository>();
-            return;
-        }
+        if (string.IsNullOrEmpty(connection))
+            throw new InvalidOperationException(
+                $"{AuditProviderConfigKey}=AzureTable requires the TableStorage1 endpoint or connection string.");
 
         services.AddAzureClients(builder =>
         {
-            builder.AddTableServiceClient(connStr)
-                .WithName("TaskFlowTableClient");
+            if (TryGetServiceUri(connection, out var serviceUri))
+            {
+                builder.UseCredential(CreateAzureCredential(config));
+                builder.AddTableServiceClient(serviceUri)
+                    .WithName("TaskFlowTableClient");
+            }
+            else
+            {
+                builder.AddTableServiceClient(connection)
+                    .WithName("TaskFlowTableClient");
+            }
         });
 
         services.Configure<AuditLogStorageSettings>(
@@ -82,28 +89,50 @@ public static partial class RegisterServices
         }
     }
 
+    private static bool TryGetServiceUri(string value, out Uri serviceUri)
+    {
+        if (Uri.TryCreate(value, UriKind.Absolute, out var candidate)
+            && (candidate.Scheme == Uri.UriSchemeHttp || candidate.Scheme == Uri.UriSchemeHttps))
+        {
+            serviceUri = candidate;
+            return true;
+        }
+
+        serviceUri = null!;
+        return false;
+    }
+
+    internal static string? ResolveServiceBusFullyQualifiedNamespace(IConfiguration config) =>
+        config["ServiceBus1:fullyQualifiedNamespace"];
+
     /// <summary>
-    /// Registers attachment blob storage when configured; otherwise a no-op repository keeps
-    /// <see cref="IObjectStorageRepository"/> resolvable so the DI graph still builds (D-037). Upload/download
-    /// endpoints surface a service-level failure from the no-op when this optional dependency is absent.
+    /// Registers the strict Azure object store. Missing Blob Storage configuration is a startup error.
     /// </summary>
     private static void AddBlobStorageServices(IServiceCollection services, IConfiguration config)
     {
-        var connStr = ResolveConnectionString(
+        var connection = ResolveConnectionString(
             config,
             "BlobStorage1",
             "BlobStorage1",
+            "BlobStorage1:blobServiceUri",
             "Values:BlobStorage1");
-        if (string.IsNullOrEmpty(connStr))
-        {
-            services.AddSingleton<IObjectStorageRepository, NoOpBlobStorageRepository>();
-            return;
-        }
+        if (string.IsNullOrEmpty(connection))
+            throw new InvalidOperationException(
+                $"{StorageProviderConfigKey}=AzureBlob requires the BlobStorage1 endpoint or connection string.");
 
         services.AddAzureClients(builder =>
         {
-            builder.AddBlobServiceClient(connStr)
-                .WithName("TaskFlowBlobClient");
+            if (TryGetServiceUri(connection, out var serviceUri))
+            {
+                builder.UseCredential(CreateAzureCredential(config));
+                builder.AddBlobServiceClient(serviceUri)
+                    .WithName("TaskFlowBlobClient");
+            }
+            else
+            {
+                builder.AddBlobServiceClient(connection)
+                    .WithName("TaskFlowBlobClient");
+            }
         });
 
         services.Configure<BlobStorageSettings>(
@@ -113,8 +142,7 @@ public static partial class RegisterServices
     }
 
     /// <summary>
-    /// Registers the Service Bus outbox transport when a namespace is configured; otherwise a transport that
-    /// reports it cannot dispatch, so staged rows stay in the outbox instead of being dropped (D-026).
+    /// Registers the strict Azure Service Bus transport. Missing broker configuration is a startup error.
     /// </summary>
     private static void AddServiceBusServices(IServiceCollection services, IConfiguration config)
     {
@@ -123,44 +151,76 @@ public static partial class RegisterServices
             "ServiceBus1",
             "ServiceBus1",
             "Values:ServiceBus1");
-        if (string.IsNullOrEmpty(connStr))
-        {
-            services.AddSingleton<IIntegrationEventTransport, NoOpEventTransport>();
-            return;
-        }
+        var fullyQualifiedNamespace = ResolveServiceBusFullyQualifiedNamespace(config);
+        if (string.IsNullOrEmpty(connStr) && string.IsNullOrWhiteSpace(fullyQualifiedNamespace))
+            throw new InvalidOperationException(
+                $"{MessagingProviderConfigKey}=ServiceBus requires the ServiceBus1 namespace or connection string.");
 
         services.AddAzureClients(builder =>
         {
-            builder.AddServiceBusClient(connStr)
-                .WithName("TaskFlowSBClient");
+            if (!string.IsNullOrEmpty(connStr))
+            {
+                builder.AddServiceBusClient(connStr)
+                    .WithName("TaskFlowSBClient");
+            }
+            else
+            {
+                builder.UseCredential(CreateAzureCredential(config));
+                builder.AddServiceBusClientWithNamespace(fullyQualifiedNamespace!)
+                    .WithName("TaskFlowSBClient");
+            }
         });
 
         services.AddSingleton<IIntegrationEventTransport, ServiceBusEventTransport>();
     }
 
     /// <summary>
-    /// Registers the denormalized TaskView read model in Cosmos DB when configured.
-    /// The no-op repository preserves API shape when the Cosmos emulator is intentionally skipped.
+    /// Registers the strict Azure Cosmos DB read model. Missing Cosmos configuration is a startup error.
     /// </summary>
     private static void AddCosmosDbServices(IServiceCollection services, IConfiguration config)
     {
-        var connStr = config.GetConnectionString("CosmosDb1");
-        if (string.IsNullOrEmpty(connStr))
+        var connection = config.GetConnectionString("CosmosDb1");
+        if (string.IsNullOrEmpty(connection))
         {
-            services.AddSingleton<ITaskViewRepository, NoOpTaskViewRepository>();
-            return;
+            if (config.GetValue("Testing:UseNoOpCosmosReadModel", false)
+                && IsTestingHost(config))
+            {
+                services.AddSingleton<ITaskViewRepository, NoOpTaskViewRepository>();
+                return;
+            }
+
+            throw new InvalidOperationException(
+                $"{ReadModelProviderConfigKey}=Cosmos requires the CosmosDb1 endpoint or connection string.");
         }
 
         var databaseName = config["Cosmos:TaskViews:DatabaseName"] ?? "taskflow-db";
         var containerName = config["Cosmos:TaskViews:ContainerName"] ?? "task-views";
 
-        services.AddSingleton(_ => new Microsoft.Azure.Cosmos.CosmosClient(connStr, BuildCosmosClientOptions(config)));
+        services.AddSingleton(_ => TryGetServiceUri(connection, out var serviceUri)
+            ? new Microsoft.Azure.Cosmos.CosmosClient(
+                serviceUri.AbsoluteUri,
+                CreateAzureCredential(config),
+                BuildCosmosClientOptions(config))
+            : new Microsoft.Azure.Cosmos.CosmosClient(connection, BuildCosmosClientOptions(config)));
         services.AddSingleton<ITaskViewRepository>(sp =>
             new CosmosTaskViewRepository(
                 sp.GetRequiredService<Microsoft.Azure.Cosmos.CosmosClient>(),
                 sp.GetRequiredService<ILogger<CosmosTaskViewRepository>>(),
                 databaseName,
                 containerName));
+    }
+
+    private static bool IsTestingHost(IConfiguration config)
+    {
+        var dotnetEnvironment = config["DOTNET_ENVIRONMENT"];
+        var aspNetCoreEnvironment = config["ASPNETCORE_ENVIRONMENT"];
+        var oneIsTesting = string.Equals(dotnetEnvironment, "Testing", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(aspNetCoreEnvironment, "Testing", StringComparison.OrdinalIgnoreCase);
+        var neitherConflicts = (string.IsNullOrWhiteSpace(dotnetEnvironment)
+                || string.Equals(dotnetEnvironment, "Testing", StringComparison.OrdinalIgnoreCase))
+            && (string.IsNullOrWhiteSpace(aspNetCoreEnvironment)
+                || string.Equals(aspNetCoreEnvironment, "Testing", StringComparison.OrdinalIgnoreCase));
+        return oneIsTesting && neitherConflicts;
     }
 
     /// <summary>
@@ -197,17 +257,22 @@ public static partial class RegisterServices
         if (!config.GetValue<bool>("HealthChecks:EnableExternalServices", false))
             return;
 
-        if (!string.IsNullOrWhiteSpace(ResolveConnectionString(config, "BlobStorage1", "BlobStorage1", "Values:BlobStorage1")))
+        if (!string.IsNullOrWhiteSpace(ResolveConnectionString(
+                config, "BlobStorage1", "BlobStorage1", "BlobStorage1:blobServiceUri", "Values:BlobStorage1")))
             builder.AddCheck<HealthChecks.BlobStorageHealthCheck>("blob-storage", tags: ["full", "extservice"]);
 
         if (ResolveStorageProvider(config) == StorageProvider.S3)
             builder.AddCheck<HealthChecks.S3StorageHealthCheck>("s3-storage", tags: ["full", "extservice"]);
 
-        if (!string.IsNullOrWhiteSpace(ResolveConnectionString(config, "ServiceBus1", "ServiceBus1", "Values:ServiceBus1")))
+        if (!string.IsNullOrWhiteSpace(ResolveConnectionString(config, "ServiceBus1", "ServiceBus1", "Values:ServiceBus1"))
+            || !string.IsNullOrWhiteSpace(ResolveServiceBusFullyQualifiedNamespace(config)))
             builder.AddCheck<HealthChecks.ServiceBusHealthCheck>("service-bus", tags: ["full", "extservice"]);
 
         if (!string.IsNullOrWhiteSpace(config.GetConnectionString("CosmosDb1")))
             builder.AddCheck<HealthChecks.CosmosDbHealthCheck>("cosmos-db", tags: ["full", "extservice"]);
+
+        if (ResolveReadModelProvider(config) == ReadModelProvider.MongoDb)
+            builder.AddCheck<HealthChecks.MongoDbHealthCheck>("mongodb", tags: ["full", "extservice"]);
 
         if (!string.IsNullOrWhiteSpace(config.GetConnectionString("Redis1")))
             builder.AddCheck<HealthChecks.RedisCacheHealthCheck>("redis-cache", tags: ["full", "extservice"]);

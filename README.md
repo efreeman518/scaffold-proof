@@ -4,7 +4,7 @@ Reference implementation for [Scaffold AI](https://github.com/efreeman518/scaffo
 
 ## Description
 
-**TaskFlow** - a production-grade reference app demonstrating AI-assisted development patterns for a multi-tenant task management system. Built with Clean Architecture and Domain-Driven Design, running local with Aspire, deployable to Azure.
+**TaskFlow** - a production-grade reference app demonstrating AI-assisted development patterns for a multi-tenant task management system. Built with Clean Architecture and Domain-Driven Design, runnable through matching Azure and NonAzure hosting lanes.
 
 ## Architecture
 
@@ -12,12 +12,14 @@ Reference implementation for [Scaffold AI](https://github.com/efreeman518/scaffo
 |-------|------|----------------|
 | Domain | `src/Domain/` | Aggregates, entities, domain events |
 | Application | `src/Application/` | Use cases, service contracts, message handlers |
-| Infrastructure | `src/Infrastructure/` | EF Core, Azure AI, Storage, Repos |
+| Infrastructure | `src/Infrastructure/` | EF Core, AI, storage, messaging, caching, read models, repositories |
 | Host | `src/Host/` | API, Functions, Scheduler, Gateway, Bootstrapper, DatabaseMigrator, Aspire (AppHost + ServiceDefaults), Uno WASM host |
 | UI | `src/UI/` | Blazor, React, and Uno (WASM + mobile) clients |
 | Shared | `src/Shared/` | Dependency-free cross-cutting libraries (e.g. `TaskFlow.Observability`) |
 
-**Azure services:** SQL Server, Cosmos DB, Service Bus, Blob Storage, Azure AI Search, Microsoft Foundry.
+**Azure lane:** SQL Server 2025, Cosmos DB, Service Bus, Blob Storage/Azurite, Azure Table, and Blob Data Protection.
+
+**NonAzure lane:** PostgreSQL 18 with PostgreSQL JSONB read models by default, RabbitMQ 4, SeaweedFS S3 storage, relational audit, and Redis Data Protection. MongoDB 8 is an explicit read-model alternative. Redis 8, DatabaseMigrator, API, Gateway, Scheduler with embedded TickerQ, Blazor, React, and Uno WASM are common to both lanes; Functions is Azure-only.
 
 **Workflow orchestration:** EF.FlowEngine - three AI-driven workflows (`ai-task-triage`, `ai-task-decomposer`, `compliance-check`) with human-in-the-loop, saga compensation, atomic outbox, and agent nodes backed by the Aspire `IChatClient`; Blazor-hosted Dashboard + Designer; admin REST at `/api/flowengine/*`. See [Tech Design Section 14](docs/tech-design.html#14-workflow-orchestration-flowengine).
 
@@ -31,7 +33,7 @@ Multi-tenant (row-level tenancy). Event-driven async via Service Bus. IaC via Bi
 
 - **.NET 10 SDK** - the exact version is pinned by [`global.json`](global.json).
 - **Workloads:** `dotnet workload install wasm-tools aspire` (required for the Uno WASM host and the Aspire AppHost).
-- **Docker-compatible container runtime** (Docker Desktop, headless Docker Engine, or Podman) - no desktop UI is required. The Aspire AppHost runs SQL Server, Azurite, Service Bus, Redis, and Cosmos DB emulators locally, and the container-backed test lanes need published ports reachable from the test process.
+- **Docker-compatible container runtime** (Docker Desktop, headless Docker Engine, or Podman) - no desktop UI is required. Aspire starts only the selected lane: Azure emulators or PostgreSQL/RabbitMQ/SeaweedFS with optional MongoDB, plus common Redis and application services.
 - **Private NuGet feed access:** the `EF.*` (FlowEngine) packages restore from GitHub Packages via the `efreeman518-github` source in [`nuget.config`](nuget.config). Supply a `NUGET_PAT` (a GitHub token with `read:packages`) before restoring.
 - **Local tools:** `dotnet tool restore` restores Stryker.NET and the other tools declared in the tool manifest.
 
@@ -47,11 +49,12 @@ Use the Aspire dashboard to discover the Gateway, API, and Blazor URLs; ports ar
 ### Providers and container runtime
 
 ```powershell
-$env:TASKFLOW_DB_PROVIDER = "PostgreSql"       # runtime DB provider: SqlServer (default) | PostgreSql
-$env:TASKFLOW_TEST_DB_PROVIDER = "PostgreSql"  # container-backed test lanes: SqlServer (default) | PostgreSql
-$env:TASKFLOW_MESSAGING_PROVIDER = "RabbitMq"  # messaging transport: ServiceBus (default) | RabbitMq
+$env:TASKFLOW_LANE = "NonAzure"
+$env:TASKFLOW_READMODEL_PROVIDER = "PostgreSqlJsonb" # default; set MongoDb explicitly for that alternative
 dotnet test tests/Test.Integration/Test.Integration.csproj
 ```
+
+`TASKFLOW_TEST_DB_PROVIDER` remains a deprecated compatibility input for one release. New runtime, Aspire, Testcontainers, and CI orchestration uses `TASKFLOW_LANE` and `TASKFLOW_READMODEL_PROVIDER`.
 
 Docker Desktop and headless Docker Engine work without repository-specific configuration when their published ports are reachable on `localhost`. For Podman on Windows/WSL2, use WSL mirrored networking so DCP's loopback-bound ports reach Windows:
 
@@ -65,16 +68,17 @@ Apply it with `podman machine stop`, `podman machine set --user-mode-networking=
 
 Generated API clients (Blazor Refit, React `openapi-typescript`) regenerate per [`docs/plans/client-generation.md`](docs/plans/client-generation.md).
 
-### Hosting lanes: Azure vs Portable
+### Hosting lanes: Azure vs NonAzure
 
-`TASKFLOW_LANE = Azure | Portable` (default `Azure`) seeds the default of every provider switch below; each switch's own env var or config key still wins over the lane default, and no registration site reads the lane directly (D-035).
+`TASKFLOW_LANE = Azure | NonAzure` defaults to `Azure`. `Portable` is a deprecated input alias for `NonAzure` for one release. Lane-owned core provider conflicts fail fast instead of creating a mixed topology.
 
 ```powershell
-dotnet run --project src/Host/Aspire/AppHost                                     # Azure lane (default): SQL Server/Cosmos/Service Bus/Blob/Azure AI Search emulators
-$env:TASKFLOW_LANE = "Portable"; dotnet run --project src/Host/Aspire/AppHost     # Portable lane: Postgres + RabbitMQ + MinIO, no Azure emulators
+dotnet run --project src/Host/Aspire/AppHost                                      # Azure: SQL Server/Cosmos/Service Bus/Azurite
+$env:TASKFLOW_LANE = "NonAzure"; dotnet run --project src/Host/Aspire/AppHost     # PostgreSQL JSONB/RabbitMQ/SeaweedFS, zero Azure
+$env:TASKFLOW_READMODEL_PROVIDER = "MongoDb"; dotnet run --project src/Host/Aspire/AppHost # explicit MongoDB alternative
 ```
 
-The Portable lane is the non-Azure hosting target: Docker Compose on a single VPS, Caddy as the TLS edge in front of the YARP gateway, PostgreSQL + RabbitMQ + MinIO (S3-compatible object storage) as containers, Azure retained only for Key Vault (DEK wrap, Data Protection key protection) and App Configuration (config + feature flags). The Compose files, environment template, and VPS deploy runbook live under [`deploy/compose/`](deploy/compose/README.md); the Azure IaC counterpart (including the Bicep `pgbouncer` param that mirrors the Portable lane's pooler switch) is in [`infra/README.md`](infra/README.md).
+The NonAzure lane is zero-Azure: non-empty Azure App Configuration and Key Vault service settings are rejected. It uses appsettings/environment configuration, local encryption keys, PostgreSQL, RabbitMQ, SeaweedFS, Redis, and optional MongoDB. Docker Compose places Caddy in front of the same Gateway, Blazor, React, Uno, API, migrator, and Scheduler/TickerQ surfaces as Azure. The Compose files and VPS runbook live under [`deploy/compose/`](deploy/compose/README.md); Azure IaC lives under [`infra/`](infra/README.md).
 
 Every independent provider switch (object storage, read model, audit sink, search, LLM client, Data Protection persistence, Postgres pooler mode) plus its env var, config key, and default is listed in the `Build and test` section of [`AGENTS.md`](AGENTS.md) - that table is the single source, not duplicated here.
 
@@ -137,10 +141,11 @@ The app wires one `Microsoft.Extensions.AI.IChatClient` for every AI demo, inclu
 
 | Mode | How to enable | Model |
 |------|---------------|-------|
-| Foundry Local (on-device, no Azure) | default when Azure Foundry is not configured and `AiServices:DisableFoundryLocal` is false | `qwen2.5-0.5b` |
-| Provision new Azure AI Foundry | set `AiServices:FoundryEndpoint` (config/user-secrets) or `TASKFLOW_USE_AZURE_FOUNDRY=true` with Azure provisioning configured | `FoundryModel.OpenAI.Gpt4oMini` |
+| Foundry Local (on-device, no Azure) | NonAzure lane with `TASKFLOW_AI_PROVIDER=FoundryLocal` | `qwen2.5-0.5b` |
+| OpenAI-compatible endpoint | NonAzure lane with `TASKFLOW_AI_PROVIDER=OpenAICompatible` and its endpoint/key configuration | deployment-specific |
+| Provision new Azure AI Foundry | Azure lane with `TASKFLOW_AI_PROVIDER=AzureInference`, then set `AiServices:FoundryEndpoint` or `TASKFLOW_USE_AZURE_FOUNDRY=true` | `FoundryModel.OpenAI.Gpt4oMini` |
 | Connect to existing Azure AI Foundry | uncomment the `RunAsExisting` block in `AppHost.cs` and set `AiServices:FoundryResourceName` + `AiServices:FoundryResourceGroup` (the `chat` deployment must already exist there) | `FoundryModel.OpenAI.Gpt4oMini` |
-| Disabled | set `AiServices:DisableFoundryLocal=true`, or leave Azure absent and local bootstrap unavailable | no-op `IChatClient` (app boots; demos return "not configured") |
+| Disabled | default for both local lanes; set `TASKFLOW_AI_PROVIDER=None` explicitly when overriding inherited configuration | no-op `IChatClient` (app boots; demos return "not configured") |
 | Publish | always | provisions a real Azure Foundry resource |
 
 ### Run Fully Local With Foundry Local
@@ -148,10 +153,12 @@ The app wires one `Microsoft.Extensions.AI.IChatClient` for every AI demo, inclu
 Use this path when you want the AI demos to call a local model and avoid Azure model calls.
 
 ```powershell
+$env:TASKFLOW_LANE = "NonAzure"
+$env:TASKFLOW_AI_PROVIDER = "FoundryLocal"
 dotnet run --project src/Host/Aspire/AppHost
 ```
 
-The AppHost wires no `chat` resource for local mode. When Azure is absent and `AiServices:DisableFoundryLocal` is false, the bootstrapper uses `Microsoft.AI.Foundry.Local` directly, downloads execution providers and the `qwen2.5-0.5b` model if needed, starts its OpenAI-compatible endpoint at `AiServices:LocalWebUrl` (default `http://127.0.0.1:52415`), records `AiProviderInfo("local")`, and registers it as the shared `IChatClient`. If Foundry Local cannot bootstrap, the bootstrapper logs the failure and falls back to no-op AI with `AiProviderInfo("none")`.
+With the explicit Foundry Local provider, the bootstrapper uses `Microsoft.AI.Foundry.Local`, downloads execution providers and the `qwen2.5-0.5b` model if needed, starts its OpenAI-compatible endpoint at `AiServices:LocalWebUrl` (default `http://127.0.0.1:52415`), records `AiProviderInfo("local")`, and registers it as the shared `IChatClient`. If Foundry Local cannot bootstrap, the bootstrapper logs the failure and follows its configured required/optional startup policy.
 
 Use `qwen2.5-0.5b` because D3, D7, and D9 exercise tool/function calling. First run can be slow because the SDK downloads execution providers and the model into the local Foundry cache.
 
@@ -171,7 +178,7 @@ In this mode the AppHost calls `AddFoundry("foundry").AddDeployment("chat", Foun
 
 ### Run With AI Disabled
 
-Set `AiServices:DisableFoundryLocal=true` to force no-op locally. When no provider is active, the app still boots and registers a no-op `IChatClient`. `GET /api/v1/ai/status` reports `provider: none`, D1-D8 return a "not configured" response instead of calling a model, and D9 can start but schema-constrained FlowEngine agent output is expected to fault because the no-op response is not valid model JSON.
+Leave the lane default or set `TASKFLOW_AI_PROVIDER=None` to force no-op locally. The app still boots and registers a no-op `IChatClient`. `GET /api/v1/ai/status` reports `provider: none`, D1-D8 return a "not configured" response instead of calling a model, and D9 can start but schema-constrained FlowEngine agent output is expected to fault because the no-op response is not valid model JSON.
 
 ### Aspire-backed AI tests
 
@@ -192,25 +199,28 @@ Set `AiServices:DisableFoundryLocal=true` to force no-op locally. When no provid
 
 Scaffold agents should preserve these AI test contracts:
 
-- Provider order is Azure Foundry first, then Foundry Local, then no-op. Azure is active only when Aspire injects `ConnectionStrings:chat` or Azure Foundry config is set. Foundry Local is active when Azure is absent and `AiServices:DisableFoundryLocal=false`.
+- AI defaults to None in both local lanes. AzureInference is Azure-only; OpenAICompatible and FoundryLocal are NonAzure-only. Provider opt-ins must match the selected lane.
 - RID-free suites (`Test.Unit`, `Test.Endpoints`, `Test.Aspire`) do not start native Foundry Local. They use fake clients or `AiServices:DisableFoundryLocal=true`.
 - `Test.FoundryLocal` is the only RID-bound local model lane. Missing runtime and bootstrapped-but-slow model calls are inconclusive. Runtime startup failures after discovery, provider mismatch, no-op fallback, and HTTP/JSON contract failures are red.
 - Code-hosted agent smoke that does not need tools sends `AgentChatRequest.UseTools=false`; the service maps it to `ChatToolMode.None`. Tool-calling tests must request tools explicitly and carry their own timeout budget.
 
 ### CI test lanes
 
-GitHub Actions runs the fast, no-Docker gate on every pull request: Unit, Architecture, Endpoint, and FlowEngine definition tests. PR runs are the merge gate, so there is no separate push trigger. The heavier lanes run automatically on a monthly schedule (28th of the month, 06:17 UTC - the last day that exists in every month, since GitHub Actions cron cannot express "last day of month") and can also be launched on demand through `workflow_dispatch` inputs:
+GitHub Actions runs the fast, no-Docker gate on every pull request: Unit, Architecture, Endpoint, and FlowEngine definition tests. PR runs are the merge gate, so there is no duplicate push-to-main trigger. The full `Test.Unit` project has a 50-second process deadline and 15-second blame-hang diagnostics; a timeout fails the job and uploads TRX, sequence, and dump evidence. All Docker-backed, Aspire, browser, local-model, Compose, and full-stack acceptance runs only through `workflow_dispatch`.
 
-| Input | Test project | Trigger | Notes |
-|-------|--------------|---------|-------|
-| `includeE2E` | `Test.E2E` | Monthly + manual | SQL-backed HTTP workflows; requires Docker |
-| `includeIntegration` | `Test.Integration` | Monthly + manual | SQL + Azurite component tests; requires Docker |
-| `includeAspireMesh` | `Test.Aspire` | Monthly + manual | Full Aspire AppHost graph; CI explicitly opts out Azure Foundry smoke unless configured |
-| `includeFoundryLocal` | `Test.FoundryLocal` | Manual only | RID-bound Foundry Local live smoke; may download local model assets |
-| `includePlaywrightUI` | `Test.PlaywrightUI` | Manual only | Browser smoke path; restores Playwright and React npm packages |
-| `includeFullAcceptance` | Entire solution | Manual only | Unfiltered `dotnet test TaskFlow.slnx --no-build -m:1`; provisions browser/React prerequisites, while the WASM fixture owns restore/build inside its startup deadline |
+| Input | Default | Effect |
+|-------|---------|--------|
+| `lane` | `both` | Runs Azure and NonAzure, or one explicitly selected lane |
+| `nonAzureReadModel` | `PostgreSqlJsonb` | Selects the NonAzure JSONB default; `MongoDb` is explicit |
+| `includeE2E` | `false` | Runs selected Testcontainers-backed HTTP lane(s) |
+| `includeIntegration` | `false` | Runs selected component lane(s) |
+| `includeAspireMesh` | `false` | Runs each selected full Aspire graph |
+| `includeFoundryLocal` | `false` | Runs the NonAzure RID-bound local-model smoke |
+| `includePlaywrightUI` | `false` | Runs Blazor, React, and Uno browser acceptance for each selected lane |
+| `includeFullAcceptance` | `false` | Runs unfiltered serial solution acceptance for each selected lane |
+| `includeComposeSmoke` | `false` | Builds and smokes the NonAzure Compose lane through Caddy |
 
-The monthly run keeps the Docker-backed E2E, Integration, and Aspire lanes green at minimal Actions-minute cost; Foundry Local and Playwright UI stay dispatch-only for cost and flakiness reasons.
+`TASKFLOW_TEST_DB_PROVIDER` remains covered as a deprecated alias, but manual orchestration uses only canonical `TASKFLOW_LANE` and `TASKFLOW_READMODEL_PROVIDER` values.
 
 Unfiltered CI acceptance uses explicit false opt-outs for unavailable Functions, Azure Foundry, Foundry Local, or mobile lanes. Local acceptance does not require AI opt-out flags: absent Azure/Foundry Local resources and bootstrapped-but-slow local generation are inconclusive. Enabled-provider contract failures remain red.
 

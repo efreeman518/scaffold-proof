@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Configuration;
-using TaskFlow.Application.Contracts.Configuration;
+using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Data.Provider;
 
 namespace Test.Unit.Infrastructure;
@@ -25,17 +25,16 @@ public class TaskFlowDbProviderSelectorTests
         Assert.AreEqual(TaskFlowDbProvider.SqlServer, TaskFlowDbProviderSelector.Resolve(Config()));
 
     [TestMethod]
-    public void Resolve_PortableLane_DefaultsToPostgreSql() =>
+    public void Resolve_NonAzureLane_DefaultsToPostgreSql() =>
         Assert.AreEqual(
             TaskFlowDbProvider.PostgreSql,
-            TaskFlowDbProviderSelector.Resolve(Config((HostingLaneSelector.ConfigurationKey, "Portable"))));
+            TaskFlowDbProviderSelector.Resolve(Config((HostingLaneResolver.LaneConfigurationKey, "NonAzure"))));
 
     [TestMethod]
-    public void Resolve_ConfigBeatsLaneDefault() =>
-        Assert.AreEqual(
-            TaskFlowDbProvider.SqlServer,
+    public void Resolve_CrossLaneValue_Throws() =>
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
             TaskFlowDbProviderSelector.Resolve(Config(
-                (HostingLaneSelector.ConfigurationKey, "Portable"),
+                (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
                 (TaskFlowDbProviderSelector.ConfigurationKey, "SqlServer"))));
 
     [TestMethod]
@@ -44,7 +43,6 @@ public class TaskFlowDbProviderSelectorTests
         var ex = Assert.ThrowsExactly<ArgumentException>(() =>
             TaskFlowDbProviderSelector.Resolve(Config((TaskFlowDbProviderSelector.ConfigurationKey, "MySql"))));
         StringAssert.Contains(ex.Message, "SqlServer");
-        StringAssert.Contains(ex.Message, "PostgreSql");
     }
 
     [TestMethod]
@@ -57,7 +55,9 @@ public class TaskFlowDbProviderSelectorTests
         {
             Assert.AreEqual(
                 TaskFlowDbProvider.PostgreSql,
-                TaskFlowDbProviderSelector.Resolve(Config((TaskFlowDbProviderSelector.ConfigurationKey, "SqlServer"))));
+                TaskFlowDbProviderSelector.Resolve(Config(
+                    (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
+                    (TaskFlowDbProviderSelector.ConfigurationKey, "SqlServer"))));
         }
         finally
         {

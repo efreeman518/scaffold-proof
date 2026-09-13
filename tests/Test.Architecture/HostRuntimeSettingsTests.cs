@@ -263,7 +263,7 @@ public class HostRuntimeSettingsTests
 
     /// <summary>
     /// Verifies no deployable host calls UseHttpsRedirection. Every deployment lane terminates TLS at the
-    /// edge (Container Apps ingress in the Azure lane, Caddy in the portable lane, D-036/D-049), so every
+    /// edge (Container Apps ingress in the Azure lane, Caddy in the NonAzure lane, D-036/D-049), so every
     /// host container only ever serves plain http; a reintroduced redirect would 307 the edge's own
     /// health/proxy probes and, on a host with no locally trusted certificate (as TaskFlow.Blazor was before
     /// this rule), break any client that follows the redirect.
@@ -304,6 +304,45 @@ public class HostRuntimeSettingsTests
         StringAssert.Contains(program, "AddServiceDefaults(addHeaderPropagation: false)",
             "Functions background triggers have no HTTP request context, so the inherited header propagation "
             + "handler would break worker gRPC calls used to complete or dead-letter Service Bus messages.");
+    }
+
+    [TestMethod]
+    public void Given_ApiStartupFailure_When_Logged_Then_ProcessFailureIsPreserved()
+    {
+        var program = ReadRepoFile("src/Host/TaskFlow.Api/Program.cs");
+        var catchStart = program.IndexOf("catch (Exception ex)", StringComparison.Ordinal);
+        var finallyStart = program.IndexOf("finally", catchStart, StringComparison.Ordinal);
+
+        Assert.IsTrue(catchStart >= 0 && finallyStart > catchStart, "API must log startup failures.");
+        var catchBlock = program[catchStart..finallyStart];
+        var logged = catchBlock.IndexOf("startupLogger.HostTerminated", StringComparison.Ordinal);
+        var rethrown = catchBlock.IndexOf("throw;", StringComparison.Ordinal);
+        Assert.IsTrue(logged >= 0 && rethrown > logged,
+            "API must rethrow after logging so startup failures produce a nonzero process exit.");
+    }
+
+    /// <summary>
+    /// MongoDB's unique tenant/task index is created by a startup task. Every host that resolves the shared
+    /// projection consumer must finish those tasks before RunAsync activates its transport consumers.
+    /// </summary>
+    [TestMethod]
+    [DataRow("src/Host/TaskFlow.Api/Program.cs")]
+    [DataRow("src/Host/TaskFlow.Scheduler/Program.cs")]
+    [DataRow("src/Host/TaskFlow.Functions/Program.cs")]
+    public void Given_ProjectionConsumingHost_When_Started_Then_ExternalResourcesExistBeforeConsumerActivation(
+        string programPath)
+    {
+        var program = ReadRepoFile(programPath);
+        var applicationRegistration = program.IndexOf(".RegisterApplicationServices(", StringComparison.Ordinal);
+        var build = program.IndexOf("builder.Build()", StringComparison.Ordinal);
+        var provisioning = program.IndexOf("await app.RunStartupTasks()", StringComparison.Ordinal);
+        var activation = program.IndexOf("await app.RunAsync()", StringComparison.Ordinal);
+
+        Assert.IsTrue(applicationRegistration >= 0, $"{programPath} must register TaskProjectionConsumer.");
+        Assert.IsTrue(build >= 0 && build < provisioning,
+            $"{programPath} must build the host before running external-resource startup tasks.");
+        Assert.IsTrue(provisioning < activation,
+            $"{programPath} must provision MongoDB indexes before RunAsync activates projection consumers.");
     }
 
     private static string ReadRepoFile(string relativePath) =>

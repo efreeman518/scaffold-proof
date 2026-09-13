@@ -44,7 +44,22 @@ resource attachmentsContainer 'Microsoft.Storage/storageAccounts/blobServices/co
   }
 }
 
+// The API persists ASP.NET Core Data Protection keys here. Provisioning it in ARM keeps startup
+// read-only with respect to container topology and avoids a data-plane create before Blob RBAC settles.
+resource dataProtectionContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobServices
+  name: 'data-protection'
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 resource tableServices 'Microsoft.Storage/storageAccounts/tableServices@2023-05-01' = {
+  parent: appStorage
+  name: 'default'
+}
+
+resource queueServices 'Microsoft.Storage/storageAccounts/queueServices@2023-05-01' = {
   parent: appStorage
   name: 'default'
 }
@@ -70,8 +85,24 @@ resource funcStorage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   }
 }
 
+resource funcBlobServices 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
+  parent: funcStorage
+  name: 'default'
+}
+
+// Flex Consumption requires an existing Blob container configured as its deployment storage.
+resource functionDeploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: funcBlobServices
+  name: 'function-releases'
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 output appStorageName string = appStorage.name
 output appStorageBlobEndpoint string = appStorage.properties.primaryEndpoints.blob
 output appStorageTableEndpoint string = appStorage.properties.primaryEndpoints.table
+output appStorageQueueEndpoint string = appStorage.properties.primaryEndpoints.queue
 output funcStorageName string = funcStorage.name
 output funcStorageId string = funcStorage.id
+output functionDeploymentContainerUri string = '${funcStorage.properties.primaryEndpoints.blob}function-releases'

@@ -73,6 +73,7 @@ public sealed class AppHostMigratorTopologyTests
     {
         var repoRoot = FindRepoRoot();
         var testAspireRoot = Path.Combine(repoRoot, "tests", "Test.Aspire");
+        var isolatedGraphTests = Path.Combine(testAspireRoot, "AppHostLaneTopologyTests.cs");
         var builderCall = "DistributedApplicationTestingBuilder." + "CreateAsync";
         var matches = Directory
             .EnumerateFiles(testAspireRoot, "*.cs", SearchOption.AllDirectories)
@@ -84,9 +85,17 @@ public sealed class AppHostMigratorTopologyTests
             })
             .Where(match => match.Count > 0)
             .ToArray();
+        var runnableHostMatches = matches
+            .Where(match => !string.Equals(match.Path, isolatedGraphTests, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
 
-        Assert.AreEqual(1, matches.Sum(match => match.Count), string.Join(Environment.NewLine, matches.Select(match => match.Path)));
-        Assert.IsTrue(matches[0].Path.EndsWith(Path.Combine("Test.Aspire", "AspireTestHost.cs"), StringComparison.Ordinal), matches[0].Path);
+        Assert.AreEqual(
+            1,
+            runnableHostMatches.Sum(match => match.Count),
+            string.Join(Environment.NewLine, runnableHostMatches.Select(match => match.Path)));
+        Assert.IsTrue(
+            runnableHostMatches[0].Path.EndsWith(Path.Combine("Test.Aspire", "AspireTestHost.cs"), StringComparison.Ordinal),
+            runnableHostMatches[0].Path);
     }
 
     [TestMethod]

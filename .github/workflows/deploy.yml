@@ -113,6 +113,8 @@ jobs:
       functions-digest: ${{ steps.functions.outputs.artifact-digest }}
       uno-id: ${{ steps.uno.outputs.artifact-id }}
       uno-digest: ${{ steps.uno.outputs.artifact-digest }}
+      react-id: ${{ steps.react.outputs.artifact-id }}
+      react-digest: ${{ steps.react.outputs.artifact-digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -134,6 +136,8 @@ jobs:
           -f net10.0-browserwasm -p:TargetFrameworkOverride=net10.0-browserwasm
           -p:EnableUnoWasm=true -c Release
           -p:PublishDir=${{ github.workspace }}/release/uno -m:1
+      - name: Build React release once
+        run: npm ci --prefix src/UI/TaskFlow.React && npm run build --prefix src/UI/TaskFlow.React && cp -R src/UI/TaskFlow.React/dist ./release/react
       - name: Verify Uno publish contract
         shell: pwsh
         run: |
@@ -154,6 +158,13 @@ jobs:
           path: ./release/uno/wwwroot
           if-no-files-found: error
           retention-days: 90
+      - id: react
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: taskflow-react-${{ needs.validate-entry.outputs.sha }}
+          path: ./release/react
+          if-no-files-found: error
+          retention-days: 90
 
   deploy-infrastructure:
     if: needs.validate-entry.outputs.operation == 'deploy'
@@ -164,8 +175,17 @@ jobs:
       resource-group: ${{ steps.deploy.outputs.resourceGroupName }}
       gateway-fqdn: ${{ steps.deploy.outputs.gatewayFqdn }}
       function-name: ${{ steps.deploy.outputs.functionAppName }}
-      swa-name: ${{ steps.deploy.outputs.staticWebAppName }}
+      react-swa-name: ${{ steps.deploy.outputs.reactStaticWebAppName }}
+      react-swa-hostname: ${{ steps.deploy.outputs.reactStaticWebAppDefaultHostname }}
+      uno-swa-name: ${{ steps.deploy.outputs.unoStaticWebAppName }}
+      uno-swa-hostname: ${{ steps.deploy.outputs.unoStaticWebAppDefaultHostname }}
       migration-job: ${{ steps.deploy.outputs.migrationJobName }}
+      sql-server-fqdn: ${{ steps.deploy.outputs.sqlServerFqdn }}
+      sql-database-name: ${{ steps.deploy.outputs.sqlDatabaseName }}
+      migration-sql-identity-name: ${{ steps.deploy.outputs.migrationSqlIdentityName }}
+      migration-sql-identity-client-id: ${{ steps.deploy.outputs.migrationSqlIdentityClientId }}
+      runtime-sql-identity-name: ${{ steps.deploy.outputs.runtimeSqlIdentityName }}
+      runtime-sql-identity-client-id: ${{ steps.deploy.outputs.runtimeSqlIdentityClientId }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -181,11 +201,38 @@ jobs:
           set -euo pipefail
           rg="${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-rg"
           inert="mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
-          current() { az containerapp show -g "$rg" -n "$1" --query 'properties.template.containers[0].image' -o tsv 2>/dev/null || printf '%s' "$inert"; }
-          echo "gateway=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-gateway")" >> "$GITHUB_OUTPUT"
-          echo "api=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-api")" >> "$GITHUB_OUTPUT"
-          echo "scheduler=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-scheduler")" >> "$GITHUB_OUTPUT"
-          echo "blazor=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-blazor")" >> "$GITHUB_OUTPUT"
+          current() {
+            local name="$1" image status error_file
+            error_file=$(mktemp)
+            if image=$(az containerapp show -g "$rg" -n "$name" --query 'properties.template.containers[0].image' -o tsv 2>"$error_file"); then
+              rm -f "$error_file"
+              [[ -n "$image" ]] || { echo "::error::$name returned an empty image" >&2; return 1; }
+              printf '%s' "$image"
+              return 0
+            else
+              status=$?
+            fi
+            if grep -Eq '(^|[(: ])(ResourceNotFound|ResourceGroupNotFound)([): ]|$)' "$error_file"; then
+              echo "::notice::$name does not exist yet; using the inert first-deploy image" >&2
+              rm -f "$error_file"
+              printf '%s' "$inert"
+              return 0
+            fi
+            echo "::error::Failed to resolve the current image for $name" >&2
+            cat "$error_file" >&2
+            rm -f "$error_file"
+            return "$status"
+          }
+          gateway=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-gateway")
+          api=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-api")
+          scheduler=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-scheduler")
+          blazor=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-blazor")
+          {
+            printf 'gateway=%s\n' "$gateway"
+            printf 'api=%s\n' "$api"
+            printf 'scheduler=%s\n' "$scheduler"
+            printf 'blazor=%s\n' "$blazor"
+          } >> "$GITHUB_OUTPUT"
       - id: deploy
         uses: azure/arm-deploy@a1361c2c2cd398621955b16ca32e01c65ea340f5 # v2
         with:
@@ -194,7 +241,6 @@ jobs:
           template: ./infra/main.bicep
           parameters: >-
             resourcePrefix=${{ env.RESOURCE_PREFIX }} environmentName=${{ env.ENVIRONMENT_NAME }} location=${{ env.AZURE_LOCATION }}
-            sqlAdminPrincipalId=${{ secrets.SQL_ADMIN_PRINCIPAL_ID }} sqlAdminPrincipalName=${{ secrets.SQL_ADMIN_PRINCIPAL_NAME }} sqlAdminPrincipalType=User
             gatewayImage=${{ steps.stable.outputs.gateway }} apiImage=${{ steps.stable.outputs.api }} schedulerImage=${{ steps.stable.outputs.scheduler }}
             migratorImage=${{ needs.build-images.outputs.migrator-image }} blazorImage=${{ steps.stable.outputs.blazor }}
 
@@ -204,11 +250,26 @@ jobs:
     runs-on: ubuntu-latest
     environment: dev
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate-entry.outputs.sha }}
       - uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Install pinned SQL PowerShell client
+        shell: pwsh
+        run: Install-Module SqlServer -RequiredVersion 22.4.5.1 -Repository PSGallery -Scope CurrentUser -Force
+      - name: Provision least-privilege migration identity
+        shell: pwsh
+        run: >-
+          ./infra/scripts/Set-AzureSqlPrincipal.ps1
+          -AccessProfile Migration
+          -ServerName '${{ needs.deploy-infrastructure.outputs.sql-server-fqdn }}'
+          -DatabaseName '${{ needs.deploy-infrastructure.outputs.sql-database-name }}'
+          -IdentityName '${{ needs.deploy-infrastructure.outputs.migration-sql-identity-name }}'
+          -IdentityClientId '${{ needs.deploy-infrastructure.outputs.migration-sql-identity-client-id }}'
       - name: Require successful migration execution
         env:
           JOB: ${{ needs.deploy-infrastructure.outputs.migration-job }}
@@ -222,6 +283,15 @@ jobs:
             sleep 10
           done
           echo "::error::Migration timed out"; exit 1
+      - name: Grant runtime access after migrations
+        shell: pwsh
+        run: >-
+          ./infra/scripts/Set-AzureSqlPrincipal.ps1
+          -AccessProfile Runtime
+          -ServerName '${{ needs.deploy-infrastructure.outputs.sql-server-fqdn }}'
+          -DatabaseName '${{ needs.deploy-infrastructure.outputs.sql-database-name }}'
+          -IdentityName '${{ needs.deploy-infrastructure.outputs.runtime-sql-identity-name }}'
+          -IdentityClientId '${{ needs.deploy-infrastructure.outputs.runtime-sql-identity-client-id }}'
 
   activate-release:
     if: needs.validate-entry.outputs.operation == 'deploy'
@@ -240,6 +310,10 @@ jobs:
         with:
           name: taskflow-uno-${{ needs.validate-entry.outputs.sha }}
           path: ./release/uno
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: taskflow-react-${{ needs.validate-entry.outputs.sha }}
+          path: ./release/react
       - uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
@@ -268,28 +342,65 @@ jobs:
             az containerapp update -n "$app" -g "$RG" --image "$image" --output none
             wait_healthy "$app"
           done
-      - uses: azure/functions-action@c5060b3b8bb1ebbcb531abd00c822ecbaa8ea656 # v1.5.7
-        with:
-          app-name: ${{ needs.deploy-infrastructure.outputs.function-name }}
-          package: ./release/functions
-      - name: Resolve Static Web App token
-        id: swa
+      - name: Deploy Functions through Flex OneDeploy
         env:
-          SWA: ${{ needs.deploy-infrastructure.outputs.swa-name }}
+          FUNCTION_NAME: ${{ needs.deploy-infrastructure.outputs.function-name }}
+          RG: ${{ needs.deploy-infrastructure.outputs.resource-group }}
+        run: |
+          set -euo pipefail
+          (cd ./release/functions && zip -qr ../released-package.zip .)
+          # Flex deployment storage RBAC can lag ARM completion. Keep retries bounded and leave each CLI failure visible.
+          for attempt in {1..6}; do
+            if az functionapp deployment source config-zip -g "$RG" -n "$FUNCTION_NAME" --src ./release/released-package.zip; then
+              exit 0
+            else
+              status=$?
+            fi
+            echo "::warning::OneDeploy attempt ${attempt}/6 failed; Azure RBAC may still be propagating"
+            [[ "$attempt" -lt 6 ]] || exit "$status"
+            sleep 10
+          done
+      - name: Write runtime gateway configuration
+        env:
+          GATEWAY_FQDN: ${{ needs.deploy-infrastructure.outputs.gateway-fqdn }}
+        run: |
+          set -euo pipefail
+          config=$(jq -cn --arg gatewayBaseUrl "https://${GATEWAY_FQDN}" '{gatewayBaseUrl:$gatewayBaseUrl}')
+          printf '%s\n' "$config" > ./release/react/app-config.json
+          printf '%s\n' "$config" > ./release/uno/app-config.json
+      - name: Resolve React Static Web App token
+        id: react-swa
+        env:
+          SWA: ${{ needs.deploy-infrastructure.outputs.react-swa-name }}
           RG: ${{ needs.deploy-infrastructure.outputs.resource-group }}
         run: |
           token=$(az staticwebapp secrets list -n "$SWA" -g "$RG" --query properties.apiKey -o tsv)
           echo "::add-mask::$token"; echo "token=$token" >> "$GITHUB_OUTPUT"
       - uses: Azure/static-web-apps-deploy@1a947af9992250f3bc2e68ad0754c0b0c11566c9 # v1
         with:
-          azure_static_web_apps_api_token: ${{ steps.swa.outputs.token }}
+          azure_static_web_apps_api_token: ${{ steps.react-swa.outputs.token }}
+          action: upload
+          app_location: ./release/react
+          skip_app_build: true
+          skip_api_build: true
+      - name: Resolve Uno Static Web App token
+        id: uno-swa
+        env:
+          SWA: ${{ needs.deploy-infrastructure.outputs.uno-swa-name }}
+          RG: ${{ needs.deploy-infrastructure.outputs.resource-group }}
+        run: |
+          token=$(az staticwebapp secrets list -n "$SWA" -g "$RG" --query properties.apiKey -o tsv)
+          echo "::add-mask::$token"; echo "token=$token" >> "$GITHUB_OUTPUT"
+      - uses: Azure/static-web-apps-deploy@1a947af9992250f3bc2e68ad0754c0b0c11566c9 # v1
+        with:
+          azure_static_web_apps_api_token: ${{ steps.uno-swa.outputs.token }}
           action: upload
           app_location: ./release/uno
           skip_app_build: true
           skip_api_build: true
-      - name: Verify public health and functional CRUD
+      - name: Verify public health, static UIs, and functional CRUD
         shell: pwsh
-        run: ./infra/scripts/Invoke-DeploymentSmoke.ps1 -GatewayUrl 'https://${{ needs.deploy-infrastructure.outputs.gateway-fqdn }}' -CommitSha '${{ needs.validate-entry.outputs.sha }}'
+        run: ./infra/scripts/Invoke-DeploymentSmoke.ps1 -GatewayUrl 'https://${{ needs.deploy-infrastructure.outputs.gateway-fqdn }}' -ReactUrl 'https://${{ needs.deploy-infrastructure.outputs.react-swa-hostname }}' -UnoUrl 'https://${{ needs.deploy-infrastructure.outputs.uno-swa-hostname }}' -CommitSha '${{ needs.validate-entry.outputs.sha }}'
 
   record-release:
     if: needs.validate-entry.outputs.operation == 'deploy'
@@ -310,13 +421,26 @@ jobs:
           FUNCTIONS_DIGEST: ${{ needs.build-release.outputs.functions-digest }}
           UNO_ID: ${{ needs.build-release.outputs.uno-id }}
           UNO_DIGEST: ${{ needs.build-release.outputs.uno-digest }}
+          REACT_ID: ${{ needs.build-release.outputs.react-id }}
+          REACT_DIGEST: ${{ needs.build-release.outputs.react-digest }}
         run: |
-          previous=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/artifacts" -f name=taskflow-release-manifest-dev -f per_page=100 \
+          candidate=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/artifacts" -f name=taskflow-release-manifest-dev -f per_page=100 \
             --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .id // empty')
+          previous=null
+          if [[ -n "$candidate" ]]; then
+            mkdir -p previous
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${candidate}/zip" > previous.zip
+            unzip -q previous.zip -d previous
+            if pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path previous/release-manifest.json -ExpectedSchemaVersion 2; then
+              previous=$candidate
+            else
+              echo "Skipping incompatible v1 release manifest $candidate as rollback target."
+            fi
+          fi
           jq -n --arg sha "$SHA" --arg gateway "$GATEWAY" --arg api "$API" --arg scheduler "$SCHEDULER" --arg migrator "$MIGRATOR" --arg blazor "$BLAZOR" \
-            --argjson fid "$FUNCTIONS_ID" --arg fd "$FUNCTIONS_DIGEST" --argjson uid "$UNO_ID" --arg ud "$UNO_DIGEST" --argjson previous "${previous:-null}" \
-            '{schemaVersion:1,operation:"deploy",commitSha:$sha,images:{gateway:$gateway,api:$api,scheduler:$scheduler,migrator:$migrator,blazor:$blazor},artifacts:{functions:{id:$fid,digest:$fd},uno:{id:$uid,digest:$ud}},previousManifestArtifactId:$previous}' > release-manifest.json
-          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path release-manifest.json
+            --argjson fid "$FUNCTIONS_ID" --arg fd "$FUNCTIONS_DIGEST" --argjson rid "$REACT_ID" --arg rd "$REACT_DIGEST" --argjson uid "$UNO_ID" --arg ud "$UNO_DIGEST" --argjson previous "$previous" \
+            '{schemaVersion:2,operation:"deploy",commitSha:$sha,images:{gateway:$gateway,api:$api,scheduler:$scheduler,migrator:$migrator,blazor:$blazor},artifacts:{functions:{id:$fid,digest:$fd},react:{id:$rid,digest:$rd},uno:{id:$uid,digest:$ud}},previousManifestArtifactId:$previous}' > release-manifest.json
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path release-manifest.json -ExpectedSchemaVersion 2
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: taskflow-release-manifest-dev
@@ -340,6 +464,8 @@ jobs:
       functions-digest: ${{ steps.release.outputs.functions-digest }}
       uno-id: ${{ steps.release.outputs.uno-id }}
       uno-digest: ${{ steps.release.outputs.uno-digest }}
+      react-id: ${{ steps.release.outputs.react-id }}
+      react-digest: ${{ steps.release.outputs.react-digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: release
@@ -353,12 +479,12 @@ jobs:
           [[ -n "$current" ]] || { echo "::error::No current release manifest"; exit 1; }
           gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${current}/zip" > current.zip
           unzip -q current.zip -d current
-          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path current/release-manifest.json
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path current/release-manifest.json -ExpectedSchemaVersion 2
           previous=$(jq -r '.previousManifestArtifactId // empty' current/release-manifest.json)
           [[ -n "$previous" ]] || { echo "::error::No previous release manifest"; exit 1; }
           gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${previous}/zip" > previous.zip
           unzip -q previous.zip -d previous
-          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path previous/release-manifest.json
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path previous/release-manifest.json -ExpectedSchemaVersion 2
           m=previous/release-manifest.json
           echo "current-id=$current" >> "$GITHUB_OUTPUT"
           echo "sha=$(jq -r .commitSha "$m")" >> "$GITHUB_OUTPUT"
@@ -367,6 +493,8 @@ jobs:
           echo "functions-digest=$(jq -r .artifacts.functions.digest "$m")" >> "$GITHUB_OUTPUT"
           echo "uno-id=$(jq -r .artifacts.uno.id "$m")" >> "$GITHUB_OUTPUT"
           echo "uno-digest=$(jq -r .artifacts.uno.digest "$m")" >> "$GITHUB_OUTPUT"
+          echo "react-id=$(jq -r .artifacts.react.id "$m")" >> "$GITHUB_OUTPUT"
+          echo "react-digest=$(jq -r .artifacts.react.digest "$m")" >> "$GITHUB_OUTPUT"
 
   rollback:
     if: needs.validate-entry.outputs.operation == 'rollback'
@@ -386,6 +514,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           FUNCTIONS_ID: ${{ needs.resolve-rollback.outputs.functions-id }}
           UNO_ID: ${{ needs.resolve-rollback.outputs.uno-id }}
+          REACT_ID: ${{ needs.resolve-rollback.outputs.react-id }}
         run: |
           set -euo pipefail
           rg="${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-rg"
@@ -397,17 +526,23 @@ jobs:
             exit 1
           }
           function="${functions[0]}"
-          expected_swa="${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-uno"
-          swa=$(az staticwebapp show -g "$rg" -n "$expected_swa" --query name -o tsv)
+          expected_react_swa="${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-react"
+          expected_uno_swa="${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-uno"
+          react_swa=$(az staticwebapp show -g "$rg" -n "$expected_react_swa" --query name -o tsv)
+          uno_swa=$(az staticwebapp show -g "$rg" -n "$expected_uno_swa" --query name -o tsv)
+          react_fqdn=$(az staticwebapp show -g "$rg" -n "$expected_react_swa" --query defaultHostname -o tsv)
+          uno_fqdn=$(az staticwebapp show -g "$rg" -n "$expected_uno_swa" --query defaultHostname -o tsv)
           fqdn=$(az containerapp show -n "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-gateway" -g "$rg" --query properties.configuration.ingress.fqdn -o tsv)
-          [[ "$swa" == "$expected_swa" && -n "$fqdn" ]]
-          echo "rg=$rg" >> "$GITHUB_OUTPUT"; echo "function=$function" >> "$GITHUB_OUTPUT"; echo "swa=$swa" >> "$GITHUB_OUTPUT"; echo "fqdn=$fqdn" >> "$GITHUB_OUTPUT"
-          mkdir -p rollback/functions rollback/uno
+          [[ "$react_swa" == "$expected_react_swa" && "$uno_swa" == "$expected_uno_swa" && -n "$react_fqdn" && -n "$uno_fqdn" && -n "$fqdn" ]]
+          echo "rg=$rg" >> "$GITHUB_OUTPUT"; echo "function=$function" >> "$GITHUB_OUTPUT"; echo "react-swa=$react_swa" >> "$GITHUB_OUTPUT"; echo "uno-swa=$uno_swa" >> "$GITHUB_OUTPUT"; echo "react-fqdn=$react_fqdn" >> "$GITHUB_OUTPUT"; echo "uno-fqdn=$uno_fqdn" >> "$GITHUB_OUTPUT"; echo "fqdn=$fqdn" >> "$GITHUB_OUTPUT"
+          mkdir -p rollback/functions rollback/react rollback/uno
           gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${FUNCTIONS_ID}/zip" > functions.zip
           gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${UNO_ID}/zip" > uno.zip
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${REACT_ID}/zip" > react.zip
           echo "${{ needs.resolve-rollback.outputs.functions-digest }}  functions.zip" | sha256sum --check --status
           echo "${{ needs.resolve-rollback.outputs.uno-digest }}  uno.zip" | sha256sum --check --status
-          unzip -q functions.zip -d rollback/functions; unzip -q uno.zip -d rollback/uno
+          echo "${{ needs.resolve-rollback.outputs.react-digest }}  react.zip" | sha256sum --check --status
+          unzip -q functions.zip -d rollback/functions; unzip -q react.zip -d rollback/react; unzip -q uno.zip -d rollback/uno
       - name: Activate recorded images without rebuilding or migrating
         env:
           RG: ${{ steps.resources.outputs.rg }}
@@ -434,27 +569,63 @@ jobs:
             wait_healthy "$app"
           done
           az containerapp job update -n "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-dbmigrator" -g "$RG" --image "$MIGRATOR" --output none
-      - uses: azure/functions-action@c5060b3b8bb1ebbcb531abd00c822ecbaa8ea656 # v1.5.7
-        with:
-          app-name: ${{ steps.resources.outputs.function }}
-          package: ./rollback/functions
-      - id: swa
+      - name: Deploy recorded Functions package through Flex OneDeploy
         env:
-          SWA: ${{ steps.resources.outputs.swa }}
+          FUNCTION_NAME: ${{ steps.resources.outputs.function }}
+          RG: ${{ steps.resources.outputs.rg }}
+        run: |
+          set -euo pipefail
+          (cd ./rollback/functions && zip -qr ../released-package.zip .)
+          # Flex deployment storage RBAC can lag resource recovery. Keep retries bounded and leave each CLI failure visible.
+          for attempt in {1..6}; do
+            if az functionapp deployment source config-zip -g "$RG" -n "$FUNCTION_NAME" --src ./rollback/released-package.zip; then
+              exit 0
+            else
+              status=$?
+            fi
+            echo "::warning::Rollback OneDeploy attempt ${attempt}/6 failed; Azure RBAC may still be propagating"
+            [[ "$attempt" -lt 6 ]] || exit "$status"
+            sleep 10
+          done
+      - name: Write rollback runtime gateway configuration
+        env:
+          GATEWAY_FQDN: ${{ steps.resources.outputs.fqdn }}
+        run: |
+          set -euo pipefail
+          config=$(jq -cn --arg gatewayBaseUrl "https://${GATEWAY_FQDN}" '{gatewayBaseUrl:$gatewayBaseUrl}')
+          printf '%s\n' "$config" > ./rollback/react/app-config.json
+          printf '%s\n' "$config" > ./rollback/uno/app-config.json
+      - id: react-swa
+        env:
+          SWA: ${{ steps.resources.outputs.react-swa }}
           RG: ${{ steps.resources.outputs.rg }}
         run: |
           token=$(az staticwebapp secrets list -n "$SWA" -g "$RG" --query properties.apiKey -o tsv)
           echo "::add-mask::$token"; echo "token=$token" >> "$GITHUB_OUTPUT"
       - uses: Azure/static-web-apps-deploy@1a947af9992250f3bc2e68ad0754c0b0c11566c9 # v1
         with:
-          azure_static_web_apps_api_token: ${{ steps.swa.outputs.token }}
+          azure_static_web_apps_api_token: ${{ steps.react-swa.outputs.token }}
+          action: upload
+          app_location: ./rollback/react
+          skip_app_build: true
+          skip_api_build: true
+      - id: uno-swa
+        env:
+          SWA: ${{ steps.resources.outputs.uno-swa }}
+          RG: ${{ steps.resources.outputs.rg }}
+        run: |
+          token=$(az staticwebapp secrets list -n "$SWA" -g "$RG" --query properties.apiKey -o tsv)
+          echo "::add-mask::$token"; echo "token=$token" >> "$GITHUB_OUTPUT"
+      - uses: Azure/static-web-apps-deploy@1a947af9992250f3bc2e68ad0754c0b0c11566c9 # v1
+        with:
+          azure_static_web_apps_api_token: ${{ steps.uno-swa.outputs.token }}
           action: upload
           app_location: ./rollback/uno
           skip_app_build: true
           skip_api_build: true
-      - name: Verify rollback health and functional CRUD
+      - name: Verify rollback health, static UIs, and functional CRUD
         shell: pwsh
-        run: ./infra/scripts/Invoke-DeploymentSmoke.ps1 -GatewayUrl 'https://${{ steps.resources.outputs.fqdn }}' -CommitSha '${{ needs.resolve-rollback.outputs.sha }}'
+        run: ./infra/scripts/Invoke-DeploymentSmoke.ps1 -GatewayUrl 'https://${{ steps.resources.outputs.fqdn }}' -ReactUrl 'https://${{ steps.resources.outputs.react-fqdn }}' -UnoUrl 'https://${{ steps.resources.outputs.uno-fqdn }}' -CommitSha '${{ needs.resolve-rollback.outputs.sha }}'
 
   record-rollback:
     if: needs.validate-entry.outputs.operation == 'rollback'
@@ -474,12 +645,14 @@ jobs:
           FUNCTIONS_DIGEST: ${{ needs.resolve-rollback.outputs.functions-digest }}
           UNO_ID: ${{ needs.resolve-rollback.outputs.uno-id }}
           UNO_DIGEST: ${{ needs.resolve-rollback.outputs.uno-digest }}
+          REACT_ID: ${{ needs.resolve-rollback.outputs.react-id }}
+          REACT_DIGEST: ${{ needs.resolve-rollback.outputs.react-digest }}
           PREVIOUS_ID: ${{ needs.resolve-rollback.outputs.current-id }}
         run: |
           jq -n --arg sha "$SHA" --arg gateway "$GATEWAY" --arg api "$API" --arg scheduler "$SCHEDULER" --arg migrator "$MIGRATOR" --arg blazor "$BLAZOR" \
-            --argjson fid "$FUNCTIONS_ID" --arg fd "$FUNCTIONS_DIGEST" --argjson uid "$UNO_ID" --arg ud "$UNO_DIGEST" --argjson previous "$PREVIOUS_ID" \
-            '{schemaVersion:1,operation:"rollback",commitSha:$sha,images:{gateway:$gateway,api:$api,scheduler:$scheduler,migrator:$migrator,blazor:$blazor},artifacts:{functions:{id:$fid,digest:$fd},uno:{id:$uid,digest:$ud}},previousManifestArtifactId:$previous}' > release-manifest.json
-          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path release-manifest.json
+            --argjson fid "$FUNCTIONS_ID" --arg fd "$FUNCTIONS_DIGEST" --argjson rid "$REACT_ID" --arg rd "$REACT_DIGEST" --argjson uid "$UNO_ID" --arg ud "$UNO_DIGEST" --argjson previous "$PREVIOUS_ID" \
+            '{schemaVersion:2,operation:"rollback",commitSha:$sha,images:{gateway:$gateway,api:$api,scheduler:$scheduler,migrator:$migrator,blazor:$blazor},artifacts:{functions:{id:$fid,digest:$fd},react:{id:$rid,digest:$rd},uno:{id:$uid,digest:$ud}},previousManifestArtifactId:$previous}' > release-manifest.json
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path release-manifest.json -ExpectedSchemaVersion 2
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: taskflow-release-manifest-dev

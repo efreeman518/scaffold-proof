@@ -1,4 +1,5 @@
 using Azure.Identity;
+using Azure.Storage.Blobs;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,7 +15,7 @@ public enum DataProtectionPersistence
     /// <summary>Azure Blob Storage (today's only persistence option).</summary>
     AzureBlob,
 
-    /// <summary>StackExchange.Redis over the existing <c>Redis1</c> connection (Portable lane).</summary>
+    /// <summary>StackExchange.Redis over the existing <c>Redis1</c> connection (NonAzure lane).</summary>
     Redis,
 
     /// <summary>No persistence: the ephemeral in-memory ring. Cursor tokens do not survive a restart or reach other replicas.</summary>
@@ -23,23 +24,21 @@ public enum DataProtectionPersistence
 
 public static partial class RegisterServices
 {
-    public const string DataProtectionPersistenceConfigKey = "DataProtection:Persistence";
-    public const string DataProtectionPersistenceEnvVar = "TASKFLOW_DATAPROTECTION_PERSISTENCE";
+    internal const string DataProtectionBlobContainerConfigKey = "DataProtection:AzureBlob:ContainerName";
+    internal const string DataProtectionBlobNameConfigKey = "DataProtection:AzureBlob:BlobName";
+    internal const string DefaultDataProtectionBlobContainerName = "data-protection";
+    internal const string DefaultDataProtectionBlobName = "keys.xml";
+
+    public const string DataProtectionPersistenceConfigKey = HostingLaneResolver.DataProtectionConfigurationKey;
+    public const string DataProtectionPersistenceEnvVar = HostingLaneResolver.DataProtectionEnvironmentVariable;
 
     /// <summary>
-    /// Resolves an explicit persistence selection. Null means "unset": the caller derives today's default
-    /// (AzureBlob when <c>DataProtectionKeysFileUrl</c> is configured, else None) or the Portable lane
-    /// default (Redis) itself (D-035).
+    /// Resolves the strict lane's Data Protection persistence (D-060).
     /// </summary>
-    public static DataProtectionPersistence? ResolveDataProtectionPersistence(IConfiguration config)
+    public static DataProtectionPersistence ResolveDataProtectionPersistence(IConfiguration config)
     {
         ArgumentNullException.ThrowIfNull(config);
-        var value = Environment.GetEnvironmentVariable(DataProtectionPersistenceEnvVar) ?? config[DataProtectionPersistenceConfigKey];
-        if (!string.IsNullOrWhiteSpace(value)) return ParseDataProtectionPersistence(value);
-
-        return HostingLaneSelector.Resolve(config) == HostingLane.Portable
-            ? DataProtectionPersistence.Redis
-            : null;
+        return ParseDataProtectionPersistence(HostingLaneResolver.Resolve(config).DataProtection);
     }
 
     private static DataProtectionPersistence ParseDataProtectionPersistence(string value) =>
@@ -65,21 +64,66 @@ public static partial class RegisterServices
         var env = builder.Environment.EnvironmentName;
 
         var keysFileUrl = config.GetValue<string?>("DataProtectionKeysFileUrl", null);
-        var encryptionKeyUrl = config.GetValue<string?>("DataProtectionEncryptionKeyUrl", null);
+        var encryptionKeyUrl = config.GetValue<string?>(
+            HostingLaneResolver.DataProtectionEncryptionKeyUrlConfigurationKey, null);
 
-        var persistence = ResolveDataProtectionPersistence(config)
-            ?? (!string.IsNullOrEmpty(keysFileUrl) ? DataProtectionPersistence.AzureBlob : DataProtectionPersistence.None);
+        var persistence = ResolveDataProtectionPersistence(config);
 
+        // Keep the framework's implicit application discriminator. Changing it here would invalidate
+        // cookies and antiforgery payloads protected before this persistence-only change.
         var dpBuilder = services.AddDataProtection();
 
         switch (persistence)
         {
             case DataProtectionPersistence.AzureBlob:
-                if (string.IsNullOrEmpty(keysFileUrl))
+                var credential = CreateAzureCredential(config);
+                if (!string.IsNullOrWhiteSpace(keysFileUrl))
+                {
+                    var keysFileUri = new Uri(keysFileUrl);
+                    // Preserve the deployed full-blob URI plus DefaultAzureCredential path. Infrastructure
+                    // owns its container; the connection-string arm below provisions its local container.
+                    dpBuilder.PersistKeysToAzureBlobStorage(keysFileUri, credential);
+                    logger.ConfigureDataProtectionPersistence(appName, env, nameof(DataProtectionPersistence.AzureBlob));
+                    break;
+                }
+
+                var blobStorage = ResolveConnectionString(
+                    config,
+                    "BlobStorage1",
+                    "BlobStorage1",
+                    "BlobStorage1:blobServiceUri",
+                    "Values:BlobStorage1");
+                if (string.IsNullOrWhiteSpace(blobStorage))
                     throw new InvalidOperationException(
-                        $"{DataProtectionPersistenceConfigKey}=AzureBlob requires DataProtectionKeysFileUrl.");
+                        $"{DataProtectionPersistenceConfigKey}=AzureBlob requires DataProtectionKeysFileUrl or the BlobStorage1 endpoint or connection string.");
+
+                var containerName = config[DataProtectionBlobContainerConfigKey] ?? DefaultDataProtectionBlobContainerName;
+                var blobName = config[DataProtectionBlobNameConfigKey] ?? DefaultDataProtectionBlobName;
+                ArgumentException.ThrowIfNullOrWhiteSpace(containerName, DataProtectionBlobContainerConfigKey);
+                ArgumentException.ThrowIfNullOrWhiteSpace(blobName, DataProtectionBlobNameConfigKey);
+
+                BlobServiceClient blobServiceClient;
+                if (Uri.TryCreate(blobStorage, UriKind.Absolute, out var blobServiceUri)
+                    && (blobServiceUri.Scheme == Uri.UriSchemeHttp || blobServiceUri.Scheme == Uri.UriSchemeHttps))
+                {
+                    // Azure deployments can provide the passwordless service endpoint in the same key that
+                    // Azurite supplies as a connection string. Infrastructure pre-provisions the deployed
+                    // container, so endpoint-auth registration must remain network-free.
+                    blobServiceClient = new BlobServiceClient(blobServiceUri, credential);
+                }
+                else
+                {
+                    blobServiceClient = new BlobServiceClient(blobStorage);
+                }
+
+                var container = blobServiceClient.GetBlobContainerClient(containerName);
+                // Local Azurite has no deployment phase to create the key container. Keep this synchronous
+                // compatibility path scoped to the emulator; real endpoint-auth and production connection
+                // registrations perform no network I/O and require infrastructure-owned provisioning.
+                if (IsAzuriteConnectionString(blobStorage))
+                    container.CreateIfNotExists();
+                dpBuilder.PersistKeysToAzureBlobStorage(container.GetBlobClient(blobName));
                 logger.ConfigureDataProtectionPersistence(appName, env, nameof(DataProtectionPersistence.AzureBlob));
-                dpBuilder.PersistKeysToAzureBlobStorage(new Uri(keysFileUrl), CreateAzureCredential(config));
                 break;
 
             case DataProtectionPersistence.Redis:
@@ -106,6 +150,10 @@ public static partial class RegisterServices
 
         return services;
     }
+
+    private static bool IsAzuriteConnectionString(string value) =>
+        value.Equals("UseDevelopmentStorage=true", StringComparison.OrdinalIgnoreCase)
+        || value.Contains("AccountName=devstoreaccount1", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Builds the Azure credential shared by Data Protection and any other Azure-identity consumer.</summary>
     public static DefaultAzureCredential CreateAzureCredential(IConfiguration config)

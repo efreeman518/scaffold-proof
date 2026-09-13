@@ -46,7 +46,8 @@
     <!-- Default to the real gateway. Enable mock mode explicitly with /p:UseMocks=true when needed. -->
     <UseMocks Condition="'$(UseMocks)'==''">false</UseMocks>
 
-    <!-- Release artifacts must not carry interactive design/MCP tooling. -->
+    <!-- Optimized Release selects Uno.Sdk's non-development asset groups. -->
+    <Optimize Condition="'$(Configuration)'=='Release'">true</Optimize>
     <UnoDisableHotDesign Condition="'$(Configuration)'=='Release'">true</UnoDisableHotDesign>
     <UnoDisableMCPSupport Condition="'$(Configuration)'=='Release'">true</UnoDisableMCPSupport>
   </PropertyGroup>
@@ -64,6 +65,10 @@
     <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
     <AndroidEnableAssemblyCompression>false</AndroidEnableAssemblyCompression>
     <AndroidStoreUncompressedFileExtensions>.so;$(AndroidStoreUncompressedFileExtensions)</AndroidStoreUncompressedFileExtensions>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' != '' AND $(TargetFramework.Contains('-browserwasm'))">
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

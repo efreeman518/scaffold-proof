@@ -10,51 +10,51 @@ This refresh follows the `feature/ef-packages-1-1-100` package-refactor: EF.* pi
 
 | Field | Value |
 |---|---|
-| Last verified | 2026-09-12 (local fast lane and AppHost build) |
+| Last verified | 2026-09-12 (local release, container, and AppHost evidence) |
 | Solution | `TaskFlow.slnx` |
 | Target framework | .NET 10 |
 | Configuration | Release |
-| Solution projects declared (`dotnet sln list` / slnx `<Project Path=` count) | 47 (two projects deleted this refactor: `src/Packages/EF.Messaging.RabbitMq`, `tests/EF.Messaging.RabbitMq.Tests`) |
-| Solution build units (`dotnet build TaskFlow.slnx -c Release -m:1` summary line) | 50 |
+| Solution projects declared (`dotnet sln list` / slnx `<Project Path=` count) | 48 |
+| Fresh Release restore | 49 restore projects, passed |
+| Solution build units (`dotnet build TaskFlow.slnx -c Release -m:1` summary line) | 51 in 48.85 s |
 | Errors | 0 |
 | Warnings | 0 |
 
-`src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj` builds separately (Release, 3 projects: `TaskFlow.Uno`, `TaskFlow.Uno.Core`, `TaskFlow.Uno.Presentation`) because the Uno SDK requires explicit invocation; 0 errors, 0 warnings.
+`src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj` builds separately (Release and Debug, 3 projects: `TaskFlow.Uno`, `TaskFlow.Uno.Core`, `TaskFlow.Uno.Presentation`) because the Uno SDK requires explicit invocation; both builds had 0 errors and 0 warnings (Release 17.17 s; Debug 21.80 s).
 
 `dotnet ef migrations has-pending-model-changes` is clean for all 6 context/provider pairs (the app `DbContext` and the FlowEngine `DbContext`, each against SqlServer and PostgreSql, plus the TickerQ context pairing where applicable).
 
 
 ## Test Status
 
-Numbers below are the observed local fast lane on 2026-09-12.
-
-**Fast lane** (`TestCategory=Unit|TestCategory=Architecture|TestCategory=Endpoint`, `dotnet test TaskFlow.slnx`): **653 passed, 0 failed, 0 skipped, across 13 projects.**
-
-Fast-lane delta vs the 664-passed baseline recorded before this refactor's wave 2: +1 (E2 cross-version cursor test) - 15 (deleted `EF.Messaging.RabbitMq.Tests` unit tests, project removed) + 3 (E3 architecture tests: cached types public, etc.) - 4 (deleted `FlowEngineIfMatchOverrideHandler` tests, D-032 superseded) + 1 (A2, `ClientGeneratedKeyTests` pinning `ValueGenerated.Never`) + 1 (`UuidV7.TimestampOf` case) = 664 - 13 = **651**. Per-project breakdown for the individual fast-lane projects was not independently recomputed this pass; the total above is the verified figure.
+Numbers below are the observed local fast lane on 2026-09-12. The full Unit project passed **523/523** (8.0 s test time, 9.73 s wall time) under a 50-second wrapper; GitHub CI run 34736624292 passed the same **523/523** in 4 s test time and 6 s step time. The categorized fast lane (`TestCategory=Unit|TestCategory=Architecture|TestCategory=Endpoint`, `dotnet test TaskFlow.slnx`) passed **739/739 across 13 projects in 30.8 s**; its Architecture and Endpoint subsets passed **74/74** and **166/166** respectively. `Test.UI` passed **59/59** and `Test.Integration.FlowEngine` passed **18/18**.
 
 Docker/Testcontainers-backed lanes (run-scoped `TESTCONTAINERS_HOST_OVERRIDE`, not committed):
 
 | Project | Category filter | Verified count | Notes |
 |---|---|---:|---|
-| Test.Integration | `TestCategory=Integration` | 63 (SqlServer) / 65 (PostgreSql) | Includes the relational read-model, relational audit, S3 storage, distributed-lock, MessagePack cache, pgvector (PostgreSql only), and keyset/projection round-trip coverage carried over from the prior refresh, plus the cross-version cursor-token compatibility case (a token minted by EF.Data.Contracts 1.1.101 decodes and resumes under 1.1.102) |
-| Test.E2E | `TestCategory=E2E` | 10 (SqlServer) / 10 (PostgreSql) | Unchanged shape |
-| Test.Integration.FlowEngine | `TestCategory=Integration` | 18 (SqlServer) / 18 (PostgreSql) | Includes the workflow-definition test pinning the absence of a UUIDv7 loop-iteration id (request 19 rejection) |
-| Test.UI | `UI`, `Presentation` | 56 | Headless UI and presentation contracts |
-| Vulnerability audit | `dotnet list TaskFlow.slnx package --vulnerable --include-transitive` | 47 projects, 0 with vulnerable packages | Per-project audit over the full solution |
+| Test.Integration | `TestCategory=Integration` | 55 (Azure) / 68 (NonAzure) | Full container-backed observed runs; covers the lane-specific provider topology |
+| Test.E2E | `TestCategory=E2E` | 1/1 targeted CRUD (Azure / NonAzure) | Targeted only; not a full Playwright claim |
+| Test.Integration.FlowEngine | `TestCategory=Integration` | 18 | Includes the workflow-definition test pinning the absence of a UUIDv7 loop-iteration id (request 19 rejection) |
+| Test.UI | `UI`, `Presentation` | 59 | Headless UI and presentation contracts |
+| Mongo repository | targeted | 2 | Explicit NonAzure MongoDB alternative |
+| NonAzure AppSurface | Aspire | 5 | Gateway, API, Blazor, React, and Uno in 99.7 s |
+| Deterministic Aspire topology and migrator filter | topology | 23 | 1.4 s; includes exact Azure image references |
+| Vulnerability audit | `dotnet list TaskFlow.slnx package --vulnerable --include-transitive` | all solution projects, 0 with vulnerable packages | Per-project audit over the full solution |
 
 `EF.Messaging.RabbitMq.Tests` (both the unit and Testcontainers.RabbitMq integration lanes, 31 tests total) no longer exists in this repo: the package shipped and the in-repo project was deleted (request 23; see `docs/plans/ef-messaging-rabbitmq-package-spec.md`). Its coverage now lives in the published `EF.Messaging.RabbitMq` package's own test suite, outside this repo.
 
 Not rerun this pass, last observed values only: **Test.Mutation** last observed 33 (mutation-target contract tests; not part of this refactor's changed surface, not rerun to save time).
 
-Not fully rerun on this machine this pass: **Test.Aspire** (full graph), **Test.Mobile** (dedicated Appium/emulator runner), **Test.FoundryLocal** (live local-model lane, RID-bound runtime), **Test.Load** (manual; the 5,000 RPS gate is deployment-only), **Test.Benchmarks** (BenchmarkDotNet console runner, build-verified only), **compose-smoke** and **deploy-vps** (CI-only: `compose-smoke` is a `workflow_dispatch`-gated job in `ci.yml`, `deploy-vps.yml` is `workflow_dispatch`-only). Mirrored WSL networking now permits Aspire/DCP localhost publishing on this machine; the focused React Playwright suite passed after the AppHost and gateway test-configuration fixes, while a later retry encountered transient gateway startup failure before browser execution.
+Not fully rerun on this machine this pass: the full Azure Aspire mesh, the full-stack `Test.PlaywrightUI` lane, **Test.Mobile** (dedicated Appium/emulator runner), **Test.FoundryLocal** (live local-model lane, RID-bound runtime), **Test.Load** (manual; the 5,000 RPS gate is deployment-only), **Test.Benchmarks** (BenchmarkDotNet console runner, build-verified only), **compose-smoke** and **deploy-vps** (CI-only: `compose-smoke` is a `workflow_dispatch`-gated job in `ci.yml`, `deploy-vps.yml` is `workflow_dispatch`-only). The bounded Azure live rerun started Cosmos and Service Bus SQL; remaining resources stayed `Created` with no `State.Error`, so the mesh is incomplete and unverified, not a manifest-duplication failure.
 
-Published Release Uno cold-start and normal browser projects pass from empty browser state without refresh, retry, sleep, or exception suppression. Browser WASM Release temporarily sets `PublishTrimmed=false` because the current Navigation, Toolkit, and WinUI package set emits upstream `IL2104` under warnings-as-errors. Removal condition: those packages become trim-clean. Not re-verified in this pass (no Uno-affecting code changed in this refactor).
+Published Release Uno cold-start and normal browser projects pass from empty browser state without refresh, retry, sleep, or exception suppression. Browser WASM Release temporarily sets `PublishTrimmed=false` because the current Navigation, Toolkit, and WinUI package set emits upstream `IL2104` under warnings-as-errors. Removal condition: those packages become trim-clean. Cold-start and browser evidence was not rerun this pass; this pass proves Release/Debug builds and the NonAzure static-host AppSurface only.
 
 ## Vulnerability Status
 
 Run `dotnet list package --vulnerable --include-transitive` and capture findings here. Severity policy: [scaffold execution gates](https://github.com/efreeman518/scaffold-ai/blob/main/support/execution-gates.md#vulnerability-audit).
 
-Last audit (2026-09-10, orchestrator's gate on the merged tree, detached worktree): `dotnet list TaskFlow.slnx package --vulnerable --include-transitive` over 47 projects reported no vulnerable packages or advisories, direct or transitive, for any project.
+Last audit (2026-09-12): `dotnet list TaskFlow.slnx package --vulnerable --include-transitive` reported no vulnerable packages or advisories, direct or transitive, for any solution project. React `npm ci`, audit, build, and lint also passed with 0 vulnerabilities; Vite retains its existing 640 KB chunk-size advisory.
 
 | Package | Severity | Direct/Transitive | Advisory | Notes |
 |---|---|---|---|---|
@@ -85,12 +85,12 @@ Status meanings:
 | Messaging transport switch (Service Bus / RabbitMQ) | proven | `Messaging:Provider`; `EF.Messaging.RabbitMq` (published package, own test suite outside this repo) + adapter tests |
 | Redis cache (FusionCache) and rate limiter | proven | `EF.Cache.ITypedCache`/`CacheSettings` injected directly (app-local `ITaskFlowCache`/`FusionTaskFlowCache` deleted); `FailOpenRateLimiter` over `RedisRateLimiting` |
 | Generated API clients (Refitter, openapi-typescript) | proven | `src/UI/TaskFlow.ApiClient` and React `types.ts` regenerate from the committed OpenAPI document |
-| Aspire, Gateway, Scheduler, Functions | proven (mesh unverified here) | Build, topology, unit, endpoint coverage; the DCP-dependent Aspire mesh lane cannot run on this machine |
-| Uno, Blazor, React | proven | Build, Test.UI, and dedicated mobile evidence; full-stack Playwright blocked here by the same Aspire limitation |
+| Aspire, Gateway, Scheduler, Functions | proven (Azure mesh unverified) | Build, topology, unit, endpoint coverage, plus NonAzure AppSurface; the Azure mesh remains incomplete and unverified |
+| Uno, Blazor, React | proven | Build, Test.UI, and NonAzure AppSurface evidence; full-stack Playwright remains unverified |
 | FlowEngine | proven | Runtime wiring, separate-schema migration, definition/integration cases including the If-Match:* connector override (D-032) |
 | Foundry Local inference | proven (not rerun this pass) | Dedicated live lane requires the RID-bound Foundry Local runtime |
 | GitHub Actions and deployment workflow shape | proven | Workflow contract tests and CI execution |
-| Bicep module shape (incl. Postgres, Redis, RabbitMQ container app, scale rules) | proven | `az bicep build` and Bicep contract tests |
+| Bicep module shape (SQL Server, Service Bus, Storage, Cosmos, Redis, Container Apps/Functions, scale rules) | proven | `main`, foundation, and all three parameter files compile; Bicep contract tests |
 | Live Entra or CIAM sign-in | deployment-only | Scaffold auth is the local proof |
 | Azure Foundry and Azure AI Search | deployment-only | Provider wiring and gated smoke tests exist; live resources not required locally |
 | Key Vault backed encryption and data-protection keys | deployment-only | AppHost and Bicep wiring exist; live vault, CMK, identity, RBAC require deployment |
@@ -101,13 +101,22 @@ Status meanings:
 | `azd` orchestration | not enabled | `includeAzd: false` |
 | Private endpoints | not enabled | `usePrivateEndpoints: false` |
 
-### New capabilities added by this refactor (Portable lane + scale-guidance alignment)
+### New capabilities added by this refactor (strict NonAzure lane + scale-guidance alignment)
+
+`TASKFLOW_LANE` owns the strict topology. `Portable` is a deprecated `NonAzure` alias for one release only; incompatible lane-owned settings fail fast.
+
+| Lane | Owned local topology |
+|---|---|
+| Azure | SQL Server 2025, Service Bus emulator plus SQL Server 2022, Azurite, Cosmos |
+| NonAzure | PostgreSQL 18 with JSONB read model by default, RabbitMQ 4, SeaweedFS, optional MongoDB 8 |
+| Common | Redis 8, TickerQ, API, Gateway, Scheduler, DatabaseMigrator, Blazor, React, Uno |
+| Azure-only | Functions |
 
 | Capability | Status | Evidence boundary |
 |---|---|---|
-| Hosting-lane preset (`TASKFLOW_LANE=Azure\|Portable`, D-035) | proven | `HostingLaneSelector`; `Test.Unit/Hosting/ProviderSwitchSelectorTests.cs`; `Test.Aspire/AppHostLaneTopologyTests.cs` (7 Portable-topology assertions, part of the 12 non-DCP Test.Aspire tests) |
-| S3 object storage (D-037) | proven | `Test.Integration/S3ObjectStorageRepositoryTests.cs` (MinIO Testcontainers); `Test.Unit/Infrastructure/S3StorageRegistrationTests.cs` |
-| Relational read model (D-038) | proven | `Test.Integration/RelationalTaskViewRepositoryTests.cs`, both DB lanes |
+| Strict hosting lanes (`TASKFLOW_LANE=Azure\|NonAzure`, D-060) | proven | `HostingLaneSelector`; `Test.Unit/Hosting/ProviderSwitchSelectorTests.cs`; `Test.Aspire/AppHostLaneTopologyTests.cs` (23 verified topology/migrator tests, including exact Azure image references). `Portable` is a deprecated alias for `NonAzure` for one release. |
+| S3 object storage (D-037) | proven | `Test.Integration/S3ObjectStorageRepositoryTests.cs` (SeaweedFS Testcontainers); `Test.Unit/Infrastructure/S3StorageRegistrationTests.cs` |
+| PostgreSQL JSONB read model (D-038) | proven | `Test.Integration/RelationalTaskViewRepositoryTests.cs` in the NonAzure lane; MongoDB is an explicit NonAzure alternative |
 | Relational audit sink (D-039) | proven | `Test.Integration/RelationalAuditLogRepositoryTests.cs`, both DB lanes |
 | pgvector semantic search (D-040) | proven | `Test.Integration/PgVectorSearchTests.cs` (PostgreSql lane only; fails fast at startup on SqlServer by design) |
 | OpenAI-compatible LLM client (D-041) | proven | `Test.Unit/AI/AiProviderSelectorTests.cs` (fail-fast on missing endpoint/API key, registers both `IChatClient` and the embedding generator) |
@@ -124,17 +133,17 @@ Status meanings:
 | LoggerMessage sweep + CA1848 (D-053) | proven | `src/.editorconfig` (`dotnet_diagnostic.CA1848.severity=error` for `src/**.cs`); full solution build 0 warnings/errors after all 58 raw call sites converted |
 | Internal gRPC read service (D-054) | proven | `Test.Endpoints/TaskFlowReadGrpcTests.cs` (in-memory `GrpcChannel` parity with the REST summary); `Test.Unit/Contracts/TaskFlowReadGrpcMapperTests.cs`; `Test.Architecture/GrpcArchitectureTests.cs` (gRPC service lives only in the Api host) |
 | MessagePack L2 cache serializer (D-048/D-056) | proven | `Test.Unit/Infrastructure/CacheSerializerTests.cs` (round trip, both serializers); `Test.Integration/MessagePackCacheTests.cs` (L2 Redis round trip) |
-| Compose lane (Docker Compose + Caddy) + VPS deploy workflow (D-036) | CI-only | `docker compose config -q` on every `ci.yml` run; dispatch-gated `compose-smoke` job (local-profile stack, `/healthz/ready` through Caddy + one CRUD round trip); `deploy-vps.yml` (`workflow_dispatch` deploy/rollback). Nothing in the compose/VPS path has executed on this dev machine - CI's `compose-smoke` run is the first real execution |
+| Compose lane (Docker Compose + Caddy) + VPS deploy workflow (D-036) | proven (Compose); CI-only (VPS deploy) | Canonical and local JSONB/Mongo Compose shapes pass; worker also validated eight none, Mongo, pooler, and combined shapes. `deploy-vps.yml` remains `workflow_dispatch` deploy/rollback evidence only. |
 
 The declared flags and matrix must agree with `.scaffold/resource-implementation.yaml`. Proof paths are validated against the scaffold-owned [TaskFlow proof map](https://github.com/efreeman518/scaffold-ai/blob/main/support/taskflow-proof-map.md).
 
 ## Phase Completion
 
-Phases 1 through 5e and the FlowEngine extension are complete. Root `HANDOFF.md` records `workflowStatus: complete`, `currentPhase: 5`, and `currentSubPhase: complete`. The Portable-lane + scale-guidance-alignment refactor (P1-P7, G1-G4) is an ordinary-maintenance addition on top of that completed baseline, not a phase re-open.
+Phases 1 through 5e and the FlowEngine extension are complete. Root `HANDOFF.md` records `workflowStatus: complete`, `currentPhase: 5`, and `currentSubPhase: complete`. The strict NonAzure-lane + scale-guidance-alignment refactor (P1-P7, G1-G4) is an ordinary-maintenance addition on top of that completed baseline, not a phase re-open.
 
 ## Infrastructure as Code
 
-`infra/` contains the Bicep deployment baseline: top-level `main.bicep`, resource modules, deployment scripts, and rollback contracts. `deploy/compose/` contains the Portable-lane Docker Compose baseline (Caddy, PgBouncer, MinIO, images.env, VPS runbook) - see `deploy/compose/README.md`.
+`infra/` contains the Bicep deployment baseline: top-level `main.bicep`, resource modules, deployment scripts, and rollback contracts. `deploy/compose/` contains the strict NonAzure Docker Compose baseline (Caddy, PgBouncer, SeaweedFS, images.env, VPS runbook) - see `deploy/compose/README.md`.
 
 Deployment plan: [`.azure/deployment-plan.md`](../.azure/deployment-plan.md).
 
@@ -142,10 +151,10 @@ Validate locally with `az bicep build --file infra/main.bicep` and `docker compo
 
 ## Outstanding Follow-Ups
 
-1. Aspire mesh (`Test.Aspire` DCP-dependent lanes) and the full-stack `Test.PlaywrightUI` lane are unverified on this machine: Aspire/DCP binds published container ports to `127.0.0.1` inside the Podman WSL VM, unreachable from the Windows host, independent of the Testcontainers `TESTCONTAINERS_HOST_OVERRIDE` workaround used by the other container lanes. Needs either Docker Desktop or a podman machine networking change before these lanes can run here.
+1. The full Azure Aspire mesh and full-stack `Test.PlaywrightUI` lane are unverified. A bounded Azure live rerun started Cosmos and Service Bus SQL; remaining resources stayed `Created` with no `State.Error`, so this is incomplete rather than a manifest-duplication failure. Targeted Azure and NonAzure CRUD E2E is not full browser acceptance.
 2. EF.* package requests from `docs/plans/ef-package-requests.md`: all REQUIRED items landed as of EF.* 1.1.102 / EF.FlowEngine.*/EF.FilterBuilder 1.0.173, except request 3 (partial - EF.Data.SqlServer split shipped, `Microsoft.Data.SqlClient` stays transitive until EF.Data 2.0, open by design) and request 4 (landed, not adopted - D-004, no repository asks for NOLOCK). Request 19 (a UUIDv7-shaped FlowEngine loop iteration id) is rejected for now: `LoopNodeExecutor.IterationId` is a deterministic UUIDv5 and GR-17 rejects a non-UUIDv7 client create id with 400, so the decomposer loop keeps its own `idempotencyKey` instead. `EF.Audit.Data` and `EF.Audit.AzureTable` (published 1.1.101/1.1.102) are rejected: both stamp the consumer clock into `RecordedUtc`/`PartitionKey`/`RowKey`, reproducing the A1 replay-duplicate defect, and `EF.Audit.Data` additionally mandates its own `AuditDbContext`; reconciliation stays contracts-only via `EF.Audit.Contracts`, with the id-derived key scheme (D-058) implemented app-side. See the dated "Feedback after adoption (2026-09-10)" section in `ef-package-requests.md` for the remaining post-merge findings (KeysetProjection selector shape, envelope tenant slot, sender-pool enumeration, envelope serializer JsonTypeInfo support, trace-context Baggage, EF.Messaging's Azure SDK footprint).
 3. The 5,000 RPS load gate is deployment-only by design (`Test.Load` is manual/NBomber); local proof is Testcontainers plus the million-row fixture, not a live RPS measurement.
 4. Authenticated Azure AI persistence and enqueue scenarios remain deployment-only.
-5. Browser WASM trimming remains disabled for Release because upstream Uno dependencies emit `IL2104` under warnings-as-errors; unaffected by this refactor, not re-verified this pass.
+5. Browser WASM trimming remains disabled for Release because upstream Uno dependencies emit `IL2104` under warnings-as-errors. Trimming and cold-start browser evidence was not rerun; Release and Debug builds plus the NonAzure static-host AppSurface passed.
 6. `TaskItemRescheduledEvent` remains defined and versioned in the envelope map but never constructed anywhere in the merged code - still dead code, still not removed.
-7. Watch items recorded by `docs/plans/scale-guidance-alignment.md` and the G3/P6 session log. Resolved by slice F1 (2026-09-09): floating image tags in `deploy/compose/` now pinned (`grafana/otel-lgtm:0.32.1`, `minio/minio:RELEASE.2025-09-07T16-13-09Z`, `edoburu/pgbouncer:v1.25.2-p0`, including the Aspire AppHost MinIO container); `launchSettings.json`'s `applicationUrl` no longer conflicts with `Kestrel:Endpoints` on a local `dotnet run` (the Api's `applicationUrl` and `https` profile were removed, `Kestrel:Endpoints` is the single port source); `TaskFlow.Functions.csproj` no longer marks `OpenAI`/`Microsoft.Extensions.AI.OpenAI` `PrivateAssets="all"` (both are deployed dependencies, matching Api/Bootstrapper; `Microsoft.AI.Foundry.Local` keeps it, unrelated); App Configuration is now wired into the Functions host via `Microsoft.Azure.AppConfiguration.Functions.Worker`. Still open: `Pgvector.EntityFrameworkCore` 0.3.0 is the newest published release (verified 2026-09-09 against nuget.org), targets `net8.0`, declares `Npgsql.EntityFrameworkCore.PostgreSQL >= 9.0.1`, and runs on EF Core 10/Npgsql 10.0.3 by framework roll-forward - `PgVectorSearchTests` (PostgreSql lane) is the running proof; upgrade path is to bump the pin when a net10/EF Core 10 build ships, or vendor the type-mapping plugin in-repo if the roll-forward ever breaks. Also still open: a second consecutive solution build emits ~180 `ExtensionsMetadataGenerator` warnings from a stale `TaskFlow.Functions` `obj` tree (clean-`obj` build is 0 warnings).
+7. Watch items recorded by `docs/plans/scale-guidance-alignment.md` and the G3/P6 session log. Resolved by slice F1 (2026-09-09): `launchSettings.json`'s `applicationUrl` no longer conflicts with `Kestrel:Endpoints` on a local `dotnet run` (the Api's `applicationUrl` and `https` profile were removed, `Kestrel:Endpoints` is the single port source); `TaskFlow.Functions.csproj` no longer marks `OpenAI`/`Microsoft.Extensions.AI.OpenAI` `PrivateAssets="all"` (both are deployed dependencies, matching Api/Bootstrapper; `Microsoft.AI.Foundry.Local` keeps it, unrelated); App Configuration is now wired into the Functions host via `Microsoft.Azure.AppConfiguration.Functions.Worker`. Still open: `Pgvector.EntityFrameworkCore` 0.3.0 is the newest published release (verified 2026-09-09 against nuget.org), targets `net8.0`, declares `Npgsql.EntityFrameworkCore.PostgreSQL >= 9.0.1`, and runs on EF Core 10/Npgsql 10.0.3 by framework roll-forward - `PgVectorSearchTests` (PostgreSql lane) is the running proof; upgrade path is to bump the pin when a net10/EF Core 10 build ships, or vendor the type-mapping plugin in-repo if the roll-forward ever breaks. Also still open: a second consecutive solution build emits ~180 `ExtensionsMetadataGenerator` warnings from a stale `TaskFlow.Functions` `obj` tree (clean-`obj` build is 0 warnings).

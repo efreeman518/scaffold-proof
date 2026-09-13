@@ -5,7 +5,7 @@ using Moq;
 using System.Reflection;
 using TaskFlow.Application.MessageHandlers.Consumers;
 using TaskFlow.Bootstrapper;
-using TaskFlow.Application.Contracts.Configuration;
+using TaskFlow.Hosting;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Infrastructure.AI;
 using TaskFlow.Infrastructure.AI.Search;
@@ -36,9 +36,9 @@ public class SearchProviderSelectorTests
             AiServiceCollectionExtensions.ResolveSearchProvider(Config(), new TaskFlowAiSettings { UseSearch = false }));
 
     [TestMethod]
-    public void ResolveSearchProvider_Unset_UseSearchTrueWithEndpoint_DefaultsToAzureAiSearch() =>
+    public void ResolveSearchProvider_Unset_UseSearchTrueWithEndpoint_StillDefaultsToSql() =>
         Assert.AreEqual(
-            SearchProvider.AzureAiSearch,
+            SearchProvider.Sql,
             AiServiceCollectionExtensions.ResolveSearchProvider(
                 Config(),
                 new TaskFlowAiSettings { UseSearch = true, SearchEndpoint = "https://example.search.windows.net" }));
@@ -51,20 +51,19 @@ public class SearchProviderSelectorTests
                 Config(), new TaskFlowAiSettings { UseSearch = true, SearchEndpoint = "" }));
 
     [TestMethod]
-    public void ResolveSearchProvider_PortableLane_DefaultsToSql_EvenWithLegacyUseSearchTrue() =>
+    public void ResolveSearchProvider_NonAzureLane_DefaultsToSql_EvenWithLegacyUseSearchTrue() =>
         Assert.AreEqual(
             SearchProvider.Sql,
             AiServiceCollectionExtensions.ResolveSearchProvider(
-                Config((HostingLaneSelector.ConfigurationKey, "Portable")),
+                Config((HostingLaneResolver.LaneConfigurationKey, "NonAzure")),
                 new TaskFlowAiSettings { UseSearch = true, SearchEndpoint = "https://example.search.windows.net" }));
 
     [TestMethod]
-    public void ResolveSearchProvider_ConfigBeatsLaneDefault() =>
-        Assert.AreEqual(
-            SearchProvider.AzureAiSearch,
+    public void ResolveSearchProvider_CrossLaneValue_Throws() =>
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
             AiServiceCollectionExtensions.ResolveSearchProvider(
                 Config(
-                    (HostingLaneSelector.ConfigurationKey, "Portable"),
+                    (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
                     (AiServiceCollectionExtensions.SearchProviderConfigKey, "AzureAiSearch")),
                 new TaskFlowAiSettings()));
 
@@ -114,7 +113,7 @@ public class SearchProviderSelectorTests
     /// switches - Infrastructure.AI must not reference Infrastructure.Data to ask.
     /// </summary>
     [TestMethod]
-    public void AddVectorSearchServices_PgVectorOnSqlServer_ThrowsNamingTheSqlServerVectorFutureArm()
+    public void AddVectorSearchServices_PgVectorOnAzureLane_ThrowsStrictLaneDiagnostic()
     {
         var config = Config(
             (AiServiceCollectionExtensions.SearchProviderConfigKey, "PgVector"),
@@ -122,8 +121,8 @@ public class SearchProviderSelectorTests
 
         var ex = Assert.ThrowsExactly<InvalidOperationException>(
             () => InvokeAddVectorSearchServices(new ServiceCollection(), config));
-        StringAssert.Contains(ex.Message, "PostgreSql");
-        StringAssert.Contains(ex.Message, "VECTOR");
+        StringAssert.Contains(ex.Message, "Azure");
+        StringAssert.Contains(ex.Message, AiServiceCollectionExtensions.SearchProviderConfigKey);
     }
 
     /// <summary>Prerequisite met: the arm's repository and consumer are registered for the consumer hosts.</summary>
@@ -132,6 +131,7 @@ public class SearchProviderSelectorTests
     {
         var services = new ServiceCollection();
         var config = Config(
+            (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
             (AiServiceCollectionExtensions.SearchProviderConfigKey, "PgVector"),
             (TaskFlowDbProviderSelector.ConfigurationKey, "PostgreSql"));
 
@@ -182,6 +182,7 @@ public class SearchProviderSelectorTests
         services.AddLogging();
         services.AddSingleton(Mock.Of<ITaskItemRepositoryQuery>());
         var config = Config(
+            (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
             (AiServiceCollectionExtensions.SearchProviderConfigKey, "PgVector"),
             (TaskFlowDbProviderSelector.ConfigurationKey, "PostgreSql"));
 
@@ -201,6 +202,7 @@ public class SearchProviderSelectorTests
         services.AddSingleton(Mock.Of<ITaskItemRepositoryQuery>());
         services.AddSingleton(Mock.Of<IEmbeddingGenerator<string, Embedding<float>>>());
         var config = Config(
+            (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
             (AiServiceCollectionExtensions.SearchProviderConfigKey, "PgVector"),
             (TaskFlowDbProviderSelector.ConfigurationKey, "PostgreSql"),
             (AiServiceCollectionExtensions.PgVectorDimensionsConfigKey, "3072"));
@@ -219,6 +221,7 @@ public class SearchProviderSelectorTests
         services.AddSingleton(Mock.Of<IEmbeddingGenerator<string, Embedding<float>>>());
         services.AddSingleton(Mock.Of<ITaskEmbeddingRepository>());
         var config = Config(
+            (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
             (AiServiceCollectionExtensions.SearchProviderConfigKey, "PgVector"),
             (TaskFlowDbProviderSelector.ConfigurationKey, "PostgreSql"));
 

@@ -4,12 +4,14 @@ using EF.Storage.S3;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System.Reflection;
-using TaskFlow.Application.Contracts.Configuration;
+using TaskFlow.Hosting;
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Bootstrapper;
 using Microsoft.Extensions.Options;
 using TaskFlow.Infrastructure.Repositories;
+using TaskFlow.Infrastructure.Repositories.MongoDb;
 using TaskFlow.Infrastructure.Storage;
+using TaskFlow.Infrastructure.Storage.CosmosDb;
 
 namespace Test.Unit.Hosting;
 
@@ -34,17 +36,18 @@ public class ProviderSwitchSelectorTests
 
     [TestMethod]
     public void ResolveHostingLane_Unset_DefaultsToAzure() =>
-        Assert.AreEqual(HostingLane.Azure, HostingLaneSelector.Resolve(Config()));
+        Assert.AreEqual(HostingLane.Azure, HostingLaneResolver.ResolveLane(Config()));
 
     [TestMethod]
-    public void ResolveHostingLane_ConfigPortable_ReturnsPortable() =>
-        Assert.AreEqual(HostingLane.Portable, HostingLaneSelector.Resolve(Config((HostingLaneSelector.ConfigurationKey, "Portable"))));
+    public void ResolveHostingLane_ConfigPortable_ReturnsNonAzure() =>
+        Assert.AreEqual(HostingLane.NonAzure, HostingLaneResolver.ResolveLane(
+            Config((HostingLaneResolver.LaneConfigurationKey, "Portable"))));
 
     [TestMethod]
     public void ResolveHostingLane_UnknownValue_Throws()
     {
         var ex = Assert.ThrowsExactly<ArgumentException>(() =>
-            HostingLaneSelector.Resolve(Config((HostingLaneSelector.ConfigurationKey, "OnPrem"))));
+            HostingLaneResolver.ResolveLane(Config((HostingLaneResolver.LaneConfigurationKey, "OnPrem"))));
         StringAssert.Contains(ex.Message, "Azure");
         StringAssert.Contains(ex.Message, "Portable");
     }
@@ -53,10 +56,10 @@ public class ProviderSwitchSelectorTests
     [DoNotParallelize]
     public void ResolveHostingLane_EnvWinsOverConfig()
     {
-        WithEnv(HostingLaneSelector.EnvironmentVariable, "Portable", () =>
+        WithEnv(HostingLaneResolver.LaneEnvironmentVariable, "Portable", () =>
             Assert.AreEqual(
-                HostingLane.Portable,
-                HostingLaneSelector.Resolve(Config((HostingLaneSelector.ConfigurationKey, "Azure")))));
+                HostingLane.NonAzure,
+                HostingLaneResolver.ResolveLane(Config((HostingLaneResolver.LaneConfigurationKey, "Azure")))));
     }
 
     // ----- Storage -----
@@ -66,17 +69,16 @@ public class ProviderSwitchSelectorTests
         Assert.AreEqual(StorageProvider.AzureBlob, RegisterServices.ResolveStorageProvider(Config()));
 
     [TestMethod]
-    public void ResolveStorageProvider_PortableLane_DefaultsToS3() =>
+    public void ResolveStorageProvider_NonAzureLane_DefaultsToS3() =>
         Assert.AreEqual(
             StorageProvider.S3,
-            RegisterServices.ResolveStorageProvider(Config((HostingLaneSelector.ConfigurationKey, "Portable"))));
+            RegisterServices.ResolveStorageProvider(Config((HostingLaneResolver.LaneConfigurationKey, "NonAzure"))));
 
     [TestMethod]
-    public void ResolveStorageProvider_ConfigBeatsLaneDefault() =>
-        Assert.AreEqual(
-            StorageProvider.AzureBlob,
+    public void ResolveStorageProvider_CrossLaneValue_Throws() =>
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
             RegisterServices.ResolveStorageProvider(Config(
-                (HostingLaneSelector.ConfigurationKey, "Portable"),
+                (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
                 (RegisterServices.StorageProviderConfigKey, "AzureBlob"))));
 
     [TestMethod]
@@ -88,18 +90,20 @@ public class ProviderSwitchSelectorTests
     [DoNotParallelize]
     public void ResolveStorageProvider_EnvWinsOverConfig()
     {
+        WithEnv(HostingLaneResolver.LaneEnvironmentVariable, "NonAzure", () =>
         WithEnv(RegisterServices.StorageProviderEnvVar, "S3", () =>
             Assert.AreEqual(
                 StorageProvider.S3,
-                RegisterServices.ResolveStorageProvider(Config((RegisterServices.StorageProviderConfigKey, "AzureBlob")))));
+                RegisterServices.ResolveStorageProvider(Config((RegisterServices.StorageProviderConfigKey, "AzureBlob"))))));
     }
 
     [TestMethod]
     public void AddStorageServices_S3_RegistersS3ObjectStorageRepository()
     {
         var config = Config(
+            (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
             (RegisterServices.StorageProviderConfigKey, "S3"),
-            ("Storage:S3:ServiceUrl", "http://minio:9000"),
+            ("Storage:S3:ServiceUrl", "http://seaweedfs:8333"),
             ("Storage:S3:PublicServiceUrl", "http://localhost:9000"));
 
         var method = typeof(RegisterServices).GetMethod("AddStorageServices", BindingFlags.NonPublic | BindingFlags.Static)
@@ -111,6 +115,51 @@ public class ProviderSwitchSelectorTests
 
         using var provider = services.BuildServiceProvider();
         Assert.IsInstanceOfType<S3ObjectStorageRepository>(provider.GetRequiredService<IObjectStorageRepository>());
+    }
+
+    [TestMethod]
+    public void AzureCoreProviders_MissingRequiredConnections_FailFast()
+    {
+        var config = Config((HostingLaneResolver.LaneConfigurationKey, "Azure"));
+
+        foreach (var (method, requiredSetting) in new[]
+                 {
+                     ("AddStorageServices", "BlobStorage1"),
+                     ("AddAuditServices", "TableStorage1"),
+                     ("AddReadModelServices", "CosmosDb1"),
+                     ("AddMessagingServices", "ServiceBus1")
+                 })
+        {
+            var exception = InvokeDispatcherFailure<InvalidOperationException>(method, config);
+            StringAssert.Contains(exception.Message, requiredSetting, method);
+        }
+    }
+
+    [TestMethod]
+    public void AzureCosmos_ExplicitTestMode_RegistersNoOpReadModel()
+    {
+        var services = InvokeDispatcher(
+            "AddReadModelServices",
+            Config(
+                (HostingLaneResolver.LaneConfigurationKey, "Azure"),
+                ("DOTNET_ENVIRONMENT", "Testing"),
+                ("Testing:UseNoOpCosmosReadModel", "true")));
+
+        var descriptor = services.Single(value => value.ServiceType == typeof(ITaskViewRepository));
+        Assert.AreEqual(typeof(NoOpTaskViewRepository), descriptor.ImplementationType);
+    }
+
+    [TestMethod]
+    public void AzureCosmos_TestFlagOutsideTesting_FailsFast()
+    {
+        var exception = InvokeDispatcherFailure<InvalidOperationException>(
+            "AddReadModelServices",
+            Config(
+                (HostingLaneResolver.LaneConfigurationKey, "Azure"),
+                ("DOTNET_ENVIRONMENT", "Production"),
+                ("Testing:UseNoOpCosmosReadModel", "true")));
+
+        StringAssert.Contains(exception.Message, "CosmosDb1");
     }
 
     [TestMethod]
@@ -143,17 +192,16 @@ public class ProviderSwitchSelectorTests
         Assert.AreEqual(ReadModelProvider.Cosmos, RegisterServices.ResolveReadModelProvider(Config()));
 
     [TestMethod]
-    public void ResolveReadModelProvider_PortableLane_DefaultsToRelational() =>
+    public void ResolveReadModelProvider_NonAzureLane_DefaultsToPostgreSqlJsonb() =>
         Assert.AreEqual(
-            ReadModelProvider.Relational,
-            RegisterServices.ResolveReadModelProvider(Config((HostingLaneSelector.ConfigurationKey, "Portable"))));
+            ReadModelProvider.PostgreSqlJsonb,
+            RegisterServices.ResolveReadModelProvider(Config((HostingLaneResolver.LaneConfigurationKey, "NonAzure"))));
 
     [TestMethod]
-    public void ResolveReadModelProvider_ConfigBeatsLaneDefault() =>
-        Assert.AreEqual(
-            ReadModelProvider.Cosmos,
+    public void ResolveReadModelProvider_CrossLaneValue_Throws() =>
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
             RegisterServices.ResolveReadModelProvider(Config(
-                (HostingLaneSelector.ConfigurationKey, "Portable"),
+                (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
                 (RegisterServices.ReadModelProviderConfigKey, "Cosmos"))));
 
     [TestMethod]
@@ -165,22 +213,66 @@ public class ProviderSwitchSelectorTests
     [DoNotParallelize]
     public void ResolveReadModelProvider_EnvWinsOverConfig()
     {
+        WithEnv(HostingLaneResolver.LaneEnvironmentVariable, "NonAzure", () =>
         WithEnv(RegisterServices.ReadModelProviderEnvVar, "Relational", () =>
             Assert.AreEqual(
-                ReadModelProvider.Relational,
-                RegisterServices.ResolveReadModelProvider(Config((RegisterServices.ReadModelProviderConfigKey, "Cosmos")))));
+                ReadModelProvider.PostgreSqlJsonb,
+                RegisterServices.ResolveReadModelProvider(Config((RegisterServices.ReadModelProviderConfigKey, "Cosmos"))))));
     }
 
     [TestMethod]
     public void AddReadModelServices_Relational_RegistersRelationalRepository()
     {
         var services = InvokeDispatcher("AddReadModelServices",
-            Config((RegisterServices.ReadModelProviderConfigKey, "Relational")));
+            Config(
+                (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
+                (RegisterServices.ReadModelProviderConfigKey, "Relational")));
 
         var descriptor = services.Single(d => d.ServiceType == typeof(ITaskViewRepository));
         Assert.AreEqual(typeof(RelationalTaskViewRepository), descriptor.ImplementationType);
         // Scoped, not singleton: it holds the two request-scoped DbContexts (D-027 write/read split).
         Assert.AreEqual(ServiceLifetime.Scoped, descriptor.Lifetime);
+    }
+
+    [TestMethod]
+    public void AddRelationalReadModelServices_SqlServer_Throws()
+    {
+        var exception = InvokeDispatcherFailure<InvalidOperationException>(
+            "AddRelationalReadModelServices",
+            Config((HostingLaneResolver.LaneConfigurationKey, "Azure")));
+
+        StringAssert.Contains(exception.Message, "requires Database:Provider=PostgreSql");
+    }
+
+    [TestMethod]
+    public void AddReadModelServices_MongoDb_RequiresConnectionString()
+    {
+        var exception = InvokeDispatcherFailure<InvalidOperationException>(
+            "AddReadModelServices",
+            Config(
+                (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
+                (RegisterServices.ReadModelProviderConfigKey, "MongoDb")));
+
+        StringAssert.Contains(exception.Message, "MongoDb1");
+    }
+
+    [TestMethod]
+    public void AddReadModelServices_MongoDb_RegistersSingletonWithDefaultNames()
+    {
+        var services = InvokeDispatcher(
+            "AddReadModelServices",
+            Config(
+                (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
+                (RegisterServices.ReadModelProviderConfigKey, "MongoDb"),
+                ("ConnectionStrings:MongoDb1", "mongodb://localhost:27017")));
+
+        using var provider = services.BuildServiceProvider();
+        var repository = provider.GetRequiredService<ITaskViewRepository>();
+        Assert.IsInstanceOfType<MongoTaskViewRepository>(repository);
+        Assert.AreSame(repository, provider.GetRequiredService<ITaskViewRepository>());
+        var settings = provider.GetRequiredService<MongoTaskViewSettings>();
+        Assert.AreEqual(MongoTaskViewSettings.DefaultDatabaseName, settings.DatabaseName);
+        Assert.AreEqual(MongoTaskViewSettings.DefaultCollectionName, settings.CollectionName);
     }
 
     // ----- Audit -----
@@ -190,17 +282,16 @@ public class ProviderSwitchSelectorTests
         Assert.AreEqual(AuditProvider.AzureTable, RegisterServices.ResolveAuditProvider(Config()));
 
     [TestMethod]
-    public void ResolveAuditProvider_PortableLane_DefaultsToRelational() =>
+    public void ResolveAuditProvider_NonAzureLane_DefaultsToRelational() =>
         Assert.AreEqual(
             AuditProvider.Relational,
-            RegisterServices.ResolveAuditProvider(Config((HostingLaneSelector.ConfigurationKey, "Portable"))));
+            RegisterServices.ResolveAuditProvider(Config((HostingLaneResolver.LaneConfigurationKey, "NonAzure"))));
 
     [TestMethod]
-    public void ResolveAuditProvider_ConfigBeatsLaneDefault() =>
-        Assert.AreEqual(
-            AuditProvider.AzureTable,
+    public void ResolveAuditProvider_CrossLaneValue_Throws() =>
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
             RegisterServices.ResolveAuditProvider(Config(
-                (HostingLaneSelector.ConfigurationKey, "Portable"),
+                (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
                 (RegisterServices.AuditProviderConfigKey, "AzureTable"))));
 
     [TestMethod]
@@ -212,17 +303,20 @@ public class ProviderSwitchSelectorTests
     [DoNotParallelize]
     public void ResolveAuditProvider_EnvWinsOverConfig()
     {
+        WithEnv(HostingLaneResolver.LaneEnvironmentVariable, "NonAzure", () =>
         WithEnv(RegisterServices.AuditProviderEnvVar, "Relational", () =>
             Assert.AreEqual(
                 AuditProvider.Relational,
-                RegisterServices.ResolveAuditProvider(Config((RegisterServices.AuditProviderConfigKey, "AzureTable")))));
+                RegisterServices.ResolveAuditProvider(Config((RegisterServices.AuditProviderConfigKey, "AzureTable"))))));
     }
 
     [TestMethod]
     public void AddAuditServices_Relational_RegistersRelationalSinkAndBindsSettings()
     {
         var services = InvokeDispatcher("AddAuditServices",
-            Config((RegisterServices.AuditProviderConfigKey, "Relational")));
+            Config(
+                (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
+                (RegisterServices.AuditProviderConfigKey, "Relational")));
 
         var descriptor = services.Single(d => d.ServiceType == typeof(IAuditLogRepository));
         Assert.AreEqual(ServiceLifetime.Scoped, descriptor.Lifetime);
@@ -240,17 +334,16 @@ public class ProviderSwitchSelectorTests
         Assert.AreEqual(MessagingProvider.ServiceBus, RegisterServices.ResolveMessagingProvider(Config()));
 
     [TestMethod]
-    public void ResolveMessagingProvider_PortableLane_DefaultsToRabbitMq() =>
+    public void ResolveMessagingProvider_NonAzureLane_DefaultsToRabbitMq() =>
         Assert.AreEqual(
             MessagingProvider.RabbitMq,
-            RegisterServices.ResolveMessagingProvider(Config((HostingLaneSelector.ConfigurationKey, "Portable"))));
+            RegisterServices.ResolveMessagingProvider(Config((HostingLaneResolver.LaneConfigurationKey, "NonAzure"))));
 
     [TestMethod]
-    public void ResolveMessagingProvider_ConfigBeatsLaneDefault() =>
-        Assert.AreEqual(
-            MessagingProvider.ServiceBus,
+    public void ResolveMessagingProvider_CrossLaneValue_Throws() =>
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
             RegisterServices.ResolveMessagingProvider(Config(
-                (HostingLaneSelector.ConfigurationKey, "Portable"),
+                (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
                 (RegisterServices.MessagingProviderConfigKey, "ServiceBus"))));
 
     [TestMethod]
@@ -262,30 +355,30 @@ public class ProviderSwitchSelectorTests
     [DoNotParallelize]
     public void ResolveMessagingProvider_EnvWinsOverConfig()
     {
+        WithEnv(HostingLaneResolver.LaneEnvironmentVariable, "NonAzure", () =>
         WithEnv(RegisterServices.MessagingProviderEnvVar, "RabbitMq", () =>
             Assert.AreEqual(
                 MessagingProvider.RabbitMq,
-                RegisterServices.ResolveMessagingProvider(Config((RegisterServices.MessagingProviderConfigKey, "ServiceBus")))));
+                RegisterServices.ResolveMessagingProvider(Config((RegisterServices.MessagingProviderConfigKey, "ServiceBus"))))));
     }
 
     // ----- DataProtection persistence -----
 
     [TestMethod]
-    public void ResolveDataProtectionPersistence_Unset_AzureLane_ReturnsNull_ForCallerDerivedDefault() =>
-        Assert.IsNull(RegisterServices.ResolveDataProtectionPersistence(Config()));
+    public void ResolveDataProtectionPersistence_Unset_AzureLane_DefaultsToAzureBlob() =>
+        Assert.AreEqual(DataProtectionPersistence.AzureBlob, RegisterServices.ResolveDataProtectionPersistence(Config()));
 
     [TestMethod]
-    public void ResolveDataProtectionPersistence_PortableLane_DefaultsToRedis() =>
+    public void ResolveDataProtectionPersistence_NonAzureLane_DefaultsToRedis() =>
         Assert.AreEqual(
             DataProtectionPersistence.Redis,
-            RegisterServices.ResolveDataProtectionPersistence(Config((HostingLaneSelector.ConfigurationKey, "Portable"))));
+            RegisterServices.ResolveDataProtectionPersistence(Config((HostingLaneResolver.LaneConfigurationKey, "NonAzure"))));
 
     [TestMethod]
-    public void ResolveDataProtectionPersistence_ConfigBeatsLaneDefault() =>
-        Assert.AreEqual(
-            DataProtectionPersistence.AzureBlob,
+    public void ResolveDataProtectionPersistence_CrossLaneValue_Throws() =>
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
             RegisterServices.ResolveDataProtectionPersistence(Config(
-                (HostingLaneSelector.ConfigurationKey, "Portable"),
+                (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
                 (RegisterServices.DataProtectionPersistenceConfigKey, "AzureBlob"))));
 
     [TestMethod]
@@ -297,10 +390,10 @@ public class ProviderSwitchSelectorTests
     [DoNotParallelize]
     public void ResolveDataProtectionPersistence_EnvWinsOverConfig()
     {
-        WithEnv(RegisterServices.DataProtectionPersistenceEnvVar, "None", () =>
+        WithEnv(RegisterServices.DataProtectionPersistenceEnvVar, "AzureBlob", () =>
             Assert.AreEqual(
-                DataProtectionPersistence.None,
-                RegisterServices.ResolveDataProtectionPersistence(Config((RegisterServices.DataProtectionPersistenceConfigKey, "AzureBlob")))));
+                DataProtectionPersistence.AzureBlob,
+                RegisterServices.ResolveDataProtectionPersistence(Config((RegisterServices.DataProtectionPersistenceConfigKey, "None")))));
     }
 
     /// <summary>
@@ -316,16 +409,17 @@ public class ProviderSwitchSelectorTests
         return services;
     }
 
-    /// <summary>Same invocation, for an arm that is expected to fail fast.</summary>
-    private static NotSupportedException InvokeUnsupportedDispatcher(string methodName, IConfiguration config)
+    /// <summary>Invokes a dispatcher that is expected to fail fast and unwraps reflection's exception.</summary>
+    private static TException InvokeDispatcherFailure<TException>(string methodName, IConfiguration config)
+        where TException : Exception
     {
         var services = new ServiceCollection();
         services.AddLogging();
 
         var target = Assert.ThrowsExactly<TargetInvocationException>(() =>
             Dispatcher(methodName).Invoke(null, [services, config]));
-        Assert.IsInstanceOfType<NotSupportedException>(target.InnerException);
-        return (NotSupportedException)target.InnerException!;
+        Assert.IsInstanceOfType<TException>(target.InnerException);
+        return (TException)target.InnerException!;
     }
 
     private static MethodInfo Dispatcher(string methodName) =>

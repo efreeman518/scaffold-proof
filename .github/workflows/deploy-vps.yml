@@ -1,11 +1,10 @@
-name: Deploy TaskFlow (Portable lane, VPS)
+name: Deploy TaskFlow (NonAzure lane, VPS)
 
-# Portable lane release (D-036): the same five digest-pinned images the Azure lane ships, brought up on one
-# VPS by Docker Compose behind Caddy. Manual only - a VPS deploy is a deliberate act, and nothing here is
-# cheap enough to run on every push.
+# NonAzure lane release (D-060, D-036): five shared host images plus React and Uno static images, brought up
+# on one VPS by Docker Compose behind Caddy. Manual only - a VPS deploy is deliberate work.
 #
 # Secrets (names only; documented in deploy/compose/README.md):
-#   VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_KNOWN_HOSTS, CADDY_DOMAIN, NUGET_PAT
+#   VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_KNOWN_HOSTS, CADDY_DOMAIN, REACT_UI_DOMAIN, UNO_UI_DOMAIN, NUGET_PAT
 
 on:
   workflow_dispatch:
@@ -89,6 +88,7 @@ jobs:
     uses: ./.github/workflows/build-images.yml
     with:
       ref: ${{ needs.validate-entry.outputs.sha }}
+      include-static-ui: true
     secrets: inherit
     permissions:
       contents: read
@@ -140,9 +140,11 @@ jobs:
           SCHEDULER: ${{ needs.build-release.outputs.scheduler-image }}
           MIGRATOR: ${{ needs.build-release.outputs.migrator-image }}
           BLAZOR: ${{ needs.build-release.outputs.blazor-image }}
+          REACT: ${{ needs.build-release.outputs.react-image }}
+          UNO: ${{ needs.build-release.outputs.uno-image }}
         run: |
           set -euo pipefail
-          for image in "$GATEWAY" "$API" "$SCHEDULER" "$MIGRATOR" "$BLAZOR"; do
+          for image in "$GATEWAY" "$API" "$SCHEDULER" "$MIGRATOR" "$BLAZOR" "$REACT" "$UNO"; do
             [[ "$image" =~ @sha256:[0-9a-f]{64}$ ]] || {
               echo "::error::Refusing to deploy an image that is not digest-pinned: $image"; exit 1;
             }
@@ -153,11 +155,15 @@ jobs:
           TASKFLOW_SCHEDULER_IMAGE=$SCHEDULER
           TASKFLOW_MIGRATOR_IMAGE=$MIGRATOR
           TASKFLOW_BLAZOR_IMAGE=$BLAZOR
+          TASKFLOW_REACT_IMAGE=$REACT
+          TASKFLOW_UNO_IMAGE=$UNO
           ENV
           ssh taskflow-vps "mkdir -p ~/${REMOTE_DIR}/pgbouncer"
           scp deploy/compose/docker-compose.yml deploy/compose/Caddyfile images.env \
             "taskflow-vps:~/${REMOTE_DIR}/"
-          scp deploy/compose/pgbouncer/pgbouncer.ini "taskflow-vps:~/${REMOTE_DIR}/pgbouncer/"
+          scp deploy/compose/.env.example "taskflow-vps:~/${REMOTE_DIR}/.env.base.example"
+          scp deploy/compose/pgbouncer/pgbouncer.ini deploy/compose/pgbouncer/userlist.txt.example \
+            "taskflow-vps:~/${REMOTE_DIR}/pgbouncer/"
       - name: Pull and bring the stack up
         run: |
           set -euo pipefail
@@ -165,16 +171,61 @@ jobs:
           # compose interpolates image names only from .env in the project directory.
           ssh taskflow-vps "set -euo pipefail
             cd ~/${REMOTE_DIR}
-            [[ -f .env.base ]] || cp .env .env.base
+            [[ -f .env.base ]] || {
+              echo 'Missing operator-managed .env.base. Copy .env.base.example to .env.base, replace every CHANGE_ME value, chmod 600, then rerun.' >&2
+              exit 1
+            }
+            if grep -Eq '^[A-Za-z0-9_]+=[^#]*CHANGE_ME_' .env.base; then
+              echo 'Refusing deployment while .env.base contains a CHANGE_ME value.' >&2
+              exit 1
+            fi
+            if grep -Eq '^TASKFLOW_[A-Z0-9_]+_IMAGE=' .env.base; then
+              echo 'Remove image variables from .env.base; images.env is workflow-managed.' >&2
+              exit 1
+            fi
+            if grep -q '^COMPOSE_PROFILES=' .env.base; then
+              echo 'Remove COMPOSE_PROFILES from .env.base; it is derived from provider settings.' >&2
+              exit 1
+            fi
+            [[ \"\$(grep -Ec '^ReadModel__Provider=' .env.base)\" -eq 1 ]] || {
+              echo 'Set exactly one ReadModel__Provider in .env.base.' >&2
+              exit 1
+            }
+            [[ \"\$(grep -Ec '^Database__PostgreSql__PoolerMode=' .env.base)\" -eq 1 ]] || {
+              echo 'Set exactly one Database__PostgreSql__PoolerMode in .env.base.' >&2
+              exit 1
+            }
             cp images.env images.env.current
-            cat .env.base images.env > .env
+            compose_profiles=''
+            if grep -qx 'ReadModel__Provider=MongoDb' .env.base; then
+              compose_profiles=mongo
+            elif grep -Eqx 'ReadModel__Provider=(PostgreSqlJsonb|Relational)' .env.base; then
+              :
+            else
+              echo 'ReadModel__Provider must be PostgreSqlJsonb, MongoDb, or deprecated Relational.' >&2
+              exit 1
+            fi
+            if grep -qx 'Database__PostgreSql__PoolerMode=Transaction' .env.base; then
+              if [[ -n \"\$compose_profiles\" ]]; then
+                compose_profiles=\"\${compose_profiles},pooler\"
+              else
+                compose_profiles=pooler
+              fi
+            elif ! grep -Eqx 'Database__PostgreSql__PoolerMode=(|None)' .env.base; then
+              echo 'Database__PostgreSql__PoolerMode must be empty, None, or Transaction.' >&2
+              exit 1
+            fi
+            { cat .env.base; printf '\n'; if [[ -n \"\$compose_profiles\" ]]; then printf 'COMPOSE_PROFILES=%s\n' \"\$compose_profiles\"; fi; cat images.env; } > .env
             chmod 600 .env .env.base
+            ${COMPOSE} config -q
             ${COMPOSE} pull
             ${COMPOSE} up -d --wait --remove-orphans
             ${COMPOSE} ps"
       - name: Verify public readiness and one CRUD round trip
         env:
           CADDY_DOMAIN: ${{ secrets.CADDY_DOMAIN }}
+          REACT_UI_DOMAIN: ${{ secrets.REACT_UI_DOMAIN }}
+          UNO_UI_DOMAIN: ${{ secrets.UNO_UI_DOMAIN }}
         run: |
           set -euo pipefail
           base="https://${CADDY_DOMAIN}"
@@ -186,6 +237,14 @@ jobs:
           id=$(jq -er '.item.id' <<< "$created")
           curl -fsS "${base}/api/v1/task-items/${id}" | jq -er --arg id "$id" 'select(.item.id == $id)' > /dev/null
           curl -fsS -X DELETE "${base}/api/v1/task-items/${id}" > /dev/null
+          check_ui() {
+            local domain="$1"
+            curl -fsS --retry 12 --retry-delay 5 --retry-all-errors "https://${domain}/" > /dev/null
+            curl -fsS --retry 12 --retry-delay 5 --retry-all-errors "https://${domain}/app-config.json" \
+              | jq -e --arg gateway "$base" '.gatewayBaseUrl == $gateway' > /dev/null
+          }
+          check_ui "$REACT_UI_DOMAIN"
+          check_ui "$UNO_UI_DOMAIN"
           echo "VPS readiness and create/read/delete smoke passed."
 
   record-release:
@@ -203,14 +262,27 @@ jobs:
           SCHEDULER: ${{ needs.build-release.outputs.scheduler-image }}
           MIGRATOR: ${{ needs.build-release.outputs.migrator-image }}
           BLAZOR: ${{ needs.build-release.outputs.blazor-image }}
+          REACT: ${{ needs.build-release.outputs.react-image }}
+          UNO: ${{ needs.build-release.outputs.uno-image }}
         run: |
           set -euo pipefail
-          previous=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/artifacts" -f name=taskflow-release-manifest-vps -f per_page=100 \
+          candidate=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/artifacts" -f name=taskflow-release-manifest-vps -f per_page=100 \
             --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .id // empty')
-          jq -n --arg sha "$SHA" --arg gateway "$GATEWAY" --arg api "$API" --arg scheduler "$SCHEDULER" --arg migrator "$MIGRATOR" --arg blazor "$BLAZOR" \
-            --argjson previous "${previous:-null}" \
-            '{schemaVersion:1,operation:"deploy",commitSha:$sha,images:{gateway:$gateway,api:$api,scheduler:$scheduler,migrator:$migrator,blazor:$blazor},previousManifestArtifactId:$previous}' > release-manifest.json
-          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path release-manifest.json -ImagesOnly
+          previous=null
+          if [[ -n "$candidate" ]]; then
+            mkdir -p previous
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${candidate}/zip" > previous.zip
+            unzip -q previous.zip -d previous
+            if pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path previous/release-manifest.json -ImagesOnly -ExpectedSchemaVersion 2; then
+              previous=$candidate
+            else
+              echo "Skipping incompatible v1 release manifest $candidate as rollback target."
+            fi
+          fi
+          jq -n --arg sha "$SHA" --arg gateway "$GATEWAY" --arg api "$API" --arg scheduler "$SCHEDULER" --arg migrator "$MIGRATOR" --arg blazor "$BLAZOR" --arg react "$REACT" --arg uno "$UNO" \
+            --argjson previous "$previous" \
+            '{schemaVersion:2,operation:"deploy",commitSha:$sha,images:{gateway:$gateway,api:$api,scheduler:$scheduler,migrator:$migrator,blazor:$blazor,react:$react,uno:$uno},previousManifestArtifactId:$previous}' > release-manifest.json
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path release-manifest.json -ImagesOnly -ExpectedSchemaVersion 2
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: taskflow-release-manifest-vps
@@ -230,6 +302,8 @@ jobs:
       scheduler: ${{ steps.release.outputs.scheduler }}
       migrator: ${{ steps.release.outputs.migrator }}
       blazor: ${{ steps.release.outputs.blazor }}
+      react: ${{ steps.release.outputs.react }}
+      uno: ${{ steps.release.outputs.uno }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: release
@@ -243,16 +317,16 @@ jobs:
           [[ -n "$current" ]] || { echo "::error::No current release manifest"; exit 1; }
           gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${current}/zip" > current.zip
           unzip -q current.zip -d current
-          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path current/release-manifest.json -ImagesOnly
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path current/release-manifest.json -ImagesOnly -ExpectedSchemaVersion 2
           previous=$(jq -r '.previousManifestArtifactId // empty' current/release-manifest.json)
           [[ -n "$previous" ]] || { echo "::error::No previous release manifest"; exit 1; }
           gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${previous}/zip" > previous.zip
           unzip -q previous.zip -d previous
-          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path previous/release-manifest.json -ImagesOnly
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path previous/release-manifest.json -ImagesOnly -ExpectedSchemaVersion 2
           m=previous/release-manifest.json
           echo "current-id=$current" >> "$GITHUB_OUTPUT"
           echo "sha=$(jq -r .commitSha "$m")" >> "$GITHUB_OUTPUT"
-          for key in gateway api scheduler migrator blazor; do echo "$key=$(jq -r ".images.$key" "$m")" >> "$GITHUB_OUTPUT"; done
+          for key in gateway api scheduler migrator blazor react uno; do echo "$key=$(jq -r ".images.$key" "$m")" >> "$GITHUB_OUTPUT"; done
 
   rollback:
     if: needs.validate-entry.outputs.operation == 'rollback'
@@ -295,11 +369,13 @@ jobs:
           SCHEDULER: ${{ needs.resolve-rollback.outputs.scheduler }}
           MIGRATOR: ${{ needs.resolve-rollback.outputs.migrator }}
           BLAZOR: ${{ needs.resolve-rollback.outputs.blazor }}
+          REACT: ${{ needs.resolve-rollback.outputs.react }}
+          UNO: ${{ needs.resolve-rollback.outputs.uno }}
         run: |
           set -euo pipefail
           # Application-only rollback. Database migrations remain forward-applied and must be backward
           # compatible - the migrator image is restored, not re-run against an older schema.
-          for image in "$GATEWAY" "$API" "$SCHEDULER" "$MIGRATOR" "$BLAZOR"; do
+          for image in "$GATEWAY" "$API" "$SCHEDULER" "$MIGRATOR" "$BLAZOR" "$REACT" "$UNO"; do
             [[ "$image" =~ @sha256:[0-9a-f]{64}$ ]] || {
               echo "::error::Recorded image is not digest-pinned: $image"; exit 1;
             }
@@ -310,17 +386,62 @@ jobs:
           TASKFLOW_SCHEDULER_IMAGE=$SCHEDULER
           TASKFLOW_MIGRATOR_IMAGE=$MIGRATOR
           TASKFLOW_BLAZOR_IMAGE=$BLAZOR
+          TASKFLOW_REACT_IMAGE=$REACT
+          TASKFLOW_UNO_IMAGE=$UNO
           ENV
           scp images.env "taskflow-vps:~/${REMOTE_DIR}/images.env"
           ssh taskflow-vps "set -euo pipefail
             cd ~/${REMOTE_DIR}
-            cat .env.base images.env > .env
+            [[ -f .env.base ]] || { echo 'Missing operator-managed .env.base.' >&2; exit 1; }
+            if grep -Eq '^[A-Za-z0-9_]+=[^#]*CHANGE_ME_' .env.base; then
+              echo 'Refusing rollback while .env.base contains a CHANGE_ME value.' >&2
+              exit 1
+            fi
+            if grep -Eq '^TASKFLOW_[A-Z0-9_]+_IMAGE=' .env.base; then
+              echo 'Remove image variables from .env.base; images.env is workflow-managed.' >&2
+              exit 1
+            fi
+            if grep -q '^COMPOSE_PROFILES=' .env.base; then
+              echo 'Remove COMPOSE_PROFILES from .env.base; it is derived from provider settings.' >&2
+              exit 1
+            fi
+            [[ \"\$(grep -Ec '^ReadModel__Provider=' .env.base)\" -eq 1 ]] || {
+              echo 'Set exactly one ReadModel__Provider in .env.base.' >&2
+              exit 1
+            }
+            [[ \"\$(grep -Ec '^Database__PostgreSql__PoolerMode=' .env.base)\" -eq 1 ]] || {
+              echo 'Set exactly one Database__PostgreSql__PoolerMode in .env.base.' >&2
+              exit 1
+            }
+            compose_profiles=''
+            if grep -qx 'ReadModel__Provider=MongoDb' .env.base; then
+              compose_profiles=mongo
+            elif grep -Eqx 'ReadModel__Provider=(PostgreSqlJsonb|Relational)' .env.base; then
+              :
+            else
+              echo 'ReadModel__Provider must be PostgreSqlJsonb, MongoDb, or deprecated Relational.' >&2
+              exit 1
+            fi
+            if grep -qx 'Database__PostgreSql__PoolerMode=Transaction' .env.base; then
+              if [[ -n \"\$compose_profiles\" ]]; then
+                compose_profiles=\"\${compose_profiles},pooler\"
+              else
+                compose_profiles=pooler
+              fi
+            elif ! grep -Eqx 'Database__PostgreSql__PoolerMode=(|None)' .env.base; then
+              echo 'Database__PostgreSql__PoolerMode must be empty, None, or Transaction.' >&2
+              exit 1
+            fi
+            { cat .env.base; printf '\n'; if [[ -n \"\$compose_profiles\" ]]; then printf 'COMPOSE_PROFILES=%s\n' \"\$compose_profiles\"; fi; cat images.env; } > .env
             chmod 600 .env
+            ${COMPOSE} config -q
             ${COMPOSE} pull
             ${COMPOSE} up -d --wait --remove-orphans"
       - name: Verify rollback readiness and one CRUD round trip
         env:
           CADDY_DOMAIN: ${{ secrets.CADDY_DOMAIN }}
+          REACT_UI_DOMAIN: ${{ secrets.REACT_UI_DOMAIN }}
+          UNO_UI_DOMAIN: ${{ secrets.UNO_UI_DOMAIN }}
         run: |
           set -euo pipefail
           base="https://${CADDY_DOMAIN}"
@@ -329,6 +450,14 @@ jobs:
             -d '{"item":{"title":"vps-rollback-smoke","priority":"Medium"}}')
           id=$(jq -er '.item.id' <<< "$created")
           curl -fsS -X DELETE "${base}/api/v1/task-items/${id}" > /dev/null
+          check_ui() {
+            local domain="$1"
+            curl -fsS --retry 12 --retry-delay 5 --retry-all-errors "https://${domain}/" > /dev/null
+            curl -fsS --retry 12 --retry-delay 5 --retry-all-errors "https://${domain}/app-config.json" \
+              | jq -e --arg gateway "$base" '.gatewayBaseUrl == $gateway' > /dev/null
+          }
+          check_ui "$REACT_UI_DOMAIN"
+          check_ui "$UNO_UI_DOMAIN"
           echo "VPS rollback readiness and CRUD smoke passed."
 
   record-rollback:
@@ -345,13 +474,15 @@ jobs:
           SCHEDULER: ${{ needs.resolve-rollback.outputs.scheduler }}
           MIGRATOR: ${{ needs.resolve-rollback.outputs.migrator }}
           BLAZOR: ${{ needs.resolve-rollback.outputs.blazor }}
+          REACT: ${{ needs.resolve-rollback.outputs.react }}
+          UNO: ${{ needs.resolve-rollback.outputs.uno }}
           PREVIOUS_ID: ${{ needs.resolve-rollback.outputs.current-id }}
         run: |
           set -euo pipefail
-          jq -n --arg sha "$SHA" --arg gateway "$GATEWAY" --arg api "$API" --arg scheduler "$SCHEDULER" --arg migrator "$MIGRATOR" --arg blazor "$BLAZOR" \
+          jq -n --arg sha "$SHA" --arg gateway "$GATEWAY" --arg api "$API" --arg scheduler "$SCHEDULER" --arg migrator "$MIGRATOR" --arg blazor "$BLAZOR" --arg react "$REACT" --arg uno "$UNO" \
             --argjson previous "$PREVIOUS_ID" \
-            '{schemaVersion:1,operation:"rollback",commitSha:$sha,images:{gateway:$gateway,api:$api,scheduler:$scheduler,migrator:$migrator,blazor:$blazor},previousManifestArtifactId:$previous}' > release-manifest.json
-          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path release-manifest.json -ImagesOnly
+            '{schemaVersion:2,operation:"rollback",commitSha:$sha,images:{gateway:$gateway,api:$api,scheduler:$scheduler,migrator:$migrator,blazor:$blazor,react:$react,uno:$uno},previousManifestArtifactId:$previous}' > release-manifest.json
+          pwsh -File ./infra/scripts/Test-ReleaseManifest.ps1 -Path release-manifest.json -ImagesOnly -ExpectedSchemaVersion 2
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: taskflow-release-manifest-vps

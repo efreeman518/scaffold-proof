@@ -19,6 +19,9 @@ param memory string = '0.5Gi'
 @description('Environment variables')
 param envVars array = []
 
+@description('User-assigned managed identity resource ID')
+param userAssignedIdentityId string
+
 @description('Replica timeout in seconds')
 param replicaTimeout int = 1800
 
@@ -30,7 +33,10 @@ resource job 'Microsoft.App/jobs@2024-03-01' = {
   location: location
   tags: tags
   identity: {
-    type: 'SystemAssigned'
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${userAssignedIdentityId}': {}
+    }
   }
   properties: {
     environmentId: environmentId
@@ -61,4 +67,3 @@ resource job 'Microsoft.App/jobs@2024-03-01' = {
 
 output id string = job.id
 output name string = job.name
-output principalId string = job.identity.principalId

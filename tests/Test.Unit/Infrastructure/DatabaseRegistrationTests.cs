@@ -1,17 +1,21 @@
+using EF.BackgroundServices.InternalMessageBus;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Moq;
 using TaskFlow.Bootstrapper;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Provider;
+using TaskFlow.Hosting;
 using Test.Support;
 
 namespace Test.Unit.Infrastructure;
 
 /// <summary>Verifies runtime database registration selects the configured provider and pins the schema-owned migration history.</summary>
 [TestClass]
+[TestCategory("Unit")]
 public sealed class DatabaseRegistrationTests
 {
     [TestMethod]
@@ -25,14 +29,20 @@ public sealed class DatabaseRegistrationTests
             {
                 ["ConnectionStrings:TaskFlowDbContextTrxn"] = connectionString,
                 ["ConnectionStrings:TaskFlowDbContextQuery"] = connectionString,
-                [RegisterServices.AuditProviderConfigKey] = AuditProvider.Relational.ToString(),
+                [HostingLaneResolver.LaneConfigurationKey] =
+                    provider == TaskFlowDbProvider.SqlServer ? "Azure" : "NonAzure",
+                [RegisterServices.AuditProviderConfigKey] =
+                    provider == TaskFlowDbProvider.SqlServer ? "AzureTable" : "Relational",
+                ["ConnectionStrings:TableStorage1"] = "https://taskflowtest.table.core.windows.net/",
                 [TaskFlowDbProviderSelector.ConfigurationKey] = provider.ToString()
             })
             .AddInMemoryCollection(TestColumnEncryption.Configuration)
             .Build();
         var services = new ServiceCollection();
         services.AddLogging();
-        services.RegisterInfrastructureServices(configuration);
+        services.AddSingleton(new Mock<IInternalMessageBus>().Object);
+        RegisterServices.AddDatabaseServices(services, configuration);
+        RegisterServices.AddAuditServices(services, configuration);
 
         using var serviceProvider = services.BuildServiceProvider(new ServiceProviderOptions
         {

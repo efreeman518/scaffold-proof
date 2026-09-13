@@ -2,6 +2,7 @@
 using EF.Data.Contracts;
 using EF.Data.Encryption;
 using EF.Data.Interceptors;
+using EF.BackgroundServices.InternalMessageBus;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,9 +23,13 @@ public static partial class RegisterServices
     /// Registers write DbContext, read DbContext, FlowEngine DbContext, and repositories.
     /// Provider selection (SQL Server / PostgreSQL) happens once in <see cref="TaskFlowDbProviderExtensions.UseTaskFlowProvider"/>.
     /// </summary>
-    private static void AddDatabaseServices(IServiceCollection services, IConfiguration config)
+    internal static void AddDatabaseServices(IServiceCollection services, IConfiguration config)
     {
-        services.AddTransient<AuditInterceptor<string, Guid?>>();
+        // AuditHandler persists through the internal bus. Do not let DI inject IAuditLogRepository into
+        // the interceptor's optional direct-sink parameter: the NonAzure relational sink uses this same
+        // context and would recurse while the pooled factory builds its options.
+        services.AddTransient(sp => new AuditInterceptor<string, Guid?>(
+            sp.GetRequiredService<IInternalMessageBus>(), []));
         services.AddSingleton<VersionTimestampInterceptor>();
         // D-026: stages raised domain events as outbox rows in the same SaveChanges as the domain write.
         services.AddSingleton<OutboxStagingInterceptor>();
@@ -42,7 +47,7 @@ public static partial class RegisterServices
         var dbConnectionStringFlowEngine =
             config.GetConnectionString("TaskFlowFlowEngineDbContext") ?? dbConnectionStringTrxn;
 
-        services.AddDbContextFactory<TaskFlowDbContextTrxn>((sp, options) =>
+        services.AddPooledDbContextFactory<TaskFlowDbContextTrxn>((sp, options) =>
         {
             UseTaskFlowProviderIfConfigured(options, config, dbConnectionStringTrxn,
                 TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName);
@@ -52,7 +57,7 @@ public static partial class RegisterServices
                 sp.GetRequiredService<VersionTimestampInterceptor>(),
                 sp.GetRequiredService<OutboxStagingInterceptor>(),
                 sp.GetRequiredService<BlindIndexInterceptor>());
-            }, ServiceLifetime.Scoped);
+        });
         services.AddScoped<DbContextScopedFactory<TaskFlowDbContextTrxn, string, Guid?>>();
         services.AddScoped(sp => sp.GetRequiredService<DbContextScopedFactory<TaskFlowDbContextTrxn, string, Guid?>>()
             .CreateDbContext());

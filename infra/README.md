@@ -7,47 +7,48 @@ Azure infrastructure for the TaskFlow dev environment. All resources deploy to a
 | Resource | Dev SKU | Prod SKU | Purpose |
 |----------|---------|----------|---------|
 | Container Apps Environment | Consumption | Consumption | Hosts Gateway, API, Scheduler, Blazor |
-| Database (`databaseProvider`) | SQL Basic (5 DTU) | SQL Hyperscale `HS_Gen5_2`, zone-redundant, 1 HA/read-scale replica | Transactional + query databases. `PostgreSql` (Flexible Server 17, pgvector) is a selectable alternative to `SqlServer` on both profiles - see the commented block in `main.prod.bicepparam`. |
+| Database | SQL Basic (5 DTU) | SQL Hyperscale `HS_Gen5_2`, zone-redundant, 1 HA/read-scale replica | Azure lane transactional + query databases. |
 | Cosmos DB | Serverless | Serverless | Read projections (`taskflow-db`/`task-views`, matching `TaskFlow.Api` appsettings) |
 | Service Bus | Standard | Standard | Domain events (3 filtered subscriptions: `projection`, `ai-review`, `workflow`) + command queue |
-| RabbitMQ (optional) | Container App, 1 vCPU / 2 GiB | same | Alternative broker when `messagingProvider: 'RabbitMq'`; single node, Azure Files volume, management plugin |
 | Azure Functions | Flex Consumption (FC1) | Flex Consumption (FC1) | Event-driven processing, `functionAppScaleLimit` param |
-| Static Web App | Free | Free | Uno WASM frontend |
+| Static Web Apps | Free | Free | React and Uno WASM frontends |
 | Redis | Azure Managed Redis `Balanced_B0`, no HA | Azure Managed Redis `Balanced_B5`+, HA | FusionCache L2 (`ConnectionStrings__Redis1`), API + Scheduler |
-| Storage Accounts | Standard LRS (x2) | Standard LRS (x2) | App blobs/tables + Functions runtime |
+| Storage Accounts | Standard LRS (x2) | Standard LRS (x2) | App blobs/tables/queues + Functions runtime |
 | Key Vault | Standard | Standard | Secrets management |
 | App Configuration | Free | Free | Centralized config |
 | Log Analytics | PerGB2018 (30d) | PerGB2018 (30d) | Logging + Application Insights |
-| User-Assigned Identity | - | - | GitHub Actions OIDC deploy identity |
+| User-Assigned Identities | - | - | GitHub Actions OIDC and SQL deployment admin, migration DDL, runtime DML |
 
-Azure resource access uses **managed identities and Entra authentication** where supported (no shared application keys except Functions storage and Redis, which require one - see the redis module comments on the Entra data-plane gap). End-user application auth is separate: this reference deployment defaults to `AuthMode: Scaffold`, supplies an automatic principal, and does not require a login.
+Azure resource access uses **managed identities and Entra authentication** where supported. Functions storage and Redis still require access keys; Redis reaches API and Scheduler only through Container Apps secret references, never plain environment values. End-user application auth is separate: this reference deployment defaults to `AuthMode: Scaffold`, supplies an automatic principal, and does not require a login.
 
 ### Container Apps scale profiles
 
-Gateway, API, Scheduler, and Blazor each take a `<host>Profile` object param (`minReplicas`, `maxReplicas`, `concurrentRequests`, `cpu`, `memory`). `main.dev.bicepparam` keeps dev scale-to-zero with small ceilings and no HTTP concurrency rule; `main.prod.bicepparam` sets Gateway/API to min 2 / max 100 / 50 concurrent requests, Blazor to min 2 / max 30, and Scheduler to two always-on replicas (min 2 / max 2, no ingress so no concurrency rule).
+Gateway, API, Scheduler, and Blazor each take a `<host>Profile` object param (`minReplicas`, `maxReplicas`, `concurrentRequests`, `cpu`, `memory`). `main.dev.bicepparam` keeps public/request-driven hosts at scale-to-zero with small ceilings and no HTTP concurrency rule; Scheduler stays at one replica because its embedded TickerQ service has no ingress or event scale rule. `main.prod.bicepparam` sets Gateway/API to min 2 / max 100 / 50 concurrent requests, Blazor to min 2 / max 30, and Scheduler to two always-on replicas (min 2 / max 2).
 
-### Messaging provider
+### Azure lane contract
 
-`messagingProvider` selects the transport (D-034). `'ServiceBus'` (default) deploys the namespace, topic and the
-three filtered subscriptions. `'RabbitMq'` deploys `modules/rabbitmq-container-app.bicep` instead: one RabbitMQ
-container app with an Azure Files volume for the mnesia directory and the management plugin on port 15672, and
-wires `Messaging__Provider` plus `ConnectionStrings__RabbitMq1` into API, Scheduler and Functions (whose Service
-Bus triggers are then disabled by name). Exactly one broker is deployed, and the Service Bus role assignments are
-skipped under RabbitMq. That single node is a dev and staging proof of the second transport, not a production
-topology: it has no clustering, no quorum queues and no failover, so a node restart pauses delivery until the
-volume remounts. A production deployment on this provider should point `ConnectionStrings__RabbitMq1` at a managed
-broker (Azure Service Bus remains the managed option here, CloudAMQP or Amazon MQ elsewhere) or at a real
-multi-node cluster with quorum queues, and leave this module to non-production environments.
+`infra/main.bicep` is Azure-only under D-060. Every relevant host receives `Hosting__Lane=Azure` plus SQL Server,
+Service Bus, Azure Blob, Cosmos, Azure Table, and Blob Data Protection settings. `searchProvider` defaults to `Sql`
+because this template does not provision or configure Azure AI Search. `AzureAiSearch` remains a strict opt-in for a
+deployment that supplies that external service and its application configuration. PostgreSQL, RabbitMQ, S3, and
+MongoDB belong to the separate NonAzure Compose lane and are not Azure Bicep alternatives.
 
 ### Connection strings
 
-Every emitted connection string carries an explicit pool size (`Max Pool Size` for SqlClient, `Maximum Pool Size` for Npgsql). `ConnectionStrings__TaskFlowDbContextQuery` (API, Scheduler, Functions) resolves to the read/replica connection string; today all other contexts share the primary read-write string, same as before this change.
+Every emitted SQL connection string carries an explicit `Max Pool Size`. `ConnectionStrings__TaskFlowDbContextQuery`
+(API, Scheduler, Functions) resolves to the read/replica connection string; all other contexts share the primary
+read-write string. SqlClient selects an explicit user-assigned identity by client ID. The migration identity receives
+`db_ddladmin`, `db_datareader`, and `db_datawriter`; the shared runtime SQL identity receives DML only on the
+`taskflow`, `flowengine`, and `scheduler` schemas. The federated deploy identity is SQL Entra administrator and runs
+the idempotent principal bootstrap before migrations. Users are bound by explicit client-ID SID, so SQL needs no
+tenant-wide Directory Readers permission.
 
 ## Prerequisites
 
 - **Azure CLI** >= 2.60 with Bicep CLI
 - **PowerShell** 7+
-- **Azure subscription** with Owner or Contributor + User Access Administrator
+- **Azure subscription** with Owner or Contributor + User Access Administrator. Bootstrap needs
+  `Microsoft.Authorization/roleDefinitions/write` and `roleAssignments/write` to create its narrow custom role.
 - **GitHub repo** with Actions enabled
 - Signed in to Azure CLI: `az login`
 
@@ -72,7 +73,9 @@ Secrets belong in Key Vault or the deployment secret store. Never commit client 
 
 ## Step 1: Run Bootstrap
 
-The bootstrap script is a **one-time** operation run from your local machine. It deploys all infrastructure and creates the federated credential for GitHub Actions OIDC.
+The bootstrap script is a rerunnable prerequisite operation from your local machine. It creates only the resource group,
+deploy identity, subscription deployment permission, and GitHub Actions OIDC trust. It never deploys application
+infrastructure or placeholder images; the workflow owns the first and every later application deployment.
 
 ```powershell
 cd infra/scripts
@@ -89,17 +92,27 @@ Optional parameters (shown with defaults):
 | `-Location` | `eastus2` | Azure region |
 | `-ResourcePrefix` | `taskflow` | Naming prefix for all resources |
 | `-EnvironmentName` | `dev` | Environment suffix |
-| `-GitHubBranch` | `main` | Branch for OIDC federated credential |
+| `-GitHubEnvironment` | `dev` | GitHub environment used by deploy jobs. Safe characters: letters, digits, `.`, `_`, `-` |
 
 The script will:
 
 1. Set the active subscription
-2. Look up your signed-in Entra user (used as SQL admin)
-3. Deploy `main.bicep` at subscription scope (creates RG + all resources)
-4. Create a federated credential on the deploy managed identity for GitHub Actions
-5. Print the exact values you need for GitHub configuration (Step 2)
+2. Deploy `bootstrap/deploy-identity-foundation.bicep` as the signed-in human. It creates the resource group, deploy UAMI,
+   and a custom subscription role limited to `Microsoft.Resources/deployments/*` plus resource-group read/write.
+3. Create or update the environment-bound federated credential on the deploy UAMI.
+4. Print the exact values needed for GitHub configuration (Step 2).
 
-> **Deployment takes 5-10 minutes.** Watch for the output block at the end - it contains the values for the next step.
+The current workflow jobs use the `dev` GitHub environment, so the default credential subject is
+`repo:owner/repo:environment:dev`. If the workflow environment changes, rerun bootstrap with the same
+`-GitHubEnvironment` value. GitHub documents this environment subject format in its
+[OIDC reference](https://docs.github.com/en/actions/reference/security/oidc#example-subject-claims).
+
+The subscription role is intentionally not Contributor. It lets the UAMI submit the
+[subscription-scoped Bicep deployment](https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/deploy-to-subscription)
+and create or update resource groups, but underlying application resources and RBAC still require the existing
+TaskFlow resource-group assignments. See Microsoft's [custom role guidance](https://learn.microsoft.com/en-us/azure/role-based-access-control/custom-roles).
+
+The output block contains the GitHub variables needed for the next step.
 
 ## Step 2: Configure GitHub Repository
 
@@ -112,13 +125,6 @@ After bootstrap completes, configure your GitHub repo at **Settings -> Secrets a
 | `AZURE_CLIENT_ID` | *(from bootstrap output)* | Deploy managed identity client ID |
 | `AZURE_TENANT_ID` | *(from bootstrap output)* | Entra tenant ID |
 | `AZURE_SUBSCRIPTION_ID` | `db98b283-631e-4f24-bd77-321332820725` | Subscription ID |
-
-### Secrets (Settings -> Secrets -> New repository secret)
-
-| Secret | Value | Source |
-|--------|-------|--------|
-| `SQL_ADMIN_PRINCIPAL_ID` | *(from bootstrap output)* | Your Entra user object ID |
-| `SQL_ADMIN_PRINCIPAL_NAME` | *(from bootstrap output)* | Your Entra user display name |
 
 ### Private NuGet Feed (`NUGET_PAT`)
 
@@ -143,7 +149,14 @@ To create the PAT: **GitHub -> Settings -> Developer settings -> Personal access
 
 The deploy workflow currently runs manually through `workflow_dispatch`. Supply `operation=deploy` and a full green `main` commit SHA, or select `operation=rollback` to activate the recorded previous release. It also preserves a `workflow_call` interface for CI, but the caller in `ci.yml` remains disabled until Azure bootstrap and repository variables are configured.
 
-For deploy, the workflow validates the exact green commit, builds each image and Functions/Uno bundle once, records immutable digests and artifact IDs, provisions with the existing runtime images, runs migrations, activates the recorded release, verifies readiness and functional CRUD, then records current and previous release manifests. Rollback downloads the recorded prior artifacts and images without rebuilding or reversing database migrations.
+For deploy, the workflow validates the exact green commit, builds each image and the Functions/React/Uno bundles once, records immutable digests and artifact IDs, provisions with the existing runtime images, creates the migration SQL principal, runs migrations, grants schema-scoped runtime SQL access, activates the recorded release, publishes Functions through Flex OneDeploy, verifies readiness and functional CRUD, then records current and previous release manifests. Rollback downloads the recorded prior artifacts and images without rebuilding or reversing database migrations.
+
+The Function App follows Microsoft's [Flex Consumption IaC contract](https://learn.microsoft.com/en-us/azure/azure-functions/functions-infrastructure-as-code): an existing deployment container, managed-identity deployment storage, explicit .NET 10 isolated runtime, and `scaleAndConcurrency`. Its Blob trigger follows the documented [identity-based binding roles](https://learn.microsoft.com/en-us/azure/azure-functions/manage-connections), including Storage Blob Data Owner and Storage Queue Data Contributor.
+
+The repository is public and images are published by its workflow with `GITHUB_TOKEN`; GitHub applies the repository's
+visibility model to newly created packages, so Container Apps can pull them anonymously. This deployment does not invent
+or store GHCR pull credentials. If package visibility is later made private, registry authentication must be designed and
+provisioned before deployment.
 
 ## CI/CD Pipeline Flow
 
@@ -151,8 +164,10 @@ For deploy, the workflow validates the exact green commit, builds each image and
 validate exact green SHA
   -> build immutable images and bundles once
   -> provision infrastructure with current runtime images
+  -> provision migration SQL identity
   -> run database migrations
-  -> activate digest-pinned runtime and recorded bundles
+  -> grant schema-scoped runtime SQL access
+  -> activate digest-pinned runtime and publish recorded Functions through OneDeploy
   -> check API database readiness and public health
   -> create/read/delete functional smoke with cleanup
   -> record current and previous release manifests
@@ -166,6 +181,8 @@ infra/
 --- main.bicepparam         # Parameter defaults (dev)
 --- main.dev.bicepparam     # Explicit dev profile
 --- main.prod.bicepparam    # Prod profile (Hyperscale, HA, scale rules)
+--- bootstrap/
+-   --- deploy-identity-foundation.bicep # Human-run deploy identity and narrow subscription role
 --- modules/
 -   --- app-configuration.bicep
 -   --- container-app.bicep
@@ -176,8 +193,6 @@ infra/
 -   --- functions.bicep
 -   --- key-vault.bicep
 -   --- log-analytics.bicep
--   --- postgres-flexible-server.bicep
--   --- rabbitmq-container-app.bicep
 -   --- redis.bicep
 -   --- redis-rbac.bicep
 -   --- role-assignment.bicep
@@ -187,6 +202,7 @@ infra/
 -   --- storage.bicep
 --- scripts/
 -   --- bootstrap.ps1       # One-time setup script
+-   --- Set-AzureSqlPrincipal.ps1 # Idempotent migration/runtime SQL grants
 -   --- Invoke-DeploymentSmoke.ps1 # Post-deploy health and CRUD smoke
 -   --- Test-ReleaseManifest.ps1   # Immutable release manifest validation
 --- README.md               # This file
@@ -200,24 +216,27 @@ After successful deployment, access the app at:
 |---------|-----|
 | Gateway | `https://taskflow-dev-gateway.<region>.azurecontainerapps.io` |
 | Blazor UI | `https://taskflow-dev-blazor.<region>.azurecontainerapps.io` |
+| React UI | `https://<auto-generated>.azurestaticapps.net` |
 | Uno WASM UI | `https://<auto-generated>.azurestaticapps.net` |
 | API (internal) | `https://taskflow-dev-api.<region>.azurecontainerapps.io` |
 
-Exact URLs are printed by the bootstrap script and visible in the deploy workflow summary.
+Exact URLs are visible in the deploy workflow summary.
 
 ## Redeploying Infrastructure Only
 
-To redeploy infra without pushing code, run the bootstrap script again. It's idempotent - existing resources update in place.
+Run the manual deploy workflow with a full green `main` commit SHA. Bootstrap is safe to rerun, but it intentionally
+repairs only the identity foundation and never redeploys application infrastructure.
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---------|-----|
 | `AADSTS700016` on deploy | Verify `AZURE_CLIENT_ID` matches the deploy identity's client ID |
-| `FederatedIdentityCredential` error | Check federated credential subject matches `repo:owner/repo:ref:refs/heads/main` |
-| SQL deployment fails | Ensure `SQL_ADMIN_PRINCIPAL_ID` and `SQL_ADMIN_PRINCIPAL_NAME` secrets are set |
-| Container image pull fails | Verify repo packages are public, or add `packages: read` permission |
-| Functions deploy fails | Functions require `allowSharedKeyAccess: true` on their storage account (already configured) |
+| `FederatedIdentityCredential` error | Check the credential subject matches `repo:owner/repo:environment:dev` and the job uses that GitHub environment |
+| Subscription deployment authorization fails | Rerun bootstrap as subscription Owner or Contributor + User Access Administrator so the custom deployment role and assignment exist before OIDC is used |
+| SQL principal provisioning fails | Verify `AZURE_CLIENT_ID` is the Bicep-created deploy identity and remains SQL Entra administrator |
+| Container image pull fails | Verify GHCR packages still inherit this public repository's visibility; private registry authentication is not configured |
+| Functions deploy fails | Verify the `function-releases` container, Function App Storage Blob Data Owner role, and Flex OneDeploy output |
 | SWA deploy fails | Check that `swa-name` output is correctly passed from deploy-infra job |
 
-> Portable lane (Docker Compose on a VPS): see [`deploy/compose/README.md`](../deploy/compose/README.md). The `postgresPgBouncerEnabled` param here is the Azure half of the same D-045 pooling switch.
+> NonAzure lane (Docker Compose on a VPS): see [`deploy/compose/README.md`](../deploy/compose/README.md).

@@ -8,7 +8,7 @@ Generated: 2026-04-23
 
 ## 1. Project Overview
 
-**Goal:** Deploy TaskFlow multi-tenant task management application to a single Azure dev environment. All backend services containerized in Azure Container Apps, Functions on Flex Consumption, minimal SKUs, managed identities, App Configuration + Key Vault for config/secrets.
+**Goal:** Deploy TaskFlow multi-tenant task management application to a single Azure dev environment. Gateway, API, Scheduler, and Blazor run in Azure Container Apps; Functions uses Flex Consumption and React/Uno use Static Web Apps. The deployment uses minimal SKUs, managed identities, App Configuration, and Key Vault.
 
 **Path:** Modernize Existing - adding Azure deployment infrastructure to an existing .NET Aspire-orchestrated application.
 
@@ -35,6 +35,7 @@ Generated: 2026-04-23
 | TaskFlow.Scheduler | Background Worker | ASP.NET Core, TickerQ | `src/Host/TaskFlow.Scheduler/` |
 | TaskFlow.Functions | Event Processor | Azure Functions Isolated Worker v4 | `src/Host/TaskFlow.Functions/` |
 | TaskFlow.Blazor | Web UI | .NET 10 Interactive Server, MudBlazor | `src/UI/TaskFlow.Blazor/` |
+| TaskFlow.React | Web UI | React | `src/UI/TaskFlow.React/` |
 | TaskFlow.Uno | Cross-platform UI | Uno Platform WASM | `src/UI/TaskFlow.Uno/` |
 
 ---
@@ -61,16 +62,17 @@ Generated: 2026-04-23
 |-----------|---------------|------------------------------------|---------------------------------------|---------|
 | TaskFlow.Gateway | Container App | min 0 / max 2, 0.25 vCPU, 0.5Gi | min 2 / max 100, 50 concurrent requests, 0.5 vCPU, 1Gi | External (only public endpoint) |
 | TaskFlow.Api | Container App | min 0 / max 3, 0.5 vCPU, 1Gi | min 2 / max 100, 50 concurrent requests, 1.0 vCPU, 2Gi | Internal only |
-| TaskFlow.Scheduler | Container App | min 0 / max 1, 0.25 vCPU, 0.5Gi | min 2 / max 2 (always-on, no concurrency rule), 0.5 vCPU, 1Gi | Internal only (no ingress) |
+| TaskFlow.Scheduler | Container App | min 1 / max 1, 0.25 vCPU, 0.5Gi (always-on) | min 2 / max 2 (always-on, no concurrency rule), 0.5 vCPU, 1Gi | Internal only (no ingress) |
 | TaskFlow.Functions | Functions Flex Consumption | `functionAppScaleLimit` 20 | `functionAppScaleLimit` 20 | Internal (Service Bus trigger) |
 | TaskFlow.Blazor | Container App | min 0 / max 1, 0.25 vCPU, 0.5Gi | min 2 / max 30, 0.5 vCPU, 1Gi | External |
-| TaskFlow.Uno | Container App (static serve) | Consumption (0.25 vCPU, 0.5Gi) | Consumption (0.25 vCPU, 0.5Gi) | External |
+| TaskFlow.React | Static Web App | Free | Free | External |
+| TaskFlow.Uno | Static Web App | Free | Free | External |
 
 ### Data & Messaging Service Mapping
 
 | Service | Azure Resource | SKU/Tier | Est. $/mo |
 |---------|---------------|----------|-----------|
-| Database (`databaseProvider`) | Azure SQL Database (default) or PostgreSQL Flexible Server 17 | Dev: Basic DTU (5 DTU) / Postgres `Standard_B1ms` Burstable. Prod: SQL Hyperscale `HS_Gen5_2` zone-redundant + HA/read-scale replica, or Postgres `GeneralPurpose` zone-redundant + read replica | Dev ~$5; prod materially higher (Hyperscale/HA priced per vCore + replica) |
+| Database | Azure SQL Database | Dev: Basic DTU (5 DTU). Prod: SQL Hyperscale `HS_Gen5_2` zone-redundant + HA/read-scale replica | Dev ~$5; prod materially higher (Hyperscale/HA priced per vCore + replica) |
 | Cache | Azure Managed Redis (`Microsoft.Cache/redisEnterprise`), FusionCache L2 (`ConnectionStrings__Redis1`) | Dev `Balanced_B0`, no HA. Prod `Balanced_B5`+, HA | Dev ~$0 (~small Balanced tier); prod higher with HA |
 | Document Store | Cosmos DB | Serverless | ~$0-5 |
 | Messaging | Service Bus | Standard (3 filtered subscriptions: `projection`, `ai-review`, `workflow`) | ~$10 |
@@ -85,7 +87,7 @@ Generated: 2026-04-23
 | App Configuration | Centralized config | Free | $0 |
 | Key Vault | Secrets management | Standard | ~$0 |
 | Log Analytics Workspace | Centralized logging | Pay-as-you-go (5GB free) | ~$0 |
-| User-Assigned Managed Identity | GitHub Actions OIDC deploy | N/A | $0 |
+| User-Assigned Managed Identities | Deploy SQL admin, migration DDL, runtime DML | N/A | $0 |
 | Container Registry | N/A - using ghcr.io | N/A | $0 |
 
 **Total estimated: ~$17-27/mo**
@@ -97,16 +99,26 @@ The baseline deployment keeps end-user `AuthMode: Scaffold` so the reference app
 | Identity | Assigned To | Roles |
 |----------|------------|-------|
 | System MI (Gateway) | Gateway Container App | App Configuration Data Reader, Key Vault Secrets User |
-| System MI (API) | API Container App | Database Contributor (Entra auth, provider-dependent), Service Bus Data Sender, Storage Blob Data Contributor, Cosmos DB Data Contributor, App Configuration Data Reader, Key Vault Secrets User, Redis Entra access policy assignment |
-| System MI (Scheduler) | Scheduler Container App | Database Contributor, Service Bus Data Sender, App Configuration Data Reader, Key Vault Secrets User, Redis Entra access policy assignment |
-| System MI (Functions) | Functions App | Service Bus Data Receiver, Storage Blob Data Contributor, Cosmos DB Data Contributor, Database Contributor |
-| User-Assigned MI | GitHub Actions | Contributor (RG scope), User Access Administrator (RG scope) |
+| System MI (API) | API Container App | Service Bus Data Sender, Storage Blob Data Contributor, Storage Table Data Contributor, Cosmos DB Data Contributor, App Configuration Data Reader, Key Vault Secrets User, Redis Entra access policy assignment |
+| System MI (Scheduler) | Scheduler Container App | Service Bus Data Sender, Storage Blob Data Contributor, Storage Table Data Contributor, App Configuration Data Reader, Key Vault Secrets User, Redis Entra access policy assignment |
+| System MI (Functions) | Functions App | Service Bus Data Receiver, Storage Blob Data Owner, Storage Queue Data Contributor, Storage Table Data Contributor, Cosmos DB Data Contributor, App Configuration Data Reader, Key Vault Secrets User |
+| User-Assigned MI (deploy) | GitHub Actions and SQL provisioning | Custom deployment/resource-group-create role (subscription scope); Contributor and User Access Administrator (TaskFlow RG scope); SQL Entra administrator |
+| User-Assigned MI (migration) | DatabaseMigrator job | `db_ddladmin`, `db_datareader`, `db_datawriter` |
+| User-Assigned MI (runtime) | API, Scheduler, Functions | DML on `taskflow`, `flowengine`, and `scheduler` schemas only |
 
 Redis access policy assignments grant the API/Scheduler managed identities Entra data-plane permission on the
 default database, but `ConnectionStrings__Redis1` still authenticates with the access key today: StackExchange.Redis
 needs the `Microsoft.Azure.StackExchangeRedis` token-provider package wired in application code to use the Entra
-grant, which is out of scope for this infra-only change. Same pre-existing gap as SQL/Postgres: no per-identity
-database user/role provisioning yet - see the module comments in `sql-database.bicep`/`postgres-flexible-server.bicep`.
+grant, which is out of scope for this infra-only change. Container Apps stores that key as a secret reference.
+SQL identities are user-assigned so the deployment workflow can bind contained users directly to stable client-ID
+SIDs without Microsoft Graph lookup. Runtime hosts keep separate system identities for their other Azure RBAC.
+The signed-in human runs `infra/bootstrap/deploy-identity-foundation.bicep` before GitHub OIDC is trusted. Its custom
+subscription role contains only `Microsoft.Resources/deployments/*` and resource-group read/write; application
+resource management and role assignment remain limited to the TaskFlow resource group. The federated credential
+subject is `repo:owner/repo:environment:dev`, matching the workflow jobs' GitHub environment.
+Bootstrap never invokes `main.bicep`; this prevents a rerun from replacing live image digests with template defaults.
+The workflow owns application deployment and publishes the .NET 10 isolated Functions artifact through the Flex
+Consumption OneDeploy path backed by the precreated `function-releases` Blob container.
 
 ### Networking
 
@@ -132,9 +144,10 @@ database user/role provisioning yet - see the module comments in `sql-database.b
 | Resource Type | Count | Notes |
 |---------------|-------|-------|
 | Microsoft.App/managedEnvironments | 1 | Consumption tier |
-| Microsoft.App/containerApps | 5 | Gateway, API, Scheduler, Blazor, Uno |
-| Microsoft.Sql/servers or Microsoft.DBforPostgreSQL/flexibleServers | 1 | Entra-only auth; whichever `databaseProvider` is selected (mutually exclusive) |
-| Microsoft.Sql/servers/databases or .../flexibleServers/databases | 1 (+1 read replica in prod) | Dev Basic DTU / Postgres Burstable; prod Hyperscale HA replica or Postgres read replica |
+| Microsoft.App/containerApps | 4 | Gateway, API, Scheduler, Blazor |
+| Microsoft.Web/staticSites | 2 | React and Uno WASM frontends |
+| Microsoft.Sql/servers | 1 | Entra-only auth |
+| Microsoft.Sql/servers/databases | 1 | Dev Basic DTU; prod Hyperscale HA replica |
 | Microsoft.Cache/redisEnterprise + /databases | 1 + 1 | Azure Managed Redis (FusionCache L2) |
 | Microsoft.DocumentDB/databaseAccounts | 1 | Serverless |
 | Microsoft.ServiceBus/namespaces | 1 | Standard, 3 topic subscriptions (`projection`, `ai-review`, `workflow`) |
@@ -143,7 +156,7 @@ database user/role provisioning yet - see the module comments in `sql-database.b
 | Microsoft.KeyVault/vaults | 1 | Standard |
 | Microsoft.AppConfiguration/configurationStores | 1 | Free |
 | Microsoft.OperationalInsights/workspaces | 1 | Pay-as-you-go |
-| Microsoft.ManagedIdentity/userAssignedIdentities | 1 | Deploy identity |
+| Microsoft.ManagedIdentity/userAssignedIdentities | 3 | Deploy SQL administrator, migration DDL, runtime DML |
 
 **Status:**  All resources within limits. Storage: 0/250 used. All other resource types have no enforced subscription-level quota in eastus2.
 
@@ -196,6 +209,7 @@ database user/role provisioning yet - see the module comments in `sql-database.b
 | Functions App | `infra/modules/functions.bicep` |
 | Log Analytics | `infra/modules/log-analytics.bicep` |
 | Managed Identity (deploy) | `infra/modules/deploy-identity.bicep` |
-| RBAC Assignments | `infra/modules/role-assignments.bicep` |
+| Deploy identity foundation | `infra/bootstrap/deploy-identity-foundation.bicep` |
+| RBAC Assignments | `infra/modules/role-assignment.bicep` |
 | Bootstrap Script | `infra/scripts/bootstrap.ps1` |
 | CI/CD Workflow | `.github/workflows/deploy.yml` |

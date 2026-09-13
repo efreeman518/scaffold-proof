@@ -14,6 +14,9 @@ param sqlAdminPrincipalName string
 @allowed(['User', 'Group', 'Application'])
 param sqlAdminPrincipalType string = 'User'
 
+@description('Client ID of the user-assigned managed identity used by runtime database connections')
+param managedIdentityClientId string
+
 @description('Database SKU name, e.g. Basic (dev) or HS_Gen5_2 (prod Hyperscale)')
 param skuName string = 'Basic'
 
@@ -97,6 +100,4 @@ resource sqlFirewallAzure 'Microsoft.Sql/servers/firewallRules@2023-08-01-previe
 output serverName string = sqlServer.name
 output serverFqdn string = sqlServer.properties.fullyQualifiedDomainName
 output databaseName string = sqlDatabase.name
-// Auth gap: Entra-only connection string does not create contained database users or grants.
-// Provision SQL data-plane users separately for each managed identity.
-output connectionString string = 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabase.name};Authentication=Active Directory Default;Encrypt=True;TrustServerCertificate=False;Max Pool Size=${maxPoolSize};'
+output connectionString string = 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabase.name};Authentication=Active Directory Managed Identity;User Id=${managedIdentityClientId};Encrypt=True;TrustServerCertificate=False;Max Pool Size=${maxPoolSize};'

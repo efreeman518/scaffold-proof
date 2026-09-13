@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
-using TaskFlow.Application.Contracts.Configuration;
+using TaskFlow.Hosting;
 
 namespace TaskFlow.Infrastructure.Data.Provider;
 
@@ -54,7 +54,7 @@ public sealed record TaskFlowProviderOptions(
 /// <summary>PgBouncer pooling mode the PostgreSQL connection string must cooperate with (D-045).</summary>
 public enum PoolerMode
 {
-    /// <summary>No pooler in front of PostgreSQL (Azure default; Portable's compose profile opts in explicitly).</summary>
+    /// <summary>No pooler in front of PostgreSQL (NonAzure default; the Compose pooler profile opts in explicitly).</summary>
     None,
 
     /// <summary>PgBouncer transaction-mode pooling: connections are multiplexed across backend sessions.</summary>
@@ -79,29 +79,23 @@ public static class PoolerModeSelector
     }
 }
 
-/// <summary>Resolves the active provider: env <c>TASKFLOW_DB_PROVIDER</c> wins over <c>Database:Provider</c>, default SqlServer.</summary>
+/// <summary>Resolves the strict lane's relational provider through the shared D-060 contract.</summary>
 public static class TaskFlowDbProviderSelector
 {
-    public const string EnvironmentVariable = "TASKFLOW_DB_PROVIDER";
-    public const string ConfigurationKey = "Database:Provider";
+    public const string EnvironmentVariable = HostingLaneResolver.DatabaseEnvironmentVariable;
+    public const string ConfigurationKey = HostingLaneResolver.DatabaseConfigurationKey;
     public const string SqlServerMigrationsAssembly = "TaskFlow.Infrastructure.Data.Migrations.SqlServer";
     public const string PostgreSqlMigrationsAssembly = "TaskFlow.Infrastructure.Data.Migrations.PostgreSql";
 
     public static TaskFlowDbProvider Resolve(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
-        var value = Environment.GetEnvironmentVariable(EnvironmentVariable) ?? configuration[ConfigurationKey];
-        return string.IsNullOrWhiteSpace(value)
-            ? LaneDefault(HostingLaneSelector.Resolve(configuration))
-            : Parse(value);
+        return Parse(HostingLaneResolver.Resolve(configuration).Database);
     }
 
     public static TaskFlowDbProvider ResolveFromEnvironment()
     {
-        var value = Environment.GetEnvironmentVariable(EnvironmentVariable);
-        return string.IsNullOrWhiteSpace(value)
-            ? LaneDefault(HostingLaneSelector.ResolveFromEnvironment())
-            : Parse(value);
+        return Parse(HostingLaneResolver.ResolveFromEnvironment().Database);
     }
 
     public static string MigrationsAssembly(TaskFlowDbProvider provider) => provider switch
@@ -110,10 +104,6 @@ public static class TaskFlowDbProviderSelector
         TaskFlowDbProvider.PostgreSql => PostgreSqlMigrationsAssembly,
         _ => throw new ArgumentOutOfRangeException(nameof(provider), provider, null)
     };
-
-    // D-035: Portable lane defaults to PostgreSQL; Azure lane keeps today's SQL Server default.
-    private static TaskFlowDbProvider LaneDefault(HostingLane lane) =>
-        lane == HostingLane.Portable ? TaskFlowDbProvider.PostgreSql : TaskFlowDbProvider.SqlServer;
 
     private static TaskFlowDbProvider Parse(string value) =>
         Enum.TryParse<TaskFlowDbProvider>(value, ignoreCase: true, out var provider)

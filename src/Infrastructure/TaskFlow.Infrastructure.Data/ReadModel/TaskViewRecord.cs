@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace TaskFlow.Infrastructure.Data.ReadModel;
 
 /// <summary>
-/// Relational TaskView read-model row (D-038), the portable-lane counterpart of the Cosmos TaskView
+/// PostgreSQL JSONB TaskView read-model row (D-038), the NonAzure counterpart of the Cosmos TaskView
 /// document. Deliberately NOT an <c>ITenantEntity</c>: the tenant is passed explicitly on every call the way
 /// a Cosmos partition key is, so there is no global query filter to remember and background projection work
 /// needs no request context. No <c>Version</c> column and no audit stamping either - a read model is a
@@ -32,8 +32,9 @@ public sealed class TaskViewRecord
 
     /// <summary>
     /// Serialized <see cref="TaskViewBody"/>: the parts of the projection nothing filters, sorts, or patches.
-    /// Plain string column, so the model stays provider-neutral (D-030); jsonb plus a GIN index on PostgreSQL
-    /// is the customization to make when tag or description search moves into the read model.
+    /// The CLR string keeps repository serialization provider-neutral (D-030). PostgreSQL maps it to native
+    /// jsonb while SQL Server retains its existing compatible string column. Scalar columns serve every
+    /// current filter and sort, so no JSON-path index is created.
     /// </summary>
     public string Document { get; set; } = null!;
 }

@@ -1,6 +1,7 @@
 using Aspire.Hosting.Testing;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using TaskFlow.Application.Models;
 
 namespace Test.Aspire;
@@ -136,6 +137,17 @@ public class AppSurfaceAspireTests
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
         Assert.Contains("<html", body);
+
+        using var configResponse = await client.GetAsync("/app-config.json", ct);
+        var configBody = await configResponse.Content.ReadAsStringAsync(ct);
+        using var gatewayClient = AspireTestHost.AspireApp!.CreateHttpClient("taskflowgateway", "http");
+
+        Assert.AreEqual(HttpStatusCode.OK, configResponse.StatusCode, configBody);
+        Assert.IsTrue(configResponse.Headers.CacheControl?.NoStore);
+        var config = JsonSerializer.Deserialize<Dictionary<string, string>>(configBody);
+        Assert.AreEqual(
+            gatewayClient.BaseAddress!.ToString().TrimEnd('/'),
+            config!["gatewayBaseUrl"].TrimEnd('/'));
     }
 
     /// <summary>Gets MSTest context for cancellation.</summary>
@@ -143,4 +155,5 @@ public class AppSurfaceAspireTests
 
     private static bool IsExplicitlyDisabled(string variableName) =>
         string.Equals(Environment.GetEnvironmentVariable(variableName), "false", StringComparison.OrdinalIgnoreCase);
+
 }

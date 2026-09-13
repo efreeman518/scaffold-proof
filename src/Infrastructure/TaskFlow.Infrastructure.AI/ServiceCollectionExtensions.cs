@@ -4,7 +4,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using TaskFlow.Application.Contracts.Configuration;
+using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.AI.Agents;
 using TaskFlow.Infrastructure.AI.Agents.Tools;
 using TaskFlow.Infrastructure.AI.Search;
@@ -27,27 +27,18 @@ public enum SearchProvider
 /// <summary>Provides AI service collection extensions behavior for the Infrastructure layer.</summary>
 public static class AiServiceCollectionExtensions
 {
-    public const string SearchProviderConfigKey = "Search:Provider";
-    public const string SearchProviderEnvVar = "TASKFLOW_SEARCH_PROVIDER";
+    public const string SearchProviderConfigKey = HostingLaneResolver.SearchConfigurationKey;
+    public const string SearchProviderEnvVar = HostingLaneResolver.SearchEnvironmentVariable;
 
     /// <summary>
-    /// Resolves the search backend. The environment variable wins over configuration; when neither is
-    /// set, the Portable lane defaults to Sql (D-035) and the Azure lane falls back to the legacy
-    /// <c>AiServices:UseSearch</c>(+<c>SearchEndpoint</c>) compatibility mapping kept one release (D-040).
+    /// Resolves the strict lane's search backend. Both lanes default to Sql; AzureAiSearch and PgVector
+    /// are accepted only in their owning lane (D-060).
     /// </summary>
     public static SearchProvider ResolveSearchProvider(IConfiguration config, TaskFlowAiSettings settings)
     {
         ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(settings);
-        var value = Environment.GetEnvironmentVariable(SearchProviderEnvVar) ?? config[SearchProviderConfigKey];
-        if (!string.IsNullOrWhiteSpace(value)) return ParseSearchProvider(value);
-
-        if (HostingLaneSelector.Resolve(config) == HostingLane.Portable)
-            return SearchProvider.Sql;
-
-        return settings.UseSearch && !string.IsNullOrWhiteSpace(settings.SearchEndpoint)
-            ? SearchProvider.AzureAiSearch
-            : SearchProvider.Sql;
+        return ParseSearchProvider(HostingLaneResolver.Resolve(config).Search);
     }
 
     /// <summary>

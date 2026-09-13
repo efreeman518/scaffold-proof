@@ -1,9 +1,17 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using EF.Audit.Contracts;
+using EF.Storage.Contracts;
 using TaskFlow.Application.Contracts;
+using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Interceptors;
+using TaskFlow.Infrastructure.Data.Messaging;
+using TaskFlow.Infrastructure.Storage;
+using TaskFlow.Infrastructure.Storage.CosmosDb;
 using Test.Support;
 
 namespace Test.Endpoints;
@@ -16,6 +24,12 @@ namespace Test.Endpoints;
 /// </summary>
 public sealed class CustomApiFactory : WebApplicationFactoryBase<Program, TaskFlowDbContextTrxn, TaskFlowDbContextQuery>
 {
+    private const string TestDataProtectionKeysFileUrl =
+        "https://taskflowtest.blob.core.windows.net/data-protection/keys.xml";
+    private const string TestBlobEndpoint = "https://taskflowtest.blob.core.windows.net/";
+    private const string TestTableEndpoint = "https://taskflowtest.table.core.windows.net/";
+    private const string TestCosmosEndpoint = "https://taskflowtest.documents.azure.com:443/";
+    private const string TestServiceBusNamespace = "taskflowtest.servicebus.windows.net";
     private readonly string _applicationStyle;
     private readonly string _dbName = $"TestDb_{Guid.NewGuid()}";
 
@@ -36,7 +50,25 @@ public sealed class CustomApiFactory : WebApplicationFactoryBase<Program, TaskFl
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting(ApplicationStyleResolver.ConfigKey, _applicationStyle);
+        builder.UseSetting("DataProtectionKeysFileUrl", TestDataProtectionKeysFileUrl);
+        builder.UseSetting("ConnectionStrings:BlobStorage1", TestBlobEndpoint);
+        builder.UseSetting("ConnectionStrings:TableStorage1", TestTableEndpoint);
+        builder.UseSetting("ConnectionStrings:CosmosDb1", TestCosmosEndpoint);
+        builder.UseSetting("ServiceBus1:fullyQualifiedNamespace", TestServiceBusNamespace);
         base.ConfigureWebHost(builder);
+        builder.ConfigureServices(services =>
+        {
+            // Strict Azure registration still requires every core endpoint above. Endpoint tests replace
+            // those external data planes explicitly so requests stay deterministic and network-free.
+            services.RemoveAll<IObjectStorageRepository>();
+            services.AddSingleton<IObjectStorageRepository, NoOpBlobStorageRepository>();
+            services.RemoveAll<IAuditLogRepository>();
+            services.AddSingleton<IAuditLogRepository, NoOpAuditLogRepository>();
+            services.RemoveAll<IIntegrationEventTransport>();
+            services.AddSingleton<IIntegrationEventTransport, NoOpEventTransport>();
+            services.RemoveAll<ITaskViewRepository>();
+            services.AddSingleton<ITaskViewRepository, NoOpTaskViewRepository>();
+        });
     }
 
     /// <summary>Verifies configure test configuration behavior and protects the expected test contract.</summary>
@@ -45,7 +77,12 @@ public sealed class CustomApiFactory : WebApplicationFactoryBase<Program, TaskFl
         AddFoundryLocalDisabled(config);
         config.AddInMemoryCollection(new Dictionary<string, string?>
         {
-            [ApplicationStyleResolver.ConfigKey] = _applicationStyle
+            [ApplicationStyleResolver.ConfigKey] = _applicationStyle,
+            ["DataProtectionKeysFileUrl"] = TestDataProtectionKeysFileUrl,
+            ["ConnectionStrings:BlobStorage1"] = TestBlobEndpoint,
+            ["ConnectionStrings:TableStorage1"] = TestTableEndpoint,
+            ["ConnectionStrings:CosmosDb1"] = TestCosmosEndpoint,
+            ["ServiceBus1:fullyQualifiedNamespace"] = TestServiceBusNamespace
         });
         config.AddInMemoryCollection(TestColumnEncryption.Configuration);
     }

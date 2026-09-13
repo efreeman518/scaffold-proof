@@ -2,7 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
-using TaskFlow.Application.Contracts.Configuration;
+using TaskFlow.Hosting;
 using TaskFlow.Bootstrapper;
 using TaskFlow.Infrastructure.AI;
 
@@ -25,21 +25,21 @@ public class AiProviderSelectorTests
             .Build();
 
     [TestMethod]
-    public void ResolveAiProvider_Unset_AzureLane_ReturnsNull_ForCallerDerivedDefault() =>
-        Assert.IsNull(RegisterServices.ResolveAiProvider(Config()));
+    public void ResolveAiProvider_Unset_AzureLane_DefaultsToNone() =>
+        Assert.AreEqual(AiProvider.None, RegisterServices.ResolveAiProvider(Config()));
 
     [TestMethod]
-    public void ResolveAiProvider_PortableLane_DefaultsToOpenAICompatible() =>
+    public void ResolveAiProvider_NonAzureLane_DefaultsToNone() =>
         Assert.AreEqual(
-            AiProvider.OpenAICompatible,
-            RegisterServices.ResolveAiProvider(Config((HostingLaneSelector.ConfigurationKey, "Portable"))));
+            AiProvider.None,
+            RegisterServices.ResolveAiProvider(Config((HostingLaneResolver.LaneConfigurationKey, "NonAzure"))));
 
     [TestMethod]
     public void ResolveAiProvider_ConfigBeatsLaneDefault() =>
         Assert.AreEqual(
             AiProvider.None,
             RegisterServices.ResolveAiProvider(Config(
-                (HostingLaneSelector.ConfigurationKey, "Portable"),
+                (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
                 (RegisterServices.AiProviderConfigKey, "None"))));
 
     [TestMethod]
@@ -70,6 +70,7 @@ public class AiProviderSelectorTests
     {
         var builder = CreateHostBuilder(new Dictionary<string, string?>
         {
+            [HostingLaneResolver.LaneConfigurationKey] = "NonAzure",
             [RegisterServices.AiProviderConfigKey] = "OpenAICompatible",
             ["AiServices:ApiKey"] = "fake-key"
         });
@@ -83,6 +84,7 @@ public class AiProviderSelectorTests
     {
         var builder = CreateHostBuilder(new Dictionary<string, string?>
         {
+            [HostingLaneResolver.LaneConfigurationKey] = "NonAzure",
             [RegisterServices.AiProviderConfigKey] = "OpenAICompatible",
             ["AiServices:Endpoint"] = "https://api.example.com/v1"
         });
@@ -114,6 +116,7 @@ public class AiProviderSelectorTests
     {
         var builder = CreateHostBuilder(new Dictionary<string, string?>
         {
+            [HostingLaneResolver.LaneConfigurationKey] = "NonAzure",
             [RegisterServices.AiProviderConfigKey] = "OpenAICompatible",
             ["AiServices:Endpoint"] = "https://api.example.com/v1",
             ["AiServices:ApiKey"] = "fake-key"

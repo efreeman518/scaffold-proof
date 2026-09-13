@@ -5,34 +5,30 @@ on:
   # main-push run would only re-test the identical tree the PR run already verified.
   pull_request:
     branches: [main, develop]
-  # Monthly deep-lane run (28th 06:17 UTC): keeps the Docker-backed E2E/Integration/
-  # Aspire lanes green with minimal Actions-minute cost, leaving the rest of the
-  # monthly minute pool to on-demand work. The 28th is used instead of the last
-  # calendar day because GitHub Actions cron has no "last day of month" syntax and
-  # the 28th is the one day that exists in every month.
-  # FoundryLocal (model download) and PlaywrightUI (browser + full stack) stay
-  # dispatch-only for cost/flakiness reasons.
-  schedule:
-    - cron: "17 6 28 * *"
   workflow_dispatch:
     inputs:
+      lane:
+        type: choice
+        default: both
+        options: [both, Azure, NonAzure]
+        description: "Hosting lane(s) for manually dispatched acceptance"
+      nonAzureReadModel:
+        type: choice
+        default: PostgreSqlJsonb
+        options: [PostgreSqlJsonb, MongoDb]
+        description: "NonAzure read model; MongoDb runs only when explicitly selected"
       includeE2E:
         type: boolean
         default: false
-        description: "Run Test.E2E SQL-backed HTTP workflow tests (requires Docker)"
+        description: "Run selected Azure/NonAzure Test.E2E lane(s) (requires Docker)"
       includeIntegration:
         type: boolean
         default: false
-        description: "Run Test.Integration component tests (standalone Testcontainers database + Azurite; requires Docker)"
-      dbProvider:
-        type: choice
-        default: both
-        options: [both, SqlServer, PostgreSql]
-        description: "Database provider lane(s) for the Docker-backed E2E and Integration jobs (TASKFLOW_TEST_DB_PROVIDER)"
+        description: "Run selected Azure/NonAzure Testcontainers lane(s) (requires Docker)"
       includeAspireMesh:
         type: boolean
         default: false
-        description: "Run Test.Aspire distributed-app mesh tests (full AppHost graph; requires Docker)"
+        description: "Run the capability-trimmed core Aspire mesh; use full acceptance for every host and UI"
       includeFoundryLocal:
         type: boolean
         default: false
@@ -44,11 +40,11 @@ on:
       includeFullAcceptance:
         type: boolean
         default: false
-        description: "Run unfiltered serial solution acceptance, including Aspire, Playwright, and WASM"
+        description: "Run complete live Aspire host/UI and browser acceptance on the workstation runner"
       includeComposeSmoke:
         type: boolean
         default: false
-        description: "Build the app images and smoke the Portable lane compose stack through Caddy (requires Docker)"
+        description: "Build images and smoke the NonAzure Compose stack through Caddy (requires Docker)"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -82,7 +78,7 @@ jobs:
 
       # Seconds, no daemon work: catches a broken compose file or a variable removed from .env.example on
       # every run, instead of only when someone dispatches the compose smoke.
-      - name: Portable lane compose config check
+      - name: NonAzure lane compose config check
         run: |
           set -euo pipefail
           cd deploy/compose
@@ -97,7 +93,7 @@ jobs:
       # Reclaim ~20+ GB (Android SDK, Haskell, large apt packages) before the Docker-backed steps run.
       # Keep dotnet and the tool cache - the build depends on them.
       - name: Free disk space
-        if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.includeAspireMesh || inputs.includeFoundryLocal || inputs.includePlaywrightUI || inputs.includeFullAcceptance)) || github.event_name == 'schedule' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.includeAspireMesh || inputs.includeFoundryLocal || inputs.includePlaywrightUI) }}
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
@@ -112,7 +108,7 @@ jobs:
           global-json-file: global.json
 
       - name: Install required workloads
-        run: dotnet workload install wasm-tools aspire
+        run: dotnet workload install wasm-tools
 
       - name: Require private NuGet feed credential
         env:
@@ -143,11 +139,17 @@ jobs:
         run: dotnet format analyzers TaskFlow.slnx --severity warn --verify-no-changes --no-restore
 
       - name: Unit Tests
-        run: >
-          dotnet test tests/Test.Unit/Test.Unit.csproj
-          --no-build --configuration Release
-          --logger "trx;LogFileName=unit-results.trx"
-          --results-directory ./TestResults
+        # The project boundary intentionally includes untagged provider, migration, deployment, and deprecated
+        # alias contract tests. In runs 34718419269 and 34719228357 a relational-audit DI cycle left this testhost
+        # silent for more than 13 minutes. The inner collector names the active test; the outer timeout stays red.
+        timeout-minutes: 1
+        run: |
+          timeout --signal=INT --kill-after=5s 50s \
+            dotnet test tests/Test.Unit/Test.Unit.csproj \
+              --no-build --configuration Release \
+              --blame-hang --blame-hang-timeout 15s \
+              --logger "trx;LogFileName=unit-results.trx" \
+              --results-directory ./TestResults
 
       - name: Architecture Tests
         run: >
@@ -170,10 +172,20 @@ jobs:
           --logger "trx;LogFileName=flowengine-results.trx"
           --results-directory ./TestResults
 
-      - name: Aspire Mesh Tests (manual or scheduled, full graph)
+      # Deterministic graph construction only. This proves exact resource membership without claiming the
+      # containers or hosts started; the manual workstation job below owns runnable full-lane proof.
+      - name: Aspire lane topology contracts
+        run: >
+          dotnet test tests/Test.Aspire/Test.Aspire.csproj
+          --no-build --configuration Release
+          --filter "FullyQualifiedName~AppHostLaneTopologyTests|FullyQualifiedName~AppHostMigratorTopologyTests"
+          --logger "trx;LogFileName=aspire-topology-results.trx"
+          --results-directory ./TestResults
+
+      - name: Aspire Core Lane Mesh Tests (manual)
         id: aspire_mesh
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.includeAspireMesh == true) || github.event_name == 'schedule' }}
-        timeout-minutes: 30
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeAspireMesh == true }}
+        timeout-minutes: 70
         env:
           TASKFLOW_RUN_AZURE_FOUNDRY_TESTS: "false"
           TASKFLOW_RUN_FUNCTIONS_TESTS: "false"
@@ -224,14 +236,26 @@ jobs:
           capture_pid=$!
           trap 'kill "$capture_pid" 2>/dev/null || true; wait "$capture_pid" 2>/dev/null || true' EXIT
 
-          if dotnet test tests/Test.Aspire/Test.Aspire.csproj \
-            --no-build --configuration Release \
-            -m:1 \
-            --logger "trx;LogFileName=aspire-results.trx" \
-            --results-directory ./TestResults; then
-            test_exit=0
-          else
-            test_exit=$?
+          run_lane() {
+            local lane="$1"
+            local read_model="$2"
+            echo "Running Aspire lane ${lane} with read model ${read_model}."
+            TASKFLOW_LANE="$lane" TASKFLOW_READMODEL_PROVIDER="$read_model" \
+              dotnet test tests/Test.Aspire/Test.Aspire.csproj \
+                --no-build --configuration Release \
+                -m:1 \
+                --logger "trx;LogFileName=aspire-${lane}-${read_model}-results.trx" \
+                --results-directory ./TestResults
+          }
+
+          test_exit=0
+          if [ "${{ inputs.lane }}" = "both" ] || [ "${{ inputs.lane }}" = "Azure" ]; then
+            run_lane Azure Cosmos || test_exit=$?
+          fi
+          if [ "$test_exit" -eq 0 ]; then
+            if [ "${{ inputs.lane }}" = "both" ] || [ "${{ inputs.lane }}" = "NonAzure" ]; then
+              run_lane NonAzure "${{ inputs.nonAzureReadModel }}" || test_exit=$?
+            fi
           fi
 
           kill "$capture_pid" 2>/dev/null || true
@@ -242,7 +266,7 @@ jobs:
           # (an if: with no status-check function gets an implicit success() ANDed in, so it never runs
           # after a failed step).
           if [ "$test_exit" -ne 0 ]; then
-            echo "=== Aspire Mesh Tests failed (exit $test_exit); captured container logs follow ==="
+            echo "=== Aspire core lane mesh failed (exit $test_exit); captured container logs follow ==="
             if [ -d /tmp/aspire-container-logs ]; then
               for f in /tmp/aspire-container-logs/*; do
                 [ -f "$f" ] || continue
@@ -295,8 +319,12 @@ jobs:
           fi
 
       - name: Foundry Local Tests (manual, live local)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeFoundryLocal == true }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeFoundryLocal == true && (inputs.lane == 'both' || inputs.lane == 'NonAzure') }}
         timeout-minutes: 70
+        env:
+          TASKFLOW_LANE: NonAzure
+          TASKFLOW_READMODEL_PROVIDER: ${{ inputs.nonAzureReadModel }}
+          TASKFLOW_AI_PROVIDER: FoundryLocal
         run: >
           dotnet test tests/Test.FoundryLocal/Test.FoundryLocal.csproj
           --no-build --configuration Release
@@ -305,7 +333,7 @@ jobs:
           --results-directory ./TestResults
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.includePlaywrightUI == true || inputs.includeFullAcceptance == true) }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.includePlaywrightUI == true }}
         with:
           node-version: 24
           cache: npm
@@ -314,13 +342,13 @@ jobs:
             src/UI/TaskFlow.React/package-lock.json
 
       - name: Restore Playwright packages
-        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.includePlaywrightUI == true || inputs.includeFullAcceptance == true) }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.includePlaywrightUI == true }}
         run: |
           npm ci --prefix tests/Test.PlaywrightUI
           npm ci --prefix src/UI/TaskFlow.React
 
       - name: Install Playwright browser
-        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.includePlaywrightUI == true || inputs.includeFullAcceptance == true) }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.includePlaywrightUI == true }}
         shell: pwsh
         run: |
           ./tests/Test.PlaywrightUI/bin/Release/net10.0/playwright.ps1 install chromium
@@ -329,12 +357,26 @@ jobs:
       - name: Playwright UI Tests (manual, browser)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.includePlaywrightUI == true }}
         timeout-minutes: 70
-        run: >
-          dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj
-          --no-build --configuration Release
-          -m:1
-          --logger "trx;LogFileName=playwrightui-results.trx"
-          --results-directory ./TestResults
+        run: |
+          set -euo pipefail
+          run_lane() {
+            local lane="$1"
+            local read_model="$2"
+            echo "Running browser acceptance for ${lane} with read model ${read_model}."
+            TASKFLOW_LANE="$lane" TASKFLOW_READMODEL_PROVIDER="$read_model" \
+              dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj \
+                --no-build --configuration Release \
+                -m:1 \
+                --logger "trx;LogFileName=playwrightui-${lane}-${read_model}-results.trx" \
+                --results-directory ./TestResults
+          }
+
+          if [ "${{ inputs.lane }}" = "both" ] || [ "${{ inputs.lane }}" = "Azure" ]; then
+            run_lane Azure Cosmos
+          fi
+          if [ "${{ inputs.lane }}" = "both" ] || [ "${{ inputs.lane }}" = "NonAzure" ]; then
+            run_lane NonAzure "${{ inputs.nonAzureReadModel }}"
+          fi
 
       - name: Migration model drift gate
         run: >
@@ -352,47 +394,181 @@ jobs:
           --logger "trx;LogFileName=deployment-contract-results.trx"
           --results-directory ./TestResults
 
-      - name: Full serial solution acceptance (manual, unfiltered)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeFullAcceptance == true }}
-        timeout-minutes: 90
-        env:
-          TASKFLOW_MOBILE_TESTS_ENABLED: "false"
-          TASKFLOW_RUN_AZURE_FOUNDRY_TESTS: "false"
-          TASKFLOW_RUN_FOUNDRY_LOCAL_TESTS: "false"
-          TASKFLOW_RUN_FUNCTIONS_TESTS: "false"
-        run: >
-          dotnet test TaskFlow.slnx
-          --no-build --configuration Release
-          -m:1
-          --logger "trx;LogFileName=full-acceptance-results.trx"
-          --results-directory ./TestResults
-
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-results
-          path: ./TestResults/*.trx
+          path: |
+            ./TestResults/**/*.trx
+            ./TestResults/**/*.xml
+            ./TestResults/**/*.dmp
+          if-no-files-found: warn
 
-  # Docker-backed lanes run once per database provider (D-020). Same assemblies, TASKFLOW_TEST_DB_PROVIDER
-  # selects the Testcontainer and the host's Database:Provider; the matrix is filtered by the dbProvider input.
+  # Complete runnable graph proof is manual and uses the zero-billable-minute workstation runner. Unlike
+  # the deterministic topology contracts, this starts every lane host and UI, then drives all three UIs.
+  full-lane-acceptance:
+    needs: build-and-test
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeFullAcceptance == true }}
+    runs-on: [self-hosted, workstation]
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      TASKFLOW_ASPIRE_FULL_LANE: "true"
+      TASKFLOW_RUN_ASPIRE_TESTS: "true"
+      TASKFLOW_RUN_AZURE_FOUNDRY_TESTS: "false"
+      TASKFLOW_RUN_FOUNDRY_LOCAL_TESTS: "false"
+      TASKFLOW_ASPIRE_SCHEDULER_AVAILABLE: "true"
+      TASKFLOW_REACT_TESTS_ENABLED: "true"
+      TASKFLOW_WASM_TESTS_ENABLED: "true"
+      TASKFLOW_PLAYWRIGHT_TESTS_ENABLED: "true"
+      TASKFLOW_MOBILE_TESTS_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            tests/Test.PlaywrightUI/package-lock.json
+            src/UI/TaskFlow.React/package-lock.json
+
+      - name: Verify workstation runtime prerequisites
+        run: |
+          docker info | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            throw "Docker runtime is required for complete lane acceptance."
+          }
+
+          $installedWorkloads = @(dotnet workload list)
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not inspect installed .NET workloads."
+          }
+          $missingWorkloads = @(
+            @("wasm-tools") | Where-Object {
+              -not ($installedWorkloads | Select-String -Pattern "^\s*$([regex]::Escape($_))\s" -Quiet)
+            }
+          )
+          if ($missingWorkloads.Count -gt 0) {
+            throw "Missing required .NET workload(s): $($missingWorkloads -join ', '). Run: dotnet workload install wasm-tools"
+          }
+
+          $azureSelected = "${{ inputs.lane }}" -in @("both", "Azure")
+          if ($azureSelected -and -not (Get-Command func -ErrorAction SilentlyContinue)) {
+            throw "Azure Functions Core Tools ('func') is required for complete Azure lane acceptance."
+          }
+
+      - name: Require private NuGet feed credential
+        env:
+          NUGET_PAT: ${{ secrets.NUGET_PAT }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:NUGET_PAT)) {
+            throw "NUGET_PAT secret is required to restore EF.* packages."
+          }
+
+      - name: Restore and build complete host/UI graph
+        env:
+          NuGetPackageSourceCredentials_efreeman518-github: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
+        run: |
+          dotnet restore TaskFlow.slnx -p:Configuration=Release
+          if ($LASTEXITCODE -ne 0) { throw "Solution restore failed." }
+          dotnet build TaskFlow.slnx --no-restore --configuration Release -m:1
+          if ($LASTEXITCODE -ne 0) { throw "Solution build failed." }
+          dotnet build src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj --no-restore --configuration Release -m:1
+          if ($LASTEXITCODE -ne 0) { throw "Uno browser build failed." }
+          npm ci --prefix src/UI/TaskFlow.React
+          if ($LASTEXITCODE -ne 0) { throw "React package restore failed." }
+          npm ci --prefix tests/Test.PlaywrightUI
+          if ($LASTEXITCODE -ne 0) { throw "Playwright package restore failed." }
+
+      - name: Install Playwright Chromium
+        run: |
+          ./tests/Test.PlaywrightUI/bin/Release/net10.0/playwright.ps1 install chromium
+          if ($LASTEXITCODE -ne 0) { throw "Playwright Chromium installation failed." }
+
+      - name: Start and verify complete selected lane graphs
+        timeout-minutes: 105
+        run: |
+          function Invoke-LaneAcceptance([string] $Lane, [string] $ReadModel, [bool] $RunFunctions) {
+            Write-Host "Running complete ${Lane} lane acceptance with ${ReadModel} read model."
+            $env:TASKFLOW_LANE = $Lane
+            $env:TASKFLOW_READMODEL_PROVIDER = $ReadModel
+            $env:TASKFLOW_RUN_FUNCTIONS_TESTS = $RunFunctions.ToString().ToLowerInvariant()
+
+            if ($Lane -eq "Azure") {
+              $env:TASKFLOW_DB_PROVIDER = "SqlServer"
+              $env:TASKFLOW_MESSAGING_PROVIDER = "ServiceBus"
+              $env:TASKFLOW_STORAGE_PROVIDER = "AzureBlob"
+              $env:TASKFLOW_AUDIT_PROVIDER = "AzureTable"
+              $env:TASKFLOW_DATAPROTECTION_PERSISTENCE = "AzureBlob"
+              $aspireFilter = "FullyQualifiedName~AppSurfaceAspireTests|FullyQualifiedName~ApiAuditPipelineTests|FullyQualifiedName~FunctionAuditPipelineTests|FullyQualifiedName~OutboxMeshTests"
+            }
+            else {
+              $env:TASKFLOW_DB_PROVIDER = "PostgreSql"
+              $env:TASKFLOW_MESSAGING_PROVIDER = "RabbitMq"
+              $env:TASKFLOW_STORAGE_PROVIDER = "S3"
+              $env:TASKFLOW_AUDIT_PROVIDER = "Relational"
+              $env:TASKFLOW_DATAPROTECTION_PERSISTENCE = "Redis"
+              $aspireFilter = "FullyQualifiedName~AppSurfaceAspireTests|FullyQualifiedName~OutboxMeshTests"
+            }
+
+            dotnet test tests/Test.Aspire/Test.Aspire.csproj `
+              --no-build --configuration Release -m:1 `
+              --filter $aspireFilter `
+              --logger "trx;LogFileName=full-aspire-${Lane}-${ReadModel}-results.trx" `
+              --results-directory ./TestResults
+            if ($LASTEXITCODE -ne 0) { throw "${Lane} complete Aspire graph acceptance failed." }
+
+            dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj `
+              --no-build --configuration Release -m:1 `
+              --filter "TestCategory=PlaywrightUI|TestCategory=WasmUI" `
+              --logger "trx;LogFileName=full-ui-${Lane}-${ReadModel}-results.trx" `
+              --results-directory ./TestResults
+            if ($LASTEXITCODE -ne 0) { throw "${Lane} browser acceptance failed." }
+          }
+
+          if ("${{ inputs.lane }}" -in @("both", "Azure")) {
+            Invoke-LaneAcceptance -Lane Azure -ReadModel Cosmos -RunFunctions $true
+          }
+          if ("${{ inputs.lane }}" -in @("both", "NonAzure")) {
+            Invoke-LaneAcceptance -Lane NonAzure -ReadModel "${{ inputs.nonAzureReadModel }}" -RunFunctions $false
+          }
+
+      - name: Upload full-lane test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: full-lane-test-results
+          path: ./TestResults/**/*.trx
+          if-no-files-found: warn
+
+  # Manual Docker-backed acceptance runs through the same canonical lane contract as Aspire and production.
+  # The full Test.Unit project above retains coverage for TASKFLOW_TEST_DB_PROVIDER as a deprecated input alias.
   database-lanes:
     needs: build-and-test
-    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.includeE2E == true || inputs.includeIntegration == true)) || github.event_name == 'schedule' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.includeE2E == true || inputs.includeIntegration == true) }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        dbProvider: [SqlServer, PostgreSql]
+        lane: [Azure, NonAzure]
     env:
-      TASKFLOW_TEST_DB_PROVIDER: ${{ matrix.dbProvider }}
+      TASKFLOW_LANE: ${{ matrix.lane }}
+      TASKFLOW_READMODEL_PROVIDER: ${{ matrix.lane == 'Azure' && 'Cosmos' || inputs.nonAzureReadModel }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: ${{ github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider }}
+        if: ${{ inputs.lane == 'both' || inputs.lane == matrix.lane }}
 
       - name: Free disk space
-        if: ${{ github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider }}
+        if: ${{ inputs.lane == 'both' || inputs.lane == matrix.lane }}
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
@@ -403,58 +579,59 @@ jobs:
           swap-storage: false
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        if: ${{ github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider }}
+        if: ${{ inputs.lane == 'both' || inputs.lane == matrix.lane }}
         with:
           global-json-file: global.json
 
-      - name: Install required workloads
-        if: ${{ github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider }}
-        run: dotnet workload install wasm-tools aspire
-
-      - name: Restore
-        if: ${{ github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider }}
+      - name: Restore test lane projects
+        if: ${{ inputs.lane == 'both' || inputs.lane == matrix.lane }}
         env:
           NuGetPackageSourceCredentials_efreeman518-github: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
-        run: dotnet restore TaskFlow.slnx -p:Configuration=Release
+        run: |
+          dotnet restore tests/Test.E2E/Test.E2E.csproj -p:Configuration=Release
+          dotnet restore tests/Test.Integration/Test.Integration.csproj -p:Configuration=Release
 
       - name: Build test lanes
-        if: ${{ github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider }}
+        if: ${{ inputs.lane == 'both' || inputs.lane == matrix.lane }}
         run: |
           dotnet build tests/Test.E2E/Test.E2E.csproj --no-restore --configuration Release -m:1
           dotnet build tests/Test.Integration/Test.Integration.csproj --no-restore --configuration Release -m:1
 
-      - name: E2E Tests (${{ matrix.dbProvider }})
-        if: ${{ (github.event_name == 'schedule' || inputs.includeE2E == true) && (github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider) }}
+      - name: E2E Tests (${{ matrix.lane }})
+        if: ${{ inputs.includeE2E == true && (inputs.lane == 'both' || inputs.lane == matrix.lane) }}
         timeout-minutes: 20
         run: >
           dotnet test tests/Test.E2E/Test.E2E.csproj
           --no-build --configuration Release
-          --logger "trx;LogFileName=e2e-${{ matrix.dbProvider }}-results.trx"
+          --logger "trx;LogFileName=e2e-${{ matrix.lane }}-results.trx"
           --results-directory ./TestResults
 
-      - name: Integration Tests (${{ matrix.dbProvider }}, component)
-        if: ${{ (github.event_name == 'schedule' || inputs.includeIntegration == true) && (github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider) }}
+      - name: Integration Tests (${{ matrix.lane }}, component)
+        if: ${{ inputs.includeIntegration == true && (inputs.lane == 'both' || inputs.lane == matrix.lane) }}
         timeout-minutes: 20
         run: >
           dotnet test tests/Test.Integration/Test.Integration.csproj
           --no-build --configuration Release
-          --logger "trx;LogFileName=integration-${{ matrix.dbProvider }}-results.trx"
+          --logger "trx;LogFileName=integration-${{ matrix.lane }}-results.trx"
           --results-directory ./TestResults
 
       - name: Upload Test Results
-        if: ${{ always() && (github.event_name == 'schedule' || inputs.dbProvider == 'both' || inputs.dbProvider == matrix.dbProvider) }}
+        if: ${{ always() && (inputs.lane == 'both' || inputs.lane == matrix.lane) }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: test-results-${{ matrix.dbProvider }}
-          path: ./TestResults/*.trx
+          name: test-results-${{ matrix.lane }}
+          path: ./TestResults/**/*.trx
+          if-no-files-found: warn
 
-  # Portable lane end-to-end proof (D-036). Dispatch-gated: it builds all five app images from source, so
+  # NonAzure lane end-to-end proof (D-060). Dispatch-gated: it builds the app images from source, so
   # it is the most expensive job in this file and nothing about it belongs on a push.
   compose-smoke:
     needs: build-and-test
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeComposeSmoke == true }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeComposeSmoke == true && (inputs.lane == 'both' || inputs.lane == 'NonAzure') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      COMPOSE_PROFILES: ${{ inputs.nonAzureReadModel == 'MongoDb' && 'local,mongo' || 'local' }}
     defaults:
       run:
         working-directory: deploy/compose
@@ -478,40 +655,65 @@ jobs:
           [[ -n "$NUGET_PAT" ]] || { echo "::error::NUGET_PAT secret is required to build the app images."; exit 1; }
 
       # CI-only environment. Every credential here matches the dev-only values hard-coded in the local
-      # override, so nothing secret is written and nothing here resembles a deployment .env.
+      # topology. Passwords are generated per run, masked before use, and never printed.
       - name: Write the CI environment
         run: |
           set -euo pipefail
+          postgres_password=$(openssl rand -hex 24)
+          rabbitmq_password=$(openssl rand -hex 24)
+          redis_password=$(openssl rand -hex 24)
+          mongo_password=$(openssl rand -hex 24)
+          echo "::add-mask::$postgres_password"
+          echo "::add-mask::$rabbitmq_password"
+          echo "::add-mask::$redis_password"
+          echo "::add-mask::$mongo_password"
           cat > .env <<ENV
-          TASKFLOW_LANE=Portable
-          # The lane already defaults AI to OpenAICompatible, which wants a real endpoint. A CI runner has
-          # none, and this switch is exactly the escape hatch for that.
+          TASKFLOW_LANE=NonAzure
+          TASKFLOW_READMODEL_PROVIDER=${{ inputs.nonAzureReadModel }}
+          ReadModel__Provider=${{ inputs.nonAzureReadModel }}
           TASKFLOW_AI_PROVIDER=None
           Database__PostgreSql__PoolerMode=None
-          ConnectionStrings__TaskFlowDbContextTrxn=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow;Password=taskflow-dev-password
-          ConnectionStrings__TaskFlowDbContextQuery=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow;Password=taskflow-dev-password
-          ConnectionStrings__TaskFlowFlowEngineDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow;Password=taskflow-dev-password
-          ConnectionStrings__TickerQDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow;Password=taskflow-dev-password
-          ConnectionStrings__Redis1=redis:6379
-          ConnectionStrings__RabbitMq1=amqp://taskflow:taskflow-dev-password@rabbitmq:5672
-          Storage__S3__ServiceUrl=http://minio:9000
-          Storage__S3__PublicServiceUrl=http://minio:9000
+          POSTGRES_DB=taskflowdb
+          POSTGRES_USER=taskflow-ci
+          POSTGRES_PASSWORD=$postgres_password
+          ConnectionStrings__TaskFlowDbContextTrxn=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password
+          ConnectionStrings__TaskFlowDbContextQuery=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password
+          ConnectionStrings__TaskFlowFlowEngineDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password
+          ConnectionStrings__TickerQDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password
+          REDIS_PASSWORD=$redis_password
+          ConnectionStrings__Redis1=redis:6379,password=$redis_password,abortConnect=false
+          RABBITMQ_DEFAULT_USER=taskflow-ci
+          RABBITMQ_DEFAULT_PASS=$rabbitmq_password
+          ConnectionStrings__RabbitMq1=amqp://taskflow-ci:$rabbitmq_password@rabbitmq:5672
+          Messaging__RabbitMq__ConnectionString=amqp://taskflow-ci:$rabbitmq_password@rabbitmq:5672
+          MONGO_INITDB_ROOT_USERNAME=taskflow-ci
+          MONGO_INITDB_ROOT_PASSWORD=$mongo_password
+          ConnectionStrings__MongoDb1=mongodb://taskflow-ci:$mongo_password@mongo:27017/taskflow?authSource=admin
+          Storage__S3__ServiceUrl=http://seaweedfs:8333
+          Storage__S3__PublicServiceUrl=http://s3.localhost
           Storage__S3__Region=us-east-1
-          Storage__S3__AccessKeyId=taskflowminio
-          Storage__S3__SecretAccessKey=taskflowminio-dev-secret
+          Storage__S3__AccessKeyId=taskflowseaweedfs
+          Storage__S3__SecretAccessKey=taskflowseaweedfs-dev-secret
           Storage__S3__ForcePathStyle=true
           Database__Encryption__LocalKeyBase64=$(openssl rand -base64 32)
           Database__Encryption__BlindIndexKeyBase64=$(openssl rand -base64 32)
           Gateway__BaseUrl=http://gateway:8080
+          GATEWAY_BASE_URL=http://localhost
           Grpc__TaskFlowRead__Address=http://api:8081
           OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-lgtm:4317
           CADDY_DOMAIN=localhost
+          BLAZOR_UI_ORIGIN=http://localhost
+          REACT_UI_ORIGIN=http://react.localhost
+          UNO_UI_ORIGIN=http://uno.localhost
+          REACT_UI_DOMAIN=react.localhost
+          UNO_UI_DOMAIN=uno.localhost
+          S3_PUBLIC_DOMAIN=s3.localhost
           ACME_EMAIL=ci@example.invalid
           ENV
           cat images.env.example >> .env
           chmod 600 .env
 
-      - name: Build the five app images
+      - name: Build the seven app images
         env:
           NuGetPackageSourceCredentials_efreeman518-github: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
         run: |
@@ -547,6 +749,25 @@ jobs:
           curl -fsS "http://localhost/api/v1/task-items/${id}" | jq -er --arg id "$id" 'select(.item.id == $id)' > /dev/null
           curl -fsS -X DELETE "http://localhost/api/v1/task-items/${id}" > /dev/null
           echo "Compose lane create/read/delete round trip passed."
+
+      - name: Verify static UI roots and runtime gateway configuration
+        run: |
+          set -euo pipefail
+          check_ui() {
+            local host="$1"
+            for attempt in $(seq 1 60); do
+              if curl -fsS --resolve "${host}:80:127.0.0.1" "http://${host}/" > /dev/null 2>&1 \
+                && curl -fsS --resolve "${host}:80:127.0.0.1" "http://${host}/app-config.json" \
+                  | jq -e --arg gateway 'http://localhost' '.gatewayBaseUrl == $gateway' > /dev/null; then
+                echo "${host} passed after ${attempt} attempt(s)."
+                return 0
+              fi
+              sleep 5
+            done
+            echo "::error::${host} did not serve the expected runtime configuration"; return 1
+          }
+          check_ui react.localhost
+          check_ui uno.localhost
 
       - name: Dump stack logs
         if: always()

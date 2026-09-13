@@ -14,6 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Shared\TaskFlow.Hosting\TaskFlow.Hosting.csproj" />
     <ProjectReference Include="..\..\src\Domain\TaskFlow.Domain.Model\TaskFlow.Domain.Model.csproj" />
     <ProjectReference Include="..\..\src\Domain\TaskFlow.Domain.Shared\TaskFlow.Domain.Shared.csproj" />
     <ProjectReference Include="..\..\src\Application\TaskFlow.Application.Models\TaskFlow.Application.Models.csproj" />

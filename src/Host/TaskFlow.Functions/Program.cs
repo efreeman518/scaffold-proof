@@ -55,5 +55,6 @@ builder.Services
     .RegisterBackgroundServices(builder.Configuration);
 
 var app = builder.Build();
-app.AutoRegisterMessageHandlers();
+// Provision shared external resources before RunAsync activates Service Bus projection triggers.
+await app.RunStartupTasks();
 await app.RunAsync();
