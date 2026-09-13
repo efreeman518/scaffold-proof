@@ -32,7 +32,8 @@ URLs retain a reachable signed host without publishing the S3 port directly.
 3. Fill in `.env`. The checked-in D-060 contract fixes `Hosting__Lane=NonAzure`, PostgreSQL, RabbitMQ, S3,
    PostgreSQL JSONB, relational audit and Redis Data Protection. Do not change those lane-owned settings.
    Required values are `POSTGRES_*`, `RABBITMQ_DEFAULT_*`, the four `ConnectionStrings__*`,
-   `ConnectionStrings__Redis1`, `ConnectionStrings__RabbitMq1`, the `Storage__S3__*` block,
+   `ConnectionStrings__Redis1`, `Messaging__RabbitMq__ConnectionString`, `ConnectionStrings__RabbitMq1`, the
+   `Storage__S3__*` block,
    `CADDY_DOMAIN`, `S3_PUBLIC_DOMAIN`, `ACME_EMAIL`, `Gateway__BaseUrl`, `GATEWAY_BASE_URL`, and the three
    `*_UI_ORIGIN` / two `*_UI_DOMAIN` values. Set `Storage__S3__PublicServiceUrl` to
    `https://<S3_PUBLIC_DOMAIN>` so the browser can follow a presigned URL. The static React and Uno images

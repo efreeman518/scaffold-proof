@@ -358,7 +358,8 @@ public sealed class DeploymentWorkflowContractTests
         {
             "Database__PostgreSql__PoolerMode", "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD",
             "ConnectionStrings__TaskFlowDbContextTrxn", "ConnectionStrings__Redis1",
-            "ConnectionStrings__RabbitMq1", "RABBITMQ_DEFAULT_USER", "RABBITMQ_DEFAULT_PASS",
+            "Messaging__RabbitMq__ConnectionString", "ConnectionStrings__RabbitMq1", "RABBITMQ_DEFAULT_USER",
+            "RABBITMQ_DEFAULT_PASS",
             "Storage__S3__PublicServiceUrl", "Storage__S3__AccessKeyId", "Storage__S3__SecretAccessKey",
             "ConnectionStrings__MongoDb1", "Database__Encryption__LocalKeyBase64", "Grpc__TaskFlowRead__Address",
             "OTEL_EXPORTER_OTLP_ENDPOINT", "CADDY_DOMAIN", "ACME_EMAIL", "TASKFLOW_API_IMAGE"
