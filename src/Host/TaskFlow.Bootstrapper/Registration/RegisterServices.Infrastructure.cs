@@ -16,8 +16,7 @@ namespace TaskFlow.Bootstrapper;
 public static partial class RegisterServices
 {
     /// <summary>
-    /// Registers audit persistence when a Table Storage endpoint or connection exists; otherwise keeps
-    /// audit message handling alive with a no-op repository for local and test hosts.
+    /// Registers the strict Azure audit sink. Missing Table Storage configuration is a startup error.
     /// </summary>
     private static void AddTableStorageServices(IServiceCollection services, IConfiguration config)
     {
@@ -27,10 +26,8 @@ public static partial class RegisterServices
             "Values:TableStorage1",
             "Aspire:Azure:Data:Tables:TableStorage1:ConnectionString");
         if (string.IsNullOrEmpty(connection))
-        {
-            services.AddSingleton<IAuditLogRepository, NoOpAuditLogRepository>();
-            return;
-        }
+            throw new InvalidOperationException(
+                $"{AuditProviderConfigKey}=AzureTable requires the TableStorage1 endpoint or connection string.");
 
         services.AddAzureClients(builder =>
         {
@@ -109,9 +106,7 @@ public static partial class RegisterServices
         config["ServiceBus1:fullyQualifiedNamespace"];
 
     /// <summary>
-    /// Registers attachment blob storage when configured; otherwise a no-op repository keeps
-    /// <see cref="IObjectStorageRepository"/> resolvable so the DI graph still builds (D-037). Upload/download
-    /// endpoints surface a service-level failure from the no-op when this optional dependency is absent.
+    /// Registers the strict Azure object store. Missing Blob Storage configuration is a startup error.
     /// </summary>
     private static void AddBlobStorageServices(IServiceCollection services, IConfiguration config)
     {
@@ -121,10 +116,8 @@ public static partial class RegisterServices
             "BlobStorage1",
             "Values:BlobStorage1");
         if (string.IsNullOrEmpty(connection))
-        {
-            services.AddSingleton<IObjectStorageRepository, NoOpBlobStorageRepository>();
-            return;
-        }
+            throw new InvalidOperationException(
+                $"{StorageProviderConfigKey}=AzureBlob requires the BlobStorage1 endpoint or connection string.");
 
         services.AddAzureClients(builder =>
         {
@@ -148,8 +141,7 @@ public static partial class RegisterServices
     }
 
     /// <summary>
-    /// Registers the Service Bus outbox transport when a namespace or connection string is configured; otherwise a transport that
-    /// reports it cannot dispatch, so staged rows stay in the outbox instead of being dropped (D-026).
+    /// Registers the strict Azure Service Bus transport. Missing broker configuration is a startup error.
     /// </summary>
     private static void AddServiceBusServices(IServiceCollection services, IConfiguration config)
     {
@@ -160,10 +152,8 @@ public static partial class RegisterServices
             "Values:ServiceBus1");
         var fullyQualifiedNamespace = ResolveServiceBusFullyQualifiedNamespace(config);
         if (string.IsNullOrEmpty(connStr) && string.IsNullOrWhiteSpace(fullyQualifiedNamespace))
-        {
-            services.AddSingleton<IIntegrationEventTransport, NoOpEventTransport>();
-            return;
-        }
+            throw new InvalidOperationException(
+                $"{MessagingProviderConfigKey}=ServiceBus requires the ServiceBus1 namespace or connection string.");
 
         services.AddAzureClients(builder =>
         {
@@ -184,16 +174,21 @@ public static partial class RegisterServices
     }
 
     /// <summary>
-    /// Registers the denormalized TaskView read model in Cosmos DB when configured.
-    /// The no-op repository preserves API shape when the Cosmos emulator is intentionally skipped.
+    /// Registers the strict Azure Cosmos DB read model. Missing Cosmos configuration is a startup error.
     /// </summary>
     private static void AddCosmosDbServices(IServiceCollection services, IConfiguration config)
     {
         var connection = config.GetConnectionString("CosmosDb1");
         if (string.IsNullOrEmpty(connection))
         {
-            services.AddSingleton<ITaskViewRepository, NoOpTaskViewRepository>();
-            return;
+            if (config.GetValue("Testing:UseNoOpCosmosReadModel", false))
+            {
+                services.AddSingleton<ITaskViewRepository, NoOpTaskViewRepository>();
+                return;
+            }
+
+            throw new InvalidOperationException(
+                $"{ReadModelProviderConfigKey}=Cosmos requires the CosmosDb1 endpoint or connection string.");
         }
 
         var databaseName = config["Cosmos:TaskViews:DatabaseName"] ?? "taskflow-db";

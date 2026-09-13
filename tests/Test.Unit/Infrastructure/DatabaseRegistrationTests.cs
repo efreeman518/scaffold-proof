@@ -33,6 +33,7 @@ public sealed class DatabaseRegistrationTests
                     provider == TaskFlowDbProvider.SqlServer ? "Azure" : "NonAzure",
                 [RegisterServices.AuditProviderConfigKey] =
                     provider == TaskFlowDbProvider.SqlServer ? "AzureTable" : "Relational",
+                ["ConnectionStrings:TableStorage1"] = "https://taskflowtest.table.core.windows.net/",
                 [TaskFlowDbProviderSelector.ConfigurationKey] = provider.ToString()
             })
             .AddInMemoryCollection(TestColumnEncryption.Configuration)

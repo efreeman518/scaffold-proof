@@ -111,7 +111,9 @@ if (nonAzureLane)
         .WithArgs("mini", "-dir=/data")
         .WithEnvironment("AWS_ACCESS_KEY_ID", s3AccessKey)
         .WithEnvironment("AWS_SECRET_ACCESS_KEY", s3SecretKey)
-        .WithHttpEndpoint(targetPort: 8333, name: "s3");
+        .WithHttpEndpoint(targetPort: 8333, name: "s3")
+        .WithHttpEndpoint(targetPort: 9333, name: "master")
+        .WithHttpHealthCheck(path: "/cluster/status", endpointName: "master");
 
     if (!isTesting)
         seaweedFs = seaweedFs.WithLifetime(ContainerLifetime.Persistent)
@@ -210,7 +212,7 @@ static void AddEventTypeSubscription(
 // Azure Cosmos DB - emulator (see AzureStorage comment re: Persistent lifetime)
 // Skipped in Testing: the emulator is heavy (~1.3 GB) and not needed for audit pipeline tests.
 // Skipped in the NonAzure lane: the read model is PostgreSQL JSONB or explicitly MongoDB (D-038).
-// The API's AddCosmosDbServices falls back to NoOpTaskViewRepository when the connection string is absent.
+// Strict Azure startup requires Cosmos configuration when this resource is selected.
 IResourceBuilder<AzureCosmosDBResource>? cosmos = null;
 if (!nonAzureLane && (!isTesting || fullLaneAvailableInTesting))
 {
@@ -559,7 +561,9 @@ IResourceBuilder<T> WithObjectStorage<T>(IResourceBuilder<T> host)
 IResourceBuilder<T> WithReadModel<T>(IResourceBuilder<T> host)
     where T : IResourceWithEnvironment, IResourceWithWaitSupport
 {
-    if (cosmos is not null) return host.WithReference(cosmos);
+    if (cosmos is not null) return host.WithReference(cosmos).WaitFor(cosmos);
+    if (!nonAzureLane && isTesting)
+        return host.WithEnvironment("Testing__UseNoOpCosmosReadModel", "true");
     if (mongoDb is not null)
         return host.WithEnvironment("ConnectionStrings__MongoDb1", mongoDb.GetEndpoint("mongodb"))
                    .WaitFor(mongoDb);

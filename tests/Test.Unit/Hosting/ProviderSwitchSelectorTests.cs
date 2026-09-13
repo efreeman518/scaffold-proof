@@ -11,6 +11,7 @@ using Microsoft.Extensions.Options;
 using TaskFlow.Infrastructure.Repositories;
 using TaskFlow.Infrastructure.Repositories.MongoDb;
 using TaskFlow.Infrastructure.Storage;
+using TaskFlow.Infrastructure.Storage.CosmosDb;
 
 namespace Test.Unit.Hosting;
 
@@ -114,6 +115,37 @@ public class ProviderSwitchSelectorTests
 
         using var provider = services.BuildServiceProvider();
         Assert.IsInstanceOfType<S3ObjectStorageRepository>(provider.GetRequiredService<IObjectStorageRepository>());
+    }
+
+    [TestMethod]
+    public void AzureCoreProviders_MissingRequiredConnections_FailFast()
+    {
+        var config = Config((HostingLaneResolver.LaneConfigurationKey, "Azure"));
+
+        foreach (var (method, requiredSetting) in new[]
+                 {
+                     ("AddStorageServices", "BlobStorage1"),
+                     ("AddAuditServices", "TableStorage1"),
+                     ("AddReadModelServices", "CosmosDb1"),
+                     ("AddMessagingServices", "ServiceBus1")
+                 })
+        {
+            var exception = InvokeDispatcherFailure<InvalidOperationException>(method, config);
+            StringAssert.Contains(exception.Message, requiredSetting, method);
+        }
+    }
+
+    [TestMethod]
+    public void AzureCosmos_ExplicitTestMode_RegistersNoOpReadModel()
+    {
+        var services = InvokeDispatcher(
+            "AddReadModelServices",
+            Config(
+                (HostingLaneResolver.LaneConfigurationKey, "Azure"),
+                ("Testing:UseNoOpCosmosReadModel", "true")));
+
+        var descriptor = services.Single(value => value.ServiceType == typeof(ITaskViewRepository));
+        Assert.AreEqual(typeof(NoOpTaskViewRepository), descriptor.ImplementationType);
     }
 
     [TestMethod]

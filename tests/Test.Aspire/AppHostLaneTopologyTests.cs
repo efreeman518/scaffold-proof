@@ -159,7 +159,8 @@ public sealed class AppHostLaneTopologyTests
     public void ReadModelResources_AreReferencedOnlyWhenSelected()
     {
         var source = ReadAppHostSource();
-        StringAssert.Contains(source, "if (cosmos is not null) return host.WithReference(cosmos);");
+        StringAssert.Contains(source, "if (cosmos is not null) return host.WithReference(cosmos).WaitFor(cosmos);");
+        StringAssert.Contains(source, "Testing__UseNoOpCosmosReadModel");
         StringAssert.Contains(source, "ConnectionStrings__MongoDb1");
         StringAssert.Contains(source, "mongoDb.GetEndpoint(\"mongodb\")");
         StringAssert.Contains(source, "functions = WithReadModel(functions);");
@@ -172,6 +173,8 @@ public sealed class AppHostLaneTopologyTests
         StringAssert.Contains(source, "scheduler = WithObjectStorage(scheduler);");
         StringAssert.Contains(source, "return host.WithReference(blobs!).WaitFor(storage!);");
         StringAssert.Contains(source, ".WaitFor(seaweedFs);");
+        StringAssert.Contains(source, ".WithHttpEndpoint(targetPort: 9333, name: \"master\")");
+        StringAssert.Contains(source, ".WithHttpHealthCheck(path: \"/cluster/status\", endpointName: \"master\")");
     }
 
     [TestMethod]

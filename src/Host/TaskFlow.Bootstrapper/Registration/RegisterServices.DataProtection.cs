@@ -102,7 +102,8 @@ public static partial class RegisterServices
                     && (blobServiceUri.Scheme == Uri.UriSchemeHttp || blobServiceUri.Scheme == Uri.UriSchemeHttps))
                 {
                     // Azure deployments can provide the passwordless service endpoint in the same key that
-                    // Azurite supplies as a connection string.
+                    // Azurite supplies as a connection string. Infrastructure pre-provisions the deployed
+                    // container, so endpoint-auth registration must remain network-free.
                     blobServiceClient = new BlobServiceClient(blobServiceUri, credential);
                 }
                 else
@@ -111,7 +112,11 @@ public static partial class RegisterServices
                 }
 
                 var container = blobServiceClient.GetBlobContainerClient(containerName);
-                container.CreateIfNotExists();
+                // Local Azurite has no deployment phase to create the key container. Keep this synchronous
+                // compatibility path scoped to the emulator; real endpoint-auth and production connection
+                // registrations perform no network I/O and require infrastructure-owned provisioning.
+                if (IsAzuriteConnectionString(blobStorage))
+                    container.CreateIfNotExists();
                 dpBuilder.PersistKeysToAzureBlobStorage(container.GetBlobClient(blobName));
                 logger.ConfigureDataProtectionPersistence(appName, env, nameof(DataProtectionPersistence.AzureBlob));
                 break;
@@ -140,6 +145,10 @@ public static partial class RegisterServices
 
         return services;
     }
+
+    private static bool IsAzuriteConnectionString(string value) =>
+        value.Equals("UseDevelopmentStorage=true", StringComparison.OrdinalIgnoreCase)
+        || value.Contains("AccountName=devstoreaccount1", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Builds the Azure credential shared by Data Protection and any other Azure-identity consumer.</summary>
     public static DefaultAzureCredential CreateAzureCredential(IConfiguration config)

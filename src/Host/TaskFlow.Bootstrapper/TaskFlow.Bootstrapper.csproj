@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Test.Unit" />
+    <InternalsVisibleTo Include="Test.Integration" />
   </ItemGroup>
 
   <ItemGroup>

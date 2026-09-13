@@ -1,4 +1,5 @@
 using EF.Messaging.RabbitMq;
+using EF.FlowEngine.Clients;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using RabbitMQ.Client;
@@ -6,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.MessageHandlers.Consumers;
+using TaskFlow.Bootstrapper;
 using TaskFlow.Domain.Shared.Events;
 using TaskFlow.Infrastructure.Data.Interceptors;
 using TaskFlow.Infrastructure.Data.Messaging;
@@ -138,6 +140,41 @@ public sealed class RabbitMqTransportTests
         Assert.IsNotNull(delivered);
         Assert.IsFalse(IntegrationEnvelopeReader.TryRead(delivered.Body.Span, out _, out var failure));
         Assert.AreEqual(IntegrationEnvelopeReader.MalformedReason, failure);
+    }
+
+    [TestMethod]
+    [Timeout(300000, CooperativeCancellation = true)]
+    public async Task FlowEngineIntegrationEventsClient_PublishesThroughConfirmedRabbitMqTransport()
+    {
+        var ct = TestContext.CancellationToken;
+        var broker = RabbitMqBrokerFixture.Container;
+        var queue = $"taskflow.workflow-message-test-{Guid.NewGuid():N}";
+
+        await using var provider = BuildProvider(broker, $"flowengine-{Guid.NewGuid():N}");
+        await provider.GetRequiredService<IRabbitMqTopologyDeclarer>().DeclareAsync(
+            new RabbitMqTopology(
+                [new RabbitMqExchange(TaskFlowRabbitMqTopology.Exchange)],
+                [new RabbitMqQueue(queue)],
+                [new RabbitMqBinding(queue, TaskFlowRabbitMqTopology.Exchange, "taskitem.triaged")]),
+            ct);
+
+        var client = RegisterServices.CreateRabbitMqFlowEngineMessageClient(
+            provider.GetRequiredService<IRabbitMqPublisher>());
+        await client.SendAsync(new MessageRequest
+        {
+            Subject = "taskitem.triaged",
+            Body = JsonSerializer.SerializeToElement(new { taskId = "task-42" }),
+            CorrelationId = "correlation-42",
+            IdempotencyKey = "task-42-triage-event"
+        }, ct);
+
+        var delivered = await GetAsync(broker, queue, ct);
+        Assert.IsNotNull(delivered);
+        Assert.AreEqual("taskitem.triaged", delivered.RoutingKey);
+        Assert.AreEqual("task-42-triage-event", delivered.BasicProperties.MessageId);
+        Assert.AreEqual("correlation-42", delivered.BasicProperties.CorrelationId);
+        Assert.AreEqual("application/json", delivered.BasicProperties.ContentType);
+        Assert.AreEqual("task-42", JsonDocument.Parse(delivered.Body).RootElement.GetProperty("taskId").GetString());
     }
 
     public TestContext TestContext { get; set; } = null!;

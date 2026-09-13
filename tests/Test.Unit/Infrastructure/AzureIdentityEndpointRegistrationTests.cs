@@ -8,6 +8,8 @@ using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using TaskFlow.Bootstrapper;
@@ -93,6 +95,27 @@ public sealed class AzureIdentityEndpointRegistrationTests
         Assert.AreEqual("127.0.0.1", table.Uri.Host);
         Assert.AreEqual("localhost", serviceBus.FullyQualifiedNamespace);
         Assert.AreEqual("localhost", cosmos.Endpoint.Host);
+    }
+
+    [TestMethod]
+    public void DataProtectionEndpointRegistration_DoesNotContactBlobStorage()
+    {
+        var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
+        {
+            ApplicationName = "Test.Unit",
+            EnvironmentName = Environments.Production,
+            DisableDefaults = true
+        });
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Hosting:Lane"] = "Azure",
+            ["ConnectionStrings:BlobStorage1"] = "https://127.0.0.1:1/"
+        });
+
+        RegisterServices.AddTaskFlowDataProtection(builder, NullLogger.Instance);
+
+        Assert.IsTrue(builder.Services.Any(
+            descriptor => descriptor.ServiceType.FullName?.Contains("DataProtection", StringComparison.Ordinal) == true));
     }
 
     [TestMethod]
