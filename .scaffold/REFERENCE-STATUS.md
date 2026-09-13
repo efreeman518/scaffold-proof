@@ -27,7 +27,7 @@ This refresh follows the `feature/ef-packages-1-1-100` package-refactor: EF.* pi
 
 ## Test Status
 
-Numbers below are the observed local fast lane on 2026-09-12. The full Unit project passed **523/523** (8.0 s test time, 9.73 s wall time) under a 50-second wrapper. The categorized fast lane (`TestCategory=Unit|TestCategory=Architecture|TestCategory=Endpoint`, `dotnet test TaskFlow.slnx`) passed **739/739 across 13 projects in 30.8 s**; its Architecture and Endpoint subsets passed **74/74** and **166/166** respectively. `Test.UI` passed **59/59** and `Test.Integration.FlowEngine` passed **18/18**.
+Numbers below are the observed local fast lane on 2026-09-12. The full Unit project passed **523/523** (8.0 s test time, 9.73 s wall time) under a 50-second wrapper; GitHub CI run 34736624292 passed the same **523/523** in 4 s test time and 6 s step time. The categorized fast lane (`TestCategory=Unit|TestCategory=Architecture|TestCategory=Endpoint`, `dotnet test TaskFlow.slnx`) passed **739/739 across 13 projects in 30.8 s**; its Architecture and Endpoint subsets passed **74/74** and **166/166** respectively. `Test.UI` passed **59/59** and `Test.Integration.FlowEngine` passed **18/18**.
 
 Docker/Testcontainers-backed lanes (run-scoped `TESTCONTAINERS_HOST_OVERRIDE`, not committed):
 
