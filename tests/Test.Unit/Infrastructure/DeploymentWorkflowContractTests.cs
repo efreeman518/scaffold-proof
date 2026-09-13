@@ -261,6 +261,22 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(fullJob, "$azureSelected = \"${{ inputs.lane }}\" -in @(\"both\", \"Azure\")");
         StringAssert.Contains(fullJob, "if ($azureSelected -and -not (Get-Command func");
         Assert.IsFalse(fullJob.Contains("runs-on: ubuntu-latest", StringComparison.Ordinal));
+
+        Assert.IsFalse(
+            System.Text.RegularExpressions.Regex.IsMatch(
+                workflow,
+                @"dotnet workload install[^\r\n]*\baspire\b",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase),
+            ".NET 10 Aspire is package-based; no CI job may try to install an Aspire workload.");
+        StringAssert.Contains(workflow, "run: dotnet workload install wasm-tools");
+
+        var databaseLanes = workflow[databaseStart..workflow.IndexOf("  compose-smoke:", StringComparison.Ordinal)];
+        StringAssert.Contains(databaseLanes, "dotnet restore tests/Test.E2E/Test.E2E.csproj -p:Configuration=Release");
+        StringAssert.Contains(databaseLanes, "dotnet restore tests/Test.Integration/Test.Integration.csproj -p:Configuration=Release");
+        Assert.IsFalse(databaseLanes.Contains("dotnet workload install", StringComparison.Ordinal),
+            "Project-scoped database lanes do not build Uno and must not install workloads.");
+        Assert.IsFalse(databaseLanes.Contains("dotnet restore TaskFlow.slnx", StringComparison.Ordinal),
+            "Database lanes must restore only the projects they build.");
     }
 
     /// <summary>
@@ -312,14 +328,28 @@ public sealed class DeploymentWorkflowContractTests
         var smokeJob = workflow[workflow.IndexOf("  compose-smoke:", StringComparison.Ordinal)..];
         StringAssert.Contains(smokeJob, "runs-on: ubuntu-latest");
         StringAssert.Contains(smokeJob, "ReadModel__Provider=${{ inputs.nonAzureReadModel }}");
+        StringAssert.Contains(smokeJob, "POSTGRES_DB=taskflowdb");
+        StringAssert.Contains(smokeJob, "POSTGRES_USER=taskflow-ci");
+        StringAssert.Contains(smokeJob, "POSTGRES_PASSWORD=$postgres_password");
+        StringAssert.Contains(smokeJob, "ConnectionStrings__TaskFlowDbContextTrxn=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password");
+        StringAssert.Contains(smokeJob, "ConnectionStrings__TaskFlowDbContextQuery=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password");
+        StringAssert.Contains(smokeJob, "ConnectionStrings__TaskFlowFlowEngineDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password");
+        StringAssert.Contains(smokeJob, "ConnectionStrings__TickerQDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password");
+        StringAssert.Contains(smokeJob, "RABBITMQ_DEFAULT_USER=taskflow-ci");
+        StringAssert.Contains(smokeJob, "RABBITMQ_DEFAULT_PASS=$rabbitmq_password");
+        StringAssert.Contains(smokeJob, "ConnectionStrings__RabbitMq1=amqp://taskflow-ci:$rabbitmq_password@rabbitmq:5672");
+        StringAssert.Contains(smokeJob, "Messaging__RabbitMq__ConnectionString=amqp://taskflow-ci:$rabbitmq_password@rabbitmq:5672");
         StringAssert.Contains(smokeJob, "REDIS_PASSWORD=$redis_password");
         StringAssert.Contains(smokeJob, "ConnectionStrings__Redis1=redis:6379,password=$redis_password,abortConnect=false");
         StringAssert.Contains(smokeJob, "MONGO_INITDB_ROOT_USERNAME=taskflow-ci");
         StringAssert.Contains(smokeJob, "MONGO_INITDB_ROOT_PASSWORD=$mongo_password");
         StringAssert.Contains(smokeJob, "ConnectionStrings__MongoDb1=mongodb://taskflow-ci:$mongo_password@mongo:27017/taskflow?authSource=admin");
         StringAssert.Contains(smokeJob, "openssl rand -hex 24");
+        StringAssert.Contains(smokeJob, "::add-mask::$postgres_password");
+        StringAssert.Contains(smokeJob, "::add-mask::$rabbitmq_password");
         StringAssert.Contains(smokeJob, "::add-mask::$redis_password");
         StringAssert.Contains(smokeJob, "::add-mask::$mongo_password");
+        Assert.IsFalse(smokeJob.Contains("taskflow-dev-password", StringComparison.Ordinal));
         StringAssert.Contains(smokeJob, "logs --no-color --tail 400");
         var logDump = smokeJob.IndexOf("Dump stack logs", StringComparison.Ordinal);
         Assert.IsGreaterThan(0, logDump);

@@ -108,7 +108,7 @@ jobs:
           global-json-file: global.json
 
       - name: Install required workloads
-        run: dotnet workload install wasm-tools aspire
+        run: dotnet workload install wasm-tools
 
       - name: Require private NuGet feed credential
         env:
@@ -583,15 +583,13 @@ jobs:
         with:
           global-json-file: global.json
 
-      - name: Install required workloads
-        if: ${{ inputs.lane == 'both' || inputs.lane == matrix.lane }}
-        run: dotnet workload install wasm-tools aspire
-
-      - name: Restore
+      - name: Restore test lane projects
         if: ${{ inputs.lane == 'both' || inputs.lane == matrix.lane }}
         env:
           NuGetPackageSourceCredentials_efreeman518-github: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
-        run: dotnet restore TaskFlow.slnx -p:Configuration=Release
+        run: |
+          dotnet restore tests/Test.E2E/Test.E2E.csproj -p:Configuration=Release
+          dotnet restore tests/Test.Integration/Test.Integration.csproj -p:Configuration=Release
 
       - name: Build test lanes
         if: ${{ inputs.lane == 'both' || inputs.lane == matrix.lane }}
@@ -661,8 +659,12 @@ jobs:
       - name: Write the CI environment
         run: |
           set -euo pipefail
+          postgres_password=$(openssl rand -hex 24)
+          rabbitmq_password=$(openssl rand -hex 24)
           redis_password=$(openssl rand -hex 24)
           mongo_password=$(openssl rand -hex 24)
+          echo "::add-mask::$postgres_password"
+          echo "::add-mask::$rabbitmq_password"
           echo "::add-mask::$redis_password"
           echo "::add-mask::$mongo_password"
           cat > .env <<ENV
@@ -671,14 +673,19 @@ jobs:
           ReadModel__Provider=${{ inputs.nonAzureReadModel }}
           TASKFLOW_AI_PROVIDER=None
           Database__PostgreSql__PoolerMode=None
-          ConnectionStrings__TaskFlowDbContextTrxn=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow;Password=taskflow-dev-password
-          ConnectionStrings__TaskFlowDbContextQuery=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow;Password=taskflow-dev-password
-          ConnectionStrings__TaskFlowFlowEngineDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow;Password=taskflow-dev-password
-          ConnectionStrings__TickerQDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow;Password=taskflow-dev-password
+          POSTGRES_DB=taskflowdb
+          POSTGRES_USER=taskflow-ci
+          POSTGRES_PASSWORD=$postgres_password
+          ConnectionStrings__TaskFlowDbContextTrxn=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password
+          ConnectionStrings__TaskFlowDbContextQuery=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password
+          ConnectionStrings__TaskFlowFlowEngineDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password
+          ConnectionStrings__TickerQDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password
           REDIS_PASSWORD=$redis_password
           ConnectionStrings__Redis1=redis:6379,password=$redis_password,abortConnect=false
-          ConnectionStrings__RabbitMq1=amqp://taskflow:taskflow-dev-password@rabbitmq:5672
-          Messaging__RabbitMq__ConnectionString=amqp://taskflow:taskflow-dev-password@rabbitmq:5672
+          RABBITMQ_DEFAULT_USER=taskflow-ci
+          RABBITMQ_DEFAULT_PASS=$rabbitmq_password
+          ConnectionStrings__RabbitMq1=amqp://taskflow-ci:$rabbitmq_password@rabbitmq:5672
+          Messaging__RabbitMq__ConnectionString=amqp://taskflow-ci:$rabbitmq_password@rabbitmq:5672
           MONGO_INITDB_ROOT_USERNAME=taskflow-ci
           MONGO_INITDB_ROOT_PASSWORD=$mongo_password
           ConnectionStrings__MongoDb1=mongodb://taskflow-ci:$mongo_password@mongo:27017/taskflow?authSource=admin
