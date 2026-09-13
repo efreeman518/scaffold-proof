@@ -92,7 +92,8 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'ReadModel__Provider', value: 'Cosmos' }
         { name: 'Audit__Provider', value: 'AzureTable' }
         { name: 'DataProtection__Persistence', value: 'AzureBlob' }
-        { name: 'SERVICEBUS__fullyQualifiedNamespace', value: serviceBusNamespace }
+        { name: 'ServiceBus1__fullyQualifiedNamespace', value: serviceBusNamespace }
+        { name: 'DomainEventsTopic', value: 'DomainEvents' }
         { name: 'AppConfig__Endpoint', value: appConfigEndpoint }
         { name: 'KeyVault__Uri', value: keyVaultUri }
         { name: 'Search__Provider', value: searchProvider }

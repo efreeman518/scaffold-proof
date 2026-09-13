@@ -271,7 +271,7 @@ module serviceBus 'modules/service-bus.bicep' = {
 var apiGrpcPort = 8081
 
 var messagingEnvVars = [
-  { name: 'SERVICEBUS__fullyQualifiedNamespace', value: serviceBus.outputs.namespaceEndpoint }
+  { name: 'ServiceBus1__fullyQualifiedNamespace', value: serviceBus.outputs.namespaceEndpoint }
 ]
 
 module storage 'modules/storage.bicep' = {

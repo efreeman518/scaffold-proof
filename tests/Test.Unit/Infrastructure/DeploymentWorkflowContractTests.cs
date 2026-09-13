@@ -432,6 +432,11 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(bicep, "module unoStaticWebApp 'modules/static-web-app.bicep'");
         StringAssert.Contains(bicep, "{ name: 'Gateway__BaseUrl', value: 'https://${gateway.outputs.fqdn}' }");
         StringAssert.Contains(bicep, "{ name: 'Search__Provider', value: searchProvider }");
+        StringAssert.Contains(bicep, "{ name: 'ServiceBus1__fullyQualifiedNamespace', value: serviceBus.outputs.namespaceEndpoint }");
+        StringAssert.Contains(functions, "{ name: 'ServiceBus1__fullyQualifiedNamespace', value: serviceBusNamespace }");
+        StringAssert.Contains(functions, "{ name: 'DomainEventsTopic', value: 'DomainEvents' }");
+        Assert.IsFalse(bicep.Contains("SERVICEBUS__fullyQualifiedNamespace", StringComparison.Ordinal));
+        Assert.IsFalse(functions.Contains("SERVICEBUS__fullyQualifiedNamespace", StringComparison.Ordinal));
 
         var functionTableRbac = bicep[bicep.IndexOf("module funcTableContributor", StringComparison.Ordinal)..];
         StringAssert.Contains(functionTableRbac, "principalId: functions.outputs.functionAppPrincipalId");
