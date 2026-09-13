@@ -28,7 +28,7 @@ on:
       includeAspireMesh:
         type: boolean
         default: false
-        description: "Run the capability-trimmed Test.Aspire core lane mesh (requires Docker)"
+        description: "Run the capability-trimmed core Aspire mesh; use full acceptance for every host and UI"
       includeFoundryLocal:
         type: boolean
         default: false
@@ -40,7 +40,7 @@ on:
       includeFullAcceptance:
         type: boolean
         default: false
-        description: "Run unfiltered serial solution acceptance, including Aspire, Playwright, and WASM"
+        description: "Run complete live Aspire host/UI and browser acceptance on the workstation runner"
       includeComposeSmoke:
         type: boolean
         default: false
@@ -93,7 +93,7 @@ jobs:
       # Reclaim ~20+ GB (Android SDK, Haskell, large apt packages) before the Docker-backed steps run.
       # Keep dotnet and the tool cache - the build depends on them.
       - name: Free disk space
-        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.includeAspireMesh || inputs.includeFoundryLocal || inputs.includePlaywrightUI || inputs.includeFullAcceptance) }}
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.includeAspireMesh || inputs.includeFoundryLocal || inputs.includePlaywrightUI) }}
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
@@ -170,6 +170,16 @@ jobs:
           dotnet test tests/Test.Integration.FlowEngine/Test.Integration.FlowEngine.csproj
           --no-build --configuration Release
           --logger "trx;LogFileName=flowengine-results.trx"
+          --results-directory ./TestResults
+
+      # Deterministic graph construction only. This proves exact resource membership without claiming the
+      # containers or hosts started; the manual workstation job below owns runnable full-lane proof.
+      - name: Aspire lane topology contracts
+        run: >
+          dotnet test tests/Test.Aspire/Test.Aspire.csproj
+          --no-build --configuration Release
+          --filter "FullyQualifiedName~AppHostLaneTopologyTests|FullyQualifiedName~AppHostMigratorTopologyTests"
+          --logger "trx;LogFileName=aspire-topology-results.trx"
           --results-directory ./TestResults
 
       - name: Aspire Core Lane Mesh Tests (manual)
@@ -323,7 +333,7 @@ jobs:
           --results-directory ./TestResults
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.includePlaywrightUI == true || inputs.includeFullAcceptance == true) }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.includePlaywrightUI == true }}
         with:
           node-version: 24
           cache: npm
@@ -332,13 +342,13 @@ jobs:
             src/UI/TaskFlow.React/package-lock.json
 
       - name: Restore Playwright packages
-        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.includePlaywrightUI == true || inputs.includeFullAcceptance == true) }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.includePlaywrightUI == true }}
         run: |
           npm ci --prefix tests/Test.PlaywrightUI
           npm ci --prefix src/UI/TaskFlow.React
 
       - name: Install Playwright browser
-        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.includePlaywrightUI == true || inputs.includeFullAcceptance == true) }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.includePlaywrightUI == true }}
         shell: pwsh
         run: |
           ./tests/Test.PlaywrightUI/bin/Release/net10.0/playwright.ps1 install chromium
@@ -384,35 +394,6 @@ jobs:
           --logger "trx;LogFileName=deployment-contract-results.trx"
           --results-directory ./TestResults
 
-      - name: Full serial solution acceptance (manual, unfiltered)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeFullAcceptance == true }}
-        timeout-minutes: 90
-        env:
-          TASKFLOW_MOBILE_TESTS_ENABLED: "false"
-          TASKFLOW_RUN_AZURE_FOUNDRY_TESTS: "false"
-          TASKFLOW_RUN_FOUNDRY_LOCAL_TESTS: "false"
-          TASKFLOW_RUN_FUNCTIONS_TESTS: "false"
-        run: |
-          set -euo pipefail
-          run_lane() {
-            local lane="$1"
-            local read_model="$2"
-            echo "Running full serial acceptance for ${lane} with read model ${read_model}."
-            TASKFLOW_LANE="$lane" TASKFLOW_READMODEL_PROVIDER="$read_model" \
-              dotnet test TaskFlow.slnx \
-                --no-build --configuration Release \
-                -m:1 \
-                --logger "trx;LogFileName=full-${lane}-${read_model}-results.trx" \
-                --results-directory ./TestResults
-          }
-
-          if [ "${{ inputs.lane }}" = "both" ] || [ "${{ inputs.lane }}" = "Azure" ]; then
-            run_lane Azure Cosmos
-          fi
-          if [ "${{ inputs.lane }}" = "both" ] || [ "${{ inputs.lane }}" = "NonAzure" ]; then
-            run_lane NonAzure "${{ inputs.nonAzureReadModel }}"
-          fi
-
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -422,6 +403,134 @@ jobs:
             ./TestResults/**/*.trx
             ./TestResults/**/*.xml
             ./TestResults/**/*.dmp
+          if-no-files-found: warn
+
+  # Complete runnable graph proof is manual and uses the zero-billable-minute workstation runner. Unlike
+  # the deterministic topology contracts, this starts every lane host and UI, then drives all three UIs.
+  full-lane-acceptance:
+    needs: build-and-test
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeFullAcceptance == true }}
+    runs-on: [self-hosted, workstation]
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      TASKFLOW_ASPIRE_FULL_LANE: "true"
+      TASKFLOW_RUN_ASPIRE_TESTS: "true"
+      TASKFLOW_RUN_AZURE_FOUNDRY_TESTS: "false"
+      TASKFLOW_RUN_FOUNDRY_LOCAL_TESTS: "false"
+      TASKFLOW_ASPIRE_SCHEDULER_AVAILABLE: "true"
+      TASKFLOW_REACT_TESTS_ENABLED: "true"
+      TASKFLOW_WASM_TESTS_ENABLED: "true"
+      TASKFLOW_PLAYWRIGHT_TESTS_ENABLED: "true"
+      TASKFLOW_MOBILE_TESTS_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            tests/Test.PlaywrightUI/package-lock.json
+            src/UI/TaskFlow.React/package-lock.json
+
+      - name: Verify workstation runtime prerequisites
+        run: |
+          docker info | Out-Null
+          if (-not (Get-Command func -ErrorAction SilentlyContinue)) {
+            throw "Azure Functions Core Tools ('func') is required for complete Azure lane acceptance."
+          }
+
+      - name: Require private NuGet feed credential
+        env:
+          NUGET_PAT: ${{ secrets.NUGET_PAT }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:NUGET_PAT)) {
+            throw "NUGET_PAT secret is required to restore EF.* packages."
+          }
+
+      - name: Restore and build complete host/UI graph
+        env:
+          NuGetPackageSourceCredentials_efreeman518-github: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
+        run: |
+          dotnet workload install wasm-tools aspire
+          if ($LASTEXITCODE -ne 0) { throw "Required workload installation failed." }
+          dotnet restore TaskFlow.slnx -p:Configuration=Release
+          if ($LASTEXITCODE -ne 0) { throw "Solution restore failed." }
+          dotnet build TaskFlow.slnx --no-restore --configuration Release -m:1
+          if ($LASTEXITCODE -ne 0) { throw "Solution build failed." }
+          dotnet build src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj --no-restore --configuration Release -m:1
+          if ($LASTEXITCODE -ne 0) { throw "Uno browser build failed." }
+          npm ci --prefix src/UI/TaskFlow.React
+          if ($LASTEXITCODE -ne 0) { throw "React package restore failed." }
+          npm ci --prefix tests/Test.PlaywrightUI
+          if ($LASTEXITCODE -ne 0) { throw "Playwright package restore failed." }
+
+      - name: Install Playwright Chromium
+        run: |
+          ./tests/Test.PlaywrightUI/bin/Release/net10.0/playwright.ps1 install chromium
+          if ($LASTEXITCODE -ne 0) { throw "Playwright Chromium installation failed." }
+
+      - name: Start and verify complete selected lane graphs
+        timeout-minutes: 105
+        run: |
+          function Invoke-LaneAcceptance([string] $Lane, [string] $ReadModel, [bool] $RunFunctions) {
+            Write-Host "Running complete ${Lane} lane acceptance with ${ReadModel} read model."
+            $env:TASKFLOW_LANE = $Lane
+            $env:TASKFLOW_READMODEL_PROVIDER = $ReadModel
+            $env:TASKFLOW_RUN_FUNCTIONS_TESTS = $RunFunctions.ToString().ToLowerInvariant()
+
+            if ($Lane -eq "Azure") {
+              $env:TASKFLOW_DB_PROVIDER = "SqlServer"
+              $env:TASKFLOW_MESSAGING_PROVIDER = "ServiceBus"
+              $env:TASKFLOW_STORAGE_PROVIDER = "AzureBlob"
+              $env:TASKFLOW_AUDIT_PROVIDER = "AzureTable"
+              $env:TASKFLOW_DATAPROTECTION_PERSISTENCE = "AzureBlob"
+              $aspireFilter = "FullyQualifiedName~AppSurfaceAspireTests|FullyQualifiedName~ApiAuditPipelineTests|FullyQualifiedName~FunctionAuditPipelineTests|FullyQualifiedName~OutboxMeshTests"
+            }
+            else {
+              $env:TASKFLOW_DB_PROVIDER = "PostgreSql"
+              $env:TASKFLOW_MESSAGING_PROVIDER = "RabbitMq"
+              $env:TASKFLOW_STORAGE_PROVIDER = "S3"
+              $env:TASKFLOW_AUDIT_PROVIDER = "Relational"
+              $env:TASKFLOW_DATAPROTECTION_PERSISTENCE = "Redis"
+              $aspireFilter = "FullyQualifiedName~AppSurfaceAspireTests|FullyQualifiedName~OutboxMeshTests"
+            }
+
+            dotnet test tests/Test.Aspire/Test.Aspire.csproj `
+              --no-build --configuration Release -m:1 `
+              --filter $aspireFilter `
+              --logger "trx;LogFileName=full-aspire-${Lane}-${ReadModel}-results.trx" `
+              --results-directory ./TestResults
+            if ($LASTEXITCODE -ne 0) { throw "${Lane} complete Aspire graph acceptance failed." }
+
+            dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj `
+              --no-build --configuration Release -m:1 `
+              --filter "TestCategory=PlaywrightUI|TestCategory=WasmUI" `
+              --logger "trx;LogFileName=full-ui-${Lane}-${ReadModel}-results.trx" `
+              --results-directory ./TestResults
+            if ($LASTEXITCODE -ne 0) { throw "${Lane} browser acceptance failed." }
+          }
+
+          if ("${{ inputs.lane }}" -in @("both", "Azure")) {
+            Invoke-LaneAcceptance -Lane Azure -ReadModel Cosmos -RunFunctions $true
+          }
+          if ("${{ inputs.lane }}" -in @("both", "NonAzure")) {
+            Invoke-LaneAcceptance -Lane NonAzure -ReadModel "${{ inputs.nonAzureReadModel }}" -RunFunctions $false
+          }
+
+      - name: Upload full-lane test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: full-lane-test-results
+          path: ./TestResults/**/*.trx
           if-no-files-found: warn
 
   # Manual Docker-backed acceptance runs through the same canonical lane contract as Aspire and production.
@@ -532,23 +641,31 @@ jobs:
           [[ -n "$NUGET_PAT" ]] || { echo "::error::NUGET_PAT secret is required to build the app images."; exit 1; }
 
       # CI-only environment. Every credential here matches the dev-only values hard-coded in the local
-      # override, so nothing secret is written and nothing here resembles a deployment .env.
+      # topology. Passwords are generated per run, masked before use, and never printed.
       - name: Write the CI environment
         run: |
           set -euo pipefail
+          redis_password=$(openssl rand -hex 24)
+          mongo_password=$(openssl rand -hex 24)
+          echo "::add-mask::$redis_password"
+          echo "::add-mask::$mongo_password"
           cat > .env <<ENV
           TASKFLOW_LANE=NonAzure
           TASKFLOW_READMODEL_PROVIDER=${{ inputs.nonAzureReadModel }}
+          ReadModel__Provider=${{ inputs.nonAzureReadModel }}
           TASKFLOW_AI_PROVIDER=None
           Database__PostgreSql__PoolerMode=None
           ConnectionStrings__TaskFlowDbContextTrxn=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow;Password=taskflow-dev-password
           ConnectionStrings__TaskFlowDbContextQuery=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow;Password=taskflow-dev-password
           ConnectionStrings__TaskFlowFlowEngineDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow;Password=taskflow-dev-password
           ConnectionStrings__TickerQDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow;Password=taskflow-dev-password
-          ConnectionStrings__Redis1=redis:6379
+          REDIS_PASSWORD=$redis_password
+          ConnectionStrings__Redis1=redis:6379,password=$redis_password,abortConnect=false
           ConnectionStrings__RabbitMq1=amqp://taskflow:taskflow-dev-password@rabbitmq:5672
           Messaging__RabbitMq__ConnectionString=amqp://taskflow:taskflow-dev-password@rabbitmq:5672
-          ConnectionStrings__MongoDb1=mongodb://mongo:27017/taskflow
+          MONGO_INITDB_ROOT_USERNAME=taskflow-ci
+          MONGO_INITDB_ROOT_PASSWORD=$mongo_password
+          ConnectionStrings__MongoDb1=mongodb://taskflow-ci:$mongo_password@mongo:27017/taskflow?authSource=admin
           Storage__S3__ServiceUrl=http://seaweedfs:8333
           Storage__S3__PublicServiceUrl=http://s3.localhost
           Storage__S3__Region=us-east-1

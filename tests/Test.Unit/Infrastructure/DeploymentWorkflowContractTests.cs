@@ -167,6 +167,66 @@ public sealed class DeploymentWorkflowContractTests
         Assert.IsFalse(rollback.Contains("dotnet publish", StringComparison.Ordinal));
     }
 
+    [TestMethod]
+    public void CiWorkflow_UnitGateRunsWholeProjectWithHardHangCeilings()
+    {
+        var workflow = ReadWorkflow("ci.yml");
+        var unitStart = workflow.IndexOf("      - name: Unit Tests", StringComparison.Ordinal);
+        var architectureStart = workflow.IndexOf("      - name: Architecture Tests", StringComparison.Ordinal);
+        Assert.IsGreaterThanOrEqualTo(0, unitStart);
+        Assert.IsGreaterThan(unitStart, architectureStart);
+
+        var unitStep = workflow[unitStart..architectureStart];
+        StringAssert.Contains(unitStep, "timeout-minutes: 1");
+        StringAssert.Contains(unitStep, "timeout --signal=INT --kill-after=5s 50s");
+        StringAssert.Contains(unitStep, "dotnet test tests/Test.Unit/Test.Unit.csproj");
+        StringAssert.Contains(unitStep, "--blame-hang --blame-hang-timeout 15s");
+        Assert.IsFalse(
+            unitStep.Contains("TestCategory=Unit", StringComparison.Ordinal),
+            "The complete Test.Unit project includes untagged provider and regression contracts.");
+        StringAssert.Contains(workflow, "./TestResults/**/*.dmp");
+    }
+
+    [TestMethod]
+    public void CiWorkflow_SeparatesDeterministicTopologyFromManualRunnableFullLanes()
+    {
+        var workflow = ReadWorkflow("ci.yml");
+        var topologyStart = workflow.IndexOf("      - name: Aspire lane topology contracts", StringComparison.Ordinal);
+        var meshStart = workflow.IndexOf("      - name: Aspire Core Lane Mesh Tests (manual)", StringComparison.Ordinal);
+        Assert.IsGreaterThanOrEqualTo(0, topologyStart);
+        Assert.IsGreaterThan(topologyStart, meshStart);
+
+        var topologyStep = workflow[topologyStart..meshStart];
+        StringAssert.Contains(topologyStep, "FullyQualifiedName~AppHostLaneTopologyTests");
+        StringAssert.Contains(topologyStep, "FullyQualifiedName~AppHostMigratorTopologyTests");
+        Assert.IsFalse(topologyStep.Contains("if:", StringComparison.Ordinal),
+            "Deterministic graph contracts must run on pull requests.");
+
+        var fullStart = workflow.IndexOf("  full-lane-acceptance:", StringComparison.Ordinal);
+        var databaseStart = workflow.IndexOf("  database-lanes:", StringComparison.Ordinal);
+        Assert.IsGreaterThanOrEqualTo(0, fullStart);
+        Assert.IsGreaterThan(fullStart, databaseStart);
+        var fullJob = workflow[fullStart..databaseStart];
+
+        StringAssert.Contains(fullJob, "inputs.includeFullAcceptance == true");
+        StringAssert.Contains(fullJob, "runs-on: [self-hosted, workstation]");
+        StringAssert.Contains(fullJob, "TASKFLOW_ASPIRE_FULL_LANE: \"true\"");
+        StringAssert.Contains(fullJob, "TASKFLOW_ASPIRE_SCHEDULER_AVAILABLE: \"true\"");
+        StringAssert.Contains(fullJob, "TASKFLOW_REACT_TESTS_ENABLED: \"true\"");
+        StringAssert.Contains(fullJob, "TASKFLOW_WASM_TESTS_ENABLED: \"true\"");
+        StringAssert.Contains(fullJob, "TASKFLOW_PLAYWRIGHT_TESTS_ENABLED: \"true\"");
+        StringAssert.Contains(fullJob, "dotnet test tests/Test.Aspire/Test.Aspire.csproj");
+        StringAssert.Contains(fullJob, "FullyQualifiedName~AppSurfaceAspireTests");
+        StringAssert.Contains(fullJob, "FullyQualifiedName~OutboxMeshTests");
+        StringAssert.Contains(fullJob, "FullyQualifiedName~FunctionAuditPipelineTests");
+        StringAssert.Contains(fullJob, "dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj");
+        StringAssert.Contains(fullJob, "TestCategory=PlaywrightUI|TestCategory=WasmUI");
+        StringAssert.Contains(fullJob, "Invoke-LaneAcceptance -Lane Azure -ReadModel Cosmos -RunFunctions $true");
+        StringAssert.Contains(fullJob, "Invoke-LaneAcceptance -Lane NonAzure");
+        StringAssert.Contains(fullJob, "-RunFunctions $false");
+        Assert.IsFalse(fullJob.Contains("runs-on: ubuntu-latest", StringComparison.Ordinal));
+    }
+
     /// <summary>
     /// The cheap compose schema check runs on every CI run; the expensive stack smoke stays dispatch-gated,
     /// and must always dump logs so a failure is diagnosable without a rerun.
@@ -215,6 +275,15 @@ public sealed class DeploymentWorkflowContractTests
 
         var smokeJob = workflow[workflow.IndexOf("  compose-smoke:", StringComparison.Ordinal)..];
         StringAssert.Contains(smokeJob, "runs-on: ubuntu-latest");
+        StringAssert.Contains(smokeJob, "ReadModel__Provider=${{ inputs.nonAzureReadModel }}");
+        StringAssert.Contains(smokeJob, "REDIS_PASSWORD=$redis_password");
+        StringAssert.Contains(smokeJob, "ConnectionStrings__Redis1=redis:6379,password=$redis_password,abortConnect=false");
+        StringAssert.Contains(smokeJob, "MONGO_INITDB_ROOT_USERNAME=taskflow-ci");
+        StringAssert.Contains(smokeJob, "MONGO_INITDB_ROOT_PASSWORD=$mongo_password");
+        StringAssert.Contains(smokeJob, "ConnectionStrings__MongoDb1=mongodb://taskflow-ci:$mongo_password@mongo:27017/taskflow?authSource=admin");
+        StringAssert.Contains(smokeJob, "openssl rand -hex 24");
+        StringAssert.Contains(smokeJob, "::add-mask::$redis_password");
+        StringAssert.Contains(smokeJob, "::add-mask::$mongo_password");
         StringAssert.Contains(smokeJob, "logs --no-color --tail 400");
         var logDump = smokeJob.IndexOf("Dump stack logs", StringComparison.Ordinal);
         Assert.IsGreaterThan(0, logDump);
