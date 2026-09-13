@@ -78,6 +78,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+        required: false
     deploy:
       resources:
         limits:

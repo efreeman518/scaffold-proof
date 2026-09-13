@@ -162,7 +162,8 @@ jobs:
           scp deploy/compose/docker-compose.yml deploy/compose/Caddyfile images.env \
             "taskflow-vps:~/${REMOTE_DIR}/"
           scp deploy/compose/.env.example "taskflow-vps:~/${REMOTE_DIR}/.env.base.example"
-          scp deploy/compose/pgbouncer/pgbouncer.ini "taskflow-vps:~/${REMOTE_DIR}/pgbouncer/"
+          scp deploy/compose/pgbouncer/pgbouncer.ini deploy/compose/pgbouncer/userlist.txt.example \
+            "taskflow-vps:~/${REMOTE_DIR}/pgbouncer/"
       - name: Pull and bring the stack up
         run: |
           set -euo pipefail
@@ -190,15 +191,31 @@ jobs:
               echo 'Set exactly one ReadModel__Provider in .env.base.' >&2
               exit 1
             }
+            [[ \"\$(grep -Ec '^Database__PostgreSql__PoolerMode=' .env.base)\" -eq 1 ]] || {
+              echo 'Set exactly one Database__PostgreSql__PoolerMode in .env.base.' >&2
+              exit 1
+            }
             cp images.env images.env.current
+            compose_profiles=''
             if grep -qx 'ReadModel__Provider=MongoDb' .env.base; then
-              { cat .env.base; printf '\nCOMPOSE_PROFILES=mongo\n'; cat images.env; } > .env
+              compose_profiles=mongo
             elif grep -Eqx 'ReadModel__Provider=(PostgreSqlJsonb|Relational)' .env.base; then
-              { cat .env.base; printf '\n'; cat images.env; } > .env
+              :
             else
               echo 'ReadModel__Provider must be PostgreSqlJsonb, MongoDb, or deprecated Relational.' >&2
               exit 1
             fi
+            if grep -qx 'Database__PostgreSql__PoolerMode=Transaction' .env.base; then
+              if [[ -n \"\$compose_profiles\" ]]; then
+                compose_profiles=\"\${compose_profiles},pooler\"
+              else
+                compose_profiles=pooler
+              fi
+            elif ! grep -Eqx 'Database__PostgreSql__PoolerMode=(|None)' .env.base; then
+              echo 'Database__PostgreSql__PoolerMode must be empty, None, or Transaction.' >&2
+              exit 1
+            fi
+            { cat .env.base; printf '\n'; if [[ -n \"\$compose_profiles\" ]]; then printf 'COMPOSE_PROFILES=%s\n' \"\$compose_profiles\"; fi; cat images.env; } > .env
             chmod 600 .env .env.base
             ${COMPOSE} config -q
             ${COMPOSE} pull
@@ -392,14 +409,30 @@ jobs:
               echo 'Set exactly one ReadModel__Provider in .env.base.' >&2
               exit 1
             }
+            [[ \"\$(grep -Ec '^Database__PostgreSql__PoolerMode=' .env.base)\" -eq 1 ]] || {
+              echo 'Set exactly one Database__PostgreSql__PoolerMode in .env.base.' >&2
+              exit 1
+            }
+            compose_profiles=''
             if grep -qx 'ReadModel__Provider=MongoDb' .env.base; then
-              { cat .env.base; printf '\nCOMPOSE_PROFILES=mongo\n'; cat images.env; } > .env
+              compose_profiles=mongo
             elif grep -Eqx 'ReadModel__Provider=(PostgreSqlJsonb|Relational)' .env.base; then
-              { cat .env.base; printf '\n'; cat images.env; } > .env
+              :
             else
               echo 'ReadModel__Provider must be PostgreSqlJsonb, MongoDb, or deprecated Relational.' >&2
               exit 1
             fi
+            if grep -qx 'Database__PostgreSql__PoolerMode=Transaction' .env.base; then
+              if [[ -n \"\$compose_profiles\" ]]; then
+                compose_profiles=\"\${compose_profiles},pooler\"
+              else
+                compose_profiles=pooler
+              fi
+            elif ! grep -Eqx 'Database__PostgreSql__PoolerMode=(|None)' .env.base; then
+              echo 'Database__PostgreSql__PoolerMode must be empty, None, or Transaction.' >&2
+              exit 1
+            fi
+            { cat .env.base; printf '\n'; if [[ -n \"\$compose_profiles\" ]]; then printf 'COMPOSE_PROFILES=%s\n' \"\$compose_profiles\"; fi; cat images.env; } > .env
             chmod 600 .env
             ${COMPOSE} config -q
             ${COMPOSE} pull

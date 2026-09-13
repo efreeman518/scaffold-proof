@@ -92,27 +92,29 @@ Mongo settings.
 
 ## Connection pooling (D-045)
 
-Off by default. To put PgBouncer in front of Postgres:
+Off by default. To put PgBouncer in front of Postgres, copy the credential template, repoint the four database
+`ConnectionStrings__*` values in `.env.base` at `pgbouncer:6432`, and set
+`Database__PostgreSql__PoolerMode=Transaction`:
 
 ```bash
 cp pgbouncer/userlist.txt.example pgbouncer/userlist.txt   # then paste the real SCRAM hash
 docker compose --profile pooler up -d
 ```
 
-Then repoint the four database `ConnectionStrings__*` in `.env.base` at `pgbouncer:6432` and set
-`Database__PostgreSql__PoolerMode=Transaction`. Both halves are required: the app side appends
-`No Reset On Close=true;Max Auto Prepare=0` to the Npgsql string, and transaction pooling without it produces
-"prepared statement already exists" failures under load. Rebuild generated `.env` after editing `.env.base`.
+The workflow derives `COMPOSE_PROFILES=pooler` from that mode, waits for PgBouncer before running the migrator,
+and preserves no profile when the mode is empty or `None`. Both the profile and connection changes are required:
+the app side appends `No Reset On Close=true;Max Auto Prepare=0` to the Npgsql string, and transaction pooling
+without it produces "prepared statement already exists" failures under load.
 
 ## MongoDB read-model alternative
 
 PostgreSQL JSONB is the default NonAzure read model. To use MongoDB instead, set
 `ReadModel__Provider=MongoDb`, replace `MONGO_INITDB_ROOT_USERNAME` and `MONGO_INITDB_ROOT_PASSWORD`, and set
 `ConnectionStrings__MongoDb1=mongodb://<encoded-user>:<encoded-password>@mongo:27017/taskflow?authSource=admin`
-in `.env.base`. The deploy and rollback workflows derive `COMPOSE_PROFILES=mongo` into generated `.env`, so
-every Compose command using it, including pull, up, health waits, ps, logs, and rollback, selects Mongo
-consistently. `COMPOSE_PROFILES` must not be added to `.env.base`; `ReadModel__Provider` is the single
-operator switch.
+in `.env.base`. The deploy and rollback workflows derive `mongo` from the read-model setting and `pooler` from
+transaction pooler mode, producing no profile, either one, or `mongo,pooler` in generated `.env`. Every Compose
+command using it, including pull, up, health waits, ps, logs, and rollback, selects the same topology.
+`COMPOSE_PROFILES` must not be added to `.env.base`; the two provider settings remain the operator sources.
 
 For a manual start before the workflow has generated `.env`, rebuild it and select the explicit profile:
 

@@ -158,21 +158,33 @@ public sealed class DeploymentWorkflowContractTests
         // image pins; a clean VPS receives the current template but deployment never promotes generated
         // output back into the operator source.
         StringAssert.Contains(workflow, "deploy/compose/.env.example \"taskflow-vps:~/${REMOTE_DIR}/.env.base.example\"");
+        StringAssert.Contains(workflow, "deploy/compose/pgbouncer/userlist.txt.example");
         StringAssert.Contains(workflow, "[[ -f .env.base ]]");
         StringAssert.Contains(workflow, "Refusing deployment while .env.base contains a CHANGE_ME value.");
-        StringAssert.Contains(workflow, "{ cat .env.base; printf '\\n'; cat images.env; } > .env");
+        StringAssert.Contains(workflow, "printf 'COMPOSE_PROFILES=%s\\n'");
         StringAssert.Contains(workflow, "Remove image variables from .env.base; images.env is workflow-managed.");
         StringAssert.Contains(workflow, "Remove COMPOSE_PROFILES from .env.base; it is derived from ReadModel__Provider.");
         Assert.AreEqual(
             2,
-            System.Text.RegularExpressions.Regex.Matches(workflow, @"printf '\\nCOMPOSE_PROFILES=mongo\\n'").Count,
+            System.Text.RegularExpressions.Regex.Matches(workflow, @"^\s+compose_profiles=mongo$", System.Text.RegularExpressions.RegexOptions.Multiline).Count,
             "deploy and rollback must derive the Mongo profile");
+        Assert.AreEqual(
+            2,
+            System.Text.RegularExpressions.Regex.Matches(workflow, @"^\s+compose_profiles=pooler$", System.Text.RegularExpressions.RegexOptions.Multiline).Count,
+            "deploy and rollback must derive the PgBouncer profile");
+        Assert.AreEqual(
+            2,
+            System.Text.RegularExpressions.Regex.Matches(
+                workflow,
+                System.Text.RegularExpressions.Regex.Escape("compose_profiles=\\\"\\${compose_profiles},pooler\\\"")).Count,
+            "deploy and rollback must combine Mongo and PgBouncer profiles");
         Assert.AreEqual(
             2,
             System.Text.RegularExpressions.Regex.Matches(
                 workflow,
                 @"ReadModel__Provider=\(PostgreSqlJsonb\|Relational\)").Count,
             "deploy and rollback must leave JSONB and its deprecated alias profile-free");
+        StringAssert.Contains(workflow, "Database__PostgreSql__PoolerMode must be empty, None, or Transaction.");
         StringAssert.Contains(workflow, "${COMPOSE} config -q");
         Assert.IsFalse(workflow.Contains("cp .env .env.base", StringComparison.Ordinal));
 
@@ -469,6 +481,8 @@ public sealed class DeploymentWorkflowContractTests
         }
         StringAssert.Contains(migrator, "ConnectionStrings__TaskFlowDbContextTrxn");
         StringAssert.Contains(migrator, "Database__Encryption__LocalKeyBase64");
+        StringAssert.Contains(migrator, "pgbouncer:");
+        StringAssert.Contains(migrator, "required: false");
 
         var redis = ServiceBlock(compose, "redis").Text;
         StringAssert.Contains(redis, "--requirepass");
