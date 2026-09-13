@@ -263,7 +263,7 @@ public class HostRuntimeSettingsTests
 
     /// <summary>
     /// Verifies no deployable host calls UseHttpsRedirection. Every deployment lane terminates TLS at the
-    /// edge (Container Apps ingress in the Azure lane, Caddy in the portable lane, D-036/D-049), so every
+    /// edge (Container Apps ingress in the Azure lane, Caddy in the NonAzure lane, D-036/D-049), so every
     /// host container only ever serves plain http; a reintroduced redirect would 307 the edge's own
     /// health/proxy probes and, on a host with no locally trusted certificate (as TaskFlow.Blazor was before
     /// this rule), break any client that follows the redirect.

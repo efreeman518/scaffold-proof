@@ -8,7 +8,7 @@ Generated: 2026-04-23
 
 ## 1. Project Overview
 
-**Goal:** Deploy TaskFlow multi-tenant task management application to a single Azure dev environment. All backend services containerized in Azure Container Apps, Functions on Flex Consumption, minimal SKUs, managed identities, App Configuration + Key Vault for config/secrets.
+**Goal:** Deploy TaskFlow multi-tenant task management application to a single Azure dev environment. Gateway, API, Scheduler, and Blazor run in Azure Container Apps; Functions uses Flex Consumption and React/Uno use Static Web Apps. The deployment uses minimal SKUs, managed identities, App Configuration, and Key Vault.
 
 **Path:** Modernize Existing - adding Azure deployment infrastructure to an existing .NET Aspire-orchestrated application.
 
@@ -35,6 +35,7 @@ Generated: 2026-04-23
 | TaskFlow.Scheduler | Background Worker | ASP.NET Core, TickerQ | `src/Host/TaskFlow.Scheduler/` |
 | TaskFlow.Functions | Event Processor | Azure Functions Isolated Worker v4 | `src/Host/TaskFlow.Functions/` |
 | TaskFlow.Blazor | Web UI | .NET 10 Interactive Server, MudBlazor | `src/UI/TaskFlow.Blazor/` |
+| TaskFlow.React | Web UI | React | `src/UI/TaskFlow.React/` |
 | TaskFlow.Uno | Cross-platform UI | Uno Platform WASM | `src/UI/TaskFlow.Uno/` |
 
 ---
@@ -64,7 +65,8 @@ Generated: 2026-04-23
 | TaskFlow.Scheduler | Container App | min 0 / max 1, 0.25 vCPU, 0.5Gi | min 2 / max 2 (always-on, no concurrency rule), 0.5 vCPU, 1Gi | Internal only (no ingress) |
 | TaskFlow.Functions | Functions Flex Consumption | `functionAppScaleLimit` 20 | `functionAppScaleLimit` 20 | Internal (Service Bus trigger) |
 | TaskFlow.Blazor | Container App | min 0 / max 1, 0.25 vCPU, 0.5Gi | min 2 / max 30, 0.5 vCPU, 1Gi | External |
-| TaskFlow.Uno | Container App (static serve) | Consumption (0.25 vCPU, 0.5Gi) | Consumption (0.25 vCPU, 0.5Gi) | External |
+| TaskFlow.React | Static Web App | Free | Free | External |
+| TaskFlow.Uno | Static Web App | Free | Free | External |
 
 ### Data & Messaging Service Mapping
 
@@ -97,16 +99,16 @@ The baseline deployment keeps end-user `AuthMode: Scaffold` so the reference app
 | Identity | Assigned To | Roles |
 |----------|------------|-------|
 | System MI (Gateway) | Gateway Container App | App Configuration Data Reader, Key Vault Secrets User |
-| System MI (API) | API Container App | Database Contributor (Entra auth, provider-dependent), Service Bus Data Sender, Storage Blob Data Contributor, Cosmos DB Data Contributor, App Configuration Data Reader, Key Vault Secrets User, Redis Entra access policy assignment |
-| System MI (Scheduler) | Scheduler Container App | Database Contributor, Service Bus Data Sender, App Configuration Data Reader, Key Vault Secrets User, Redis Entra access policy assignment |
-| System MI (Functions) | Functions App | Service Bus Data Receiver, Storage Blob Data Contributor, Cosmos DB Data Contributor, Database Contributor |
+| System MI (API) | API Container App | Service Bus Data Sender, Storage Blob Data Contributor, Storage Table Data Contributor, Cosmos DB Data Contributor, App Configuration Data Reader, Key Vault Secrets User, Redis Entra access policy assignment |
+| System MI (Scheduler) | Scheduler Container App | Service Bus Data Sender, Storage Blob Data Contributor, Storage Table Data Contributor, App Configuration Data Reader, Key Vault Secrets User, Redis Entra access policy assignment |
+| System MI (Functions) | Functions App | Service Bus Data Receiver, Storage Blob Data Contributor, Storage Table Data Contributor, Cosmos DB Data Contributor, App Configuration Data Reader, Key Vault Secrets User |
 | User-Assigned MI | GitHub Actions | Contributor (RG scope), User Access Administrator (RG scope) |
 
 Redis access policy assignments grant the API/Scheduler managed identities Entra data-plane permission on the
 default database, but `ConnectionStrings__Redis1` still authenticates with the access key today: StackExchange.Redis
 needs the `Microsoft.Azure.StackExchangeRedis` token-provider package wired in application code to use the Entra
-grant, which is out of scope for this infra-only change. Same pre-existing gap as SQL/Postgres: no per-identity
-database user/role provisioning yet - see the module comments in `sql-database.bicep`/`postgres-flexible-server.bicep`.
+grant, which is out of scope for this infra-only change. SQL contained database users and roles are not provisioned
+per workload identity yet; see the module comments in `sql-database.bicep`.
 
 ### Networking
 
@@ -197,6 +199,6 @@ database user/role provisioning yet - see the module comments in `sql-database.b
 | Functions App | `infra/modules/functions.bicep` |
 | Log Analytics | `infra/modules/log-analytics.bicep` |
 | Managed Identity (deploy) | `infra/modules/deploy-identity.bicep` |
-| RBAC Assignments | `infra/modules/role-assignments.bicep` |
+| RBAC Assignments | `infra/modules/role-assignment.bicep` |
 | Bootstrap Script | `infra/scripts/bootstrap.ps1` |
 | CI/CD Workflow | `.github/workflows/deploy.yml` |

@@ -122,8 +122,9 @@ public abstract class TaskFlowDbContextBase(DbContextOptions options) : DbContex
     public DbSet<BlobDeleteWork> BlobDeleteWork { get; set; } = null!;
     public DbSet<ConsumerInbox> ConsumerInbox { get; set; } = null!;
 
-    // Portable-lane read model and audit sink (D-038, D-039): same rules as the operational tables - not
-    // tenant entities, no query filter, no Version. Declared on the shared base so both contexts see them:
+    // NonAzure PostgreSQL JSONB read model and relational audit sink (D-038, D-039):
+    // same rules as the operational tables - not tenant entities, no query filter, no Version. Declared on the
+    // shared base so both contexts see them:
     // the projection writes and counter patches run on Trxn and the list/get endpoints read on Query (D-027).
     public DbSet<TaskViewRecord> TaskViews { get; set; } = null!;
     public DbSet<AuditLogRecord> AuditLog { get; set; } = null!;

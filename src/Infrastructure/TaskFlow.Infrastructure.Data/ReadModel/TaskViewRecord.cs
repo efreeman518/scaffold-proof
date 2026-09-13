@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace TaskFlow.Infrastructure.Data.ReadModel;
 
 /// <summary>
-/// Relational TaskView read-model row (D-038), the portable-lane counterpart of the Cosmos TaskView
+/// PostgreSQL JSONB TaskView read-model row (D-038), the NonAzure counterpart of the Cosmos TaskView
 /// document. Deliberately NOT an <c>ITenantEntity</c>: the tenant is passed explicitly on every call the way
 /// a Cosmos partition key is, so there is no global query filter to remember and background projection work
 /// needs no request context. No <c>Version</c> column and no audit stamping either - a read model is a

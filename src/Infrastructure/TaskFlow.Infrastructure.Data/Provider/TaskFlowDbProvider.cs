@@ -54,7 +54,7 @@ public sealed record TaskFlowProviderOptions(
 /// <summary>PgBouncer pooling mode the PostgreSQL connection string must cooperate with (D-045).</summary>
 public enum PoolerMode
 {
-    /// <summary>No pooler in front of PostgreSQL (Azure default; Portable's compose profile opts in explicitly).</summary>
+    /// <summary>No pooler in front of PostgreSQL (NonAzure default; the Compose pooler profile opts in explicitly).</summary>
     None,
 
     /// <summary>PgBouncer transaction-mode pooling: connections are multiplexed across backend sessions.</summary>

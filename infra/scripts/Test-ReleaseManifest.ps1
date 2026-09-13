@@ -3,8 +3,8 @@ param(
     [Parameter(Mandatory)]
     [string] $Path,
 
-    # Portable lane (deploy-vps.yml) manifests carry container images only: that lane ships no Functions
-    # package and no Uno WASM bundle, so there are no upload-artifact ids to validate.
+    # NonAzure lane (deploy-vps.yml) manifests carry all UI and host container images. It ships no Functions
+    # package or standalone UI bundles, so there are no upload-artifact ids to validate.
     [switch] $ImagesOnly,
 
     # Omit when reading historical manifests. New release and rollback paths require v2 so a v1 manifest

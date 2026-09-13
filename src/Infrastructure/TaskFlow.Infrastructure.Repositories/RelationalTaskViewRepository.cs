@@ -8,7 +8,7 @@ using TaskFlow.Infrastructure.Data.ReadModel;
 namespace TaskFlow.Infrastructure.Repositories;
 
 /// <summary>
-/// Relational TaskView read model (D-038): the portable-lane arm of <see cref="ITaskViewRepository"/>,
+/// PostgreSQL JSONB TaskView read model (D-038): the NonAzure arm of <see cref="ITaskViewRepository"/>,
 /// semantics matched to <c>CosmosTaskViewRepository</c> so the producers (<c>TaskViewProjectionService</c>,
 /// <c>TaskProjectionConsumer</c>) and <c>TaskViewEndpoints</c> cannot tell the two apart:
 /// <list type="bullet">

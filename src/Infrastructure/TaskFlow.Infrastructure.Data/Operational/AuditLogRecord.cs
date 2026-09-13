@@ -1,7 +1,7 @@
 namespace TaskFlow.Infrastructure.Data.Operational;
 
 /// <summary>
-/// Relational audit sink row (D-039), the portable-lane counterpart of the Azure Table audit entity. Not a
+/// Relational audit sink row (D-039), the NonAzure counterpart of the Azure Table audit entity. Not a
 /// tenant entity: no query filter and no Version, because the audit trail is written once and never updated,
 /// and stamping an audit row with audit metadata would recurse. <c>TenantId</c> is non-null - a system entry
 /// carries the configured sentinel (<c>AuditLogStorageSettings.NullTenantPartitionKey</c>) so it stays
