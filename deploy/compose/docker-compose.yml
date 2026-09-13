@@ -146,6 +146,7 @@ services:
     <<: *app-common
     image: ${TASKFLOW_GATEWAY_IMAGE}
     environment:
+      <<: *nonazure-providers
       ASPNETCORE_ENVIRONMENT: Production
       DOTNET_gcServer: "1"
       ReverseProxy__Clusters__api-cluster__Destinations__api__Address: http://api:8080

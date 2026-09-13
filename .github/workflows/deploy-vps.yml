@@ -182,8 +182,23 @@ jobs:
               echo 'Remove image variables from .env.base; images.env is workflow-managed.' >&2
               exit 1
             fi
+            if grep -q '^COMPOSE_PROFILES=' .env.base; then
+              echo 'Remove COMPOSE_PROFILES from .env.base; it is derived from ReadModel__Provider.' >&2
+              exit 1
+            fi
+            [[ \"\$(grep -Ec '^ReadModel__Provider=' .env.base)\" -eq 1 ]] || {
+              echo 'Set exactly one ReadModel__Provider in .env.base.' >&2
+              exit 1
+            }
             cp images.env images.env.current
-            { cat .env.base; printf '\n'; cat images.env; } > .env
+            if grep -qx 'ReadModel__Provider=MongoDb' .env.base; then
+              { cat .env.base; printf '\nCOMPOSE_PROFILES=mongo\n'; cat images.env; } > .env
+            elif grep -Eqx 'ReadModel__Provider=(PostgreSqlJsonb|Relational)' .env.base; then
+              { cat .env.base; printf '\n'; cat images.env; } > .env
+            else
+              echo 'ReadModel__Provider must be PostgreSqlJsonb, MongoDb, or deprecated Relational.' >&2
+              exit 1
+            fi
             chmod 600 .env .env.base
             ${COMPOSE} config -q
             ${COMPOSE} pull
@@ -369,7 +384,22 @@ jobs:
               echo 'Remove image variables from .env.base; images.env is workflow-managed.' >&2
               exit 1
             fi
-            { cat .env.base; printf '\n'; cat images.env; } > .env
+            if grep -q '^COMPOSE_PROFILES=' .env.base; then
+              echo 'Remove COMPOSE_PROFILES from .env.base; it is derived from ReadModel__Provider.' >&2
+              exit 1
+            fi
+            [[ \"\$(grep -Ec '^ReadModel__Provider=' .env.base)\" -eq 1 ]] || {
+              echo 'Set exactly one ReadModel__Provider in .env.base.' >&2
+              exit 1
+            }
+            if grep -qx 'ReadModel__Provider=MongoDb' .env.base; then
+              { cat .env.base; printf '\nCOMPOSE_PROFILES=mongo\n'; cat images.env; } > .env
+            elif grep -Eqx 'ReadModel__Provider=(PostgreSqlJsonb|Relational)' .env.base; then
+              { cat .env.base; printf '\n'; cat images.env; } > .env
+            else
+              echo 'ReadModel__Provider must be PostgreSqlJsonb, MongoDb, or deprecated Relational.' >&2
+              exit 1
+            fi
             chmod 600 .env
             ${COMPOSE} config -q
             ${COMPOSE} pull

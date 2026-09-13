@@ -162,6 +162,17 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(workflow, "Refusing deployment while .env.base contains a CHANGE_ME value.");
         StringAssert.Contains(workflow, "{ cat .env.base; printf '\\n'; cat images.env; } > .env");
         StringAssert.Contains(workflow, "Remove image variables from .env.base; images.env is workflow-managed.");
+        StringAssert.Contains(workflow, "Remove COMPOSE_PROFILES from .env.base; it is derived from ReadModel__Provider.");
+        Assert.AreEqual(
+            2,
+            System.Text.RegularExpressions.Regex.Matches(workflow, @"printf '\\nCOMPOSE_PROFILES=mongo\\n'").Count,
+            "deploy and rollback must derive the Mongo profile");
+        Assert.AreEqual(
+            2,
+            System.Text.RegularExpressions.Regex.Matches(
+                workflow,
+                @"ReadModel__Provider=\(PostgreSqlJsonb\|Relational\)").Count,
+            "deploy and rollback must leave JSONB and its deprecated alias profile-free");
         StringAssert.Contains(workflow, "${COMPOSE} config -q");
         Assert.IsFalse(workflow.Contains("cp .env .env.base", StringComparison.Ordinal));
 
@@ -466,6 +477,7 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(mongo, "MONGO_INITDB_ROOT_USERNAME");
         StringAssert.Contains(mongo, "MONGO_INITDB_ROOT_PASSWORD");
         StringAssert.Contains(mongo, "--authenticationDatabase admin");
+        StringAssert.Contains(ServiceBlock(compose, "gateway").Text, "<<: *nonazure-providers");
         foreach (var internalNetwork in new[] { "app", "data", "cache", "telemetry" })
         {
             Assert.IsTrue(

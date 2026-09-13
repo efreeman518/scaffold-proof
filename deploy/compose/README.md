@@ -109,7 +109,12 @@ Then repoint the four database `ConnectionStrings__*` in `.env.base` at `pgbounc
 PostgreSQL JSONB is the default NonAzure read model. To use MongoDB instead, set
 `ReadModel__Provider=MongoDb`, replace `MONGO_INITDB_ROOT_USERNAME` and `MONGO_INITDB_ROOT_PASSWORD`, and set
 `ConnectionStrings__MongoDb1=mongodb://<encoded-user>:<encoded-password>@mongo:27017/taskflow?authSource=admin`
-in `.env.base`, then rebuild `.env` and start the explicit profile:
+in `.env.base`. The deploy and rollback workflows derive `COMPOSE_PROFILES=mongo` into generated `.env`, so
+every Compose command using it, including pull, up, health waits, ps, logs, and rollback, selects Mongo
+consistently. `COMPOSE_PROFILES` must not be added to `.env.base`; `ReadModel__Provider` is the single
+operator switch.
+
+For a manual start before the workflow has generated `.env`, rebuild it and select the explicit profile:
 
 ```bash
 docker compose --profile mongo up -d --wait
