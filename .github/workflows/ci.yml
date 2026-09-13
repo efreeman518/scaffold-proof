@@ -28,7 +28,7 @@ on:
       includeAspireMesh:
         type: boolean
         default: false
-        description: "Run Test.Aspire distributed-app mesh tests (full AppHost graph; requires Docker)"
+        description: "Run the capability-trimmed Test.Aspire core lane mesh (requires Docker)"
       includeFoundryLocal:
         type: boolean
         default: false
@@ -172,7 +172,7 @@ jobs:
           --logger "trx;LogFileName=flowengine-results.trx"
           --results-directory ./TestResults
 
-      - name: Aspire Mesh Tests (manual, selected full lane graph)
+      - name: Aspire Core Lane Mesh Tests (manual)
         id: aspire_mesh
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeAspireMesh == true }}
         timeout-minutes: 70
@@ -256,7 +256,7 @@ jobs:
           # (an if: with no status-check function gets an implicit success() ANDed in, so it never runs
           # after a failed step).
           if [ "$test_exit" -ne 0 ]; then
-            echo "=== Aspire Mesh Tests failed (exit $test_exit); captured container logs follow ==="
+            echo "=== Aspire core lane mesh failed (exit $test_exit); captured container logs follow ==="
             if [ -d /tmp/aspire-container-logs ]; then
               for f in /tmp/aspire-container-logs/*; do
                 [ -f "$f" ] || continue
@@ -314,6 +314,7 @@ jobs:
         env:
           TASKFLOW_LANE: NonAzure
           TASKFLOW_READMODEL_PROVIDER: ${{ inputs.nonAzureReadModel }}
+          TASKFLOW_AI_PROVIDER: FoundryLocal
         run: >
           dotnet test tests/Test.FoundryLocal/Test.FoundryLocal.csproj
           --no-build --configuration Release
@@ -546,6 +547,7 @@ jobs:
           ConnectionStrings__TickerQDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow;Password=taskflow-dev-password
           ConnectionStrings__Redis1=redis:6379
           ConnectionStrings__RabbitMq1=amqp://taskflow:taskflow-dev-password@rabbitmq:5672
+          Messaging__RabbitMq__ConnectionString=amqp://taskflow:taskflow-dev-password@rabbitmq:5672
           ConnectionStrings__MongoDb1=mongodb://mongo:27017/taskflow
           Storage__S3__ServiceUrl=http://seaweedfs:8333
           Storage__S3__PublicServiceUrl=http://s3.localhost
