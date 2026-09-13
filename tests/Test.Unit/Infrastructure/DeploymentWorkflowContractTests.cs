@@ -336,7 +336,7 @@ public sealed class DeploymentWorkflowContractTests
             Assert.IsTrue(
                 System.Text.RegularExpressions.Regex.IsMatch(
                     compose,
-                    $"^  {internalNetwork}:\\r?$\\n    driver: bridge\\r?$\\n    internal: true$",
+                    $"^  {internalNetwork}:\\r?$\\n    driver: bridge\\r?$\\n    internal: true\\r?$",
                     System.Text.RegularExpressions.RegexOptions.Multiline),
                 internalNetwork);
         }
