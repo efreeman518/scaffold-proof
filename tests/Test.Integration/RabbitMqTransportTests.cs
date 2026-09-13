@@ -2,6 +2,7 @@ using EF.Messaging.RabbitMq;
 using EF.FlowEngine.Clients;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 using System.Diagnostics;
 using System.Text;
@@ -159,7 +160,8 @@ public sealed class RabbitMqTransportTests
             ct);
 
         var client = RegisterServices.CreateRabbitMqFlowEngineMessageClient(
-            provider.GetRequiredService<IRabbitMqConnectionMultiplexer>());
+            provider.GetRequiredService<IRabbitMqConnectionMultiplexer>(),
+            provider.GetRequiredService<IOptionsMonitor<RabbitMqOptions>>());
         var result = await client.SendAsync(new MessageRequest
         {
             Subject = $"workflow.unbound.{Guid.NewGuid():N}",
@@ -192,7 +194,8 @@ public sealed class RabbitMqTransportTests
         try
         {
             var client = RegisterServices.CreateRabbitMqFlowEngineMessageClient(
-                provider.GetRequiredService<IRabbitMqConnectionMultiplexer>());
+                provider.GetRequiredService<IRabbitMqConnectionMultiplexer>(),
+                provider.GetRequiredService<IOptionsMonitor<RabbitMqOptions>>());
             using var parent = new Activity("flowengine-live-test").SetIdFormat(ActivityIdFormat.W3C).Start();
             await client.SendAsync(new MessageRequest
             {

@@ -4,6 +4,7 @@ using EF.Messaging.RabbitMq;
 using Moq;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using System.Diagnostics;
 using System.Text.Json;
 using TaskFlow.Bootstrapper;
@@ -82,7 +83,10 @@ public sealed class RabbitMqFlowEngineRegistrationTests
     public async Task IntegrationEventsClient_RejectsUnsupportedRequestReplyBeforePublishing()
     {
         var multiplexer = new Mock<IRabbitMqConnectionMultiplexer>(MockBehavior.Strict);
-        var client = RegisterServices.CreateRabbitMqFlowEngineMessageClient(multiplexer.Object);
+        var options = new Mock<IOptionsMonitor<RabbitMqOptions>>(MockBehavior.Strict);
+        var client = RegisterServices.CreateRabbitMqFlowEngineMessageClient(
+            multiplexer.Object,
+            options.Object);
 
         var exception = await Assert.ThrowsExactlyAsync<NotSupportedException>(() => client.SendAsync(
             new MessageRequest
@@ -94,6 +98,48 @@ public sealed class RabbitMqFlowEngineRegistrationTests
             TestContext.CancellationToken));
 
         StringAssert.Contains(exception.Message, "fire-and-forget");
+    }
+
+    [TestMethod]
+    public async Task PublisherConfirmAwait_ConfiguredTimeoutFailsClearly()
+    {
+        var timeout = TimeSpan.FromMilliseconds(25);
+
+        var exception = await Assert.ThrowsExactlyAsync<TimeoutException>(() =>
+            RegisterServices.AwaitRabbitMqPublisherConfirmAsync(
+                cancellation => new ValueTask(Task.Delay(Timeout.InfiniteTimeSpan, cancellation)),
+                timeout,
+                TestContext.CancellationToken));
+
+        StringAssert.Contains(exception.Message, timeout.ToString());
+        Assert.IsInstanceOfType<OperationCanceledException>(exception.InnerException);
+    }
+
+    [TestMethod]
+    public async Task PublisherConfirmAwait_CallerCancellationRemainsCancellation()
+    {
+        using var callerCancellation = new CancellationTokenSource();
+        callerCancellation.Cancel();
+
+        await Assert.ThrowsExactlyAsync<TaskCanceledException>(() =>
+            RegisterServices.AwaitRabbitMqPublisherConfirmAsync(
+                cancellation => new ValueTask(Task.Delay(Timeout.InfiniteTimeSpan, cancellation)),
+                TimeSpan.FromMinutes(1),
+                callerCancellation.Token));
+    }
+
+    [TestMethod]
+    public async Task PublisherConfirmAwait_BrokerFailurePreservesPrimaryException()
+    {
+        var primaryFailure = new InvalidOperationException("broker channel closed");
+
+        var observed = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            RegisterServices.AwaitRabbitMqPublisherConfirmAsync(
+                _ => ValueTask.FromException(primaryFailure),
+                TimeSpan.FromSeconds(1),
+                TestContext.CancellationToken));
+
+        Assert.AreSame(primaryFailure, observed);
     }
 
     private static ActivityListener Listen(out List<Activity> started)
