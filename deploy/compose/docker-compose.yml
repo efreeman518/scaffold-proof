@@ -32,6 +32,11 @@ x-app-common: &app-common
     ASPNETCORE_ENVIRONMENT: Production
     DOTNET_gcServer: "1"
   depends_on:
+    # MongoDB is an explicit profile. When selected, API/Scheduler must not race index provisioning; when
+    # absent, default PostgreSQL JSONB startup remains valid.
+    mongo:
+      condition: service_healthy
+      required: false
     postgres:
       condition: service_healthy
     rabbitmq:
@@ -241,11 +246,14 @@ services:
   seaweedfs:
     image: chrislusf/seaweedfs:latest
     restart: unless-stopped
-    command: ["server", "-s3", "-s3.port=8333", "-dir=/data"]
+    command: ["mini", "-dir=/data"]
+    environment:
+      AWS_ACCESS_KEY_ID: ${Storage__S3__AccessKeyId}
+      AWS_SECRET_ACCESS_KEY: ${Storage__S3__SecretAccessKey}
     volumes:
       - seaweedfs-data:/data
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8333/ || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9333/cluster/healthz || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10

@@ -70,7 +70,7 @@ Two mechanisms cover it instead, and both are stronger than a self-reported cont
   app container starts until that owner exits 0 - the same single-migration-owner rule the AppHost enforces.
 
 Infrastructure containers do have native probes (`pg_isready`, `redis-cli ping`, `rabbitmq-diagnostics`,
-and SeaweedFS S3 HTTP), which is what `--wait` and the `service_healthy` conditions above them key off.
+and SeaweedFS master `/cluster/healthz`), which is what `--wait` and the `service_healthy` conditions above them key off.
 
 ## Connection pooling (D-045)
 

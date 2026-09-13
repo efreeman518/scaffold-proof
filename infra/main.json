@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "2877028319972546357"
+      "templateHash": "14010740924886302108"
     }
   },
   "parameters": {
@@ -2493,7 +2493,7 @@
             "value": "[parameters('schedulerProfile').maxReplicas]"
           },
           "envVars": {
-            "value": "[union(createArray(createObject('name', 'Hosting__Lane', 'value', 'Azure'), createObject('name', 'Database__Provider', 'value', 'SqlServer'), createObject('name', 'Messaging__Provider', 'value', 'ServiceBus'), createObject('name', 'Storage__Provider', 'value', 'AzureBlob'), createObject('name', 'ReadModel__Provider', 'value', 'Cosmos'), createObject('name', 'Audit__Provider', 'value', 'AzureTable'), createObject('name', 'Search__Provider', 'value', parameters('searchProvider')), createObject('name', 'DataProtection__Persistence', 'value', 'AzureBlob'), createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value)), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', format('{0}ApplicationIntent=ReadOnly;', reference('sqlDatabase').outputs.connectionString.value)), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TickerQDbContext', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__Redis1', 'value', listOutputsWithSecureValues('redis', '2025-04-01').connectionString)), createArray(createObject('name', 'SERVICEBUS__fullyQualifiedNamespace', 'value', reference('serviceBus').outputs.namespaceEndpoint.value)))]"
+            "value": "[union(createArray(createObject('name', 'Hosting__Lane', 'value', 'Azure'), createObject('name', 'Database__Provider', 'value', 'SqlServer'), createObject('name', 'Messaging__Provider', 'value', 'ServiceBus'), createObject('name', 'Storage__Provider', 'value', 'AzureBlob'), createObject('name', 'ReadModel__Provider', 'value', 'Cosmos'), createObject('name', 'Audit__Provider', 'value', 'AzureTable'), createObject('name', 'Search__Provider', 'value', parameters('searchProvider')), createObject('name', 'DataProtection__Persistence', 'value', 'AzureBlob'), createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value)), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', format('{0}ApplicationIntent=ReadOnly;', reference('sqlDatabase').outputs.connectionString.value)), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TickerQDbContext', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__BlobStorage1', 'value', reference('storage').outputs.appStorageBlobEndpoint.value), createObject('name', 'ConnectionStrings__TableStorage1', 'value', reference('storage').outputs.appStorageTableEndpoint.value), createObject('name', 'ConnectionStrings__Redis1', 'value', listOutputsWithSecureValues('redis', '2025-04-01').connectionString)), createArray(createObject('name', 'SERVICEBUS__fullyQualifiedNamespace', 'value', reference('serviceBus').outputs.namespaceEndpoint.value)))]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -2749,7 +2749,8 @@
         "redis",
         "rg",
         "serviceBus",
-        "sqlDatabase"
+        "sqlDatabase",
+        "storage"
       ]
     },
     "blazor": {
@@ -4443,6 +4444,140 @@
         "scheduler"
       ]
     },
+    "schedulerBlobContributor": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "schedulerBlobContributor",
+      "resourceGroup": "[format('{0}-rg', variables('prefix'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "principalId": {
+            "value": "[reference('scheduler').outputs.principalId.value]"
+          },
+          "roleDefinitionId": {
+            "value": "[variables('roles').storageBlobDataContributor]"
+          },
+          "roleDescription": {
+            "value": "Scheduler: Storage Blob Data Contributor"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "11752414911162580225"
+            }
+          },
+          "parameters": {
+            "principalId": {
+              "type": "string"
+            },
+            "principalType": {
+              "type": "string",
+              "defaultValue": "ServicePrincipal"
+            },
+            "roleDefinitionId": {
+              "type": "string"
+            },
+            "roleDescription": {
+              "type": "string",
+              "defaultValue": ""
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(resourceGroup().id, parameters('principalId'), parameters('roleDefinitionId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleDefinitionId'))]",
+                "principalId": "[parameters('principalId')]",
+                "principalType": "[parameters('principalType')]",
+                "description": "[parameters('roleDescription')]"
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "rg",
+        "scheduler"
+      ]
+    },
+    "schedulerTableContributor": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "schedulerTableContributor",
+      "resourceGroup": "[format('{0}-rg', variables('prefix'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "principalId": {
+            "value": "[reference('scheduler').outputs.principalId.value]"
+          },
+          "roleDefinitionId": {
+            "value": "[variables('roles').storageTableDataContributor]"
+          },
+          "roleDescription": {
+            "value": "Scheduler: Storage Table Data Contributor"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "11752414911162580225"
+            }
+          },
+          "parameters": {
+            "principalId": {
+              "type": "string"
+            },
+            "principalType": {
+              "type": "string",
+              "defaultValue": "ServicePrincipal"
+            },
+            "roleDefinitionId": {
+              "type": "string"
+            },
+            "roleDescription": {
+              "type": "string",
+              "defaultValue": ""
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(resourceGroup().id, parameters('principalId'), parameters('roleDefinitionId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleDefinitionId'))]",
+                "principalId": "[parameters('principalId')]",
+                "principalType": "[parameters('principalType')]",
+                "description": "[parameters('roleDescription')]"
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "rg",
+        "scheduler"
+      ]
+    },
     "funcServiceBusReceiver": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
@@ -4529,6 +4664,73 @@
           },
           "roleDescription": {
             "value": "Functions: Storage Blob Data Contributor"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "11752414911162580225"
+            }
+          },
+          "parameters": {
+            "principalId": {
+              "type": "string"
+            },
+            "principalType": {
+              "type": "string",
+              "defaultValue": "ServicePrincipal"
+            },
+            "roleDefinitionId": {
+              "type": "string"
+            },
+            "roleDescription": {
+              "type": "string",
+              "defaultValue": ""
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(resourceGroup().id, parameters('principalId'), parameters('roleDefinitionId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleDefinitionId'))]",
+                "principalId": "[parameters('principalId')]",
+                "principalType": "[parameters('principalType')]",
+                "description": "[parameters('roleDescription')]"
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "functions",
+        "rg"
+      ]
+    },
+    "funcTableContributor": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "funcTableContributor",
+      "resourceGroup": "[format('{0}-rg', variables('prefix'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "principalId": {
+            "value": "[reference('functions').outputs.functionAppPrincipalId.value]"
+          },
+          "roleDefinitionId": {
+            "value": "[variables('roles').storageTableDataContributor]"
+          },
+          "roleDescription": {
+            "value": "Functions: Storage Table Data Contributor"
           }
         },
         "template": {

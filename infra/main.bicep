@@ -412,6 +412,8 @@ module scheduler 'modules/container-app.bicep' = {
       { name: 'ConnectionStrings__TaskFlowDbContextQuery', value: dbReadConnectionString }
       { name: 'ConnectionStrings__TaskFlowFlowEngineDbContext', value: dbConnectionString }
       { name: 'ConnectionStrings__TickerQDbContext', value: dbConnectionString }
+      { name: 'ConnectionStrings__BlobStorage1', value: storage.outputs.appStorageBlobEndpoint }
+      { name: 'ConnectionStrings__TableStorage1', value: storage.outputs.appStorageTableEndpoint }
       { name: 'ConnectionStrings__Redis1', value: redis.outputs.connectionString }
     ], messagingEnvVars)
     tags: tags
@@ -636,6 +638,26 @@ module schedulerServiceBusSender 'modules/role-assignment.bicep' = {
   }
 }
 
+module schedulerBlobContributor 'modules/role-assignment.bicep' = {
+  name: 'schedulerBlobContributor'
+  scope: rg
+  params: {
+    principalId: scheduler.outputs.principalId
+    roleDefinitionId: roles.storageBlobDataContributor
+    roleDescription: 'Scheduler: Storage Blob Data Contributor'
+  }
+}
+
+module schedulerTableContributor 'modules/role-assignment.bicep' = {
+  name: 'schedulerTableContributor'
+  scope: rg
+  params: {
+    principalId: scheduler.outputs.principalId
+    roleDefinitionId: roles.storageTableDataContributor
+    roleDescription: 'Scheduler: Storage Table Data Contributor'
+  }
+}
+
 // ---- RBAC: Functions ----
 
 module funcServiceBusReceiver 'modules/role-assignment.bicep' = {
@@ -655,6 +677,16 @@ module funcBlobContributor 'modules/role-assignment.bicep' = {
     principalId: functions.outputs.functionAppPrincipalId
     roleDefinitionId: roles.storageBlobDataContributor
     roleDescription: 'Functions: Storage Blob Data Contributor'
+  }
+}
+
+module funcTableContributor 'modules/role-assignment.bicep' = {
+  name: 'funcTableContributor'
+  scope: rg
+  params: {
+    principalId: functions.outputs.functionAppPrincipalId
+    roleDefinitionId: roles.storageTableDataContributor
+    roleDescription: 'Functions: Storage Table Data Contributor'
   }
 }
 

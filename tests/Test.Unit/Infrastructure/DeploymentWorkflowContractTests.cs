@@ -289,6 +289,7 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(compose, "Audit__Provider: Relational");
         StringAssert.Contains(compose, "DataProtection__Persistence: Redis");
         StringAssert.Contains(compose, "profiles: [\"mongo\"]");
+        StringAssert.Contains(compose, "required: false");
         StringAssert.Contains(ServiceBlock(compose, "caddy").Text, "REACT_UI_DOMAIN: ${REACT_UI_DOMAIN}");
         StringAssert.Contains(ServiceBlock(compose, "caddy").Text, "UNO_UI_DOMAIN: ${UNO_UI_DOMAIN}");
         StringAssert.Contains(ServiceBlock(compose, "caddy").Text, "S3_PUBLIC_DOMAIN: ${S3_PUBLIC_DOMAIN}");
@@ -328,7 +329,16 @@ public sealed class DeploymentWorkflowContractTests
 
         StringAssert.Contains(compose, "pg_isready");
         StringAssert.Contains(compose, "rabbitmq-diagnostics");
-        StringAssert.Contains(compose, "-s3.port=8333");
+        var seaweedfs = ServiceBlock(compose, "seaweedfs").Text;
+        StringAssert.Contains(seaweedfs, "command: [\"mini\", \"-dir=/data\"]");
+        StringAssert.Contains(seaweedfs, "AWS_ACCESS_KEY_ID: ${Storage__S3__AccessKeyId}");
+        StringAssert.Contains(seaweedfs, "AWS_SECRET_ACCESS_KEY: ${Storage__S3__SecretAccessKey}");
+        StringAssert.Contains(seaweedfs, "http://127.0.0.1:9333/cluster/healthz");
+        var seaweedFixture = File.ReadAllText(
+            RepoRoot.Combine("tests", "Test.Integration", "Infrastructure", "SeaweedFsContainerFixture.cs"));
+        StringAssert.Contains(seaweedFixture, ".WithCommand(\"mini\", \"-dir=/data\")");
+        StringAssert.Contains(seaweedFixture, ".WithEnvironment(\"AWS_ACCESS_KEY_ID\", AccessKey)");
+        StringAssert.Contains(seaweedFixture, ".WithEnvironment(\"AWS_SECRET_ACCESS_KEY\", SecretKey)");
         StringAssert.Contains(local, "- nuget_credentials");
         StringAssert.Contains(local, "environment: NuGetPackageSourceCredentials_efreeman518-github");
 
@@ -421,6 +431,32 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(bicep, "module unoStaticWebApp 'modules/static-web-app.bicep'");
         StringAssert.Contains(bicep, "{ name: 'Gateway__BaseUrl', value: 'https://${gateway.outputs.fqdn}' }");
         StringAssert.Contains(bicep, "{ name: 'Search__Provider', value: searchProvider }");
+
+        var functionTableRbac = bicep[bicep.IndexOf("module funcTableContributor", StringComparison.Ordinal)..];
+        StringAssert.Contains(functionTableRbac, "principalId: functions.outputs.functionAppPrincipalId");
+        StringAssert.Contains(functionTableRbac, "roleDefinitionId: roles.storageTableDataContributor");
+        StringAssert.Contains(bicep, "storageTableEndpoint: storage.outputs.appStorageTableEndpoint");
+        StringAssert.Contains(functions, "{ name: 'ConnectionStrings__TableStorage1', value: storageTableEndpoint }");
+
+        var apiBlock = bicep[
+            bicep.IndexOf("module api 'modules/container-app.bicep'", StringComparison.Ordinal)..
+            bicep.IndexOf("module scheduler 'modules/container-app.bicep'", StringComparison.Ordinal)];
+        StringAssert.Contains(apiBlock, "{ name: 'ConnectionStrings__TableStorage1', value: storage.outputs.appStorageTableEndpoint }");
+        var apiTableRbac = bicep[bicep.IndexOf("module apiTableContributor", StringComparison.Ordinal)..];
+        StringAssert.Contains(apiTableRbac, "principalId: api.outputs.principalId");
+        StringAssert.Contains(apiTableRbac, "roleDefinitionId: roles.storageTableDataContributor");
+
+        var schedulerBlock = bicep[
+            bicep.IndexOf("module scheduler 'modules/container-app.bicep'", StringComparison.Ordinal)..
+            bicep.IndexOf("module blazor 'modules/container-app.bicep'", StringComparison.Ordinal)];
+        StringAssert.Contains(schedulerBlock, "{ name: 'ConnectionStrings__BlobStorage1', value: storage.outputs.appStorageBlobEndpoint }");
+        StringAssert.Contains(schedulerBlock, "{ name: 'ConnectionStrings__TableStorage1', value: storage.outputs.appStorageTableEndpoint }");
+        var schedulerBlobRbac = bicep[bicep.IndexOf("module schedulerBlobContributor", StringComparison.Ordinal)..];
+        StringAssert.Contains(schedulerBlobRbac, "principalId: scheduler.outputs.principalId");
+        StringAssert.Contains(schedulerBlobRbac, "roleDefinitionId: roles.storageBlobDataContributor");
+        var schedulerTableRbac = bicep[bicep.IndexOf("module schedulerTableContributor", StringComparison.Ordinal)..];
+        StringAssert.Contains(schedulerTableRbac, "principalId: scheduler.outputs.principalId");
+        StringAssert.Contains(schedulerTableRbac, "roleDefinitionId: roles.storageTableDataContributor");
 
         foreach (var nonAzureOnlyValue in new[] { "PostgreSql", "RabbitMq", "Storage__S3", "MongoDb" })
         {
