@@ -11,9 +11,11 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using RabbitMQ.Client;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Interceptors;
 using TaskFlow.Infrastructure.Messaging.RabbitMq;
+using TaskFlow.Observability.Tracing;
 
 namespace TaskFlow.Bootstrapper;
 
@@ -98,11 +100,11 @@ public static partial class RegisterServices
 
         if (ResolveMessagingProvider(config) == MessagingProvider.RabbitMq)
         {
-            // Reuse the same confirmed publisher and topic exchange as the application outbox. FlowEngine's
-            // delegating adapter keeps the broker protocol in EF.Messaging.RabbitMq rather than introducing a
-            // second RabbitMQ stack just for workflow message nodes.
+            // Workflow messages are topic publications and may intentionally have no subscriber. Reuse the
+            // package's confirmed publisher-channel pool, but publish mandatory:false so that zero bindings is
+            // accepted just like a Service Bus topic with zero subscriptions.
             fe.AddClient(sp => CreateRabbitMqFlowEngineMessageClient(
-                sp.GetRequiredService<IRabbitMqPublisher>()));
+                sp.GetRequiredService<IRabbitMqConnectionMultiplexer>()));
         }
         else
         {
@@ -133,9 +135,10 @@ public static partial class RegisterServices
         ?? config["DomainEventsTopic"]
         ?? OutboxStagingInterceptor.DefaultDestination;
 
-    internal static DelegatingMessageClient CreateRabbitMqFlowEngineMessageClient(IRabbitMqPublisher publisher)
+    internal static DelegatingMessageClient CreateRabbitMqFlowEngineMessageClient(
+        IRabbitMqConnectionMultiplexer multiplexer)
     {
-        ArgumentNullException.ThrowIfNull(publisher);
+        ArgumentNullException.ThrowIfNull(multiplexer);
 
         return new DelegatingMessageClient(
             "integration-events",
@@ -150,25 +153,12 @@ public static partial class RegisterServices
                 var messageId = string.IsNullOrWhiteSpace(request.IdempotencyKey)
                     ? Guid.CreateVersion7().ToString()
                     : request.IdempotencyKey;
-                var binaryBody = request.BinaryBody;
-                var body = binaryBody ?? System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(request.Body);
-                var contentType = request.ContentType
-                    ?? (binaryBody is null ? "application/json" : "application/octet-stream");
-                var headers = request.Properties?.ToDictionary(
-                    pair => pair.Key,
-                    pair => (object?)pair.Value,
-                    StringComparer.Ordinal);
-
-                await publisher.PublishAsync(
-                    TaskFlowRabbitMqTopology.Exchange,
-                    new RabbitMqMessage(
-                        body,
-                        RoutingKey: request.Subject,
-                        MessageId: messageId,
-                        ContentType: contentType,
-                        CorrelationId: request.CorrelationId,
-                        Headers: headers),
-                    ct).ConfigureAwait(false);
+                var message = CreateRabbitMqFlowEngineMessage(request, messageId, out var publishActivity);
+                using (publishActivity)
+                {
+                    await PublishRabbitMqFlowEngineMessageAsync(multiplexer, message, ct)
+                        .ConfigureAwait(false);
+                }
 
                 return new MessageResult
                 {
@@ -178,6 +168,74 @@ public static partial class RegisterServices
                     Outcome = DecisionOutcome.Match
                 };
             });
+    }
+
+    /// <summary>
+    /// Maps one FlowEngine request to the shared RabbitMQ wire shape and starts its D-053 producer span.
+    /// The caller owns the returned activity and must keep it alive through the confirmed publish.
+    /// </summary>
+    internal static RabbitMqMessage CreateRabbitMqFlowEngineMessage(
+        MessageRequest request,
+        string messageId,
+        out System.Diagnostics.Activity? publishActivity)
+    {
+        var binaryBody = request.BinaryBody;
+        var body = binaryBody ?? System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(request.Body);
+        var contentType = request.ContentType
+            ?? (binaryBody is null ? "application/json" : "application/octet-stream");
+        var headers = request.Properties?.ToDictionary(
+                pair => pair.Key,
+                pair => (object?)pair.Value,
+                StringComparer.Ordinal)
+            ?? new Dictionary<string, object?>(StringComparer.Ordinal);
+
+        publishActivity = MessagingTrace.StartPublish(
+            MessagingTrace.RabbitMqSystem,
+            TaskFlowRabbitMqTopology.Exchange,
+            request.Subject,
+            messageId,
+            (key, value) => headers[key] = value);
+
+        return new RabbitMqMessage(
+            body,
+            RoutingKey: request.Subject,
+            MessageId: messageId,
+            ContentType: contentType,
+            CorrelationId: request.CorrelationId,
+            Headers: headers);
+    }
+
+    /// <summary>
+    /// Uses EF.Messaging.RabbitMq's pooled, confirm-tracking channel while allowing topic publications
+    /// that currently have no binding. Awaiting BasicPublishAsync retains publisher-confirm semantics.
+    /// </summary>
+    private static async Task PublishRabbitMqFlowEngineMessageAsync(
+        IRabbitMqConnectionMultiplexer multiplexer,
+        RabbitMqMessage message,
+        CancellationToken ct)
+    {
+        using var pooledChannel = await multiplexer.RentPublisherChannelAsync(ct).ConfigureAwait(false);
+        var properties = new BasicProperties
+        {
+            MessageId = message.MessageId,
+            CorrelationId = message.CorrelationId,
+            ContentType = message.ContentType,
+            // FlowEngine properties and W3C propagation values are strings, which are valid AMQP
+            // field-table values. Copy them into the mutable table required by RabbitMQ.Client.
+            Headers = message.Headers?.ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value,
+                StringComparer.Ordinal),
+            Persistent = message.Persistent
+        };
+
+        await pooledChannel.Channel.BasicPublishAsync(
+            TaskFlowRabbitMqTopology.Exchange,
+            message.RoutingKey,
+            mandatory: false,
+            properties,
+            message.Body,
+            ct).ConfigureAwait(false);
     }
 
     // JSON workflow definitions live in TaskFlow.Api/Workflows/. The seeding service is a

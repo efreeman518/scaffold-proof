@@ -142,10 +142,24 @@ public class ProviderSwitchSelectorTests
             "AddReadModelServices",
             Config(
                 (HostingLaneResolver.LaneConfigurationKey, "Azure"),
+                ("DOTNET_ENVIRONMENT", "Testing"),
                 ("Testing:UseNoOpCosmosReadModel", "true")));
 
         var descriptor = services.Single(value => value.ServiceType == typeof(ITaskViewRepository));
         Assert.AreEqual(typeof(NoOpTaskViewRepository), descriptor.ImplementationType);
+    }
+
+    [TestMethod]
+    public void AzureCosmos_TestFlagOutsideTesting_FailsFast()
+    {
+        var exception = InvokeDispatcherFailure<InvalidOperationException>(
+            "AddReadModelServices",
+            Config(
+                (HostingLaneResolver.LaneConfigurationKey, "Azure"),
+                ("DOTNET_ENVIRONMENT", "Production"),
+                ("Testing:UseNoOpCosmosReadModel", "true")));
+
+        StringAssert.Contains(exception.Message, "CosmosDb1");
     }
 
     [TestMethod]

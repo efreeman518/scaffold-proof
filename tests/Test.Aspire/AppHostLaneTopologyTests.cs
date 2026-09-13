@@ -160,6 +160,7 @@ public sealed class AppHostLaneTopologyTests
     {
         var source = ReadAppHostSource();
         StringAssert.Contains(source, "if (cosmos is not null) return host.WithReference(cosmos).WaitFor(cosmos);");
+        StringAssert.Contains(source, ".WithEnvironment(\"DOTNET_ENVIRONMENT\", \"Testing\")");
         StringAssert.Contains(source, "Testing__UseNoOpCosmosReadModel");
         StringAssert.Contains(source, "ConnectionStrings__MongoDb1");
         StringAssert.Contains(source, "mongoDb.GetEndpoint(\"mongodb\")");

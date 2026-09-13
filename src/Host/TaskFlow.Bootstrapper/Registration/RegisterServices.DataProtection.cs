@@ -87,10 +87,15 @@ public static partial class RegisterServices
                     break;
                 }
 
-                var blobStorage = ResolveConnectionString(config, "BlobStorage1", "BlobStorage1", "Values:BlobStorage1");
+                var blobStorage = ResolveConnectionString(
+                    config,
+                    "BlobStorage1",
+                    "BlobStorage1",
+                    "BlobStorage1:blobServiceUri",
+                    "Values:BlobStorage1");
                 if (string.IsNullOrWhiteSpace(blobStorage))
                     throw new InvalidOperationException(
-                        $"{DataProtectionPersistenceConfigKey}=AzureBlob requires DataProtectionKeysFileUrl or the BlobStorage1 connection string.");
+                        $"{DataProtectionPersistenceConfigKey}=AzureBlob requires DataProtectionKeysFileUrl or the BlobStorage1 endpoint or connection string.");
 
                 var containerName = config[DataProtectionBlobContainerConfigKey] ?? DefaultDataProtectionBlobContainerName;
                 var blobName = config[DataProtectionBlobNameConfigKey] ?? DefaultDataProtectionBlobName;

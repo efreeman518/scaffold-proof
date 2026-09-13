@@ -114,6 +114,7 @@ public static partial class RegisterServices
             config,
             "BlobStorage1",
             "BlobStorage1",
+            "BlobStorage1:blobServiceUri",
             "Values:BlobStorage1");
         if (string.IsNullOrEmpty(connection))
             throw new InvalidOperationException(
@@ -181,7 +182,8 @@ public static partial class RegisterServices
         var connection = config.GetConnectionString("CosmosDb1");
         if (string.IsNullOrEmpty(connection))
         {
-            if (config.GetValue("Testing:UseNoOpCosmosReadModel", false))
+            if (config.GetValue("Testing:UseNoOpCosmosReadModel", false)
+                && IsTestingHost(config))
             {
                 services.AddSingleton<ITaskViewRepository, NoOpTaskViewRepository>();
                 return;
@@ -206,6 +208,19 @@ public static partial class RegisterServices
                 sp.GetRequiredService<ILogger<CosmosTaskViewRepository>>(),
                 databaseName,
                 containerName));
+    }
+
+    private static bool IsTestingHost(IConfiguration config)
+    {
+        var dotnetEnvironment = config["DOTNET_ENVIRONMENT"];
+        var aspNetCoreEnvironment = config["ASPNETCORE_ENVIRONMENT"];
+        var oneIsTesting = string.Equals(dotnetEnvironment, "Testing", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(aspNetCoreEnvironment, "Testing", StringComparison.OrdinalIgnoreCase);
+        var neitherConflicts = (string.IsNullOrWhiteSpace(dotnetEnvironment)
+                || string.Equals(dotnetEnvironment, "Testing", StringComparison.OrdinalIgnoreCase))
+            && (string.IsNullOrWhiteSpace(aspNetCoreEnvironment)
+                || string.Equals(aspNetCoreEnvironment, "Testing", StringComparison.OrdinalIgnoreCase));
+        return oneIsTesting && neitherConflicts;
     }
 
     /// <summary>
@@ -242,7 +257,8 @@ public static partial class RegisterServices
         if (!config.GetValue<bool>("HealthChecks:EnableExternalServices", false))
             return;
 
-        if (!string.IsNullOrWhiteSpace(ResolveConnectionString(config, "BlobStorage1", "BlobStorage1", "Values:BlobStorage1")))
+        if (!string.IsNullOrWhiteSpace(ResolveConnectionString(
+                config, "BlobStorage1", "BlobStorage1", "BlobStorage1:blobServiceUri", "Values:BlobStorage1")))
             builder.AddCheck<HealthChecks.BlobStorageHealthCheck>("blob-storage", tags: ["full", "extservice"]);
 
         if (ResolveStorageProvider(config) == StorageProvider.S3)

@@ -98,6 +98,21 @@ public sealed class AzureIdentityEndpointRegistrationTests
     }
 
     [TestMethod]
+    public void FunctionsBlobIdentityPrefix_RegistersManagedIdentityObjectStorageClient()
+    {
+        var configuration = BuildAzureConfiguration("BlobStorage1:blobServiceUri");
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.RegisterInfrastructureServices(configuration);
+
+        using var provider = services.BuildServiceProvider();
+        var blob = provider.GetRequiredService<IAzureClientFactory<BlobServiceClient>>()
+            .CreateClient("TaskFlowBlobClient");
+
+        Assert.AreEqual(new Uri(BlobEndpoint), blob.Uri);
+    }
+
+    [TestMethod]
     public void DataProtectionEndpointRegistration_DoesNotContactBlobStorage()
     {
         var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
@@ -109,7 +124,7 @@ public sealed class AzureIdentityEndpointRegistrationTests
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Hosting:Lane"] = "Azure",
-            ["ConnectionStrings:BlobStorage1"] = "https://127.0.0.1:1/"
+            ["BlobStorage1:blobServiceUri"] = "https://127.0.0.1:1/"
         });
 
         RegisterServices.AddTaskFlowDataProtection(builder, NullLogger.Instance);
@@ -177,13 +192,14 @@ public sealed class AzureIdentityEndpointRegistrationTests
         StringAssert.Contains(functions, "{ name: 'ServiceBus1__fullyQualifiedNamespace', value: serviceBusNamespace }");
     }
 
-    private static IConfiguration BuildAzureConfiguration() => new ConfigurationBuilder()
+    private static IConfiguration BuildAzureConfiguration(
+        string blobEndpointKey = "ConnectionStrings:BlobStorage1") => new ConfigurationBuilder()
         .AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Hosting:Lane"] = "Azure",
             ["ConnectionStrings:TaskFlowDbContextTrxn"] = SqlConnectionString,
             ["ConnectionStrings:TaskFlowDbContextQuery"] = SqlConnectionString,
-            ["ConnectionStrings:BlobStorage1"] = BlobEndpoint,
+            [blobEndpointKey] = BlobEndpoint,
             ["ConnectionStrings:TableStorage1"] = TableEndpoint,
             ["ConnectionStrings:CosmosDb1"] = CosmosEndpoint,
             ["ServiceBus1:fullyQualifiedNamespace"] = ServiceBusNamespace,

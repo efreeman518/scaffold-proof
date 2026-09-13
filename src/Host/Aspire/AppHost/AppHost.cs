@@ -563,7 +563,8 @@ IResourceBuilder<T> WithReadModel<T>(IResourceBuilder<T> host)
 {
     if (cosmos is not null) return host.WithReference(cosmos).WaitFor(cosmos);
     if (!nonAzureLane && isTesting)
-        return host.WithEnvironment("Testing__UseNoOpCosmosReadModel", "true");
+        return host.WithEnvironment("DOTNET_ENVIRONMENT", "Testing")
+                   .WithEnvironment("Testing__UseNoOpCosmosReadModel", "true");
     if (mongoDb is not null)
         return host.WithEnvironment("ConnectionStrings__MongoDb1", mongoDb.GetEndpoint("mongodb"))
                    .WaitFor(mongoDb);
