@@ -9,7 +9,7 @@ Azure service dependency. These files are hand-written on purpose - the AppHost 
 | `docker-compose.yml` | Canonical NonAzure stack: caddy, PostgreSQL, RabbitMQ, SeaweedFS, Redis, migrator, gateway, api, scheduler, Blazor, React, Uno, otel-lgtm, and optional `pgbouncer` / `mongo` profiles |
 | `docker-compose.override.local.yml` | `build:` for the app images under profile `local`; it does not replace the canonical service topology |
 | `Caddyfile` / `Caddyfile.local` | ACME TLS for `{$CADDY_DOMAIN}`, and the plain `:80` variant CI uses |
-| `.env.example` | The environment contract - names only, no values |
+| `.env.example` | Operator template with clearly marked non-production values; copy to `.env.base` and replace every `CHANGE_ME` value |
 | `images.env.example` | Shape of the digest-pinned image variables the deploy job writes |
 | `pgbouncer/` | Transaction-pooling config for the opt-in `pooler` profile |
 
@@ -23,19 +23,24 @@ URLs retain a reachable signed host without publishing the S3 port directly.
 
 1. Point an A/AAAA record at the VPS. Caddy solves the ACME challenge itself, so DNS must resolve before
    the first `up`; nothing else in the stack publishes a port.
-2. On the VPS, as the deploy user:
+2. From a trusted checkout, copy the operator template to the VPS as the canonical configuration source:
    ```bash
-   mkdir -p ~/taskflow && cd ~/taskflow
-   # deploy/compose/{docker-compose.yml,Caddyfile,pgbouncer/} are copied here by the deploy job
-   cp .env.example .env && chmod 600 .env
+   ssh <user>@<vps> 'mkdir -p ~/taskflow && chmod 700 ~/taskflow'
+   scp deploy/compose/.env.example <user>@<vps>:~/taskflow/.env.base
+   ssh <user>@<vps> 'chmod 600 ~/taskflow/.env.base'
    ```
-3. Fill in `.env`. The checked-in D-060 contract fixes `Hosting__Lane=NonAzure`, PostgreSQL, RabbitMQ, S3,
-   PostgreSQL JSONB, relational audit and Redis Data Protection. Do not change those lane-owned settings.
-   Required values are `POSTGRES_*`, `RABBITMQ_DEFAULT_*`, the four `ConnectionStrings__*`,
+   Every deployment also refreshes `~/taskflow/.env.base.example`, so the current contract is available beside
+   the operator-managed file without overwriting it.
+3. Fill in `.env.base` and replace every `CHANGE_ME` value. The checked-in D-060 contract fixes
+   `Hosting__Lane=NonAzure`, PostgreSQL, RabbitMQ, S3,
+   PostgreSQL JSONB, relational audit and Redis Data Protection. Do not change those lane-owned settings or
+   add `TASKFLOW_*_IMAGE` values; `images.env` is workflow-managed.
+   Required values are `POSTGRES_*`, `REDIS_PASSWORD`, `RABBITMQ_DEFAULT_*`, the database connection strings,
    `ConnectionStrings__Redis1`, `Messaging__RabbitMq__ConnectionString`, `ConnectionStrings__RabbitMq1`, the
-   `Storage__S3__*` block,
+   `Storage__S3__*` block, both encryption keys,
    `CADDY_DOMAIN`, `S3_PUBLIC_DOMAIN`, `ACME_EMAIL`, `Gateway__BaseUrl`, `GATEWAY_BASE_URL`, and the three
-   `*_UI_ORIGIN` / two `*_UI_DOMAIN` values. Set `Storage__S3__PublicServiceUrl` to
+   `*_UI_ORIGIN` / two `*_UI_DOMAIN` values. Set `MONGO_INITDB_ROOT_*` before using the optional Mongo profile.
+   Set `Storage__S3__PublicServiceUrl` to
    `https://<S3_PUBLIC_DOMAIN>` so the browser can follow a presigned URL. The static React and Uno images
    write their minimal `/app-config.json` from `GATEWAY_BASE_URL` at container start, so one digest can target
    a changed gateway origin without a provider-specific UI build.
@@ -43,12 +48,16 @@ URLs retain a reachable signed host without publishing the S3 port directly.
    into a presigned download URL, so signing one against an in-network-only host hands the caller a URL it
    can never resolve.
 4. Run `gh workflow run deploy-vps.yml -f operation=deploy -f commit_sha=<green sha>`. The job builds the
-   seven images, writes `images.env` with their digests, appends it into `.env`, then runs
+   seven images, writes `images.env` with their digests, rebuilds generated `.env` from `.env.base` plus
+   `images.env`, then runs
    `docker compose pull && docker compose up -d --wait` and smokes `https://$CADDY_DOMAIN/healthz/ready`.
 
 Manual equivalent, from `~/taskflow`:
 
 ```bash
+{ cat .env.base; printf '\n'; cat images.env; } > .env
+chmod 600 .env
+docker compose config -q
 docker compose pull
 docker compose up -d --wait
 curl -fsS "https://$CADDY_DOMAIN/healthz/ready"
@@ -70,8 +79,14 @@ Two mechanisms cover it instead, and both are stronger than a self-reported cont
 - **`depends_on: migrator: service_completed_successfully`.** Schema changes have exactly one owner, and no
   app container starts until that owner exits 0 - the same single-migration-owner rule the AppHost enforces.
 
-Infrastructure containers do have native probes (`pg_isready`, `redis-cli ping`, `rabbitmq-diagnostics`,
+Infrastructure containers do have native probes (`pg_isready`, authenticated `redis-cli ping`,
+authenticated `mongosh`, `rabbitmq-diagnostics`,
 and SeaweedFS master `/cluster/healthz`), which is what `--wait` and the `service_healthy` conditions above them key off.
+
+Compose separates the public edge from internal app, data, cache, and telemetry networks. Caddy and the static
+UI containers cannot address the API, PostgreSQL, RabbitMQ, Redis, or MongoDB. Gateway and Blazor receive no
+data-plane credentials; only API and Scheduler receive the database, broker, object-storage, cache, and optional
+Mongo settings.
 
 ## Connection pooling (D-045)
 
@@ -82,18 +97,17 @@ cp pgbouncer/userlist.txt.example pgbouncer/userlist.txt   # then paste the real
 docker compose --profile pooler up -d
 ```
 
-Then repoint the four `ConnectionStrings__*` in `.env` at `pgbouncer:6432` and set
+Then repoint the four database `ConnectionStrings__*` in `.env.base` at `pgbouncer:6432` and set
 `Database__PostgreSql__PoolerMode=Transaction`. Both halves are required: the app side appends
 `No Reset On Close=true;Max Auto Prepare=0` to the Npgsql string, and transaction pooling without it produces
-"prepared statement already exists" failures under load. On Azure the same switch is the Flexible Server
-`pgbouncer.enabled` parameter (`postgresPgBouncerEnabled` in `infra/main.bicep`), which is not offered on the
-Burstable tier.
+"prepared statement already exists" failures under load. Rebuild generated `.env` after editing `.env.base`.
 
 ## MongoDB read-model alternative
 
 PostgreSQL JSONB is the default NonAzure read model. To use MongoDB instead, set
-`ReadModel__Provider=MongoDb`, set `ConnectionStrings__MongoDb1=mongodb://mongo:27017/taskflow`, then start
-the explicit profile:
+`ReadModel__Provider=MongoDb`, replace `MONGO_INITDB_ROOT_USERNAME` and `MONGO_INITDB_ROOT_PASSWORD`, and set
+`ConnectionStrings__MongoDb1=mongodb://<encoded-user>:<encoded-password>@mongo:27017/taskflow?authSource=admin`
+in `.env.base`, then rebuild `.env` and start the explicit profile:
 
 ```bash
 docker compose --profile mongo up -d --wait
@@ -103,11 +117,13 @@ Do not enable the profile for the default PostgreSQL JSONB path.
 
 ## Rotating secrets
 
-Everything secret is in `.env` (file mode 600, never committed, never baked into an image). To rotate:
+Everything secret is in operator-managed `.env.base` (file mode 600, never committed, never baked into an image).
+Generated `.env` is deployment output and must never be edited directly. To rotate:
 
 1. Rotate at the source (database password, S3 access key, broker user, or local encryption key).
-2. Update the corresponding line in `.env` if the value is one the container reads directly.
-3. `docker compose up -d --force-recreate <service>` for the affected services.
+2. Update the corresponding line in `.env.base`.
+3. Run the deploy workflow again, or manually rebuild `.env` from `.env.base` and `images.env`, then run
+   `docker compose up -d --force-recreate <service>` for the affected services.
 
 The private NuGet feed credential is never in `.env`: it reaches the image build as a BuildKit secret
 (`--secret id=nuget_credentials`) and leaves no layer behind.
@@ -115,9 +131,9 @@ The private NuGet feed credential is never in `.env`: it reaches the image build
 ## Rollback
 
 `gh workflow run deploy-vps.yml -f operation=rollback`. The job reads the current release manifest artifact,
-follows its `previousManifestArtifactId`, writes that manifest's digests back to `images.env`, re-appends it
-into `.env`, and runs `docker compose up -d --wait` followed by the same smoke. No image is rebuilt and no
-migration is re-run.
+follows its `previousManifestArtifactId`, writes that manifest's digests back to `images.env`, combines them
+with `.env.base` into generated `.env`, and runs `docker compose up -d --wait` followed by the same smoke. No
+image is rebuilt and no migration is re-run.
 
 Application-only rollback: **database migrations stay forward-applied and must be backward compatible**, the
 same contract as the Azure lane. A migration that drops a column cannot be rolled back this way.
@@ -126,7 +142,7 @@ Manual equivalent, if `images.env` from the previous release is still on the box
 
 ```bash
 cp images.env.previous images.env
-cat .env.base images.env > .env
+{ cat .env.base; printf '\n'; cat images.env; } > .env
 docker compose up -d --wait
 ```
 

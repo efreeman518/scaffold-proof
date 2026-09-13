@@ -135,6 +135,19 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(workflow, "taskflow-release-manifest-vps");
         StringAssert.Contains(workflow, "'{schemaVersion:2,operation:");
         StringAssert.Contains(workflow, "-ExpectedSchemaVersion 2");
+        StringAssert.Contains(workflow, "name: Deploy TaskFlow (NonAzure lane, VPS)");
+        Assert.IsFalse(workflow.Contains("Portable lane", StringComparison.Ordinal));
+
+        // .env.base is the only operator-managed source. Generated .env is rebuilt from it and immutable
+        // image pins; a clean VPS receives the current template but deployment never promotes generated
+        // output back into the operator source.
+        StringAssert.Contains(workflow, "deploy/compose/.env.example \"taskflow-vps:~/${REMOTE_DIR}/.env.base.example\"");
+        StringAssert.Contains(workflow, "[[ -f .env.base ]]");
+        StringAssert.Contains(workflow, "Refusing deployment while .env.base contains a CHANGE_ME value.");
+        StringAssert.Contains(workflow, "{ cat .env.base; printf '\\n'; cat images.env; } > .env");
+        StringAssert.Contains(workflow, "Remove image variables from .env.base; images.env is workflow-managed.");
+        StringAssert.Contains(workflow, "${COMPOSE} config -q");
+        Assert.IsFalse(workflow.Contains("cp .env .env.base", StringComparison.Ordinal));
 
         // Plain ssh with a pinned host key: no third-party action holds a key that can run docker on the box.
         StringAssert.Contains(workflow, "StrictHostKeyChecking yes");
@@ -284,9 +297,64 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(compose, "DataProtection__Persistence: Redis");
         StringAssert.Contains(compose, "profiles: [\"mongo\"]");
         StringAssert.Contains(compose, "required: false");
-        StringAssert.Contains(ServiceBlock(compose, "caddy").Text, "REACT_UI_DOMAIN: ${REACT_UI_DOMAIN}");
-        StringAssert.Contains(ServiceBlock(compose, "caddy").Text, "UNO_UI_DOMAIN: ${UNO_UI_DOMAIN}");
-        StringAssert.Contains(ServiceBlock(compose, "caddy").Text, "S3_PUBLIC_DOMAIN: ${S3_PUBLIC_DOMAIN}");
+        StringAssert.Contains(ServiceBlock(compose, "caddy").Text, "REACT_UI_DOMAIN: ${REACT_UI_DOMAIN:");
+        StringAssert.Contains(ServiceBlock(compose, "caddy").Text, "UNO_UI_DOMAIN: ${UNO_UI_DOMAIN:");
+        StringAssert.Contains(ServiceBlock(compose, "caddy").Text, "S3_PUBLIC_DOMAIN: ${S3_PUBLIC_DOMAIN:");
+
+        Assert.IsFalse(compose.Contains("env_file:", StringComparison.Ordinal), "services must receive only explicit settings");
+        foreach (var publicService in new[] { "caddy", "gateway", "blazor", "react", "uno" })
+        {
+            var block = ServiceBlock(compose, publicService).Text;
+            foreach (var sensitiveSetting in new[]
+            {
+                "POSTGRES_PASSWORD", "ConnectionStrings__TaskFlowDbContext", "ConnectionStrings__Redis1",
+                "RabbitMq__ConnectionString", "RABBITMQ_DEFAULT_PASS", "Storage__S3__AccessKeyId",
+                "Storage__S3__SecretAccessKey", "ConnectionStrings__MongoDb1", "Database__Encryption__"
+            })
+            {
+                Assert.IsFalse(block.Contains(sensitiveSetting, StringComparison.Ordinal), $"{publicService}: {sensitiveSetting}");
+            }
+        }
+
+        var migrator = ServiceBlock(compose, "migrator").Text;
+        foreach (var unrelatedSecret in new[] { "Redis1", "RabbitMq", "Storage__S3", "MongoDb1" })
+        {
+            Assert.IsFalse(migrator.Contains(unrelatedSecret, StringComparison.Ordinal), $"migrator: {unrelatedSecret}");
+        }
+        StringAssert.Contains(migrator, "ConnectionStrings__TaskFlowDbContextTrxn");
+        StringAssert.Contains(migrator, "Database__Encryption__LocalKeyBase64");
+
+        var redis = ServiceBlock(compose, "redis").Text;
+        StringAssert.Contains(redis, "--requirepass");
+        StringAssert.Contains(redis, "REDISCLI_AUTH");
+        var mongo = ServiceBlock(compose, "mongo").Text;
+        StringAssert.Contains(mongo, "MONGO_INITDB_ROOT_USERNAME");
+        StringAssert.Contains(mongo, "MONGO_INITDB_ROOT_PASSWORD");
+        StringAssert.Contains(mongo, "--authenticationDatabase admin");
+        foreach (var internalNetwork in new[] { "app", "data", "cache", "telemetry" })
+        {
+            Assert.IsTrue(
+                System.Text.RegularExpressions.Regex.IsMatch(
+                    compose,
+                    $"^  {internalNetwork}:\\r?$\\n    driver: bridge\\r?$\\n    internal: true$",
+                    System.Text.RegularExpressions.RegexOptions.Multiline),
+                internalNetwork);
+        }
+        var caddy = ServiceBlock(compose, "caddy").Text;
+        StringAssert.Contains(caddy, "      - edge");
+        foreach (var internalNetwork in new[] { "app", "data", "cache", "telemetry" })
+        {
+            Assert.IsFalse(caddy.Contains($"      - {internalNetwork}", StringComparison.Ordinal), internalNetwork);
+        }
+        var api = ServiceBlock(compose, "api").Text;
+        StringAssert.Contains(api, "      - app");
+        Assert.IsFalse(api.Contains("      - edge", StringComparison.Ordinal));
+        foreach (var frontend in new[] { "gateway", "blazor" })
+        {
+            var block = ServiceBlock(compose, frontend).Text;
+            StringAssert.Contains(block, "      - edge");
+            StringAssert.Contains(block, "      - app");
+        }
 
         // Only caddy publishes to the outside world; the one other mapping is Grafana on loopback.
         var published = System.Text.RegularExpressions.Regex
@@ -327,8 +395,8 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(compose, "rabbitmq-diagnostics");
         var seaweedfs = ServiceBlock(compose, "seaweedfs").Text;
         StringAssert.Contains(seaweedfs, "command: [\"mini\", \"-dir=/data\"]");
-        StringAssert.Contains(seaweedfs, "AWS_ACCESS_KEY_ID: ${Storage__S3__AccessKeyId}");
-        StringAssert.Contains(seaweedfs, "AWS_SECRET_ACCESS_KEY: ${Storage__S3__SecretAccessKey}");
+        StringAssert.Contains(seaweedfs, "AWS_ACCESS_KEY_ID: ${Storage__S3__AccessKeyId:");
+        StringAssert.Contains(seaweedfs, "AWS_SECRET_ACCESS_KEY: ${Storage__S3__SecretAccessKey:");
         StringAssert.Contains(seaweedfs, "http://127.0.0.1:9333/cluster/healthz");
         var seaweedFixture = File.ReadAllText(
             RepoRoot.Combine("tests", "Test.Integration", "Infrastructure", "SeaweedFsContainerFixture.cs"));
@@ -353,41 +421,32 @@ public sealed class DeploymentWorkflowContractTests
         foreach (var name in new[]
         {
             "Database__PostgreSql__PoolerMode", "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD",
+            "REDIS_PASSWORD", "MONGO_INITDB_ROOT_USERNAME", "MONGO_INITDB_ROOT_PASSWORD",
             "ConnectionStrings__TaskFlowDbContextTrxn", "ConnectionStrings__Redis1",
             "Messaging__RabbitMq__ConnectionString", "ConnectionStrings__RabbitMq1", "RABBITMQ_DEFAULT_USER",
             "RABBITMQ_DEFAULT_PASS",
             "Storage__S3__PublicServiceUrl", "Storage__S3__AccessKeyId", "Storage__S3__SecretAccessKey",
             "ConnectionStrings__MongoDb1", "Database__Encryption__LocalKeyBase64", "Grpc__TaskFlowRead__Address",
-            "OTEL_EXPORTER_OTLP_ENDPOINT", "CADDY_DOMAIN", "ACME_EMAIL", "TASKFLOW_API_IMAGE"
-            , "GATEWAY_BASE_URL", "REACT_UI_ORIGIN", "UNO_UI_ORIGIN", "REACT_UI_DOMAIN", "UNO_UI_DOMAIN",
-            "S3_PUBLIC_DOMAIN", "TASKFLOW_REACT_IMAGE", "TASKFLOW_UNO_IMAGE"
+            "OTEL_EXPORTER_OTLP_ENDPOINT", "CADDY_DOMAIN", "ACME_EMAIL", "GATEWAY_BASE_URL",
+            "REACT_UI_ORIGIN", "UNO_UI_ORIGIN", "REACT_UI_DOMAIN", "UNO_UI_DOMAIN",
+            "S3_PUBLIC_DOMAIN"
         })
         {
             StringAssert.Contains(envExample, $"\n{name}=", name);
         }
 
-        foreach (var line in envExample.Split('\n'))
+        foreach (var name in new[]
         {
-            var trimmed = line.Trim();
-            if (trimmed.Length == 0 || trimmed.StartsWith('#'))
-            {
-                continue;
-            }
-
-            if (!trimmed.StartsWith("Hosting__Lane=", StringComparison.Ordinal) &&
-                !trimmed.StartsWith("Database__Provider=", StringComparison.Ordinal) &&
-                !trimmed.StartsWith("Messaging__Provider=", StringComparison.Ordinal) &&
-                !trimmed.StartsWith("Storage__Provider=", StringComparison.Ordinal) &&
-                !trimmed.StartsWith("ReadModel__Provider=", StringComparison.Ordinal) &&
-                !trimmed.StartsWith("Audit__Provider=", StringComparison.Ordinal) &&
-                !trimmed.StartsWith("Search__Provider=", StringComparison.Ordinal) &&
-                !trimmed.StartsWith("AiServices__Provider=", StringComparison.Ordinal) &&
-                !trimmed.StartsWith("DataProtection__Persistence=", StringComparison.Ordinal) &&
-                !trimmed.StartsWith("Storage__S3__ServiceUrl=", StringComparison.Ordinal) &&
-                !trimmed.StartsWith("Storage__S3__ForcePathStyle=", StringComparison.Ordinal))
-            {
-                Assert.EndsWith("=", trimmed, $"'{trimmed}' must not commit a secret.");
-            }
+            "POSTGRES_PASSWORD", "ConnectionStrings__TaskFlowDbContextTrxn",
+            "ConnectionStrings__TaskFlowDbContextQuery", "ConnectionStrings__TaskFlowFlowEngineDbContext",
+            "ConnectionStrings__TickerQDbContext", "REDIS_PASSWORD", "ConnectionStrings__Redis1",
+            "RABBITMQ_DEFAULT_PASS", "Messaging__RabbitMq__ConnectionString", "ConnectionStrings__RabbitMq1",
+            "Storage__S3__AccessKeyId", "Storage__S3__SecretAccessKey", "MONGO_INITDB_ROOT_PASSWORD",
+            "Database__Encryption__LocalKeyBase64", "Database__Encryption__BlindIndexKeyBase64"
+        })
+        {
+            var line = envExample.Split('\n').Single(candidate => candidate.StartsWith($"{name}=", StringComparison.Ordinal));
+            StringAssert.Contains(line, "CHANGE_ME_", $"{name} must use an obvious non-production value");
         }
 
         var nonAzureDeployment = compose + envExample + local;
@@ -399,6 +458,7 @@ public sealed class DeploymentWorkflowContractTests
 
         var gitignore = File.ReadAllText(RepoRoot.Combine(".gitignore"));
         StringAssert.Contains(gitignore, "deploy/compose/.env");
+        StringAssert.Contains(gitignore, "deploy/compose/.env.base");
         StringAssert.Contains(gitignore, "deploy/compose/images.env");
     }
 

@@ -1,4 +1,4 @@
-name: Deploy TaskFlow (Portable lane, VPS)
+name: Deploy TaskFlow (NonAzure lane, VPS)
 
 # NonAzure lane release (D-060, D-036): five shared host images plus React and Uno static images, brought up
 # on one VPS by Docker Compose behind Caddy. Manual only - a VPS deploy is deliberate work.
@@ -161,6 +161,7 @@ jobs:
           ssh taskflow-vps "mkdir -p ~/${REMOTE_DIR}/pgbouncer"
           scp deploy/compose/docker-compose.yml deploy/compose/Caddyfile images.env \
             "taskflow-vps:~/${REMOTE_DIR}/"
+          scp deploy/compose/.env.example "taskflow-vps:~/${REMOTE_DIR}/.env.base.example"
           scp deploy/compose/pgbouncer/pgbouncer.ini "taskflow-vps:~/${REMOTE_DIR}/pgbouncer/"
       - name: Pull and bring the stack up
         run: |
@@ -169,10 +170,22 @@ jobs:
           # compose interpolates image names only from .env in the project directory.
           ssh taskflow-vps "set -euo pipefail
             cd ~/${REMOTE_DIR}
-            [[ -f .env.base ]] || cp .env .env.base
+            [[ -f .env.base ]] || {
+              echo 'Missing operator-managed .env.base. Copy .env.base.example to .env.base, replace every CHANGE_ME value, chmod 600, then rerun.' >&2
+              exit 1
+            }
+            if grep -Eq '^[A-Za-z0-9_]+=[^#]*CHANGE_ME_' .env.base; then
+              echo 'Refusing deployment while .env.base contains a CHANGE_ME value.' >&2
+              exit 1
+            fi
+            if grep -Eq '^TASKFLOW_[A-Z0-9_]+_IMAGE=' .env.base; then
+              echo 'Remove image variables from .env.base; images.env is workflow-managed.' >&2
+              exit 1
+            fi
             cp images.env images.env.current
-            cat .env.base images.env > .env
+            { cat .env.base; printf '\n'; cat images.env; } > .env
             chmod 600 .env .env.base
+            ${COMPOSE} config -q
             ${COMPOSE} pull
             ${COMPOSE} up -d --wait --remove-orphans
             ${COMPOSE} ps"
@@ -347,8 +360,18 @@ jobs:
           scp images.env "taskflow-vps:~/${REMOTE_DIR}/images.env"
           ssh taskflow-vps "set -euo pipefail
             cd ~/${REMOTE_DIR}
-            cat .env.base images.env > .env
+            [[ -f .env.base ]] || { echo 'Missing operator-managed .env.base.' >&2; exit 1; }
+            if grep -Eq '^[A-Za-z0-9_]+=[^#]*CHANGE_ME_' .env.base; then
+              echo 'Refusing rollback while .env.base contains a CHANGE_ME value.' >&2
+              exit 1
+            fi
+            if grep -Eq '^TASKFLOW_[A-Z0-9_]+_IMAGE=' .env.base; then
+              echo 'Remove image variables from .env.base; images.env is workflow-managed.' >&2
+              exit 1
+            fi
+            { cat .env.base; printf '\n'; cat images.env; } > .env
             chmod 600 .env
+            ${COMPOSE} config -q
             ${COMPOSE} pull
             ${COMPOSE} up -d --wait --remove-orphans"
       - name: Verify rollback readiness and one CRUD round trip

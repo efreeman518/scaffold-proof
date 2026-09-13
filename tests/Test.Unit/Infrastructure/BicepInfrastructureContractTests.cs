@@ -116,8 +116,8 @@ public sealed class BicepInfrastructureContractTests
 
         StringAssert.Contains(compose, "rabbitmq:");
         StringAssert.Contains(compose, "image: rabbitmq:4-management");
-        StringAssert.Contains(compose, "RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}");
-        StringAssert.Contains(compose, "RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}");
+        StringAssert.Contains(compose, "RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:");
+        StringAssert.Contains(compose, "RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:");
         StringAssert.Contains(compose, "- rabbitmq-data:/var/lib/rabbitmq");
         StringAssert.Contains(compose, "rabbitmq-diagnostics");
     }
@@ -157,7 +157,7 @@ public sealed class BicepInfrastructureContractTests
 
         StringAssert.Contains(compose, "postgres:");
         StringAssert.Contains(compose, "image: pgvector/pgvector:pg18");
-        StringAssert.Contains(compose, "POSTGRES_DB: ${POSTGRES_DB}");
+        StringAssert.Contains(compose, "POSTGRES_DB: ${POSTGRES_DB:");
         StringAssert.Contains(compose, "- postgres-data:/var/lib/postgresql/data");
         StringAssert.Contains(compose, "pg_isready");
     }
