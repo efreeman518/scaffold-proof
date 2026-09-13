@@ -1,6 +1,5 @@
 # Local / CI variant: plain :80, no ACME. A CI runner has no public DNS name to answer an ACME challenge
 # with, so this is the same routing with automatic HTTPS switched off. Never used on the VPS.
-
 {
 	auto_https off
 }
@@ -50,7 +49,9 @@ http://{$UNO_UI_DOMAIN} {
 
 http://{$S3_PUBLIC_DOMAIN} {
 	reverse_proxy seaweedfs:8333 {
-		health_uri /
+		# S3 requires SigV4, so probe the unauthenticated master control plane instead of unsigned S3 root.
+		health_port 9333
+		health_uri /cluster/healthz
 		health_interval 5s
 		health_timeout 5s
 		health_status 200

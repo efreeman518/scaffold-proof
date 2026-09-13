@@ -17,7 +17,9 @@ The lane uses the centralized D-060 major/family tags: `pgvector/pgvector:pg18`,
 `chrislusf/seaweedfs:latest`, `mongo:8`, and `redis:8`. Only app images move via digest through `images.env`
 on every deploy (see Rollback); infrastructure-image tag changes are deliberate edits to `docker-compose.yml`.
 SeaweedFS exposes S3 internally at `seaweedfs:8333`; Caddy proxies its browser-facing hostname so presigned
-URLs retain a reachable signed host without publishing the S3 port directly.
+URLs retain a reachable signed host without publishing the S3 port directly. S3 requests require SigV4, so
+Caddy checks SeaweedFS readiness through the unauthenticated master endpoint `/cluster/healthz` on port 9333;
+it never uses an unsigned request to the authenticated S3 root as a health probe.
 
 ## First deploy
 

@@ -552,6 +552,28 @@ public sealed class DeploymentWorkflowContractTests
     }
 
     [TestMethod]
+    public void Caddy_ProbesSeaweedMasterWithoutUnsignedS3Request()
+    {
+        foreach (var name in new[] { "Caddyfile", "Caddyfile.local" })
+        {
+            var caddy = File.ReadAllText(RepoRoot.Combine("deploy", "compose", name));
+            var s3Start = caddy.IndexOf("{$S3_PUBLIC_DOMAIN}", StringComparison.Ordinal);
+            Assert.IsGreaterThanOrEqualTo(0, s3Start, name);
+            var s3Site = caddy[s3Start..];
+
+            StringAssert.Contains(s3Site, "reverse_proxy seaweedfs:8333", name);
+            StringAssert.Contains(s3Site, "health_port 9333", name);
+            StringAssert.Contains(s3Site, "health_uri /cluster/healthz", name);
+            Assert.IsFalse(
+                System.Text.RegularExpressions.Regex.IsMatch(
+                    s3Site,
+                    @"^\s*health_uri\s+/$",
+                    System.Text.RegularExpressions.RegexOptions.Multiline),
+                $"{name} must not probe authenticated S3 root without SigV4.");
+        }
+    }
+
+    [TestMethod]
     public void AzureBicep_UsesOnlyTheAzureLaneContract()
     {
         var bicep = File.ReadAllText(RepoRoot.Combine("infra", "main.bicep"));
