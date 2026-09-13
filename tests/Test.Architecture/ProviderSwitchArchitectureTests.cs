@@ -57,17 +57,22 @@ public class ProviderSwitchArchitectureTests : BaseTest
 
     /// <summary>
     /// Every dispatcher tagged <see cref="ProviderSwitchAttribute"/> is discovered, and its default
-    /// (unconfigured) arm registers <see cref="ProviderSwitchAttribute.ContractType"/> without throwing.
+    /// Azure arm registers <see cref="ProviderSwitchAttribute.ContractType"/> when its strict core
+    /// dependencies are present. Inert endpoints prove composition without contacting Azure.
     /// </summary>
     [TestMethod]
-    public void Given_ProviderSwitchDispatchers_When_InvokedUnconfigured_Then_ContractTypeResolves()
+    public void Given_ProviderSwitchDispatchers_When_StrictAzureDependenciesConfigured_Then_ContractTypeResolves()
     {
+        var azureRegistration = new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:BlobStorage1"] = "https://taskflow.blob.core.windows.net/",
+            ["ConnectionStrings:TableStorage1"] = "https://taskflow.table.core.windows.net/",
+            ["ConnectionStrings:CosmosDb1"] = "https://taskflow.documents.azure.com:443/",
+            ["ServiceBus1:fullyQualifiedNamespace"] = "taskflow.servicebus.windows.net",
+            ["DataProtectionKeysFileUrl"] = "https://taskflow.blob.core.windows.net/data-protection/keys.xml"
+        };
         var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                // D-060 fixes the Azure default to Blob Data Protection; registration requires its blob URI.
-                ["DataProtectionKeysFileUrl"] = "https://taskflow.example/keys.xml"
-            })
+            .AddInMemoryCollection(azureRegistration)
             .Build();
         var tagged = GetLoadableTypes(BootstrapperAssembly)
             .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly))
@@ -101,10 +106,7 @@ public class ProviderSwitchArchitectureTests : BaseTest
                         EnvironmentName = "Testing",
                         DisableDefaults = true
                     });
-                    builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
-                    {
-                        ["DataProtectionKeysFileUrl"] = "https://taskflow.example/keys.xml"
-                    });
+                    builder.Configuration.AddInMemoryCollection(azureRegistration);
                     method.Invoke(null, [builder, NullLogger.Instance]);
                     var provider = builder.Services.BuildServiceProvider();
                     if (provider.GetService(contractType) is null)
