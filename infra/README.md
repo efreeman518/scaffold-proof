@@ -28,9 +28,10 @@ Gateway, API, Scheduler, and Blazor each take a `<host>Profile` object param (`m
 ### Azure lane contract
 
 `infra/main.bicep` is Azure-only under D-060. Every relevant host receives `Hosting__Lane=Azure` plus SQL Server,
-Service Bus, Azure Blob, Cosmos, Azure Table, and Blob Data Protection settings. Azure AI Search remains selectable
-through `searchProvider`; SQL is the non-AI fallback. PostgreSQL, RabbitMQ, S3, and MongoDB belong to the separate
-NonAzure Compose lane and are not Azure Bicep alternatives.
+Service Bus, Azure Blob, Cosmos, Azure Table, and Blob Data Protection settings. `searchProvider` defaults to `Sql`
+because this template does not provision or configure Azure AI Search. `AzureAiSearch` remains a strict opt-in for a
+deployment that supplies that external service and its application configuration. PostgreSQL, RabbitMQ, S3, and
+MongoDB belong to the separate NonAzure Compose lane and are not Azure Bicep alternatives.
 
 ### Connection strings
 

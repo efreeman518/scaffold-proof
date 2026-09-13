@@ -3,6 +3,7 @@ using 'main.bicep'
 param resourcePrefix = 'taskflow'
 param environmentName = 'prod'
 param location = 'eastus2'
+param searchProvider = 'Sql'
 
 // Container images - updated by CI/CD workflow
 param gatewayImage = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'

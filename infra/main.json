@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "10522621770688601456"
+      "templateHash": "13501809503800297347"
     }
   },
   "parameters": {
@@ -68,13 +68,13 @@
     },
     "searchProvider": {
       "type": "string",
-      "defaultValue": "AzureAiSearch",
+      "defaultValue": "Sql",
       "allowedValues": [
         "AzureAiSearch",
         "Sql"
       ],
       "metadata": {
-        "description": "Search backend: Azure AI Search (default) or the SQL prefix fallback (D-040)"
+        "description": "Search backend: SQL prefix search (deployable default) or externally configured Azure AI Search (D-040)"
       }
     },
     "dbMaxPoolSize": {
@@ -2871,7 +2871,7 @@
             "value": "[reference('runtimeSqlIdentity').outputs.id.value]"
           },
           "envVars": {
-            "value": "[union(createArray(createObject('name', 'Hosting__Lane', 'value', 'Azure'), createObject('name', 'Database__Provider', 'value', 'SqlServer'), createObject('name', 'Messaging__Provider', 'value', 'ServiceBus'), createObject('name', 'Storage__Provider', 'value', 'AzureBlob'), createObject('name', 'ReadModel__Provider', 'value', 'Cosmos'), createObject('name', 'Audit__Provider', 'value', 'AzureTable'), createObject('name', 'Search__Provider', 'value', parameters('searchProvider')), createObject('name', 'DataProtection__Persistence', 'value', 'AzureBlob'), createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value)), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', format('{0}ApplicationIntent=ReadOnly;', reference('sqlDatabase').outputs.connectionString.value)), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TickerQDbContext', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__BlobStorage1', 'value', reference('storage').outputs.appStorageBlobEndpoint.value), createObject('name', 'ConnectionStrings__TableStorage1', 'value', reference('storage').outputs.appStorageTableEndpoint.value)), createArray(createObject('name', 'ServiceBus1__fullyQualifiedNamespace', 'value', reference('serviceBus').outputs.namespaceEndpoint.value)))]"
+            "value": "[union(createArray(createObject('name', 'Hosting__Lane', 'value', 'Azure'), createObject('name', 'Database__Provider', 'value', 'SqlServer'), createObject('name', 'Messaging__Provider', 'value', 'ServiceBus'), createObject('name', 'Storage__Provider', 'value', 'AzureBlob'), createObject('name', 'ReadModel__Provider', 'value', 'Cosmos'), createObject('name', 'Audit__Provider', 'value', 'AzureTable'), createObject('name', 'Search__Provider', 'value', parameters('searchProvider')), createObject('name', 'DataProtection__Persistence', 'value', 'AzureBlob'), createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value)), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', format('{0}ApplicationIntent=ReadOnly;', reference('sqlDatabase').outputs.connectionString.value)), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TickerQDbContext', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__CosmosDb1', 'value', reference('cosmosDb').outputs.accountEndpoint.value), createObject('name', 'ConnectionStrings__BlobStorage1', 'value', reference('storage').outputs.appStorageBlobEndpoint.value), createObject('name', 'ConnectionStrings__TableStorage1', 'value', reference('storage').outputs.appStorageTableEndpoint.value)), createArray(createObject('name', 'ServiceBus1__fullyQualifiedNamespace', 'value', reference('serviceBus').outputs.namespaceEndpoint.value)))]"
           },
           "secretValues": {
             "value": {
@@ -3165,6 +3165,7 @@
         "appConfig",
         "appInsights",
         "containerAppsEnv",
+        "cosmosDb",
         "keyVault",
         "redis",
         "rg",
@@ -5418,6 +5419,7 @@
           "principalIds": {
             "value": [
               "[reference('api').outputs.principalId.value]",
+              "[reference('scheduler').outputs.principalId.value]",
               "[reference('functions').outputs.functionAppPrincipalId.value]"
             ]
           }
@@ -5465,7 +5467,8 @@
         "api",
         "cosmosDb",
         "functions",
-        "rg"
+        "rg",
+        "scheduler"
       ]
     },
     "redisRbac": {

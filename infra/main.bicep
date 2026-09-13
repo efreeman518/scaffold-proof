@@ -31,12 +31,12 @@ param migratorImage string = 'mcr.microsoft.com/azuredocs/containerapps-hellowor
 @description('Blazor container image')
 param blazorImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
-@description('Search backend: Azure AI Search (default) or the SQL prefix fallback (D-040)')
+@description('Search backend: SQL prefix search (deployable default) or externally configured Azure AI Search (D-040)')
 @allowed([
   'AzureAiSearch'
   'Sql'
 ])
-param searchProvider string = 'AzureAiSearch'
+param searchProvider string = 'Sql'
 
 @description('Explicit connection pool ceiling emitted in every connection string')
 param dbMaxPoolSize int = 100
@@ -449,6 +449,7 @@ module scheduler 'modules/container-app.bicep' = {
       { name: 'ConnectionStrings__TaskFlowDbContextQuery', value: dbReadConnectionString }
       { name: 'ConnectionStrings__TaskFlowFlowEngineDbContext', value: dbConnectionString }
       { name: 'ConnectionStrings__TickerQDbContext', value: dbConnectionString }
+      { name: 'ConnectionStrings__CosmosDb1', value: cosmosDb.outputs.accountEndpoint }
       { name: 'ConnectionStrings__BlobStorage1', value: storage.outputs.appStorageBlobEndpoint }
       { name: 'ConnectionStrings__TableStorage1', value: storage.outputs.appStorageTableEndpoint }
     ], messagingEnvVars)
@@ -763,6 +764,7 @@ module cosmosRbac 'modules/cosmos-rbac.bicep' = {
     cosmosAccountName: cosmosDb.outputs.accountName
     principalIds: [
       api.outputs.principalId
+      scheduler.outputs.principalId
       functions.outputs.functionAppPrincipalId
     ]
   }

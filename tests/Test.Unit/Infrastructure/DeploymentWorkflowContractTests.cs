@@ -657,6 +657,7 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(bicep, "module unoStaticWebApp 'modules/static-web-app.bicep'");
         StringAssert.Contains(bicep, "{ name: 'Gateway__BaseUrl', value: 'https://${gateway.outputs.fqdn}' }");
         StringAssert.Contains(bicep, "{ name: 'Search__Provider', value: searchProvider }");
+        StringAssert.Contains(bicep, "param searchProvider string = 'Sql'");
         StringAssert.Contains(bicep, "{ name: 'ServiceBus1__fullyQualifiedNamespace', value: serviceBus.outputs.namespaceEndpoint }");
         StringAssert.Contains(functions, "{ name: 'ServiceBus1__fullyQualifiedNamespace', value: serviceBusNamespace }");
         StringAssert.Contains(functions, "{ name: 'DomainEventsTopic', value: 'DomainEvents' }");
@@ -684,12 +685,15 @@ public sealed class DeploymentWorkflowContractTests
             bicep.IndexOf("module blazor 'modules/container-app.bicep'", StringComparison.Ordinal)];
         StringAssert.Contains(schedulerBlock, "{ name: 'ConnectionStrings__BlobStorage1', value: storage.outputs.appStorageBlobEndpoint }");
         StringAssert.Contains(schedulerBlock, "{ name: 'ConnectionStrings__TableStorage1', value: storage.outputs.appStorageTableEndpoint }");
+        StringAssert.Contains(schedulerBlock, "{ name: 'ConnectionStrings__CosmosDb1', value: cosmosDb.outputs.accountEndpoint }");
         var schedulerBlobRbac = bicep[bicep.IndexOf("module schedulerBlobContributor", StringComparison.Ordinal)..];
         StringAssert.Contains(schedulerBlobRbac, "principalId: scheduler.outputs.principalId");
         StringAssert.Contains(schedulerBlobRbac, "roleDefinitionId: roles.storageBlobDataContributor");
         var schedulerTableRbac = bicep[bicep.IndexOf("module schedulerTableContributor", StringComparison.Ordinal)..];
         StringAssert.Contains(schedulerTableRbac, "principalId: scheduler.outputs.principalId");
         StringAssert.Contains(schedulerTableRbac, "roleDefinitionId: roles.storageTableDataContributor");
+        var cosmosRbac = bicep[bicep.IndexOf("module cosmosRbac", StringComparison.Ordinal)..];
+        StringAssert.Contains(cosmosRbac, "scheduler.outputs.principalId");
 
         foreach (var nonAzureOnlyValue in new[] { "PostgreSql", "RabbitMq", "Storage__S3", "MongoDb" })
         {

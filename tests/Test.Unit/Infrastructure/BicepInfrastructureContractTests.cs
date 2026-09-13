@@ -34,6 +34,31 @@ public sealed class BicepInfrastructureContractTests
     }
 
     [TestMethod]
+    public void AzureDeployment_DefaultsToSqlSearchAndGivesSchedulerCosmosAccess()
+    {
+        var main = ReadInfraFile("main.bicep");
+        var cosmosRbacModule = ReadInfraFile(Path.Combine("modules", "cosmos-rbac.bicep"));
+
+        StringAssert.Contains(main, "param searchProvider string = 'Sql'");
+        foreach (var parameterFile in new[] { "main.bicepparam", "main.dev.bicepparam", "main.prod.bicepparam" })
+        {
+            StringAssert.Contains(ReadInfraFile(parameterFile), "param searchProvider = 'Sql'", parameterFile);
+        }
+
+        var scheduler = main[
+            main.IndexOf("module scheduler 'modules/container-app.bicep'", StringComparison.Ordinal)..
+            main.IndexOf("module blazor 'modules/container-app.bicep'", StringComparison.Ordinal)];
+        StringAssert.Contains(scheduler,
+            "{ name: 'ConnectionStrings__CosmosDb1', value: cosmosDb.outputs.accountEndpoint }");
+
+        var cosmosRbac = main[
+            main.IndexOf("module cosmosRbac 'modules/cosmos-rbac.bicep'", StringComparison.Ordinal)..
+            main.IndexOf("module redisRbac 'modules/redis-rbac.bicep'", StringComparison.Ordinal)];
+        StringAssert.Contains(cosmosRbac, "scheduler.outputs.principalId");
+        StringAssert.Contains(cosmosRbacModule, "cosmosDataContributorRoleId = '00000000-0000-0000-0000-000000000002'");
+    }
+
+    [TestMethod]
     public void MainBicep_UsesExactGatewayClusterAndDestinationKeys()
     {
         var main = ReadInfraFile("main.bicep");
