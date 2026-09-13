@@ -224,6 +224,24 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(fullJob, "Invoke-LaneAcceptance -Lane Azure -ReadModel Cosmos -RunFunctions $true");
         StringAssert.Contains(fullJob, "Invoke-LaneAcceptance -Lane NonAzure");
         StringAssert.Contains(fullJob, "-RunFunctions $false");
+        StringAssert.Contains(fullJob, "docker info | Out-Null");
+        StringAssert.Contains(fullJob, "Docker runtime is required for complete lane acceptance.");
+        Assert.IsTrue(
+            System.Text.RegularExpressions.Regex.IsMatch(
+                fullJob,
+                @"docker info \| Out-Null\r?\n\s+if \(\$LASTEXITCODE -ne 0\)"),
+            "Docker failure must be checked before any later command can replace LASTEXITCODE.");
+        StringAssert.Contains(fullJob, "dotnet workload list");
+        StringAssert.Contains(fullJob, "@(\"wasm-tools\", \"aspire\") | Where-Object");
+        StringAssert.Contains(fullJob, "Run: dotnet workload install wasm-tools aspire");
+        Assert.IsFalse(
+            System.Text.RegularExpressions.Regex.IsMatch(
+                fullJob,
+                "^\\s+dotnet workload install wasm-tools aspire\\s*$",
+                System.Text.RegularExpressions.RegexOptions.Multiline),
+            "A self-hosted CI job must not mutate machine-wide workloads.");
+        StringAssert.Contains(fullJob, "$azureSelected = \"${{ inputs.lane }}\" -in @(\"both\", \"Azure\")");
+        StringAssert.Contains(fullJob, "if ($azureSelected -and -not (Get-Command func");
         Assert.IsFalse(fullJob.Contains("runs-on: ubuntu-latest", StringComparison.Ordinal));
     }
 

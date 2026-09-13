@@ -443,7 +443,25 @@ jobs:
       - name: Verify workstation runtime prerequisites
         run: |
           docker info | Out-Null
-          if (-not (Get-Command func -ErrorAction SilentlyContinue)) {
+          if ($LASTEXITCODE -ne 0) {
+            throw "Docker runtime is required for complete lane acceptance."
+          }
+
+          $installedWorkloads = @(dotnet workload list)
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not inspect installed .NET workloads."
+          }
+          $missingWorkloads = @(
+            @("wasm-tools", "aspire") | Where-Object {
+              -not ($installedWorkloads | Select-String -Pattern "^\s*$([regex]::Escape($_))\s" -Quiet)
+            }
+          )
+          if ($missingWorkloads.Count -gt 0) {
+            throw "Missing required .NET workload(s): $($missingWorkloads -join ', '). Run: dotnet workload install wasm-tools aspire"
+          }
+
+          $azureSelected = "${{ inputs.lane }}" -in @("both", "Azure")
+          if ($azureSelected -and -not (Get-Command func -ErrorAction SilentlyContinue)) {
             throw "Azure Functions Core Tools ('func') is required for complete Azure lane acceptance."
           }
 
@@ -459,8 +477,6 @@ jobs:
         env:
           NuGetPackageSourceCredentials_efreeman518-github: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
         run: |
-          dotnet workload install wasm-tools aspire
-          if ($LASTEXITCODE -ne 0) { throw "Required workload installation failed." }
           dotnet restore TaskFlow.slnx -p:Configuration=Release
           if ($LASTEXITCODE -ne 0) { throw "Solution restore failed." }
           dotnet build TaskFlow.slnx --no-restore --configuration Release -m:1
