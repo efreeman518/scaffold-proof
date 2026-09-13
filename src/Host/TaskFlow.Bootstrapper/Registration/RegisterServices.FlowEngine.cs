@@ -4,10 +4,13 @@ using EF.FlowEngine.Clients.AI;
 using EF.FlowEngine.Clients.Http;
 using EF.FlowEngine.Clients.ServiceBus;
 using EF.FlowEngine.Model;
+using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TaskFlow.Infrastructure.Data;
+using TaskFlow.Infrastructure.Data.Interceptors;
 
 namespace TaskFlow.Bootstrapper;
 
@@ -90,14 +93,19 @@ public static partial class RegisterServices
         services.AddHttpClient("taskflow-api", c => c.BaseAddress = new Uri(apiBaseUrl));
         fe.AddResilientHttpClient("taskflow-api", namedClient: "taskflow-api");
 
-        // Service Bus message client - uses the same connection string as the application's
-        // integration event publisher. Workflow `message` nodes publish through this; the
+        // Service Bus message client - reuses the application's named client for either a local
+        // connection string or deployed managed identity. Workflow `message` nodes publish through this; the
         // existing FunctionServiceBusTrigger picks them up alongside domain events.
         var sbConnStr = ResolveConnectionString(config, "ServiceBus1", "Values:ServiceBus1");
-        if (!string.IsNullOrEmpty(sbConnStr))
+        var fullyQualifiedNamespace = ResolveServiceBusFullyQualifiedNamespace(config);
+        if (!string.IsNullOrEmpty(sbConnStr) || !string.IsNullOrWhiteSpace(fullyQualifiedNamespace))
         {
-            var topic = config["FlowEngine:ServiceBusTopic"] ?? "taskflow-integration-events";
-            fe.AddServiceBusClient("integration-events", sbConnStr, topic);
+            var topic = ResolveFlowEngineServiceBusTopic(config);
+            fe.AddServiceBusClient(
+                "integration-events",
+                sp => sp.GetRequiredService<IAzureClientFactory<ServiceBusClient>>()
+                    .CreateClient("TaskFlowSBClient"),
+                topic);
         }
 
         // Agent workflow nodes share the same host-provided IChatClient as the rest of the AI demos.
@@ -105,6 +113,11 @@ public static partial class RegisterServices
             clientRef: "ai-agent",
             chatClientFactory: sp => sp.GetRequiredService<IChatClient>());
     }
+
+    internal static string ResolveFlowEngineServiceBusTopic(IConfiguration config) =>
+        config["FlowEngine:ServiceBusTopic"]
+        ?? config["DomainEventsTopic"]
+        ?? OutboxStagingInterceptor.DefaultDestination;
 
     // JSON workflow definitions live in TaskFlow.Api/Workflows/. The seeding service is a
     // hosted service that runs once at startup, skipping the directory if it does not exist

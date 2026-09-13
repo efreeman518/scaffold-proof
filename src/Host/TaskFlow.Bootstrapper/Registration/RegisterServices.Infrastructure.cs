@@ -16,17 +16,17 @@ namespace TaskFlow.Bootstrapper;
 public static partial class RegisterServices
 {
     /// <summary>
-    /// Registers audit persistence when a Table Storage connection exists; otherwise keeps
+    /// Registers audit persistence when a Table Storage endpoint or connection exists; otherwise keeps
     /// audit message handling alive with a no-op repository for local and test hosts.
     /// </summary>
     private static void AddTableStorageServices(IServiceCollection services, IConfiguration config)
     {
-        var connStr = ResolveConnectionString(
+        var connection = ResolveConnectionString(
             config,
             "TableStorage1",
             "Values:TableStorage1",
             "Aspire:Azure:Data:Tables:TableStorage1:ConnectionString");
-        if (string.IsNullOrEmpty(connStr))
+        if (string.IsNullOrEmpty(connection))
         {
             services.AddSingleton<IAuditLogRepository, NoOpAuditLogRepository>();
             return;
@@ -34,8 +34,17 @@ public static partial class RegisterServices
 
         services.AddAzureClients(builder =>
         {
-            builder.AddTableServiceClient(connStr)
-                .WithName("TaskFlowTableClient");
+            if (TryGetServiceUri(connection, out var serviceUri))
+            {
+                builder.UseCredential(CreateAzureCredential(config));
+                builder.AddTableServiceClient(serviceUri)
+                    .WithName("TaskFlowTableClient");
+            }
+            else
+            {
+                builder.AddTableServiceClient(connection)
+                    .WithName("TaskFlowTableClient");
+            }
         });
 
         services.Configure<AuditLogStorageSettings>(
@@ -83,6 +92,22 @@ public static partial class RegisterServices
         }
     }
 
+    private static bool TryGetServiceUri(string value, out Uri serviceUri)
+    {
+        if (Uri.TryCreate(value, UriKind.Absolute, out var candidate)
+            && (candidate.Scheme == Uri.UriSchemeHttp || candidate.Scheme == Uri.UriSchemeHttps))
+        {
+            serviceUri = candidate;
+            return true;
+        }
+
+        serviceUri = null!;
+        return false;
+    }
+
+    internal static string? ResolveServiceBusFullyQualifiedNamespace(IConfiguration config) =>
+        config["ServiceBus1:fullyQualifiedNamespace"];
+
     /// <summary>
     /// Registers attachment blob storage when configured; otherwise a no-op repository keeps
     /// <see cref="IObjectStorageRepository"/> resolvable so the DI graph still builds (D-037). Upload/download
@@ -90,12 +115,12 @@ public static partial class RegisterServices
     /// </summary>
     private static void AddBlobStorageServices(IServiceCollection services, IConfiguration config)
     {
-        var connStr = ResolveConnectionString(
+        var connection = ResolveConnectionString(
             config,
             "BlobStorage1",
             "BlobStorage1",
             "Values:BlobStorage1");
-        if (string.IsNullOrEmpty(connStr))
+        if (string.IsNullOrEmpty(connection))
         {
             services.AddSingleton<IObjectStorageRepository, NoOpBlobStorageRepository>();
             return;
@@ -103,8 +128,17 @@ public static partial class RegisterServices
 
         services.AddAzureClients(builder =>
         {
-            builder.AddBlobServiceClient(connStr)
-                .WithName("TaskFlowBlobClient");
+            if (TryGetServiceUri(connection, out var serviceUri))
+            {
+                builder.UseCredential(CreateAzureCredential(config));
+                builder.AddBlobServiceClient(serviceUri)
+                    .WithName("TaskFlowBlobClient");
+            }
+            else
+            {
+                builder.AddBlobServiceClient(connection)
+                    .WithName("TaskFlowBlobClient");
+            }
         });
 
         services.Configure<BlobStorageSettings>(
@@ -114,7 +148,7 @@ public static partial class RegisterServices
     }
 
     /// <summary>
-    /// Registers the Service Bus outbox transport when a namespace is configured; otherwise a transport that
+    /// Registers the Service Bus outbox transport when a namespace or connection string is configured; otherwise a transport that
     /// reports it cannot dispatch, so staged rows stay in the outbox instead of being dropped (D-026).
     /// </summary>
     private static void AddServiceBusServices(IServiceCollection services, IConfiguration config)
@@ -124,7 +158,8 @@ public static partial class RegisterServices
             "ServiceBus1",
             "ServiceBus1",
             "Values:ServiceBus1");
-        if (string.IsNullOrEmpty(connStr))
+        var fullyQualifiedNamespace = ResolveServiceBusFullyQualifiedNamespace(config);
+        if (string.IsNullOrEmpty(connStr) && string.IsNullOrWhiteSpace(fullyQualifiedNamespace))
         {
             services.AddSingleton<IIntegrationEventTransport, NoOpEventTransport>();
             return;
@@ -132,8 +167,17 @@ public static partial class RegisterServices
 
         services.AddAzureClients(builder =>
         {
-            builder.AddServiceBusClient(connStr)
-                .WithName("TaskFlowSBClient");
+            if (!string.IsNullOrEmpty(connStr))
+            {
+                builder.AddServiceBusClient(connStr)
+                    .WithName("TaskFlowSBClient");
+            }
+            else
+            {
+                builder.UseCredential(CreateAzureCredential(config));
+                builder.AddServiceBusClientWithNamespace(fullyQualifiedNamespace!)
+                    .WithName("TaskFlowSBClient");
+            }
         });
 
         services.AddSingleton<IIntegrationEventTransport, ServiceBusEventTransport>();
@@ -145,8 +189,8 @@ public static partial class RegisterServices
     /// </summary>
     private static void AddCosmosDbServices(IServiceCollection services, IConfiguration config)
     {
-        var connStr = config.GetConnectionString("CosmosDb1");
-        if (string.IsNullOrEmpty(connStr))
+        var connection = config.GetConnectionString("CosmosDb1");
+        if (string.IsNullOrEmpty(connection))
         {
             services.AddSingleton<ITaskViewRepository, NoOpTaskViewRepository>();
             return;
@@ -155,7 +199,12 @@ public static partial class RegisterServices
         var databaseName = config["Cosmos:TaskViews:DatabaseName"] ?? "taskflow-db";
         var containerName = config["Cosmos:TaskViews:ContainerName"] ?? "task-views";
 
-        services.AddSingleton(_ => new Microsoft.Azure.Cosmos.CosmosClient(connStr, BuildCosmosClientOptions(config)));
+        services.AddSingleton(_ => TryGetServiceUri(connection, out var serviceUri)
+            ? new Microsoft.Azure.Cosmos.CosmosClient(
+                serviceUri.AbsoluteUri,
+                CreateAzureCredential(config),
+                BuildCosmosClientOptions(config))
+            : new Microsoft.Azure.Cosmos.CosmosClient(connection, BuildCosmosClientOptions(config)));
         services.AddSingleton<ITaskViewRepository>(sp =>
             new CosmosTaskViewRepository(
                 sp.GetRequiredService<Microsoft.Azure.Cosmos.CosmosClient>(),
@@ -204,7 +253,8 @@ public static partial class RegisterServices
         if (ResolveStorageProvider(config) == StorageProvider.S3)
             builder.AddCheck<HealthChecks.S3StorageHealthCheck>("s3-storage", tags: ["full", "extservice"]);
 
-        if (!string.IsNullOrWhiteSpace(ResolveConnectionString(config, "ServiceBus1", "ServiceBus1", "Values:ServiceBus1")))
+        if (!string.IsNullOrWhiteSpace(ResolveConnectionString(config, "ServiceBus1", "ServiceBus1", "Values:ServiceBus1"))
+            || !string.IsNullOrWhiteSpace(ResolveServiceBusFullyQualifiedNamespace(config)))
             builder.AddCheck<HealthChecks.ServiceBusHealthCheck>("service-bus", tags: ["full", "extservice"]);
 
         if (!string.IsNullOrWhiteSpace(config.GetConnectionString("CosmosDb1")))
