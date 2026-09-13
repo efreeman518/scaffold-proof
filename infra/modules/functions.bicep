@@ -35,6 +35,9 @@ param cosmosEndpoint string
 @description('Storage blob endpoint')
 param storageBlobEndpoint string
 
+@description('Storage queue endpoint used by the Blob trigger for poison blobs')
+param storageQueueEndpoint string
+
 @description('Storage table endpoint')
 param storageTableEndpoint string
 
@@ -43,6 +46,9 @@ param appInsightsConnectionString string
 
 @description('Maximum function app instance count (Flex Consumption scale-out ceiling); pair with host.json serviceBus.maxConcurrentCalls')
 param functionAppScaleLimit int = 20
+
+@description('User-assigned managed identity resource ID used for Azure SQL')
+param userAssignedIdentityId string
 
 @description('Tags')
 param tags object = {}
@@ -75,7 +81,10 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
   tags: tags
   kind: 'functionapp,linux'
   identity: {
-    type: 'SystemAssigned'
+    type: 'SystemAssigned, UserAssigned'
+    userAssignedIdentities: {
+      '${userAssignedIdentityId}': {}
+    }
   }
   properties: {
     serverFarmId: flexPlan.id
@@ -102,7 +111,9 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'ConnectionStrings__TaskFlowDbContextQuery', value: dbReadConnectionString }
         { name: 'ConnectionStrings__TaskFlowFlowEngineDbContext', value: dbConnectionString }
         { name: 'ConnectionStrings__CosmosDb1', value: cosmosEndpoint }
-        { name: 'ConnectionStrings__BlobStorage1', value: storageBlobEndpoint }
+        // Azure Functions identity-based Blob bindings require the connection prefix plus blobServiceUri.
+        { name: 'BlobStorage1__blobServiceUri', value: storageBlobEndpoint }
+        { name: 'BlobStorage1__queueServiceUri', value: storageQueueEndpoint }
         { name: 'ConnectionStrings__TableStorage1', value: storageTableEndpoint }
         {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'

@@ -27,6 +27,99 @@ public sealed class BicepInfrastructureContractTests
         Assert.IsFalse(main.Contains("param databaseProvider", StringComparison.Ordinal));
         Assert.IsFalse(main.Contains("postgres-flexible-server.bicep", StringComparison.Ordinal));
         Assert.IsFalse(main.Contains("rabbitmq-container-app.bicep", StringComparison.Ordinal));
+        Assert.IsFalse(File.Exists(RepoRoot.Combine("infra", "modules", "postgres-flexible-server.bicep")));
+        Assert.IsFalse(File.Exists(RepoRoot.Combine("infra", "modules", "rabbitmq-container-app.bicep")));
+    }
+
+    [TestMethod]
+    public void MainBicep_UsesExactGatewayClusterAndDestinationKeys()
+    {
+        var main = ReadInfraFile("main.bicep");
+        var gatewaySettings = File.ReadAllText(
+            RepoRoot.Combine("src", "Host", "TaskFlow.Gateway", "appsettings.json"));
+
+        StringAssert.Contains(gatewaySettings, "\"api-cluster\"");
+        StringAssert.Contains(main,
+            "ReverseProxy__Clusters__api-cluster__Destinations__api__Address");
+        Assert.IsFalse(main.Contains(
+            "ReverseProxy__Clusters__api__Destinations__default__Address",
+            StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void AzureSqlIdentities_AreProvisionedBeforeMigrationAndRuntimeActivation()
+    {
+        var main = ReadInfraFile("main.bicep");
+        var sql = ReadInfraFile(Path.Combine("modules", "sql-database.bicep"));
+        var app = ReadInfraFile(Path.Combine("modules", "container-app.bicep"));
+        var job = ReadInfraFile(Path.Combine("modules", "container-app-job.bicep"));
+        var functions = ReadInfraFile(Path.Combine("modules", "functions.bicep"));
+        var provisioner = ReadInfraFile(Path.Combine("scripts", "Set-AzureSqlPrincipal.ps1"));
+        var workflow = File.ReadAllText(RepoRoot.Combine(".github", "workflows", "deploy.yml"));
+
+        StringAssert.Contains(main, "module deployIdentity 'modules/deploy-identity.bicep'");
+        StringAssert.Contains(main, "module migrationSqlIdentity 'modules/deploy-identity.bicep'");
+        StringAssert.Contains(main, "module runtimeSqlIdentity 'modules/deploy-identity.bicep'");
+        StringAssert.Contains(main, "sqlAdminPrincipalId: deployIdentity.outputs.principalId");
+        StringAssert.Contains(main, "sqlAdminPrincipalType: 'Application'");
+        StringAssert.Contains(main, "userAssignedIdentityId: migrationSqlIdentity.outputs.id");
+        Assert.AreEqual(3, main.Split("userAssignedIdentityId: runtimeSqlIdentity.outputs.id").Length - 1);
+        StringAssert.Contains(sql, "Authentication=Active Directory Managed Identity;User Id=${managedIdentityClientId}");
+        StringAssert.Contains(app, "type: 'SystemAssigned, UserAssigned'");
+        StringAssert.Contains(job, "type: 'UserAssigned'");
+        StringAssert.Contains(functions, "type: 'SystemAssigned, UserAssigned'");
+
+        StringAssert.Contains(provisioner, "WITH SID =");
+        StringAssert.Contains(provisioner, "TYPE = E");
+        StringAssert.Contains(provisioner, "ALTER ROLE [db_ddladmin]");
+        StringAssert.Contains(provisioner, "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::[taskflow]");
+        StringAssert.Contains(provisioner, "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::[flowengine]");
+        StringAssert.Contains(provisioner, "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::[scheduler]");
+        Assert.IsFalse(provisioner.Contains("FROM EXTERNAL PROVIDER", StringComparison.Ordinal));
+
+        var provisionMigration = workflow.IndexOf("Provision least-privilege migration identity", StringComparison.Ordinal);
+        var startMigration = workflow.IndexOf("Require successful migration execution", StringComparison.Ordinal);
+        var grantRuntime = workflow.IndexOf("Grant runtime access after migrations", StringComparison.Ordinal);
+        var activate = workflow.IndexOf("  activate-release:", StringComparison.Ordinal);
+        Assert.IsTrue(provisionMigration > 0 && provisionMigration < startMigration);
+        Assert.IsTrue(startMigration < grantRuntime && grantRuntime < activate);
+        StringAssert.Contains(workflow, "needs: [validate-entry, build-images, build-release, deploy-infrastructure, run-migrations]");
+        StringAssert.Contains(workflow, "Keep current runtime images during provisioning");
+        StringAssert.Contains(workflow, "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest");
+        Assert.IsFalse(workflow.Contains("SQL_ADMIN_PRINCIPAL", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void ContainerApps_UseSecretReferencesForRedisConnectionStrings()
+    {
+        var main = ReadInfraFile("main.bicep");
+        var module = ReadInfraFile(Path.Combine("modules", "container-app.bicep"));
+
+        StringAssert.Contains(module, "@secure()");
+        StringAssert.Contains(module, "param secretValues object = {}");
+        StringAssert.Contains(module, "secrets: containerAppSecrets");
+        StringAssert.Contains(module, "env: union(envVars, secretEnvVars)");
+        Assert.AreEqual(2, main.Split("secretRef: 'redis-connection'").Length - 1);
+        Assert.AreEqual(2, main.Split("'redis-connection': redis.outputs.connectionString").Length - 1);
+        Assert.IsFalse(main.Contains(
+            "{ name: 'ConnectionStrings__Redis1', value: redis.outputs.connectionString }",
+            StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void AzureStorage_ProvisionDataProtectionContainerAndFunctionsIdentityBindingPrefix()
+    {
+        var storage = ReadInfraFile(Path.Combine("modules", "storage.bicep"));
+        var functions = ReadInfraFile(Path.Combine("modules", "functions.bicep"));
+
+        StringAssert.Contains(storage, "resource dataProtectionContainer");
+        StringAssert.Contains(storage, "name: 'data-protection'");
+        StringAssert.Contains(functions, "{ name: 'BlobStorage1__blobServiceUri', value: storageBlobEndpoint }");
+        StringAssert.Contains(functions, "{ name: 'BlobStorage1__queueServiceUri', value: storageQueueEndpoint }");
+        StringAssert.Contains(ReadInfraFile("main.bicep"), "roleDefinitionId: roles.storageQueueDataContributor");
+        Assert.IsFalse(functions.Contains(
+            "{ name: 'ConnectionStrings__BlobStorage1', value: storageBlobEndpoint }",
+            StringComparison.Ordinal));
     }
 
     [TestMethod]

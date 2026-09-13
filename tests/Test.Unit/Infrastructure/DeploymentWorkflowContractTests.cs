@@ -499,6 +499,8 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(functionTableRbac, "roleDefinitionId: roles.storageTableDataContributor");
         StringAssert.Contains(bicep, "storageTableEndpoint: storage.outputs.appStorageTableEndpoint");
         StringAssert.Contains(functions, "{ name: 'ConnectionStrings__TableStorage1', value: storageTableEndpoint }");
+        StringAssert.Contains(functions, "{ name: 'BlobStorage1__blobServiceUri', value: storageBlobEndpoint }");
+        StringAssert.Contains(functions, "{ name: 'BlobStorage1__queueServiceUri', value: storageQueueEndpoint }");
 
         var apiBlock = bicep[
             bicep.IndexOf("module api 'modules/container-app.bicep'", StringComparison.Ordinal)..

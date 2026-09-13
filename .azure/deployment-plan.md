@@ -87,7 +87,7 @@ Generated: 2026-04-23
 | App Configuration | Centralized config | Free | $0 |
 | Key Vault | Secrets management | Standard | ~$0 |
 | Log Analytics Workspace | Centralized logging | Pay-as-you-go (5GB free) | ~$0 |
-| User-Assigned Managed Identity | GitHub Actions OIDC deploy | N/A | $0 |
+| User-Assigned Managed Identities | Deploy SQL admin, migration DDL, runtime DML | N/A | $0 |
 | Container Registry | N/A - using ghcr.io | N/A | $0 |
 
 **Total estimated: ~$17-27/mo**
@@ -101,14 +101,17 @@ The baseline deployment keeps end-user `AuthMode: Scaffold` so the reference app
 | System MI (Gateway) | Gateway Container App | App Configuration Data Reader, Key Vault Secrets User |
 | System MI (API) | API Container App | Service Bus Data Sender, Storage Blob Data Contributor, Storage Table Data Contributor, Cosmos DB Data Contributor, App Configuration Data Reader, Key Vault Secrets User, Redis Entra access policy assignment |
 | System MI (Scheduler) | Scheduler Container App | Service Bus Data Sender, Storage Blob Data Contributor, Storage Table Data Contributor, App Configuration Data Reader, Key Vault Secrets User, Redis Entra access policy assignment |
-| System MI (Functions) | Functions App | Service Bus Data Receiver, Storage Blob Data Contributor, Storage Table Data Contributor, Cosmos DB Data Contributor, App Configuration Data Reader, Key Vault Secrets User |
-| User-Assigned MI | GitHub Actions | Contributor (RG scope), User Access Administrator (RG scope) |
+| System MI (Functions) | Functions App | Service Bus Data Receiver, Storage Blob Data Contributor, Storage Queue Data Contributor, Storage Table Data Contributor, Cosmos DB Data Contributor, App Configuration Data Reader, Key Vault Secrets User |
+| User-Assigned MI (deploy) | GitHub Actions and SQL provisioning | Contributor and User Access Administrator (RG scope), SQL Entra administrator |
+| User-Assigned MI (migration) | DatabaseMigrator job | `db_ddladmin`, `db_datareader`, `db_datawriter` |
+| User-Assigned MI (runtime) | API, Scheduler, Functions | DML on `taskflow`, `flowengine`, and `scheduler` schemas only |
 
 Redis access policy assignments grant the API/Scheduler managed identities Entra data-plane permission on the
 default database, but `ConnectionStrings__Redis1` still authenticates with the access key today: StackExchange.Redis
 needs the `Microsoft.Azure.StackExchangeRedis` token-provider package wired in application code to use the Entra
-grant, which is out of scope for this infra-only change. SQL contained database users and roles are not provisioned
-per workload identity yet; see the module comments in `sql-database.bicep`.
+grant, which is out of scope for this infra-only change. Container Apps stores that key as a secret reference.
+SQL identities are user-assigned so the deployment workflow can bind contained users directly to stable client-ID
+SIDs without Microsoft Graph lookup. Runtime hosts keep separate system identities for their other Azure RBAC.
 
 ### Networking
 
@@ -146,7 +149,7 @@ per workload identity yet; see the module comments in `sql-database.bicep`.
 | Microsoft.KeyVault/vaults | 1 | Standard |
 | Microsoft.AppConfiguration/configurationStores | 1 | Free |
 | Microsoft.OperationalInsights/workspaces | 1 | Pay-as-you-go |
-| Microsoft.ManagedIdentity/userAssignedIdentities | 1 | Deploy identity |
+| Microsoft.ManagedIdentity/userAssignedIdentities | 3 | Deploy SQL administrator, migration DDL, runtime DML |
 
 **Status:**  All resources within limits. Storage: 0/250 used. All other resource types have no enforced subscription-level quota in eastus2.
 

@@ -16,16 +16,6 @@ param environmentName string = 'dev'
 @description('Azure region')
 param location string = 'eastus2'
 
-@description('SQL Entra admin principal ID')
-param sqlAdminPrincipalId string
-
-@description('SQL Entra admin principal name')
-param sqlAdminPrincipalName string
-
-@description('SQL Entra admin principal type')
-@allowed(['User', 'Group', 'Application'])
-param sqlAdminPrincipalType string = 'User'
-
 @description('Gateway container image')
 param gatewayImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
@@ -131,6 +121,7 @@ var roles = {
   // Storage
   storageBlobDataContributor: 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
   storageTableDataContributor: '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
+  storageQueueDataContributor: '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
   // Cosmos DB
   cosmosDbDataContributor: '00000000-0000-0000-0000-000000000002' // Built-in Cosmos data role
   // Service Bus
@@ -209,6 +200,41 @@ module appConfig 'modules/app-configuration.bicep' = {
   }
 }
 
+// The federated deployment identity is also the Azure SQL Entra administrator. It performs the
+// idempotent contained-user bootstrap in deploy.yml; runtime workloads never receive this identity.
+module deployIdentity 'modules/deploy-identity.bicep' = {
+  name: 'deployIdentity'
+  scope: rg
+  params: {
+    identityName: '${prefix}-deploy-id'
+    location: location
+    tags: tags
+  }
+}
+
+// SQL uses separate user-assigned identities for migration DDL and runtime DML. Explicit client IDs in
+// the connection strings let SqlClient select the correct identity while each host keeps its system
+// identity for its independently scoped Storage, Service Bus, Cosmos, App Configuration, and Key Vault RBAC.
+module migrationSqlIdentity 'modules/deploy-identity.bicep' = {
+  name: 'migrationSqlIdentity'
+  scope: rg
+  params: {
+    identityName: '${prefix}-sql-migrator-id'
+    location: location
+    tags: tags
+  }
+}
+
+module runtimeSqlIdentity 'modules/deploy-identity.bicep' = {
+  name: 'runtimeSqlIdentity'
+  scope: rg
+  params: {
+    identityName: '${prefix}-sql-runtime-id'
+    location: location
+    tags: tags
+  }
+}
+
 // ---- Data Modules ----
 
 module sqlDatabase 'modules/sql-database.bicep' = {
@@ -217,9 +243,10 @@ module sqlDatabase 'modules/sql-database.bicep' = {
   params: {
     resourcePrefix: prefix
     location: location
-    sqlAdminPrincipalId: sqlAdminPrincipalId
-    sqlAdminPrincipalName: sqlAdminPrincipalName
-    sqlAdminPrincipalType: sqlAdminPrincipalType
+    sqlAdminPrincipalId: deployIdentity.outputs.principalId
+    sqlAdminPrincipalName: deployIdentity.outputs.name
+    sqlAdminPrincipalType: 'Application'
+    managedIdentityClientId: runtimeSqlIdentity.outputs.clientId
     skuName: sqlSkuName
     skuTier: sqlSkuTier
     skuFamily: sqlSkuFamily
@@ -305,10 +332,11 @@ var commonEnvVars = [
 var dbConnectionString = sqlDatabase.outputs.connectionString
 var dbReadConnectionString = '${sqlDatabase.outputs.connectionString}ApplicationIntent=ReadOnly;'
 
-// Auth gap: these apps use Entra auth connection strings, but this template does not yet create
-// database users/roles or grants. Add a data-plane step before production: migrator
-// identity gets schema DDL plus migration history rights; API, Scheduler, and Functions get
-// runtime DML only on taskflow, flowengine, and Scheduler schemas. Do not grant DDL to runtime apps.
+var migratorDbConnectionString = replace(
+  dbConnectionString,
+  runtimeSqlIdentity.outputs.clientId,
+  migrationSqlIdentity.outputs.clientId)
+
 module migrator 'modules/container-app-job.bicep' = {
   name: 'migrator'
   scope: rg
@@ -319,10 +347,11 @@ module migrator 'modules/container-app-job.bicep' = {
     containerImage: migratorImage
     cpu: '0.25'
     memory: '0.5Gi'
+    userAssignedIdentityId: migrationSqlIdentity.outputs.id
     envVars: union(commonEnvVars, [
-      { name: 'ConnectionStrings__TaskFlowDbContextTrxn', value: dbConnectionString }
-      { name: 'ConnectionStrings__TaskFlowFlowEngineDbContext', value: dbConnectionString }
-      { name: 'ConnectionStrings__TickerQDbContext', value: dbConnectionString }
+      { name: 'ConnectionStrings__TaskFlowDbContextTrxn', value: migratorDbConnectionString }
+      { name: 'ConnectionStrings__TaskFlowFlowEngineDbContext', value: migratorDbConnectionString }
+      { name: 'ConnectionStrings__TickerQDbContext', value: migratorDbConnectionString }
     ])
     tags: tags
   }
@@ -344,7 +373,7 @@ module gateway 'modules/container-app.bicep' = {
     maxReplicas: gatewayProfile.maxReplicas
     concurrentRequests: gatewayProfile.concurrentRequests
     envVars: union(commonEnvVars, [
-      { name: 'ReverseProxy__Clusters__api__Destinations__default__Address', value: 'https://${api.outputs.fqdn}' }
+      { name: 'ReverseProxy__Clusters__api-cluster__Destinations__api__Address', value: 'https://${api.outputs.fqdn}' }
       { name: 'AggregateHealthCheck__TaskFlowApiHealthUrl', value: 'https://${api.outputs.fqdn}/health/full' }
       { name: 'AggregateHealthCheck__TaskFlowApiClusterId', value: '' }
       { name: 'CorsSettings__AllowedOrigins__0', value: 'https://${prefix}-blazor.${containerAppsEnv.outputs.defaultDomain}' }
@@ -375,6 +404,7 @@ module api 'modules/container-app.bicep' = {
     minReplicas: apiProfile.minReplicas
     maxReplicas: apiProfile.maxReplicas
     concurrentRequests: apiProfile.concurrentRequests
+    userAssignedIdentityId: runtimeSqlIdentity.outputs.id
     envVars: union(commonEnvVars, [
       { name: 'ConnectionStrings__TaskFlowDbContextTrxn', value: dbConnectionString }
       { name: 'ConnectionStrings__TaskFlowDbContextQuery', value: dbReadConnectionString }
@@ -387,8 +417,13 @@ module api 'modules/container-app.bicep' = {
       { name: 'Cors__AllowedOrigins__1', value: 'https://${reactStaticWebApp.outputs.defaultHostname}' }
       { name: 'Cors__AllowedOrigins__2', value: 'https://${unoStaticWebApp.outputs.defaultHostname}' }
       { name: 'ConnectionStrings__TableStorage1', value: storage.outputs.appStorageTableEndpoint }
-      { name: 'ConnectionStrings__Redis1', value: redis.outputs.connectionString }
     ], messagingEnvVars)
+    secretValues: {
+      'redis-connection': redis.outputs.connectionString
+    }
+    secretEnvVars: [
+      { name: 'ConnectionStrings__Redis1', secretRef: 'redis-connection' }
+    ]
     tags: tags
   }
 }
@@ -407,6 +442,7 @@ module scheduler 'modules/container-app.bicep' = {
     targetPort: 8080
     minReplicas: schedulerProfile.minReplicas
     maxReplicas: schedulerProfile.maxReplicas
+    userAssignedIdentityId: runtimeSqlIdentity.outputs.id
     envVars: union(commonEnvVars, [
       { name: 'ConnectionStrings__TaskFlowDbContextTrxn', value: dbConnectionString }
       { name: 'ConnectionStrings__TaskFlowDbContextQuery', value: dbReadConnectionString }
@@ -414,8 +450,13 @@ module scheduler 'modules/container-app.bicep' = {
       { name: 'ConnectionStrings__TickerQDbContext', value: dbConnectionString }
       { name: 'ConnectionStrings__BlobStorage1', value: storage.outputs.appStorageBlobEndpoint }
       { name: 'ConnectionStrings__TableStorage1', value: storage.outputs.appStorageTableEndpoint }
-      { name: 'ConnectionStrings__Redis1', value: redis.outputs.connectionString }
     ], messagingEnvVars)
+    secretValues: {
+      'redis-connection': redis.outputs.connectionString
+    }
+    secretEnvVars: [
+      { name: 'ConnectionStrings__Redis1', secretRef: 'redis-connection' }
+    ]
     tags: tags
   }
 }
@@ -491,25 +532,16 @@ module functions 'modules/functions.bicep' = {
     dbReadConnectionString: dbReadConnectionString
     cosmosEndpoint: cosmosDb.outputs.accountEndpoint
     storageBlobEndpoint: storage.outputs.appStorageBlobEndpoint
+    storageQueueEndpoint: storage.outputs.appStorageQueueEndpoint
     storageTableEndpoint: storage.outputs.appStorageTableEndpoint
     appInsightsConnectionString: appInsights.outputs.connectionString
     functionAppScaleLimit: functionAppScaleLimit
+    userAssignedIdentityId: runtimeSqlIdentity.outputs.id
     tags: tags
   }
 }
 
 // ---- Deploy Identity ----
-
-module deployIdentity 'modules/deploy-identity.bicep' = {
-  name: 'deployIdentity'
-  scope: rg
-  params: {
-    identityName: '${prefix}-deploy-id'
-    location: location
-    tags: tags
-  }
-}
-
 // ---- RBAC: Deploy Identity -> Resource Group ----
 
 module deployContributor 'modules/role-assignment.bicep' = {
@@ -690,6 +722,16 @@ module funcTableContributor 'modules/role-assignment.bicep' = {
   }
 }
 
+module funcQueueContributor 'modules/role-assignment.bicep' = {
+  name: 'funcQueueContributor'
+  scope: rg
+  params: {
+    principalId: functions.outputs.functionAppPrincipalId
+    roleDefinitionId: roles.storageQueueDataContributor
+    roleDescription: 'Functions: Storage Queue Data Contributor for Blob trigger poison queues'
+  }
+}
+
 module funcAppConfigReader 'modules/role-assignment.bicep' = {
   name: 'funcAppConfigReader'
   scope: rg
@@ -756,5 +798,11 @@ output keyVaultName string = keyVault.outputs.name
 output appConfigName string = appConfig.outputs.name
 output databaseProviderName string = 'SqlServer'
 output sqlServerName string = sqlDatabase.outputs.serverName
+output sqlServerFqdn string = sqlDatabase.outputs.serverFqdn
+output sqlDatabaseName string = sqlDatabase.outputs.databaseName
+output migrationSqlIdentityName string = migrationSqlIdentity.outputs.name
+output migrationSqlIdentityClientId string = migrationSqlIdentity.outputs.clientId
+output runtimeSqlIdentityName string = runtimeSqlIdentity.outputs.name
+output runtimeSqlIdentityClientId string = runtimeSqlIdentity.outputs.clientId
 output redisHostName string = redis.outputs.hostName
 output appStorageName string = storage.outputs.appStorageName

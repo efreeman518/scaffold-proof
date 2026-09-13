@@ -53,19 +53,39 @@ param additionalPortMappings array = []
 @description('Environment variables')
 param envVars array = []
 
+@secure()
+@description('Container App secret values keyed by secret name')
+param secretValues object = {}
+
+@description('Secret-backed environment variables, each { name, secretRef }')
+param secretEnvVars array = []
+
+@description('Optional user-assigned managed identity resource ID')
+param userAssignedIdentityId string = ''
+
 @description('Tags')
 param tags object = {}
+
+var containerAppSecrets = [for secret in items(secretValues): {
+  name: secret.key
+  value: secret.value
+}]
 
 resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: appName
   location: location
   tags: tags
-  identity: {
+  identity: empty(userAssignedIdentityId) ? {
     type: 'SystemAssigned'
+  } : {
+    type: 'SystemAssigned, UserAssigned'
+    userAssignedIdentities: {
+      '${userAssignedIdentityId}': {}
+    }
   }
   properties: {
     environmentId: environmentId
-    configuration: {
+    configuration: union({
       // The additional mappings are folded in with union() rather than written as a literal property so
       // an app that declares none produces byte-identical ingress to before this parameter existed.
       ingress: ingressEnabled ? union(
@@ -82,7 +102,9 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           additionalPortMappings: additionalPortMappings
         }
       ) : null
-    }
+    }, empty(secretValues) ? {} : {
+      secrets: containerAppSecrets
+    })
     template: {
       containers: [
         {
@@ -92,7 +114,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             cpu: json(cpu)
             memory: memory
           }
-          env: envVars
+          env: union(envVars, secretEnvVars)
           // D-049: three probes with distinct jobs. Startup absorbs a slow first start (up to 5 minutes) and
           // suppresses the other two until it passes, so a cold start is never mistaken for a crash loop.
           // Liveness restarts the container and therefore probes only the process. Readiness gates routing

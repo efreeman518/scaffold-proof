@@ -13,13 +13,13 @@ Azure infrastructure for the TaskFlow dev environment. All resources deploy to a
 | Azure Functions | Flex Consumption (FC1) | Flex Consumption (FC1) | Event-driven processing, `functionAppScaleLimit` param |
 | Static Web Apps | Free | Free | React and Uno WASM frontends |
 | Redis | Azure Managed Redis `Balanced_B0`, no HA | Azure Managed Redis `Balanced_B5`+, HA | FusionCache L2 (`ConnectionStrings__Redis1`), API + Scheduler |
-| Storage Accounts | Standard LRS (x2) | Standard LRS (x2) | App blobs/tables + Functions runtime |
+| Storage Accounts | Standard LRS (x2) | Standard LRS (x2) | App blobs/tables/queues + Functions runtime |
 | Key Vault | Standard | Standard | Secrets management |
 | App Configuration | Free | Free | Centralized config |
 | Log Analytics | PerGB2018 (30d) | PerGB2018 (30d) | Logging + Application Insights |
-| User-Assigned Identity | - | - | GitHub Actions OIDC deploy identity |
+| User-Assigned Identities | - | - | GitHub Actions OIDC and SQL deployment admin, migration DDL, runtime DML |
 
-Azure resource access uses **managed identities and Entra authentication** where supported (no shared application keys except Functions storage and Redis, which require one - see the redis module comments on the Entra data-plane gap). End-user application auth is separate: this reference deployment defaults to `AuthMode: Scaffold`, supplies an automatic principal, and does not require a login.
+Azure resource access uses **managed identities and Entra authentication** where supported. Functions storage and Redis still require access keys; Redis reaches API and Scheduler only through Container Apps secret references, never plain environment values. End-user application auth is separate: this reference deployment defaults to `AuthMode: Scaffold`, supplies an automatic principal, and does not require a login.
 
 ### Container Apps scale profiles
 
@@ -36,7 +36,11 @@ NonAzure Compose lane and are not Azure Bicep alternatives.
 
 Every emitted SQL connection string carries an explicit `Max Pool Size`. `ConnectionStrings__TaskFlowDbContextQuery`
 (API, Scheduler, Functions) resolves to the read/replica connection string; all other contexts share the primary
-read-write string.
+read-write string. SqlClient selects an explicit user-assigned identity by client ID. The migration identity receives
+`db_ddladmin`, `db_datareader`, and `db_datawriter`; the shared runtime SQL identity receives DML only on the
+`taskflow`, `flowengine`, and `scheduler` schemas. The federated deploy identity is SQL Entra administrator and runs
+the idempotent principal bootstrap before migrations. Users are bound by explicit client-ID SID, so SQL needs no
+tenant-wide Directory Readers permission.
 
 ## Prerequisites
 
@@ -89,10 +93,9 @@ Optional parameters (shown with defaults):
 The script will:
 
 1. Set the active subscription
-2. Look up your signed-in Entra user (used as SQL admin)
-3. Deploy `main.bicep` at subscription scope (creates RG + all resources)
-4. Create a federated credential on the deploy managed identity for GitHub Actions
-5. Print the exact values you need for GitHub configuration (Step 2)
+2. Deploy `main.bicep` at subscription scope (creates RG, deploy identity as SQL Entra admin, and workload identities)
+3. Create a federated credential on the deploy managed identity for GitHub Actions
+4. Print the exact values you need for GitHub configuration (Step 2)
 
 > **Deployment takes 5-10 minutes.** Watch for the output block at the end - it contains the values for the next step.
 
@@ -107,13 +110,6 @@ After bootstrap completes, configure your GitHub repo at **Settings -> Secrets a
 | `AZURE_CLIENT_ID` | *(from bootstrap output)* | Deploy managed identity client ID |
 | `AZURE_TENANT_ID` | *(from bootstrap output)* | Entra tenant ID |
 | `AZURE_SUBSCRIPTION_ID` | `db98b283-631e-4f24-bd77-321332820725` | Subscription ID |
-
-### Secrets (Settings -> Secrets -> New repository secret)
-
-| Secret | Value | Source |
-|--------|-------|--------|
-| `SQL_ADMIN_PRINCIPAL_ID` | *(from bootstrap output)* | Your Entra user object ID |
-| `SQL_ADMIN_PRINCIPAL_NAME` | *(from bootstrap output)* | Your Entra user display name |
 
 ### Private NuGet Feed (`NUGET_PAT`)
 
@@ -138,7 +134,7 @@ To create the PAT: **GitHub -> Settings -> Developer settings -> Personal access
 
 The deploy workflow currently runs manually through `workflow_dispatch`. Supply `operation=deploy` and a full green `main` commit SHA, or select `operation=rollback` to activate the recorded previous release. It also preserves a `workflow_call` interface for CI, but the caller in `ci.yml` remains disabled until Azure bootstrap and repository variables are configured.
 
-For deploy, the workflow validates the exact green commit, builds each image and the Functions/React/Uno bundles once, records immutable digests and artifact IDs, provisions with the existing runtime images, runs migrations, activates the recorded release, verifies readiness and functional CRUD, then records current and previous release manifests. Rollback downloads the recorded prior artifacts and images without rebuilding or reversing database migrations.
+For deploy, the workflow validates the exact green commit, builds each image and the Functions/React/Uno bundles once, records immutable digests and artifact IDs, provisions with the existing runtime images, creates the migration SQL principal, runs migrations, grants schema-scoped runtime SQL access, activates the recorded release, verifies readiness and functional CRUD, then records current and previous release manifests. Rollback downloads the recorded prior artifacts and images without rebuilding or reversing database migrations.
 
 ## CI/CD Pipeline Flow
 
@@ -146,7 +142,9 @@ For deploy, the workflow validates the exact green commit, builds each image and
 validate exact green SHA
   -> build immutable images and bundles once
   -> provision infrastructure with current runtime images
+  -> provision migration SQL identity
   -> run database migrations
+  -> grant schema-scoped runtime SQL access
   -> activate digest-pinned runtime and recorded bundles
   -> check API database readiness and public health
   -> create/read/delete functional smoke with cleanup
@@ -180,6 +178,7 @@ infra/
 -   --- storage.bicep
 --- scripts/
 -   --- bootstrap.ps1       # One-time setup script
+-   --- Set-AzureSqlPrincipal.ps1 # Idempotent migration/runtime SQL grants
 -   --- Invoke-DeploymentSmoke.ps1 # Post-deploy health and CRUD smoke
 -   --- Test-ReleaseManifest.ps1   # Immutable release manifest validation
 --- README.md               # This file
@@ -209,7 +208,7 @@ To redeploy infra without pushing code, run the bootstrap script again. It's ide
 |---------|-----|
 | `AADSTS700016` on deploy | Verify `AZURE_CLIENT_ID` matches the deploy identity's client ID |
 | `FederatedIdentityCredential` error | Check federated credential subject matches `repo:owner/repo:ref:refs/heads/main` |
-| SQL deployment fails | Ensure `SQL_ADMIN_PRINCIPAL_ID` and `SQL_ADMIN_PRINCIPAL_NAME` secrets are set |
+| SQL principal provisioning fails | Verify `AZURE_CLIENT_ID` is the Bicep-created deploy identity and remains SQL Entra administrator |
 | Container image pull fails | Verify repo packages are public, or add `packages: read` permission |
 | Functions deploy fails | Functions require `allowSharedKeyAccess: true` on their storage account (already configured) |
 | SWA deploy fails | Check that `swa-name` output is correctly passed from deploy-infra job |

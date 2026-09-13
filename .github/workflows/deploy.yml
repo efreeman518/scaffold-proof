@@ -180,6 +180,12 @@ jobs:
       uno-swa-name: ${{ steps.deploy.outputs.unoStaticWebAppName }}
       uno-swa-hostname: ${{ steps.deploy.outputs.unoStaticWebAppDefaultHostname }}
       migration-job: ${{ steps.deploy.outputs.migrationJobName }}
+      sql-server-fqdn: ${{ steps.deploy.outputs.sqlServerFqdn }}
+      sql-database-name: ${{ steps.deploy.outputs.sqlDatabaseName }}
+      migration-sql-identity-name: ${{ steps.deploy.outputs.migrationSqlIdentityName }}
+      migration-sql-identity-client-id: ${{ steps.deploy.outputs.migrationSqlIdentityClientId }}
+      runtime-sql-identity-name: ${{ steps.deploy.outputs.runtimeSqlIdentityName }}
+      runtime-sql-identity-client-id: ${{ steps.deploy.outputs.runtimeSqlIdentityClientId }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -208,7 +214,6 @@ jobs:
           template: ./infra/main.bicep
           parameters: >-
             resourcePrefix=${{ env.RESOURCE_PREFIX }} environmentName=${{ env.ENVIRONMENT_NAME }} location=${{ env.AZURE_LOCATION }}
-            sqlAdminPrincipalId=${{ secrets.SQL_ADMIN_PRINCIPAL_ID }} sqlAdminPrincipalName=${{ secrets.SQL_ADMIN_PRINCIPAL_NAME }} sqlAdminPrincipalType=User
             gatewayImage=${{ steps.stable.outputs.gateway }} apiImage=${{ steps.stable.outputs.api }} schedulerImage=${{ steps.stable.outputs.scheduler }}
             migratorImage=${{ needs.build-images.outputs.migrator-image }} blazorImage=${{ steps.stable.outputs.blazor }}
 
@@ -218,11 +223,26 @@ jobs:
     runs-on: ubuntu-latest
     environment: dev
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate-entry.outputs.sha }}
       - uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Install pinned SQL PowerShell client
+        shell: pwsh
+        run: Install-Module SqlServer -RequiredVersion 22.4.5.1 -Repository PSGallery -Scope CurrentUser -Force
+      - name: Provision least-privilege migration identity
+        shell: pwsh
+        run: >-
+          ./infra/scripts/Set-AzureSqlPrincipal.ps1
+          -AccessProfile Migration
+          -ServerName '${{ needs.deploy-infrastructure.outputs.sql-server-fqdn }}'
+          -DatabaseName '${{ needs.deploy-infrastructure.outputs.sql-database-name }}'
+          -IdentityName '${{ needs.deploy-infrastructure.outputs.migration-sql-identity-name }}'
+          -IdentityClientId '${{ needs.deploy-infrastructure.outputs.migration-sql-identity-client-id }}'
       - name: Require successful migration execution
         env:
           JOB: ${{ needs.deploy-infrastructure.outputs.migration-job }}
@@ -236,6 +256,15 @@ jobs:
             sleep 10
           done
           echo "::error::Migration timed out"; exit 1
+      - name: Grant runtime access after migrations
+        shell: pwsh
+        run: >-
+          ./infra/scripts/Set-AzureSqlPrincipal.ps1
+          -AccessProfile Runtime
+          -ServerName '${{ needs.deploy-infrastructure.outputs.sql-server-fqdn }}'
+          -DatabaseName '${{ needs.deploy-infrastructure.outputs.sql-database-name }}'
+          -IdentityName '${{ needs.deploy-infrastructure.outputs.runtime-sql-identity-name }}'
+          -IdentityClientId '${{ needs.deploy-infrastructure.outputs.runtime-sql-identity-client-id }}'
 
   activate-release:
     if: needs.validate-entry.outputs.operation == 'deploy'

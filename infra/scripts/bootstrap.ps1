@@ -58,28 +58,18 @@ Write-Host "GitHub:       $GitHubRepo (branch: $GitHubBranch)"
 Write-Host ""
 
 # 1. Set subscription
-Write-Host "[1/6] Setting subscription..." -ForegroundColor Yellow
+Write-Host "[1/4] Setting subscription..." -ForegroundColor Yellow
 az account set --subscription $SubscriptionId
 if ($LASTEXITCODE -ne 0) { throw "Failed to set subscription" }
 
-# 2. Get current user for SQL Entra admin
-Write-Host "[2/6] Getting signed-in user for SQL admin..." -ForegroundColor Yellow
-$userInfo = az ad signed-in-user show --query "{id:id, name:displayName}" -o json | ConvertFrom-Json
-$sqlAdminId = $userInfo.id
-$sqlAdminName = $userInfo.name
-Write-Host "  SQL Admin: $sqlAdminName ($sqlAdminId)"
-
-# 3. Deploy infrastructure (creates RG + all resources including deploy identity)
-Write-Host "[3/6] Deploying infrastructure (this takes 5-10 minutes)..." -ForegroundColor Yellow
+# 2. Deploy infrastructure (creates RG + all resources including deploy identity)
+Write-Host "[2/4] Deploying infrastructure (this takes 5-10 minutes)..." -ForegroundColor Yellow
 $deployOutput = az deployment sub create `
     --location $Location `
     --template-file "$PSScriptRoot/../main.bicep" `
     --parameters resourcePrefix=$ResourcePrefix `
                  environmentName=$EnvironmentName `
                  location=$Location `
-                 sqlAdminPrincipalId=$sqlAdminId `
-                 sqlAdminPrincipalName=$sqlAdminName `
-                 sqlAdminPrincipalType=User `
     --query "properties.outputs" `
     --output json
 
@@ -87,23 +77,15 @@ if ($LASTEXITCODE -ne 0) { throw "Infrastructure deployment failed" }
 
 $outputs = $deployOutput | ConvertFrom-Json
 $deployClientId = $outputs.deployIdentityClientId.value
-$deployPrincipalId = $outputs.deployIdentityPrincipalId.value
 $identityName = "$prefix-deploy-id"
 
 Write-Host "  Deploy Identity Client ID: $deployClientId"
 
-# 4. Get tenant ID
+# 3. Get tenant ID
 $tenantId = (az account show --query tenantId -o tsv)
 
-# 5. Add federated credential for GitHub Actions
-Write-Host "[4/6] Creating federated credential for GitHub Actions..." -ForegroundColor Yellow
-
-$fedCredBody = @{
-    name = "github-actions-$EnvironmentName"
-    issuer = "https://token.actions.githubusercontent.com"
-    subject = "repo:${GitHubRepo}:ref:refs/heads/$GitHubBranch"
-    audiences = @("api://AzureADTokenExchange")
-} | ConvertTo-Json -Compress
+# 4. Add federated credential for GitHub Actions
+Write-Host "[3/4] Creating federated credential for GitHub Actions..." -ForegroundColor Yellow
 
 # Create federated credential on the managed identity
 az identity federated-credential create `
@@ -116,16 +98,12 @@ az identity federated-credential create `
 
 if ($LASTEXITCODE -ne 0) { throw "Failed to create federated credential" }
 
-# 6. Output GitHub Actions variables
+# 4. Output GitHub Actions variables
 Write-Host ""
-Write-Host "[5/6] Configure these as GitHub Actions variables (Settings > Secrets and variables > Actions > Variables):" -ForegroundColor Green
+Write-Host "[4/4] Configure these as GitHub Actions variables (Settings > Secrets and variables > Actions > Variables):" -ForegroundColor Green
 Write-Host "  AZURE_CLIENT_ID       = $deployClientId"
 Write-Host "  AZURE_TENANT_ID       = $tenantId"
 Write-Host "  AZURE_SUBSCRIPTION_ID = $SubscriptionId"
-Write-Host ""
-Write-Host "[6/6] Configure these as GitHub Actions secrets (Settings > Secrets and variables > Actions > Secrets):" -ForegroundColor Green
-Write-Host "  SQL_ADMIN_PRINCIPAL_ID   = $sqlAdminId"
-Write-Host "  SQL_ADMIN_PRINCIPAL_NAME = $sqlAdminName"
 Write-Host ""
 
 # Summary

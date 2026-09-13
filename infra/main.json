@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "12370850710294000921"
+      "templateHash": "15056989480071439438"
     }
   },
   "parameters": {
@@ -29,30 +29,6 @@
       "defaultValue": "eastus2",
       "metadata": {
         "description": "Azure region"
-      }
-    },
-    "sqlAdminPrincipalId": {
-      "type": "string",
-      "metadata": {
-        "description": "SQL Entra admin principal ID"
-      }
-    },
-    "sqlAdminPrincipalName": {
-      "type": "string",
-      "metadata": {
-        "description": "SQL Entra admin principal name"
-      }
-    },
-    "sqlAdminPrincipalType": {
-      "type": "string",
-      "defaultValue": "User",
-      "allowedValues": [
-        "User",
-        "Group",
-        "Application"
-      ],
-      "metadata": {
-        "description": "SQL Entra admin principal type"
       }
     },
     "gatewayImage": {
@@ -241,6 +217,7 @@
     "roles": {
       "storageBlobDataContributor": "ba92f5b4-2d11-453d-a403-e96b0029c9fe",
       "storageTableDataContributor": "0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3",
+      "storageQueueDataContributor": "974c5e8b-45b9-4653-ba55-5f855dd0fb88",
       "cosmosDbDataContributor": "00000000-0000-0000-0000-000000000002",
       "serviceBusDataSender": "69a216fc-b8fb-44d8-bc22-1f3c2cd27a39",
       "serviceBusDataReceiver": "4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0",
@@ -758,6 +735,261 @@
         "rg"
       ]
     },
+    "deployIdentity": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deployIdentity",
+      "resourceGroup": "[format('{0}-rg', variables('prefix'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "identityName": {
+            "value": "[format('{0}-deploy-id', variables('prefix'))]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "1171689923931820157"
+            }
+          },
+          "parameters": {
+            "identityName": {
+              "type": "string",
+              "metadata": {
+                "description": "User-assigned managed identity name"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+              "apiVersion": "2023-07-31-preview",
+              "name": "[parameters('identityName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]"
+            }
+          ],
+          "outputs": {
+            "principalId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')), '2023-07-31-preview').principalId]"
+            },
+            "clientId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')), '2023-07-31-preview').clientId]"
+            },
+            "id": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName'))]"
+            },
+            "name": {
+              "type": "string",
+              "value": "[parameters('identityName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "rg"
+      ]
+    },
+    "migrationSqlIdentity": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "migrationSqlIdentity",
+      "resourceGroup": "[format('{0}-rg', variables('prefix'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "identityName": {
+            "value": "[format('{0}-sql-migrator-id', variables('prefix'))]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "1171689923931820157"
+            }
+          },
+          "parameters": {
+            "identityName": {
+              "type": "string",
+              "metadata": {
+                "description": "User-assigned managed identity name"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+              "apiVersion": "2023-07-31-preview",
+              "name": "[parameters('identityName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]"
+            }
+          ],
+          "outputs": {
+            "principalId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')), '2023-07-31-preview').principalId]"
+            },
+            "clientId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')), '2023-07-31-preview').clientId]"
+            },
+            "id": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName'))]"
+            },
+            "name": {
+              "type": "string",
+              "value": "[parameters('identityName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "rg"
+      ]
+    },
+    "runtimeSqlIdentity": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "runtimeSqlIdentity",
+      "resourceGroup": "[format('{0}-rg', variables('prefix'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "identityName": {
+            "value": "[format('{0}-sql-runtime-id', variables('prefix'))]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "1171689923931820157"
+            }
+          },
+          "parameters": {
+            "identityName": {
+              "type": "string",
+              "metadata": {
+                "description": "User-assigned managed identity name"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+              "apiVersion": "2023-07-31-preview",
+              "name": "[parameters('identityName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]"
+            }
+          ],
+          "outputs": {
+            "principalId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')), '2023-07-31-preview').principalId]"
+            },
+            "clientId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')), '2023-07-31-preview').clientId]"
+            },
+            "id": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName'))]"
+            },
+            "name": {
+              "type": "string",
+              "value": "[parameters('identityName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "rg"
+      ]
+    },
     "sqlDatabase": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
@@ -776,13 +1008,16 @@
             "value": "[parameters('location')]"
           },
           "sqlAdminPrincipalId": {
-            "value": "[parameters('sqlAdminPrincipalId')]"
+            "value": "[reference('deployIdentity').outputs.principalId.value]"
           },
           "sqlAdminPrincipalName": {
-            "value": "[parameters('sqlAdminPrincipalName')]"
+            "value": "[reference('deployIdentity').outputs.name.value]"
           },
           "sqlAdminPrincipalType": {
-            "value": "[parameters('sqlAdminPrincipalType')]"
+            "value": "Application"
+          },
+          "managedIdentityClientId": {
+            "value": "[reference('runtimeSqlIdentity').outputs.clientId.value]"
           },
           "skuName": {
             "value": "[parameters('sqlSkuName')]"
@@ -819,7 +1054,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "3688746022337082840"
+              "templateHash": "17847234654930313361"
             }
           },
           "parameters": {
@@ -857,6 +1092,12 @@
               ],
               "metadata": {
                 "description": "Entra admin principal type"
+              }
+            },
+            "managedIdentityClientId": {
+              "type": "string",
+              "metadata": {
+                "description": "Client ID of the user-assigned managed identity used by runtime database connections"
               }
             },
             "skuName": {
@@ -987,13 +1228,15 @@
             },
             "connectionString": {
               "type": "string",
-              "value": "[format('Server=tcp:{0},1433;Database={1};Authentication=Active Directory Default;Encrypt=True;TrustServerCertificate=False;Max Pool Size={2};', reference(resourceId('Microsoft.Sql/servers', format('{0}-sql-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))), '2023-08-01-preview').fullyQualifiedDomainName, 'taskflowdb', parameters('maxPoolSize'))]"
+              "value": "[format('Server=tcp:{0},1433;Database={1};Authentication=Active Directory Managed Identity;User Id={2};Encrypt=True;TrustServerCertificate=False;Max Pool Size={3};', reference(resourceId('Microsoft.Sql/servers', format('{0}-sql-{1}', parameters('resourcePrefix'), variables('uniqueSuffix'))), '2023-08-01-preview').fullyQualifiedDomainName, 'taskflowdb', parameters('managedIdentityClientId'), parameters('maxPoolSize'))]"
             }
           }
         }
       },
       "dependsOn": [
-        "rg"
+        "deployIdentity",
+        "rg",
+        "runtimeSqlIdentity"
       ]
     },
     "redis": {
@@ -1534,7 +1777,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "7808195770219433203"
+              "templateHash": "18394736461861345079"
             }
           },
           "parameters": {
@@ -1604,7 +1847,26 @@
               ]
             },
             {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', replace(format('{0}st{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), '-', ''), 'default', 'data-protection')]",
+              "properties": {
+                "publicAccess": "None"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', replace(format('{0}st{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), '-', ''), 'default')]"
+              ]
+            },
+            {
               "type": "Microsoft.Storage/storageAccounts/tableServices",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', replace(format('{0}st{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), '-', ''), 'default')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', replace(format('{0}st{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), '-', ''))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/queueServices",
               "apiVersion": "2023-05-01",
               "name": "[format('{0}/{1}', replace(format('{0}st{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), '-', ''), 'default')]",
               "dependsOn": [
@@ -1645,6 +1907,10 @@
             "appStorageTableEndpoint": {
               "type": "string",
               "value": "[reference(resourceId('Microsoft.Storage/storageAccounts', replace(format('{0}st{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), '-', '')), '2023-05-01').primaryEndpoints.table]"
+            },
+            "appStorageQueueEndpoint": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Storage/storageAccounts', replace(format('{0}st{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), '-', '')), '2023-05-01').primaryEndpoints.queue]"
             },
             "funcStorageName": {
               "type": "string",
@@ -1690,8 +1956,11 @@
           "memory": {
             "value": "0.5Gi"
           },
+          "userAssignedIdentityId": {
+            "value": "[reference('migrationSqlIdentity').outputs.id.value]"
+          },
           "envVars": {
-            "value": "[union(createArray(createObject('name', 'Hosting__Lane', 'value', 'Azure'), createObject('name', 'Database__Provider', 'value', 'SqlServer'), createObject('name', 'Messaging__Provider', 'value', 'ServiceBus'), createObject('name', 'Storage__Provider', 'value', 'AzureBlob'), createObject('name', 'ReadModel__Provider', 'value', 'Cosmos'), createObject('name', 'Audit__Provider', 'value', 'AzureTable'), createObject('name', 'Search__Provider', 'value', parameters('searchProvider')), createObject('name', 'DataProtection__Persistence', 'value', 'AzureBlob'), createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value)), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TickerQDbContext', 'value', reference('sqlDatabase').outputs.connectionString.value)))]"
+            "value": "[union(createArray(createObject('name', 'Hosting__Lane', 'value', 'Azure'), createObject('name', 'Database__Provider', 'value', 'SqlServer'), createObject('name', 'Messaging__Provider', 'value', 'ServiceBus'), createObject('name', 'Storage__Provider', 'value', 'AzureBlob'), createObject('name', 'ReadModel__Provider', 'value', 'Cosmos'), createObject('name', 'Audit__Provider', 'value', 'AzureTable'), createObject('name', 'Search__Provider', 'value', parameters('searchProvider')), createObject('name', 'DataProtection__Persistence', 'value', 'AzureBlob'), createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value)), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', replace(reference('sqlDatabase').outputs.connectionString.value, reference('runtimeSqlIdentity').outputs.clientId.value, reference('migrationSqlIdentity').outputs.clientId.value)), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', replace(reference('sqlDatabase').outputs.connectionString.value, reference('runtimeSqlIdentity').outputs.clientId.value, reference('migrationSqlIdentity').outputs.clientId.value)), createObject('name', 'ConnectionStrings__TickerQDbContext', 'value', replace(reference('sqlDatabase').outputs.connectionString.value, reference('runtimeSqlIdentity').outputs.clientId.value, reference('migrationSqlIdentity').outputs.clientId.value))))]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -1704,7 +1973,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "5733347083968510086"
+              "templateHash": "11252399312612326622"
             }
           },
           "parameters": {
@@ -1753,6 +2022,12 @@
                 "description": "Environment variables"
               }
             },
+            "userAssignedIdentityId": {
+              "type": "string",
+              "metadata": {
+                "description": "User-assigned managed identity resource ID"
+              }
+            },
             "replicaTimeout": {
               "type": "int",
               "defaultValue": 1800,
@@ -1776,7 +2051,10 @@
               "location": "[parameters('location')]",
               "tags": "[parameters('tags')]",
               "identity": {
-                "type": "SystemAssigned"
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', parameters('userAssignedIdentityId'))]": {}
+                }
               },
               "properties": {
                 "environmentId": "[parameters('environmentId')]",
@@ -1813,10 +2091,6 @@
             "name": {
               "type": "string",
               "value": "[parameters('jobName')]"
-            },
-            "principalId": {
-              "type": "string",
-              "value": "[reference(resourceId('Microsoft.App/jobs', parameters('jobName')), '2024-03-01', 'full').identity.principalId]"
             }
           }
         }
@@ -1826,7 +2100,9 @@
         "appInsights",
         "containerAppsEnv",
         "keyVault",
+        "migrationSqlIdentity",
         "rg",
+        "runtimeSqlIdentity",
         "sqlDatabase"
       ]
     },
@@ -1875,7 +2151,7 @@
             "value": "[parameters('gatewayProfile').concurrentRequests]"
           },
           "envVars": {
-            "value": "[union(createArray(createObject('name', 'Hosting__Lane', 'value', 'Azure'), createObject('name', 'Database__Provider', 'value', 'SqlServer'), createObject('name', 'Messaging__Provider', 'value', 'ServiceBus'), createObject('name', 'Storage__Provider', 'value', 'AzureBlob'), createObject('name', 'ReadModel__Provider', 'value', 'Cosmos'), createObject('name', 'Audit__Provider', 'value', 'AzureTable'), createObject('name', 'Search__Provider', 'value', parameters('searchProvider')), createObject('name', 'DataProtection__Persistence', 'value', 'AzureBlob'), createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value)), createArray(createObject('name', 'ReverseProxy__Clusters__api__Destinations__default__Address', 'value', format('https://{0}', reference('api').outputs.fqdn.value)), createObject('name', 'AggregateHealthCheck__TaskFlowApiHealthUrl', 'value', format('https://{0}/health/full', reference('api').outputs.fqdn.value)), createObject('name', 'AggregateHealthCheck__TaskFlowApiClusterId', 'value', ''), createObject('name', 'CorsSettings__AllowedOrigins__0', 'value', format('https://{0}-blazor.{1}', variables('prefix'), reference('containerAppsEnv').outputs.defaultDomain.value)), createObject('name', 'CorsSettings__AllowedOrigins__1', 'value', format('https://{0}', reference('reactStaticWebApp').outputs.defaultHostname.value)), createObject('name', 'CorsSettings__AllowedOrigins__2', 'value', format('https://{0}', reference('unoStaticWebApp').outputs.defaultHostname.value))))]"
+            "value": "[union(createArray(createObject('name', 'Hosting__Lane', 'value', 'Azure'), createObject('name', 'Database__Provider', 'value', 'SqlServer'), createObject('name', 'Messaging__Provider', 'value', 'ServiceBus'), createObject('name', 'Storage__Provider', 'value', 'AzureBlob'), createObject('name', 'ReadModel__Provider', 'value', 'Cosmos'), createObject('name', 'Audit__Provider', 'value', 'AzureTable'), createObject('name', 'Search__Provider', 'value', parameters('searchProvider')), createObject('name', 'DataProtection__Persistence', 'value', 'AzureBlob'), createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value)), createArray(createObject('name', 'ReverseProxy__Clusters__api-cluster__Destinations__api__Address', 'value', format('https://{0}', reference('api').outputs.fqdn.value)), createObject('name', 'AggregateHealthCheck__TaskFlowApiHealthUrl', 'value', format('https://{0}/health/full', reference('api').outputs.fqdn.value)), createObject('name', 'AggregateHealthCheck__TaskFlowApiClusterId', 'value', ''), createObject('name', 'CorsSettings__AllowedOrigins__0', 'value', format('https://{0}-blazor.{1}', variables('prefix'), reference('containerAppsEnv').outputs.defaultDomain.value)), createObject('name', 'CorsSettings__AllowedOrigins__1', 'value', format('https://{0}', reference('reactStaticWebApp').outputs.defaultHostname.value)), createObject('name', 'CorsSettings__AllowedOrigins__2', 'value', format('https://{0}', reference('unoStaticWebApp').outputs.defaultHostname.value))))]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -1888,7 +2164,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "11145755578384506289"
+              "templateHash": "7556980250466145039"
             }
           },
           "parameters": {
@@ -2019,6 +2295,27 @@
                 "description": "Environment variables"
               }
             },
+            "secretValues": {
+              "type": "secureObject",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Container App secret values keyed by secret name"
+              }
+            },
+            "secretEnvVars": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Secret-backed environment variables, each { name, secretRef }"
+              }
+            },
+            "userAssignedIdentityId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Optional user-assigned managed identity resource ID"
+              }
+            },
             "tags": {
               "type": "object",
               "defaultValue": {},
@@ -2027,6 +2324,18 @@
               }
             }
           },
+          "variables": {
+            "copy": [
+              {
+                "name": "containerAppSecrets",
+                "count": "[length(items(parameters('secretValues')))]",
+                "input": {
+                  "name": "[items(parameters('secretValues'))[copyIndex('containerAppSecrets')].key]",
+                  "value": "[items(parameters('secretValues'))[copyIndex('containerAppSecrets')].value]"
+                }
+              }
+            ]
+          },
           "resources": [
             {
               "type": "Microsoft.App/containerApps",
@@ -2034,14 +2343,10 @@
               "name": "[parameters('appName')]",
               "location": "[parameters('location')]",
               "tags": "[parameters('tags')]",
-              "identity": {
-                "type": "SystemAssigned"
-              },
+              "identity": "[if(empty(parameters('userAssignedIdentityId')), createObject('type', 'SystemAssigned'), createObject('type', 'SystemAssigned, UserAssigned', 'userAssignedIdentities', createObject(format('{0}', parameters('userAssignedIdentityId')), createObject())))]",
               "properties": {
                 "environmentId": "[parameters('environmentId')]",
-                "configuration": {
-                  "ingress": "[if(parameters('ingressEnabled'), union(createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), if(empty(parameters('additionalPortMappings')), createObject(), createObject('additionalPortMappings', parameters('additionalPortMappings')))), null())]"
-                },
+                "configuration": "[union(createObject('ingress', if(parameters('ingressEnabled'), union(createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), if(empty(parameters('additionalPortMappings')), createObject(), createObject('additionalPortMappings', parameters('additionalPortMappings')))), null())), if(empty(parameters('secretValues')), createObject(), createObject('secrets', variables('containerAppSecrets'))))]",
                 "template": {
                   "containers": [
                     {
@@ -2051,7 +2356,7 @@
                         "cpu": "[json(parameters('cpu'))]",
                         "memory": "[parameters('memory')]"
                       },
-                      "env": "[parameters('envVars')]",
+                      "env": "[union(parameters('envVars'), parameters('secretEnvVars'))]",
                       "probes": [
                         {
                           "type": "Startup",
@@ -2187,8 +2492,24 @@
           "concurrentRequests": {
             "value": "[parameters('apiProfile').concurrentRequests]"
           },
+          "userAssignedIdentityId": {
+            "value": "[reference('runtimeSqlIdentity').outputs.id.value]"
+          },
           "envVars": {
-            "value": "[union(createArray(createObject('name', 'Hosting__Lane', 'value', 'Azure'), createObject('name', 'Database__Provider', 'value', 'SqlServer'), createObject('name', 'Messaging__Provider', 'value', 'ServiceBus'), createObject('name', 'Storage__Provider', 'value', 'AzureBlob'), createObject('name', 'ReadModel__Provider', 'value', 'Cosmos'), createObject('name', 'Audit__Provider', 'value', 'AzureTable'), createObject('name', 'Search__Provider', 'value', parameters('searchProvider')), createObject('name', 'DataProtection__Persistence', 'value', 'AzureBlob'), createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value)), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', format('{0}ApplicationIntent=ReadOnly;', reference('sqlDatabase').outputs.connectionString.value)), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__CosmosDb1', 'value', reference('cosmosDb').outputs.accountEndpoint.value), createObject('name', 'ConnectionStrings__BlobStorage1', 'value', reference('storage').outputs.appStorageBlobEndpoint.value), createObject('name', 'Cors__AllowedOrigins__0', 'value', format('https://{0}-blazor.{1}', variables('prefix'), reference('containerAppsEnv').outputs.defaultDomain.value)), createObject('name', 'Cors__AllowedOrigins__1', 'value', format('https://{0}', reference('reactStaticWebApp').outputs.defaultHostname.value)), createObject('name', 'Cors__AllowedOrigins__2', 'value', format('https://{0}', reference('unoStaticWebApp').outputs.defaultHostname.value)), createObject('name', 'ConnectionStrings__TableStorage1', 'value', reference('storage').outputs.appStorageTableEndpoint.value), createObject('name', 'ConnectionStrings__Redis1', 'value', listOutputsWithSecureValues('redis', '2025-04-01').connectionString)), createArray(createObject('name', 'ServiceBus1__fullyQualifiedNamespace', 'value', reference('serviceBus').outputs.namespaceEndpoint.value)))]"
+            "value": "[union(createArray(createObject('name', 'Hosting__Lane', 'value', 'Azure'), createObject('name', 'Database__Provider', 'value', 'SqlServer'), createObject('name', 'Messaging__Provider', 'value', 'ServiceBus'), createObject('name', 'Storage__Provider', 'value', 'AzureBlob'), createObject('name', 'ReadModel__Provider', 'value', 'Cosmos'), createObject('name', 'Audit__Provider', 'value', 'AzureTable'), createObject('name', 'Search__Provider', 'value', parameters('searchProvider')), createObject('name', 'DataProtection__Persistence', 'value', 'AzureBlob'), createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value)), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', format('{0}ApplicationIntent=ReadOnly;', reference('sqlDatabase').outputs.connectionString.value)), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__CosmosDb1', 'value', reference('cosmosDb').outputs.accountEndpoint.value), createObject('name', 'ConnectionStrings__BlobStorage1', 'value', reference('storage').outputs.appStorageBlobEndpoint.value), createObject('name', 'Cors__AllowedOrigins__0', 'value', format('https://{0}-blazor.{1}', variables('prefix'), reference('containerAppsEnv').outputs.defaultDomain.value)), createObject('name', 'Cors__AllowedOrigins__1', 'value', format('https://{0}', reference('reactStaticWebApp').outputs.defaultHostname.value)), createObject('name', 'Cors__AllowedOrigins__2', 'value', format('https://{0}', reference('unoStaticWebApp').outputs.defaultHostname.value)), createObject('name', 'ConnectionStrings__TableStorage1', 'value', reference('storage').outputs.appStorageTableEndpoint.value)), createArray(createObject('name', 'ServiceBus1__fullyQualifiedNamespace', 'value', reference('serviceBus').outputs.namespaceEndpoint.value)))]"
+          },
+          "secretValues": {
+            "value": {
+              "redis-connection": "[listOutputsWithSecureValues('redis', '2025-04-01').connectionString]"
+            }
+          },
+          "secretEnvVars": {
+            "value": [
+              {
+                "name": "ConnectionStrings__Redis1",
+                "secretRef": "redis-connection"
+              }
+            ]
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -2201,7 +2522,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "11145755578384506289"
+              "templateHash": "7556980250466145039"
             }
           },
           "parameters": {
@@ -2332,6 +2653,27 @@
                 "description": "Environment variables"
               }
             },
+            "secretValues": {
+              "type": "secureObject",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Container App secret values keyed by secret name"
+              }
+            },
+            "secretEnvVars": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Secret-backed environment variables, each { name, secretRef }"
+              }
+            },
+            "userAssignedIdentityId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Optional user-assigned managed identity resource ID"
+              }
+            },
             "tags": {
               "type": "object",
               "defaultValue": {},
@@ -2340,6 +2682,18 @@
               }
             }
           },
+          "variables": {
+            "copy": [
+              {
+                "name": "containerAppSecrets",
+                "count": "[length(items(parameters('secretValues')))]",
+                "input": {
+                  "name": "[items(parameters('secretValues'))[copyIndex('containerAppSecrets')].key]",
+                  "value": "[items(parameters('secretValues'))[copyIndex('containerAppSecrets')].value]"
+                }
+              }
+            ]
+          },
           "resources": [
             {
               "type": "Microsoft.App/containerApps",
@@ -2347,14 +2701,10 @@
               "name": "[parameters('appName')]",
               "location": "[parameters('location')]",
               "tags": "[parameters('tags')]",
-              "identity": {
-                "type": "SystemAssigned"
-              },
+              "identity": "[if(empty(parameters('userAssignedIdentityId')), createObject('type', 'SystemAssigned'), createObject('type', 'SystemAssigned, UserAssigned', 'userAssignedIdentities', createObject(format('{0}', parameters('userAssignedIdentityId')), createObject())))]",
               "properties": {
                 "environmentId": "[parameters('environmentId')]",
-                "configuration": {
-                  "ingress": "[if(parameters('ingressEnabled'), union(createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), if(empty(parameters('additionalPortMappings')), createObject(), createObject('additionalPortMappings', parameters('additionalPortMappings')))), null())]"
-                },
+                "configuration": "[union(createObject('ingress', if(parameters('ingressEnabled'), union(createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), if(empty(parameters('additionalPortMappings')), createObject(), createObject('additionalPortMappings', parameters('additionalPortMappings')))), null())), if(empty(parameters('secretValues')), createObject(), createObject('secrets', variables('containerAppSecrets'))))]",
                 "template": {
                   "containers": [
                     {
@@ -2364,7 +2714,7 @@
                         "cpu": "[json(parameters('cpu'))]",
                         "memory": "[parameters('memory')]"
                       },
-                      "env": "[parameters('envVars')]",
+                      "env": "[union(parameters('envVars'), parameters('secretEnvVars'))]",
                       "probes": [
                         {
                           "type": "Startup",
@@ -2445,6 +2795,7 @@
         "reactStaticWebApp",
         "redis",
         "rg",
+        "runtimeSqlIdentity",
         "serviceBus",
         "sqlDatabase",
         "storage",
@@ -2492,8 +2843,24 @@
           "maxReplicas": {
             "value": "[parameters('schedulerProfile').maxReplicas]"
           },
+          "userAssignedIdentityId": {
+            "value": "[reference('runtimeSqlIdentity').outputs.id.value]"
+          },
           "envVars": {
-            "value": "[union(createArray(createObject('name', 'Hosting__Lane', 'value', 'Azure'), createObject('name', 'Database__Provider', 'value', 'SqlServer'), createObject('name', 'Messaging__Provider', 'value', 'ServiceBus'), createObject('name', 'Storage__Provider', 'value', 'AzureBlob'), createObject('name', 'ReadModel__Provider', 'value', 'Cosmos'), createObject('name', 'Audit__Provider', 'value', 'AzureTable'), createObject('name', 'Search__Provider', 'value', parameters('searchProvider')), createObject('name', 'DataProtection__Persistence', 'value', 'AzureBlob'), createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value)), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', format('{0}ApplicationIntent=ReadOnly;', reference('sqlDatabase').outputs.connectionString.value)), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TickerQDbContext', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__BlobStorage1', 'value', reference('storage').outputs.appStorageBlobEndpoint.value), createObject('name', 'ConnectionStrings__TableStorage1', 'value', reference('storage').outputs.appStorageTableEndpoint.value), createObject('name', 'ConnectionStrings__Redis1', 'value', listOutputsWithSecureValues('redis', '2025-04-01').connectionString)), createArray(createObject('name', 'ServiceBus1__fullyQualifiedNamespace', 'value', reference('serviceBus').outputs.namespaceEndpoint.value)))]"
+            "value": "[union(createArray(createObject('name', 'Hosting__Lane', 'value', 'Azure'), createObject('name', 'Database__Provider', 'value', 'SqlServer'), createObject('name', 'Messaging__Provider', 'value', 'ServiceBus'), createObject('name', 'Storage__Provider', 'value', 'AzureBlob'), createObject('name', 'ReadModel__Provider', 'value', 'Cosmos'), createObject('name', 'Audit__Provider', 'value', 'AzureTable'), createObject('name', 'Search__Provider', 'value', parameters('searchProvider')), createObject('name', 'DataProtection__Persistence', 'value', 'AzureBlob'), createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value)), createArray(createObject('name', 'ConnectionStrings__TaskFlowDbContextTrxn', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TaskFlowDbContextQuery', 'value', format('{0}ApplicationIntent=ReadOnly;', reference('sqlDatabase').outputs.connectionString.value)), createObject('name', 'ConnectionStrings__TaskFlowFlowEngineDbContext', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__TickerQDbContext', 'value', reference('sqlDatabase').outputs.connectionString.value), createObject('name', 'ConnectionStrings__BlobStorage1', 'value', reference('storage').outputs.appStorageBlobEndpoint.value), createObject('name', 'ConnectionStrings__TableStorage1', 'value', reference('storage').outputs.appStorageTableEndpoint.value)), createArray(createObject('name', 'ServiceBus1__fullyQualifiedNamespace', 'value', reference('serviceBus').outputs.namespaceEndpoint.value)))]"
+          },
+          "secretValues": {
+            "value": {
+              "redis-connection": "[listOutputsWithSecureValues('redis', '2025-04-01').connectionString]"
+            }
+          },
+          "secretEnvVars": {
+            "value": [
+              {
+                "name": "ConnectionStrings__Redis1",
+                "secretRef": "redis-connection"
+              }
+            ]
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -2506,7 +2873,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "11145755578384506289"
+              "templateHash": "7556980250466145039"
             }
           },
           "parameters": {
@@ -2637,6 +3004,27 @@
                 "description": "Environment variables"
               }
             },
+            "secretValues": {
+              "type": "secureObject",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Container App secret values keyed by secret name"
+              }
+            },
+            "secretEnvVars": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Secret-backed environment variables, each { name, secretRef }"
+              }
+            },
+            "userAssignedIdentityId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Optional user-assigned managed identity resource ID"
+              }
+            },
             "tags": {
               "type": "object",
               "defaultValue": {},
@@ -2645,6 +3033,18 @@
               }
             }
           },
+          "variables": {
+            "copy": [
+              {
+                "name": "containerAppSecrets",
+                "count": "[length(items(parameters('secretValues')))]",
+                "input": {
+                  "name": "[items(parameters('secretValues'))[copyIndex('containerAppSecrets')].key]",
+                  "value": "[items(parameters('secretValues'))[copyIndex('containerAppSecrets')].value]"
+                }
+              }
+            ]
+          },
           "resources": [
             {
               "type": "Microsoft.App/containerApps",
@@ -2652,14 +3052,10 @@
               "name": "[parameters('appName')]",
               "location": "[parameters('location')]",
               "tags": "[parameters('tags')]",
-              "identity": {
-                "type": "SystemAssigned"
-              },
+              "identity": "[if(empty(parameters('userAssignedIdentityId')), createObject('type', 'SystemAssigned'), createObject('type', 'SystemAssigned, UserAssigned', 'userAssignedIdentities', createObject(format('{0}', parameters('userAssignedIdentityId')), createObject())))]",
               "properties": {
                 "environmentId": "[parameters('environmentId')]",
-                "configuration": {
-                  "ingress": "[if(parameters('ingressEnabled'), union(createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), if(empty(parameters('additionalPortMappings')), createObject(), createObject('additionalPortMappings', parameters('additionalPortMappings')))), null())]"
-                },
+                "configuration": "[union(createObject('ingress', if(parameters('ingressEnabled'), union(createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), if(empty(parameters('additionalPortMappings')), createObject(), createObject('additionalPortMappings', parameters('additionalPortMappings')))), null())), if(empty(parameters('secretValues')), createObject(), createObject('secrets', variables('containerAppSecrets'))))]",
                 "template": {
                   "containers": [
                     {
@@ -2669,7 +3065,7 @@
                         "cpu": "[json(parameters('cpu'))]",
                         "memory": "[parameters('memory')]"
                       },
-                      "env": "[parameters('envVars')]",
+                      "env": "[union(parameters('envVars'), parameters('secretEnvVars'))]",
                       "probes": [
                         {
                           "type": "Startup",
@@ -2748,6 +3144,7 @@
         "keyVault",
         "redis",
         "rg",
+        "runtimeSqlIdentity",
         "serviceBus",
         "sqlDatabase",
         "storage"
@@ -2814,7 +3211,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "11145755578384506289"
+              "templateHash": "7556980250466145039"
             }
           },
           "parameters": {
@@ -2945,6 +3342,27 @@
                 "description": "Environment variables"
               }
             },
+            "secretValues": {
+              "type": "secureObject",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Container App secret values keyed by secret name"
+              }
+            },
+            "secretEnvVars": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Secret-backed environment variables, each { name, secretRef }"
+              }
+            },
+            "userAssignedIdentityId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Optional user-assigned managed identity resource ID"
+              }
+            },
             "tags": {
               "type": "object",
               "defaultValue": {},
@@ -2953,6 +3371,18 @@
               }
             }
           },
+          "variables": {
+            "copy": [
+              {
+                "name": "containerAppSecrets",
+                "count": "[length(items(parameters('secretValues')))]",
+                "input": {
+                  "name": "[items(parameters('secretValues'))[copyIndex('containerAppSecrets')].key]",
+                  "value": "[items(parameters('secretValues'))[copyIndex('containerAppSecrets')].value]"
+                }
+              }
+            ]
+          },
           "resources": [
             {
               "type": "Microsoft.App/containerApps",
@@ -2960,14 +3390,10 @@
               "name": "[parameters('appName')]",
               "location": "[parameters('location')]",
               "tags": "[parameters('tags')]",
-              "identity": {
-                "type": "SystemAssigned"
-              },
+              "identity": "[if(empty(parameters('userAssignedIdentityId')), createObject('type', 'SystemAssigned'), createObject('type', 'SystemAssigned, UserAssigned', 'userAssignedIdentities', createObject(format('{0}', parameters('userAssignedIdentityId')), createObject())))]",
               "properties": {
                 "environmentId": "[parameters('environmentId')]",
-                "configuration": {
-                  "ingress": "[if(parameters('ingressEnabled'), union(createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), if(empty(parameters('additionalPortMappings')), createObject(), createObject('additionalPortMappings', parameters('additionalPortMappings')))), null())]"
-                },
+                "configuration": "[union(createObject('ingress', if(parameters('ingressEnabled'), union(createObject('external', parameters('externalIngress'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false(), 'stickySessions', createObject('affinity', parameters('stickySessions'))), if(empty(parameters('additionalPortMappings')), createObject(), createObject('additionalPortMappings', parameters('additionalPortMappings')))), null())), if(empty(parameters('secretValues')), createObject(), createObject('secrets', variables('containerAppSecrets'))))]",
                 "template": {
                   "containers": [
                     {
@@ -2977,7 +3403,7 @@
                         "cpu": "[json(parameters('cpu'))]",
                         "memory": "[parameters('memory')]"
                       },
-                      "env": "[parameters('envVars')]",
+                      "env": "[union(parameters('envVars'), parameters('secretEnvVars'))]",
                       "probes": [
                         {
                           "type": "Startup",
@@ -3269,6 +3695,9 @@
           "storageBlobEndpoint": {
             "value": "[reference('storage').outputs.appStorageBlobEndpoint.value]"
           },
+          "storageQueueEndpoint": {
+            "value": "[reference('storage').outputs.appStorageQueueEndpoint.value]"
+          },
           "storageTableEndpoint": {
             "value": "[reference('storage').outputs.appStorageTableEndpoint.value]"
           },
@@ -3277,6 +3706,9 @@
           },
           "functionAppScaleLimit": {
             "value": "[parameters('functionAppScaleLimit')]"
+          },
+          "userAssignedIdentityId": {
+            "value": "[reference('runtimeSqlIdentity').outputs.id.value]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -3289,7 +3721,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "15169365643734380812"
+              "templateHash": "14797848689858427523"
             }
           },
           "parameters": {
@@ -3364,6 +3796,12 @@
                 "description": "Storage blob endpoint"
               }
             },
+            "storageQueueEndpoint": {
+              "type": "string",
+              "metadata": {
+                "description": "Storage queue endpoint used by the Blob trigger for poison blobs"
+              }
+            },
             "storageTableEndpoint": {
               "type": "string",
               "metadata": {
@@ -3381,6 +3819,12 @@
               "defaultValue": 20,
               "metadata": {
                 "description": "Maximum function app instance count (Flex Consumption scale-out ceiling); pair with host.json serviceBus.maxConcurrentCalls"
+              }
+            },
+            "userAssignedIdentityId": {
+              "type": "string",
+              "metadata": {
+                "description": "User-assigned managed identity resource ID used for Azure SQL"
               }
             },
             "tags": {
@@ -3418,7 +3862,10 @@
               "tags": "[parameters('tags')]",
               "kind": "functionapp,linux",
               "identity": {
-                "type": "SystemAssigned"
+                "type": "SystemAssigned, UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', parameters('userAssignedIdentityId'))]": {}
+                }
               },
               "properties": {
                 "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', format('{0}-func-plan', parameters('resourcePrefix')))]",
@@ -3506,8 +3953,12 @@
                       "value": "[parameters('cosmosEndpoint')]"
                     },
                     {
-                      "name": "ConnectionStrings__BlobStorage1",
+                      "name": "BlobStorage1__blobServiceUri",
                       "value": "[parameters('storageBlobEndpoint')]"
+                    },
+                    {
+                      "name": "BlobStorage1__queueServiceUri",
+                      "value": "[parameters('storageQueueEndpoint')]"
                     },
                     {
                       "name": "ConnectionStrings__TableStorage1",
@@ -3554,94 +4005,10 @@
         "cosmosDb",
         "keyVault",
         "rg",
+        "runtimeSqlIdentity",
         "serviceBus",
         "sqlDatabase",
         "storage"
-      ]
-    },
-    "deployIdentity": {
-      "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2025-04-01",
-      "name": "deployIdentity",
-      "resourceGroup": "[format('{0}-rg', variables('prefix'))]",
-      "properties": {
-        "expressionEvaluationOptions": {
-          "scope": "inner"
-        },
-        "mode": "Incremental",
-        "parameters": {
-          "identityName": {
-            "value": "[format('{0}-deploy-id', variables('prefix'))]"
-          },
-          "location": {
-            "value": "[parameters('location')]"
-          },
-          "tags": {
-            "value": "[variables('tags')]"
-          }
-        },
-        "template": {
-          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-          "contentVersion": "1.0.0.0",
-          "metadata": {
-            "_generator": {
-              "name": "bicep",
-              "version": "0.42.1.51946",
-              "templateHash": "1171689923931820157"
-            }
-          },
-          "parameters": {
-            "identityName": {
-              "type": "string",
-              "metadata": {
-                "description": "User-assigned managed identity name"
-              }
-            },
-            "location": {
-              "type": "string",
-              "metadata": {
-                "description": "Azure region"
-              }
-            },
-            "tags": {
-              "type": "object",
-              "defaultValue": {},
-              "metadata": {
-                "description": "Tags"
-              }
-            }
-          },
-          "resources": [
-            {
-              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
-              "apiVersion": "2023-07-31-preview",
-              "name": "[parameters('identityName')]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]"
-            }
-          ],
-          "outputs": {
-            "principalId": {
-              "type": "string",
-              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')), '2023-07-31-preview').principalId]"
-            },
-            "clientId": {
-              "type": "string",
-              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')), '2023-07-31-preview').clientId]"
-            },
-            "id": {
-              "type": "string",
-              "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName'))]"
-            },
-            "name": {
-              "type": "string",
-              "value": "[parameters('identityName')]"
-            }
-          }
-        }
-      },
-      "dependsOn": [
-        "rg"
       ]
     },
     "deployContributor": {
@@ -4783,6 +5150,73 @@
         "rg"
       ]
     },
+    "funcQueueContributor": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "funcQueueContributor",
+      "resourceGroup": "[format('{0}-rg', variables('prefix'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "principalId": {
+            "value": "[reference('functions').outputs.functionAppPrincipalId.value]"
+          },
+          "roleDefinitionId": {
+            "value": "[variables('roles').storageQueueDataContributor]"
+          },
+          "roleDescription": {
+            "value": "Functions: Storage Queue Data Contributor for Blob trigger poison queues"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "11752414911162580225"
+            }
+          },
+          "parameters": {
+            "principalId": {
+              "type": "string"
+            },
+            "principalType": {
+              "type": "string",
+              "defaultValue": "ServicePrincipal"
+            },
+            "roleDefinitionId": {
+              "type": "string"
+            },
+            "roleDescription": {
+              "type": "string",
+              "defaultValue": ""
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(resourceGroup().id, parameters('principalId'), parameters('roleDefinitionId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleDefinitionId'))]",
+                "principalId": "[parameters('principalId')]",
+                "principalType": "[parameters('principalType')]",
+                "description": "[parameters('roleDescription')]"
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "functions",
+        "rg"
+      ]
+    },
     "funcAppConfigReader": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
@@ -5120,6 +5554,30 @@
     "sqlServerName": {
       "type": "string",
       "value": "[reference('sqlDatabase').outputs.serverName.value]"
+    },
+    "sqlServerFqdn": {
+      "type": "string",
+      "value": "[reference('sqlDatabase').outputs.serverFqdn.value]"
+    },
+    "sqlDatabaseName": {
+      "type": "string",
+      "value": "[reference('sqlDatabase').outputs.databaseName.value]"
+    },
+    "migrationSqlIdentityName": {
+      "type": "string",
+      "value": "[reference('migrationSqlIdentity').outputs.name.value]"
+    },
+    "migrationSqlIdentityClientId": {
+      "type": "string",
+      "value": "[reference('migrationSqlIdentity').outputs.clientId.value]"
+    },
+    "runtimeSqlIdentityName": {
+      "type": "string",
+      "value": "[reference('runtimeSqlIdentity').outputs.name.value]"
+    },
+    "runtimeSqlIdentityClientId": {
+      "type": "string",
+      "value": "[reference('runtimeSqlIdentity').outputs.clientId.value]"
     },
     "redisHostName": {
       "type": "string",
