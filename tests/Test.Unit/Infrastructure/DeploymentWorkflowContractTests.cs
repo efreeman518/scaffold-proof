@@ -43,6 +43,11 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(stableImageLookup, "ResourceNotFound|ResourceGroupNotFound");
         StringAssert.Contains(stableImageLookup, "cat \"$error_file\" >&2");
         StringAssert.Contains(stableImageLookup, "return \"$status\"");
+        Assert.AreEqual(4, stableImageLookup.Split("=$(current ").Length - 1);
+        StringAssert.Contains(stableImageLookup, "printf 'gateway=%s\\n' \"$gateway\"");
+        Assert.IsFalse(stableImageLookup.Split('\n').Any(
+            line => line.Contains("echo ", StringComparison.Ordinal) &&
+                    line.Contains("$(current ", StringComparison.Ordinal)));
         Assert.IsFalse(stableImageLookup.Contains("2>/dev/null ||", StringComparison.Ordinal));
 
         // The image build lives in the reusable workflow now, and both lanes must consume the same one.

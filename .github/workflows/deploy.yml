@@ -223,10 +223,16 @@ jobs:
             rm -f "$error_file"
             return "$status"
           }
-          echo "gateway=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-gateway")" >> "$GITHUB_OUTPUT"
-          echo "api=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-api")" >> "$GITHUB_OUTPUT"
-          echo "scheduler=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-scheduler")" >> "$GITHUB_OUTPUT"
-          echo "blazor=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-blazor")" >> "$GITHUB_OUTPUT"
+          gateway=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-gateway")
+          api=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-api")
+          scheduler=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-scheduler")
+          blazor=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-blazor")
+          {
+            printf 'gateway=%s\n' "$gateway"
+            printf 'api=%s\n' "$api"
+            printf 'scheduler=%s\n' "$scheduler"
+            printf 'blazor=%s\n' "$blazor"
+          } >> "$GITHUB_OUTPUT"
       - id: deploy
         uses: azure/arm-deploy@a1361c2c2cd398621955b16ca32e01c65ea340f5 # v2
         with:
