@@ -1,4 +1,5 @@
 using AppHost;
+using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Testing;
 using Microsoft.Extensions.Configuration;
 using TaskFlow.Hosting;
@@ -189,7 +190,7 @@ public sealed class AppHostLaneTopologyTests
     [TestMethod]
     public async Task FullLane_AzureGraph_ContainsEveryHostAndNoNonAzureResource()
     {
-        var resources = await BuildResourceGraphAsync("Azure");
+        var resources = (await BuildResourceGraphAsync("Azure")).ResourceNames;
 
         AssertPresent(resources, "sql", "taskflowdb", "redis", "AzureStorage", "BlobStorage1",
             "TableStorage1", "ServiceBus1", "ServiceBus1-mssql", "CosmosDb1", "taskflowmigrator",
@@ -201,7 +202,7 @@ public sealed class AppHostLaneTopologyTests
     [TestMethod]
     public async Task FullLane_NonAzureGraph_ContainsEveryCommonHostAndNoAzureResource()
     {
-        var resources = await BuildResourceGraphAsync("NonAzure");
+        var resources = (await BuildResourceGraphAsync("NonAzure")).ResourceNames;
 
         AssertPresent(resources, "postgres", "taskflowdb", "redis", "rabbitmq", "seaweedfs",
             "taskflowmigrator", "taskflowapi", "taskflowgateway", "taskflowscheduler", "taskflowblazor",
@@ -213,7 +214,7 @@ public sealed class AppHostLaneTopologyTests
     [TestMethod]
     public async Task FullLane_NonAzureMongoOptIn_AddsOnlyMongoResource()
     {
-        var resources = await BuildResourceGraphAsync("NonAzure", readModel: "MongoDb");
+        var resources = (await BuildResourceGraphAsync("NonAzure", readModel: "MongoDb")).ResourceNames;
 
         AssertPresent(resources, "mongodb");
         AssertAbsent(resources, "AzureStorage", "BlobStorage1", "TableStorage1", "ServiceBus1",
@@ -223,10 +224,33 @@ public sealed class AppHostLaneTopologyTests
     [TestMethod]
     public async Task AzureManifestMode_BuildsWithoutEmulatorSidecarLookupFailure()
     {
-        var resources = await BuildResourceGraphAsync("Azure", manifestMode: true);
+        var resources = (await BuildResourceGraphAsync("Azure", manifestMode: true)).ResourceNames;
 
         AssertPresent(resources, "ServiceBus1", "taskflowfunctions", "taskflowreact", "taskflowuno");
         AssertAbsent(resources, "ServiceBus1-mssql", "rabbitmq", "seaweedfs");
+    }
+
+    [TestMethod]
+    public async Task FullLane_AzureContainerImages_UseSingleRegistryAndCanonicalTags()
+    {
+        var images = (await BuildResourceGraphAsync("Azure")).ContainerImages;
+
+        foreach (var expected in new[]
+                 {
+                     ContainerImages.SqlServer,
+                     ContainerImages.ServiceBusEmulator,
+                     ContainerImages.ServiceBusSqlServer,
+                     ContainerImages.Azurite,
+                     ContainerImages.CosmosEmulator
+                 })
+        {
+            Assert.IsTrue(images.Contains(expected),
+                $"missing {expected}; actual images: {string.Join(", ", images.Order())}");
+        }
+
+        Assert.IsFalse(images.Any(image =>
+                image.Contains("mcr.microsoft.com/mcr.microsoft.com/", StringComparison.Ordinal)),
+            $"duplicated registry in: {string.Join(", ", images.Order())}");
     }
 
     private static void AssertHostEnvironmentMatches(LaneSwitches switches)
@@ -281,7 +305,7 @@ public sealed class AppHostLaneTopologyTests
         return File.ReadAllText(Path.Combine(directory.FullName, "src", "Host", "Aspire", "AppHost", "AppHost.cs"));
     }
 
-    private static async Task<HashSet<string>> BuildResourceGraphAsync(
+    private static async Task<AppHostGraph> BuildResourceGraphAsync(
         string lane,
         string? readModel = null,
         bool manifestMode = false)
@@ -302,7 +326,13 @@ public sealed class AppHostLaneTopologyTests
                 args: manifestMode ? ["--publisher", "manifest"] : [],
                 configureBuilder: (appOptions, _) => appOptions.DisableDashboard = true);
 
-            return builder.Resources.Select(resource => resource.Name).ToHashSet(StringComparer.Ordinal);
+            var resourceNames = builder.Resources.Select(resource => resource.Name).ToHashSet(StringComparer.Ordinal);
+            var containerImages = builder.Resources
+                .Select(resource => resource.TryGetContainerImageName(out var imageName) ? imageName : null)
+                .OfType<string>()
+                .ToHashSet(StringComparer.Ordinal);
+
+            return new(resourceNames, containerImages);
         }
         finally
         {
@@ -323,4 +353,8 @@ public sealed class AppHostLaneTopologyTests
             Assert.IsFalse(resources.Contains(resource),
                 $"unexpected {resource}; actual resources: {string.Join(", ", resources.Order())}");
     }
+
+    private sealed record AppHostGraph(
+        HashSet<string> ResourceNames,
+        HashSet<string> ContainerImages);
 }

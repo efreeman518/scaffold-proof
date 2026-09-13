@@ -71,6 +71,7 @@ else
     var sqlPassword = builder.AddParameter("sql-password", defaultSqlPassword, secret: true);
     var sql = builder.AddSqlServer("sql", sqlPassword, port: isTesting ? null : 38433)
         .WithImage(ContainerImages.SqlServerRepository)
+        .WithImageRegistry(ContainerImages.MicrosoftContainerRegistry)
         .WithImageTag(ContainerImages.SqlServerTag);
     if (!isTesting)
         sql = sql.WithLifetime(ContainerLifetime.Persistent)
@@ -124,6 +125,7 @@ else
     storage = builder.AddAzureStorage("AzureStorage")
         .RunAsEmulator(emulator => emulator
             .WithImage(ContainerImages.AzuriteRepository)
+            .WithImageRegistry(ContainerImages.MicrosoftContainerRegistry)
             .WithImageTag(ContainerImages.AzuriteTag));
     blobs = storage.AddBlobs("BlobStorage1");
     tables = storage.AddTables("TableStorage1");
@@ -152,6 +154,7 @@ else
     var sb = builder.AddAzureServiceBus("ServiceBus1")
         .RunAsEmulator(emulator => emulator
             .WithImage(ContainerImages.ServiceBusEmulatorRepository)
+            .WithImageRegistry(ContainerImages.MicrosoftContainerRegistry)
             .WithImageTag(ContainerImages.ServiceBusEmulatorTag));
     var domainEventsTopic = sb.AddServiceBusTopic("DomainEvents");
 
@@ -181,6 +184,7 @@ else
     {
         builder.CreateResourceBuilder(serviceBusSqlSidecar)
             .WithImage(ContainerImages.ServiceBusSqlServerRepository)
+            .WithImageRegistry(ContainerImages.MicrosoftContainerRegistry)
             .WithImageTag(ContainerImages.ServiceBusSqlServerTag);
     }
 
@@ -219,6 +223,7 @@ if (!nonAzureLane && (!isTesting || fullLaneAvailableInTesting))
     cosmos = builder.AddAzureCosmosDB("CosmosDb1")
         .RunAsEmulator(emulator => emulator
             .WithImage(ContainerImages.CosmosEmulatorRepository)
+            .WithImageRegistry(ContainerImages.MicrosoftContainerRegistry)
             .WithImageTag(ContainerImages.CosmosEmulatorTag));
 }
 

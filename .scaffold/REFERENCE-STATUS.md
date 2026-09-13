@@ -105,7 +105,7 @@ Status meanings:
 
 | Capability | Status | Evidence boundary |
 |---|---|---|
-| Hosting-lane preset (`TASKFLOW_LANE=Azure\|Portable`, D-035) | proven | `HostingLaneSelector`; `Test.Unit/Hosting/ProviderSwitchSelectorTests.cs`; `Test.Aspire/AppHostLaneTopologyTests.cs` (7 Portable-topology assertions, part of the 12 non-DCP Test.Aspire tests) |
+| Hosting-lane preset (`TASKFLOW_LANE=Azure\|Portable`, D-035) | proven | `HostingLaneSelector`; `Test.Unit/Hosting/ProviderSwitchSelectorTests.cs`; `Test.Aspire/AppHostLaneTopologyTests.cs` (17 verified topology tests, including exact single-registry Azure container image references) |
 | S3 object storage (D-037) | proven | `Test.Integration/S3ObjectStorageRepositoryTests.cs` (MinIO Testcontainers); `Test.Unit/Infrastructure/S3StorageRegistrationTests.cs` |
 | Relational read model (D-038) | proven | `Test.Integration/RelationalTaskViewRepositoryTests.cs`, both DB lanes |
 | Relational audit sink (D-039) | proven | `Test.Integration/RelationalAuditLogRepositoryTests.cs`, both DB lanes |

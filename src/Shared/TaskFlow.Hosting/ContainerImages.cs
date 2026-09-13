@@ -3,25 +3,27 @@ namespace TaskFlow.Hosting;
 /// <summary>Single image-name and tag catalog for local lane infrastructure (D-060).</summary>
 public static class ContainerImages
 {
-    public const string SqlServerRepository = "mcr.microsoft.com/mssql/server";
+    public const string MicrosoftContainerRegistry = "mcr.microsoft.com";
+
+    public const string SqlServerRepository = "mssql/server";
     public const string SqlServerTag = "2025-latest";
-    public const string SqlServer = $"{SqlServerRepository}:{SqlServerTag}";
+    public const string SqlServer = $"{MicrosoftContainerRegistry}/{SqlServerRepository}:{SqlServerTag}";
 
-    public const string ServiceBusEmulatorRepository = "mcr.microsoft.com/azure-messaging/servicebus-emulator";
+    public const string ServiceBusEmulatorRepository = "azure-messaging/servicebus-emulator";
     public const string ServiceBusEmulatorTag = "latest";
-    public const string ServiceBusEmulator = $"{ServiceBusEmulatorRepository}:{ServiceBusEmulatorTag}";
+    public const string ServiceBusEmulator = $"{MicrosoftContainerRegistry}/{ServiceBusEmulatorRepository}:{ServiceBusEmulatorTag}";
 
-    public const string ServiceBusSqlServerRepository = "mcr.microsoft.com/mssql/server";
+    public const string ServiceBusSqlServerRepository = "mssql/server";
     public const string ServiceBusSqlServerTag = "2022-latest";
-    public const string ServiceBusSqlServer = $"{ServiceBusSqlServerRepository}:{ServiceBusSqlServerTag}";
+    public const string ServiceBusSqlServer = $"{MicrosoftContainerRegistry}/{ServiceBusSqlServerRepository}:{ServiceBusSqlServerTag}";
 
-    public const string AzuriteRepository = "mcr.microsoft.com/azure-storage/azurite";
+    public const string AzuriteRepository = "azure-storage/azurite";
     public const string AzuriteTag = "latest";
-    public const string Azurite = $"{AzuriteRepository}:{AzuriteTag}";
+    public const string Azurite = $"{MicrosoftContainerRegistry}/{AzuriteRepository}:{AzuriteTag}";
 
-    public const string CosmosEmulatorRepository = "mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator";
+    public const string CosmosEmulatorRepository = "cosmosdb/linux/azure-cosmos-emulator";
     public const string CosmosEmulatorTag = "vnext-latest";
-    public const string CosmosEmulator = $"{CosmosEmulatorRepository}:{CosmosEmulatorTag}";
+    public const string CosmosEmulator = $"{MicrosoftContainerRegistry}/{CosmosEmulatorRepository}:{CosmosEmulatorTag}";
 
     public const string PostgreSqlRepository = "pgvector/pgvector";
     public const string PostgreSqlTag = "pg18";
