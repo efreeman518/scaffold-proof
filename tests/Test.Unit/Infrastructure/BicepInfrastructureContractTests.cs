@@ -123,6 +123,26 @@ public sealed class BicepInfrastructureContractTests
     }
 
     [TestMethod]
+    public void AzureBootstrap_UpdatesExistingFederatedCredentialWithoutHidingLookupFailures()
+    {
+        var bootstrap = ReadInfraFile(Path.Combine("scripts", "bootstrap.ps1"));
+        var list = bootstrap.IndexOf("az identity federated-credential list", StringComparison.Ordinal);
+        var listExitCheck = bootstrap.IndexOf(
+            "if ($LASTEXITCODE -ne 0) { throw \"Failed to list federated credentials\" }",
+            StringComparison.Ordinal);
+        var update = bootstrap.IndexOf("az identity federated-credential update", StringComparison.Ordinal);
+        var create = bootstrap.IndexOf("az identity federated-credential create", StringComparison.Ordinal);
+        var mutationExitCheck = bootstrap.IndexOf(
+            "if ($LASTEXITCODE -ne 0) { throw \"Failed to create or update federated credential\" }",
+            StringComparison.Ordinal);
+
+        Assert.IsTrue(list >= 0 && list < listExitCheck);
+        Assert.IsTrue(listExitCheck < update && update < mutationExitCheck);
+        Assert.IsTrue(listExitCheck < create && create < mutationExitCheck);
+        StringAssert.Contains(bootstrap, "$credentialExists");
+    }
+
+    [TestMethod]
     public void MainBicep_RemovesAlwaysEncryptedWiring()
     {
         var main = ReadInfraFile("main.bicep");
@@ -139,6 +159,34 @@ public sealed class BicepInfrastructureContractTests
 
         StringAssert.Contains(module, "param concurrentRequests int");
         StringAssert.Contains(module, "concurrentRequests: string(concurrentRequests)");
+    }
+
+    [TestMethod]
+    public void SchedulerWithoutIngress_StaysWarmInDefaultAndDeploymentProfiles()
+    {
+        var main = ReadInfraFile("main.bicep");
+        var defaultProfile = main[
+            main.IndexOf("param schedulerProfile object", StringComparison.Ordinal)..
+            main.IndexOf("@description('Blazor container app scale/sizing profile')", StringComparison.Ordinal)];
+        var scheduler = main[
+            main.IndexOf("module scheduler 'modules/container-app.bicep'", StringComparison.Ordinal)..
+            main.IndexOf("module blazor 'modules/container-app.bicep'", StringComparison.Ordinal)];
+        var dev = ReadInfraFile("main.dev.bicepparam");
+        var devProfile = dev[
+            dev.IndexOf("param schedulerProfile", StringComparison.Ordinal)..
+            dev.IndexOf("param blazorProfile", StringComparison.Ordinal)];
+        var prod = ReadInfraFile("main.prod.bicepparam");
+        var prodProfile = prod[
+            prod.IndexOf("param schedulerProfile", StringComparison.Ordinal)..
+            prod.IndexOf("param blazorProfile", StringComparison.Ordinal)];
+
+        StringAssert.Contains(scheduler, "ingressEnabled: false");
+        StringAssert.Contains(scheduler, "minReplicas: schedulerProfile.minReplicas");
+        StringAssert.Contains(defaultProfile, "minReplicas: 1");
+        StringAssert.Contains(devProfile, "minReplicas: 1");
+        StringAssert.Contains(prodProfile, "minReplicas: 2");
+        Assert.IsFalse(defaultProfile.Contains("minReplicas: 0", StringComparison.Ordinal));
+        Assert.IsFalse(devProfile.Contains("minReplicas: 0", StringComparison.Ordinal));
     }
 
     /// <summary>

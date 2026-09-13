@@ -41,7 +41,7 @@ param apiProfile = {
   memory: '1Gi'
 }
 param schedulerProfile = {
-  minReplicas: 0
+  minReplicas: 1
   maxReplicas: 1
   concurrentRequests: 0
   cpu: '0.25'

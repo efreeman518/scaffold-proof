@@ -87,16 +87,32 @@ $tenantId = (az account show --query tenantId -o tsv)
 # 4. Add federated credential for GitHub Actions
 Write-Host "[3/4] Creating federated credential for GitHub Actions..." -ForegroundColor Yellow
 
-# Create federated credential on the managed identity
-az identity federated-credential create `
-    --name "github-actions-$EnvironmentName" `
+$credentialName = "github-actions-$EnvironmentName"
+$credentialList = az identity federated-credential list `
     --identity-name $identityName `
     --resource-group $rgName `
-    --issuer "https://token.actions.githubusercontent.com" `
-    --subject "repo:${GitHubRepo}:ref:refs/heads/$GitHubBranch" `
-    --audiences "api://AzureADTokenExchange"
+    --output json
+if ($LASTEXITCODE -ne 0) { throw "Failed to list federated credentials" }
 
-if ($LASTEXITCODE -ne 0) { throw "Failed to create federated credential" }
+$credentialExists = @($credentialList | ConvertFrom-Json | Where-Object name -EQ $credentialName).Count -eq 1
+$federatedCredentialArguments = @(
+    '--name', $credentialName,
+    '--identity-name', $identityName,
+    '--resource-group', $rgName,
+    '--issuer', 'https://token.actions.githubusercontent.com',
+    '--subject', "repo:${GitHubRepo}:ref:refs/heads/$GitHubBranch",
+    '--audiences', 'api://AzureADTokenExchange',
+    '--output', 'none'
+)
+
+if ($credentialExists) {
+    az identity federated-credential update @federatedCredentialArguments
+}
+else {
+    az identity federated-credential create @federatedCredentialArguments
+}
+
+if ($LASTEXITCODE -ne 0) { throw "Failed to create or update federated credential" }
 
 # 4. Output GitHub Actions variables
 Write-Host ""

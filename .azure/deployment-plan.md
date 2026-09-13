@@ -62,7 +62,7 @@ Generated: 2026-04-23
 |-----------|---------------|------------------------------------|---------------------------------------|---------|
 | TaskFlow.Gateway | Container App | min 0 / max 2, 0.25 vCPU, 0.5Gi | min 2 / max 100, 50 concurrent requests, 0.5 vCPU, 1Gi | External (only public endpoint) |
 | TaskFlow.Api | Container App | min 0 / max 3, 0.5 vCPU, 1Gi | min 2 / max 100, 50 concurrent requests, 1.0 vCPU, 2Gi | Internal only |
-| TaskFlow.Scheduler | Container App | min 0 / max 1, 0.25 vCPU, 0.5Gi | min 2 / max 2 (always-on, no concurrency rule), 0.5 vCPU, 1Gi | Internal only (no ingress) |
+| TaskFlow.Scheduler | Container App | min 1 / max 1, 0.25 vCPU, 0.5Gi (always-on) | min 2 / max 2 (always-on, no concurrency rule), 0.5 vCPU, 1Gi | Internal only (no ingress) |
 | TaskFlow.Functions | Functions Flex Consumption | `functionAppScaleLimit` 20 | `functionAppScaleLimit` 20 | Internal (Service Bus trigger) |
 | TaskFlow.Blazor | Container App | min 0 / max 1, 0.25 vCPU, 0.5Gi | min 2 / max 30, 0.5 vCPU, 1Gi | External |
 | TaskFlow.React | Static Web App | Free | Free | External |

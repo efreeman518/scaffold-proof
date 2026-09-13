@@ -23,7 +23,7 @@ Azure resource access uses **managed identities and Entra authentication** where
 
 ### Container Apps scale profiles
 
-Gateway, API, Scheduler, and Blazor each take a `<host>Profile` object param (`minReplicas`, `maxReplicas`, `concurrentRequests`, `cpu`, `memory`). `main.dev.bicepparam` keeps dev scale-to-zero with small ceilings and no HTTP concurrency rule; `main.prod.bicepparam` sets Gateway/API to min 2 / max 100 / 50 concurrent requests, Blazor to min 2 / max 30, and Scheduler to two always-on replicas (min 2 / max 2, no ingress so no concurrency rule).
+Gateway, API, Scheduler, and Blazor each take a `<host>Profile` object param (`minReplicas`, `maxReplicas`, `concurrentRequests`, `cpu`, `memory`). `main.dev.bicepparam` keeps public/request-driven hosts at scale-to-zero with small ceilings and no HTTP concurrency rule; Scheduler stays at one replica because its embedded TickerQ service has no ingress or event scale rule. `main.prod.bicepparam` sets Gateway/API to min 2 / max 100 / 50 concurrent requests, Blazor to min 2 / max 30, and Scheduler to two always-on replicas (min 2 / max 2).
 
 ### Azure lane contract
 

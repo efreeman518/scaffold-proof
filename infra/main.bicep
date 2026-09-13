@@ -91,7 +91,7 @@ param apiProfile object = {
 
 @description('Scheduler container app scale/sizing profile')
 param schedulerProfile object = {
-  minReplicas: 0
+  minReplicas: 1
   maxReplicas: 1
   concurrentRequests: 0
   cpu: '0.25'
