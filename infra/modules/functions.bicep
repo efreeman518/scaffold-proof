@@ -7,6 +7,9 @@ param location string
 @description('Functions storage account name')
 param funcStorageAccountName string
 
+@description('Existing Blob container URI used by Flex Consumption OneDeploy')
+param functionDeploymentContainerUri string
+
 @description('Service Bus namespace FQDN')
 param serviceBusNamespace string
 
@@ -92,8 +95,6 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
     siteConfig: {
       appSettings: [
         { name: 'AzureWebJobsStorage', value: funcStorageConnectionString }
-        { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
-        { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'dotnet-isolated' }
         { name: 'Hosting__Lane', value: 'Azure' }
         { name: 'Database__Provider', value: 'SqlServer' }
         { name: 'Messaging__Provider', value: 'ServiceBus' }
@@ -114,6 +115,8 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         // Azure Functions identity-based Blob bindings require the connection prefix plus blobServiceUri.
         { name: 'BlobStorage1__blobServiceUri', value: storageBlobEndpoint }
         { name: 'BlobStorage1__queueServiceUri', value: storageQueueEndpoint }
+        { name: 'BlobStorage1__credential', value: 'managedidentity' }
+        { name: 'AttachmentBlobContainer', value: 'attachments' }
         { name: 'ConnectionStrings__TableStorage1', value: storageTableEndpoint }
         {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
@@ -124,8 +127,25 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'TASKFLOW_SUPPRESS_ASPNETCORE_INSTRUMENTATION', value: 'true' }
       ]
       minTlsVersion: '1.2'
-      ftpsState: 'Disabled'
-      functionAppScaleLimit: functionAppScaleLimit
+    }
+    functionAppConfig: {
+      deployment: {
+        storage: {
+          type: 'blobContainer'
+          value: functionDeploymentContainerUri
+          authentication: {
+            type: 'SystemAssignedIdentity'
+          }
+        }
+      }
+      runtime: {
+        name: 'dotnet-isolated'
+        version: '10.0'
+      }
+      scaleAndConcurrency: {
+        maximumInstanceCount: functionAppScaleLimit
+        instanceMemoryMB: 2048
+      }
     }
   }
 }

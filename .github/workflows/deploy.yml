@@ -201,7 +201,28 @@ jobs:
           set -euo pipefail
           rg="${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-rg"
           inert="mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
-          current() { az containerapp show -g "$rg" -n "$1" --query 'properties.template.containers[0].image' -o tsv 2>/dev/null || printf '%s' "$inert"; }
+          current() {
+            local name="$1" image status error_file
+            error_file=$(mktemp)
+            if image=$(az containerapp show -g "$rg" -n "$name" --query 'properties.template.containers[0].image' -o tsv 2>"$error_file"); then
+              rm -f "$error_file"
+              [[ -n "$image" ]] || { echo "::error::$name returned an empty image" >&2; return 1; }
+              printf '%s' "$image"
+              return 0
+            else
+              status=$?
+            fi
+            if grep -Eq '(^|[(: ])(ResourceNotFound|ResourceGroupNotFound)([): ]|$)' "$error_file"; then
+              echo "::notice::$name does not exist yet; using the inert first-deploy image" >&2
+              rm -f "$error_file"
+              printf '%s' "$inert"
+              return 0
+            fi
+            echo "::error::Failed to resolve the current image for $name" >&2
+            cat "$error_file" >&2
+            rm -f "$error_file"
+            return "$status"
+          }
           echo "gateway=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-gateway")" >> "$GITHUB_OUTPUT"
           echo "api=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-api")" >> "$GITHUB_OUTPUT"
           echo "scheduler=$(current "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-scheduler")" >> "$GITHUB_OUTPUT"
@@ -315,10 +336,24 @@ jobs:
             az containerapp update -n "$app" -g "$RG" --image "$image" --output none
             wait_healthy "$app"
           done
-      - uses: azure/functions-action@c5060b3b8bb1ebbcb531abd00c822ecbaa8ea656 # v1.5.7
-        with:
-          app-name: ${{ needs.deploy-infrastructure.outputs.function-name }}
-          package: ./release/functions
+      - name: Deploy Functions through Flex OneDeploy
+        env:
+          FUNCTION_NAME: ${{ needs.deploy-infrastructure.outputs.function-name }}
+          RG: ${{ needs.deploy-infrastructure.outputs.resource-group }}
+        run: |
+          set -euo pipefail
+          (cd ./release/functions && zip -qr ../released-package.zip .)
+          # Flex deployment storage RBAC can lag ARM completion. Keep retries bounded and leave each CLI failure visible.
+          for attempt in {1..6}; do
+            if az functionapp deployment source config-zip -g "$RG" -n "$FUNCTION_NAME" --src ./release/released-package.zip; then
+              exit 0
+            else
+              status=$?
+            fi
+            echo "::warning::OneDeploy attempt ${attempt}/6 failed; Azure RBAC may still be propagating"
+            [[ "$attempt" -lt 6 ]] || exit "$status"
+            sleep 10
+          done
       - name: Write runtime gateway configuration
         env:
           GATEWAY_FQDN: ${{ needs.deploy-infrastructure.outputs.gateway-fqdn }}
@@ -528,10 +563,24 @@ jobs:
             wait_healthy "$app"
           done
           az containerapp job update -n "${RESOURCE_PREFIX}-${ENVIRONMENT_NAME}-dbmigrator" -g "$RG" --image "$MIGRATOR" --output none
-      - uses: azure/functions-action@c5060b3b8bb1ebbcb531abd00c822ecbaa8ea656 # v1.5.7
-        with:
-          app-name: ${{ steps.resources.outputs.function }}
-          package: ./rollback/functions
+      - name: Deploy recorded Functions package through Flex OneDeploy
+        env:
+          FUNCTION_NAME: ${{ steps.resources.outputs.function }}
+          RG: ${{ steps.resources.outputs.rg }}
+        run: |
+          set -euo pipefail
+          (cd ./rollback/functions && zip -qr ../released-package.zip .)
+          # Flex deployment storage RBAC can lag resource recovery. Keep retries bounded and leave each CLI failure visible.
+          for attempt in {1..6}; do
+            if az functionapp deployment source config-zip -g "$RG" -n "$FUNCTION_NAME" --src ./rollback/released-package.zip; then
+              exit 0
+            else
+              status=$?
+            fi
+            echo "::warning::Rollback OneDeploy attempt ${attempt}/6 failed; Azure RBAC may still be propagating"
+            [[ "$attempt" -lt 6 ]] || exit "$status"
+            sleep 10
+          done
       - name: Write rollback runtime gateway configuration
         env:
           GATEWAY_FQDN: ${{ steps.resources.outputs.fqdn }}

@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace Test.Unit.Infrastructure;
 
 /// <summary>
@@ -75,6 +77,9 @@ public sealed class BicepInfrastructureContractTests
         StringAssert.Contains(provisioner, "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::[taskflow]");
         StringAssert.Contains(provisioner, "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::[flowengine]");
         StringAssert.Contains(provisioner, "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::[scheduler]");
+        StringAssert.Contains(provisioner, "$maxAttempts = 6");
+        StringAssert.Contains(provisioner, "$retryDeadline = [DateTimeOffset]::UtcNow.AddMinutes(2)");
+        StringAssert.Contains(provisioner, "Write-Warning \"Azure SQL provisioning attempt");
         Assert.IsFalse(provisioner.Contains("FROM EXTERNAL PROVIDER", StringComparison.Ordinal));
 
         var provisionMigration = workflow.IndexOf("Provision least-privilege migration identity", StringComparison.Ordinal);
@@ -111,15 +116,60 @@ public sealed class BicepInfrastructureContractTests
     {
         var storage = ReadInfraFile(Path.Combine("modules", "storage.bicep"));
         var functions = ReadInfraFile(Path.Combine("modules", "functions.bicep"));
+        var main = ReadInfraFile("main.bicep");
 
         StringAssert.Contains(storage, "resource dataProtectionContainer");
         StringAssert.Contains(storage, "name: 'data-protection'");
+        StringAssert.Contains(storage, "resource functionDeploymentContainer");
+        StringAssert.Contains(storage, "name: 'function-releases'");
         StringAssert.Contains(functions, "{ name: 'BlobStorage1__blobServiceUri', value: storageBlobEndpoint }");
         StringAssert.Contains(functions, "{ name: 'BlobStorage1__queueServiceUri', value: storageQueueEndpoint }");
-        StringAssert.Contains(ReadInfraFile("main.bicep"), "roleDefinitionId: roles.storageQueueDataContributor");
+        StringAssert.Contains(functions, "{ name: 'BlobStorage1__credential', value: 'managedidentity' }");
+        StringAssert.Contains(functions, "{ name: 'AttachmentBlobContainer', value: 'attachments' }");
+        StringAssert.Contains(main, "roleDefinitionId: roles.storageBlobDataOwner");
+        StringAssert.Contains(main, "roleDefinitionId: roles.storageQueueDataContributor");
         Assert.IsFalse(functions.Contains(
             "{ name: 'ConnectionStrings__BlobStorage1', value: storageBlobEndpoint }",
             StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void FunctionsFlexConsumption_UsesDeploymentStorageRuntimeAndScaleContract()
+    {
+        var functions = ReadInfraFile(Path.Combine("modules", "functions.bicep"));
+
+        StringAssert.Contains(functions, "functionAppConfig: {");
+        StringAssert.Contains(functions, "deployment: {");
+        StringAssert.Contains(functions, "value: functionDeploymentContainerUri");
+        StringAssert.Contains(functions, "type: 'SystemAssignedIdentity'");
+        StringAssert.Contains(functions, "name: 'dotnet-isolated'");
+        StringAssert.Contains(functions, "version: '10.0'");
+        StringAssert.Contains(functions, "maximumInstanceCount: functionAppScaleLimit");
+        StringAssert.Contains(functions, "instanceMemoryMB: 2048");
+        Assert.IsFalse(functions.Contains("functionAppScaleLimit: functionAppScaleLimit", StringComparison.Ordinal));
+        Assert.IsFalse(functions.Contains("FUNCTIONS_EXTENSION_VERSION", StringComparison.Ordinal));
+        Assert.IsFalse(functions.Contains("FUNCTIONS_WORKER_RUNTIME", StringComparison.Ordinal));
+        Assert.IsFalse(functions.Contains("ftpsState", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void CompiledFunctionsFlexConsumption_HasRequiredSemanticStructure()
+    {
+        using var template = JsonDocument.Parse(ReadInfraFile("main.json"));
+        var configs = FindProperties(template.RootElement, "functionAppConfig").ToArray();
+
+        Assert.AreEqual(1, configs.Length);
+        var config = configs[0];
+        var storage = config.GetProperty("deployment").GetProperty("storage");
+        Assert.AreEqual("blobContainer", storage.GetProperty("type").GetString());
+        Assert.AreEqual(
+            "SystemAssignedIdentity",
+            storage.GetProperty("authentication").GetProperty("type").GetString());
+
+        var runtime = config.GetProperty("runtime");
+        Assert.AreEqual("dotnet-isolated", runtime.GetProperty("name").GetString());
+        Assert.AreEqual("10.0", runtime.GetProperty("version").GetString());
+        Assert.AreEqual(2048, config.GetProperty("scaleAndConcurrency").GetProperty("instanceMemoryMB").GetInt32());
     }
 
     [TestMethod]
@@ -140,6 +190,47 @@ public sealed class BicepInfrastructureContractTests
         Assert.IsTrue(listExitCheck < update && update < mutationExitCheck);
         Assert.IsTrue(listExitCheck < create && create < mutationExitCheck);
         StringAssert.Contains(bootstrap, "$credentialExists");
+    }
+
+    [TestMethod]
+    public void AzureBootstrap_EstablishesNarrowSubscriptionAccessBeforeEnvironmentOidcTrust()
+    {
+        var bootstrap = ReadInfraFile(Path.Combine("scripts", "bootstrap.ps1"));
+        var foundation = ReadInfraFile(Path.Combine("bootstrap", "deploy-identity-foundation.bicep"));
+        var workflow = File.ReadAllText(RepoRoot.Combine(".github", "workflows", "deploy.yml"));
+
+        StringAssert.Contains(bootstrap, "[string]$GitHubEnvironment = 'dev'");
+        StringAssert.Contains(bootstrap,
+            "'--subject', \"repo:${GitHubRepo}:environment:$GitHubEnvironment\"");
+        StringAssert.Contains(workflow, "environment: dev");
+        Assert.IsFalse(bootstrap.Contains("GitHubBranch", StringComparison.Ordinal));
+        Assert.IsFalse(bootstrap.Contains("ref:refs/heads", StringComparison.Ordinal));
+
+        var foundationDeployment = bootstrap.IndexOf(
+            "bootstrap/deploy-identity-foundation.bicep", StringComparison.Ordinal);
+        var federatedCredential = bootstrap.IndexOf(
+            "az identity federated-credential list", StringComparison.Ordinal);
+
+        Assert.IsTrue(foundationDeployment >= 0 && foundationDeployment < federatedCredential);
+        Assert.IsFalse(bootstrap.Contains("../main.bicep", StringComparison.Ordinal));
+        Assert.IsFalse(bootstrap.Contains("gatewayFqdn", StringComparison.Ordinal));
+
+        Assert.AreEqual(1, foundation.Split("'Microsoft.Resources/deployments/*'").Length - 1);
+        Assert.AreEqual(1,
+            foundation.Split("'Microsoft.Resources/subscriptions/resourceGroups/read'").Length - 1);
+        Assert.AreEqual(1,
+            foundation.Split("'Microsoft.Resources/subscriptions/resourceGroups/write'").Length - 1);
+        StringAssert.Contains(foundation, "roleDefinitionId: subscriptionDeploymentRole.id");
+        StringAssert.Contains(foundation, "principalId: deployIdentity.outputs.principalId");
+        StringAssert.Contains(foundation, "module deployContributor '../modules/role-assignment.bicep'");
+        StringAssert.Contains(foundation, "module deployUaa '../modules/role-assignment.bicep'");
+        Assert.AreEqual(3, foundation.Split("scope: rg").Length - 1);
+
+        var customRole = foundation[
+            foundation.IndexOf("resource subscriptionDeploymentRole", StringComparison.Ordinal)..
+            foundation.IndexOf("resource subscriptionDeploymentAssignment", StringComparison.Ordinal)];
+        Assert.IsFalse(customRole.Contains("b24988ac-6180-42a0-ab88-20f7382dd24c", StringComparison.Ordinal));
+        Assert.IsFalse(customRole.Contains("18d7d88d-d35e-4fb5-a5c3-7773c20a72d9", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -225,7 +316,7 @@ public sealed class BicepInfrastructureContractTests
         var module = ReadInfraFile(Path.Combine("modules", "functions.bicep"));
 
         StringAssert.Contains(module, "param functionAppScaleLimit int = 20");
-        StringAssert.Contains(module, "functionAppScaleLimit: functionAppScaleLimit");
+        StringAssert.Contains(module, "maximumInstanceCount: functionAppScaleLimit");
         StringAssert.Contains(module, "ConnectionStrings__TaskFlowDbContextQuery', value: dbReadConnectionString");
     }
 
@@ -395,4 +486,33 @@ public sealed class BicepInfrastructureContractTests
 
     private static string ReadInfraFile(string relativePath) =>
         File.ReadAllText(RepoRoot.Combine("infra", relativePath));
+
+    private static IEnumerable<JsonElement> FindProperties(JsonElement element, string propertyName)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (property.NameEquals(propertyName))
+                {
+                    yield return property.Value;
+                }
+
+                foreach (var descendant in FindProperties(property.Value, propertyName))
+                {
+                    yield return descendant;
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                foreach (var descendant in FindProperties(item, propertyName))
+                {
+                    yield return descendant;
+                }
+            }
+        }
+    }
 }

@@ -33,6 +33,17 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(workflow, "app-config.json");
         StringAssert.Contains(workflow, "-ReactUrl");
         StringAssert.Contains(workflow, "-UnoUrl");
+        StringAssert.Contains(workflow, "az functionapp deployment source config-zip");
+        StringAssert.Contains(workflow, "released-package.zip");
+        Assert.IsFalse(workflow.Contains("azure/functions-action", StringComparison.Ordinal));
+
+        var stableImageLookup = workflow[
+            workflow.IndexOf("name: Keep current runtime images", StringComparison.Ordinal)..
+            workflow.IndexOf("      - id: deploy", StringComparison.Ordinal)];
+        StringAssert.Contains(stableImageLookup, "ResourceNotFound|ResourceGroupNotFound");
+        StringAssert.Contains(stableImageLookup, "cat \"$error_file\" >&2");
+        StringAssert.Contains(stableImageLookup, "return \"$status\"");
+        Assert.IsFalse(stableImageLookup.Contains("2>/dev/null ||", StringComparison.Ordinal));
 
         // The image build lives in the reusable workflow now, and both lanes must consume the same one.
         StringAssert.Contains(workflow, "uses: ./.github/workflows/build-images.yml");
@@ -680,9 +691,8 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(nginxConfig, "alias /var/cache/nginx/app-config/app-config.json;");
 
         var bootstrap = File.ReadAllText(RepoRoot.Combine("infra", "scripts", "bootstrap.ps1"));
-        StringAssert.Contains(bootstrap, "reactStaticWebAppDefaultHostname");
-        StringAssert.Contains(bootstrap, "unoStaticWebAppDefaultHostname");
-        Assert.IsFalse(bootstrap.Contains("staticWebAppDefaultHostname", StringComparison.Ordinal));
+        Assert.IsFalse(bootstrap.Contains("--template-file \"$PSScriptRoot/../main.bicep\"", StringComparison.Ordinal));
+        Assert.IsFalse(bootstrap.Contains("StaticWebAppDefaultHostname", StringComparison.Ordinal));
     }
 
     /// <summary>

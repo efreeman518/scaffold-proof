@@ -120,6 +120,7 @@ var tags = {
 var roles = {
   // Storage
   storageBlobDataContributor: 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+  storageBlobDataOwner: 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
   storageTableDataContributor: '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
   storageQueueDataContributor: '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
   // Cosmos DB
@@ -524,6 +525,7 @@ module functions 'modules/functions.bicep' = {
     resourcePrefix: prefix
     location: location
     funcStorageAccountName: storage.outputs.funcStorageName
+    functionDeploymentContainerUri: storage.outputs.functionDeploymentContainerUri
     serviceBusNamespace: serviceBus.outputs.namespaceEndpoint
     appConfigEndpoint: appConfig.outputs.endpoint
     keyVaultUri: keyVault.outputs.uri
@@ -702,13 +704,13 @@ module funcServiceBusReceiver 'modules/role-assignment.bicep' = {
   }
 }
 
-module funcBlobContributor 'modules/role-assignment.bicep' = {
-  name: 'funcBlobContributor'
+module funcBlobOwner 'modules/role-assignment.bicep' = {
+  name: 'funcBlobOwner'
   scope: rg
   params: {
     principalId: functions.outputs.functionAppPrincipalId
-    roleDefinitionId: roles.storageBlobDataContributor
-    roleDescription: 'Functions: Storage Blob Data Contributor'
+    roleDefinitionId: roles.storageBlobDataOwner
+    roleDescription: 'Functions: Storage Blob Data Owner for trigger and deployment storage'
   }
 }
 

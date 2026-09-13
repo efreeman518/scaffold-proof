@@ -85,9 +85,24 @@ resource funcStorage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   }
 }
 
+resource funcBlobServices 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
+  parent: funcStorage
+  name: 'default'
+}
+
+// Flex Consumption requires an existing Blob container configured as its deployment storage.
+resource functionDeploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: funcBlobServices
+  name: 'function-releases'
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 output appStorageName string = appStorage.name
 output appStorageBlobEndpoint string = appStorage.properties.primaryEndpoints.blob
 output appStorageTableEndpoint string = appStorage.properties.primaryEndpoints.table
 output appStorageQueueEndpoint string = appStorage.properties.primaryEndpoints.queue
 output funcStorageName string = funcStorage.name
 output funcStorageId string = funcStorage.id
+output functionDeploymentContainerUri string = '${funcStorage.properties.primaryEndpoints.blob}function-releases'

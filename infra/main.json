@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "18379497226321187199"
+      "templateHash": "10522621770688601456"
     }
   },
   "parameters": {
@@ -216,6 +216,7 @@
     },
     "roles": {
       "storageBlobDataContributor": "ba92f5b4-2d11-453d-a403-e96b0029c9fe",
+      "storageBlobDataOwner": "b7e6dc6d-f1e8-4753-8033-0f276bb0955b",
       "storageTableDataContributor": "0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3",
       "storageQueueDataContributor": "974c5e8b-45b9-4653-ba55-5f855dd0fb88",
       "cosmosDbDataContributor": "00000000-0000-0000-0000-000000000002",
@@ -1777,7 +1778,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "18394736461861345079"
+              "templateHash": "9981536051152880650"
             }
           },
           "parameters": {
@@ -1893,6 +1894,25 @@
                   "bypass": "AzureServices"
                 }
               }
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', replace(format('{0}fn{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), '-', ''), 'default')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', replace(format('{0}fn{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), '-', ''))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', replace(format('{0}fn{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), '-', ''), 'default', 'function-releases')]",
+              "properties": {
+                "publicAccess": "None"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', replace(format('{0}fn{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), '-', ''), 'default')]"
+              ]
             }
           ],
           "outputs": {
@@ -1919,6 +1939,10 @@
             "funcStorageId": {
               "type": "string",
               "value": "[resourceId('Microsoft.Storage/storageAccounts', replace(format('{0}fn{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), '-', ''))]"
+            },
+            "functionDeploymentContainerUri": {
+              "type": "string",
+              "value": "[format('{0}function-releases', reference(resourceId('Microsoft.Storage/storageAccounts', replace(format('{0}fn{1}', parameters('resourcePrefix'), variables('uniqueSuffix')), '-', '')), '2023-05-01').primaryEndpoints.blob)]"
             }
           }
         }
@@ -3671,6 +3695,9 @@
           "funcStorageAccountName": {
             "value": "[reference('storage').outputs.funcStorageName.value]"
           },
+          "functionDeploymentContainerUri": {
+            "value": "[reference('storage').outputs.functionDeploymentContainerUri.value]"
+          },
           "serviceBusNamespace": {
             "value": "[reference('serviceBus').outputs.namespaceEndpoint.value]"
           },
@@ -3721,7 +3748,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "14797848689858427523"
+              "templateHash": "7892619355790509469"
             }
           },
           "parameters": {
@@ -3741,6 +3768,12 @@
               "type": "string",
               "metadata": {
                 "description": "Functions storage account name"
+              }
+            },
+            "functionDeploymentContainerUri": {
+              "type": "string",
+              "metadata": {
+                "description": "Existing Blob container URI used by Flex Consumption OneDeploy"
               }
             },
             "serviceBusNamespace": {
@@ -3877,14 +3910,6 @@
                       "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix=core.windows.net', parameters('funcStorageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('funcStorageAccountName')), '2023-05-01').keys[0].value)]"
                     },
                     {
-                      "name": "FUNCTIONS_EXTENSION_VERSION",
-                      "value": "~4"
-                    },
-                    {
-                      "name": "FUNCTIONS_WORKER_RUNTIME",
-                      "value": "dotnet-isolated"
-                    },
-                    {
                       "name": "Hosting__Lane",
                       "value": "Azure"
                     },
@@ -3961,6 +3986,14 @@
                       "value": "[parameters('storageQueueEndpoint')]"
                     },
                     {
+                      "name": "BlobStorage1__credential",
+                      "value": "managedidentity"
+                    },
+                    {
+                      "name": "AttachmentBlobContainer",
+                      "value": "attachments"
+                    },
+                    {
                       "name": "ConnectionStrings__TableStorage1",
                       "value": "[parameters('storageTableEndpoint')]"
                     },
@@ -3973,9 +4006,26 @@
                       "value": "true"
                     }
                   ],
-                  "minTlsVersion": "1.2",
-                  "ftpsState": "Disabled",
-                  "functionAppScaleLimit": "[parameters('functionAppScaleLimit')]"
+                  "minTlsVersion": "1.2"
+                },
+                "functionAppConfig": {
+                  "deployment": {
+                    "storage": {
+                      "type": "blobContainer",
+                      "value": "[parameters('functionDeploymentContainerUri')]",
+                      "authentication": {
+                        "type": "SystemAssignedIdentity"
+                      }
+                    }
+                  },
+                  "runtime": {
+                    "name": "dotnet-isolated",
+                    "version": "10.0"
+                  },
+                  "scaleAndConcurrency": {
+                    "maximumInstanceCount": "[parameters('functionAppScaleLimit')]",
+                    "instanceMemoryMB": 2048
+                  }
                 }
               },
               "dependsOn": [
@@ -5016,10 +5066,10 @@
         "rg"
       ]
     },
-    "funcBlobContributor": {
+    "funcBlobOwner": {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
-      "name": "funcBlobContributor",
+      "name": "funcBlobOwner",
       "resourceGroup": "[format('{0}-rg', variables('prefix'))]",
       "properties": {
         "expressionEvaluationOptions": {
@@ -5031,10 +5081,10 @@
             "value": "[reference('functions').outputs.functionAppPrincipalId.value]"
           },
           "roleDefinitionId": {
-            "value": "[variables('roles').storageBlobDataContributor]"
+            "value": "[variables('roles').storageBlobDataOwner]"
           },
           "roleDescription": {
-            "value": "Functions: Storage Blob Data Contributor"
+            "value": "Functions: Storage Blob Data Owner for trigger and deployment storage"
           }
         },
         "template": {

@@ -101,8 +101,8 @@ The baseline deployment keeps end-user `AuthMode: Scaffold` so the reference app
 | System MI (Gateway) | Gateway Container App | App Configuration Data Reader, Key Vault Secrets User |
 | System MI (API) | API Container App | Service Bus Data Sender, Storage Blob Data Contributor, Storage Table Data Contributor, Cosmos DB Data Contributor, App Configuration Data Reader, Key Vault Secrets User, Redis Entra access policy assignment |
 | System MI (Scheduler) | Scheduler Container App | Service Bus Data Sender, Storage Blob Data Contributor, Storage Table Data Contributor, App Configuration Data Reader, Key Vault Secrets User, Redis Entra access policy assignment |
-| System MI (Functions) | Functions App | Service Bus Data Receiver, Storage Blob Data Contributor, Storage Queue Data Contributor, Storage Table Data Contributor, Cosmos DB Data Contributor, App Configuration Data Reader, Key Vault Secrets User |
-| User-Assigned MI (deploy) | GitHub Actions and SQL provisioning | Contributor and User Access Administrator (RG scope), SQL Entra administrator |
+| System MI (Functions) | Functions App | Service Bus Data Receiver, Storage Blob Data Owner, Storage Queue Data Contributor, Storage Table Data Contributor, Cosmos DB Data Contributor, App Configuration Data Reader, Key Vault Secrets User |
+| User-Assigned MI (deploy) | GitHub Actions and SQL provisioning | Custom deployment/resource-group-create role (subscription scope); Contributor and User Access Administrator (TaskFlow RG scope); SQL Entra administrator |
 | User-Assigned MI (migration) | DatabaseMigrator job | `db_ddladmin`, `db_datareader`, `db_datawriter` |
 | User-Assigned MI (runtime) | API, Scheduler, Functions | DML on `taskflow`, `flowengine`, and `scheduler` schemas only |
 
@@ -112,6 +112,13 @@ needs the `Microsoft.Azure.StackExchangeRedis` token-provider package wired in a
 grant, which is out of scope for this infra-only change. Container Apps stores that key as a secret reference.
 SQL identities are user-assigned so the deployment workflow can bind contained users directly to stable client-ID
 SIDs without Microsoft Graph lookup. Runtime hosts keep separate system identities for their other Azure RBAC.
+The signed-in human runs `infra/bootstrap/deploy-identity-foundation.bicep` before GitHub OIDC is trusted. Its custom
+subscription role contains only `Microsoft.Resources/deployments/*` and resource-group read/write; application
+resource management and role assignment remain limited to the TaskFlow resource group. The federated credential
+subject is `repo:owner/repo:environment:dev`, matching the workflow jobs' GitHub environment.
+Bootstrap never invokes `main.bicep`; this prevents a rerun from replacing live image digests with template defaults.
+The workflow owns application deployment and publishes the .NET 10 isolated Functions artifact through the Flex
+Consumption OneDeploy path backed by the precreated `function-releases` Blob container.
 
 ### Networking
 
@@ -202,6 +209,7 @@ SIDs without Microsoft Graph lookup. Runtime hosts keep separate system identiti
 | Functions App | `infra/modules/functions.bicep` |
 | Log Analytics | `infra/modules/log-analytics.bicep` |
 | Managed Identity (deploy) | `infra/modules/deploy-identity.bicep` |
+| Deploy identity foundation | `infra/bootstrap/deploy-identity-foundation.bicep` |
 | RBAC Assignments | `infra/modules/role-assignment.bicep` |
 | Bootstrap Script | `infra/scripts/bootstrap.ps1` |
 | CI/CD Workflow | `.github/workflows/deploy.yml` |

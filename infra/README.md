@@ -46,7 +46,8 @@ tenant-wide Directory Readers permission.
 
 - **Azure CLI** >= 2.60 with Bicep CLI
 - **PowerShell** 7+
-- **Azure subscription** with Owner or Contributor + User Access Administrator
+- **Azure subscription** with Owner or Contributor + User Access Administrator. Bootstrap needs
+  `Microsoft.Authorization/roleDefinitions/write` and `roleAssignments/write` to create its narrow custom role.
 - **GitHub repo** with Actions enabled
 - Signed in to Azure CLI: `az login`
 
@@ -71,7 +72,9 @@ Secrets belong in Key Vault or the deployment secret store. Never commit client 
 
 ## Step 1: Run Bootstrap
 
-The bootstrap script is a **one-time** operation run from your local machine. It deploys all infrastructure and creates the federated credential for GitHub Actions OIDC.
+The bootstrap script is a rerunnable prerequisite operation from your local machine. It creates only the resource group,
+deploy identity, subscription deployment permission, and GitHub Actions OIDC trust. It never deploys application
+infrastructure or placeholder images; the workflow owns the first and every later application deployment.
 
 ```powershell
 cd infra/scripts
@@ -88,16 +91,27 @@ Optional parameters (shown with defaults):
 | `-Location` | `eastus2` | Azure region |
 | `-ResourcePrefix` | `taskflow` | Naming prefix for all resources |
 | `-EnvironmentName` | `dev` | Environment suffix |
-| `-GitHubBranch` | `main` | Branch for OIDC federated credential |
+| `-GitHubEnvironment` | `dev` | GitHub environment used by deploy jobs. Safe characters: letters, digits, `.`, `_`, `-` |
 
 The script will:
 
 1. Set the active subscription
-2. Deploy `main.bicep` at subscription scope (creates RG, deploy identity as SQL Entra admin, and workload identities)
-3. Create a federated credential on the deploy managed identity for GitHub Actions
-4. Print the exact values you need for GitHub configuration (Step 2)
+2. Deploy `bootstrap/deploy-identity-foundation.bicep` as the signed-in human. It creates the resource group, deploy UAMI,
+   and a custom subscription role limited to `Microsoft.Resources/deployments/*` plus resource-group read/write.
+3. Create or update the environment-bound federated credential on the deploy UAMI.
+4. Print the exact values needed for GitHub configuration (Step 2).
 
-> **Deployment takes 5-10 minutes.** Watch for the output block at the end - it contains the values for the next step.
+The current workflow jobs use the `dev` GitHub environment, so the default credential subject is
+`repo:owner/repo:environment:dev`. If the workflow environment changes, rerun bootstrap with the same
+`-GitHubEnvironment` value. GitHub documents this environment subject format in its
+[OIDC reference](https://docs.github.com/en/actions/reference/security/oidc#example-subject-claims).
+
+The subscription role is intentionally not Contributor. It lets the UAMI submit the
+[subscription-scoped Bicep deployment](https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/deploy-to-subscription)
+and create or update resource groups, but underlying application resources and RBAC still require the existing
+TaskFlow resource-group assignments. See Microsoft's [custom role guidance](https://learn.microsoft.com/en-us/azure/role-based-access-control/custom-roles).
+
+The output block contains the GitHub variables needed for the next step.
 
 ## Step 2: Configure GitHub Repository
 
@@ -134,7 +148,14 @@ To create the PAT: **GitHub -> Settings -> Developer settings -> Personal access
 
 The deploy workflow currently runs manually through `workflow_dispatch`. Supply `operation=deploy` and a full green `main` commit SHA, or select `operation=rollback` to activate the recorded previous release. It also preserves a `workflow_call` interface for CI, but the caller in `ci.yml` remains disabled until Azure bootstrap and repository variables are configured.
 
-For deploy, the workflow validates the exact green commit, builds each image and the Functions/React/Uno bundles once, records immutable digests and artifact IDs, provisions with the existing runtime images, creates the migration SQL principal, runs migrations, grants schema-scoped runtime SQL access, activates the recorded release, verifies readiness and functional CRUD, then records current and previous release manifests. Rollback downloads the recorded prior artifacts and images without rebuilding or reversing database migrations.
+For deploy, the workflow validates the exact green commit, builds each image and the Functions/React/Uno bundles once, records immutable digests and artifact IDs, provisions with the existing runtime images, creates the migration SQL principal, runs migrations, grants schema-scoped runtime SQL access, activates the recorded release, publishes Functions through Flex OneDeploy, verifies readiness and functional CRUD, then records current and previous release manifests. Rollback downloads the recorded prior artifacts and images without rebuilding or reversing database migrations.
+
+The Function App follows Microsoft's [Flex Consumption IaC contract](https://learn.microsoft.com/en-us/azure/azure-functions/functions-infrastructure-as-code): an existing deployment container, managed-identity deployment storage, explicit .NET 10 isolated runtime, and `scaleAndConcurrency`. Its Blob trigger follows the documented [identity-based binding roles](https://learn.microsoft.com/en-us/azure/azure-functions/manage-connections), including Storage Blob Data Owner and Storage Queue Data Contributor.
+
+The repository is public and images are published by its workflow with `GITHUB_TOKEN`; GitHub applies the repository's
+visibility model to newly created packages, so Container Apps can pull them anonymously. This deployment does not invent
+or store GHCR pull credentials. If package visibility is later made private, registry authentication must be designed and
+provisioned before deployment.
 
 ## CI/CD Pipeline Flow
 
@@ -145,7 +166,7 @@ validate exact green SHA
   -> provision migration SQL identity
   -> run database migrations
   -> grant schema-scoped runtime SQL access
-  -> activate digest-pinned runtime and recorded bundles
+  -> activate digest-pinned runtime and publish recorded Functions through OneDeploy
   -> check API database readiness and public health
   -> create/read/delete functional smoke with cleanup
   -> record current and previous release manifests
@@ -159,6 +180,8 @@ infra/
 --- main.bicepparam         # Parameter defaults (dev)
 --- main.dev.bicepparam     # Explicit dev profile
 --- main.prod.bicepparam    # Prod profile (Hyperscale, HA, scale rules)
+--- bootstrap/
+-   --- deploy-identity-foundation.bicep # Human-run deploy identity and narrow subscription role
 --- modules/
 -   --- app-configuration.bicep
 -   --- container-app.bicep
@@ -196,21 +219,23 @@ After successful deployment, access the app at:
 | Uno WASM UI | `https://<auto-generated>.azurestaticapps.net` |
 | API (internal) | `https://taskflow-dev-api.<region>.azurecontainerapps.io` |
 
-Exact URLs are printed by the bootstrap script and visible in the deploy workflow summary.
+Exact URLs are visible in the deploy workflow summary.
 
 ## Redeploying Infrastructure Only
 
-To redeploy infra without pushing code, run the bootstrap script again. It's idempotent - existing resources update in place.
+Run the manual deploy workflow with a full green `main` commit SHA. Bootstrap is safe to rerun, but it intentionally
+repairs only the identity foundation and never redeploys application infrastructure.
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---------|-----|
 | `AADSTS700016` on deploy | Verify `AZURE_CLIENT_ID` matches the deploy identity's client ID |
-| `FederatedIdentityCredential` error | Check federated credential subject matches `repo:owner/repo:ref:refs/heads/main` |
+| `FederatedIdentityCredential` error | Check the credential subject matches `repo:owner/repo:environment:dev` and the job uses that GitHub environment |
+| Subscription deployment authorization fails | Rerun bootstrap as subscription Owner or Contributor + User Access Administrator so the custom deployment role and assignment exist before OIDC is used |
 | SQL principal provisioning fails | Verify `AZURE_CLIENT_ID` is the Bicep-created deploy identity and remains SQL Entra administrator |
-| Container image pull fails | Verify repo packages are public, or add `packages: read` permission |
-| Functions deploy fails | Functions require `allowSharedKeyAccess: true` on their storage account (already configured) |
+| Container image pull fails | Verify GHCR packages still inherit this public repository's visibility; private registry authentication is not configured |
+| Functions deploy fails | Verify the `function-releases` container, Function App Storage Blob Data Owner role, and Flex OneDeploy output |
 | SWA deploy fails | Check that `swa-name` output is correctly passed from deploy-infra job |
 
 > NonAzure lane (Docker Compose on a VPS): see [`deploy/compose/README.md`](../deploy/compose/README.md).

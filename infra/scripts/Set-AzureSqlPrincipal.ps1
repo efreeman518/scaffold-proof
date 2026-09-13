@@ -80,13 +80,32 @@ if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($accessToken)) {
 }
 
 $connectionString = "Server=tcp:$ServerName,1433;Database=$DatabaseName;Encrypt=True;TrustServerCertificate=False;Connect Timeout=30;"
-Invoke-Sqlcmd `
-    -ConnectionString $connectionString `
-    -AccessToken $accessToken `
-    -Query $query `
-    -QueryTimeout 60 `
-    -AbortOnError `
-    -ErrorLevel 11 `
-    -OutputSqlErrors $true
+$maxAttempts = 6
+$retryDeadline = [DateTimeOffset]::UtcNow.AddMinutes(2)
+for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+    try {
+        Invoke-Sqlcmd `
+            -ConnectionString $connectionString `
+            -AccessToken $accessToken `
+            -Query $query `
+            -QueryTimeout 60 `
+            -AbortOnError `
+            -ErrorLevel 11 `
+            -OutputSqlErrors $true
+        break
+    }
+    catch {
+        # Azure SQL Entra administrator and RBAC changes can lag a completed ARM deployment.
+        # Surface every primary failure and retry only within this bounded propagation window.
+        Write-Warning "Azure SQL provisioning attempt $attempt/$maxAttempts failed: $($_.Exception.Message)"
+        if ($attempt -eq $maxAttempts -or [DateTimeOffset]::UtcNow -ge $retryDeadline) {
+            throw
+        }
+
+        $remainingSeconds = [Math]::Floor(($retryDeadline - [DateTimeOffset]::UtcNow).TotalSeconds)
+        $retryDelaySeconds = [int][Math]::Min(10, [Math]::Max(1, $remainingSeconds))
+        Start-Sleep -Seconds $retryDelaySeconds
+    }
+}
 
 Write-Host "Azure SQL $AccessProfile access is ready for $IdentityName."
