@@ -172,17 +172,11 @@ public sealed class DeploymentWorkflowContractTests
             "ci.yml must not run on push");
         Assert.IsTrue(
             System.Text.RegularExpressions.Regex.IsMatch(workflow, @"^\s*pull_request:\s*$", Multiline));
-        Assert.IsTrue(
-            System.Text.RegularExpressions.Regex.IsMatch(workflow, @"^\s*schedule:\s*$", Multiline));
+        Assert.IsFalse(
+            System.Text.RegularExpressions.Regex.IsMatch(workflow, @"^\s*schedule:\s*$", Multiline),
+            "ci.yml must not spend Actions minutes on scheduled runs.");
         Assert.IsTrue(
             System.Text.RegularExpressions.Regex.IsMatch(workflow, @"^\s*workflow_dispatch:\s*$", Multiline));
-
-        // Monthly, not weekly: GitHub Actions cron has no "last day of month" syntax, so the 28th (the one
-        // day that exists in every month) stands in for it - minimal Actions-minute cost for the deep lanes.
-        Assert.IsTrue(
-            System.Text.RegularExpressions.Regex.IsMatch(
-                workflow, @"^\s*-\s*cron:\s*""17 6 28 \* \*""\s*$", Multiline),
-            "ci.yml must run the deep lane monthly on the 28th at 06:17 UTC.");
 
         // Uno.Sdk conditions implicit package references (DevServer, HotDesign, MCP) on Optimize: a Debug restore
         // followed by a Release --no-restore build fails with UNOB0019, so every restore names the Release configuration.
@@ -213,11 +207,11 @@ public sealed class DeploymentWorkflowContractTests
         Assert.IsGreaterThan(0, logDump);
         StringAssert.Contains(smokeJob[logDump..], "if: always()");
 
-        // The Aspire mesh lane's own container logs are the only lead into a failure like the 2026-09-08
+        // The manually-dispatched Aspire mesh lane's container logs are the only lead into a failure like the 2026-09-08
         // SqlException pre-login handshake run, where the sql_check health probe stayed Unhealthy with no
         // other explanation on the runner - the diagnostics step must exist, run only after that lane
         // actually ran and failed, and cover both the sql/mssql containers and host memory pressure.
-        var aspireStep = workflow.IndexOf("Aspire Mesh Tests (manual or scheduled, full graph)", StringComparison.Ordinal);
+        var aspireStep = workflow.IndexOf("Aspire Core Lane Mesh Tests (manual)", StringComparison.Ordinal);
         Assert.IsGreaterThan(0, aspireStep);
         StringAssert.Contains(workflow[aspireStep..], "id: aspire_mesh");
         var diagnosticsStep = workflow.IndexOf("Aspire Mesh Diagnostics (on failure)", StringComparison.Ordinal);
@@ -314,17 +308,19 @@ public sealed class DeploymentWorkflowContractTests
 
         var local = File.ReadAllText(RepoRoot.Combine("deploy", "compose", "docker-compose.override.local.yml"));
         var imageCatalog = File.ReadAllText(RepoRoot.Combine("src", "Shared", "TaskFlow.Hosting", "ContainerImages.cs"));
-        foreach (var (catalogValue, composeImage) in new[]
+        foreach (var (repositoryConstant, repository, tagConstant, tag, imageConstant, composeImage) in new[]
         {
-            ("pgvector/pgvector:pg18", "image: pgvector/pgvector:pg18"),
-            ("rabbitmq:4-management", "image: rabbitmq:4-management"),
-            ("chrislusf/seaweedfs:latest", "image: chrislusf/seaweedfs:latest"),
-            ("mongo:8", "image: mongo:8"),
-            ("redis:8", "image: redis:8")
+            ("PostgreSqlRepository", "pgvector/pgvector", "PostgreSqlTag", "pg18", "PostgreSql", "image: pgvector/pgvector:pg18"),
+            ("RabbitMqRepository", "rabbitmq", "RabbitMqTag", "4-management", "RabbitMq", "image: rabbitmq:4-management"),
+            ("SeaweedFsRepository", "chrislusf/seaweedfs", "SeaweedFsTag", "latest", "SeaweedFs", "image: chrislusf/seaweedfs:latest"),
+            ("MongoDbRepository", "mongo", "MongoDbTag", "8", "MongoDb", "image: mongo:8"),
+            ("RedisRepository", "redis", "RedisTag", "8", "Redis", "image: redis:8")
         })
         {
-            StringAssert.Contains(imageCatalog, catalogValue, $"ContainerImages must own '{catalogValue}'.");
-            StringAssert.Contains(compose, composeImage, $"Compose must match ContainerImages '{catalogValue}'.");
+            StringAssert.Contains(imageCatalog, $"public const string {repositoryConstant} = \"{repository}\";");
+            StringAssert.Contains(imageCatalog, $"public const string {tagConstant} = \"{tag}\";");
+            StringAssert.Contains(imageCatalog, $"public const string {imageConstant} = $\"{{{repositoryConstant}}}:{{{tagConstant}}}\";");
+            StringAssert.Contains(compose, composeImage, $"Compose must match ContainerImages '{imageConstant}'.");
         }
 
         StringAssert.Contains(compose, "pg_isready");

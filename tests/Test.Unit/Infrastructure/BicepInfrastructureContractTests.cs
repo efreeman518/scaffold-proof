@@ -1,31 +1,32 @@
 namespace Test.Unit.Infrastructure;
 
 /// <summary>
-/// Locks the dual-provider database, Redis, container app scale-out, Service Bus topology, and Cosmos naming
-/// contracts introduced for the scale-baseline infra work, and the removal of the Always Encrypted wiring.
+/// Locks strict Azure Bicep, NonAzure Compose, Redis, container app scale-out, Service Bus topology, and Cosmos
+/// naming contracts, plus removal of obsolete provider selection and Always Encrypted wiring.
 /// </summary>
 [TestClass]
 [TestCategory("Unit")]
 public sealed class BicepInfrastructureContractTests
 {
     [TestMethod]
-    public void MainBicep_SelectsDatabaseProviderAndWiresConnectionStrings()
+    public void MainBicep_DeploysAzureSqlAndWiresCoreConnectionStrings()
     {
         var main = ReadInfraFile("main.bicep");
 
-        StringAssert.Contains(main, "param databaseProvider string");
-        StringAssert.Contains(main, "@allowed(['SqlServer', 'PostgreSql'])");
-        StringAssert.Contains(main, "if (databaseProvider == 'SqlServer')");
-        StringAssert.Contains(main, "if (databaseProvider == 'PostgreSql')");
-        StringAssert.Contains(main, "module postgres 'modules/postgres-flexible-server.bicep'");
+        StringAssert.Contains(main, "module sqlDatabase 'modules/sql-database.bicep'");
+        StringAssert.Contains(main, "module serviceBus 'modules/service-bus.bicep'");
         StringAssert.Contains(main, "module redis 'modules/redis.bicep'");
         StringAssert.Contains(main, "module redisRbac 'modules/redis-rbac.bicep'");
-        StringAssert.Contains(main, "'Database__Provider', value: databaseProvider");
+        StringAssert.Contains(main, "{ name: 'Database__Provider', value: 'SqlServer' }");
+        StringAssert.Contains(main, "{ name: 'Messaging__Provider', value: 'ServiceBus' }");
         StringAssert.Contains(main, "ConnectionStrings__TaskFlowDbContextQuery', value: dbReadConnectionString");
-        StringAssert.Contains(main, "ConnectionStrings__Redis1', value: redis.outputs.connectionString");
+        StringAssert.Contains(main, "ConnectionStrings__Redis1'");
         StringAssert.Contains(main, "sqlHighAvailabilityReplicaCount");
         StringAssert.Contains(main, "sqlReadScaleEnabled");
         StringAssert.Contains(main, "sqlSkuName");
+        Assert.IsFalse(main.Contains("param databaseProvider", StringComparison.Ordinal));
+        Assert.IsFalse(main.Contains("postgres-flexible-server.bicep", StringComparison.Ordinal));
+        Assert.IsFalse(main.Contains("rabbitmq-container-app.bicep", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -109,31 +110,31 @@ public sealed class BicepInfrastructureContractTests
     }
 
     [TestMethod]
-    public void RabbitMqModule_IsSingleNodeWithVolumeAndManagementPlugin()
+    public void NonAzureCompose_UsesRabbitMqWithPersistentManagementService()
     {
-        var module = ReadInfraFile(Path.Combine("modules", "rabbitmq-container-app.bicep"));
+        var compose = File.ReadAllText(RepoRoot.Combine("deploy", "compose", "docker-compose.yml"));
 
-        // Single node is load-bearing: a second replica would be an independent broker on the same file share.
-        StringAssert.Contains(module, "minReplicas: 1");
-        StringAssert.Contains(module, "maxReplicas: 1");
-        StringAssert.Contains(module, "rabbitmq:4.1-management");
-        StringAssert.Contains(module, "storageType: 'AzureFile'");
-        StringAssert.Contains(module, "targetPort: 15672");
-        StringAssert.Contains(module, "mountPath: '/var/lib/rabbitmq/mnesia'");
+        StringAssert.Contains(compose, "rabbitmq:");
+        StringAssert.Contains(compose, "image: rabbitmq:4-management");
+        StringAssert.Contains(compose, "RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}");
+        StringAssert.Contains(compose, "RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}");
+        StringAssert.Contains(compose, "- rabbitmq-data:/var/lib/rabbitmq");
+        StringAssert.Contains(compose, "rabbitmq-diagnostics");
     }
 
     [TestMethod]
-    public void MainTemplate_DeploysExactlyOneBrokerAndWiresTheProvider()
+    public void MainTemplate_DeploysAzureServiceBusAndWiresManagedIdentity()
     {
         var main = ReadInfraFile("main.bicep");
 
-        StringAssert.Contains(main, "param messagingProvider string = 'ServiceBus'");
-        StringAssert.Contains(main, "modules/service-bus.bicep' = if (messagingProvider == 'ServiceBus')");
-        StringAssert.Contains(main, "modules/rabbitmq-container-app.bicep' = if (messagingProvider == 'RabbitMq')");
-        StringAssert.Contains(main, "ConnectionStrings__RabbitMq1");
-        StringAssert.Contains(main, "name: 'Messaging__Provider', value: messagingProvider");
+        StringAssert.Contains(main, "module serviceBus 'modules/service-bus.bicep'");
+        StringAssert.Contains(main, "{ name: 'Messaging__Provider', value: 'ServiceBus' }");
+        StringAssert.Contains(main, "{ name: 'ServiceBus1__fullyQualifiedNamespace', value: serviceBus.outputs.namespaceEndpoint }");
         StringAssert.Contains(main, "envVars: union(commonEnvVars, [");
         StringAssert.Contains(main, "], messagingEnvVars)");
+        Assert.IsFalse(main.Contains("messagingProvider", StringComparison.Ordinal));
+        Assert.IsFalse(main.Contains("rabbitmq-container-app.bicep", StringComparison.Ordinal));
+        Assert.IsFalse(main.Contains("ConnectionStrings__RabbitMq1", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -150,21 +151,15 @@ public sealed class BicepInfrastructureContractTests
     }
 
     [TestMethod]
-    public void PostgresModule_IsEntraOnlyWithPgvectorAndReadReplica()
+    public void NonAzureCompose_UsesPgvectorPostgreSqlWithPersistentData()
     {
-        var module = ReadInfraFile(Path.Combine("modules", "postgres-flexible-server.bicep"));
+        var compose = File.ReadAllText(RepoRoot.Combine("deploy", "compose", "docker-compose.yml"));
 
-        StringAssert.Contains(module, "Microsoft.DBforPostgreSQL/flexibleServers@2025-08-01");
-        StringAssert.Contains(module, "version: postgresVersion");
-        StringAssert.Contains(module, "param postgresVersion string = '17'");
-        StringAssert.Contains(module, "activeDirectoryAuth: 'Enabled'");
-        StringAssert.Contains(module, "passwordAuth: 'Disabled'");
-        StringAssert.Contains(module, "name: 'azure.extensions'");
-        StringAssert.Contains(module, "value: 'VECTOR'");
-        StringAssert.Contains(module, "name: 'AllowAzureServices'");
-        StringAssert.Contains(module, "createMode: 'Replica'");
-        StringAssert.Contains(module, "if (deployReadReplica)");
-        StringAssert.Contains(module, "Maximum Pool Size=");
+        StringAssert.Contains(compose, "postgres:");
+        StringAssert.Contains(compose, "image: pgvector/pgvector:pg18");
+        StringAssert.Contains(compose, "POSTGRES_DB: ${POSTGRES_DB}");
+        StringAssert.Contains(compose, "- postgres-data:/var/lib/postgresql/data");
+        StringAssert.Contains(compose, "pg_isready");
     }
 
     [TestMethod]
@@ -182,47 +177,48 @@ public sealed class BicepInfrastructureContractTests
     }
 
     [TestMethod]
-    public void ParameterFiles_ProvideDevAndProdProfiles()
+    public void ParameterFiles_ProvideAzureDevAndProdProfiles()
     {
         var devParams = ReadInfraFile("main.dev.bicepparam");
         var prodParams = ReadInfraFile("main.prod.bicepparam");
 
-        StringAssert.Contains(devParams, "param databaseProvider = 'SqlServer'");
+        StringAssert.Contains(devParams, "param sqlSkuName = 'Basic'");
+        StringAssert.Contains(devParams, "param sqlSkuTier = 'Basic'");
         StringAssert.Contains(devParams, "minReplicas: 0");
 
         StringAssert.Contains(prodParams, "param sqlSkuName = 'HS_Gen5_2'");
         StringAssert.Contains(prodParams, "param sqlSkuTier = 'Hyperscale'");
         StringAssert.Contains(prodParams, "param sqlZoneRedundant = true");
-        StringAssert.Contains(prodParams, "PostgreSql alternative");
         StringAssert.Contains(prodParams, "minReplicas: 2");
         StringAssert.Contains(prodParams, "maxReplicas: 100");
         StringAssert.Contains(prodParams, "concurrentRequests: 50");
+        Assert.IsFalse(devParams.Contains("databaseProvider", StringComparison.Ordinal));
+        Assert.IsFalse(prodParams.Contains("databaseProvider", StringComparison.Ordinal));
+        Assert.IsFalse(devParams.Contains("messagingProvider", StringComparison.Ordinal));
+        Assert.IsFalse(prodParams.Contains("messagingProvider", StringComparison.Ordinal));
+        Assert.IsFalse(devParams.Contains("PostgreSql", StringComparison.Ordinal));
+        Assert.IsFalse(prodParams.Contains("PostgreSql", StringComparison.Ordinal));
+        Assert.IsFalse(devParams.Contains("RabbitMq", StringComparison.Ordinal));
+        Assert.IsFalse(prodParams.Contains("RabbitMq", StringComparison.Ordinal));
     }
 
     /// <summary>
-    /// D-045: PgBouncer is a server parameter on Flexible Server, not a sidecar, so enabling it moves the
-    /// client port to 6432 and requires the app to switch to pooler-safe Npgsql settings. Both halves come
-    /// from one flag; this pins that they cannot drift apart, and that the Burstable limitation stays written
-    /// down where someone setting the flag will read it.
+    /// D-045: PgBouncer is an explicit NonAzure Compose profile. Transaction pooling moves clients to port
+    /// 6432 and requires the pooler-safe Npgsql setting, so both deployment surfaces are pinned together.
     /// </summary>
     [TestMethod]
-    public void PostgresModule_SupportsOptInPgBouncerOnPortSixFourThreeTwo()
+    public void NonAzureCompose_OffersOptInPgBouncerOnPortSixFourThreeTwo()
     {
-        var module = ReadInfraFile(Path.Combine("modules", "postgres-flexible-server.bicep"));
+        var compose = File.ReadAllText(RepoRoot.Combine("deploy", "compose", "docker-compose.yml"));
+        var config = File.ReadAllText(RepoRoot.Combine("deploy", "compose", "pgbouncer", "pgbouncer.ini"));
+        var environment = File.ReadAllText(RepoRoot.Combine("deploy", "compose", ".env.example"));
 
-        StringAssert.Contains(module, "param pgBouncerEnabled bool = false");
-        StringAssert.Contains(module, "name: 'pgbouncer.enabled'");
-        StringAssert.Contains(module, "if (pgBouncerEnabled)");
-        StringAssert.Contains(module, "var pgPort = pgBouncerEnabled ? 6432 : 5432");
-        StringAssert.Contains(module, "Port=${pgPort};");
-        StringAssert.Contains(module, "Burstable");
-        Assert.IsFalse(module.Contains("Port=5432;", StringComparison.Ordinal));
-
-        var main = ReadInfraFile("main.bicep");
-        StringAssert.Contains(main, "param postgresPgBouncerEnabled bool = false");
-        StringAssert.Contains(main, "pgBouncerEnabled: postgresPgBouncerEnabled");
-        StringAssert.Contains(main, "name: 'Database__PostgreSql__PoolerMode'");
-        StringAssert.Contains(main, "postgresPgBouncerEnabled ? 'Transaction' : 'None'");
+        StringAssert.Contains(compose, "pgbouncer:");
+        StringAssert.Contains(compose, "profiles: [\"pooler\"]");
+        StringAssert.Contains(compose, "-p 6432");
+        StringAssert.Contains(config, "listen_port = 6432");
+        StringAssert.Contains(config, "pool_mode = transaction");
+        StringAssert.Contains(environment, "Database__PostgreSql__PoolerMode=");
     }
 
     /// <summary>
