@@ -51,6 +51,7 @@ try
 catch (Exception ex)
 {
     startupLogger.HostTerminated(ex, appName, env);
+    throw;
 }
 finally
 {

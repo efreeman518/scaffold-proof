@@ -306,6 +306,21 @@ public class HostRuntimeSettingsTests
             + "handler would break worker gRPC calls used to complete or dead-letter Service Bus messages.");
     }
 
+    [TestMethod]
+    public void Given_ApiStartupFailure_When_Logged_Then_ProcessFailureIsPreserved()
+    {
+        var program = ReadRepoFile("src/Host/TaskFlow.Api/Program.cs");
+        var catchStart = program.IndexOf("catch (Exception ex)", StringComparison.Ordinal);
+        var finallyStart = program.IndexOf("finally", catchStart, StringComparison.Ordinal);
+
+        Assert.IsTrue(catchStart >= 0 && finallyStart > catchStart, "API must log startup failures.");
+        var catchBlock = program[catchStart..finallyStart];
+        var logged = catchBlock.IndexOf("startupLogger.HostTerminated", StringComparison.Ordinal);
+        var rethrown = catchBlock.IndexOf("throw;", StringComparison.Ordinal);
+        Assert.IsTrue(logged >= 0 && rethrown > logged,
+            "API must rethrow after logging so startup failures produce a nonzero process exit.");
+    }
+
     /// <summary>
     /// MongoDB's unique tenant/task index is created by a startup task. Every host that resolves the shared
     /// projection consumer must finish those tasks before RunAsync activates its transport consumers.
