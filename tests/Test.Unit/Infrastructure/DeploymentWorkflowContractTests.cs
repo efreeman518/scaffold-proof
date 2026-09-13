@@ -232,12 +232,14 @@ public sealed class DeploymentWorkflowContractTests
                 @"docker info \| Out-Null\r?\n\s+if \(\$LASTEXITCODE -ne 0\)"),
             "Docker failure must be checked before any later command can replace LASTEXITCODE.");
         StringAssert.Contains(fullJob, "dotnet workload list");
-        StringAssert.Contains(fullJob, "@(\"wasm-tools\", \"aspire\") | Where-Object");
-        StringAssert.Contains(fullJob, "Run: dotnet workload install wasm-tools aspire");
+        StringAssert.Contains(fullJob, "@(\"wasm-tools\") | Where-Object");
+        StringAssert.Contains(fullJob, "Run: dotnet workload install wasm-tools");
+        Assert.IsFalse(fullJob.Contains("dotnet workload install wasm-tools aspire", StringComparison.Ordinal),
+            ".NET 10 Aspire is package-based and has no workload ID.");
         Assert.IsFalse(
             System.Text.RegularExpressions.Regex.IsMatch(
                 fullJob,
-                "^\\s+dotnet workload install wasm-tools aspire\\s*$",
+                "^\\s+dotnet workload install wasm-tools\\s*$",
                 System.Text.RegularExpressions.RegexOptions.Multiline),
             "A self-hosted CI job must not mutate machine-wide workloads.");
         StringAssert.Contains(fullJob, "$azureSelected = \"${{ inputs.lane }}\" -in @(\"both\", \"Azure\")");

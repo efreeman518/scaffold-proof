@@ -452,12 +452,12 @@ jobs:
             throw "Could not inspect installed .NET workloads."
           }
           $missingWorkloads = @(
-            @("wasm-tools", "aspire") | Where-Object {
+            @("wasm-tools") | Where-Object {
               -not ($installedWorkloads | Select-String -Pattern "^\s*$([regex]::Escape($_))\s" -Quiet)
             }
           )
           if ($missingWorkloads.Count -gt 0) {
-            throw "Missing required .NET workload(s): $($missingWorkloads -join ', '). Run: dotnet workload install wasm-tools aspire"
+            throw "Missing required .NET workload(s): $($missingWorkloads -join ', '). Run: dotnet workload install wasm-tools"
           }
 
           $azureSelected = "${{ inputs.lane }}" -in @("both", "Azure")
