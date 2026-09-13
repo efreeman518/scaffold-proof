@@ -184,7 +184,7 @@ jobs:
               exit 1
             fi
             if grep -q '^COMPOSE_PROFILES=' .env.base; then
-              echo 'Remove COMPOSE_PROFILES from .env.base; it is derived from ReadModel__Provider.' >&2
+              echo 'Remove COMPOSE_PROFILES from .env.base; it is derived from provider settings.' >&2
               exit 1
             fi
             [[ \"\$(grep -Ec '^ReadModel__Provider=' .env.base)\" -eq 1 ]] || {
@@ -402,7 +402,7 @@ jobs:
               exit 1
             fi
             if grep -q '^COMPOSE_PROFILES=' .env.base; then
-              echo 'Remove COMPOSE_PROFILES from .env.base; it is derived from ReadModel__Provider.' >&2
+              echo 'Remove COMPOSE_PROFILES from .env.base; it is derived from provider settings.' >&2
               exit 1
             fi
             [[ \"\$(grep -Ec '^ReadModel__Provider=' .env.base)\" -eq 1 ]] || {
