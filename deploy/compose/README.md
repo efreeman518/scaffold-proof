@@ -6,15 +6,16 @@ Azure service dependency. These files are hand-written on purpose - the AppHost 
 
 | File | What it is |
 |---|---|
-| `docker-compose.yml` | Canonical NonAzure stack: caddy, PostgreSQL, RabbitMQ, SeaweedFS, Redis, migrator, gateway, api, scheduler, Blazor, React, Uno, otel-lgtm, and optional `pgbouncer` / `mongo` profiles |
-| `docker-compose.override.local.yml` | `build:` for the app images under profile `local`; it does not replace the canonical service topology |
+| `docker-compose.yml` | Canonical NonAzure stack: caddy, PostgreSQL, RabbitMQ, SeaweedFS, Redis, OpenObserve, migrator, gateway, api, scheduler, Blazor, React, Uno, and optional `pgbouncer` / `mongo` profiles |
+| `docker-compose.override.local.yml` | `build:` for the app images under profile `local`; it excludes deployed OpenObserve because local development uses the Aspire Dashboard |
 | `Caddyfile` / `Caddyfile.local` | ACME TLS for `{$CADDY_DOMAIN}`, and the plain `:80` variant CI uses |
 | `.env.example` | Operator template with clearly marked non-production values; copy to `.env.base` and replace every `CHANGE_ME` value |
 | `images.env.example` | Shape of the digest-pinned image variables the deploy job writes |
 | `pgbouncer/` | Transaction-pooling config for the opt-in `pooler` profile |
 
 The lane uses the centralized D-060 major/family tags: `pgvector/pgvector:pg18`, `rabbitmq:4-management`,
-`chrislusf/seaweedfs:latest`, `mongo:8`, and `redis:8`. Only app images move via digest through `images.env`
+`chrislusf/seaweedfs:latest`, `mongo:8`, and `redis:8`, plus the D-061 pinned OpenObserve OSS image
+`public.ecr.aws/zinclabs/openobserve:v1.0.0`. Only app images move via digest through `images.env`
 on every deploy (see Rollback); infrastructure-image tag changes are deliberate edits to `docker-compose.yml`.
 SeaweedFS exposes S3 internally at `seaweedfs:8333`; Caddy proxies its browser-facing hostname so presigned
 URLs retain a reachable signed host without publishing the S3 port directly. S3 requests require SigV4, so
@@ -39,7 +40,7 @@ it never uses an unsigned request to the authenticated S3 root as a health probe
    add `TASKFLOW_*_IMAGE` values; `images.env` is workflow-managed.
    Required values are `POSTGRES_*`, `REDIS_PASSWORD`, `RABBITMQ_DEFAULT_*`, the database connection strings,
    `ConnectionStrings__Redis1`, `Messaging__RabbitMq__ConnectionString`, `ConnectionStrings__RabbitMq1`, the
-   `Storage__S3__*` block, both encryption keys,
+   `Storage__S3__*` block, both encryption keys, `OPENOBSERVE_ROOT_*`, `OPENOBSERVE_OTLP_AUTH_TOKEN`,
    `CADDY_DOMAIN`, `S3_PUBLIC_DOMAIN`, `ACME_EMAIL`, `Gateway__BaseUrl`, `GATEWAY_BASE_URL`, and the three
    `*_UI_ORIGIN` / two `*_UI_DOMAIN` values. Set `MONGO_INITDB_ROOT_*` before using the optional Mongo profile.
    Set `Storage__S3__PublicServiceUrl` to
@@ -84,6 +85,9 @@ Two mechanisms cover it instead, and both are stronger than a self-reported cont
 Infrastructure containers do have native probes (`pg_isready`, authenticated `redis-cli ping`,
 authenticated `mongosh`, `rabbitmq-diagnostics`,
 and SeaweedFS master `/cluster/healthz`), which is what `--wait` and the `service_healthy` conditions above them key off.
+OpenObserve v1.0.0 is a distroless image with no built-in healthcheck and no shell, curl, or wget, so it follows
+the same no-synthetic-probe rule as the chiseled app images. Verify its documented `/healthz` endpoint through
+the loopback tunnel after startup when troubleshooting the observability service itself.
 
 Compose separates the public edge from internal app, data, cache, and telemetry networks. Caddy and the static
 UI containers cannot address the API, PostgreSQL, RabbitMQ, Redis, or MongoDB. Gateway and Blazor receive no
@@ -155,24 +159,38 @@ cp images.env.previous images.env
 docker compose up -d --wait
 ```
 
-## Logs and Grafana
+## Logs and traces
 
 ```bash
 docker compose logs -f --tail 200 api          # one service
 docker compose logs --since 15m                # everything, recent
 ```
 
-`otel-lgtm` (Grafana + Loki + Tempo + Mimir) is published to `127.0.0.1:3000` only - it has no authentication
-worth exposing, so reach it over an ssh tunnel:
+Deployed NonAzure uses the AGPL OpenObserve OSS single-node image. Its data directory is the persistent
+`openobserve-data` volume. `OPENOBSERVE_RETENTION_DAYS` defaults to 14 days and must remain at least 3 days;
+`ZO_COMPACT_FAST_MODE=false` trades compaction speed for lower peak memory on the VPS. The UI is published to
+loopback only, while OTLP gRPC port 5081 is not published to the host. Reach the UI over an SSH tunnel:
 
 ```bash
-ssh -L 3000:127.0.0.1:3000 <user>@<vps>
-# then open http://localhost:3000
+ssh -L 5080:127.0.0.1:5080 <user>@<vps>
+# then open http://localhost:5080
 ```
 
-Hosts export to it through `OTEL_EXPORTER_OTLP_ENDPOINT` (`http://otel-lgtm:4317`). Traces cross the broker:
+`OPENOBSERVE_ROOT_EMAIL` and `OPENOBSERVE_ROOT_PASSWORD` bootstrap only the OpenObserve container. TaskFlow
+hosts do not receive those plaintext values. They receive `OPENOBSERVE_OTLP_AUTH_TOKEN`, the base64 encoding
+of an ingestion user's literal `email:password`, and Compose constructs OpenObserve's required OTLP headers:
+`Authorization=Basic <token>`, `organization`, and `stream-name`. Create a dedicated ingestion user instead
+of reusing the root account, then rotate only its token when needed.
+
+Hosts export logs and traces over authenticated gRPC to `http://openobserve:5081`.
+`OpenTelemetry__MetricsEnabled=false` is the deployed default because metrics create high-volume time series;
+set it to `true` only for a bounded diagnosis. Traces cross the broker:
 the dispatcher injects W3C `traceparent` into message headers and the consumers link back to the producer
 span (D-053), so a request through the gateway and out through RabbitMQ is one trace.
+
+No OpenTelemetry Collector is part of this minimal topology. Add one only when server-side tail sampling or
+another processing stage becomes a measured requirement. For local development, run the Aspire AppHost and
+use its Dashboard; the local Compose profile excludes OpenObserve and clears OTLP export settings.
 
 ## Single-node ceiling, and the upgrade path
 
