@@ -1,6 +1,5 @@
 using TaskFlow.Bootstrapper;
 using TaskFlow.Scheduler;
-using TaskFlow.Observability.Meters;
 using TaskFlow.Scheduler.Telemetry;
 using TickerQ.DependencyInjection;
 
@@ -19,9 +18,7 @@ if (RegisterServices.ResolveMessagingProvider(builder.Configuration) == Messagin
     builder.AddRabbitMQClient("RabbitMq1");
 }
 
-builder.Services.AddOpenTelemetry()
-    .WithMetrics(metrics => metrics.AddMeter(
-        SchedulingMetrics.MeterName, MessagingMetrics.MeterName, "EF.Messaging.RabbitMq"));
+builder.Services.AddSchedulerOpenTelemetry(builder.Configuration);
 builder.Services
     .RegisterInfrastructureServices(builder.Configuration)
     .RegisterApplicationServices(builder.Configuration)

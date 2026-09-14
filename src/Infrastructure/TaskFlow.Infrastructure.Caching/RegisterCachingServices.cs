@@ -63,7 +63,10 @@ public static class RegisterCachingServices
         // FusionCache's own hit/miss/latency instrumentation, registered here rather than in the host's
         // telemetry setup so it arrives with the cache and cannot be forgotten by a host that adds caching.
         // AddTypedCache does not register it - it takes no OpenTelemetry dependency.
-        services.AddOpenTelemetry().WithMetrics(metrics => metrics.AddFusionCacheInstrumentation());
+        if (config.GetValue("OpenTelemetry:MetricsEnabled", true))
+        {
+            services.AddOpenTelemetry().WithMetrics(metrics => metrics.AddFusionCacheInstrumentation());
+        }
 
         return services;
     }

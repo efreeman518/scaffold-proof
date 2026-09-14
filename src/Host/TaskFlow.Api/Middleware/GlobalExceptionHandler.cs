@@ -64,10 +64,13 @@ internal sealed class DefaultExceptionHandler(
             Instance = $"{httpContext.Request.Method} {httpContext.Request.Path}"
         };
 
-        problemDetails.Extensions.TryAdd("traceId", httpContext.TraceIdentifier);
+        problemDetails.Extensions.TryAdd("requestId", httpContext.TraceIdentifier);
         var activity = Activity.Current;
-        if (!string.IsNullOrWhiteSpace(activity?.Id))
-            problemDetails.Extensions.TryAdd("activityId", activity.Id);
+        if (activity is not null)
+        {
+            problemDetails.Extensions.TryAdd("traceId", activity.TraceId.ToHexString());
+            problemDetails.Extensions.TryAdd("spanId", activity.SpanId.ToHexString());
+        }
 
         if (httpContext.Response.HasStarted)
             return true;
