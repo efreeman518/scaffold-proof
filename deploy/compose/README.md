@@ -25,8 +25,34 @@ it never uses an unsigned request to the authenticated S3 root as a health probe
 ## VPS prerequisites
 
 Install Docker Engine with the Compose plugin, OpenSSH, `curl`, and GNU `base64` on the VPS. The deploy and
-rollback gates use host `curl` to verify OpenObserve health and authenticated ingestion after Compose starts;
-they do not add diagnostic tools to the distroless OpenObserve container.
+rollback gates use host `curl` to verify OpenObserve health, then run a digest-pinned OpenTelemetry
+`telemetrygen` container to verify authenticated OTLP/gRPC log and trace ingestion. They do not add
+diagnostic tools to the distroless OpenObserve container.
+
+## Upgrade from the LGTM deployment
+
+The previous deployment stored Grafana LGTM data in a Compose-labeled `lgtm-data` volume. Compose removes
+the replaced container but deliberately leaves that volume behind. The deployment gate stops when it finds
+one so old telemetry cannot silently consume disk and cannot be deleted without an operator decision.
+
+On the VPS, inspect every reported volume. Back up any data that must be retained, verify the archive, then
+explicitly remove only the reported legacy volume:
+
+```bash
+cd ~/taskflow
+docker volume ls --filter label=com.docker.compose.project=taskflow \
+  --filter label=com.docker.compose.volume=lgtm-data
+docker volume inspect <reported-volume>
+mkdir -p backups
+docker run --rm -v <reported-volume>:/source:ro -v "$PWD/backups:/backup" alpine:3.22 \
+  sh -c 'tar -czf /backup/lgtm-data.tgz -C /source .'
+tar -tzf backups/lgtm-data.tgz > /dev/null
+docker volume rm <reported-volume>
+```
+
+Remove any legacy `OTEL_EXPORTER_OTLP_ENDPOINT=` line from `.env.base`. The strict NonAzure lane owns
+`http://openobserve:5081`; operator overrides are rejected so an old `http://otel-lgtm:4317` value cannot
+silently route telemetry to the removed service.
 
 ## First deploy
 
@@ -72,7 +98,8 @@ they do not add diagnostic tools to the distroless OpenObserve container.
 4. Fill in the rest of `.env.base` and replace every `CHANGE_ME` value. The checked-in D-060 contract fixes
    `Hosting__Lane=NonAzure`, PostgreSQL, RabbitMQ, S3,
    PostgreSQL JSONB, relational audit and Redis Data Protection. Do not change those lane-owned settings or
-   add `TASKFLOW_*_IMAGE` values; `images.env` is workflow-managed.
+   add `TASKFLOW_*_IMAGE` or `OTEL_EXPORTER_OTLP_ENDPOINT` values; the workflow manages images and the strict
+   lane owns its OpenObserve endpoint.
    Required values are `POSTGRES_*`, `REDIS_PASSWORD`, `RABBITMQ_DEFAULT_*`, the database connection strings,
    `ConnectionStrings__Redis1`, `Messaging__RabbitMq__ConnectionString`, `ConnectionStrings__RabbitMq1`, the
    `Storage__S3__*` block, both encryption keys, `OPENOBSERVE_ROOT_*`, `OPENOBSERVE_OTLP_BASIC_CREDENTIAL`,
@@ -225,9 +252,9 @@ set it to `true` only for a bounded diagnosis. Traces cross the broker: the disp
 `traceparent` into message headers, and the extracted producer context is the consumer span's parent (D-053),
 preserving one contiguous trace from a gateway request through RabbitMQ processing.
 
-After every deploy and rollback, the remote workflow waits for `http://127.0.0.1:5080/healthz` and writes one
-small JSON log to the configured organization and stream with the encoded ingestion credential. Both response
-bodies are discarded; a failed health or authenticated ingestion request fails the operation.
+After every deploy and rollback, the remote workflow waits for `http://127.0.0.1:5080/healthz`, then uses a
+digest-pinned official `telemetrygen` image to export one log and one trace over the same authenticated OTLP
+gRPC listener, organization, and stream configuration used by TaskFlow. Any failed export fails the operation.
 
 No OpenTelemetry Collector is part of this minimal topology. Add one only when server-side tail sampling or
 another processing stage becomes a measured requirement. For local development, run the Aspire AppHost and

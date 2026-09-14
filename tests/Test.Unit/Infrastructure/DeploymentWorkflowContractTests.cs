@@ -202,10 +202,24 @@ public sealed class DeploymentWorkflowContractTests
             StringAssert.Contains(job, "base64 --decode", name);
             StringAssert.Contains(job, "organization:o2oi_token", name);
             StringAssert.Contains(job, "http://127.0.0.1:5080/healthz > /dev/null", name);
-            StringAssert.Contains(job, "-H \"Authorization: Basic ${openobserve_basic_credential}\"", name);
-            StringAssert.Contains(job, "-H 'Content-Type: application/json'", name);
-            StringAssert.Contains(job, "--data '[{\"level\":\"info\"", name);
-            StringAssert.Contains(job, "http://127.0.0.1:5080/api/${openobserve_org}/${openobserve_stream}/_json", name);
+            StringAssert.Contains(job, "telemetrygen@sha256:554d71c82659e4dda1269004b0ea0731755b7e153e2ba909c9b3555883b4b623", name);
+            StringAssert.Contains(job, "logs --logs 1", name);
+            StringAssert.Contains(job, "traces --traces 1", name);
+            StringAssert.Contains(job, "--otlp-endpoint 127.0.0.1:5081 --otlp-insecure", name);
+            StringAssert.Contains(job, "--otlp-header \"Authorization=\\\"Basic ${openobserve_basic_credential}\\\"\"", name);
+            StringAssert.Contains(job, "--otlp-header \"organization=\\\"${openobserve_org}\\\"\"", name);
+            StringAssert.Contains(job, "--otlp-header \"stream-name=\\\"${openobserve_stream}\\\"\"", name);
+            StringAssert.Contains(job, "--network \"container:${openobserve_id}\"", name);
+            StringAssert.Contains(job, "echo \"::add-mask::${openobserve_basic_credential}\"", name);
+            StringAssert.Contains(job, "openobserve_id=$(docker compose -f docker-compose.yml ps -q openobserve)", name);
+            Assert.IsTrue(
+                job.IndexOf("::add-mask::${openobserve_basic_credential}", StringComparison.Ordinal)
+                    < job.IndexOf("docker run --rm", StringComparison.Ordinal),
+                $"{name} must mask the ingestion credential before telemetrygen can log its configuration");
+            Assert.IsFalse(job.Contains("openobserve_id=$(${COMPOSE}", StringComparison.Ordinal), name);
+            StringAssert.Contains(job, "Remove OTEL_EXPORTER_OTLP_ENDPOINT from .env.base", name);
+            StringAssert.Contains(job, "label=com.docker.compose.project=taskflow", name);
+            StringAssert.Contains(job, "label=com.docker.compose.volume=lgtm-data", name);
             Assert.IsFalse(job.Contains("OPENOBSERVE_ROOT_PASSWORD", StringComparison.Ordinal), $"{name} smoke must not use the root credential");
         }
 
@@ -580,7 +594,8 @@ public sealed class DeploymentWorkflowContractTests
         foreach (var host in new[] { "migrator", "api", "gateway", "scheduler", "blazor" })
         {
             var block = ServiceBlock(compose, host).Text;
-            StringAssert.Contains(block, "OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://openobserve:5081}", host);
+            StringAssert.Contains(block, "OTEL_EXPORTER_OTLP_ENDPOINT: http://openobserve:5081", host);
+            Assert.IsFalse(block.Contains("${OTEL_EXPORTER_OTLP_ENDPOINT", StringComparison.Ordinal), host);
             StringAssert.Contains(block, "OTEL_EXPORTER_OTLP_PROTOCOL: grpc", host);
             StringAssert.Contains(block, "Authorization=Basic ${OPENOBSERVE_OTLP_BASIC_CREDENTIAL:", host);
             StringAssert.Contains(block, "organization=${OPENOBSERVE_ORGANIZATION:-default}", host);
@@ -642,7 +657,7 @@ public sealed class DeploymentWorkflowContractTests
             "Storage__Provider=S3", "ReadModel__Provider=PostgreSqlJsonb", "Audit__Provider=Relational",
             "Search__Provider=Sql", "AiServices__Provider=None", "DataProtection__Persistence=Redis",
             "Storage__S3__ServiceUrl=http://seaweedfs:8333", "Storage__S3__ForcePathStyle=true",
-            "OTEL_EXPORTER_OTLP_ENDPOINT=http://openobserve:5081", "OpenTelemetry__MetricsEnabled=false"
+            "OpenTelemetry__MetricsEnabled=false"
         })
         {
             StringAssert.Contains(envExample, setting, setting);
@@ -659,7 +674,7 @@ public sealed class DeploymentWorkflowContractTests
             "ConnectionStrings__MongoDb1", "Database__Encryption__LocalKeyBase64", "Grpc__TaskFlowRead__Address",
             "OPENOBSERVE_ROOT_EMAIL", "OPENOBSERVE_ROOT_PASSWORD", "OPENOBSERVE_OTLP_BASIC_CREDENTIAL",
             "OPENOBSERVE_ORGANIZATION", "OPENOBSERVE_STREAM_NAME", "OPENOBSERVE_RETENTION_DAYS",
-            "OTEL_EXPORTER_OTLP_ENDPOINT", "OpenTelemetry__MetricsEnabled", "CADDY_DOMAIN", "ACME_EMAIL", "GATEWAY_BASE_URL",
+            "OpenTelemetry__MetricsEnabled", "CADDY_DOMAIN", "ACME_EMAIL", "GATEWAY_BASE_URL",
             "REACT_UI_ORIGIN", "UNO_UI_ORIGIN", "REACT_UI_DOMAIN", "UNO_UI_DOMAIN",
             "S3_PUBLIC_DOMAIN"
         })
@@ -685,6 +700,7 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(
             envExample,
             "OPENOBSERVE_OTLP_BASIC_CREDENTIAL=CHANGE_ME_BASE64_ORGANIZATION_COLON_O2OI_TOKEN");
+        Assert.IsFalse(envExample.Contains("OTEL_EXPORTER_OTLP_ENDPOINT=", StringComparison.Ordinal));
         var composeRunbook = File.ReadAllText(RepoRoot.Combine("deploy", "compose", "README.md"));
         foreach (var bootstrapContract in new[]
         {
@@ -694,7 +710,11 @@ public sealed class DeploymentWorkflowContractTests
             "default:o2oi_bootstrap",
             "default:$openobserve_token",
             "OPENOBSERVE_OTLP_BASIC_CREDENTIAL=$openobserve_basic",
-            "Open-source service accounts have full access"
+            "Open-source service accounts have full access",
+            "docker volume ls --filter label=com.docker.compose.project=taskflow",
+            "tar -tzf backups/lgtm-data.tgz",
+            "docker volume rm <reported-volume>",
+            "one log and one trace over the same authenticated OTLP"
         })
         {
             StringAssert.Contains(composeRunbook, bootstrapContract, bootstrapContract);

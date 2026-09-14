@@ -187,6 +187,16 @@ jobs:
               echo 'Remove COMPOSE_PROFILES from .env.base; it is derived from provider settings.' >&2
               exit 1
             fi
+            if grep -q '^OTEL_EXPORTER_OTLP_ENDPOINT=' .env.base; then
+              echo 'Remove OTEL_EXPORTER_OTLP_ENDPOINT from .env.base; the strict NonAzure lane owns the OpenObserve endpoint.' >&2
+              exit 1
+            fi
+            legacy_lgtm_volumes=\$(docker volume ls --filter label=com.docker.compose.project=taskflow --filter label=com.docker.compose.volume=lgtm-data --format '{{.Name}}')
+            if [[ -n "\$legacy_lgtm_volumes" ]]; then
+              echo 'Legacy LGTM data volume found. Back it up or explicitly discard it using the upgrade procedure in deploy/compose/README.md, then rerun.' >&2
+              printf '%s\n' "\$legacy_lgtm_volumes" >&2
+              exit 1
+            fi
             [[ \"\$(grep -Ec '^ReadModel__Provider=' .env.base)\" -eq 1 ]] || {
               echo 'Set exactly one ReadModel__Provider in .env.base.' >&2
               exit 1
@@ -237,6 +247,7 @@ jobs:
           openobserve_org=$(read_setting OPENOBSERVE_ORGANIZATION)
           openobserve_stream=$(read_setting OPENOBSERVE_STREAM_NAME)
           openobserve_basic_credential=$(read_setting OPENOBSERVE_OTLP_BASIC_CREDENTIAL)
+          echo "::add-mask::${openobserve_basic_credential}"
           case "$openobserve_org" in ''|*[!A-Za-z0-9_-]*) echo 'OPENOBSERVE_ORGANIZATION contains unsupported URL characters.' >&2; exit 1;; esac
           case "$openobserve_stream" in ''|*[!A-Za-z0-9_-]*) echo 'OPENOBSERVE_STREAM_NAME contains unsupported URL characters.' >&2; exit 1;; esac
           openobserve_decoded=$(printf '%s' "$openobserve_basic_credential" | base64 --decode 2>/dev/null) || {
@@ -248,11 +259,22 @@ jobs:
           unset openobserve_decoded
           curl -fsS --retry 12 --retry-delay 5 --retry-all-errors --connect-timeout 5 --max-time 10 \
             http://127.0.0.1:5080/healthz > /dev/null
-          curl -fsS --retry 3 --retry-delay 2 --retry-all-errors --connect-timeout 5 --max-time 15 \
-            -H "Authorization: Basic ${openobserve_basic_credential}" \
-            -H 'Content-Type: application/json' \
-            --data '[{"level":"info","message":"TaskFlow deployment observability smoke","service_name":"taskflow-deploy"}]' \
-            "http://127.0.0.1:5080/api/${openobserve_org}/${openobserve_stream}/_json" > /dev/null
+          openobserve_id=$(docker compose -f docker-compose.yml ps -q openobserve)
+          [[ -n "$openobserve_id" ]] || { echo 'OpenObserve container was not found.' >&2; exit 1; }
+          docker run --rm --network "container:${openobserve_id}" \
+            ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen@sha256:554d71c82659e4dda1269004b0ea0731755b7e153e2ba909c9b3555883b4b623 \
+            logs --logs 1 --service taskflow-deploy-smoke --body 'TaskFlow deployment observability smoke' \
+            --otlp-endpoint 127.0.0.1:5081 --otlp-insecure \
+            --otlp-header "Authorization=\"Basic ${openobserve_basic_credential}\"" \
+            --otlp-header "organization=\"${openobserve_org}\"" \
+            --otlp-header "stream-name=\"${openobserve_stream}\""
+          docker run --rm --network "container:${openobserve_id}" \
+            ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen@sha256:554d71c82659e4dda1269004b0ea0731755b7e153e2ba909c9b3555883b4b623 \
+            traces --traces 1 --service taskflow-deploy-smoke \
+            --otlp-endpoint 127.0.0.1:5081 --otlp-insecure \
+            --otlp-header "Authorization=\"Basic ${openobserve_basic_credential}\"" \
+            --otlp-header "organization=\"${openobserve_org}\"" \
+            --otlp-header "stream-name=\"${openobserve_stream}\""
           unset openobserve_basic_credential
           REMOTE
       - name: Verify public readiness and one CRUD round trip
@@ -439,6 +461,16 @@ jobs:
               echo 'Remove COMPOSE_PROFILES from .env.base; it is derived from provider settings.' >&2
               exit 1
             fi
+            if grep -q '^OTEL_EXPORTER_OTLP_ENDPOINT=' .env.base; then
+              echo 'Remove OTEL_EXPORTER_OTLP_ENDPOINT from .env.base; the strict NonAzure lane owns the OpenObserve endpoint.' >&2
+              exit 1
+            fi
+            legacy_lgtm_volumes=\$(docker volume ls --filter label=com.docker.compose.project=taskflow --filter label=com.docker.compose.volume=lgtm-data --format '{{.Name}}')
+            if [[ -n "\$legacy_lgtm_volumes" ]]; then
+              echo 'Legacy LGTM data volume found. Back it up or explicitly discard it using the upgrade procedure in deploy/compose/README.md, then rerun.' >&2
+              printf '%s\n' "\$legacy_lgtm_volumes" >&2
+              exit 1
+            fi
             [[ \"\$(grep -Ec '^ReadModel__Provider=' .env.base)\" -eq 1 ]] || {
               echo 'Set exactly one ReadModel__Provider in .env.base.' >&2
               exit 1
@@ -487,6 +519,7 @@ jobs:
           openobserve_org=$(read_setting OPENOBSERVE_ORGANIZATION)
           openobserve_stream=$(read_setting OPENOBSERVE_STREAM_NAME)
           openobserve_basic_credential=$(read_setting OPENOBSERVE_OTLP_BASIC_CREDENTIAL)
+          echo "::add-mask::${openobserve_basic_credential}"
           case "$openobserve_org" in ''|*[!A-Za-z0-9_-]*) echo 'OPENOBSERVE_ORGANIZATION contains unsupported URL characters.' >&2; exit 1;; esac
           case "$openobserve_stream" in ''|*[!A-Za-z0-9_-]*) echo 'OPENOBSERVE_STREAM_NAME contains unsupported URL characters.' >&2; exit 1;; esac
           openobserve_decoded=$(printf '%s' "$openobserve_basic_credential" | base64 --decode 2>/dev/null) || {
@@ -498,11 +531,22 @@ jobs:
           unset openobserve_decoded
           curl -fsS --retry 12 --retry-delay 5 --retry-all-errors --connect-timeout 5 --max-time 10 \
             http://127.0.0.1:5080/healthz > /dev/null
-          curl -fsS --retry 3 --retry-delay 2 --retry-all-errors --connect-timeout 5 --max-time 15 \
-            -H "Authorization: Basic ${openobserve_basic_credential}" \
-            -H 'Content-Type: application/json' \
-            --data '[{"level":"info","message":"TaskFlow rollback observability smoke","service_name":"taskflow-rollback"}]' \
-            "http://127.0.0.1:5080/api/${openobserve_org}/${openobserve_stream}/_json" > /dev/null
+          openobserve_id=$(docker compose -f docker-compose.yml ps -q openobserve)
+          [[ -n "$openobserve_id" ]] || { echo 'OpenObserve container was not found.' >&2; exit 1; }
+          docker run --rm --network "container:${openobserve_id}" \
+            ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen@sha256:554d71c82659e4dda1269004b0ea0731755b7e153e2ba909c9b3555883b4b623 \
+            logs --logs 1 --service taskflow-rollback-smoke --body 'TaskFlow rollback observability smoke' \
+            --otlp-endpoint 127.0.0.1:5081 --otlp-insecure \
+            --otlp-header "Authorization=\"Basic ${openobserve_basic_credential}\"" \
+            --otlp-header "organization=\"${openobserve_org}\"" \
+            --otlp-header "stream-name=\"${openobserve_stream}\""
+          docker run --rm --network "container:${openobserve_id}" \
+            ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen@sha256:554d71c82659e4dda1269004b0ea0731755b7e153e2ba909c9b3555883b4b623 \
+            traces --traces 1 --service taskflow-rollback-smoke \
+            --otlp-endpoint 127.0.0.1:5081 --otlp-insecure \
+            --otlp-header "Authorization=\"Basic ${openobserve_basic_credential}\"" \
+            --otlp-header "organization=\"${openobserve_org}\"" \
+            --otlp-header "stream-name=\"${openobserve_stream}\""
           unset openobserve_basic_credential
           REMOTE
       - name: Verify rollback readiness and one CRUD round trip

@@ -906,7 +906,7 @@ TASKFLOW_LANE=NonAzure dotnet run --project src/Host/Aspire/AppHost/AppHost.cspr
 <ul>
 <li><code>CorrelationIdMiddleware</code> generates or propagates <code>X-Correlation-Id</code> on every request</li>
 <li>Correlation ID flows through: HTTP headers -&gt; service calls -&gt; integration events -&gt; Function triggers -&gt; logs</li>
-<li>W3C <code>TraceId</code>/<code>SpanId</code> values are the cross-service join keys connecting exception responses, structured logs, spans, HTTP calls, and broker hops</li>
+<li>All ProblemDetails responses expose the server request identifier as <code>requestId</code>; W3C <code>traceId</code>/<code>spanId</code> values are the cross-service join keys connecting those responses, structured logs, spans, HTTP calls, and broker hops</li>
 <li><code>X-Correlation-Id</code> remains the human-facing request identifier; it complements rather than replaces the W3C trace context</li>
 </ul>
 <h3 id="104-aspire-dashboard">10.4 Aspire Dashboard</h3>
