@@ -55,7 +55,8 @@ they do not add diagnostic tools to the distroless OpenObserve container.
    { cat .env.base; printf '\n'; cat images.env.bootstrap; } > .env
    chmod 600 .env
    docker compose up -d openobserve
-   until curl -fsS http://127.0.0.1:5080/healthz > /dev/null; do sleep 2; done
+   curl -fsS --retry 12 --retry-delay 5 --retry-all-errors --connect-timeout 5 --max-time 10 \
+     http://127.0.0.1:5080/healthz > /dev/null
    ```
    From the trusted workstation, open `ssh -L 5080:127.0.0.1:5080 <user>@<vps>`, sign in at
    `http://localhost:5080` with the root account, then copy the automatically created default token or create

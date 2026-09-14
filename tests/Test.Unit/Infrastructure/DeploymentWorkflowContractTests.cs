@@ -689,7 +689,7 @@ public sealed class DeploymentWorkflowContractTests
         foreach (var bootstrapContract in new[]
         {
             "docker compose up -d openobserve",
-            "until curl -fsS http://127.0.0.1:5080/healthz > /dev/null",
+            "curl -fsS --retry 12 --retry-delay 5 --retry-all-errors --connect-timeout 5 --max-time 10",
             "IAM > Ingestion Tokens",
             "default:o2oi_bootstrap",
             "default:$openobserve_token",
