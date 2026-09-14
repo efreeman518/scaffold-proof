@@ -20,7 +20,7 @@ Deliver two coherent hosting and container profiles, `Azure` and `NonAzure`, acr
 
 ## Slice Status
 
-Active delegated workers: 0. Queue order: O1, then O2 and O3, final audit, PR lifecycle.
+Active delegated workers: 1. Queue order: O2 and O3, final audit, PR lifecycle.
 
 | ID | Scope | Model | Why | Status | Branch | Worktree | PID | Thread | JSONL log | Final report | Worker handoff | Queue |
 |---|---|---|---|---|---|---|---|---|---|---|---|---:|
@@ -42,7 +42,7 @@ Active delegated workers: 0. Queue order: O1, then O2 and O3, final audit, PR li
 | S5f | React OpenAPI development dependency audit correction | gpt-5.6-terra through native agent transport | Narrow lockfile-only compatible patch | complete, reviewed, integrated as `9db8123` | fix/react-audit | `../scaffold-proof-react-audit` | native agent | `/root/react_audit_fix` | not applicable for native transport | agent final message | `.tmp/orchestrated-refactor/react-audit-handoff.md` | 11 |
 | S5g | Uno Release development-asset exclusion contract | gpt-5.6-terra through native agent transport | UI packaging correctness | complete, reviewed, integrated through `f4c187e` | feature/lane-ui-deployment | `../scaffold-proof-ui-deployment` | native agent | `/root/s3_ui_deployment` | not applicable for native transport | agent final message | `.tmp/orchestrated-refactor/s3-handoff.md` | 12 |
 | S5h | Aspire MCR registry composition and exact-image regression | gpt-5.6-sol through native agent transport | Live container orchestration failure | complete, reviewed, integrated as `9e5bc0d` | fix/aspire-registry-ref | `../scaffold-proof-aspire-registry-fix` | native agent | `/root/aspire_registry_fix` | not applicable for native transport | agent final message | `.tmp/orchestrated-refactor/aspire-registry-handoff.md` | 13 |
-| O1 | Binding OpenObserve/Aspire observability decision and canonical architecture documentation | gpt-5.6-luna through native agent transport | Explicit documentation path list | queued | docs/nonazure-observability-design | `../scaffold-proof-observability-design` | native agent | pending | not applicable for native transport | agent final message | `.tmp/orchestrated-refactor/o1-handoff.md` | 14 |
+| O1 | Binding OpenObserve/Aspire observability decision and canonical architecture documentation | gpt-5.6-luna through native agent transport | Explicit documentation path list | running | docs/nonazure-observability-design | `../scaffold-proof-observability-design` | native agent | `/root/o1_observability_design` | not applicable for native transport | agent final message | `.tmp/orchestrated-refactor/o1-handoff.md` | 14 |
 | O2 | Metrics export switch, exception trace correlation contract, and focused tests | gpt-5.6-sol through native agent transport | Cross-host telemetry behavior and diagnostic correctness | queued after O1 | feature/otel-correlation-controls | `../scaffold-proof-otel-runtime` | native agent | pending | not applicable for native transport | agent final message | `.tmp/orchestrated-refactor/o2-handoff.md` | 15 |
 | O3 | OpenObserve Compose deployment, local Aspire separation, workflow contracts, and operator runbook | gpt-5.6-sol through native agent transport | Deployment, credentials, network exposure, and CI workflow safety | queued after O1 | feature/nonazure-openobserve-deployment | `../scaffold-proof-openobserve-deployment` | native agent | pending | not applicable for native transport | agent final message | `.tmp/orchestrated-refactor/o3-handoff.md` | 16 |
 
