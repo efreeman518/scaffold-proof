@@ -221,6 +221,40 @@ jobs:
             ${COMPOSE} pull
             ${COMPOSE} up -d --wait --remove-orphans
             ${COMPOSE} ps"
+          ssh taskflow-vps "TASKFLOW_REMOTE_DIR='${REMOTE_DIR}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd ~/"$TASKFLOW_REMOTE_DIR"
+          read_setting() {
+            local name="$1"
+            [[ "$(grep -Ec "^${name}=" .env.base)" -eq 1 ]] || {
+              echo "Set exactly one ${name} in .env.base." >&2; exit 1;
+            }
+            local value
+            value=$(sed -n "s/^${name}=//p" .env.base)
+            [[ -n "$value" ]] || { echo "${name} must not be empty." >&2; exit 1; }
+            printf '%s' "$value"
+          }
+          openobserve_org=$(read_setting OPENOBSERVE_ORGANIZATION)
+          openobserve_stream=$(read_setting OPENOBSERVE_STREAM_NAME)
+          openobserve_basic_credential=$(read_setting OPENOBSERVE_OTLP_BASIC_CREDENTIAL)
+          case "$openobserve_org" in ''|*[!A-Za-z0-9_-]*) echo 'OPENOBSERVE_ORGANIZATION contains unsupported URL characters.' >&2; exit 1;; esac
+          case "$openobserve_stream" in ''|*[!A-Za-z0-9_-]*) echo 'OPENOBSERVE_STREAM_NAME contains unsupported URL characters.' >&2; exit 1;; esac
+          openobserve_decoded=$(printf '%s' "$openobserve_basic_credential" | base64 --decode 2>/dev/null) || {
+            echo 'OPENOBSERVE_OTLP_BASIC_CREDENTIAL must be valid base64.' >&2; exit 1;
+          }
+          case "$openobserve_decoded" in "$openobserve_org":o2oi_?*) ;; *)
+            echo 'OPENOBSERVE_OTLP_BASIC_CREDENTIAL must encode organization:o2oi_token for the configured organization.' >&2; exit 1;;
+          esac
+          unset openobserve_decoded
+          curl -fsS --retry 12 --retry-delay 5 --retry-all-errors --connect-timeout 5 --max-time 10 \
+            http://127.0.0.1:5080/healthz > /dev/null
+          curl -fsS --retry 3 --retry-delay 2 --retry-all-errors --connect-timeout 5 --max-time 15 \
+            -H "Authorization: Basic ${openobserve_basic_credential}" \
+            -H 'Content-Type: application/json' \
+            --data '[{"level":"info","message":"TaskFlow deployment observability smoke","service_name":"taskflow-deploy"}]' \
+            "http://127.0.0.1:5080/api/${openobserve_org}/${openobserve_stream}/_json" > /dev/null
+          unset openobserve_basic_credential
+          REMOTE
       - name: Verify public readiness and one CRUD round trip
         env:
           CADDY_DOMAIN: ${{ secrets.CADDY_DOMAIN }}
@@ -437,6 +471,40 @@ jobs:
             ${COMPOSE} config -q
             ${COMPOSE} pull
             ${COMPOSE} up -d --wait --remove-orphans"
+          ssh taskflow-vps "TASKFLOW_REMOTE_DIR='${REMOTE_DIR}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd ~/"$TASKFLOW_REMOTE_DIR"
+          read_setting() {
+            local name="$1"
+            [[ "$(grep -Ec "^${name}=" .env.base)" -eq 1 ]] || {
+              echo "Set exactly one ${name} in .env.base." >&2; exit 1;
+            }
+            local value
+            value=$(sed -n "s/^${name}=//p" .env.base)
+            [[ -n "$value" ]] || { echo "${name} must not be empty." >&2; exit 1; }
+            printf '%s' "$value"
+          }
+          openobserve_org=$(read_setting OPENOBSERVE_ORGANIZATION)
+          openobserve_stream=$(read_setting OPENOBSERVE_STREAM_NAME)
+          openobserve_basic_credential=$(read_setting OPENOBSERVE_OTLP_BASIC_CREDENTIAL)
+          case "$openobserve_org" in ''|*[!A-Za-z0-9_-]*) echo 'OPENOBSERVE_ORGANIZATION contains unsupported URL characters.' >&2; exit 1;; esac
+          case "$openobserve_stream" in ''|*[!A-Za-z0-9_-]*) echo 'OPENOBSERVE_STREAM_NAME contains unsupported URL characters.' >&2; exit 1;; esac
+          openobserve_decoded=$(printf '%s' "$openobserve_basic_credential" | base64 --decode 2>/dev/null) || {
+            echo 'OPENOBSERVE_OTLP_BASIC_CREDENTIAL must be valid base64.' >&2; exit 1;
+          }
+          case "$openobserve_decoded" in "$openobserve_org":o2oi_?*) ;; *)
+            echo 'OPENOBSERVE_OTLP_BASIC_CREDENTIAL must encode organization:o2oi_token for the configured organization.' >&2; exit 1;;
+          esac
+          unset openobserve_decoded
+          curl -fsS --retry 12 --retry-delay 5 --retry-all-errors --connect-timeout 5 --max-time 10 \
+            http://127.0.0.1:5080/healthz > /dev/null
+          curl -fsS --retry 3 --retry-delay 2 --retry-all-errors --connect-timeout 5 --max-time 15 \
+            -H "Authorization: Basic ${openobserve_basic_credential}" \
+            -H 'Content-Type: application/json' \
+            --data '[{"level":"info","message":"TaskFlow rollback observability smoke","service_name":"taskflow-rollback"}]' \
+            "http://127.0.0.1:5080/api/${openobserve_org}/${openobserve_stream}/_json" > /dev/null
+          unset openobserve_basic_credential
+          REMOTE
       - name: Verify rollback readiness and one CRUD round trip
         env:
           CADDY_DOMAIN: ${{ secrets.CADDY_DOMAIN }}

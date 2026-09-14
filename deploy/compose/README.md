@@ -22,25 +22,59 @@ URLs retain a reachable signed host without publishing the S3 port directly. S3 
 Caddy checks SeaweedFS readiness through the unauthenticated master endpoint `/cluster/healthz` on port 9333;
 it never uses an unsigned request to the authenticated S3 root as a health probe.
 
+## VPS prerequisites
+
+Install Docker Engine with the Compose plugin, OpenSSH, `curl`, and GNU `base64` on the VPS. The deploy and
+rollback gates use host `curl` to verify OpenObserve health and authenticated ingestion after Compose starts;
+they do not add diagnostic tools to the distroless OpenObserve container.
+
 ## First deploy
 
 1. Point an A/AAAA record at the VPS. Caddy solves the ACME challenge itself, so DNS must resolve before
    the first `up`; nothing else in the stack publishes a port.
-2. From a trusted checkout, copy the operator template to the VPS as the canonical configuration source:
+2. From a trusted checkout, stage the OpenObserve bootstrap files and operator configuration source:
    ```bash
    ssh <user>@<vps> 'mkdir -p ~/taskflow && chmod 700 ~/taskflow'
+   scp deploy/compose/docker-compose.yml <user>@<vps>:~/taskflow/
    scp deploy/compose/.env.example <user>@<vps>:~/taskflow/.env.base
+   scp deploy/compose/images.env.example <user>@<vps>:~/taskflow/images.env.bootstrap
    ssh <user>@<vps> 'chmod 600 ~/taskflow/.env.base'
    ```
    Every deployment also refreshes `~/taskflow/.env.base.example`, so the current contract is available beside
    the operator-managed file without overwriting it.
-3. Fill in `.env.base` and replace every `CHANGE_ME` value. The checked-in D-060 contract fixes
+3. Bootstrap OpenObserve before starting TaskFlow. In `.env.base`, first set real
+   `OPENOBSERVE_ROOT_EMAIL` and `OPENOBSERVE_ROOT_PASSWORD` values. Keep `OPENOBSERVE_ORGANIZATION=default`
+   and set `OPENOBSERVE_OTLP_BASIC_CREDENTIAL` to a temporary, base64-shaped interpolation value. Then start
+   OpenObserve alone and wait for its host-only health endpoint:
+   ```bash
+   ssh <user>@<vps>
+   cd ~/taskflow
+   bootstrap_credential=$(printf '%s' 'default:o2oi_bootstrap' | base64 -w0)
+   sed -i "s|^OPENOBSERVE_OTLP_BASIC_CREDENTIAL=.*|OPENOBSERVE_OTLP_BASIC_CREDENTIAL=$bootstrap_credential|" .env.base
+   unset bootstrap_credential
+   { cat .env.base; printf '\n'; cat images.env.bootstrap; } > .env
+   chmod 600 .env
+   docker compose up -d openobserve
+   until curl -fsS http://127.0.0.1:5080/healthz > /dev/null; do sleep 2; done
+   ```
+   From the trusted workstation, open `ssh -L 5080:127.0.0.1:5080 <user>@<vps>`, sign in at
+   `http://localhost:5080` with the root account, then copy the automatically created default token or create
+   a named token under IAM > Ingestion Tokens. OpenObserve ingestion tokens start with `o2oi_` and are limited
+   to ingestion endpoints. Encode the organization identifier and token without a trailing newline and replace
+   the temporary value without printing either credential:
+   ```bash
+   read -rsp 'OpenObserve o2oi_ ingestion token: ' openobserve_token; printf '\n'
+   openobserve_basic=$(printf '%s' "default:$openobserve_token" | base64 -w0)
+   sed -i "s|^OPENOBSERVE_OTLP_BASIC_CREDENTIAL=.*|OPENOBSERVE_OTLP_BASIC_CREDENTIAL=$openobserve_basic|" .env.base
+   unset openobserve_token openobserve_basic
+   ```
+4. Fill in the rest of `.env.base` and replace every `CHANGE_ME` value. The checked-in D-060 contract fixes
    `Hosting__Lane=NonAzure`, PostgreSQL, RabbitMQ, S3,
    PostgreSQL JSONB, relational audit and Redis Data Protection. Do not change those lane-owned settings or
    add `TASKFLOW_*_IMAGE` values; `images.env` is workflow-managed.
    Required values are `POSTGRES_*`, `REDIS_PASSWORD`, `RABBITMQ_DEFAULT_*`, the database connection strings,
    `ConnectionStrings__Redis1`, `Messaging__RabbitMq__ConnectionString`, `ConnectionStrings__RabbitMq1`, the
-   `Storage__S3__*` block, both encryption keys, `OPENOBSERVE_ROOT_*`, `OPENOBSERVE_OTLP_AUTH_TOKEN`,
+   `Storage__S3__*` block, both encryption keys, `OPENOBSERVE_ROOT_*`, `OPENOBSERVE_OTLP_BASIC_CREDENTIAL`,
    `CADDY_DOMAIN`, `S3_PUBLIC_DOMAIN`, `ACME_EMAIL`, `Gateway__BaseUrl`, `GATEWAY_BASE_URL`, and the three
    `*_UI_ORIGIN` / two `*_UI_DOMAIN` values. Set `MONGO_INITDB_ROOT_*` before using the optional Mongo profile.
    Set `Storage__S3__PublicServiceUrl` to
@@ -50,7 +84,7 @@ it never uses an unsigned request to the authenticated S3 root as a health probe
    `Storage__S3__PublicServiceUrl` must be an address a **browser** can reach: SigV4 signs the Host header
    into a presigned download URL, so signing one against an in-network-only host hands the caller a URL it
    can never resolve.
-4. Run `gh workflow run deploy-vps.yml -f operation=deploy -f commit_sha=<green sha>`. The job builds the
+5. Run `gh workflow run deploy-vps.yml -f operation=deploy -f commit_sha=<green sha>`. The job builds the
    seven images, writes `images.env` with their digests, rebuilds generated `.env` from `.env.base` plus
    `images.env`, then runs
    `docker compose pull && docker compose up -d --wait` and smokes `https://$CADDY_DOMAIN/healthz/ready`.
@@ -177,16 +211,22 @@ ssh -L 5080:127.0.0.1:5080 <user>@<vps>
 ```
 
 `OPENOBSERVE_ROOT_EMAIL` and `OPENOBSERVE_ROOT_PASSWORD` bootstrap only the OpenObserve container. TaskFlow
-hosts do not receive those plaintext values. They receive `OPENOBSERVE_OTLP_AUTH_TOKEN`, the base64 encoding
-of an ingestion user's literal `email:password`, and Compose constructs OpenObserve's required OTLP headers:
-`Authorization=Basic <token>`, `organization`, and `stream-name`. Create a dedicated ingestion user instead
-of reusing the root account, then rotate only its token when needed.
+hosts do not receive those plaintext values. They receive `OPENOBSERVE_OTLP_BASIC_CREDENTIAL`, the base64
+encoding of `organization:o2oi_ingestion_token`, and Compose constructs OpenObserve's required OTLP headers:
+`Authorization=Basic <credential>`, `organization`, and `stream-name`. Organization ingestion tokens are
+accepted only by ingestion endpoints and survive user removal. Open-source service accounts have full access,
+so this lane deliberately does not use one. Rotate the organization token when needed and replace only the
+encoded credential.
 
 Hosts export logs and traces over authenticated gRPC to `http://openobserve:5081`.
 `OpenTelemetry__MetricsEnabled=false` is the deployed default because metrics create high-volume time series;
 set it to `true` only for a bounded diagnosis. Traces cross the broker: the dispatcher injects W3C
 `traceparent` into message headers, and the extracted producer context is the consumer span's parent (D-053),
 preserving one contiguous trace from a gateway request through RabbitMQ processing.
+
+After every deploy and rollback, the remote workflow waits for `http://127.0.0.1:5080/healthz` and writes one
+small JSON log to the configured organization and stream with the encoded ingestion credential. Both response
+bodies are discarded; a failed health or authenticated ingestion request fails the operation.
 
 No OpenTelemetry Collector is part of this minimal topology. Add one only when server-side tail sampling or
 another processing stage becomes a measured requirement. For local development, run the Aspire AppHost and

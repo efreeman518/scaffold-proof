@@ -76,7 +76,7 @@ services:
       Database__Encryption__BlindIndexKeyBase64: ${Database__Encryption__BlindIndexKeyBase64:?set BlindIndexKeyBase64 in .env.base}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://openobserve:5081}
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic ${OPENOBSERVE_OTLP_AUTH_TOKEN:?set OPENOBSERVE_OTLP_AUTH_TOKEN in .env.base},organization=${OPENOBSERVE_ORGANIZATION:-default},stream-name=${OPENOBSERVE_STREAM_NAME:-taskflow}"
+      OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic ${OPENOBSERVE_OTLP_BASIC_CREDENTIAL:?set OPENOBSERVE_OTLP_BASIC_CREDENTIAL in .env.base},organization=${OPENOBSERVE_ORGANIZATION:-default},stream-name=${OPENOBSERVE_STREAM_NAME:-taskflow}"
       OpenTelemetry__MetricsEnabled: ${OpenTelemetry__MetricsEnabled:-false}
     depends_on:
       postgres:
@@ -122,7 +122,7 @@ services:
       Database__Encryption__BlindIndexKeyBase64: ${Database__Encryption__BlindIndexKeyBase64:?set BlindIndexKeyBase64 in .env.base}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://openobserve:5081}
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic ${OPENOBSERVE_OTLP_AUTH_TOKEN:?set OPENOBSERVE_OTLP_AUTH_TOKEN in .env.base},organization=${OPENOBSERVE_ORGANIZATION:-default},stream-name=${OPENOBSERVE_STREAM_NAME:-taskflow}"
+      OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic ${OPENOBSERVE_OTLP_BASIC_CREDENTIAL:?set OPENOBSERVE_OTLP_BASIC_CREDENTIAL in .env.base},organization=${OPENOBSERVE_ORGANIZATION:-default},stream-name=${OPENOBSERVE_STREAM_NAME:-taskflow}"
       OpenTelemetry__MetricsEnabled: ${OpenTelemetry__MetricsEnabled:-false}
       # 8080 REST, 8081 cleartext HTTP/2 for the internal gRPC read service (D-054). Both come from the
       # image's own Kestrel:Endpoints section; nothing here overrides them.
@@ -168,7 +168,7 @@ services:
       CorsSettings__AllowedOrigins__2: ${UNO_UI_ORIGIN:?set UNO_UI_ORIGIN in .env.base}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://openobserve:5081}
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic ${OPENOBSERVE_OTLP_AUTH_TOKEN:?set OPENOBSERVE_OTLP_AUTH_TOKEN in .env.base},organization=${OPENOBSERVE_ORGANIZATION:-default},stream-name=${OPENOBSERVE_STREAM_NAME:-taskflow}"
+      OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic ${OPENOBSERVE_OTLP_BASIC_CREDENTIAL:?set OPENOBSERVE_OTLP_BASIC_CREDENTIAL in .env.base},organization=${OPENOBSERVE_ORGANIZATION:-default},stream-name=${OPENOBSERVE_STREAM_NAME:-taskflow}"
       OpenTelemetry__MetricsEnabled: ${OpenTelemetry__MetricsEnabled:-false}
     depends_on:
       api:
@@ -209,7 +209,7 @@ services:
       Database__Encryption__BlindIndexKeyBase64: ${Database__Encryption__BlindIndexKeyBase64:?set BlindIndexKeyBase64 in .env.base}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://openobserve:5081}
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic ${OPENOBSERVE_OTLP_AUTH_TOKEN:?set OPENOBSERVE_OTLP_AUTH_TOKEN in .env.base},organization=${OPENOBSERVE_ORGANIZATION:-default},stream-name=${OPENOBSERVE_STREAM_NAME:-taskflow}"
+      OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic ${OPENOBSERVE_OTLP_BASIC_CREDENTIAL:?set OPENOBSERVE_OTLP_BASIC_CREDENTIAL in .env.base},organization=${OPENOBSERVE_ORGANIZATION:-default},stream-name=${OPENOBSERVE_STREAM_NAME:-taskflow}"
       OpenTelemetry__MetricsEnabled: ${OpenTelemetry__MetricsEnabled:-false}
     depends_on:
       mongo:
@@ -248,7 +248,7 @@ services:
       Gateway__BaseUrl: ${Gateway__BaseUrl:?set Gateway BaseUrl in .env.base}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://openobserve:5081}
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic ${OPENOBSERVE_OTLP_AUTH_TOKEN:?set OPENOBSERVE_OTLP_AUTH_TOKEN in .env.base},organization=${OPENOBSERVE_ORGANIZATION:-default},stream-name=${OPENOBSERVE_STREAM_NAME:-taskflow}"
+      OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic ${OPENOBSERVE_OTLP_BASIC_CREDENTIAL:?set OPENOBSERVE_OTLP_BASIC_CREDENTIAL in .env.base},organization=${OPENOBSERVE_ORGANIZATION:-default},stream-name=${OPENOBSERVE_STREAM_NAME:-taskflow}"
       OpenTelemetry__MetricsEnabled: ${OpenTelemetry__MetricsEnabled:-false}
     depends_on:
       api:
