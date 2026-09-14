@@ -184,9 +184,9 @@ of reusing the root account, then rotate only its token when needed.
 
 Hosts export logs and traces over authenticated gRPC to `http://openobserve:5081`.
 `OpenTelemetry__MetricsEnabled=false` is the deployed default because metrics create high-volume time series;
-set it to `true` only for a bounded diagnosis. Traces cross the broker:
-the dispatcher injects W3C `traceparent` into message headers and the consumers link back to the producer
-span (D-053), so a request through the gateway and out through RabbitMQ is one trace.
+set it to `true` only for a bounded diagnosis. Traces cross the broker: the dispatcher injects W3C
+`traceparent` into message headers, and the extracted producer context is the consumer span's parent (D-053),
+preserving one contiguous trace from a gateway request through RabbitMQ processing.
 
 No OpenTelemetry Collector is part of this minimal topology. Add one only when server-side tail sampling or
 another processing stage becomes a measured requirement. For local development, run the Aspire AppHost and
