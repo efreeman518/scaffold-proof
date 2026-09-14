@@ -30,6 +30,21 @@ public sealed class OpenTelemetryMetricsRegistrationTests
     }
 
     [TestMethod]
+    public void ServiceDefaults_MetricsDisabled_KeepsSignalSpecificExporters()
+    {
+        // OpenTelemetry exposes provider presence through DI, but not the configured processor/exporter
+        // pipeline. Keep this source contract beside the provider behavior test so removing any exporter
+        // cannot silently preserve a passing test while dropping deployed logs or traces.
+        var source = File.ReadAllText(RepoRoot.Combine(
+            "src", "Host", "Aspire", "ServiceDefaults", "Extensions.cs"));
+
+        StringAssert.Contains(source, "logging.AddOtlpExporter();");
+        StringAssert.Contains(source, "tracing.AddOtlpExporter();");
+        StringAssert.Contains(source, "logging.AddAzureMonitorLogExporter(options =>");
+        StringAssert.Contains(source, "tracing.AddAzureMonitorTraceExporter(options =>");
+    }
+
+    [TestMethod]
     public void Caching_MetricsSetting_DefaultsEnabledAndCanDisableMeterProvider()
     {
         using var enabled = BuildCachingProvider(metricsEnabled: null);
