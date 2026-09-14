@@ -106,8 +106,8 @@ text { font-family: "trebuchet ms", verdana, arial, sans-serif; fill: #ccc; }
 
 <g class="node">
 <rect x="505" y="480" width="170" height="50" rx="6"/>
-<text x="590" y="502">otel-lgtm</text>
-<text x="590" y="520" class="small">OTLP traces/metrics/logs</text>
+<text x="590" y="502">OpenObserve OSS</text>
+<text x="590" y="520" class="small">persistent OTLP logs/traces</text>
 </g>
 
 <g class="node">

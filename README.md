@@ -46,6 +46,8 @@ dotnet run --project src/Host/Aspire/AppHost
 
 Use the Aspire dashboard to discover the Gateway, API, and Blazor URLs; ports are allocated per run. See [AI Demos](#ai-demos-azure-ai-foundry-and-foundry-local) for AI-specific run modes.
 
+Local development sends OpenTelemetry only to the Aspire Dashboard. Deployed NonAzure runs pinned OpenObserve OSS v1.0.0 in a separate persistent container for logs and traces, with metrics export disabled by default and short operator-configurable retention. Its UI is private by default. W3C TraceId/SpanId values connect exceptions and structured logs to traces across service and broker hops. This direct SDK export is the minimal baseline; add an OpenTelemetry Collector only if tail sampling becomes necessary. OpenObserve Open Source Edition uses AGPL-3.0; enterprise and hosted offerings are separate products. The single-node Compose shape is low cost, not highly available.
+
 ### Providers and container runtime
 
 ```powershell
