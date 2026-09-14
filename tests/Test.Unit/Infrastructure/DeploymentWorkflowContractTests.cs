@@ -218,6 +218,9 @@ public sealed class DeploymentWorkflowContractTests
                 $"{name} must mask the ingestion credential before telemetrygen can log its configuration");
             Assert.IsFalse(job.Contains("openobserve_id=$(${COMPOSE}", StringComparison.Ordinal), name);
             StringAssert.Contains(job, "Remove OTEL_EXPORTER_OTLP_ENDPOINT from .env.base", name);
+            StringAssert.Contains(job, "grep -Ec '^OPENOBSERVE_RETENTION_DAYS=' .env.base", name);
+            StringAssert.Contains(job, "(( 10#\\$openobserve_retention < 3 ))", name);
+            StringAssert.Contains(job, "OPENOBSERVE_RETENTION_DAYS must be an integer greater than or equal to 3", name);
             StringAssert.Contains(job, "label=com.docker.compose.project=taskflow", name);
             StringAssert.Contains(job, "label=com.docker.compose.volume=lgtm-data", name);
             Assert.IsFalse(job.Contains("OPENOBSERVE_ROOT_PASSWORD", StringComparison.Ordinal), $"{name} smoke must not use the root credential");

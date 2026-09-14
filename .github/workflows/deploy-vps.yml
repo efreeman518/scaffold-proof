@@ -191,6 +191,15 @@ jobs:
               echo 'Remove OTEL_EXPORTER_OTLP_ENDPOINT from .env.base; the strict NonAzure lane owns the OpenObserve endpoint.' >&2
               exit 1
             fi
+            [[ "\$(grep -Ec '^OPENOBSERVE_RETENTION_DAYS=' .env.base)" -eq 1 ]] || {
+              echo 'Set exactly one OPENOBSERVE_RETENTION_DAYS in .env.base.' >&2
+              exit 1
+            }
+            openobserve_retention=\$(sed -n 's/^OPENOBSERVE_RETENTION_DAYS=//p' .env.base)
+            if [[ ! "\$openobserve_retention" =~ ^[0-9]+$ ]] || (( 10#\$openobserve_retention < 3 )); then
+              echo 'OPENOBSERVE_RETENTION_DAYS must be an integer greater than or equal to 3.' >&2
+              exit 1
+            fi
             legacy_lgtm_volumes=\$(docker volume ls --filter label=com.docker.compose.project=taskflow --filter label=com.docker.compose.volume=lgtm-data --format '{{.Name}}')
             if [[ -n "\$legacy_lgtm_volumes" ]]; then
               echo 'Legacy LGTM data volume found. Back it up or explicitly discard it using the upgrade procedure in deploy/compose/README.md, then rerun.' >&2
@@ -463,6 +472,15 @@ jobs:
             fi
             if grep -q '^OTEL_EXPORTER_OTLP_ENDPOINT=' .env.base; then
               echo 'Remove OTEL_EXPORTER_OTLP_ENDPOINT from .env.base; the strict NonAzure lane owns the OpenObserve endpoint.' >&2
+              exit 1
+            fi
+            [[ "\$(grep -Ec '^OPENOBSERVE_RETENTION_DAYS=' .env.base)" -eq 1 ]] || {
+              echo 'Set exactly one OPENOBSERVE_RETENTION_DAYS in .env.base.' >&2
+              exit 1
+            }
+            openobserve_retention=\$(sed -n 's/^OPENOBSERVE_RETENTION_DAYS=//p' .env.base)
+            if [[ ! "\$openobserve_retention" =~ ^[0-9]+$ ]] || (( 10#\$openobserve_retention < 3 )); then
+              echo 'OPENOBSERVE_RETENTION_DAYS must be an integer greater than or equal to 3.' >&2
               exit 1
             fi
             legacy_lgtm_volumes=\$(docker volume ls --filter label=com.docker.compose.project=taskflow --filter label=com.docker.compose.volume=lgtm-data --format '{{.Name}}')
