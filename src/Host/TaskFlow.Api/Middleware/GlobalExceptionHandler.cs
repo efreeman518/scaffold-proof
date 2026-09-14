@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Diagnostics;
 using System.Globalization;
 using TaskFlow.Application.Contracts.Concurrency;
 
@@ -64,10 +63,7 @@ internal sealed class DefaultExceptionHandler(
             Instance = $"{httpContext.Request.Method} {httpContext.Request.Path}"
         };
 
-        problemDetails.Extensions.TryAdd("traceId", httpContext.TraceIdentifier);
-        var activity = Activity.Current;
-        if (!string.IsNullOrWhiteSpace(activity?.Id))
-            problemDetails.Extensions.TryAdd("activityId", activity.Id);
+        ProblemDetailsCorrelation.Apply(problemDetails, httpContext);
 
         if (httpContext.Response.HasStarted)
             return true;

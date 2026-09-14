@@ -449,7 +449,8 @@ externalDependencyModes:
   aiServices: deployment-only
   seaweedfs: emulator             # NonAzure S3-compatible object storage, see D-060
   appConfiguration: lazy-optional # no-op without AppConfig:Endpoint, see D-042
-  otelLgtm: emulator              # NonAzure lane observability stack (Grafana/Loki/Tempo/Mimir)
+  aspireDashboard: emulator       # local development telemetry UI, see D-061
+  openObserve: deployment-only    # pinned OpenObserve OSS v1.0.0 for deployed NonAzure logs/traces, see D-061
 
 # ---------------------------------------------------------------------------
 # AI Services

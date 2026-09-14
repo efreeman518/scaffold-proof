@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using TaskFlow.Application.Models;
 
 namespace Test.Endpoints;
@@ -125,6 +126,13 @@ public class ConcurrencyEndpointTests
             TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
+        using var problem = JsonDocument.Parse(
+            await response.Content.ReadAsStreamAsync(TestContext.CancellationToken));
+        var root = problem.RootElement;
+        Assert.AreEqual(32, root.GetProperty("traceId").GetString()!.Length);
+        Assert.AreEqual(16, root.GetProperty("spanId").GetString()!.Length);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(root.GetProperty("requestId").GetString()));
+        Assert.IsFalse(root.TryGetProperty("activityId", out _));
     }
 
     /// <summary>Verifies an unparseable If-Match is a 400 rather than being treated as "no precondition".</summary>

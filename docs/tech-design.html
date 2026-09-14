@@ -100,7 +100,7 @@
 </tr>
 <tr>
 <td><strong>Observability</strong></td>
-<td>OpenTelemetry (OTLP), Aspire Dashboard</td>
+<td>OpenTelemetry (OTLP), Aspire Dashboard locally, OpenObserve OSS for deployed NonAzure logs and traces</td>
 </tr>
 <tr>
 <td><strong>Testing</strong></td>
@@ -758,7 +758,7 @@ API: Sets IRequestContext (tenant, user, roles)
 <hr>
 <h2 id="9-deployment-topology">9. Deployment Topology</h2>
 <h3 id="91-local-development-aspire">9.1 Local Development (Aspire)</h3>
-<p>The AppHost selects a complete local container graph from <code>TASKFLOW_LANE</code>; no Azure subscription is required for either lane. Azure is the default and runs the Azure service emulators. NonAzure runs PostgreSQL, RabbitMQ, SeaweedFS, and optional MongoDB with no Azure resource or configuration dependency.</p>
+<p>The AppHost selects a complete local container graph from <code>TASKFLOW_LANE</code>; no Azure subscription is required for either lane. Azure is the default and runs the Azure service emulators. NonAzure runs PostgreSQL, RabbitMQ, SeaweedFS, and optional MongoDB with no Azure resource or configuration dependency. Both local lanes export telemetry only to the Aspire Dashboard; OpenObserve is a deployed NonAzure service, not another local-development container.</p>
 <figure class="diagram-container">
 <img src="diagrams/diagram-13.svg" alt="9.1 Local Development (Aspire)">
 </figure>
@@ -816,7 +816,7 @@ TASKFLOW_LANE=NonAzure dotnet run --project src/Host/Aspire/AppHost/AppHost.cspr
 </tbody>
 </table>
 <p><strong>Local lane images</strong>: Aspire and Testcontainers consume the shared <code>TaskFlow.Hosting.ContainerImages</code> catalog. Azure uses SQL Server <code>2025-latest</code>, Service Bus emulator <code>latest</code> with its SQL Server <code>2022-latest</code> sidecar, Azurite <code>latest</code>, and Cosmos emulator <code>vnext-latest</code>. NonAzure uses <code>pgvector/pgvector:pg18</code>, <code>rabbitmq:4-management</code>, <code>chrislusf/seaweedfs:latest</code>, and optional <code>mongo:8</code>. Both use <code>redis:8</code>.</p>
-<p><strong>Common application surface</strong>: both lanes run one migration owner, API, Gateway, Scheduler with TickerQ, Blazor, React, and Uno WASM against the same contracts. Functions runs only in Azure. <code>deploy/compose/docker-compose.yml</code> is the canonical NonAzure stack; <code>docker-compose.override.local.yml</code> changes TaskFlow image sources for local builds without changing provider topology. PostgreSQL JSONB is the default read model, while the <code>mongo</code> profile enables MongoDB when <code>ReadModel__Provider=MongoDb</code>. The optional <code>pooler</code> profile adds PgBouncer transaction pooling. Caddy is the only public edge and actively probes <code>/healthz/ready</code>; TaskFlow deployment images are digest-pinned by <code>deploy-vps.yml</code>.</p>
+<p><strong>Common application surface</strong>: both lanes run one migration owner, API, Gateway, Scheduler with TickerQ, Blazor, React, and Uno WASM against the same contracts. Functions runs only in Azure. <code>deploy/compose/docker-compose.yml</code> is the canonical NonAzure stack; <code>docker-compose.override.local.yml</code> changes TaskFlow image sources for local builds without changing provider topology. PostgreSQL JSONB is the default read model, while the <code>mongo</code> profile enables MongoDB when <code>ReadModel__Provider=MongoDb</code>. The optional <code>pooler</code> profile adds PgBouncer transaction pooling. Deployed NonAzure also runs pinned OpenObserve OSS v1.0.0 as a separate persistent logs-and-traces container; metrics export is off by default, retention is short and operator-configurable, and its UI is private/loopback-bound by default. This single-node shape minimizes license and infrastructure cost but is not highly available. Caddy is the only public edge and actively probes <code>/healthz/ready</code>; TaskFlow deployment images are digest-pinned by <code>deploy-vps.yml</code>.</p>
 <p><strong>CI lanes</strong>: pull-request CI builds and analyzes the solution, runs the complete <code>Test.Unit</code> project with a 50-second process deadline and a one-minute step timeout, then runs architecture and endpoint contracts. Container-heavy Aspire, component integration, E2E, full acceptance, Playwright, and Compose smoke lanes are explicit <code>workflow_dispatch</code> options so routine PR pushes do not spend hosted-runner minutes on full stacks. Manual lane inputs cover Azure, NonAzure with PostgreSQL JSONB, and NonAzure with MongoDB.</p>
 <hr>
 <h2 id="10-observability">10. Observability</h2>
@@ -835,7 +835,7 @@ TASKFLOW_LANE=NonAzure dotnet run --project src/Host/Aspire/AppHost/AppHost.cspr
 </tr>
 <tr>
 <td><strong>Metrics</strong></td>
-<td>ASP.NET Core, HttpClient, .NET Runtime, FusionCache</td>
+<td>ASP.NET Core, HttpClient, .NET Runtime, FusionCache; export disabled by default for deployed NonAzure</td>
 </tr>
 <tr>
 <td><strong>Logs</strong></td>
@@ -843,10 +843,11 @@ TASKFLOW_LANE=NonAzure dotnet run --project src/Host/Aspire/AppHost/AppHost.cspr
 </tr>
 <tr>
 <td><strong>Exporter</strong></td>
-<td>OTLP (to Aspire Dashboard locally, Azure Monitor in Azure; <code>otel-lgtm</code> in the NonAzure lane)</td>
+<td>OTLP (Aspire Dashboard locally, Azure Monitor in Azure, pinned OpenObserve OSS v1.0.0 for deployed NonAzure logs and traces)</td>
 </tr>
 </tbody></table>
-<p><strong>Broker trace propagation (D-053):</strong> before this refactor a trace ended at the process boundary - every async hop (outbox dispatch, a consumed message) started a new, disconnected trace. <code>TaskFlow.Observability/Tracing/TaskFlowActivitySources.cs</code> declares two additional <code>ActivitySource</code>s, <code>TaskFlow.Messaging</code> and <code>TaskFlow.Scheduler</code>, registered into the OTel pipeline alongside the framework sources. <code>MessagingTrace</code> injects the W3C <code>traceparent</code>/<code>tracestate</code> into the outgoing message headers at the producer (<code>ActivityKind.Producer</code>) for both the RabbitMQ and Service Bus transports, and extracts them at the consumer (<code>ActivityKind.Consumer</code>, linked back to the producer span) in the Scheduler&#39;s RabbitMQ handler wrappers and the Service Bus envelope reader. Every Scheduler job execution and TickerQ job wrapper (<code>BaseTickerQJob</code>) also gets its own root activity, since a scheduled run has no incoming request to inherit a trace from.</p>
+<p><strong>Deployment baseline (D-061):</strong> applications export directly through the OpenTelemetry SDK. The deployed NonAzure lane does not require an OpenTelemetry Collector; add one only when a concrete need for tail sampling justifies the extra stateful component. OpenObserve retention is intentionally short and operator-configurable to bound disk use. OpenObserve Open Source Edition is AGPL-3.0; hosted and enterprise offerings have separate licensing and cost. The selected single-node container is a low-cost baseline, not an HA topology.</p>
+<p><strong>Broker trace propagation (D-053):</strong> before this refactor a trace ended at the process boundary - every async hop (outbox dispatch, a consumed message) started a new, disconnected trace. <code>TaskFlow.Observability/Tracing/TaskFlowActivitySources.cs</code> declares two additional <code>ActivitySource</code>s, <code>TaskFlow.Messaging</code> and <code>TaskFlow.Scheduler</code>, registered into the OTel pipeline alongside the framework sources. <code>MessagingTrace</code> injects the W3C <code>traceparent</code>/<code>tracestate</code> into the outgoing message headers at the producer (<code>ActivityKind.Producer</code>) for both the RabbitMQ and Service Bus transports, and extracts the producer context as the consumer span&#39;s parent (<code>ActivityKind.Consumer</code>) in the Scheduler&#39;s RabbitMQ handler wrappers and the Service Bus envelope reader. Every Scheduler job execution and TickerQ job wrapper (<code>BaseTickerQJob</code>) also gets its own root activity, since a scheduled run has no incoming request to inherit a trace from.</p>
 <p><strong>Source-generated logging (D-053 enforcement):</strong> every <code>ILogger</code> call site under <code>src/</code> goes through a <code>[LoggerMessage]</code>-generated delegate rather than a runtime-formatted <code>ILogger.Log*()</code> call (see the README <a href="../README.md#logging-and-code-quality">Logging and Code Quality</a> section for the EventId ranges); <code>src/.editorconfig</code> sets <code>dotnet_diagnostic.CA1848.severity=error</code> so a raw call fails the build for anything under <code>src/</code> (tests stay advisory).</p>
 <h3 id="102-health-checks">10.2 Health Checks</h3>
 <table>
@@ -905,7 +906,8 @@ TASKFLOW_LANE=NonAzure dotnet run --project src/Host/Aspire/AppHost/AppHost.cspr
 <ul>
 <li><code>CorrelationIdMiddleware</code> generates or propagates <code>X-Correlation-Id</code> on every request</li>
 <li>Correlation ID flows through: HTTP headers -&gt; service calls -&gt; integration events -&gt; Function triggers -&gt; logs</li>
-<li>Enables end-to-end distributed tracing across all services</li>
+<li>All ProblemDetails responses expose the server request identifier as <code>requestId</code>; W3C <code>traceId</code>/<code>spanId</code> values are the cross-service join keys connecting those responses, structured logs, spans, HTTP calls, and broker hops</li>
+<li><code>X-Correlation-Id</code> remains the human-facing request identifier; it complements rather than replaces the W3C trace context</li>
 </ul>
 <h3 id="104-aspire-dashboard">10.4 Aspire Dashboard</h3>
 <p>Locally at <code>http://localhost:17179</code>:</p>
@@ -915,7 +917,10 @@ TASKFLOW_LANE=NonAzure dotnet run --project src/Host/Aspire/AppHost/AppHost.cspr
 <li>Distributed traces (request -&gt; service -&gt; database)</li>
 <li>Metrics (throughput, latency, errors)</li>
 </ul>
-<h3 id="105-flowengine-dashboard">10.5 FlowEngine Dashboard</h3>
+<p>The Aspire Dashboard is the only local-development telemetry service for both hosting lanes.</p>
+<h3 id="105-openobserve">10.5 Deployed NonAzure: OpenObserve</h3>
+<p>OpenObserve OSS v1.0.0 runs in its own persistent container and ingests OTLP logs and traces directly from TaskFlow services. Metrics export is disabled by default to avoid unnecessary ingestion and storage; operators set the short retention window to fit available disk. The UI is private/loopback-bound by default and should be reached through an authenticated administrative path such as an SSH tunnel. Trace and span identifiers let an operator pivot from an exception to its logs and complete distributed trace. An OpenTelemetry Collector is optional later for tail sampling. This single-node baseline has no HA guarantee.</p>
+<h3 id="106-flowengine-dashboard">10.6 FlowEngine Dashboard</h3>
 <p>Hosted inside <code>TaskFlow.Blazor</code> via <code>AddFlowEngineDashboard(adminApiBaseUrl: ...)</code>. Provides a separate, workflow-centric observability surface that complements the Aspire dashboard:</p>
 <table>
 <thead>

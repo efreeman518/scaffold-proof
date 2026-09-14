@@ -74,7 +74,10 @@ services:
       ConnectionStrings__TickerQDbContext: ${ConnectionStrings__TickerQDbContext:?set TickerQDbContext in .env.base}
       Database__Encryption__LocalKeyBase64: ${Database__Encryption__LocalKeyBase64:?set LocalKeyBase64 in .env.base}
       Database__Encryption__BlindIndexKeyBase64: ${Database__Encryption__BlindIndexKeyBase64:?set BlindIndexKeyBase64 in .env.base}
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-lgtm:4317}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://openobserve:5081
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic ${OPENOBSERVE_OTLP_BASIC_CREDENTIAL:?set OPENOBSERVE_OTLP_BASIC_CREDENTIAL in .env.base},organization=${OPENOBSERVE_ORGANIZATION:-default},stream-name=${OPENOBSERVE_STREAM_NAME:-taskflow}"
+      OpenTelemetry__MetricsEnabled: ${OpenTelemetry__MetricsEnabled:-false}
     depends_on:
       postgres:
         condition: service_healthy
@@ -117,7 +120,10 @@ services:
       ConnectionStrings__MongoDb1: ${ConnectionStrings__MongoDb1:-}
       Database__Encryption__LocalKeyBase64: ${Database__Encryption__LocalKeyBase64:?set LocalKeyBase64 in .env.base}
       Database__Encryption__BlindIndexKeyBase64: ${Database__Encryption__BlindIndexKeyBase64:?set BlindIndexKeyBase64 in .env.base}
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-lgtm:4317}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://openobserve:5081
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic ${OPENOBSERVE_OTLP_BASIC_CREDENTIAL:?set OPENOBSERVE_OTLP_BASIC_CREDENTIAL in .env.base},organization=${OPENOBSERVE_ORGANIZATION:-default},stream-name=${OPENOBSERVE_STREAM_NAME:-taskflow}"
+      OpenTelemetry__MetricsEnabled: ${OpenTelemetry__MetricsEnabled:-false}
       # 8080 REST, 8081 cleartext HTTP/2 for the internal gRPC read service (D-054). Both come from the
       # image's own Kestrel:Endpoints section; nothing here overrides them.
     deploy:
@@ -160,7 +166,10 @@ services:
       CorsSettings__AllowedOrigins__0: ${BLAZOR_UI_ORIGIN:?set BLAZOR_UI_ORIGIN in .env.base}
       CorsSettings__AllowedOrigins__1: ${REACT_UI_ORIGIN:?set REACT_UI_ORIGIN in .env.base}
       CorsSettings__AllowedOrigins__2: ${UNO_UI_ORIGIN:?set UNO_UI_ORIGIN in .env.base}
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-lgtm:4317}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://openobserve:5081
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic ${OPENOBSERVE_OTLP_BASIC_CREDENTIAL:?set OPENOBSERVE_OTLP_BASIC_CREDENTIAL in .env.base},organization=${OPENOBSERVE_ORGANIZATION:-default},stream-name=${OPENOBSERVE_STREAM_NAME:-taskflow}"
+      OpenTelemetry__MetricsEnabled: ${OpenTelemetry__MetricsEnabled:-false}
     depends_on:
       api:
         condition: service_started
@@ -198,7 +207,10 @@ services:
       ConnectionStrings__MongoDb1: ${ConnectionStrings__MongoDb1:-}
       Database__Encryption__LocalKeyBase64: ${Database__Encryption__LocalKeyBase64:?set LocalKeyBase64 in .env.base}
       Database__Encryption__BlindIndexKeyBase64: ${Database__Encryption__BlindIndexKeyBase64:?set BlindIndexKeyBase64 in .env.base}
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-lgtm:4317}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://openobserve:5081
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic ${OPENOBSERVE_OTLP_BASIC_CREDENTIAL:?set OPENOBSERVE_OTLP_BASIC_CREDENTIAL in .env.base},organization=${OPENOBSERVE_ORGANIZATION:-default},stream-name=${OPENOBSERVE_STREAM_NAME:-taskflow}"
+      OpenTelemetry__MetricsEnabled: ${OpenTelemetry__MetricsEnabled:-false}
     depends_on:
       mongo:
         condition: service_healthy
@@ -234,7 +246,10 @@ services:
       # D-054: the one in-cluster service-to-service hop, cleartext HTTP/2 on the internal network.
       Grpc__TaskFlowRead__Address: ${Grpc__TaskFlowRead__Address:-http://api:8081}
       Gateway__BaseUrl: ${Gateway__BaseUrl:?set Gateway BaseUrl in .env.base}
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-lgtm:4317}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://openobserve:5081
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic ${OPENOBSERVE_OTLP_BASIC_CREDENTIAL:?set OPENOBSERVE_OTLP_BASIC_CREDENTIAL in .env.base},organization=${OPENOBSERVE_ORGANIZATION:-default},stream-name=${OPENOBSERVE_STREAM_NAME:-taskflow}"
+      OpenTelemetry__MetricsEnabled: ${OpenTelemetry__MetricsEnabled:-false}
     depends_on:
       api:
         condition: service_started
@@ -375,15 +390,23 @@ services:
     networks:
       - cache
 
-  # Grafana/Loki/Tempo/Mimir in one container. Bound to loopback: reachable over an ssh tunnel only,
-  # never published to the internet (it has no authentication worth exposing).
-  otel-lgtm:
-    image: grafana/otel-lgtm:0.32.1
+  # D-061 deployed NonAzure observability. The UI is reachable only through an SSH tunnel; OTLP gRPC
+  # remains internal on the telemetry network. v1.0.0 has no image healthcheck or shell utility, so a
+  # Compose probe would be synthetic and unreliable.
+  openobserve:
+    image: public.ecr.aws/zinclabs/openobserve:v1.0.0
     restart: unless-stopped
+    environment:
+      ZO_LOCAL_MODE: "true"
+      ZO_DATA_DIR: /data
+      ZO_ROOT_USER_EMAIL: ${OPENOBSERVE_ROOT_EMAIL:?set OPENOBSERVE_ROOT_EMAIL in .env.base}
+      ZO_ROOT_USER_PASSWORD: ${OPENOBSERVE_ROOT_PASSWORD:?set OPENOBSERVE_ROOT_PASSWORD in .env.base}
+      ZO_COMPACT_DATA_RETENTION_DAYS: ${OPENOBSERVE_RETENTION_DAYS:-14}
+      ZO_COMPACT_FAST_MODE: "false"
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:5080:5080"
     volumes:
-      - lgtm-data:/data
+      - openobserve-data:/data
     deploy:
       resources:
         limits:
@@ -423,7 +446,7 @@ volumes:
   seaweedfs-data:
   mongo-data:
   redis-data:
-  lgtm-data:
+  openobserve-data:
 
 networks:
   edge:

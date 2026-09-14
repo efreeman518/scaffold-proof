@@ -1,5 +1,4 @@
 using EF.AspNetCore.Correlation;
-using EF.AspNetCore.ProblemDetails;
 using EF.AspNetCore.Versioning;
 using EF.Grpc;
 using Microsoft.AspNetCore.Authentication;
@@ -121,7 +120,7 @@ public static class RegisterApiServices
         services.AddProblemDetails(options =>
         {
             options.CustomizeProblemDetails = context =>
-                ProblemDetailsMetadata.ApplyRequestMetadata(context.ProblemDetails, context.HttpContext);
+                ProblemDetailsCorrelation.Apply(context.ProblemDetails, context.HttpContext);
         });
     }
 

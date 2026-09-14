@@ -663,10 +663,16 @@ jobs:
           rabbitmq_password=$(openssl rand -hex 24)
           redis_password=$(openssl rand -hex 24)
           mongo_password=$(openssl rand -hex 24)
+          openobserve_password=$(openssl rand -hex 24)
+          openobserve_ingest_token="o2oi_$(openssl rand -hex 24)"
+          openobserve_basic_credential=$(printf '%s' "default:$openobserve_ingest_token" | base64 -w0)
           echo "::add-mask::$postgres_password"
           echo "::add-mask::$rabbitmq_password"
           echo "::add-mask::$redis_password"
           echo "::add-mask::$mongo_password"
+          echo "::add-mask::$openobserve_password"
+          echo "::add-mask::$openobserve_ingest_token"
+          echo "::add-mask::$openobserve_basic_credential"
           cat > .env <<ENV
           TASKFLOW_LANE=NonAzure
           TASKFLOW_READMODEL_PROVIDER=${{ inputs.nonAzureReadModel }}
@@ -700,7 +706,12 @@ jobs:
           Gateway__BaseUrl=http://gateway:8080
           GATEWAY_BASE_URL=http://localhost
           Grpc__TaskFlowRead__Address=http://api:8081
-          OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-lgtm:4317
+          OPENOBSERVE_ROOT_EMAIL=taskflow-ci@example.invalid
+          OPENOBSERVE_ROOT_PASSWORD=$openobserve_password
+          OPENOBSERVE_OTLP_BASIC_CREDENTIAL=$openobserve_basic_credential
+          OPENOBSERVE_ORGANIZATION=default
+          OPENOBSERVE_STREAM_NAME=taskflow-ci
+          OPENOBSERVE_RETENTION_DAYS=3
           CADDY_DOMAIN=localhost
           BLAZOR_UI_ORIGIN=http://localhost
           REACT_UI_ORIGIN=http://react.localhost

@@ -22,12 +22,17 @@ services:
   redis:
     profiles: ["local"]
 
-  otel-lgtm:
-    profiles: ["local"]
+  # Local development uses the Aspire Dashboard. Keep the deployed observability backend outside the
+  # local/CI profile and explicitly disable app exporters so an absent backend produces no connection noise.
+  openobserve:
+    profiles: ["deployment-observability"]
 
   migrator:
     profiles: ["local"]
     image: taskflow-db-migrator:local
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
+      OTEL_EXPORTER_OTLP_HEADERS: ""
     build: &nuget-build
       context: ../..
       dockerfile: src/Host/TaskFlow.DatabaseMigrator/Dockerfile
@@ -36,12 +41,18 @@ services:
   api:
     profiles: ["local"]
     image: taskflow-api:local
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
+      OTEL_EXPORTER_OTLP_HEADERS: ""
     build:
       <<: *nuget-build
       dockerfile: src/Host/TaskFlow.Api/Dockerfile
   gateway:
     profiles: ["local"]
     image: taskflow-gateway:local
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
+      OTEL_EXPORTER_OTLP_HEADERS: ""
     build:
       <<: *nuget-build
       dockerfile: src/Host/TaskFlow.Gateway/Dockerfile
@@ -49,12 +60,18 @@ services:
   scheduler:
     profiles: ["local"]
     image: taskflow-scheduler:local
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
+      OTEL_EXPORTER_OTLP_HEADERS: ""
     build:
       <<: *nuget-build
       dockerfile: src/Host/TaskFlow.Scheduler/Dockerfile
   blazor:
     profiles: ["local"]
     image: taskflow-blazor:local
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
+      OTEL_EXPORTER_OTLP_HEADERS: ""
     build:
       <<: *nuget-build
       dockerfile: src/UI/TaskFlow.Blazor/Dockerfile
