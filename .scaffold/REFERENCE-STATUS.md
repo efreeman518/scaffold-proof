@@ -4,19 +4,19 @@ Canonical current evidence for the TaskFlow reference application. Historical ph
 
 > Update this file only from observed results. TaskFlow CI records the scaffold checkout commit used for cross-repository validation so failures remain diagnosable without creating a compatibility pin.
 
-This refresh follows the `feature/ef-packages-1-1-100` package-refactor: EF.* pinned at 1.1.102, EF.FlowEngine.*/EF.FilterBuilder at 1.0.173, app-local fallbacks for the landed package requests deleted. Numbers below include the observed local fast lane and AppHost build on 2026-09-12.
+This refresh includes the integrated D-061 observability lane. Numbers below include the observed local Release build and fast lane on 2026-09-13; AppHost, container, and vulnerability evidence not rerun for D-061 remains dated 2026-09-12.
 
 ## Build Status
 
 | Field | Value |
 |---|---|
-| Last verified | 2026-09-12 (local release, container, and AppHost evidence) |
+| Last verified | 2026-09-13 (local Release build and fast lane; container and AppHost evidence carried from 2026-09-12) |
 | Solution | `TaskFlow.slnx` |
 | Target framework | .NET 10 |
 | Configuration | Release |
 | Solution projects declared (`dotnet sln list` / slnx `<Project Path=` count) | 48 |
 | Fresh Release restore | 49 restore projects, passed |
-| Solution build units (`dotnet build TaskFlow.slnx -c Release -m:1` summary line) | 51 in 48.85 s |
+| Solution build units (`dotnet build TaskFlow.slnx -c Release -m:1` summary line) | 51 in 41.32 s |
 | Errors | 0 |
 | Warnings | 0 |
 
@@ -27,7 +27,7 @@ This refresh follows the `feature/ef-packages-1-1-100` package-refactor: EF.* pi
 
 ## Test Status
 
-Numbers below are the observed local fast lane on 2026-09-12. The full Unit project passed **523/523** (8.0 s test time, 9.73 s wall time) under a 50-second wrapper; GitHub CI run 34736624292 passed the same **523/523** in 4 s test time and 6 s step time. The categorized fast lane (`TestCategory=Unit|TestCategory=Architecture|TestCategory=Endpoint`, `dotnet test TaskFlow.slnx`) passed **739/739 across 13 projects in 30.8 s**; its Architecture and Endpoint subsets passed **74/74** and **166/166** respectively. `Test.UI` passed **59/59** and `Test.Integration.FlowEngine` passed **18/18**.
+Numbers below are the observed local fast lane on 2026-09-13. The full Unit project passed **527/527** (7.8 s test time, 9.84 s wall time) with 15-second blame-hang diagnostics, safely below the 60-second CI limit. The categorized fast lane (`TestCategory=Unit|TestCategory=Architecture|TestCategory=Endpoint`, `dotnet test TaskFlow.slnx`) passed **743/743 across 13 projects** (10.7 s test time, 14.26 s wall time). The full `Test.Endpoints` project passed **167/167** (7.1 s test time, 8.84 s wall time). For historical CI evidence, run 34736624292 passed the prior **523/523** Unit count in 4 s test time and 6 s step time. `Test.UI` passed **59/59** and `Test.Integration.FlowEngine` passed **18/18** on the preceding verification pass.
 
 Docker/Testcontainers-backed lanes (run-scoped `TESTCONTAINERS_HOST_OVERRIDE`, not committed):
 
@@ -46,7 +46,7 @@ Docker/Testcontainers-backed lanes (run-scoped `TESTCONTAINERS_HOST_OVERRIDE`, n
 
 Not rerun this pass, last observed values only: **Test.Mutation** last observed 33 (mutation-target contract tests; not part of this refactor's changed surface, not rerun to save time).
 
-Not fully rerun on this machine this pass: the full Azure Aspire mesh, the full-stack `Test.PlaywrightUI` lane, **Test.Mobile** (dedicated Appium/emulator runner), **Test.FoundryLocal** (live local-model lane, RID-bound runtime), **Test.Load** (manual; the 5,000 RPS gate is deployment-only), **Test.Benchmarks** (BenchmarkDotNet console runner, build-verified only), **compose-smoke** and **deploy-vps** (CI-only: `compose-smoke` is a `workflow_dispatch`-gated job in `ci.yml`, `deploy-vps.yml` is `workflow_dispatch`-only). The bounded Azure live rerun started Cosmos and Service Bus SQL; remaining resources stayed `Created` with no `State.Error`, so the mesh is incomplete and unverified, not a manifest-duplication failure.
+Not fully rerun on this machine this pass: the full Azure Aspire mesh, the full-stack `Test.PlaywrightUI` lane, **Test.Mobile** (dedicated Appium/emulator runner), **Test.FoundryLocal** (live local-model lane, RID-bound runtime), **Test.Load** (manual; the 5,000 RPS gate is deployment-only), **Test.Benchmarks** (BenchmarkDotNet console runner, build-verified only), **compose-smoke** and **deploy-vps** (CI-only: `compose-smoke` is a `workflow_dispatch`-gated job in `ci.yml`, `deploy-vps.yml` is `workflow_dispatch`-only). Canonical JSONB, Mongo, and local Compose configurations rendered; the local service list omitted OpenObserve and its TaskFlow OTLP endpoint and headers were empty. Workflow YAML parsed with PyYAML. The OpenObserve v1.0.0 manifest was verified for linux/amd64 and linux/arm64, but no live OpenObserve container or VPS/Azure deployment ran. The bounded Azure live rerun started Cosmos and Service Bus SQL; remaining resources stayed `Created` with no `State.Error`, so the mesh is incomplete and unverified, not a manifest-duplication failure.
 
 Published Release Uno cold-start and normal browser projects pass from empty browser state without refresh, retry, sleep, or exception suppression. Browser WASM Release temporarily sets `PublishTrimmed=false` because the current Navigation, Toolkit, and WinUI package set emits upstream `IL2104` under warnings-as-errors. Removal condition: those packages become trim-clean. Cold-start and browser evidence was not rerun this pass; this pass proves Release/Debug builds and the NonAzure static-host AppSurface only.
 
@@ -129,11 +129,12 @@ Status meanings:
 | Edge rate limiter + YARP active/passive health (D-050) | proven | `Test.Unit/Gateway/GatewayEdgeRateLimitTests.cs` (burst over the token bucket -> 429) |
 | GET-only hedging (D-051) | proven | `Test.Unit/Hosting/ReadHedgingTests.cs` (GET hedges, POST never does); `Test.Unit/Infrastructure/CosmosHedgingOptionsTests.cs` (config-gated, deployment-only for the live behavior) |
 | Distributed lock (D-052) | proven | `Test.Integration/RedisDistributedLockTests.cs` (two contenders, one wins, second wins after release); `Test.Unit/Infrastructure/InProcessDistributedLockTests.cs` (fallback) |
-| Broker trace propagation (D-053) | proven | `Test.Unit/Infrastructure/BrokerTracePropagationTests.cs` (`ActivityListener` asserts a consumed message with an injected `traceparent` yields a linked Consumer activity) |
+| Broker trace propagation (D-053) | proven | `Test.Unit/Infrastructure/BrokerTracePropagationTests.cs` (`ActivityListener` asserts a consumed message extracts the injected remote parent and creates a Consumer activity with the same trace ID and expected parent span ID, preserving a contiguous trace) |
 | LoggerMessage sweep + CA1848 (D-053) | proven | `src/.editorconfig` (`dotnet_diagnostic.CA1848.severity=error` for `src/**.cs`); full solution build 0 warnings/errors after all 58 raw call sites converted |
 | Internal gRPC read service (D-054) | proven | `Test.Endpoints/TaskFlowReadGrpcTests.cs` (in-memory `GrpcChannel` parity with the REST summary); `Test.Unit/Contracts/TaskFlowReadGrpcMapperTests.cs`; `Test.Architecture/GrpcArchitectureTests.cs` (gRPC service lives only in the Api host) |
 | MessagePack L2 cache serializer (D-048/D-056) | proven | `Test.Unit/Infrastructure/CacheSerializerTests.cs` (round trip, both serializers); `Test.Integration/MessagePackCacheTests.cs` (L2 Redis round trip) |
 | Compose lane (Docker Compose + Caddy) + VPS deploy workflow (D-036) | proven (Compose); CI-only (VPS deploy) | Canonical and local JSONB/Mongo Compose shapes pass; worker also validated eight none, Mongo, pooler, and combined shapes. `deploy-vps.yml` remains `workflow_dispatch` deploy/rollback evidence only. |
+| NonAzure deployment observability (D-061) | proven (wiring and contracts); deployment-only (live runtime) | `Test.Unit/Hosting/OpenTelemetryMetricsRegistrationTests.cs` proves the runtime metrics switch; `Test.Endpoints/GlobalExceptionHandlerTests.cs` proves exception `traceId`/`spanId` correlation; `Test.Unit/Infrastructure/DeploymentWorkflowContractTests.cs` proves OpenObserve isolation, credentials, OTLP, retention, and deploy gates. `deploy/compose/docker-compose.yml`, `docker-compose.override.local.yml`, and `.github/workflows/deploy-vps.yml` wire deployed OpenObserve OSS while local Aspire uses its Dashboard with metrics export disabled by default. Compose shapes and workflow YAML validated, but no live OpenObserve container or deployment ran. |
 
 The declared flags and matrix must agree with `.scaffold/resource-implementation.yaml`. Proof paths are validated against the scaffold-owned [TaskFlow proof map](https://github.com/efreeman518/scaffold-ai/blob/main/support/taskflow-proof-map.md).
 
