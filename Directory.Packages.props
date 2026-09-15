@@ -36,7 +36,7 @@
     <PackageVersion Include="EF.AI" Version="1.1.103" />
     <PackageVersion Include="EF.MSGraph" Version="1.1.102" />
     <PackageVersion Include="Testcontainers.MsSql" Version="4.15.0" />
-    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.14.0" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.15.0" />
     <PackageVersion Include="Testcontainers.Azurite" Version="4.15.0" />
     <PackageVersion Include="Testcontainers.Redis" Version="4.15.0" />
     <!-- Generic containers host SeaweedFS and MongoDB without provider-specific fixture packages. -->
@@ -59,10 +59,10 @@
     <PackageVersion Include="EF.FlowEngine.Testing" Version="1.0.179" />
   </ItemGroup>
   <ItemGroup Label="Microsoft Entity Framework Core">
-    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.12" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.12" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12" />
     <!-- Dual-provider dependency (Phase 0 pin, no PackageReference yet) -->
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
@@ -164,12 +164,12 @@
     <PackageVersion Include="RedisRateLimiting" Version="1.2.1" />
     <PackageVersion Include="ZiggyCreatures.FusionCache" Version="2.8.0" />
     <PackageVersion Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" Version="2.7.2" />
-    <!-- D-048: the binary L2 arm of CacheSettings:Serializer. Same 2.7.2 family as the rest of FusionCache;
-         it brings MessagePack 3.1.7 transitively, which the central MessagePack 3.1.8 pin lifts. -->
+    <!-- D-048: the binary L2 arm of CacheSettings:Serializer remains on 2.7.2 alongside the serializers and
+         Redis backplane; it brings MessagePack 3.1.7 transitively, which the central MessagePack 3.1.8 pin lifts. -->
     <PackageVersion Include="ZiggyCreatures.FusionCache.Serialization.NeueccMessagePack" Version="2.7.2" />
     <PackageVersion Include="ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis" Version="2.7.2" />
     <PackageVersion Include="ZiggyCreatures.FusionCache.OpenTelemetry" Version="2.8.0" />
-    <PackageVersion Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.12" />
   </ItemGroup>
   <ItemGroup Label="Testing">
     <PackageVersion Include="MSTest" Version="4.4.0" />
