@@ -47,7 +47,19 @@ public sealed class FoundryLocalLiveSmokeTests
 
         _environment = new EnvironmentVariableScope()
             .Set(HostingLaneResolver.LaneEnvironmentVariable, "NonAzure")
-            .Set(HostingLaneResolver.AiEnvironmentVariable, "FoundryLocal");
+            .Set(HostingLaneResolver.DatabaseEnvironmentVariable, "PostgreSql")
+            .Set(HostingLaneResolver.MessagingEnvironmentVariable, "RabbitMq")
+            .Set(HostingLaneResolver.StorageEnvironmentVariable, "S3")
+            .Set(HostingLaneResolver.ReadModelEnvironmentVariable, "PostgreSqlJsonb")
+            .Set(HostingLaneResolver.AuditEnvironmentVariable, "Relational")
+            .Set(HostingLaneResolver.SearchEnvironmentVariable, "Sql")
+            .Set(HostingLaneResolver.AiEnvironmentVariable, "FoundryLocal")
+            .Set(HostingLaneResolver.DataProtectionEnvironmentVariable, "Redis")
+            .Set(HostingLaneResolver.AppConfigEndpointEnvironmentVariable, null)
+            .Set(HostingLaneResolver.AppConfigConnectionStringEnvironmentVariable, null)
+            .Set(HostingLaneResolver.KeyVaultEndpointEnvironmentVariable, null)
+            .Set(HostingLaneResolver.KeyVaultUriEnvironmentVariable, null)
+            .Set(HostingLaneResolver.DataProtectionEncryptionKeyUrlEnvironmentVariable, null);
 
         try
         {

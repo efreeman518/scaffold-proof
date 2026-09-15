@@ -63,7 +63,7 @@ public sealed class TypeScriptPlaywrightSuiteTests
             Assert.Inconclusive(ex.Message);
             return;
         }
-        catch (AspireResourceUnavailableException ex)
+        catch (TimeoutException ex)
         {
             Assert.Inconclusive($"Aspire resources unavailable: {ex.Message}");
             return;
@@ -76,10 +76,6 @@ public sealed class TypeScriptPlaywrightSuiteTests
                 "Gateway/Blazor browser launch and smoke",
                 token => GatewayBlazorSmokeRunner.RunAsync(host.GatewayBaseUrl, host.BlazorBaseUrl, token),
                 TestContext.CancellationToken);
-        }
-        catch (AspireResourceUnavailableException ex)
-        {
-            Assert.Inconclusive($"Aspire resources unavailable: {ex.Message}");
         }
         catch (PlaywrightException ex) when (
             ex.Message.Contains("Executable doesn't exist", StringComparison.OrdinalIgnoreCase))
@@ -121,7 +117,7 @@ public sealed class TypeScriptPlaywrightSuiteTests
             Assert.Inconclusive(ex.Message);
             return;
         }
-        catch (AspireResourceUnavailableException ex)
+        catch (TimeoutException ex)
         {
             Assert.Inconclusive($"Aspire resources unavailable: {ex.Message}");
             return;
@@ -154,11 +150,6 @@ public sealed class TypeScriptPlaywrightSuiteTests
                 "Playwright browser launch and smoke",
                 token => TypeScriptPlaywrightRunner.RunAsync(selectedProjects, token),
                 TestContext.CancellationToken);
-        }
-        catch (AspireResourceUnavailableException ex)
-        {
-            Assert.Inconclusive($"Aspire resources unavailable: {ex.Message}");
-            return;
         }
         catch (InvalidOperationException ex) when (
             ex.Message.Equals("Node.js is not available on PATH.", StringComparison.Ordinal))
