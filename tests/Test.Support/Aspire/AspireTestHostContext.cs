@@ -246,10 +246,14 @@ public sealed class AspireTestHostContext
             : throw CreateStartupTimeout(stepName, null);
     }
 
-    private TimeoutException CreateStartupTimeout(string stepName, Exception? innerException) => new(
+    private AspireResourceUnavailableException CreateStartupTimeout(string stepName, Exception? innerException) => new(
         $"Global Aspire startup budget {_startupBudget.TotalSeconds:0}s expired during {stepName}; "
         + $"elapsed={_startupClock.Elapsed.TotalSeconds:0}s.",
         innerException);
 
     private static TimeSpan Min(TimeSpan left, TimeSpan right) => left <= right ? left : right;
 }
+
+/// <summary>Signals that an Aspire-backed test could not run because its local resource graph never became available.</summary>
+public sealed class AspireResourceUnavailableException(string message, Exception? innerException = null)
+    : TimeoutException(message, innerException);

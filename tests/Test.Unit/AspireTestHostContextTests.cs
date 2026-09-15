@@ -18,7 +18,7 @@ public sealed class AspireTestHostContextTests
     {
         var host = new AspireTestHostContext(TimeSpan.FromMilliseconds(25), "TASKFLOW_TEST_RESOURCE_LOGGING");
 
-        var exception = await Assert.ThrowsExactlyAsync<TimeoutException>(() =>
+        var exception = await Assert.ThrowsExactlyAsync<AspireResourceUnavailableException>(() =>
             host.RunStartupStepAsync(
                 "browser launch",
                 token => Task.Delay(TimeSpan.FromSeconds(5), token),
@@ -52,7 +52,7 @@ public sealed class AspireTestHostContextTests
             token => Task.Delay(TimeSpan.FromMilliseconds(300), token),
             TestContext.CancellationToken);
 
-        var exception = await Assert.ThrowsExactlyAsync<TimeoutException>(() =>
+        var exception = await Assert.ThrowsExactlyAsync<AspireResourceUnavailableException>(() =>
             host.RunStartupStepAsync(
                 "browser launch",
                 token => Task.Delay(TimeSpan.FromMilliseconds(300), token),

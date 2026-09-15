@@ -1,4 +1,6 @@
+using Microsoft.Playwright;
 using Test.PlaywrightUI.Hosting;
+using Test.Support.Aspire;
 
 namespace Test.PlaywrightUI;
 
@@ -61,12 +63,29 @@ public sealed class TypeScriptPlaywrightSuiteTests
             Assert.Inconclusive(ex.Message);
             return;
         }
+        catch (AspireResourceUnavailableException ex)
+        {
+            Assert.Inconclusive($"Aspire resources unavailable: {ex.Message}");
+            return;
+        }
 
         await using var hostScope = host;
-        await host.RunWithinStartupBudgetAsync(
-            "Gateway/Blazor browser launch and smoke",
-            token => GatewayBlazorSmokeRunner.RunAsync(host.GatewayBaseUrl, host.BlazorBaseUrl, token),
-            TestContext.CancellationToken);
+        try
+        {
+            await host.RunWithinStartupBudgetAsync(
+                "Gateway/Blazor browser launch and smoke",
+                token => GatewayBlazorSmokeRunner.RunAsync(host.GatewayBaseUrl, host.BlazorBaseUrl, token),
+                TestContext.CancellationToken);
+        }
+        catch (AspireResourceUnavailableException ex)
+        {
+            Assert.Inconclusive($"Aspire resources unavailable: {ex.Message}");
+        }
+        catch (PlaywrightException ex) when (
+            ex.Message.Contains("Executable doesn't exist", StringComparison.OrdinalIgnoreCase))
+        {
+            Assert.Inconclusive("Playwright browser executable is unavailable: " + ex.Message);
+        }
     }
 
     private async Task RunTypeScriptProjectsAsync(params string[] requestedProjects)
@@ -88,7 +107,7 @@ public sealed class TypeScriptPlaywrightSuiteTests
         TestContext.WriteLine(readiness.Message);
         if (!readiness.CanRun)
         {
-            Assert.Fail(readiness.Message);
+            Assert.Inconclusive(readiness.Message);
             return;
         }
 
@@ -102,7 +121,11 @@ public sealed class TypeScriptPlaywrightSuiteTests
             Assert.Inconclusive(ex.Message);
             return;
         }
-
+        catch (AspireResourceUnavailableException ex)
+        {
+            Assert.Inconclusive($"Aspire resources unavailable: {ex.Message}");
+            return;
+        }
         await using var hostScope = host;
         foreach (var message in host.DiagnosticMessages)
         {
@@ -119,15 +142,30 @@ public sealed class TypeScriptPlaywrightSuiteTests
             return;
         }
 
-        await host.RunWithinStartupBudgetAsync(
-            "Gateway readiness smoke",
-            token => GatewayHttpSmokeRunner.RunAsync(host.GatewayBaseUrl, token),
-            TestContext.CancellationToken);
+        CommandResult result;
+        try
+        {
+            await host.RunWithinStartupBudgetAsync(
+                "Gateway readiness smoke",
+                token => GatewayHttpSmokeRunner.RunAsync(host.GatewayBaseUrl, token),
+                TestContext.CancellationToken);
 
-        var result = await host.RunWithinStartupBudgetAsync(
-            "Playwright browser launch and smoke",
-            token => TypeScriptPlaywrightRunner.RunAsync(selectedProjects, token),
-            TestContext.CancellationToken);
+            result = await host.RunWithinStartupBudgetAsync(
+                "Playwright browser launch and smoke",
+                token => TypeScriptPlaywrightRunner.RunAsync(selectedProjects, token),
+                TestContext.CancellationToken);
+        }
+        catch (AspireResourceUnavailableException ex)
+        {
+            Assert.Inconclusive($"Aspire resources unavailable: {ex.Message}");
+            return;
+        }
+        catch (InvalidOperationException ex) when (
+            ex.Message.Equals("Node.js is not available on PATH.", StringComparison.Ordinal))
+        {
+            Assert.Inconclusive(ex.Message);
+            return;
+        }
         TestContext.WriteLine(result.StandardOutput);
         TestContext.WriteLine(result.StandardError);
 

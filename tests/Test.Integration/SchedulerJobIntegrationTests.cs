@@ -184,7 +184,7 @@ public class SchedulerJobIntegrationTests
                 new TaskItemSystemRepository(db),
                 new OutboxStaging(db),
                 new SchedulerJobMeter(),
-                TimeProvider.System,
+                new FixedTimeProvider(Now),
                 NullLogger<RecurringTaskGenerationHandler>.Instance);
             await handler.HandleAsync(TestContext.CancellationToken);
         }
@@ -219,4 +219,9 @@ public class SchedulerJobIntegrationTests
     }
 
     public TestContext TestContext { get; set; } = null!;
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+    }
 }
