@@ -233,6 +233,29 @@ public sealed class HostingLaneContractTests
     }
 
     [TestMethod]
+    [DataRow(HostingLaneResolver.AppConfigEndpointEnvironmentVariable, HostingLaneResolver.AppConfigEndpointConfigurationKey, false)]
+    [DataRow(HostingLaneResolver.AppConfigConnectionStringEnvironmentVariable, HostingLaneResolver.AppConfigConnectionStringConfigurationKey, true)]
+    [DataRow(HostingLaneResolver.KeyVaultEndpointEnvironmentVariable, HostingLaneResolver.KeyVaultEndpointConfigurationKey, false)]
+    [DataRow(HostingLaneResolver.KeyVaultUriEnvironmentVariable, HostingLaneResolver.KeyVaultUriConfigurationKey, false)]
+    [DataRow(HostingLaneResolver.DataProtectionEncryptionKeyUrlEnvironmentVariable, HostingLaneResolver.DataProtectionEncryptionKeyUrlConfigurationKey, false)]
+    public void Resolve_NonAzureEnvironmentAzureServiceSetting_ThrowsWithoutEnvironmentProvider(
+        string environmentVariable, string configurationKey, bool redacted)
+    {
+        const string value = "https://azure.example/secret";
+
+        WithCleanEnvironment(() =>
+        WithEnvironment(environmentVariable, value, () =>
+        {
+            var exception = Assert.ThrowsExactly<InvalidOperationException>(() =>
+                HostingLaneResolver.Resolve(Config((HostingLaneResolver.LaneConfigurationKey, "NonAzure"))));
+
+            StringAssert.Contains(exception.Message, configurationKey);
+            StringAssert.Contains(exception.Message, redacted ? "<redacted>" : value);
+            if (redacted) Assert.IsFalse(exception.Message.Contains(value, StringComparison.Ordinal));
+        }));
+    }
+
+    [TestMethod]
     public void Resolve_NonAzureLocalEncryptionKeys_AreAllowed()
     {
         var settings = Resolve(

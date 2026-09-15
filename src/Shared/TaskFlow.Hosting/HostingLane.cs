@@ -183,7 +183,10 @@ public static class HostingLaneResolver
         string configurationKey,
         bool redactValue = false)
     {
-        var value = configuration(configurationKey);
+        var environmentValue = Environment.GetEnvironmentVariable(ToEnvironmentVariable(configurationKey));
+        var value = !string.IsNullOrWhiteSpace(environmentValue)
+            ? environmentValue
+            : configuration(configurationKey);
         if (string.IsNullOrWhiteSpace(value)) return;
 
         throw new InvalidOperationException(

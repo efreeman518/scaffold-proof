@@ -887,6 +887,8 @@ public sealed class DeploymentWorkflowContractTests
             RepoRoot.Combine("src", "UI", "TaskFlow.React", "src", "api", "runtimeConfig.ts"));
         var client = File.ReadAllText(
             RepoRoot.Combine("src", "UI", "TaskFlow.React", "src", "api", "client.ts"));
+        var readme = File.ReadAllText(
+            RepoRoot.Combine("src", "UI", "TaskFlow.React", "README.md"));
 
         StringAssert.Contains(
             runtimeConfig,
@@ -896,6 +898,30 @@ public sealed class DeploymentWorkflowContractTests
             runtimeConfig.IndexOf("export function gatewayBaseUrl", StringComparison.Ordinal)];
         StringAssert.Contains(developmentFallback, "return ''");
         StringAssert.Contains(client, "`${gatewayBaseUrl()}${apiVersionRoot}`");
+        StringAssert.Contains(readme, "A standalone Vite server must set `VITE_API_BASE_URL`");
+    }
+
+    [TestMethod]
+    public void HostingBindingArtifacts_RecordAzureRejectionsAndReviewedSqlImagePin()
+    {
+        var manifest = File.ReadAllText(RepoRoot.Combine(".scaffold", "resource-implementation.yaml"));
+        var design = File.ReadAllText(RepoRoot.Combine("docs", "tech-design.html"));
+
+        foreach (var setting in new[]
+                 {
+                     "AppConfig:Endpoint",
+                     "ConnectionStrings:AppConfig",
+                     "KeyVault:Endpoint",
+                     "KeyVault:Uri",
+                     "DataProtectionEncryptionKeyUrl"
+                 })
+        {
+            StringAssert.Contains(manifest, setting);
+        }
+
+        const string sqlImage = "mcr.microsoft.com/mssql/server:2025-CU8-ubuntu-22.04";
+        StringAssert.Contains(manifest, sqlImage);
+        StringAssert.Contains(design, "2025-CU8-ubuntu-22.04");
     }
 
     [TestMethod]
