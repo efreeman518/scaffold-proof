@@ -21,15 +21,17 @@ function requireBaseUrl() {
 
 export async function waitForApp(page: Page) {
   requireBaseUrl();
-  await page.goto("/tasks", { waitUntil: "networkidle" });
+  await page.goto("/tasks", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("button", { name: /new task/i })).toBeVisible({ timeout: 15_000 });
 }
 
 /** Provides Playwright helper logic for navigate to new task. */
 export async function navigateToNewTask(page: Page) {
-  await page.getByRole("button", { name: /new task/i }).click();
-  await expect(page).toHaveURL(/\/tasks\/new$/i, { timeout: 15_000 });
+  await expect(async () => {
+    await page.getByRole("button", { name: /new task/i }).click();
+    await expect(page).toHaveURL(/\/tasks\/new$/i, { timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
   await expect(page.getByRole("heading", { name: /new task/i })).toBeVisible({ timeout: 15_000 });
   await expect(getLabeledField(page, "Title")).toBeVisible({ timeout: 15_000 });
 }
@@ -37,7 +39,7 @@ export async function navigateToNewTask(page: Page) {
 /** Provides Playwright helper logic for navigate to task list. */
 export async function navigateToTaskList(page: Page) {
   requireBaseUrl();
-  await page.goto("/tasks", { waitUntil: "networkidle" });
+  await page.goto("/tasks", { waitUntil: "domcontentloaded" });
   await expect(page.locator(".mud-table")).toBeVisible({ timeout: 10_000 });
 }
 
@@ -47,7 +49,6 @@ export async function searchForTask(page: Page, term: string) {
   await searchInput.click();
   await searchInput.fill(term);
   await page.getByRole("button", { name: /^search$/i }).click();
-  await page.waitForLoadState("networkidle");
 }
 
 // ---------------------------------------------------------------------------
@@ -133,7 +134,7 @@ export async function confirmDeleteDialog(page: Page) {
 // ---------------------------------------------------------------------------
 
 export async function expectSnackbar(page: Page, textFragment: string, timeout = 5_000) {
-  await expect(page.locator(".mud-snackbar")).toContainText(textFragment, { timeout });
+  await expect(page.getByRole("alert").filter({ hasText: textFragment }).last()).toBeVisible({ timeout });
 }
 
 // ---------------------------------------------------------------------------

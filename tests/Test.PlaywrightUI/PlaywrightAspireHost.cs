@@ -17,6 +17,16 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
     private const string HttpEndpointName = "http";
     private const string ResourceLoggingEnvironmentVariable = "TASKFLOW_ASPIRE_RESOURCE_LOGGING";
     private const string UnoColdStartProject = "uno-release-cold-start";
+    private static readonly string[] DiagnosticResourceNames =
+    [
+        GatewayResourceName,
+        BlazorResourceName,
+        ReactResourceName,
+        "taskflowuno",
+        "taskflowapi",
+        "taskflowdb",
+        "taskflowmigrator"
+    ];
 
     private readonly AspireTestHostContext _hostContext;
     private readonly Dictionary<string, string?> _originalEnvironment;
@@ -192,20 +202,15 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
             RestoreEnvironment(originalEnvironment);
             throw;
         }
-        catch
+        catch (Exception ex)
         {
+            var resourcesUnavailable = app is not null
+                && ex is DistributedApplicationException
+                && ResourcesFailedBeforeLaunch(app);
+
             if (app is not null)
             {
-                foreach (var resourceName in new[]
-                {
-                    GatewayResourceName,
-                    BlazorResourceName,
-                    ReactResourceName,
-                    "taskflowuno",
-                    "taskflowapi",
-                    "taskflowdb",
-                    "taskflowmigrator"
-                })
+                foreach (var resourceName in DiagnosticResourceNames)
                 {
                     await hostContext.DumpResourceDiagnosticsAsync(resourceName, CancellationToken.None);
                 }
@@ -221,6 +226,9 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
             }
 
             RestoreEnvironment(originalEnvironment);
+            if (resourcesUnavailable)
+                throw new ResourceUnavailableException(
+                    "Aspire could not launch the test resources. No application process started.", ex);
             throw;
         }
     }
@@ -271,16 +279,7 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
 
     internal async Task DumpDiagnosticsAsync(CancellationToken cancellationToken)
     {
-        foreach (var resourceName in new[]
-        {
-            GatewayResourceName,
-            BlazorResourceName,
-            ReactResourceName,
-            "taskflowuno",
-            "taskflowapi",
-            "taskflowdb",
-            "taskflowmigrator"
-        })
+        foreach (var resourceName in DiagnosticResourceNames)
         {
             await _hostContext.DumpResourceDiagnosticsAsync(resourceName, cancellationToken);
         }
@@ -323,6 +322,21 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
     private static bool HasValue(string variableName) =>
         !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(variableName));
 
+    private static bool ResourcesFailedBeforeLaunch(DistributedApplication app)
+    {
+        var observed = DiagnosticResourceNames
+            .Select(name => app.ResourceNotifications.TryGetCurrentState(name, out var resourceEvent)
+                ? (resourceEvent.Snapshot.State?.Text, HasExitCode: resourceEvent.Snapshot.ExitCode is not null)
+                : default)
+            .Where(resource => resource.Text is not null)
+            .ToArray();
+
+        return observed.Length >= 2
+            && observed.All(resource =>
+                resource.Text!.Equals("FailedToStart", StringComparison.OrdinalIgnoreCase)
+                && !resource.HasExitCode);
+    }
+
     private static bool IsReactRunnable()
     {
         var reactRoot = Path.GetFullPath(Path.Combine(
@@ -340,4 +354,7 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
     }
 
     internal sealed class DockerUnavailableException(string message) : Exception(message);
+
+    internal sealed class ResourceUnavailableException(string message, Exception innerException)
+        : Exception(message, innerException);
 }

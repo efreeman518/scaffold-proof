@@ -162,8 +162,7 @@ internal static class WasmAppHost
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null)
         {
-            if (File.Exists(Path.Combine(directory.FullName, "src", "TaskFlow.slnx"))
-                || Directory.Exists(Path.Combine(directory.FullName, ".git")))
+            if (File.Exists(Path.Combine(directory.FullName, "TaskFlow.slnx")))
             {
                 return directory.FullName;
             }

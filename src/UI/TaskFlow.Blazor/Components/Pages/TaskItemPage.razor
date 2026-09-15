@@ -81,12 +81,16 @@ else
 
             <MudExpansionPanels Class="mt-4" MultiExpansion="true">
                 <MudExpansionPanel Text="@($"Checklist ({Checklist.Count})")" Expanded="@(!IsNew)">
+                    @if (IsNew)
+                    {
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">Save the task before adding checklist items.</MudText>
+                    }
                     <div class="d-flex align-center mb-2">
                         <MudTextField @bind-Value="_newChecklistTitle" Placeholder="Add item..." Variant="Variant.Outlined"
-                                      Margin="Margin.Dense" Immediate="true"
-                                      OnKeyDown="@(e => { if (e.Key == "Enter") _ = AddChecklistAsync(); })" />
+                                      Margin="Margin.Dense" Immediate="true" Disabled="@IsNew"
+                                      OnKeyDown="AddChecklistOnKeyDownAsync" />
                         <MudButton Class="ml-2" Variant="Variant.Filled" Color="Color.Primary"
-                                   OnClick="AddChecklistAsync">Add</MudButton>
+                                   OnClick="AddChecklistAsync" Disabled="@IsNew">Add</MudButton>
                     </div>
                     @foreach (var item in Checklist)
                     {
@@ -105,11 +109,15 @@ else
                     }
                 </MudExpansionPanel>
                 <MudExpansionPanel Text="@($"Comments ({Comments.Count})")" Expanded="@(!IsNew)">
+                    @if (IsNew)
+                    {
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">Save the task before adding comments.</MudText>
+                    }
                     <div class="d-flex align-start mb-2">
                         <MudTextField @bind-Value="_newCommentBody" Placeholder="Add a comment..."
-                                      Variant="Variant.Outlined" Lines="2" />
+                                      Variant="Variant.Outlined" Lines="2" Disabled="@IsNew" />
                         <MudButton Class="ml-2 mt-1" Variant="Variant.Filled" Color="Color.Primary"
-                                   OnClick="AddCommentAsync">Add</MudButton>
+                                   OnClick="AddCommentAsync" Disabled="@IsNew">Add</MudButton>
                     </div>
                     @foreach (var c in Comments)
                     {
@@ -423,6 +431,9 @@ else
             CaptureBaseline();
         }
     }
+
+    private Task AddChecklistOnKeyDownAsync(KeyboardEventArgs args) =>
+        args.Key == "Enter" ? AddChecklistAsync() : Task.CompletedTask;
 
     private async Task ToggleChecklistAsync(ChecklistItemDto item, bool completed)
     {

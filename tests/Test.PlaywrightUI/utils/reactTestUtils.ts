@@ -114,11 +114,16 @@ export async function addComment(page: Page, body: string) {
 export async function saveTask(page: Page, expectedStatus?: number) {
   const responsePromise = page.waitForResponse(
     (response) => response.url().includes("/task-items")
-      && ["POST", "PUT"].includes(response.request().method())
-      && (expectedStatus === undefined ? response.ok() : response.status() === expectedStatus),
+      && ["POST", "PUT"].includes(response.request().method()),
   );
   await page.getByRole("button", { name: /^save$/i }).click();
-  await responsePromise;
+  const response = await responsePromise;
+  const body = await response.text();
+  if (expectedStatus === undefined) {
+    expect(response.ok(), `Task save returned ${response.status()}: ${body}`).toBeTruthy();
+  } else {
+    expect(response.status(), `Task save returned ${response.status()}: ${body}`).toBe(expectedStatus);
+  }
 }
 
 /** Provides Playwright helper logic for confirm dialog. */

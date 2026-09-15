@@ -54,16 +54,20 @@ test.describe("TaskFlow Blazor - Task CRUD lifecycle", () => {
 
     await fillTextField(page, "Title", taskTitle);
     await fillTextField(page, "Description", "Automated Playwright E2E test task");
-    await page.getByText(/^Checklist \(0\)$/).click();
-    await page.getByPlaceholder("Add item...").fill(checklistTitle);
-    await page.getByPlaceholder("Add item...").press("Enter");
-
-    await page.getByText(/^Comments \(0\)$/).click();
-    await page.getByPlaceholder("Add a comment...").fill(commentBody);
-    await page.getByRole("button", { name: /^add$/i }).last().click();
-    // Status=Open and Priority=Medium are defaults - no need to select them
-
     await clickSaveNewTask(page);
+
+    const checklistInput = page.getByPlaceholder("Add item...");
+    if (!await checklistInput.isVisible()) await page.getByText(/^Checklist \(0\)$/).click();
+    await checklistInput.fill(checklistTitle);
+    await checklistInput.press("Enter");
+    await expect(page.getByText(/^Checklist \(1\)$/)).toBeVisible();
+
+    const commentInput = page.getByPlaceholder("Add a comment...");
+    if (!await commentInput.isVisible()) await page.getByText(/^Comments \(0\)$/).click();
+    await commentInput.fill(commentBody);
+    await page.getByRole("button", { name: /^add$/i }).last().click();
+    await expect(page.getByText(/^Comments \(1\)$/)).toBeVisible();
+    // Status=Open and Priority=Medium are defaults - no need to select them
 
     await navigateToTaskList(page);
     await searchForTask(page, taskTitle);
@@ -101,6 +105,7 @@ test.describe("TaskFlow Blazor - Task CRUD lifecycle", () => {
     await selectOption(page, "Priority", "High");
 
     await clickSave(page);
+    await expectSnackbar(page, "Task saved.");
 
     await navigateToTaskList(page);
     await searchForTask(page, updatedTitle);
@@ -136,12 +141,13 @@ test.describe("TaskFlow Blazor - two-tab optimistic concurrency (412)", () => {
 
     // Tab B loads the same task independently, capturing the same If-Match currency as tab A.
     const pageB = await context.newPage();
-    await pageB.goto(taskUrl, { waitUntil: "networkidle" });
+    await pageB.goto(taskUrl, { waitUntil: "domcontentloaded" });
     await expect(pageB.getByRole("heading", { name: /edit task/i })).toBeVisible({ timeout: 15_000 });
 
     // Tab A saves first: succeeds and bumps the server-side Version past what tab B is holding.
     await selectOption(page, "Priority", "High");
     await clickSave(page);
+    await expectSnackbar(page, "Task saved.");
     await expect(page).toHaveURL(/\/tasks\/[0-9a-f-]{36}$/i, { timeout: 15_000 });
 
     // Tab B saves against its now-stale Version: the API returns 412, and the UI reports the

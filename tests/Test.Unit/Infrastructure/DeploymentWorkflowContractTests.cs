@@ -881,7 +881,7 @@ public sealed class DeploymentWorkflowContractTests
     }
 
     [TestMethod]
-    public void ReactDevelopmentRuntimeConfig_MissingViteUrl_UsesSameOrigin()
+    public void ReactDevelopmentRuntimeConfig_UsesSameOriginViteProxy()
     {
         var runtimeConfig = File.ReadAllText(
             RepoRoot.Combine("src", "UI", "TaskFlow.React", "src", "api", "runtimeConfig.ts"));
@@ -894,11 +894,12 @@ public sealed class DeploymentWorkflowContractTests
 
         StringAssert.Contains(
             runtimeConfig,
-            "developmentGatewayBaseUrl(import.meta.env.VITE_API_BASE_URL)");
+            "developmentGatewayBaseUrl()");
         var developmentFallback = runtimeConfig[
             runtimeConfig.IndexOf("export function developmentGatewayBaseUrl", StringComparison.Ordinal)..
             runtimeConfig.IndexOf("export function gatewayBaseUrl", StringComparison.Ordinal)];
         StringAssert.Contains(developmentFallback, "return ''");
+        Assert.IsFalse(developmentFallback.Contains("normalizeGatewayBaseUrl", StringComparison.Ordinal));
         StringAssert.Contains(client, "`${gatewayBaseUrl()}${apiVersionRoot}`");
         StringAssert.Contains(readme, "A standalone Vite server must set `VITE_API_BASE_URL`");
         StringAssert.Contains(viteConfig, "env.VITE_API_BASE_URL?.trim()");

@@ -54,6 +54,7 @@
 
   <ItemGroup>
     <UnoSplashScreen Include="Assets\splashscreen.svg" BaseSize="128,128" Color="#6750A4" />
+    <EmbeddedResource Include="Platforms\WebAssembly\WasmScripts\TaskFlowRuntimeConfig.js" />
   </ItemGroup>
 
   <PropertyGroup Condition="'$(UseMocks)'=='true'">
