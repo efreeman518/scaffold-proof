@@ -880,6 +880,70 @@ public sealed class DeploymentWorkflowContractTests
         Assert.IsFalse(bootstrap.Contains("StaticWebAppDefaultHostname", StringComparison.Ordinal));
     }
 
+    [TestMethod]
+    public void ReactDevelopmentRuntimeConfig_MissingViteUrl_UsesSameOrigin()
+    {
+        var runtimeConfig = File.ReadAllText(
+            RepoRoot.Combine("src", "UI", "TaskFlow.React", "src", "api", "runtimeConfig.ts"));
+        var client = File.ReadAllText(
+            RepoRoot.Combine("src", "UI", "TaskFlow.React", "src", "api", "client.ts"));
+        var readme = File.ReadAllText(
+            RepoRoot.Combine("src", "UI", "TaskFlow.React", "README.md"));
+        var viteConfig = File.ReadAllText(
+            RepoRoot.Combine("src", "UI", "TaskFlow.React", "vite.config.ts"));
+
+        StringAssert.Contains(
+            runtimeConfig,
+            "developmentGatewayBaseUrl(import.meta.env.VITE_API_BASE_URL)");
+        var developmentFallback = runtimeConfig[
+            runtimeConfig.IndexOf("export function developmentGatewayBaseUrl", StringComparison.Ordinal)..
+            runtimeConfig.IndexOf("export function gatewayBaseUrl", StringComparison.Ordinal)];
+        StringAssert.Contains(developmentFallback, "return ''");
+        StringAssert.Contains(client, "`${gatewayBaseUrl()}${apiVersionRoot}`");
+        StringAssert.Contains(readme, "A standalone Vite server must set `VITE_API_BASE_URL`");
+        StringAssert.Contains(viteConfig, "env.VITE_API_BASE_URL?.trim()");
+    }
+
+    [TestMethod]
+    public void HostingBindingArtifacts_RecordAzureRejectionsAndReviewedSqlImagePin()
+    {
+        var manifest = File.ReadAllText(RepoRoot.Combine(".scaffold", "resource-implementation.yaml"));
+        var design = File.ReadAllText(RepoRoot.Combine("docs", "tech-design.html"));
+
+        foreach (var setting in new[]
+                 {
+                     "AppConfig:Endpoint",
+                     "ConnectionStrings:AppConfig",
+                     "KeyVault:Endpoint",
+                     "KeyVault:Uri",
+                     "DataProtectionEncryptionKeyUrl"
+                 })
+        {
+            StringAssert.Contains(manifest, setting);
+        }
+
+        const string sqlImage = "mcr.microsoft.com/mssql/server:2025-CU8-ubuntu-22.04";
+        StringAssert.Contains(manifest, sqlImage);
+        StringAssert.Contains(design, "2025-CU8-ubuntu-22.04");
+    }
+
+    [TestMethod]
+    public void ComponentTestSetup_RecordsLaneBeforeDockerPreflight_AndReportsDockerFirst()
+    {
+        var source = File.ReadAllText(
+            RepoRoot.Combine("tests", "Test.Integration", "Infrastructure", "IntegrationTestSetup.cs"));
+
+        var laneInitialization = source.IndexOf("_lane = settings.Lane;", StringComparison.Ordinal);
+        var dockerPreflight = source.IndexOf(
+            "DockerRuntimePreflight.GetUnavailableReasonAsync", StringComparison.Ordinal);
+        Assert.IsTrue(laneInitialization >= 0 && laneInitialization < dockerPreflight);
+
+        var requireLane = source[source.IndexOf("internal static void RequireLane", StringComparison.Ordinal)..];
+        var dockerUnavailable = requireLane.IndexOf("DockerUnavailableReason is not null", StringComparison.Ordinal);
+        var laneMismatch = requireLane.IndexOf("_lane != lane", StringComparison.Ordinal);
+        Assert.IsTrue(dockerUnavailable >= 0 && dockerUnavailable < laneMismatch);
+    }
+
     /// <summary>
     /// Every deployed image is built the same way: private feed as a BuildKit secret, chiseled runtime,
     /// non-root. Gateway is the only host with neither a culture-rendering nor a Microsoft.Data.SqlClient

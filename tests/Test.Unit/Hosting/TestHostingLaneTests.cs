@@ -21,6 +21,11 @@ public sealed class TestHostingLaneTests
         HostingLaneResolver.SearchEnvironmentVariable,
         HostingLaneResolver.AiEnvironmentVariable,
         HostingLaneResolver.DataProtectionEnvironmentVariable,
+        HostingLaneResolver.AppConfigEndpointEnvironmentVariable,
+        HostingLaneResolver.AppConfigConnectionStringEnvironmentVariable,
+        HostingLaneResolver.KeyVaultEndpointEnvironmentVariable,
+        HostingLaneResolver.KeyVaultUriEnvironmentVariable,
+        HostingLaneResolver.DataProtectionEncryptionKeyUrlEnvironmentVariable,
         TestHostingLane.LegacyDatabaseProviderEnvironmentVariable
     ];
 
@@ -66,6 +71,34 @@ public sealed class TestHostingLaneTests
     {
         [TestHostingLane.LegacyDatabaseProviderEnvironmentVariable] = "1"
     }, () => Assert.ThrowsExactly<ArgumentException>(() => _ = TestHostingLane.Current));
+
+    [TestMethod]
+    public void EnvironmentIsolation_ClearsAzureServiceSettings()
+    {
+        var azureSettings = new[]
+        {
+            HostingLaneResolver.AppConfigEndpointEnvironmentVariable,
+            HostingLaneResolver.AppConfigConnectionStringEnvironmentVariable,
+            HostingLaneResolver.KeyVaultEndpointEnvironmentVariable,
+            HostingLaneResolver.KeyVaultUriEnvironmentVariable,
+            HostingLaneResolver.DataProtectionEncryptionKeyUrlEnvironmentVariable
+        };
+        var originals = azureSettings.ToDictionary(name => name, Environment.GetEnvironmentVariable);
+
+        try
+        {
+            foreach (var name in azureSettings) Environment.SetEnvironmentVariable(name, "azure-test-value");
+            WithEnvironment([], () =>
+            {
+                foreach (var name in azureSettings)
+                    Assert.IsNull(Environment.GetEnvironmentVariable(name), name);
+            });
+        }
+        finally
+        {
+            foreach (var (name, value) in originals) Environment.SetEnvironmentVariable(name, value);
+        }
+    }
 
     [TestMethod]
     public void LegacySelector_IsMarkedDeprecated()

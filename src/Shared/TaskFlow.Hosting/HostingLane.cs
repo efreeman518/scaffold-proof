@@ -53,6 +53,12 @@ public static class HostingLaneResolver
     public const string KeyVaultUriConfigurationKey = "KeyVault:Uri";
     public const string DataProtectionEncryptionKeyUrlConfigurationKey = "DataProtectionEncryptionKeyUrl";
 
+    public const string AppConfigEndpointEnvironmentVariable = "AppConfig__Endpoint";
+    public const string AppConfigConnectionStringEnvironmentVariable = "ConnectionStrings__AppConfig";
+    public const string KeyVaultEndpointEnvironmentVariable = "KeyVault__Endpoint";
+    public const string KeyVaultUriEnvironmentVariable = "KeyVault__Uri";
+    public const string DataProtectionEncryptionKeyUrlEnvironmentVariable = "DataProtectionEncryptionKeyUrl";
+
     private static readonly string[] DatabaseValues = ["SqlServer", "PostgreSql"];
     private static readonly string[] MessagingValues = ["ServiceBus", "RabbitMq"];
     private static readonly string[] StorageValues = ["AzureBlob", "S3"];
@@ -68,7 +74,8 @@ public static class HostingLaneResolver
         return ResolveCore(key => configuration[key]);
     }
 
-    public static HostingLaneSettings ResolveFromEnvironment() => ResolveCore(_ => null);
+    public static HostingLaneSettings ResolveFromEnvironment() =>
+        ResolveCore(key => Environment.GetEnvironmentVariable(ToEnvironmentVariable(key)));
 
     public static HostingLane ResolveLane(IConfiguration configuration)
     {
@@ -136,6 +143,9 @@ public static class HostingLaneResolver
             $"Unknown hosting lane '{value}'. Allowed values: Azure, NonAzure. Portable is a deprecated alias for NonAzure.");
     }
 
+    private static string ToEnvironmentVariable(string configurationKey) =>
+        configurationKey.Replace(":", "__", StringComparison.Ordinal);
+
     private static string ResolveProvider(
         Func<string, string?> configuration,
         HostingLane lane,
@@ -173,7 +183,10 @@ public static class HostingLaneResolver
         string configurationKey,
         bool redactValue = false)
     {
-        var value = configuration(configurationKey);
+        var environmentValue = Environment.GetEnvironmentVariable(ToEnvironmentVariable(configurationKey));
+        var value = !string.IsNullOrWhiteSpace(environmentValue)
+            ? environmentValue
+            : configuration(configurationKey);
         if (string.IsNullOrWhiteSpace(value)) return;
 
         throw new InvalidOperationException(

@@ -36,7 +36,14 @@ public static class IntegrationEnvelopeReader
             return false;
         }
 
-        if (!TaskFlowIntegrationEvents.IsKnownType(envelope!.Type))
+        if (envelope is null || string.IsNullOrWhiteSpace(envelope.Type) || envelope.Id == Guid.Empty)
+        {
+            envelope = null;
+            failure = MalformedReason;
+            return false;
+        }
+
+        if (!TaskFlowIntegrationEvents.IsKnownType(envelope.Type))
         {
             envelope = null;
             failure = UnsupportedReason;

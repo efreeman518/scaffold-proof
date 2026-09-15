@@ -6,7 +6,7 @@ public static class ContainerImages
     public const string MicrosoftContainerRegistry = "mcr.microsoft.com";
 
     public const string SqlServerRepository = "mssql/server";
-    public const string SqlServerTag = "2025-latest";
+    public const string SqlServerTag = "2025-CU8-ubuntu-22.04";
     public const string SqlServer = $"{MicrosoftContainerRegistry}/{SqlServerRepository}:{SqlServerTag}";
 
     public const string ServiceBusEmulatorRepository = "azure-messaging/servicebus-emulator";

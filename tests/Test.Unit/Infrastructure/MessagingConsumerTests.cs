@@ -72,6 +72,29 @@ public sealed class MessagingConsumerTests
 
     [TestMethod]
     [TestCategory("Unit")]
+    [DataRow(null)]
+    [DataRow("")]
+    [DataRow(" ")]
+    public void EnvelopeReader_DeadLettersMissingEventType(string? type)
+    {
+        var invalid = JsonSerializer.Serialize(Envelope() with { Type = type! });
+
+        Assert.IsFalse(IntegrationEnvelopeReader.TryRead(Encoding.UTF8.GetBytes(invalid), out _, out var failure));
+        Assert.AreEqual(IntegrationEnvelopeReader.MalformedReason, failure);
+    }
+
+    [TestMethod]
+    [TestCategory("Unit")]
+    public void EnvelopeReader_DeadLettersEmptyMessageId()
+    {
+        var invalid = JsonSerializer.Serialize(Envelope() with { Id = Guid.Empty });
+
+        Assert.IsFalse(IntegrationEnvelopeReader.TryRead(Encoding.UTF8.GetBytes(invalid), out _, out var failure));
+        Assert.AreEqual(IntegrationEnvelopeReader.MalformedReason, failure);
+    }
+
+    [TestMethod]
+    [TestCategory("Unit")]
     public void LeasedWorker_PollsImmediatelyOnAFullBatch_AndBacksOffWhenIdle()
     {
         var oneSecond = TimeSpan.FromSeconds(1);

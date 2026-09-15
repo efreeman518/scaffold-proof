@@ -58,6 +58,7 @@ hostingLanes: [Azure, NonAzure]
 # NonAzure for one release. Lane-owned core conflicts fail fast. See D-060.
 hostingLaneDefaults:
   Azure:
+    deploymentTarget: ContainerApps
     databaseProvider: SqlServer
     messagingProvider: ServiceBus
     storageProvider: AzureBlob
@@ -67,6 +68,7 @@ hostingLaneDefaults:
     aiProvider: None
     dataProtectionPersistence: AzureBlob
   NonAzure:
+    deploymentTarget: DockerCompose
     databaseProvider: PostgreSql
     messagingProvider: RabbitMq
     storageProvider: S3
@@ -81,7 +83,7 @@ localDefaults: { searchProvider: Sql, aiProvider: None }
 compatibleProviderOptIns:
   Azure: { searchProvider: AzureAiSearch, aiProvider: AzureInference }
   NonAzure: { searchProvider: PgVector, aiProvider: [OpenAICompatible, FoundryLocal] }
-zeroAzureNonAzure: { reject: [AppConfig:Endpoint, KeyVault:Endpoint], config: [appsettings, environment], encryptionKeyPath: local }
+zeroAzureNonAzure: { reject: [AppConfig:Endpoint, ConnectionStrings:AppConfig, KeyVault:Endpoint, KeyVault:Uri, DataProtectionEncryptionKeyUrl], config: [appsettings, environment], encryptionKeyPath: local }
 
 storageProviders: [AzureBlob, S3]                                   # Storage:Provider, see D-037
 readModelProviders: [Cosmos, PostgreSqlJsonb, MongoDb]                 # Canonical providers, see D-060
@@ -95,8 +97,8 @@ deployTargets: [ContainerApps, DockerCompose]
 commonHosts: [Redis, DatabaseMigrator, Api, Gateway, Scheduler, Blazor, React, Uno]
 azureOnlyHosts: [Functions]
 
-# Major/family image tags are defined once and consumed by every lane.
-imageTagPolicy: { source: centralized, allowedTags: [major, family] }
+# Image tags are defined once and consumed by every lane. Exact pins require reviewed compatibility evidence.
+imageTagPolicy: { source: centralized, allowedTags: [major, family, reviewed-exact], reviewedExactTags: [mcr.microsoft.com/mssql/server:2025-CU8-ubuntu-22.04] }
 
 # SeaweedFS is the NonAzure S3-compatible object-storage service.
 nonAzureObjectStorage: SeaweedFS
