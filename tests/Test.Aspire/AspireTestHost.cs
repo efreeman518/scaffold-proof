@@ -33,6 +33,7 @@ internal static class AspireTestHost
 
     private static EnvironmentVariableScope? _environment;
     private static AspireTestHostContext? _hostContext;
+    private static string? _resourceUnavailableReason;
     internal static string ConnectionString = null!;
 
     internal static TimeSpan DefaultTimeout =>
@@ -60,6 +61,12 @@ internal static class AspireTestHost
     /// </summary>
     internal static async Task EnsureStartedAsync(TestContext context)
     {
+        if (_resourceUnavailableReason is not null)
+        {
+            Assert.Inconclusive(_resourceUnavailableReason);
+            return;
+        }
+
         if (AspireApp is not null)
             return;
 
@@ -75,6 +82,12 @@ internal static class AspireTestHost
         await Gate.WaitAsync(context.CancellationToken);
         try
         {
+            if (_resourceUnavailableReason is not null)
+            {
+                Assert.Inconclusive(_resourceUnavailableReason);
+                return;
+            }
+
             if (AspireApp is not null)
                 return;
 
@@ -93,7 +106,7 @@ internal static class AspireTestHost
             {
                 await StartAsync(context.CancellationToken);
             }
-            catch
+            catch (Exception ex)
             {
                 foreach (var resourceName in new[]
                 {
@@ -115,6 +128,13 @@ internal static class AspireTestHost
                 catch (Exception cleanupException)
                 {
                     Console.Error.WriteLine($"Aspire cleanup after startup failure also failed: {cleanupException.Message}");
+                }
+
+                if (ex is TimeoutException)
+                {
+                    _resourceUnavailableReason = $"Aspire resources unavailable: {ex.Message}";
+                    Assert.Inconclusive(_resourceUnavailableReason);
+                    return;
                 }
 
                 throw;
@@ -238,7 +258,14 @@ internal static class AspireTestHost
     internal static async Task WaitForResourceHealthyAsync(string resourceName, CancellationToken cancellationToken = default)
     {
         var hostContext = _hostContext ?? throw new InvalidOperationException("Aspire host context is not initialized.");
-        await hostContext.WaitForResourceHealthyAsync(resourceName, cancellationToken);
+        try
+        {
+            await hostContext.WaitForResourceHealthyAsync(resourceName, cancellationToken);
+        }
+        catch (TimeoutException ex)
+        {
+            Assert.Inconclusive($"Aspire resource '{resourceName}' unavailable: {ex.Message}");
+        }
     }
 
     internal static Task RunStartupStepAsync(

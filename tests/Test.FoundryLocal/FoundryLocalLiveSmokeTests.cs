@@ -1,11 +1,15 @@
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using System.Net;
 using System.Net.Http.Json;
 using System.Net.Sockets;
 using System.Text.Json;
+using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Data;
 using Test.Support;
+using Test.Support.Hosting;
+using EnvironmentVariableScope = EF.IntegrationTesting.Environment.EnvironmentVariableScope;
 
 namespace Test.FoundryLocal;
 
@@ -18,21 +22,68 @@ namespace Test.FoundryLocal;
 public sealed class FoundryLocalLiveSmokeTests
 {
     private const string RunTestsEnvironmentVariable = "TASKFLOW_RUN_FOUNDRY_LOCAL_TESTS";
+    private const string TestS3Endpoint = "http://127.0.0.1:1";
+    private const string TestRabbitMqConnection = "amqp://guest:guest@127.0.0.1:1/";
     private static readonly Lock ClientLock = new();
+    private static readonly RedisTestContainer Redis = new();
+    private static EnvironmentVariableScope? _environment;
     private static FoundryLocalApiFactory? _factory;
     private static HttpClient? _client;
     private static Exception? _startupException;
 
     public TestContext TestContext { get; set; } = null!;
 
+    [ClassInitialize]
+    public static async Task ClassInitialize(TestContext context)
+    {
+        if (string.Equals(
+                Environment.GetEnvironmentVariable(RunTestsEnvironmentVariable),
+                "false",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            Assert.Inconclusive($"{RunTestsEnvironmentVariable}=false - Foundry Local live tests opted out.");
+            return;
+        }
+
+        _environment = new EnvironmentVariableScope()
+            .Set(HostingLaneResolver.LaneEnvironmentVariable, "NonAzure")
+            .Set(HostingLaneResolver.DatabaseEnvironmentVariable, "PostgreSql")
+            .Set(HostingLaneResolver.MessagingEnvironmentVariable, "RabbitMq")
+            .Set(HostingLaneResolver.StorageEnvironmentVariable, "S3")
+            .Set(HostingLaneResolver.ReadModelEnvironmentVariable, "PostgreSqlJsonb")
+            .Set(HostingLaneResolver.AuditEnvironmentVariable, "Relational")
+            .Set(HostingLaneResolver.SearchEnvironmentVariable, "Sql")
+            .Set(HostingLaneResolver.AiEnvironmentVariable, "FoundryLocal")
+            .Set(HostingLaneResolver.DataProtectionEnvironmentVariable, "Redis")
+            .Set(HostingLaneResolver.AppConfigEndpointEnvironmentVariable, null)
+            .Set(HostingLaneResolver.AppConfigConnectionStringEnvironmentVariable, null)
+            .Set(HostingLaneResolver.KeyVaultEndpointEnvironmentVariable, null)
+            .Set(HostingLaneResolver.KeyVaultUriEnvironmentVariable, null)
+            .Set(HostingLaneResolver.DataProtectionEncryptionKeyUrlEnvironmentVariable, null);
+
+        try
+        {
+            await Redis.StartAsync();
+        }
+        catch (Exception ex)
+        {
+            _environment.Dispose();
+            _environment = null;
+            Assert.Inconclusive($"Redis resource unavailable for Foundry Local test host: {ex.Message}");
+        }
+    }
+
     [ClassCleanup]
-    public static void ClassCleanup()
+    public static async Task ClassCleanup()
     {
         _client?.Dispose();
         _factory?.Dispose();
         _client = null;
         _factory = null;
         _startupException = null;
+        await Redis.DisposeAsync();
+        _environment?.Dispose();
+        _environment = null;
     }
 
     [TestMethod]
@@ -286,12 +337,33 @@ public sealed class FoundryLocalLiveSmokeTests
     {
         private readonly string _dbName = $"FoundryLocalDb_{Guid.NewGuid()}";
 
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            builder.UseSetting(HostingLaneResolver.LaneConfigurationKey, "NonAzure");
+            builder.UseSetting(HostingLaneResolver.AiConfigurationKey, "FoundryLocal");
+            builder.UseSetting("ConnectionStrings:Redis1", Redis.ConnectionString);
+            builder.UseSetting("Storage:S3:ServiceUrl", TestS3Endpoint);
+            builder.UseSetting("Storage:S3:PublicServiceUrl", TestS3Endpoint);
+            builder.UseSetting("Storage:S3:AccessKeyId", "taskflow-foundry-test");
+            builder.UseSetting("Storage:S3:SecretAccessKey", "taskflow-foundry-test-secret");
+            builder.UseSetting("Messaging:RabbitMq:ConnectionString", TestRabbitMqConnection);
+            base.ConfigureWebHost(builder);
+        }
+
         protected override void ConfigureTestConfiguration(IConfigurationBuilder config)
         {
             config.AddInMemoryCollection(TestColumnEncryption.Configuration);
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:chat"] = string.Empty,
+                [HostingLaneResolver.LaneConfigurationKey] = "NonAzure",
+                [HostingLaneResolver.AiConfigurationKey] = "FoundryLocal",
+                ["ConnectionStrings:Redis1"] = Redis.ConnectionString,
+                ["Storage:S3:ServiceUrl"] = TestS3Endpoint,
+                ["Storage:S3:PublicServiceUrl"] = TestS3Endpoint,
+                ["Storage:S3:AccessKeyId"] = "taskflow-foundry-test",
+                ["Storage:S3:SecretAccessKey"] = "taskflow-foundry-test-secret",
+                ["Messaging:RabbitMq:ConnectionString"] = TestRabbitMqConnection,
                 ["AiServices:DisableFoundryLocal"] = "false",
                 ["AiServices:RequireFoundryLocal"] = "true",
                 ["AiServices:LocalModel"] = Environment.GetEnvironmentVariable("TASKFLOW_FOUNDRY_LOCAL_MODEL") ?? "qwen2.5-0.5b",
