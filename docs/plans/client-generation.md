@@ -100,5 +100,5 @@ flattened `DefaultResponseOfTaskItemDto`-equivalent shape is structurally identi
 
 - `refitter` 2.1.3, pinned in `dotnet-tools.json` (repo-local, `dotnet tool restore`).
 - `openapi-typescript` 7.13.0, pinned as a `devDependency` in `src/UI/TaskFlow.React/package.json`.
-- `Microsoft.Extensions.ApiDescription.Server` 10.0.11 (matches the `Microsoft.AspNetCore.OpenApi`
+- `Microsoft.Extensions.ApiDescription.Server` 10.0.12 (matches the `Microsoft.AspNetCore.OpenApi`
   pin), `PackageVersion` in `Directory.Packages.props`.
