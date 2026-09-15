@@ -17,12 +17,13 @@ public sealed class TypeScriptPlaywrightSuiteTests
     public TestContext TestContext { get; set; } = null!;
 
     /// <summary>
-    /// Runs the Blazor TypeScript Playwright project through the Aspire-owned host.
+    /// Runs the Blazor TypeScript project and C# Gateway/Blazor smoke through one Aspire-owned host.
     /// </summary>
     [TestMethod]
     [TestCategory("PlaywrightUI")]
     [Timeout(3_600_000, CooperativeCancellation = true)]
-    public Task BlazorTypeScriptProject_Passes() => RunTypeScriptProjectsAsync("blazor");
+    public Task BlazorTypeScriptProject_Passes() =>
+        RunTypeScriptProjectsAsync(["blazor"], runGatewayBlazorSmoke: true);
 
     /// <summary>
     /// Runs the React TypeScript Playwright project when that host is available.
@@ -30,7 +31,7 @@ public sealed class TypeScriptPlaywrightSuiteTests
     [TestMethod]
     [TestCategory("PlaywrightUI")]
     [Timeout(3_600_000, CooperativeCancellation = true)]
-    public Task ReactTypeScriptProject_Passes() => RunTypeScriptProjectsAsync("react");
+    public Task ReactTypeScriptProject_Passes() => RunTypeScriptProjectsAsync(["react"]);
 
     /// <summary>
     /// Runs the Uno WASM TypeScript Playwright canvas smoke project.
@@ -39,52 +40,11 @@ public sealed class TypeScriptPlaywrightSuiteTests
     [TestCategory("WasmUI")]
     [Timeout(3_600_000, CooperativeCancellation = true)]
     public Task UnoWasmCanvasSmoke_Passes() =>
-        RunTypeScriptProjectsAsync("uno-release-cold-start", "uno");
+        RunTypeScriptProjectsAsync(["uno-release-cold-start", "uno"]);
 
-    /// <summary>Runs the C# Gateway and Blazor browser happy-path through the same Aspire host policy.</summary>
-    [TestMethod]
-    [TestCategory("PlaywrightUI")]
-    [Timeout(3_600_000, CooperativeCancellation = true)]
-    public async Task GatewayBlazorBrowserSmoke_Passes()
-    {
-        if (IsExplicitlyDisabled("TASKFLOW_PLAYWRIGHT_TESTS_ENABLED"))
-        {
-            Assert.Inconclusive("TASKFLOW_PLAYWRIGHT_TESTS_ENABLED=false - Playwright full-stack tier opted out.");
-            return;
-        }
-
-        PlaywrightAspireHost host;
-        try
-        {
-            host = await PlaywrightAspireHost.StartAsync(["blazor"], TestContext.CancellationToken);
-        }
-        catch (PlaywrightAspireHost.DockerUnavailableException ex)
-        {
-            Assert.Inconclusive(ex.Message);
-            return;
-        }
-        catch (TimeoutException ex)
-        {
-            Assert.Inconclusive($"Aspire resources unavailable: {ex.Message}");
-            return;
-        }
-
-        await using var hostScope = host;
-        try
-        {
-            await host.RunWithinStartupBudgetAsync(
-                "Gateway/Blazor browser launch and smoke",
-                token => GatewayBlazorSmokeRunner.RunAsync(host.GatewayBaseUrl, host.BlazorBaseUrl, token),
-                TestContext.CancellationToken);
-        }
-        catch (PlaywrightException ex) when (
-            ex.Message.Contains("Executable doesn't exist", StringComparison.OrdinalIgnoreCase))
-        {
-            Assert.Inconclusive("Playwright browser executable is unavailable: " + ex.Message);
-        }
-    }
-
-    private async Task RunTypeScriptProjectsAsync(params string[] requestedProjects)
+    private async Task RunTypeScriptProjectsAsync(
+        string[] requestedProjects,
+        bool runGatewayBlazorSmoke = false)
     {
         if (IsExplicitlyDisabled("TASKFLOW_PLAYWRIGHT_TESTS_ENABLED"))
         {
@@ -110,9 +70,24 @@ public sealed class TypeScriptPlaywrightSuiteTests
         PlaywrightAspireHost host;
         try
         {
-            host = await PlaywrightAspireHost.StartAsync(requestedProjects, TestContext.CancellationToken);
+            try
+            {
+                host = await PlaywrightAspireHost.StartAsync(requestedProjects, TestContext.CancellationToken);
+            }
+            catch (PlaywrightAspireHost.ResourceUnavailableException ex)
+            {
+                // DCP intermittently reports every resource FailedToStart before creating its log directory.
+                // Retry only that pre-launch state once; remove when the Aspire launcher no longer reproduces it.
+                TestContext.WriteLine($"Aspire pre-launch failed once; retrying with a fresh host: {ex.Message}");
+                host = await PlaywrightAspireHost.StartAsync(requestedProjects, TestContext.CancellationToken);
+            }
         }
         catch (PlaywrightAspireHost.DockerUnavailableException ex)
+        {
+            Assert.Inconclusive(ex.Message);
+            return;
+        }
+        catch (PlaywrightAspireHost.ResourceUnavailableException ex)
         {
             Assert.Inconclusive(ex.Message);
             return;
@@ -146,6 +121,14 @@ public sealed class TypeScriptPlaywrightSuiteTests
                 token => GatewayHttpSmokeRunner.RunAsync(host.GatewayBaseUrl, token),
                 TestContext.CancellationToken);
 
+            if (runGatewayBlazorSmoke)
+            {
+                await host.RunWithinStartupBudgetAsync(
+                    "Gateway/Blazor browser launch and smoke",
+                    token => GatewayBlazorSmokeRunner.RunAsync(host.GatewayBaseUrl, host.BlazorBaseUrl, token),
+                    TestContext.CancellationToken);
+            }
+
             result = await host.RunWithinStartupBudgetAsync(
                 "Playwright browser launch and smoke",
                 token => TypeScriptPlaywrightRunner.RunAsync(selectedProjects, token),
@@ -155,6 +138,12 @@ public sealed class TypeScriptPlaywrightSuiteTests
             ex.Message.Equals("Node.js is not available on PATH.", StringComparison.Ordinal))
         {
             Assert.Inconclusive(ex.Message);
+            return;
+        }
+        catch (PlaywrightException ex) when (
+            ex.Message.Contains("Executable doesn't exist", StringComparison.OrdinalIgnoreCase))
+        {
+            Assert.Inconclusive("Playwright browser executable is unavailable: " + ex.Message);
             return;
         }
         TestContext.WriteLine(result.StandardOutput);

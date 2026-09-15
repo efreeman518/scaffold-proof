@@ -127,6 +127,8 @@ public sealed class AppHostLaneTopologyTests
         StringAssert.Contains(source, "if (!nonAzureLane && (!isTesting || functionsAvailableInTesting || fullLaneAvailableInTesting))");
         StringAssert.Contains(source, "if (!isTesting || reactAvailableInTesting || fullLaneAvailableInTesting)");
         StringAssert.Contains(source, "if (!isTesting || unoWasmAvailableInTesting || fullLaneAvailableInTesting)");
+        StringAssert.Contains(source,
+            ".WithEnvironment(\"RateLimiting__Tiers__standard__PermitLimit\", \"10000\")");
     }
 
     [TestMethod]
@@ -162,6 +164,7 @@ public sealed class AppHostLaneTopologyTests
         var source = ReadAppHostSource();
         StringAssert.Contains(source, "if (cosmos is not null) return host.WithReference(cosmos).WaitFor(cosmos);");
         StringAssert.Contains(source, ".WithEnvironment(\"DOTNET_ENVIRONMENT\", \"Testing\")");
+        StringAssert.Contains(source, ".WithEnvironment(\"ASPNETCORE_ENVIRONMENT\", \"Testing\")");
         StringAssert.Contains(source, "Testing__UseNoOpCosmosReadModel");
         StringAssert.Contains(source, "ConnectionStrings__MongoDb1");
         StringAssert.Contains(source, "mongoDb.GetEndpoint(\"mongodb\")");

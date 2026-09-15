@@ -113,6 +113,16 @@ public sealed class AppHostMigratorTopologyTests
         {
             Assert.Contains("AspireTestHostContext", File.ReadAllText(path), path);
         }
+
+        var playwrightHost = File.ReadAllText(consumers[1]);
+        Assert.Contains("ResourcesFailedBeforeLaunch", playwrightHost);
+        Assert.Contains("ResourceUnavailableException", playwrightHost);
+
+        var playwrightSuite = File.ReadAllText(Path.Combine(
+            repoRoot, "tests", "Test.PlaywrightUI", "TypeScriptPlaywrightSuiteTests.cs"));
+        Assert.Contains("RunTypeScriptProjectsAsync([\"blazor\"], runGatewayBlazorSmoke: true)", playwrightSuite);
+        Assert.Contains("Aspire pre-launch failed once; retrying with a fresh host", playwrightSuite);
+        Assert.IsFalse(playwrightSuite.Contains("GatewayBlazorBrowserSmoke_Passes", StringComparison.Ordinal));
     }
 
     private static string ReadAppHostSource() =>

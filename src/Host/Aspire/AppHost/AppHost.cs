@@ -357,7 +357,9 @@ if (chat is not null)
 
 if (isTesting)
 {
-    api = api.WithEnvironment("Cors__AllowedOrigins__0", "http://localhost");
+    api = api
+        .WithEnvironment("Cors__AllowedOrigins__0", "http://localhost")
+        .WithEnvironment("RateLimiting__Tiers__standard__PermitLimit", "10000");
 
     if (foundryLocalAvailableInTesting)
     {
@@ -569,6 +571,7 @@ IResourceBuilder<T> WithReadModel<T>(IResourceBuilder<T> host)
     if (cosmos is not null) return host.WithReference(cosmos).WaitFor(cosmos);
     if (!nonAzureLane && isTesting)
         return host.WithEnvironment("DOTNET_ENVIRONMENT", "Testing")
+                   .WithEnvironment("ASPNETCORE_ENVIRONMENT", "Testing")
                    .WithEnvironment("Testing__UseNoOpCosmosReadModel", "true");
     if (mongoDb is not null)
         return host.WithEnvironment("ConnectionStrings__MongoDb1", mongoDb.GetEndpoint("mongodb"))
