@@ -4,19 +4,19 @@ Canonical current evidence for the TaskFlow reference application. Historical ph
 
 > Update this file only from observed results. TaskFlow CI records the scaffold checkout commit used for cross-repository validation so failures remain diagnosable without creating a compatibility pin.
 
-This refresh includes the integrated D-061 observability lane. Numbers below include the observed local Release build and fast lane on 2026-09-13; AppHost, container, and vulnerability evidence not rerun for D-061 remains dated 2026-09-12.
+This refresh includes the integrated D-061 observability lane and the 2026-09-14 proof-contract corrections. Numbers below include the observed local Release build and full Unit project on 2026-09-14 plus the categorized fast lane on 2026-09-13; AppHost, container, and vulnerability evidence not rerun for D-061 remains dated 2026-09-12.
 
 ## Build Status
 
 | Field | Value |
 |---|---|
-| Last verified | 2026-09-13 (local Release build and fast lane; container and AppHost evidence carried from 2026-09-12) |
+| Last verified | 2026-09-14 (local Release build and full Unit project; categorized fast lane from 2026-09-13; container and AppHost evidence carried from 2026-09-12) |
 | Solution | `TaskFlow.slnx` |
 | Target framework | .NET 10 |
 | Configuration | Release |
 | Solution projects declared (`dotnet sln list` / slnx `<Project Path=` count) | 48 |
 | Fresh Release restore | 49 restore projects, passed |
-| Solution build units (`dotnet build TaskFlow.slnx -c Release -m:1` summary line) | 51 in 41.32 s |
+| Solution build units (`dotnet build TaskFlow.slnx -c Release -m:1` summary line) | 51 in 66.76 s |
 | Errors | 0 |
 | Warnings | 0 |
 
@@ -27,7 +27,7 @@ This refresh includes the integrated D-061 observability lane. Numbers below inc
 
 ## Test Status
 
-Numbers below are the observed local fast lane on 2026-09-13. The full Unit project passed **527/527** (7.8 s test time, 9.84 s wall time) with 15-second blame-hang diagnostics, safely below the 60-second CI limit. The categorized fast lane (`TestCategory=Unit|TestCategory=Architecture|TestCategory=Endpoint`, `dotnet test TaskFlow.slnx`) passed **743/743 across 13 projects** (10.7 s test time, 14.26 s wall time). The full `Test.Endpoints` project passed **167/167** (7.1 s test time, 8.84 s wall time). For historical CI evidence, run 34736624292 passed the prior **523/523** Unit count in 4 s test time and 6 s step time. `Test.UI` passed **59/59** and `Test.Integration.FlowEngine` passed **18/18** on the preceding verification pass.
+The full Unit project passed **538/538** on 2026-09-14 (8.1 s test time) with 15-second blame-hang diagnostics, safely below the 60-second CI limit. On 2026-09-13, the categorized fast lane (`TestCategory=Unit|TestCategory=Architecture|TestCategory=Endpoint`, `dotnet test TaskFlow.slnx`) passed **743/743 across 13 projects** (10.7 s test time, 14.26 s wall time), and the full `Test.Endpoints` project passed **167/167** (7.1 s test time, 8.84 s wall time). For historical CI evidence, run 34736624292 passed the prior **523/523** Unit count in 4 s test time and 6 s step time. `Test.UI` passed **59/59** and `Test.Integration.FlowEngine` passed **18/18** on the preceding verification pass.
 
 Docker/Testcontainers-backed lanes (run-scoped `TESTCONTAINERS_HOST_OVERRIDE`, not committed):
 
@@ -114,7 +114,7 @@ Status meanings:
 
 | Capability | Status | Evidence boundary |
 |---|---|---|
-| Strict hosting lanes (`TASKFLOW_LANE=Azure\|NonAzure`, D-060) | proven | `HostingLaneSelector`; `Test.Unit/Hosting/ProviderSwitchSelectorTests.cs`; `Test.Aspire/AppHostLaneTopologyTests.cs` (23 verified topology/migrator tests, including exact Azure image references). `Portable` is a deprecated alias for `NonAzure` for one release. |
+| Strict hosting lanes (`TASKFLOW_LANE=Azure\|NonAzure`, D-060) | proven | `HostingLaneResolver`; `Test.Unit/Hosting/ProviderSwitchSelectorTests.cs`; `Test.Aspire/AppHostLaneTopologyTests.cs` (23 verified topology/migrator tests, including exact Azure image references). `Portable` is a deprecated alias for `NonAzure` for one release. |
 | S3 object storage (D-037) | proven | `Test.Integration/S3ObjectStorageRepositoryTests.cs` (SeaweedFS Testcontainers); `Test.Unit/Infrastructure/S3StorageRegistrationTests.cs` |
 | PostgreSQL JSONB read model (D-038) | proven | `Test.Integration/RelationalTaskViewRepositoryTests.cs` in the NonAzure lane; MongoDB is an explicit NonAzure alternative |
 | Relational audit sink (D-039) | proven | `Test.Integration/RelationalAuditLogRepositoryTests.cs`, both DB lanes |

@@ -880,6 +880,41 @@ public sealed class DeploymentWorkflowContractTests
         Assert.IsFalse(bootstrap.Contains("StaticWebAppDefaultHostname", StringComparison.Ordinal));
     }
 
+    [TestMethod]
+    public void ReactDevelopmentRuntimeConfig_MissingViteUrl_UsesSameOrigin()
+    {
+        var runtimeConfig = File.ReadAllText(
+            RepoRoot.Combine("src", "UI", "TaskFlow.React", "src", "api", "runtimeConfig.ts"));
+        var client = File.ReadAllText(
+            RepoRoot.Combine("src", "UI", "TaskFlow.React", "src", "api", "client.ts"));
+
+        StringAssert.Contains(
+            runtimeConfig,
+            "developmentGatewayBaseUrl(import.meta.env.VITE_API_BASE_URL)");
+        var developmentFallback = runtimeConfig[
+            runtimeConfig.IndexOf("export function developmentGatewayBaseUrl", StringComparison.Ordinal)..
+            runtimeConfig.IndexOf("export function gatewayBaseUrl", StringComparison.Ordinal)];
+        StringAssert.Contains(developmentFallback, "return ''");
+        StringAssert.Contains(client, "`${gatewayBaseUrl()}${apiVersionRoot}`");
+    }
+
+    [TestMethod]
+    public void ComponentTestSetup_RecordsLaneBeforeDockerPreflight_AndReportsDockerFirst()
+    {
+        var source = File.ReadAllText(
+            RepoRoot.Combine("tests", "Test.Integration", "Infrastructure", "IntegrationTestSetup.cs"));
+
+        var laneInitialization = source.IndexOf("_lane = settings.Lane;", StringComparison.Ordinal);
+        var dockerPreflight = source.IndexOf(
+            "DockerRuntimePreflight.GetUnavailableReasonAsync", StringComparison.Ordinal);
+        Assert.IsTrue(laneInitialization >= 0 && laneInitialization < dockerPreflight);
+
+        var requireLane = source[source.IndexOf("internal static void RequireLane", StringComparison.Ordinal)..];
+        var dockerUnavailable = requireLane.IndexOf("DockerUnavailableReason is not null", StringComparison.Ordinal);
+        var laneMismatch = requireLane.IndexOf("_lane != lane", StringComparison.Ordinal);
+        Assert.IsTrue(dockerUnavailable >= 0 && dockerUnavailable < laneMismatch);
+    }
+
     /// <summary>
     /// Every deployed image is built the same way: private feed as a BuildKit secret, chiseled runtime,
     /// non-root. Gateway is the only host with neither a culture-rendering nor a Microsoft.Data.SqlClient

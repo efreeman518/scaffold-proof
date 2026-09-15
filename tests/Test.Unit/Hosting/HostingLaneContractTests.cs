@@ -18,7 +18,12 @@ public sealed class HostingLaneContractTests
         HostingLaneResolver.AuditEnvironmentVariable,
         HostingLaneResolver.SearchEnvironmentVariable,
         HostingLaneResolver.AiEnvironmentVariable,
-        HostingLaneResolver.DataProtectionEnvironmentVariable
+        HostingLaneResolver.DataProtectionEnvironmentVariable,
+        HostingLaneResolver.AppConfigEndpointEnvironmentVariable,
+        HostingLaneResolver.AppConfigConnectionStringEnvironmentVariable,
+        HostingLaneResolver.KeyVaultEndpointEnvironmentVariable,
+        HostingLaneResolver.KeyVaultUriEnvironmentVariable,
+        HostingLaneResolver.DataProtectionEncryptionKeyUrlEnvironmentVariable
     ];
 
     [TestMethod]
@@ -189,6 +194,45 @@ public sealed class HostingLaneContractTests
     }
 
     [TestMethod]
+    [DataRow(HostingLaneResolver.AppConfigEndpointEnvironmentVariable, HostingLaneResolver.AppConfigEndpointConfigurationKey)]
+    [DataRow(HostingLaneResolver.KeyVaultEndpointEnvironmentVariable, HostingLaneResolver.KeyVaultEndpointConfigurationKey)]
+    [DataRow(HostingLaneResolver.KeyVaultUriEnvironmentVariable, HostingLaneResolver.KeyVaultUriConfigurationKey)]
+    [DataRow(HostingLaneResolver.DataProtectionEncryptionKeyUrlEnvironmentVariable, HostingLaneResolver.DataProtectionEncryptionKeyUrlConfigurationKey)]
+    public void ResolveFromEnvironment_NonAzureAzureServiceSetting_Throws(
+        string environmentVariable, string configurationKey)
+    {
+        WithCleanEnvironment(() =>
+        WithEnvironment(HostingLaneResolver.LaneEnvironmentVariable, "NonAzure", () =>
+        WithEnvironment(environmentVariable, "https://azure.example", () =>
+        {
+            var exception = Assert.ThrowsExactly<InvalidOperationException>(
+                HostingLaneResolver.ResolveFromEnvironment);
+
+            StringAssert.Contains(exception.Message, "NonAzure");
+            StringAssert.Contains(exception.Message, configurationKey);
+            StringAssert.Contains(exception.Message, "https://azure.example");
+        })));
+    }
+
+    [TestMethod]
+    public void ResolveFromEnvironment_NonAzureAppConfigConnectionString_IsRedacted()
+    {
+        const string secret = "Endpoint=https://azure.example;Id=id;Secret=do-not-log";
+
+        WithCleanEnvironment(() =>
+        WithEnvironment(HostingLaneResolver.LaneEnvironmentVariable, "NonAzure", () =>
+        WithEnvironment(HostingLaneResolver.AppConfigConnectionStringEnvironmentVariable, secret, () =>
+        {
+            var exception = Assert.ThrowsExactly<InvalidOperationException>(
+                HostingLaneResolver.ResolveFromEnvironment);
+
+            StringAssert.Contains(exception.Message, HostingLaneResolver.AppConfigConnectionStringConfigurationKey);
+            StringAssert.Contains(exception.Message, "<redacted>");
+            Assert.IsFalse(exception.Message.Contains(secret, StringComparison.Ordinal));
+        })));
+    }
+
+    [TestMethod]
     public void Resolve_NonAzureLocalEncryptionKeys_AreAllowed()
     {
         var settings = Resolve(
@@ -205,7 +249,7 @@ public sealed class HostingLaneContractTests
         CollectionAssert.AreEqual(
             new[]
             {
-                "mcr.microsoft.com/mssql/server:2025-latest",
+                "mcr.microsoft.com/mssql/server:2025-CU8-ubuntu-22.04",
                 "mcr.microsoft.com/azure-messaging/servicebus-emulator:latest",
                 "mcr.microsoft.com/mssql/server:2022-latest",
                 "mcr.microsoft.com/azure-storage/azurite:latest",

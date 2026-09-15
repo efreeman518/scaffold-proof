@@ -5,7 +5,7 @@ let runtimeConfig: RuntimeConfig | undefined
 /** Loads the deployment-supplied gateway origin before production requests begin. */
 export async function loadRuntimeConfig(fetcher: typeof fetch = fetch): Promise<RuntimeConfig> {
   if (import.meta.env.DEV) {
-    runtimeConfig = { gatewayBaseUrl: normalizeGatewayBaseUrl(import.meta.env.VITE_API_BASE_URL ?? '') }
+    runtimeConfig = { gatewayBaseUrl: developmentGatewayBaseUrl(import.meta.env.VITE_API_BASE_URL) }
     return runtimeConfig
   }
 
@@ -27,6 +27,15 @@ export async function loadRuntimeConfig(fetcher: typeof fetch = fetch): Promise<
 
   runtimeConfig = { gatewayBaseUrl: normalizeGatewayBaseUrl(config.gatewayBaseUrl) }
   return runtimeConfig
+}
+
+/** Uses Vite's proxy when configured, otherwise keeps API requests on the current origin. */
+export function developmentGatewayBaseUrl(value: unknown): string {
+  if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) {
+    return ''
+  }
+
+  return normalizeGatewayBaseUrl(value)
 }
 
 /** Returns the gateway origin only after startup validated the runtime configuration. */

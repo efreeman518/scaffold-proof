@@ -58,6 +58,7 @@ hostingLanes: [Azure, NonAzure]
 # NonAzure for one release. Lane-owned core conflicts fail fast. See D-060.
 hostingLaneDefaults:
   Azure:
+    deploymentTarget: ContainerApps
     databaseProvider: SqlServer
     messagingProvider: ServiceBus
     storageProvider: AzureBlob
@@ -67,6 +68,7 @@ hostingLaneDefaults:
     aiProvider: None
     dataProtectionPersistence: AzureBlob
   NonAzure:
+    deploymentTarget: DockerCompose
     databaseProvider: PostgreSql
     messagingProvider: RabbitMq
     storageProvider: S3

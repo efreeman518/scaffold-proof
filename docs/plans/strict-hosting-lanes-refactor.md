@@ -11,7 +11,7 @@ Deliver two coherent hosting and container profiles, `Azure` and `NonAzure`, acr
 - NonAzure read model permits `PostgreSqlJsonb` by default or `MongoDb` explicitly. Legacy `Relational` aliases `PostgreSqlJsonb` for one release.
 - Common services are Redis, migrator, API, gateway, Scheduler with embedded TickerQ, Blazor, React, and Uno WASM. Azure Functions remains Azure-only.
 - Local search defaults to SQL and AI defaults to None. Live provider opt-ins must remain compatible with the selected lane.
-- Container images use moving major or family tags from one catalog: SQL Server `2025-latest`, Service Bus emulator `latest` with SQL Server `2022-latest`, Azurite `latest`, Cosmos `vnext-latest`, pgvector PostgreSQL `pg18`, RabbitMQ `4-management`, SeaweedFS `latest`, MongoDB `8`, and Redis `8`.
+- Container images use one catalog. SQL Server uses the previously reviewed exact `2025-CU8-ubuntu-22.04` tag; Service Bus emulator `latest` with SQL Server `2022-latest`, Azurite `latest`, Cosmos `vnext-latest`, pgvector PostgreSQL `pg18`, RabbitMQ `4-management`, SeaweedFS `latest`, MongoDB `8`, and Redis `8` remain moving major or family tags until exact compatible versions are reviewed.
 - MinIO is replaced by SeaweedFS. Existing EF packages are validated first; an upstream request requires a focused reproduction and acceptance criteria.
 - Azure and NonAzure deployments expose Blazor, React, and Uno through one gateway contract. React and Uno consume runtime `app-config.json` containing `gatewayBaseUrl`.
 - Full lane and browser acceptance is manually dispatched; pull requests retain fast deterministic checks.

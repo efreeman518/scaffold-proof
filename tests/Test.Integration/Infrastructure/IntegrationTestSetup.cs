@@ -23,15 +23,16 @@ public static class IntegrationTestSetup
     [AssemblyInitialize]
     public static async Task AssemblyInit(TestContext context)
     {
+        var settings = TestHostingLane.Current;
+        _lane = settings.Lane;
+        _usesMongoDb = TestHostingLane.UsesMongoDb;
+
         DockerUnavailableReason = await DockerRuntimePreflight.GetUnavailableReasonAsync(
             TimeSpan.FromSeconds(10),
             context.CancellationToken);
         if (DockerUnavailableReason is not null)
             return;
 
-        var settings = TestHostingLane.Current;
-        _lane = settings.Lane;
-        _usesMongoDb = TestHostingLane.UsesMongoDb;
         var starts = new List<Task>
         {
             DbContainerFixture.StartAsync(),
@@ -95,6 +96,12 @@ public static class IntegrationTestSetup
 
     internal static void RequireLane(HostingLane lane, bool requireMongoDb = false)
     {
+        if (DockerUnavailableReason is not null)
+        {
+            Assert.Inconclusive(DockerUnavailableReason);
+            return;
+        }
+
         if (_lane != lane)
             Assert.Inconclusive($"Test requires the {lane} lane; current lane is {_lane}.");
         if (requireMongoDb && !_usesMongoDb)
