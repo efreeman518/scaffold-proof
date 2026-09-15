@@ -889,6 +889,8 @@ public sealed class DeploymentWorkflowContractTests
             RepoRoot.Combine("src", "UI", "TaskFlow.React", "src", "api", "client.ts"));
         var readme = File.ReadAllText(
             RepoRoot.Combine("src", "UI", "TaskFlow.React", "README.md"));
+        var viteConfig = File.ReadAllText(
+            RepoRoot.Combine("src", "UI", "TaskFlow.React", "vite.config.ts"));
 
         StringAssert.Contains(
             runtimeConfig,
@@ -899,6 +901,7 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(developmentFallback, "return ''");
         StringAssert.Contains(client, "`${gatewayBaseUrl()}${apiVersionRoot}`");
         StringAssert.Contains(readme, "A standalone Vite server must set `VITE_API_BASE_URL`");
+        StringAssert.Contains(viteConfig, "env.VITE_API_BASE_URL?.trim()");
     }
 
     [TestMethod]

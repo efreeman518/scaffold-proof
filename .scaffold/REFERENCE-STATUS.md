@@ -27,7 +27,7 @@ This refresh includes the integrated D-061 observability lane and the proof-cont
 
 ## Test Status
 
-The full Unit project passed **544/544** on 2026-09-15 (8.2 s test time) with 15-second blame-hang diagnostics, safely below the 60-second CI limit. On 2026-09-13, the categorized fast lane (`TestCategory=Unit|TestCategory=Architecture|TestCategory=Endpoint`, `dotnet test TaskFlow.slnx`) passed **743/743 across 13 projects** (10.7 s test time, 14.26 s wall time), and the full `Test.Endpoints` project passed **167/167** (7.1 s test time, 8.84 s wall time). For historical CI evidence, run 34736624292 passed the prior **523/523** Unit count in 4 s test time and 6 s step time. `Test.UI` passed **59/59** and `Test.Integration.FlowEngine` passed **18/18** on the preceding verification pass.
+The full Unit project passed **545/545** on 2026-09-15 (8.0 s test time) with 15-second blame-hang diagnostics, safely below the 60-second CI limit. On 2026-09-13, the categorized fast lane (`TestCategory=Unit|TestCategory=Architecture|TestCategory=Endpoint`, `dotnet test TaskFlow.slnx`) passed **743/743 across 13 projects** (10.7 s test time, 14.26 s wall time), and the full `Test.Endpoints` project passed **167/167** (7.1 s test time, 8.84 s wall time). For historical CI evidence, run 34736624292 passed the prior **523/523** Unit count in 4 s test time and 6 s step time. `Test.UI` passed **59/59** and `Test.Integration.FlowEngine` passed **18/18** on the preceding verification pass.
 
 Docker/Testcontainers-backed lanes (run-scoped `TESTCONTAINERS_HOST_OVERRIDE`, not committed):
 

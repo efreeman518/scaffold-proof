@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const apiTarget = env.VITE_API_BASE_URL
+  const apiTarget = env.VITE_API_BASE_URL?.trim()
   const port = Number(env.PORT || env.VITE_PORT || 5178)
 
   return {
