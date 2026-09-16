@@ -4,6 +4,8 @@ namespace Test.Mobile;
 internal sealed record MobileTestSettings
 {
     public required bool Enabled { get; init; }
+    public required string RepoRoot { get; init; }
+    public required bool HasConfiguredAppPath { get; init; }
     public required MobileTestPlatform Platform { get; init; }
     public required Uri AppiumServerUri { get; init; }
     public required string AppPath { get; init; }
@@ -22,14 +24,17 @@ internal sealed record MobileTestSettings
     public static MobileTestSettings From(TestContext context)
     {
         var platform = ParsePlatform(GetValue(context, "TASKFLOW_MOBILE_PLATFORM") ?? "Android");
-        var sourceRoot = FindSourceRoot();
-        var appPath = ResolveAppPath(sourceRoot, GetValue(context, PlatformAppPathKey(platform)), platform);
+        var repoRoot = FindRepoRoot();
+        var configuredAppPath = GetValue(context, PlatformAppPathKey(platform));
+        var appPath = ResolveAppPath(repoRoot, configuredAppPath, platform);
         var screenshotDirectory = GetValue(context, "TASKFLOW_MOBILE_SCREENSHOT_DIR")
-            ?? Path.Combine(sourceRoot, "Test", "Test.Mobile", "TestResults", "screenshots");
+            ?? Path.Combine(repoRoot, "tests", "Test.Mobile", "TestResults", "screenshots");
 
         return new MobileTestSettings
         {
             Enabled = IsTrue(GetValue(context, "TASKFLOW_MOBILE_TESTS_ENABLED")),
+            RepoRoot = repoRoot,
+            HasConfiguredAppPath = !string.IsNullOrWhiteSpace(configuredAppPath),
             Platform = platform,
             AppiumServerUri = new Uri(GetValue(context, "TASKFLOW_APPIUM_SERVER_URL") ?? "http://127.0.0.1:4723/"),
             AppPath = appPath,
@@ -95,11 +100,11 @@ internal sealed record MobileTestSettings
     private static string PlatformAppPathKey(MobileTestPlatform platform) =>
         platform == MobileTestPlatform.Android ? "TASKFLOW_ANDROID_APP_PATH" : "TASKFLOW_IOS_APP_PATH";
 
-    /// <summary>Resolves configured app paths against the repo root so README commands are stable from test output folders.</summary>
-    private static string ResolveAppPath(string sourceRoot, string? configuredPath, MobileTestPlatform platform)
+    /// <summary>Resolves configured app paths against the repo root so Test Explorer and CLI runs agree.</summary>
+    private static string ResolveAppPath(string repoRoot, string? configuredPath, MobileTestPlatform platform)
     {
         var appPath = string.IsNullOrWhiteSpace(configuredPath)
-            ? GetDefaultAppPath(sourceRoot, platform)
+            ? GetDefaultAppPath(repoRoot, platform)
             : configuredPath.Trim();
 
         if (Path.IsPathFullyQualified(appPath))
@@ -107,30 +112,7 @@ internal sealed record MobileTestSettings
             return appPath;
         }
 
-        var solutionRelativePath = Path.GetFullPath(appPath, sourceRoot);
-        var repoRoot = Directory.GetParent(sourceRoot)?.FullName;
-        if (repoRoot is null)
-        {
-            return solutionRelativePath;
-        }
-
-        var repoRelativePath = Path.GetFullPath(appPath, repoRoot);
-        if (File.Exists(repoRelativePath) || Directory.Exists(repoRelativePath))
-        {
-            return repoRelativePath;
-        }
-
-        return StartsWithPathSegment(appPath, new DirectoryInfo(sourceRoot).Name)
-            ? repoRelativePath
-            : solutionRelativePath;
-    }
-
-    /// <summary>Detects repo-root paths such as src/UI/... when the solution root is the src folder.</summary>
-    private static bool StartsWithPathSegment(string path, string segment)
-    {
-        var normalized = path.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        return normalized.StartsWith(segment + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
-            || normalized.StartsWith(segment + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        return Path.GetFullPath(appPath, repoRoot);
     }
 
     /// <summary>Verifies default device name behavior and protects the expected test contract.</summary>
@@ -138,11 +120,12 @@ internal sealed record MobileTestSettings
         platform == MobileTestPlatform.Android ? "Android Emulator" : "iPhone Simulator";
 
     /// <summary>Verifies get default app path behavior and protects the expected test contract.</summary>
-    private static string GetDefaultAppPath(string sourceRoot, MobileTestPlatform platform) =>
+    private static string GetDefaultAppPath(string repoRoot, MobileTestPlatform platform) =>
         platform switch
         {
             MobileTestPlatform.Android => Path.Combine(
-                sourceRoot,
+                repoRoot,
+                "src",
                 "UI",
                 "TaskFlow.Uno",
                 "bin",
@@ -150,7 +133,8 @@ internal sealed record MobileTestSettings
                 "net10.0-android",
                 "com.taskflow.uno-Signed.apk"),
             MobileTestPlatform.Ios => Path.Combine(
-                sourceRoot,
+                repoRoot,
+                "src",
                 "UI",
                 "TaskFlow.Uno",
                 "bin",
@@ -162,7 +146,7 @@ internal sealed record MobileTestSettings
         };
 
     /// <summary>Verifies find source root behavior and protects the expected test contract.</summary>
-    private static string FindSourceRoot()
+    private static string FindRepoRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
 
