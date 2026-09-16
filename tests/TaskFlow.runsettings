@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <RunSettings>
+  <RunConfiguration>
+    <MaxCpuCount>1</MaxCpuCount>
+  </RunConfiguration>
   <TestRunParameters>
-    <Parameter name="TASKFLOW_MOBILE_TESTS_ENABLED" value="false" />
+    <Parameter name="TASKFLOW_MOBILE_TESTS_ENABLED" value="true" />
     <Parameter name="TASKFLOW_MOBILE_PLATFORM" value="Android" />
     <Parameter name="TASKFLOW_APPIUM_SERVER_URL" value="http://127.0.0.1:4723/" />
   </TestRunParameters>
