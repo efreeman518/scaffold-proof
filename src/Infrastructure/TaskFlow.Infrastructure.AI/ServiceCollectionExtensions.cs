@@ -135,7 +135,7 @@ public static class AiServiceCollectionExtensions
         // Agent function tools (always registered - agents and tests both need them)
         services.AddScoped<TaskItemTools>();
 
-        // A live IChatClient is registered at the host for Azure Foundry or Foundry Local. Its
+        // A live IChatClient is registered at the host for Azure Foundry or an OpenAI-compatible endpoint. Its
         // presence - not raw config - gates live AI.
         var hasChatClient = services.Any(d => d.ServiceType == typeof(IChatClient));
 

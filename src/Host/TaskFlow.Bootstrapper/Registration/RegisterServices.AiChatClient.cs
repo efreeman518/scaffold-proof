@@ -18,9 +18,6 @@ public enum AiProvider
     /// <summary>OpenAI SDK client against a configurable endpoint (OpenAI, OpenRouter, Ollama, vLLM).</summary>
     OpenAICompatible,
 
-    /// <summary>Foundry Local SDK-direct fallback.</summary>
-    FoundryLocal,
-
     /// <summary>No live chat client; NoOpChatClient answers every call.</summary>
     None
 }
@@ -57,13 +54,13 @@ public static partial class RegisterServices
 
     /// <summary>
     /// Registers the shared AI chat client before application services bind agents and demos.
-    /// The shared lane contract defaults to None. AzureInference, OpenAICompatible, and FoundryLocal
-    /// are explicit same-lane selections; local startup failures fall through to AddAiServices' no-op client.
+    /// The shared lane contract defaults to None. AzureInference and OpenAICompatible are explicit
+    /// same-lane selections; AddAiServices supplies the no-op client when neither is selected.
     /// </summary>
-    public static async Task RegisterAiChatClientAsync(
+    public static Task RegisterAiChatClientAsync(
         this IHostApplicationBuilder builder,
         ILogger logger,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         var config = builder.Configuration;
         var appName = config.GetValue<string>("AppName") ?? builder.Environment.ApplicationName;
@@ -73,16 +70,15 @@ public static partial class RegisterServices
 
         var explicitProvider = ResolveAiProvider(config);
         if (explicitProvider == AiProvider.None)
-            return; // AddAiServices registers the no-op chat client and AiProviderInfo("none") fallback.
+            return Task.CompletedTask; // AddAiServices registers the no-op client and provider metadata.
 
         if (explicitProvider == AiProvider.OpenAICompatible)
         {
             AddOpenAICompatibleClients(builder, config, logger, appName, env);
-            return;
+            return Task.CompletedTask;
         }
 
-        var useAzure = explicitProvider == AiProvider.AzureInference;
-        if (useAzure)
+        if (explicitProvider == AiProvider.AzureInference)
         {
             logger.ConfigureAzureChatClient(appName, env);
             builder.AddAzureChatCompletionsClient("chat")
@@ -100,36 +96,10 @@ public static partial class RegisterServices
             }
 
             builder.Services.AddSingleton(new AiProviderInfo("azure"));
-            return;
+            return Task.CompletedTask;
         }
 
-        logger.ConfigureFoundryLocalChatClient(appName, env);
-        var requireFoundryLocal = config.GetValue<bool>("AiServices:RequireFoundryLocal");
-        var localModel = config["AiServices:LocalModel"] ?? "qwen2.5-0.5b";
-        var localWebUrl = config["AiServices:LocalWebUrl"] ?? "http://127.0.0.1:52415";
-
-        try
-        {
-            if (!Uri.TryCreate(localWebUrl, UriKind.Absolute, out _))
-            {
-                throw new ArgumentException("Foundry Local web URL (AiServices:LocalWebUrl) must be absolute.");
-            }
-
-            var chatClient = await FoundryLocalChatClient.CreateAsync(
-                localModel,
-                localWebUrl,
-                logger,
-                ct);
-            builder.Services.AddSingleton<IChatClient>(chatClient);
-            builder.Services.AddSingleton(new AiProviderInfo("local"));
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            if (requireFoundryLocal)
-                throw;
-
-            logger.FoundryLocalUnavailable(ex, appName, env);
-        }
+        throw new InvalidOperationException($"Unsupported AI provider '{explicitProvider}'.");
     }
 
     /// <summary>

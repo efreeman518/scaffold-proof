@@ -44,9 +44,9 @@ dotnet restore TaskFlow.slnx
 dotnet run --project src/Host/Aspire/AppHost
 ```
 
-Use the Aspire dashboard to discover the Gateway, API, and Blazor URLs; ports are allocated per run. See [AI Demos](#ai-demos-azure-ai-foundry-and-foundry-local) for AI-specific run modes.
+Use the Aspire dashboard to discover the Gateway, API, and Blazor URLs; ports are allocated per run. See [AI Demos](#ai-demos-azure-ai-foundry-and-openai-compatible-endpoints) for AI-specific run modes.
 
-Local development sends OpenTelemetry only to the Aspire Dashboard. Deployed NonAzure runs pinned OpenObserve OSS v1.0.0 in a separate persistent container for logs and traces, with metrics export disabled by default and short operator-configurable retention. Its UI is private by default. All ProblemDetails responses expose the server request identifier as `requestId` and W3C `traceId`/`spanId` values that join structured logs to traces across service and broker hops. This direct SDK export is the minimal baseline; add an OpenTelemetry Collector only if tail sampling becomes necessary. OpenObserve Open Source Edition uses AGPL-3.0; enterprise and hosted offerings are separate products. The single-node Compose shape is low cost, not highly available.
+Local development sends OpenTelemetry only to the Aspire Dashboard. Deployed NonAzure runs OpenObserve OSS `v1.0.0@sha256:d581789cb03b5f061ed56a3e864b5e4bbc86bbf6d317ec863372e98ee49b30d5` in a separate persistent container for logs and traces, with metrics export disabled by default and short operator-configurable retention. Its UI is private by default. All ProblemDetails responses expose the server request identifier as `requestId` and W3C `traceId`/`spanId` values that join structured logs to traces across service and broker hops. This direct SDK export is the minimal baseline; add an OpenTelemetry Collector only if tail sampling becomes necessary. OpenObserve Open Source Edition uses AGPL-3.0; enterprise and hosted offerings are separate products. The single-node Compose shape is low cost, not highly available.
 
 ### Providers and container runtime
 
@@ -137,46 +137,45 @@ The repository is kept clean at the **error and warning** severities, and CI enf
 
 Keep the tree green: prefer fixing the root cause over suppressing a diagnostic, and add a scoped, commented `#pragma`/`.editorconfig` entry only when a suppression is genuinely warranted.
 
-## AI Demos (Azure AI Foundry and Foundry Local)
+## AI Demos (Azure AI Foundry and OpenAI-compatible endpoints)
 
-The app wires one `Microsoft.Extensions.AI.IChatClient` for every AI demo, including the FlowEngine `ai-agent` connector used by D9. Azure Foundry is still modeled by Aspire as a `chat` deployment. Foundry Local is temporarily bootstrapped by `TaskFlow.Bootstrapper` with `Microsoft.AI.Foundry.Local` because Aspire `RunAsFoundryLocal()` is avoided until its bundled SDK can discover the GA runtime. Two independent axes apply: **lifecycle** (where the Foundry resource comes from) and **consumption** (this app consumes raw model inference; Foundry projects + server-hosted agents are an Azure-only escalation, documented as commented opt-ins - see *Projects and agents* below).
+The app wires one `Microsoft.Extensions.AI.IChatClient` for every AI demo, including the FlowEngine `ai-agent` connector used by D9. Azure AI Foundry resources and model deployments are provisioned externally, then exposed to Aspire through the `chat` connection. NonAzure deployments can instead use a configured OpenAI-compatible endpoint. Foundry projects and server-hosted agents remain an Azure-only escalation described under *Projects and agents*.
 
 | Mode | How to enable | Model |
 |------|---------------|-------|
-| Foundry Local (on-device, no Azure) | NonAzure lane with `TASKFLOW_AI_PROVIDER=FoundryLocal` | `qwen2.5-0.5b` |
 | OpenAI-compatible endpoint | NonAzure lane with `TASKFLOW_AI_PROVIDER=OpenAICompatible` and its endpoint/key configuration | deployment-specific |
-| Provision new Azure AI Foundry | Azure lane with `TASKFLOW_AI_PROVIDER=AzureInference`, then set `AiServices:FoundryEndpoint` or `TASKFLOW_USE_AZURE_FOUNDRY=true` | `FoundryModel.OpenAI.Gpt4oMini` |
-| Connect to existing Azure AI Foundry | uncomment the `RunAsExisting` block in `AppHost.cs` and set `AiServices:FoundryResourceName` + `AiServices:FoundryResourceGroup` (the `chat` deployment must already exist there) | `FoundryModel.OpenAI.Gpt4oMini` |
-| Disabled | default for both local lanes; set `TASKFLOW_AI_PROVIDER=None` explicitly when overriding inherited configuration | no-op `IChatClient` (app boots; demos return "not configured") |
-| Publish | always | provisions a real Azure Foundry resource |
+| Azure AI Foundry, keyless | Azure lane with `TASKFLOW_AI_PROVIDER=AzureInference`, `AiServices:FoundryEndpoint`, and `AiServices:AgentModelDeployment` | externally provisioned deployment |
+| Azure AI Foundry, connection string | Azure lane with `TASKFLOW_AI_PROVIDER=AzureInference` and complete `ConnectionStrings:chat` containing `Endpoint` and `Deployment`; `Key` is optional | externally provisioned deployment |
+| Disabled | default for both hosting lanes; set `TASKFLOW_AI_PROVIDER=None` explicitly when overriding inherited configuration | no-op `IChatClient` (app boots; demos return "not configured") |
 
-### Run Fully Local With Foundry Local
+### Run With an OpenAI-compatible Endpoint
 
-Use this path when you want the AI demos to call a local model and avoid Azure model calls.
+Use this path for OpenAI, OpenRouter, Ollama, vLLM, or another service that implements the OpenAI wire protocol.
 
 ```powershell
 $env:TASKFLOW_LANE = "NonAzure"
-$env:TASKFLOW_AI_PROVIDER = "FoundryLocal"
+$env:TASKFLOW_AI_PROVIDER = "OpenAICompatible"
+$env:AiServices__Endpoint = "https://example.invalid/v1"
+$env:AiServices__ChatModel = "deployment-name"
 dotnet run --project src/Host/Aspire/AppHost
 ```
 
-With the explicit Foundry Local provider, the bootstrapper uses `Microsoft.AI.Foundry.Local`, downloads execution providers and the `qwen2.5-0.5b` model if needed, starts its OpenAI-compatible endpoint at `AiServices:LocalWebUrl` (default `http://127.0.0.1:52415`), records `AiProviderInfo("local")`, and registers it as the shared `IChatClient`. If Foundry Local cannot bootstrap, the bootstrapper logs the failure and follows its configured required/optional startup policy.
-
-Use `qwen2.5-0.5b` because D3, D7, and D9 exercise tool/function calling. First run can be slow because the SDK downloads execution providers and the model into the local Foundry cache.
+Supply `AiServices:ApiKey` through the configured secret source. The bootstrapper registers the endpoint as the shared `IChatClient`; D3, D7, and D9 require a deployment that supports tool/function calling.
 
 ### Run With Real Azure AI Foundry
 
-Use this path when you have a real Azure AI Foundry deployment or when testing the publish shape.
+Provision the Azure AI Foundry account and model deployment outside this AppHost, using your platform IaC or Azure tooling. Then configure one of these two consumption paths.
 
 ```powershell
 dotnet user-secrets set "AiServices:FoundryEndpoint" "https://<your-foundry-resource>.services.ai.azure.com/" --project src/Host/Aspire/AppHost
+dotnet user-secrets set "AiServices:AgentModelDeployment" "<deployment-name>" --project src/Host/Aspire/AppHost
 # or
-$env:TASKFLOW_USE_AZURE_FOUNDRY = "true"
+dotnet user-secrets set "ConnectionStrings:chat" "Endpoint=https://<your-foundry-resource>.services.ai.azure.com/;Deployment=<deployment-name>" --project src/Host/Aspire/AppHost
 
 dotnet run --project src/Host/Aspire/AppHost
 ```
 
-In this mode the AppHost calls `AddFoundry("foundry").AddDeployment("chat", FoundryModel.OpenAI.Gpt4oMini)`. `aspire publish` always takes the real Azure path and provisions an Azure AI Foundry resource/deployment. If your Azure tenant requires keyless managed-identity auth for the inference client, adjust the host registration around `AddAzureChatCompletionsClient("chat")` to pass the required credential shape before treating local failures as model failures.
+The endpoint-plus-deployment path injects `Endpoint=...;Deployment=...` and `Aspire.Azure.AI.Inference` authenticates with `DefaultAzureCredential`. A complete connection string can additionally include `Key=...` when key authentication is required. `TASKFLOW_USE_AZURE_FOUNDRY=true` is only an explicit intent flag; it does not supply configuration and fails startup unless one complete path is configured. `aspire publish` does not provision the Foundry account or deployment.
 
 ### Run With AI Disabled
 
@@ -184,16 +183,13 @@ Leave the lane default or set `TASKFLOW_AI_PROVIDER=None` to force no-op locally
 
 ### Aspire-backed AI tests
 
-`dotnet test tests/Test.Aspire/Test.Aspire.csproj -m:1 --filter TestCategory=Foundry` boots the AppHost through `Aspire.Hosting.Testing` and runs the Azure live Foundry smoke set. Missing Azure configuration is inconclusive. Once Azure is configured and active, HTTP/provider contract failures remain red. `TASKFLOW_RUN_AZURE_FOUNDRY_TESTS=false` can opt out explicitly. The Aspire mesh is RID-free and forces `AiServices:DisableFoundryLocal=true`, so it never starts a local native model. App-level AI HTTP contract coverage lives in `Test.Endpoints` with a fake `IChatClient`.
-
-`dotnet test tests/Test.FoundryLocal/Test.FoundryLocal.csproj -m:1 --filter TestCategory=FoundryLocal` runs the RID-bound local smoke lane. It boots `TaskFlow.Api` directly, checks `GET /api/v1/ai/status` for `provider: local`, then covers chat, no-tool agent chat, and one safe write-adjacent AI demo. Missing or undiscoverable runtime and post-bootstrap model timeouts are inconclusive. Startup failures after runtime discovery, provider mismatch, and HTTP/JSON contract failures remain red. `TASKFLOW_RUN_FOUNDRY_LOCAL_TESTS=false` can opt out explicitly.
+`dotnet test tests/Test.Aspire/Test.Aspire.csproj -m:1 --filter TestCategory=Foundry` boots the AppHost through `Aspire.Hosting.Testing` and runs the Azure live Foundry smoke set. Missing Azure configuration is inconclusive. Once Azure is configured and active, HTTP/provider contract failures remain red. `TASKFLOW_RUN_AZURE_FOUNDRY_TESTS=false` can opt out explicitly. App-level AI HTTP contract coverage lives in `Test.Endpoints` with a fake `IChatClient`.
 
 | Test condition | Result |
 |----------------|--------|
-| Azure Foundry config exists (`AiServices:FoundryEndpoint` or `TASKFLOW_USE_AZURE_FOUNDRY=true`) | `Test.Aspire` `TestCategory=Foundry` runs against Azure Foundry |
+| Complete Azure Foundry config exists (`AiServices:FoundryEndpoint` plus `AiServices:AgentModelDeployment`, or complete `ConnectionStrings:chat`) | `Test.Aspire` `TestCategory=Foundry` runs against Azure Foundry |
+| Azure Foundry is requested but endpoint or deployment is missing | AppHost configuration fails; the live test does not silently become inconclusive |
 | No Azure Foundry config exists | `Test.Aspire` live Foundry tests are inconclusive |
-| Foundry Local SDK bootstraps in the RID-bound API host | `Test.FoundryLocal` `TestCategory=FoundryLocal` runs against the local model |
-| Foundry Local runtime missing or undiscoverable | `Test.FoundryLocal` is inconclusive |
 
 `TestCategory=AzureFoundry` is reserved for Azure-specific provider-selection or provisioning checks. The no-op AI fallback path is covered by unit and endpoint tests. Load, benchmark, and mobile suites stay explicit because they require a running target, BenchmarkDotNet process control, or Appium/emulator setup.
 
@@ -201,14 +197,13 @@ Leave the lane default or set `TASKFLOW_AI_PROVIDER=None` to force no-op locally
 
 Scaffold agents should preserve these AI test contracts:
 
-- AI defaults to None in both local lanes. AzureInference is Azure-only; OpenAICompatible and FoundryLocal are NonAzure-only. Provider opt-ins must match the selected lane.
-- RID-free suites (`Test.Unit`, `Test.Endpoints`, `Test.Aspire`) do not start native Foundry Local. They use fake clients or `AiServices:DisableFoundryLocal=true`.
-- `Test.FoundryLocal` is the only RID-bound local model lane. Missing runtime and bootstrapped-but-slow model calls are inconclusive. Runtime startup failures after discovery, provider mismatch, no-op fallback, and HTTP/JSON contract failures are red.
+- AI defaults to None in both hosting lanes. AzureInference is Azure-only; OpenAICompatible is NonAzure-only. Provider opt-ins must match the selected lane.
+- RID-free suites (`Test.Unit`, `Test.Endpoints`, `Test.Aspire`) use fake clients or explicit Azure configuration; they do not bootstrap native model runtimes.
 - Code-hosted agent smoke that does not need tools sends `AgentChatRequest.UseTools=false`; the service maps it to `ChatToolMode.None`. Tool-calling tests must request tools explicitly and carry their own timeout budget.
 
 ### CI test lanes
 
-GitHub Actions runs the fast, no-Docker gate on every pull request: Unit, Architecture, Endpoint, and FlowEngine definition tests. PR runs are the merge gate, so there is no duplicate push-to-main trigger. The full `Test.Unit` project has a 50-second process deadline and 15-second blame-hang diagnostics; a timeout fails the job and uploads TRX, sequence, and dump evidence. All Docker-backed, Aspire, browser, local-model, Compose, and full-stack acceptance runs only through `workflow_dispatch`.
+GitHub Actions runs the fast, no-Docker gate on every pull request: Unit, Architecture, Endpoint, and FlowEngine definition tests. PR runs are the merge gate, so there is no duplicate push-to-main trigger. The full `Test.Unit` project has a 50-second process deadline and 15-second blame-hang diagnostics; a timeout fails the job and uploads TRX, sequence, and dump evidence. All Docker-backed, Aspire, browser, Compose, and full-stack acceptance runs only through `workflow_dispatch`.
 
 | Input | Default | Effect |
 |-------|---------|--------|
@@ -217,14 +212,13 @@ GitHub Actions runs the fast, no-Docker gate on every pull request: Unit, Archit
 | `includeE2E` | `false` | Runs selected Testcontainers-backed HTTP lane(s) |
 | `includeIntegration` | `false` | Runs selected component lane(s) |
 | `includeAspireMesh` | `false` | Runs each selected full Aspire graph |
-| `includeFoundryLocal` | `false` | Runs the NonAzure RID-bound local-model smoke |
 | `includePlaywrightUI` | `false` | Runs Blazor, React, and Uno browser acceptance for each selected lane |
 | `includeFullAcceptance` | `false` | Runs unfiltered serial solution acceptance for each selected lane |
 | `includeComposeSmoke` | `false` | Builds and smokes the NonAzure Compose lane through Caddy |
 
 `TASKFLOW_TEST_DB_PROVIDER` remains covered as a deprecated alias, but manual orchestration uses only canonical `TASKFLOW_LANE` and `TASKFLOW_READMODEL_PROVIDER` values.
 
-Unfiltered CI acceptance uses explicit false opt-outs for unavailable Functions, Azure Foundry, Foundry Local, or mobile lanes. Local acceptance does not require AI opt-out flags: absent Azure/Foundry Local resources and bootstrapped-but-slow local generation are inconclusive. Enabled-provider contract failures remain red.
+Unfiltered CI acceptance uses explicit false opt-outs for unavailable Functions, Azure Foundry, or mobile lanes. Local acceptance does not require an AI opt-out flag because both hosting lanes default to `None`. Enabled-provider contract failures remain red.
 
 ### Aspire-backed UI tests
 
@@ -234,13 +228,11 @@ The C# page objects stay intentionally narrow: Gateway root/`/alive` plus Blazor
 
 ### Projects and agents (opt-in, Azure-only)
 
-The demos above use **code-hosted** agents - a `ChatClientAgent` running in-process over the injected `IChatClient`. That works with every lifecycle mode and boots offline. **Server-hosted** Foundry agents are an Azure-only escalation for hosted memory, centralized tools, or portal/IaC-managed agent definitions. They are documented and wired as commented opt-ins; nothing here runs by default.
+The demos above use **code-hosted** agents - a `ChatClientAgent` running in-process over the injected `IChatClient`. That works with every configured provider and boots with the no-op provider when AI is disabled. **Server-hosted** Foundry agents are an Azure-only escalation for hosted memory, centralized tools, or portal/IaC-managed agent definitions. They are not wired by this AppHost.
 
 No `.foundry/agent-metadata.yaml` is committed because no server-hosted agent participates in Foundry deploy/eval workflows yet. When enabling a hosted or prompt agent, create `.foundry/agent-metadata.yaml` under that agent source folder and keep the project endpoint, agent name, datasets, evaluators, and thresholds there.
 
-- **Aspire-modeled project + prompt agent** (commented in `AppHost.cs`). A project (`foundry.AddProject(...)`) is the container for server-hosted agents, deployments, and tool connections. A prompt agent (`project.AddPromptAgent(model, "name", instructions).WithTool(...)`) is declarative. Tools are project-level resources (code interpreter, web/AI-Search/Bing grounding, function calling). Note: **prompt agents always deploy to Azure Foundry, even under `aspire run`** - there is no offline path. Referencing the project injects `PROJ_URI` (the project endpoint) into the consuming host.
-
-- **Pre-existing agents via the client SDK** (bootstrapper-owned provider extension). When an agent is created in the Foundry portal or by IaC, connect to the existing project endpoint and drive it with `AIProjectClient.AsAIAgent(...)`. Add `Azure.AI.Projects` + `Microsoft.Agents.AI.Foundry`, set `AiServices:FoundryProjectEndpoint` (or read the Aspire-injected `PROJ_URI`) and `AiServices:FoundryAgentName`:
+- **Externally provisioned agents via the client SDK** (bootstrapper-owned provider extension). When an agent is created in the Foundry portal or by IaC, connect to the existing project endpoint and drive it with `AIProjectClient.AsAIAgent(...)`. Add `Azure.AI.Projects` + `Microsoft.Agents.AI.Foundry`, then set `AiServices:FoundryProjectEndpoint` and `AiServices:FoundryAgentName`:
 
   ```csharp
   var project = new AIProjectClient(new Uri(projectEndpoint), credential);

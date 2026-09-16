@@ -12,7 +12,7 @@ public class NoOpTaskAssistantAgent(ILogger<NoOpTaskAssistantAgent> logger) : IT
         logger.AssistantNotConfigured();
         return Task.FromResult(new AgentChatResponse
         {
-            Message = "AI agent is not configured. Wire the Aspire chat model or enable Foundry Local to continue.",
+            Message = "AI agent is not configured. Wire an Azure or OpenAI-compatible chat model to continue.",
             ConversationId = request.ConversationId ?? Guid.NewGuid().ToString(),
             IsConfigured = false
         });

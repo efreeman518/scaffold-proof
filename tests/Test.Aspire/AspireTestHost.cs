@@ -22,7 +22,6 @@ namespace Test.Aspire;
 internal static class AspireTestHost
 {
     internal const string ResourceLoggingEnvironmentVariable = "TASKFLOW_ASPIRE_RESOURCE_LOGGING";
-    internal const string FoundryLocalOptInEnvironmentVariable = "TASKFLOW_ASPIRE_ENABLE_FOUNDRY_LOCAL";
     internal const string RunAspireTestsEnvironmentVariable = "TASKFLOW_RUN_ASPIRE_TESTS";
     internal const string RunAzureFoundryTestsEnvironmentVariable = "TASKFLOW_RUN_AZURE_FOUNDRY_TESTS";
     internal const string RunFunctionsTestsEnvironmentVariable = "TASKFLOW_RUN_FUNCTIONS_TESTS";
@@ -152,8 +151,7 @@ internal static class AspireTestHost
         var hostContext = _hostContext ?? throw new InvalidOperationException("Aspire host context is not initialized.");
         // AppHost.cs reads these via Environment.GetEnvironmentVariable, so they must be process env vars.
         _environment = new EnvironmentVariableScope()
-            .Set("TASKFLOW_ASPIRE_TESTING", "true")
-            .Set(FoundryLocalOptInEnvironmentVariable, "false");
+            .Set("TASKFLOW_ASPIRE_TESTING", "true");
 
         if (!IsExplicitlyDisabled(RunFunctionsTestsEnvironmentVariable) && EnsureFuncToolAvailable())
             _environment.Set("TASKFLOW_ASPIRE_FUNCTIONS_AVAILABLE", "true");
@@ -304,27 +302,34 @@ internal static class AspireTestHost
         if (provider != AspireAiProvider.AzureFoundry)
         {
             Assert.Inconclusive(
-                "Azure AI Foundry is not configured. Run Test.FoundryLocal for local live smoke coverage.");
+                "Azure AI Foundry is not configured.");
         }
     }
 
     internal static AspireAiProvider SelectRequestedAiProviderForTesting()
     {
-        return IsAzureFoundryRequested()
-            ? AspireAiProvider.AzureFoundry
-            : IsFoundryLocalRequested()
-                ? AspireAiProvider.FoundryLocal
-            : AspireAiProvider.None;
+        return IsAzureFoundryRequested() ? AspireAiProvider.AzureFoundry : AspireAiProvider.None;
     }
 
     private static bool IsAzureFoundryRequested()
     {
-        return IsEnabled("TASKFLOW_USE_AZURE_FOUNDRY")
+        return IsAzureInferenceProvider("TASKFLOW_AI_PROVIDER")
+            || IsAzureInferenceProvider("AiServices__Provider")
+            || IsAzureInferenceProvider("AiServices:Provider")
+            || IsEnabled("TASKFLOW_USE_AZURE_FOUNDRY")
+            || HasValue("ConnectionStrings__chat")
+            || HasValue("ConnectionStrings:chat")
             || HasValue("AiServices__FoundryEndpoint")
-            || HasValue("AiServices:FoundryEndpoint");
+            || HasValue("AiServices:FoundryEndpoint")
+            || HasValue("AiServices__AgentModelDeployment")
+            || HasValue("AiServices:AgentModelDeployment");
     }
 
-    private static bool IsFoundryLocalRequested() => IsEnabled(FoundryLocalOptInEnvironmentVariable);
+    private static bool IsAzureInferenceProvider(string variableName) =>
+        string.Equals(
+            Environment.GetEnvironmentVariable(variableName),
+            "AzureInference",
+            StringComparison.OrdinalIgnoreCase);
 
     private static bool IsEnabled(string variableName) =>
         string.Equals(Environment.GetEnvironmentVariable(variableName), "true", StringComparison.OrdinalIgnoreCase);
@@ -397,6 +402,5 @@ internal static class AspireTestHost
 internal enum AspireAiProvider
 {
     None,
-    FoundryLocal,
     AzureFoundry
 }

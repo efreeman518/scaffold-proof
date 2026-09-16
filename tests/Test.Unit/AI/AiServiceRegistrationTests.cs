@@ -54,42 +54,6 @@ public class AiServiceRegistrationTests
         Assert.AreEqual("none", provider.GetRequiredService<AiProviderInfo>().Name);
     }
 
-    [TestMethod]
-    public async Task RegisterAiChatClientAsync_WithFoundryLocalBootstrapFailure_AllowsNoOpFallback()
-    {
-        var builder = CreateHostBuilder(new Dictionary<string, string?>
-        {
-            [HostingLaneResolver.LaneConfigurationKey] = "NonAzure",
-            [RegisterServices.AiProviderConfigKey] = "FoundryLocal",
-            ["ConnectionStrings:chat"] = "",
-            ["AiServices:LocalWebUrl"] = "not-a-url"
-        });
-
-        await builder.RegisterAiChatClientAsync(NullLogger.Instance, TestContext.CancellationToken);
-        builder.Services.AddAiServices(builder.Configuration);
-
-        var provider = builder.Services.BuildServiceProvider();
-        Assert.IsInstanceOfType<NoOpChatClient>(provider.GetRequiredService<IChatClient>());
-        Assert.AreEqual("none", provider.GetRequiredService<AiProviderInfo>().Name);
-    }
-
-    [TestMethod]
-    public async Task RegisterAiChatClientAsync_WithRequiredFoundryLocalBootstrapFailure_Throws()
-    {
-        var builder = CreateHostBuilder(new Dictionary<string, string?>
-        {
-            [HostingLaneResolver.LaneConfigurationKey] = "NonAzure",
-            [RegisterServices.AiProviderConfigKey] = "FoundryLocal",
-            ["ConnectionStrings:chat"] = "",
-            ["AiServices:RequireFoundryLocal"] = "true",
-            ["AiServices:LocalModel"] = "",
-            ["AiServices:LocalWebUrl"] = "not-a-url"
-        });
-
-        await Assert.ThrowsExactlyAsync<ArgumentException>(() =>
-            builder.RegisterAiChatClientAsync(NullLogger.Instance, TestContext.CancellationToken));
-    }
-
     /// <summary>Verifies add AI services with no config registers no op services behavior and protects the expected test contract.</summary>
     [TestMethod]
     public void AddAiServices_WithNoConfig_RegistersNoOpServices()
@@ -136,9 +100,9 @@ public class AiServiceRegistrationTests
         services.AddLogging();
         // NoOpSearchService answers from the SQL prefix search, so the repository must resolve.
         services.AddSingleton(Mock.Of<ITaskItemRepositoryQuery>());
-        // Simulate the host having wired a Foundry IChatClient before AddAiServices runs.
+        // Simulate the host having wired an Azure IChatClient before AddAiServices runs.
         services.AddSingleton(new Mock<IChatClient>().Object);
-        services.AddSingleton(new AiProviderInfo("local"));
+        services.AddSingleton(new AiProviderInfo("azure"));
 
         services.AddAiServices(config);
 
@@ -151,7 +115,7 @@ public class AiServiceRegistrationTests
         Assert.DoesNotContain(d => d.ImplementationType == typeof(NoOpChatClient), services);
 
         var provider = services.BuildServiceProvider();
-        Assert.AreEqual("local", provider.GetRequiredService<AiProviderInfo>().Name);
+        Assert.AreEqual("azure", provider.GetRequiredService<AiProviderInfo>().Name);
     }
 
     /// <summary>Verifies add AI services with search enabled no endpoint registers no op search behavior and protects the expected test contract.</summary>

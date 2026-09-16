@@ -57,18 +57,6 @@ public sealed class AppHostMigratorTopologyTests
     }
 
     [TestMethod]
-    public void AppHost_PreservesFoundryLocalTestingOptInWiring()
-    {
-        var appHostSource = ReadAppHostSource();
-
-        Assert.Contains("TASKFLOW_ASPIRE_ENABLE_FOUNDRY_LOCAL", appHostSource);
-        Assert.Contains(".WithEnvironment(\"AiServices__DisableFoundryLocal\", \"false\")", appHostSource);
-        Assert.Contains(".WithEnvironment(\"AiServices__RequireFoundryLocal\", \"true\")", appHostSource);
-        Assert.Contains("TASKFLOW_FOUNDRY_LOCAL_MODEL", appHostSource);
-        Assert.Contains("TASKFLOW_FOUNDRY_LOCAL_WEB_URL", appHostSource);
-    }
-
-    [TestMethod]
     public void TestAspire_UsesSingleSharedDistributedAppBuilder()
     {
         var repoRoot = FindRepoRoot();

@@ -1,6 +1,6 @@
 ﻿using AppHost;
 using Aspire.Hosting.Azure;
-using Aspire.Hosting.Foundry;
+using System.Data.Common;
 using TaskFlow.Hosting;
 
 var builder = DistributedApplication.CreateBuilder(args);
@@ -22,11 +22,6 @@ var fullLaneAvailableInTesting =
 // under test for the same reason Functions and the SPAs are: one more host to boot inside the startup budget.
 var schedulerAvailableInTesting =
     Environment.GetEnvironmentVariable("TASKFLOW_ASPIRE_SCHEDULER_AVAILABLE") == "true";
-// Opt-in only: normal Aspire tests keep AI deterministic by disabling Foundry Local.
-// Set before AppHost build only for manual local-AI AppHost runs.
-var foundryLocalAvailableInTesting =
-    Environment.GetEnvironmentVariable("TASKFLOW_ASPIRE_ENABLE_FOUNDRY_LOCAL") == "true";
-
 // Keep the database password stable across restarts so persistent volumes remain usable. Tests can still
 // override via Parameters__sql-password / Parameters__postgres-password.
 var defaultSqlPassword = LocalSqlSettings.SharedSaPassword;
@@ -240,48 +235,41 @@ if (nonAzureLane && string.Equals(lane.ReadModel, "MongoDb", StringComparison.Or
                          .WithVolume("taskflow-mongodb-data", "/data/db");
 }
 
-// AI: Azure AI Foundry. Two independent axes - lifecycle x consumption.
-//
-// Axis 1 - lifecycle (where the Foundry resource comes from):
-//  - Foundry Local       -> API host bootstraps Microsoft.AI.Foundry.Local directly.
-//  - Provision new       -> AddFoundry(...).AddDeployment(...), Bicep creates account + model on publish
-//                           (and in run mode when Azure provisioning secrets are set).
-//  - Connect to existing -> RunAsExisting/PublishAsExisting against an already-provisioned account
-//                           (see the commented block below). Deployment name must already exist there.
-//  - Disabled            -> no "chat" resource; the API registers a no-op IChatClient and still boots.
-//
-// Axis 2 - consumption: this app consumes raw model inference (IChatClient over the "chat" deployment;
-// the resource name is the connection name consumers bind to, CHAT_ENDPOINT/etc.). Foundry projects +
-// server-hosted agents (AddProject/AddPromptAgent, or pre-existing agents via the client SDK) are an
-// Azure-only escalation - see the commented "Foundry project + prompt agent" block after the API host
-// and README "AI Demos" -> "Projects and agents". They are documented but not wired by default.
-//
-// Test mode forces no-op for local AI unless TASKFLOW_ASPIRE_ENABLE_FOUNDRY_LOCAL=true;
-// Azure Foundry can still be explicitly configured.
-// The NonAzure lane never provisions Foundry: its AI arm is an OpenAI-compatible endpoint reached over
-// plain configuration (D-041), so there is no Azure resource for this graph to declare.
-IResourceBuilder<FoundryDeploymentResource>? chat = null;
-var azureFoundryConfigured = !nonAzureLane
-    && (builder.ExecutionContext.IsPublishMode
-        || !string.IsNullOrWhiteSpace(builder.Configuration["AiServices:FoundryEndpoint"])
-        || Environment.GetEnvironmentVariable("TASKFLOW_USE_AZURE_FOUNDRY") == "true");
+// Azure AI Foundry provisioning is external because its former hosting package also installed a native
+// local-model runtime. Accept either a complete ConnectionStrings:chat value or build a keyless connection
+// from an HTTPS endpoint plus deployment. Aspire.Azure.AI.Inference uses DefaultAzureCredential when Key is absent.
+var foundryEndpoint = builder.Configuration["AiServices:FoundryEndpoint"];
+var foundryDeployment = builder.Configuration["AiServices:AgentModelDeployment"];
+var chatConnectionString = builder.Configuration["ConnectionStrings:chat"];
+var azureFoundryRequested = !nonAzureLane
+    && (string.Equals(lane.AiServices, "AzureInference", StringComparison.OrdinalIgnoreCase)
+        || !string.IsNullOrWhiteSpace(chatConnectionString)
+        || !string.IsNullOrWhiteSpace(foundryEndpoint)
+        || !string.IsNullOrWhiteSpace(foundryDeployment)
+        || string.Equals(
+            Environment.GetEnvironmentVariable("TASKFLOW_USE_AZURE_FOUNDRY"),
+            "true",
+            StringComparison.OrdinalIgnoreCase));
 
-if (azureFoundryConfigured)
+IResourceBuilder<IResourceWithConnectionString>? chat = null;
+string? keylessChatConnectionString = null;
+if (azureFoundryRequested)
 {
-    // Provisions an Azure AI Foundry account + deployment on publish; connects to it in run mode
-    // when Azure provisioning is configured (azd / user secrets).
-    var foundry = builder.AddFoundry("foundry");
-    chat = foundry.AddDeployment("chat", FoundryModel.OpenAI.Gpt4oMini);
-
-    // OPT-IN: connect to an EXISTING Azure Foundry account instead of provisioning a new one.
-    // The "chat" deployment must already exist in that account. RunAsExisting binds in run mode;
-    // PublishAsExisting binds the published graph. Parameters resolve from config/user-secrets
-    // (Parameters:foundry-name / Parameters:foundry-rg). Uncomment and set AiServices:FoundryResourceName
-    // + AiServices:FoundryResourceGroup to use it.
-    // var foundryName = builder.AddParameter("foundry-name");
-    // var foundryRg = builder.AddParameter("foundry-rg");
-    // chat = builder.AddFoundry("foundry").RunAsExisting(foundryName, foundryRg)
-    //     .AddDeployment("chat", FoundryModel.OpenAI.Gpt4oMini);
+    if (!string.IsNullOrWhiteSpace(chatConnectionString))
+    {
+        ValidateAzureChatConnectionString(chatConnectionString);
+        chat = builder.AddConnectionString("chat");
+    }
+    else
+    {
+        var (endpoint, deployment) = ValidateAzureChatEndpoint(foundryEndpoint, foundryDeployment);
+        var connection = new DbConnectionStringBuilder
+        {
+            ["Endpoint"] = endpoint.AbsoluteUri,
+            ["Deployment"] = deployment
+        };
+        keylessChatConnectionString = connection.ConnectionString;
+    }
 }
 
 // D-023 column encryption keys for every host that maps TaskItem. Generated once and persisted to user secrets
@@ -330,30 +318,15 @@ api = WithBroker(api);
 api = WithReadModel(api);
 api = WithLaneEnvironment(api);
 
-// Wire the Azure Foundry chat model into the API when a deployment was created. Local mode wires no
-// chat resource; the bootstrapper owns the temporary SDK-direct Foundry Local fallback.
+// Wire the externally provisioned Azure Foundry chat model into the API.
 if (chat is not null)
 {
     api = api.WithReference(chat);
 }
-
-// OPT-IN (Azure-only): Foundry project + server-hosted prompt agent.
-// A project is the container for server-hosted agents, deployments, and tool connections. A prompt
-// agent is a declarative agent (model + instructions + tools). Prompt agents ALWAYS deploy to Azure
-// Foundry, even under `aspire run` - there is no offline path - so this stays commented by default.
-// Referencing the project injects PROJ_URI (the project endpoint) into the API; consume pre-existing
-// agents at runtime with AIProjectClient.AsAIAgent(...) in a bootstrapper-owned provider extension.
-//
-// var foundry = builder.AddFoundry("foundry");
-// var project = foundry.AddProject("taskflow-project");
-// var projectChat = project.AddModelDeployment("chat", FoundryModel.OpenAI.Gpt41);
-// var codeInterp = project.AddCodeInterpreterTool("code-interp");
-// var webSearch = project.AddWebSearchTool("web-search");
-// var assistant = project.AddPromptAgent(projectChat, "task-assistant",
-//         instructions: "You are an assistant for TaskFlow.")
-//     .WithTool(codeInterp)
-//     .WithTool(webSearch);
-// api = api.WithReference(project);   // or .WithReference(assistant)
+else if (azureFoundryRequested)
+{
+    api = api.WithEnvironment("ConnectionStrings__chat", keylessChatConnectionString);
+}
 
 if (isTesting)
 {
@@ -361,28 +334,6 @@ if (isTesting)
         .WithEnvironment("Cors__AllowedOrigins__0", "http://localhost")
         .WithEnvironment("RateLimiting__Tiers__standard__PermitLimit", "10000");
 
-    if (foundryLocalAvailableInTesting)
-    {
-        // This is deliberately API-only. Functions stay local-AI disabled in test mode so
-        // the optional lane does not start multiple Foundry Local hosts in the same graph.
-        // RequireFoundryLocal prevents an opt-in smoke from silently falling back to no-op.
-        api = api
-            .WithEnvironment("AiServices__DisableFoundryLocal", "false")
-            .WithEnvironment("AiServices__RequireFoundryLocal", "true");
-
-        // Let local smoke runs pin the model or HTTP endpoint without changing appsettings.
-        var foundryLocalModel = Environment.GetEnvironmentVariable("TASKFLOW_FOUNDRY_LOCAL_MODEL");
-        if (!string.IsNullOrWhiteSpace(foundryLocalModel))
-            api = api.WithEnvironment("AiServices__LocalModel", foundryLocalModel);
-
-        var foundryLocalWebUrl = Environment.GetEnvironmentVariable("TASKFLOW_FOUNDRY_LOCAL_WEB_URL");
-        if (!string.IsNullOrWhiteSpace(foundryLocalWebUrl))
-            api = api.WithEnvironment("AiServices__LocalWebUrl", foundryLocalWebUrl);
-    }
-    else
-    {
-        api = api.WithEnvironment("AiServices__DisableFoundryLocal", "true");
-    }
 }
 
 if (!string.IsNullOrWhiteSpace(applicationStyle))
@@ -518,16 +469,14 @@ if (!nonAzureLane && (!isTesting || functionsAvailableInTesting || fullLaneAvail
         functions.WithEnvironment("TASKFLOW_APPLICATION_STYLE", applicationStyle);
     }
 
-    // Wire the Azure Foundry chat model into Functions for the event-driven AI readiness review (D6).
-    // Without this reference, Functions follows the same bootstrapper-owned local/no-op fallback as API.
+    // Wire the externally provisioned Azure Foundry model into Functions for the AI readiness review (D6).
     if (chat is not null)
     {
         functions.WithReference(chat);
     }
-
-    if (isTesting)
+    else if (azureFoundryRequested)
     {
-        functions.WithEnvironment("AiServices__DisableFoundryLocal", "true");
+        functions.WithEnvironment("ConnectionStrings__chat", keylessChatConnectionString);
     }
 }
 
@@ -598,6 +547,46 @@ IResourceBuilder<T> WithLaneEnvironment<T>(IResourceBuilder<T> host)
 IResourceBuilder<T> WithAuditSink<T>(IResourceBuilder<T> host)
     where T : IResourceWithEnvironment =>
     tables is null ? host : host.WithReference(tables);
+
+static void ValidateAzureChatConnectionString(string connectionString)
+{
+    DbConnectionStringBuilder parsed;
+    try
+    {
+        parsed = new DbConnectionStringBuilder { ConnectionString = connectionString };
+    }
+    catch (ArgumentException)
+    {
+        throw new InvalidOperationException(
+            "ConnectionStrings:chat must be a valid connection string containing Endpoint and Deployment.");
+    }
+
+    _ = ValidateAzureChatEndpoint(
+        parsed.TryGetValue("Endpoint", out var endpoint) ? Convert.ToString(endpoint) : null,
+        parsed.TryGetValue("Deployment", out var deployment) ? Convert.ToString(deployment) : null,
+        "ConnectionStrings:chat");
+}
+
+static (Uri Endpoint, string Deployment) ValidateAzureChatEndpoint(
+    string? endpointValue,
+    string? deploymentValue,
+    string source = "AiServices")
+{
+    if (!Uri.TryCreate(endpointValue, UriKind.Absolute, out var endpoint)
+        || !string.Equals(endpoint.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException(
+            $"{source} requires an absolute HTTPS Endpoint for externally provisioned Azure AI Foundry.");
+    }
+
+    if (string.IsNullOrWhiteSpace(deploymentValue))
+    {
+        throw new InvalidOperationException(
+            $"{source} requires a non-empty Deployment. Configure AiServices:AgentModelDeployment or include Deployment in ConnectionStrings:chat.");
+    }
+
+    return (endpoint, deploymentValue.Trim());
+}
 
 await builder.Build().RunAsync();
 

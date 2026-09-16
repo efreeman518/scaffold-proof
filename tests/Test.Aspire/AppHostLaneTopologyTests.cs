@@ -32,7 +32,16 @@ public sealed class AppHostLaneTopologyTests
         "TASKFLOW_ASPIRE_FULL_LANE",
         "TASKFLOW_ASPIRE_FUNCTIONS_AVAILABLE",
         "TASKFLOW_ASPIRE_REACT_AVAILABLE",
-        "TASKFLOW_ASPIRE_UNO_WASM_AVAILABLE"
+        "TASKFLOW_ASPIRE_UNO_WASM_AVAILABLE",
+        "TASKFLOW_USE_AZURE_FOUNDRY",
+        "ConnectionStrings__chat",
+        "ConnectionStrings:chat",
+        "AiServices__Provider",
+        "AiServices:Provider",
+        "AiServices__FoundryEndpoint",
+        "AiServices:FoundryEndpoint",
+        "AiServices__AgentModelDeployment",
+        "AiServices:AgentModelDeployment"
     ];
 
     [TestMethod]
@@ -234,6 +243,132 @@ public sealed class AppHostLaneTopologyTests
     }
 
     [TestMethod]
+    [TestCategory("AzureFoundry")]
+    public async Task AzureFoundry_EndpointAndDeployment_BuildsKeylessGraph()
+    {
+        var graph = await BuildResourceGraphAsync(
+            "Azure",
+            foundryEndpoint: "https://taskflow.services.ai.azure.com/",
+            foundryDeployment: "chat-deployment");
+
+        AssertPresent(graph.ResourceNames, "taskflowapi");
+        AssertAbsent(graph.ResourceNames, "chat");
+    }
+
+    [TestMethod]
+    [TestCategory("AzureFoundry")]
+    public async Task AzureFoundry_CompleteConnection_AddsConnectionResource()
+    {
+        var graph = await BuildResourceGraphAsync(
+            "Azure",
+            chatConnection: "Endpoint=https://taskflow.services.ai.azure.com/;Deployment=chat-deployment");
+
+        AssertPresent(graph.ResourceNames, "chat", "taskflowapi");
+    }
+
+    [TestMethod]
+    [TestCategory("AzureFoundry")]
+    public async Task AzureFoundry_FlagOnly_FailsWithConfigurationError()
+    {
+        var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            BuildResourceGraphAsync("Azure", useAzureFoundry: true));
+
+        StringAssert.Contains(exception.Message, "absolute HTTPS Endpoint");
+    }
+
+    [TestMethod]
+    [TestCategory("AzureFoundry")]
+    public async Task AzureFoundry_EndpointWithoutDeployment_FailsWithConfigurationError()
+    {
+        var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            BuildResourceGraphAsync("Azure", foundryEndpoint: "https://taskflow.services.ai.azure.com/"));
+
+        StringAssert.Contains(exception.Message, "non-empty Deployment");
+    }
+
+    [TestMethod]
+    [TestCategory("AzureFoundry")]
+    public async Task AzureFoundry_NonHttpsEndpoint_FailsWithConfigurationError()
+    {
+        var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            BuildResourceGraphAsync(
+                "Azure",
+                foundryEndpoint: "http://taskflow.example/",
+                foundryDeployment: "chat-deployment"));
+
+        StringAssert.Contains(exception.Message, "absolute HTTPS Endpoint");
+    }
+
+    [TestMethod]
+    [TestCategory("AzureFoundry")]
+    public async Task AzureFoundry_ConnectionWithoutDeployment_FailsWithConfigurationError()
+    {
+        var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            BuildResourceGraphAsync(
+                "Azure",
+                chatConnection: "Endpoint=https://taskflow.services.ai.azure.com/"));
+
+        StringAssert.Contains(exception.Message, "non-empty Deployment");
+    }
+
+    [TestMethod]
+    [TestCategory("AzureFoundry")]
+    public async Task AzureFoundry_ProviderOnly_FailsWithConfigurationError()
+    {
+        var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            BuildResourceGraphAsync("Azure", aiProvider: "AzureInference"));
+
+        StringAssert.Contains(exception.Message, "absolute HTTPS Endpoint");
+    }
+
+    [TestMethod]
+    [TestCategory("AzureFoundry")]
+    public async Task AzureFoundry_DeploymentOnly_FailsWithConfigurationError()
+    {
+        var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            BuildResourceGraphAsync("Azure", foundryDeployment: "chat-deployment"));
+
+        StringAssert.Contains(exception.Message, "absolute HTTPS Endpoint");
+    }
+
+    [TestMethod]
+    [TestCategory("AzureFoundry")]
+    public async Task AzureFoundry_EnvironmentProviderWithEndpointAndDeployment_BuildsKeylessGraph()
+    {
+        var graph = await BuildResourceGraphAsync(
+            "Azure",
+            aiProvider: "AzureInference",
+            foundryEndpoint: "https://taskflow.services.ai.azure.com/",
+            foundryDeployment: "chat-deployment");
+
+        AssertPresent(graph.ResourceNames, "taskflowapi");
+        AssertAbsent(graph.ResourceNames, "chat");
+    }
+
+    [TestMethod]
+    [TestCategory("AzureFoundry")]
+    public async Task AzureFoundry_ConfigurationProviderWithEndpointAndDeployment_BuildsKeylessGraph()
+    {
+        var graph = await BuildResourceGraphAsync(
+            "Azure",
+            providerConfiguration: "AzureInference",
+            foundryEndpoint: "https://taskflow.services.ai.azure.com/",
+            foundryDeployment: "chat-deployment");
+
+        AssertPresent(graph.ResourceNames, "taskflowapi");
+        AssertAbsent(graph.ResourceNames, "chat");
+    }
+
+    [TestMethod]
+    public async Task NonAzure_AzureInferenceProvider_RemainsRejected()
+    {
+        var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            BuildResourceGraphAsync("NonAzure", aiProvider: "AzureInference"));
+
+        StringAssert.Contains(exception.Message, "NonAzure");
+    }
+
+    [TestMethod]
     public async Task FullLane_AzureContainerImages_UseSingleRegistryAndCanonicalTags()
     {
         var images = (await BuildResourceGraphAsync("Azure")).ContainerImages;
@@ -311,7 +446,13 @@ public sealed class AppHostLaneTopologyTests
     private static async Task<AppHostGraph> BuildResourceGraphAsync(
         string lane,
         string? readModel = null,
-        bool manifestMode = false)
+        bool manifestMode = false,
+        bool useAzureFoundry = false,
+        string? foundryEndpoint = null,
+        string? foundryDeployment = null,
+        string? chatConnection = null,
+        string? aiProvider = null,
+        string? providerConfiguration = null)
     {
         var saved = GraphEnvironmentVariables.ToDictionary(
             name => name, Environment.GetEnvironmentVariable, StringComparer.Ordinal);
@@ -320,13 +461,27 @@ public sealed class AppHostLaneTopologyTests
             foreach (var name in GraphEnvironmentVariables) Environment.SetEnvironmentVariable(name, null);
             Environment.SetEnvironmentVariable(HostingLaneResolver.LaneEnvironmentVariable, lane);
             Environment.SetEnvironmentVariable(HostingLaneResolver.ReadModelEnvironmentVariable, readModel);
+            Environment.SetEnvironmentVariable(HostingLaneResolver.AiEnvironmentVariable, aiProvider);
             Environment.SetEnvironmentVariable("TASKFLOW_ASPIRE_TESTING", "true");
             Environment.SetEnvironmentVariable("TASKFLOW_ASPIRE_FULL_LANE", "true");
+            Environment.SetEnvironmentVariable("TASKFLOW_USE_AZURE_FOUNDRY", useAzureFoundry ? "true" : null);
+            Environment.SetEnvironmentVariable("AiServices__FoundryEndpoint", foundryEndpoint);
+            Environment.SetEnvironmentVariable("AiServices__AgentModelDeployment", foundryDeployment);
+            Environment.SetEnvironmentVariable("ConnectionStrings__chat", chatConnection);
+
+            var args = new List<string>
+            {
+                $"--AiServices:Provider={providerConfiguration ?? string.Empty}",
+                $"--AiServices:FoundryEndpoint={foundryEndpoint ?? string.Empty}",
+                $"--AiServices:AgentModelDeployment={foundryDeployment ?? string.Empty}",
+                $"--ConnectionStrings:chat={chatConnection ?? string.Empty}"
+            };
+            if (manifestMode) args.AddRange(["--publisher", "manifest"]);
 
             var programType = Type.GetType("Program, AppHost", throwOnError: true)!;
             var builder = await DistributedApplicationTestingBuilder.CreateAsync(
                 programType,
-                args: manifestMode ? ["--publisher", "manifest"] : [],
+                args: [.. args],
                 configureBuilder: (appOptions, _) => appOptions.DisableDashboard = true);
 
             var resourceNames = builder.Resources.Select(resource => resource.Name).ToHashSet(StringComparer.Ordinal);

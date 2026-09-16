@@ -118,7 +118,9 @@ public class HostRuntimeSettingsTests
         {
             var text = ReadRepoFile(dockerfile);
             Assert.IsTrue(
-                text.Contains("aspnet:10.0-noble-chiseled-extra", StringComparison.Ordinal),
+                text.Contains(
+                    "mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra@sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28",
+                    StringComparison.Ordinal),
                 $"{dockerfile} must use the -chiseled-extra runtime base: this host sets "
                 + "InvariantGlobalization=false and plain chiseled ships no ICU.");
         }
@@ -144,9 +146,11 @@ public class HostRuntimeSettingsTests
             var commands = string.Join('\n', text.Split('\n')
                 .Where(l => !l.TrimStart().StartsWith('#')));
 
-            Assert.IsTrue(
-                commands.Contains("-p:PublishReadyToRun=true", StringComparison.Ordinal),
-                $"{dockerfile} must publish with PublishReadyToRun (D-047).");
+            Assert.AreEqual(
+                2,
+                commands.Split("-p:PublishReadyToRun=true").Length - 1,
+                $"{dockerfile} must pass PublishReadyToRun to BOTH restore and publish; a --no-restore publish "
+                + "cannot find the runtime optimization pack when restore omitted it (D-047).");
             Assert.IsTrue(
                 commands.Contains("--self-contained false", StringComparison.Ordinal),
                 $"{dockerfile} must stay framework-dependent so the chiseled aspnet base supplies the runtime.");

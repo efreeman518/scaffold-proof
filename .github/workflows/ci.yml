@@ -29,10 +29,6 @@ on:
         type: boolean
         default: false
         description: "Run the capability-trimmed core Aspire mesh; use full acceptance for every host and UI"
-      includeFoundryLocal:
-        type: boolean
-        default: false
-        description: "Run Test.FoundryLocal live local model smoke tests (RID-bound; may download model assets)"
       includePlaywrightUI:
         type: boolean
         default: false
@@ -93,7 +89,7 @@ jobs:
       # Reclaim ~20+ GB (Android SDK, Haskell, large apt packages) before the Docker-backed steps run.
       # Keep dotnet and the tool cache - the build depends on them.
       - name: Free disk space
-        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.includeAspireMesh || inputs.includeFoundryLocal || inputs.includePlaywrightUI) }}
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.includeAspireMesh || inputs.includePlaywrightUI) }}
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
@@ -318,20 +314,6 @@ jobs:
             echo "no captured container logs directory"
           fi
 
-      - name: Foundry Local Tests (manual, live local)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeFoundryLocal == true && (inputs.lane == 'both' || inputs.lane == 'NonAzure') }}
-        timeout-minutes: 70
-        env:
-          TASKFLOW_LANE: NonAzure
-          TASKFLOW_READMODEL_PROVIDER: ${{ inputs.nonAzureReadModel }}
-          TASKFLOW_AI_PROVIDER: FoundryLocal
-        run: >
-          dotnet test tests/Test.FoundryLocal/Test.FoundryLocal.csproj
-          --no-build --configuration Release
-          --filter TestCategory=FoundryLocal
-          --logger "trx;LogFileName=foundrylocal-results.trx"
-          --results-directory ./TestResults
-
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.includePlaywrightUI == true }}
         with:
@@ -419,7 +401,6 @@ jobs:
       TASKFLOW_ASPIRE_FULL_LANE: "true"
       TASKFLOW_RUN_ASPIRE_TESTS: "true"
       TASKFLOW_RUN_AZURE_FOUNDRY_TESTS: "false"
-      TASKFLOW_RUN_FOUNDRY_LOCAL_TESTS: "false"
       TASKFLOW_ASPIRE_SCHEDULER_AVAILABLE: "true"
       TASKFLOW_REACT_TESTS_ENABLED: "true"
       TASKFLOW_WASM_TESTS_ENABLED: "true"
@@ -492,6 +473,8 @@ jobs:
         run: |
           ./tests/Test.PlaywrightUI/bin/Release/net10.0/playwright.ps1 install chromium
           if ($LASTEXITCODE -ne 0) { throw "Playwright Chromium installation failed." }
+          npx --prefix tests/Test.PlaywrightUI playwright install --with-deps chromium
+          if ($LASTEXITCODE -ne 0) { throw "npm Playwright Chromium installation failed." }
 
       - name: Start and verify complete selected lane graphs
         timeout-minutes: 105
@@ -757,8 +740,15 @@ jobs:
           # the same convention infra/scripts/Invoke-DeploymentSmoke.ps1 relies on.
           created=$(curl -fsS -X POST http://localhost/api/v1/task-items -H 'Content-Type: application/json'             -d '{"item":{"title":"compose-smoke","priority":"Medium"}}')
           id=$(jq -er '.item.id' <<< "$created")
-          curl -fsS "http://localhost/api/v1/task-items/${id}" | jq -er --arg id "$id" 'select(.item.id == $id)' > /dev/null
-          curl -fsS -X DELETE "http://localhost/api/v1/task-items/${id}" > /dev/null
+          headers_file=$(mktemp)
+          body_file=$(mktemp)
+          trap 'rm -f "$headers_file" "$body_file"' EXIT
+          curl -fsS -D "$headers_file" -o "$body_file" "http://localhost/api/v1/task-items/${id}"
+          jq -er --arg id "$id" 'select(.item.id == $id)' "$body_file" > /dev/null
+          etag=$(awk 'tolower($1) == "etag:" { sub(/\r$/, "", $2); print $2; exit }' "$headers_file")
+          jq -en --arg etag "$etag" '$etag | test("^\"[^\"]+\"$")' > /dev/null \
+            || { echo "::error::task-item GET did not return a strong ETag"; exit 1; }
+          curl -fsS -X DELETE "http://localhost/api/v1/task-items/${id}" -H "If-Match: ${etag}" > /dev/null
           echo "Compose lane create/read/delete round trip passed."
 
       - name: Verify static UI roots and runtime gateway configuration

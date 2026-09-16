@@ -150,7 +150,6 @@ public sealed class DbApiFactory : WebApplicationFactoryBase<Program, TaskFlowDb
     /// <summary>Points the host at the container and selects the lane's provider (Database:Provider).</summary>
     protected override void ConfigureTestConfiguration(IConfigurationBuilder config)
     {
-        AddFoundryLocalDisabled(config);
         config.AddInMemoryCollection(new Dictionary<string, string?>
         {
             [ApplicationStyleResolver.ConfigKey] = _applicationStyle,

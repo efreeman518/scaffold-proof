@@ -435,8 +435,8 @@ lane default > hard default, unknown throws) but are deliberately NOT `[Provider
 lives in Infrastructure.AI, which cannot reference `TaskFlow.Bootstrapper` without inverting the
 dependency direction, so its default-arm coverage lives in `Test.Unit`'s `SearchProviderSelectorTests`
 instead (documented in `ProviderSwitchArchitectureTests`'s own class comment); AiServices
-(`RegisterServices.AiChatClient.cs`, `AiProvider { AzureInference, OpenAICompatible, FoundryLocal,
-None }`, method `RegisterAiChatClientAsync`) is async and does not match either signature the
+(historically `RegisterServices.AiChatClient.cs`, `AiProvider { AzureInference, OpenAICompatible,
+None }` plus a later-removed local-model experiment, method `RegisterAiChatClientAsync`) is async and does not match either signature the
 reflection sweep recognizes; PoolerMode (`Infrastructure.Data/Provider/TaskFlowDbProvider.cs`,
 `PoolerMode { None, Transaction }`, D-045) is a data value folded into `TaskFlowProviderOptions`, not
 a service registration, and its resolver (`PoolerModeSelector`) has no environment-variable override
@@ -723,7 +723,7 @@ Server GC since .NET 9 but declared explicitly), `TieredPGO=true`, `TieredCompil
 import so MSBuild's last-assignment-wins semantics apply: `TaskFlow.DatabaseMigrator.csproj` overrides
 `ServerGarbageCollection=false` (a run-to-completion job gets no throughput benefit from per-core heaps);
 `TaskFlow.Blazor.csproj` and `TaskFlow.Functions.csproj` both override `InvariantGlobalization=false`
-(culture-rendering hosts need real ICU) and both run on the `aspnet:10.0-noble-chiseled-extra` base
+(culture-rendering hosts need real ICU) and both run on the `mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra@sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28` base
 image (plain chiseled ships no ICU/tzdata and fails at startup with "Couldn't find a valid ICU package"
 if paired with `InvariantGlobalization=false`). `PublishReadyToRun=true` plus `-r linux-x64` on BOTH
 the restore and publish lines applies only to the Api and Gateway Dockerfiles (`--self-contained false`,

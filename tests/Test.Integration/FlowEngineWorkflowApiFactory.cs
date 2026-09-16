@@ -48,7 +48,6 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
         "ConnectionStrings__TaskFlowDbContextQuery",
         "ConnectionStrings__TaskFlowFlowEngineDbContext",
         "ConnectionStrings__chat",
-        "AiServices__DisableFoundryLocal",
         "FlowEngine__TaskFlowApiBaseUrl",
         "RateLimiting__PerTenant__PermitLimit",
         "Database__Encryption__LocalKeyBase64",
@@ -82,9 +81,8 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
         Environment.SetEnvironmentVariable("ConnectionStrings__TaskFlowDbContextTrxn", connectionString);
         Environment.SetEnvironmentVariable("ConnectionStrings__TaskFlowDbContextQuery", connectionString);
         Environment.SetEnvironmentVariable("ConnectionStrings__TaskFlowFlowEngineDbContext", connectionString);
-        // No live model and no Service Bus: leave the AI connection empty and disable Foundry Local.
+        // No live model and no Service Bus: leave the AI connection empty.
         Environment.SetEnvironmentVariable("ConnectionStrings__chat", string.Empty);
-        Environment.SetEnvironmentVariable("AiServices__DisableFoundryLocal", "true");
         // Self-call base address; the in-process handler ignores the authority anyway.
         Environment.SetEnvironmentVariable("FlowEngine__TaskFlowApiBaseUrl", "http://localhost");
         // Polling the instance plus the workflow's own self-calls share the per-tenant budget; raise it so

@@ -87,7 +87,7 @@ Resolved by slice F1 (2026-09-09), previously listed here:
   "Overriding address(es)" warning is gone.
 - TaskFlow.Functions.csproj still has OpenAI PrivateAssets=all - removed from `OpenAI` and
   `Microsoft.Extensions.AI.OpenAI`; both are deployed dependencies now, matching Api/Bootstrapper (D-041).
-  `Microsoft.AI.Foundry.Local` keeps `PrivateAssets="all"` (unrelated to the OpenAICompatible arm).
+  The SDK used by the later-removed local-model experiment kept `PrivateAssets="all"` (unrelated to the OpenAICompatible arm).
 - App Configuration source not wired into Functions - wired via the isolated-worker package
   `Microsoft.Azure.AppConfiguration.Functions.Worker`, guarded by the same `AppConfig:Endpoint`/
   `ConnectionStrings:AppConfig` condition `AddTaskFlowAppConfiguration` already checked.

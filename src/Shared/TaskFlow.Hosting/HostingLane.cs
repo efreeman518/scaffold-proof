@@ -65,7 +65,7 @@ public static class HostingLaneResolver
     private static readonly string[] ReadModelValues = ["Cosmos", "PostgreSqlJsonb", "MongoDb"];
     private static readonly string[] AuditValues = ["AzureTable", "Relational"];
     private static readonly string[] SearchValues = ["AzureAiSearch", "PgVector", "Sql"];
-    private static readonly string[] AiValues = ["AzureInference", "OpenAICompatible", "FoundryLocal", "None"];
+    private static readonly string[] AiValues = ["AzureInference", "OpenAICompatible", "None"];
     private static readonly string[] DataProtectionValues = ["AzureBlob", "Redis", "None"];
 
     public static HostingLaneSettings Resolve(IConfiguration configuration)
@@ -125,7 +125,7 @@ public static class HostingLaneResolver
                 azure ? ["Sql", "AzureAiSearch"] : ["Sql", "PgVector"]),
             ResolveProvider(configuration, lane, AiEnvironmentVariable, AiConfigurationKey,
                 "None", AiValues,
-                azure ? ["None", "AzureInference"] : ["None", "OpenAICompatible", "FoundryLocal"]),
+                azure ? ["None", "AzureInference"] : ["None", "OpenAICompatible"]),
             ResolveProvider(configuration, lane, DataProtectionEnvironmentVariable, DataProtectionConfigurationKey,
                 azure ? "AzureBlob" : "Redis", DataProtectionValues,
                 azure ? ["AzureBlob"] : ["Redis"]));

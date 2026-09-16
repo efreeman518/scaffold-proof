@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0.401@sha256:2fa828c68761b1b8c23d7662dc134421b9d3b59fe1425fdbc80804e390cdb24d AS build
 WORKDIR /source
 
 # Copy solution + package management files for restore-layer caching
@@ -10,7 +10,7 @@ COPY src/ src/
 
 RUN --mount=type=secret,id=nuget_credentials,required=true \
     env "NuGetPackageSourceCredentials_efreeman518-github=$(cat /run/secrets/nuget_credentials)" \
-    dotnet restore src/Host/TaskFlow.Api/TaskFlow.Api.csproj -r linux-x64
+    dotnet restore src/Host/TaskFlow.Api/TaskFlow.Api.csproj -r linux-x64 -p:PublishReadyToRun=true
 
 # D-047: ReadyToRun AOT-precompiles the IL this host JITs on its first requests, which is what a
 # scale-out replica pays for on every cold start. Framework-dependent (--self-contained false) so the
@@ -21,7 +21,7 @@ RUN dotnet publish src/Host/TaskFlow.Api/TaskFlow.Api.csproj -c Release -r linux
     -p:PublishReadyToRun=true -o /app --no-restore
 
 # Runtime
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled-extra AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra@sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28 AS runtime
 WORKDIR /app
 # D-054: 8080 REST/HTTP1.1, 8081 cleartext HTTP/2 for the internal gRPC read service. Both listeners are
 # declared in appsettings Kestrel:Endpoints, and no ASPNETCORE_URLS is set here on purpose: with both

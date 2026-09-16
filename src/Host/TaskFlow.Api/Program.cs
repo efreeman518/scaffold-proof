@@ -26,7 +26,7 @@ try
     // 2. Data Protection (key-ring persistence + Key Vault key encryption, D-043)
     builder.AddTaskFlowDataProtection(startupLogger);
 
-    // 2b. AI chat client: shared Azure -> Foundry Local -> no-op strategy.
+    // 2b. AI chat client: Azure or OpenAI-compatible provider, with a no-op default.
     await builder.RegisterAiChatClientAsync(startupLogger);
 
     // 3. Registration chain - order matters for dependency resolution
@@ -68,8 +68,8 @@ ILogger<Program> CreateStartupLogger()
     return StaticLogging.CreateLogger<Program>();
 }
 
-// Required so cross-assembly integration/smoke test projects (Test.Endpoints, Test.FoundryLocal,
-// Test.E2E, ...) can reference this host as WebApplicationFactory<Program>. The .NET 10 auto-generated
+// Required so cross-assembly integration/smoke test projects (Test.Endpoints, Test.E2E, ...)
+// can reference this host as WebApplicationFactory<Program>. The .NET 10 auto-generated
 // Program is internal, so the explicit public declaration is load-bearing here despite ASP0027.
 #pragma warning disable ASP0027 // Public partial Program is required for external WebApplicationFactory access.
 public partial class Program { }

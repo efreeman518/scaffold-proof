@@ -94,9 +94,9 @@ Source: `dotnet list <proj> package --outdated` per project (solution-level call
 | EF.Cache, EF.CosmosDb, EF.KeyVault, EF.Grpc, EF.AI, EF.MSGraph, EF.Auth | 1.0.88 | 1.0.88 | Already latest on the feed (not flagged by the scan); if the package agent republishes them at 1.1.x during this work, align |
 | EF.FlowEngine + all EF.FlowEngine.* (AdminApi, CircuitBreaker.Sql, Clients.AI/Http/ServiceBus, Dashboard, HumanTaskStore.Sql, Locks.Sql, Outbox.Sql, StateStore.Sql, Testing, WorkflowRegistry.Sql), EF.FilterBuilder | 1.0.162 | 1.0.163 | |
 | Aspire.Hosting.* (AppHost, Azure.CognitiveServices/CosmosDB/Functions/KeyVault/Search/ServiceBus/Storage, JavaScript, Redis, SqlServer, Testing) | 13.4.6 | 13.5.3 | Add `Aspire.Hosting.PostgreSQL` 13.5.3 |
-| Aspire.Hosting.Foundry, Aspire.Azure.AI.Inference | 13.4.6-preview.1.26319.6 | 13.5.3-preview.1.26425.3 | Current pins are no longer on nuget.org (restore works only from local cache); must move together with Aspire 13.5.3 |
+| Aspire.Azure.AI.Inference | 13.4.6-preview.1.26319.6 | 13.5.3-preview.1.26425.3 | Historical Azure inference preview upgrade aligned with Aspire 13.5.3 |
 | ZiggyCreatures.FusionCache (+ Backplane.StackExchangeRedis, Serialization.SystemTextJson) | 2.6.0 | 2.7.2 | Add `ZiggyCreatures.FusionCache.OpenTelemetry` same version |
-| Microsoft.AI.Foundry.Local | 1.2.4 | 2.0.1 | Major: expect API changes in `TaskFlow.Bootstrapper` Foundry Local bootstrap; Test.FoundryLocal lane verifies |
+| Removed local-model experiment SDK | 1.2.4 | 2.0.1 | Historical major-version upgrade item; the experiment and its dedicated smoke lane were later removed |
 | Microsoft.Agents.AI, Microsoft.Agents.AI.OpenAI | 1.17.0 | 1.20.0 | |
 | OpenAI | 2.12.0 | 2.13.0 | |
 | OpenTelemetry.* (Exporter.OpenTelemetryProtocol, Extensions.Hosting, Instrumentation.AspNetCore/Http/Runtime) | 1.17.0 | 1.18.0 | |
@@ -112,7 +112,7 @@ Source: `dotnet list <proj> package --outdated` per project (solution-level call
 | Uno.Sdk (csproj `Sdk="Uno.Sdk/6.6.42"`) | 6.6.42 | 6.7.22 | Re-check the `PublishTrimmed=false` IL2104 workaround noted in REFERENCE-STATUS after the bump |
 | New: Npgsql.EntityFrameworkCore.PostgreSQL, Testcontainers.PostgreSql, Aspire.Hosting.PostgreSQL, Aspire.Npgsql.EntityFrameworkCore.PostgreSQL | - | latest | Dual-provider dependencies |
 
-Gate: `dotnet build TaskFlow.slnx` and the Uno build at 0 warnings, `TestCategory=Unit|Architecture|Endpoint` green, `dotnet list package --vulnerable --include-transitive` clean. Fix compile breaks from EF.* 1.1.x and Foundry Local 2.x in this phase only; no behavior changes.
+Gate: `dotnet build TaskFlow.slnx` and the Uno build at 0 warnings, `TestCategory=Unit|Architecture|Endpoint` green, `dotnet list package --vulnerable --include-transitive` clean. Fix compile breaks from EF.* 1.1.x and the since-removed local-model experiment in this phase only; no behavior changes.
 
 ## Phase 1 - Dual-provider data layer (SQL Server + PostgreSQL)
 

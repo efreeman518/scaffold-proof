@@ -372,7 +372,7 @@ public sealed class BicepInfrastructureContractTests
         var compose = File.ReadAllText(RepoRoot.Combine("deploy", "compose", "docker-compose.yml"));
 
         StringAssert.Contains(compose, "rabbitmq:");
-        StringAssert.Contains(compose, "image: rabbitmq:4-management");
+        StringAssert.Contains(compose, "image: rabbitmq:4.3.6-management@sha256:5935b8b172f3351664b7f1610a109b3c883cec000bebeeca894d1719d18ffc76");
         StringAssert.Contains(compose, "RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:");
         StringAssert.Contains(compose, "RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:");
         StringAssert.Contains(compose, "- rabbitmq-data:/var/lib/rabbitmq");
@@ -413,9 +413,9 @@ public sealed class BicepInfrastructureContractTests
         var compose = File.ReadAllText(RepoRoot.Combine("deploy", "compose", "docker-compose.yml"));
 
         StringAssert.Contains(compose, "postgres:");
-        StringAssert.Contains(compose, "image: pgvector/pgvector:pg18");
+        StringAssert.Contains(compose, "image: pgvector/pgvector:0.8.6-pg18@sha256:2ba9ca5f2e7daa0f0e7723cba1ee9167bab54efd3640516a44ac1a928dd67e7a");
         StringAssert.Contains(compose, "POSTGRES_DB: ${POSTGRES_DB:");
-        StringAssert.Contains(compose, "- postgres-data:/var/lib/postgresql/data");
+        StringAssert.Contains(compose, "- postgres-data:/var/lib/postgresql");
         StringAssert.Contains(compose, "pg_isready");
     }
 

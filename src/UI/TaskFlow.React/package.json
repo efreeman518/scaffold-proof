@@ -3,6 +3,11 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "taskflow": {
+    "toolingNotes": {
+      "typescript": "Pinned to ~6.0.3 because typescript-eslint 8.70 supports TypeScript >=4.8.4 <6.1.0. Remove this pin when typescript-eslint supports the next selected TypeScript line."
+    }
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -15,25 +20,25 @@
     "@emotion/styled": "^11.14.1",
     "@mui/material": "^9.4.0",
     "@tanstack/react-query": "^5.102.8",
-    "lucide-react": "^1.41.0",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.3"
+    "lucide-react": "^1.46.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^26.4.1",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.7",
+    "@types/node": "^24.13.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
     "eslint": "^10.10.0",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.6",
+    "eslint-plugin-react-refresh": "^0.5.7",
     "globals": "^17.12.0",
     "openapi-typescript": "^7.13.0",
     "typescript": "~6.0.3",
-    "typescript-eslint": "^8.69.0",
-    "vite": "^8.2.2"
+    "typescript-eslint": "^8.70.0",
+    "vite": "^8.3.0"
   },
   "overrides": {
     "openapi-typescript": {

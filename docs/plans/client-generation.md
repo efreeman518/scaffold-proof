@@ -18,7 +18,6 @@ run only when the HTTP contract changes:
 
 ```powershell
 $env:ASPNETCORE_ENVIRONMENT = "Development"
-$env:AiServices__DisableFoundryLocal = "true"
 # Shared, non-secret test keys (Test.Support/TestColumnEncryption.cs) - never used outside dev/test.
 $env:Database__Encryption__LocalKeyBase64 = "VGFza0Zsb3dUZXN0Q29sdW1uRW5jcnlwdGlvbktleSE="
 $env:Database__Encryption__BlindIndexKeyBase64 = "VGFza0Zsb3dUZXN0QmxpbmRJbmRleEhtYWNLZXkhISE="
@@ -36,6 +35,8 @@ absent from the build-time document) against the committed file. A forgotten reg
 endpoint change fails this test, not silently.
 
 ## 2. Regenerate the .NET Refit client
+
+The root `dotnet-tools.json` pins Refitter 2.2.0 so regeneration uses the same generator version locally and in automation.
 
 ```powershell
 dotnet tool run refitter -- --settings-file src/UI/TaskFlow.ApiClient/.refitter --no-banner
@@ -98,7 +99,7 @@ flattened `DefaultResponseOfTaskItemDto`-equivalent shape is structurally identi
 
 ## Tool versions
 
-- `refitter` 2.1.3, pinned in `dotnet-tools.json` (repo-local, `dotnet tool restore`).
+- `refitter` 2.2.0, pinned in `dotnet-tools.json` (repo-local, `dotnet tool restore`).
 - `openapi-typescript` 7.13.0, pinned as a `devDependency` in `src/UI/TaskFlow.React/package.json`.
 - `Microsoft.Extensions.ApiDescription.Server` 10.0.12 (matches the `Microsoft.AspNetCore.OpenApi`
   pin), `PackageVersion` in `Directory.Packages.props`.

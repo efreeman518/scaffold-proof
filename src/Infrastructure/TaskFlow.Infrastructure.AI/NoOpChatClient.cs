@@ -5,15 +5,15 @@ using System.Runtime.CompilerServices;
 namespace TaskFlow.Infrastructure.AI;
 
 /// <summary>
-/// Scaffold-mode <see cref="IChatClient"/> used when no Foundry model is wired. It returns a clear
+/// Scaffold-mode <see cref="IChatClient"/> used when no AI model is wired. It returns a clear
 /// "not configured" message instead of throwing, so the AI demo endpoints and any IChatClient
-/// consumers resolve and the app boots without Foundry Local or Azure AI Foundry.
+/// consumers resolve and the app boots without external AI credentials.
 /// </summary>
 public sealed class NoOpChatClient(ILogger<NoOpChatClient> logger) : IChatClient
 {
     private const string NotConfigured =
-        "AI model is not configured. Install or allow Foundry Local, or wire an Azure AI Foundry " +
-        "deployment in the AppHost to enable AI responses.";
+        "AI model is not configured. Wire an Azure AI Foundry deployment or OpenAI-compatible " +
+        "endpoint to enable AI responses.";
 
     /// <summary>Returns the canned not-configured response for a non-streaming call.</summary>
     public Task<ChatResponse> GetResponseAsync(

@@ -28,11 +28,4 @@ public abstract class WebApplicationFactoryBase<TProgram, TTrxnContext, TQueryCo
         });
     }
 
-    protected static void AddFoundryLocalDisabled(IConfigurationBuilder config)
-    {
-        config.AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["AiServices:DisableFoundryLocal"] = "true"
-        });
-    }
 }
