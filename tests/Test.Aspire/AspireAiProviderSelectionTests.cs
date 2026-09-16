@@ -10,65 +10,111 @@ public sealed class AspireAiProviderSelectionTests
     public void Given_NoAzureConfig_When_SelectingLiveAiProvider_Then_NoProviderSelected()
     {
         using var _ = new EnvironmentOverride(
-            ("TASKFLOW_ENABLE_FOUNDRY_LOCAL", null),
-            ("TASKFLOW_ASPIRE_ENABLE_FOUNDRY_LOCAL", null),
+            ("TASKFLOW_AI_PROVIDER", null),
+            ("AiServices__Provider", null),
+            ("AiServices:Provider", null),
             ("TASKFLOW_USE_AZURE_FOUNDRY", null),
+            ("ConnectionStrings__chat", null),
+            ("ConnectionStrings:chat", null),
             ("AiServices__FoundryEndpoint", null),
-            ("AiServices:FoundryEndpoint", null));
+            ("AiServices:FoundryEndpoint", null),
+            ("AiServices__AgentModelDeployment", null),
+            ("AiServices:AgentModelDeployment", null));
 
         Assert.AreEqual(AspireAiProvider.None, AspireTestHost.SelectRequestedAiProviderForTesting());
     }
 
     [TestMethod]
     [TestCategory("AzureFoundry")]
-    public void Given_AzureConfig_When_SelectingLiveAiProvider_Then_AzureFoundryWins()
+    public void Given_EndpointAndDeployment_When_SelectingLiveAiProvider_Then_AzureFoundryWins()
     {
         using var _ = new EnvironmentOverride(
-            ("TASKFLOW_ENABLE_FOUNDRY_LOCAL", null),
-            ("TASKFLOW_ASPIRE_ENABLE_FOUNDRY_LOCAL", null),
-            ("TASKFLOW_USE_AZURE_FOUNDRY", "true"),
-            ("AiServices__FoundryEndpoint", null),
-            ("AiServices:FoundryEndpoint", null));
+            ("TASKFLOW_AI_PROVIDER", null),
+            ("AiServices__Provider", null),
+            ("AiServices:Provider", null),
+            ("TASKFLOW_USE_AZURE_FOUNDRY", null),
+            ("ConnectionStrings__chat", null),
+            ("ConnectionStrings:chat", null),
+            ("AiServices__FoundryEndpoint", "https://taskflow.services.ai.azure.com/"),
+            ("AiServices:FoundryEndpoint", null),
+            ("AiServices__AgentModelDeployment", "chat-deployment"),
+            ("AiServices:AgentModelDeployment", null));
 
         Assert.AreEqual(AspireAiProvider.AzureFoundry, AspireTestHost.SelectRequestedAiProviderForTesting());
     }
 
     [TestMethod]
-    public void Given_ExplicitLocal_When_NoAzureConfig_Then_MeshStillSelectsNoProvider()
+    [TestCategory("AzureFoundry")]
+    public void Given_CompleteConnection_When_SelectingLiveAiProvider_Then_AzureFoundryWins()
     {
         using var _ = new EnvironmentOverride(
-            ("TASKFLOW_ENABLE_FOUNDRY_LOCAL", "true"),
-            ("TASKFLOW_ASPIRE_ENABLE_FOUNDRY_LOCAL", null),
+            ("TASKFLOW_AI_PROVIDER", null),
+            ("AiServices__Provider", null),
+            ("AiServices:Provider", null),
             ("TASKFLOW_USE_AZURE_FOUNDRY", null),
+            ("ConnectionStrings__chat", "Endpoint=https://taskflow.services.ai.azure.com/;Deployment=chat-deployment"),
+            ("ConnectionStrings:chat", null),
             ("AiServices__FoundryEndpoint", null),
-            ("AiServices:FoundryEndpoint", null));
+            ("AiServices:FoundryEndpoint", null),
+            ("AiServices__AgentModelDeployment", null),
+            ("AiServices:AgentModelDeployment", null));
 
-        Assert.AreEqual(AspireAiProvider.None, AspireTestHost.SelectRequestedAiProviderForTesting());
-    }
-
-    [TestMethod]
-    public void Given_AspireLocalOptIn_When_NoAzureConfig_Then_FoundryLocalSelected()
-    {
-        using var _ = new EnvironmentOverride(
-            ("TASKFLOW_ENABLE_FOUNDRY_LOCAL", null),
-            ("TASKFLOW_ASPIRE_ENABLE_FOUNDRY_LOCAL", "true"),
-            ("TASKFLOW_USE_AZURE_FOUNDRY", null),
-            ("AiServices__FoundryEndpoint", null),
-            ("AiServices:FoundryEndpoint", null));
-
-        Assert.AreEqual(AspireAiProvider.FoundryLocal, AspireTestHost.SelectRequestedAiProviderForTesting());
+        Assert.AreEqual(AspireAiProvider.AzureFoundry, AspireTestHost.SelectRequestedAiProviderForTesting());
     }
 
     [TestMethod]
     [TestCategory("AzureFoundry")]
-    public void Given_AzureAndAspireLocalOptIn_When_SelectingLiveAiProvider_Then_AzureFoundryWins()
+    public void Given_AzureInferenceEnvironmentProvider_When_SelectingLiveAiProvider_Then_AzureFoundryWins()
     {
         using var _ = new EnvironmentOverride(
-            ("TASKFLOW_ENABLE_FOUNDRY_LOCAL", null),
-            ("TASKFLOW_ASPIRE_ENABLE_FOUNDRY_LOCAL", "true"),
-            ("TASKFLOW_USE_AZURE_FOUNDRY", "true"),
+            ("TASKFLOW_AI_PROVIDER", "AzureInference"),
+            ("AiServices__Provider", null),
+            ("AiServices:Provider", null),
+            ("TASKFLOW_USE_AZURE_FOUNDRY", null),
+            ("ConnectionStrings__chat", null),
+            ("ConnectionStrings:chat", null),
             ("AiServices__FoundryEndpoint", null),
-            ("AiServices:FoundryEndpoint", null));
+            ("AiServices:FoundryEndpoint", null),
+            ("AiServices__AgentModelDeployment", null),
+            ("AiServices:AgentModelDeployment", null));
+
+        Assert.AreEqual(AspireAiProvider.AzureFoundry, AspireTestHost.SelectRequestedAiProviderForTesting());
+    }
+
+    [TestMethod]
+    [TestCategory("AzureFoundry")]
+    public void Given_AzureInferenceConfigurationProvider_When_SelectingLiveAiProvider_Then_AzureFoundryWins()
+    {
+        using var _ = new EnvironmentOverride(
+            ("TASKFLOW_AI_PROVIDER", null),
+            ("AiServices__Provider", "AzureInference"),
+            ("AiServices:Provider", null),
+            ("TASKFLOW_USE_AZURE_FOUNDRY", null),
+            ("ConnectionStrings__chat", null),
+            ("ConnectionStrings:chat", null),
+            ("AiServices__FoundryEndpoint", null),
+            ("AiServices:FoundryEndpoint", null),
+            ("AiServices__AgentModelDeployment", null),
+            ("AiServices:AgentModelDeployment", null));
+
+        Assert.AreEqual(AspireAiProvider.AzureFoundry, AspireTestHost.SelectRequestedAiProviderForTesting());
+    }
+
+    [TestMethod]
+    [TestCategory("AzureFoundry")]
+    public void Given_DeploymentOnly_When_SelectingLiveAiProvider_Then_AzureFoundryWins()
+    {
+        using var _ = new EnvironmentOverride(
+            ("TASKFLOW_AI_PROVIDER", null),
+            ("AiServices__Provider", null),
+            ("AiServices:Provider", null),
+            ("TASKFLOW_USE_AZURE_FOUNDRY", null),
+            ("ConnectionStrings__chat", null),
+            ("ConnectionStrings:chat", null),
+            ("AiServices__FoundryEndpoint", null),
+            ("AiServices:FoundryEndpoint", null),
+            ("AiServices__AgentModelDeployment", "chat-deployment"),
+            ("AiServices:AgentModelDeployment", null));
 
         Assert.AreEqual(AspireAiProvider.AzureFoundry, AspireTestHost.SelectRequestedAiProviderForTesting());
     }

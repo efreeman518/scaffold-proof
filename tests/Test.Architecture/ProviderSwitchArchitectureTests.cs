@@ -74,7 +74,7 @@ public class ProviderSwitchArchitectureTests : BaseTest
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(azureRegistration)
             .Build();
-        var tagged = GetLoadableTypes(BootstrapperAssembly)
+        var tagged = BootstrapperAssembly.GetTypes()
             .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly))
             .Select(m => (Method: m, Switch: m.GetCustomAttribute<ProviderSwitchAttribute>()))
             .Where(x => x.Switch is not null)
@@ -124,23 +124,6 @@ public class ProviderSwitchArchitectureTests : BaseTest
         }
 
         Assert.AreEqual(0, failures.Count, string.Join("; ", failures));
-    }
-
-    /// <summary>
-    /// <see cref="Assembly.GetTypes"/> throws if any type in the assembly cannot load (here: FoundryLocalChatClient,
-    /// whose Microsoft.AI.Foundry.Local dependency is PrivateAssets="all" and so absent from this test
-    /// project's output). The types this test actually needs (RegisterServices) load fine regardless.
-    /// </summary>
-    private static IEnumerable<Type> GetLoadableTypes(Assembly assembly)
-    {
-        try
-        {
-            return assembly.GetTypes();
-        }
-        catch (ReflectionTypeLoadException ex)
-        {
-            return ex.Types.Where(t => t is not null)!;
-        }
     }
 
     private static void AssertNoDependencyOnAny(Assembly assembly, params string[] namespaces)

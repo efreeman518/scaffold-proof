@@ -298,6 +298,8 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(fullJob, "FullyQualifiedName~FunctionAuditPipelineTests");
         StringAssert.Contains(fullJob, "dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj");
         StringAssert.Contains(fullJob, "TestCategory=PlaywrightUI|TestCategory=WasmUI");
+        StringAssert.Contains(fullJob, "./tests/Test.PlaywrightUI/bin/Release/net10.0/playwright.ps1 install chromium");
+        StringAssert.Contains(fullJob, "npx --prefix tests/Test.PlaywrightUI playwright install --with-deps chromium");
         StringAssert.Contains(fullJob, "Invoke-LaneAcceptance -Lane Azure -ReadModel Cosmos -RunFunctions $true");
         StringAssert.Contains(fullJob, "Invoke-LaneAcceptance -Lane NonAzure");
         StringAssert.Contains(fullJob, "-RunFunctions $false");
@@ -338,6 +340,17 @@ public sealed class DeploymentWorkflowContractTests
             "Project-scoped database lanes do not build Uno and must not install workloads.");
         Assert.IsFalse(databaseLanes.Contains("dotnet restore TaskFlow.slnx", StringComparison.Ordinal),
             "Database lanes must restore only the projects they build.");
+    }
+
+    [TestMethod]
+    public void MobileRunner_AllowsCurrentUiAutomatorColdStart()
+    {
+        var runner = File.ReadAllText(
+            RepoRoot.Combine("tests", "Test.Mobile", "run-mobile-tests.ps1"));
+
+        StringAssert.Contains(runner, "$env:TASKFLOW_MOBILE_STARTUP_TIMEOUT_SECONDS = \"240\"");
+        StringAssert.Contains(runner, "UiAutomator2 8.7 instrumentation took about 96 seconds");
+        StringAssert.Contains(runner, "cold-start provisioning stays consistently below that old ceiling");
     }
 
     /// <summary>
@@ -381,6 +394,8 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(workflow, "inputs.includeComposeSmoke == true");
         StringAssert.Contains(workflow, "http://localhost/healthz/ready");
         StringAssert.Contains(workflow, "/api/v1/task-items");
+        StringAssert.Contains(workflow, "-D \"$headers_file\" -o \"$body_file\"");
+        StringAssert.Contains(workflow, "-H \"If-Match: ${etag}\"");
         StringAssert.Contains(workflow, "Verify static UI roots and runtime gateway configuration");
         StringAssert.Contains(workflow, "check_ui react.localhost");
         StringAssert.Contains(workflow, "check_ui uno.localhost");
@@ -581,7 +596,7 @@ public sealed class DeploymentWorkflowContractTests
         }
 
         var openobserve = ServiceBlock(compose, "openobserve").Text;
-        StringAssert.Contains(openobserve, "image: public.ecr.aws/zinclabs/openobserve:v1.0.0");
+        StringAssert.Contains(openobserve, "image: public.ecr.aws/zinclabs/openobserve:v1.0.0@sha256:d581789cb03b5f061ed56a3e864b5e4bbc86bbf6d317ec863372e98ee49b30d5");
         StringAssert.Contains(openobserve, "ZO_LOCAL_MODE: \"true\"");
         StringAssert.Contains(openobserve, "ZO_DATA_DIR: /data");
         StringAssert.Contains(openobserve, "ZO_ROOT_USER_EMAIL: ${OPENOBSERVE_ROOT_EMAIL:");
@@ -618,11 +633,11 @@ public sealed class DeploymentWorkflowContractTests
         var imageCatalog = File.ReadAllText(RepoRoot.Combine("src", "Shared", "TaskFlow.Hosting", "ContainerImages.cs"));
         foreach (var (repositoryConstant, repository, tagConstant, tag, imageConstant, composeImage) in new[]
         {
-            ("PostgreSqlRepository", "pgvector/pgvector", "PostgreSqlTag", "pg18", "PostgreSql", "image: pgvector/pgvector:pg18"),
-            ("RabbitMqRepository", "rabbitmq", "RabbitMqTag", "4-management", "RabbitMq", "image: rabbitmq:4-management"),
-            ("SeaweedFsRepository", "chrislusf/seaweedfs", "SeaweedFsTag", "latest", "SeaweedFs", "image: chrislusf/seaweedfs:latest"),
-            ("MongoDbRepository", "mongo", "MongoDbTag", "8", "MongoDb", "image: mongo:8"),
-            ("RedisRepository", "redis", "RedisTag", "8", "Redis", "image: redis:8")
+            ("PostgreSqlRepository", "pgvector/pgvector", "PostgreSqlTag", "0.8.6-pg18@sha256:2ba9ca5f2e7daa0f0e7723cba1ee9167bab54efd3640516a44ac1a928dd67e7a", "PostgreSql", "image: pgvector/pgvector:0.8.6-pg18@sha256:2ba9ca5f2e7daa0f0e7723cba1ee9167bab54efd3640516a44ac1a928dd67e7a"),
+            ("RabbitMqRepository", "rabbitmq", "RabbitMqTag", "4.3.6-management@sha256:5935b8b172f3351664b7f1610a109b3c883cec000bebeeca894d1719d18ffc76", "RabbitMq", "image: rabbitmq:4.3.6-management@sha256:5935b8b172f3351664b7f1610a109b3c883cec000bebeeca894d1719d18ffc76"),
+            ("SeaweedFsRepository", "chrislusf/seaweedfs", "SeaweedFsTag", "4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882", "SeaweedFs", "image: chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882"),
+            ("MongoDbRepository", "mongo", "MongoDbTag", "8.3.11@sha256:2609aaf7a1abbff404101af896e05f243d22be742471ed857b50b9ce0270fdbd", "MongoDb", "image: mongo:8.3.11@sha256:2609aaf7a1abbff404101af896e05f243d22be742471ed857b50b9ce0270fdbd"),
+            ("RedisRepository", "redis", "RedisTag", "8.8.2@sha256:37227fff5638322f4ebea25d6d0dc3ee50848604e82b81426f11507b3ec7d2cc", "Redis", "image: redis:8.8.2@sha256:37227fff5638322f4ebea25d6d0dc3ee50848604e82b81426f11507b3ec7d2cc")
         })
         {
             StringAssert.Contains(imageCatalog, $"public const string {repositoryConstant} = \"{repository}\";");
@@ -954,20 +969,20 @@ public sealed class DeploymentWorkflowContractTests
     [TestMethod]
     public void Dockerfiles_UseTheSecretMountAndTheRightChiseledBase()
     {
-        foreach (var (dockerfile, runtimeBase) in new[]
+        foreach (var (dockerfile, runtimeImage) in new[]
         {
-            ("src/Host/TaskFlow.Gateway/Dockerfile", "10.0-noble-chiseled"),
-            ("src/Host/TaskFlow.Api/Dockerfile", "10.0-noble-chiseled-extra"),
-            ("src/Host/TaskFlow.Scheduler/Dockerfile", "10.0-noble-chiseled-extra"),
-            ("src/Host/TaskFlow.DatabaseMigrator/Dockerfile", "10.0-noble-chiseled-extra"),
-            ("src/Host/TaskFlow.Functions/Dockerfile", "10.0-noble-chiseled-extra"),
-            ("src/UI/TaskFlow.Blazor/Dockerfile", "10.0-noble-chiseled-extra")
+            ("src/Host/TaskFlow.Gateway/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled@sha256:9651fa59abcdf177c30392cb44a820605ca5d618429ab37acbf6e7c644510b02"),
+            ("src/Host/TaskFlow.Api/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra@sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28"),
+            ("src/Host/TaskFlow.Scheduler/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra@sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28"),
+            ("src/Host/TaskFlow.DatabaseMigrator/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra@sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28"),
+            ("src/Host/TaskFlow.Functions/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra@sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28"),
+            ("src/UI/TaskFlow.Blazor/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra@sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28")
         })
         {
             var content = File.ReadAllText(RepoRoot.Combine(dockerfile.Split('/')));
             StringAssert.Contains(content, "--mount=type=secret,id=nuget_credentials,required=true", dockerfile);
             StringAssert.Contains(
-                content, $"FROM mcr.microsoft.com/dotnet/aspnet:{runtimeBase} AS runtime", dockerfile);
+                content, $"FROM {runtimeImage} AS runtime", dockerfile);
             StringAssert.Contains(content, "USER $APP_UID", dockerfile);
             Assert.IsFalse(content.Contains("ARG NUGET_TOKEN", StringComparison.Ordinal), dockerfile);
             Assert.IsFalse(content.Contains("store-password-in-clear-text", StringComparison.Ordinal), dockerfile);

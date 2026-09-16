@@ -139,7 +139,6 @@ public class ApplicationStyleBenchmarks
         /// <summary>Supports benchmark execution for application style benchmark API factory.</summary>
         protected override void ConfigureTestConfiguration(IConfigurationBuilder config)
         {
-            AddFoundryLocalDisabled(config);
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 [ApplicationStyleResolver.ConfigKey] = _applicationStyle,

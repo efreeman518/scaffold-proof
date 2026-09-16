@@ -177,6 +177,12 @@ Wait-Until `
 
 & $adb shell input keyevent 82 2>$null
 
+# Appium compares versionCode/versionName and skips installation when they match,
+# even when the locally rebuilt APK contains newer code. Install the runner-owned
+# artifact once so every session exercises the current build.
+& $adb install -r $apkPath
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 if (-not (Test-AppiumReady $AppiumServerUrl)) {
     $appium = Get-Command appium -ErrorAction SilentlyContinue
     if (-not $appium) {
@@ -204,7 +210,9 @@ $env:TASKFLOW_MOBILE_TESTS_ENABLED = "true"
 $env:TASKFLOW_MOBILE_PLATFORM = "Android"
 $env:TASKFLOW_APPIUM_SERVER_URL = $AppiumServerUrl
 $env:TASKFLOW_ANDROID_APP_PATH = $apkPath
-$env:TASKFLOW_MOBILE_STARTUP_TIMEOUT_SECONDS = "120"
+# UiAutomator2 8.7 instrumentation took about 96 seconds before app/session startup on API 35.
+# Return to 120 only when cold-start provisioning stays consistently below that old ceiling.
+$env:TASKFLOW_MOBILE_STARTUP_TIMEOUT_SECONDS = "240"
 
 Push-Location $repoRoot
 try {

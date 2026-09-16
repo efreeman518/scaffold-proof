@@ -46,39 +46,6 @@ public sealed class AiEndpointContractTests
 
     [TestMethod]
     [TestCategory("Endpoint")]
-    public async Task Given_FoundryLocalBootstrapFails_When_ChatCalled_Then_NoOpResponseReturned()
-    {
-        using var factory = new CustomApiFactory().WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureAppConfiguration((_, config) =>
-            {
-                config.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["ConnectionStrings:chat"] = string.Empty,
-                    ["AiServices:DisableFoundryLocal"] = "false",
-                    ["AiServices:LocalWebUrl"] = "not-a-url"
-                });
-            });
-        });
-        using var client = factory.CreateClient();
-
-        using var statusResponse = await client.GetAsync("/api/v1/ai/status", TestContext.CancellationToken);
-        using var status = await ReadJsonAsync(statusResponse);
-        using var chatResponse = await client.PostAsJsonAsync("/api/v1/ai/chat", new { message = "hello" }, cancellationToken: TestContext.CancellationToken);
-        using var chat = await ReadJsonAsync(chatResponse);
-
-        Assert.AreEqual(HttpStatusCode.OK, statusResponse.StatusCode);
-        Assert.AreEqual("none", status.RootElement.GetProperty("provider").GetString());
-        Assert.IsFalse(status.RootElement.GetProperty("isConfigured").GetBoolean());
-        Assert.AreEqual(HttpStatusCode.OK, chatResponse.StatusCode);
-        Assert.IsFalse(chat.RootElement.GetProperty("isConfigured").GetBoolean());
-        var chatMessage = chat.RootElement.GetProperty("message").GetString();
-        Assert.IsNotNull(chatMessage);
-        Assert.Contains("not configured", chatMessage);
-    }
-
-    [TestMethod]
-    [TestCategory("Endpoint")]
     public async Task Given_FakeChatClient_When_StreamingChatCalled_Then_EventStreamReturned()
     {
         using var factory = CreateAiFactory(_ => "streamed fake response");
@@ -212,15 +179,6 @@ public sealed class AiEndpointContractTests
         ITaskAssistantAgent? agent = null)
         => new CustomApiFactory().WithWebHostBuilder(builder =>
         {
-            builder.ConfigureAppConfiguration((_, config) =>
-            {
-                config.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["ConnectionStrings:chat"] = string.Empty,
-                    ["AiServices:DisableFoundryLocal"] = "true"
-                });
-            });
-
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IChatClient>();

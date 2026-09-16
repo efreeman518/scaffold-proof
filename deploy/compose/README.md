@@ -13,9 +13,9 @@ Azure service dependency. These files are hand-written on purpose - the AppHost 
 | `images.env.example` | Shape of the digest-pinned image variables the deploy job writes |
 | `pgbouncer/` | Transaction-pooling config for the opt-in `pooler` profile |
 
-The lane uses the centralized D-060 major/family tags: `pgvector/pgvector:pg18`, `rabbitmq:4-management`,
-`chrislusf/seaweedfs:latest`, `mongo:8`, and `redis:8`, plus the D-061 pinned OpenObserve OSS image
-`public.ecr.aws/zinclabs/openobserve:v1.0.0`. Only app images move via digest through `images.env`
+The lane uses centralized, immutable D-060 image pins: `pgvector/pgvector:0.8.6-pg18@sha256:2ba9ca5f2e7daa0f0e7723cba1ee9167bab54efd3640516a44ac1a928dd67e7a`, `rabbitmq:4.3.6-management@sha256:5935b8b172f3351664b7f1610a109b3c883cec000bebeeca894d1719d18ffc76`,
+`chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882`, `mongo:8.3.11@sha256:2609aaf7a1abbff404101af896e05f243d22be742471ed857b50b9ce0270fdbd`, and `redis:8.8.2@sha256:37227fff5638322f4ebea25d6d0dc3ee50848604e82b81426f11507b3ec7d2cc`, plus the D-061 pinned OpenObserve OSS image
+`public.ecr.aws/zinclabs/openobserve:v1.0.0@sha256:d581789cb03b5f061ed56a3e864b5e4bbc86bbf6d317ec863372e98ee49b30d5`. Only app images move via digest through `images.env`
 on every deploy (see Rollback); infrastructure-image tag changes are deliberate edits to `docker-compose.yml`.
 SeaweedFS exposes S3 internally at `seaweedfs:8333`; Caddy proxies its browser-facing hostname so presigned
 URLs retain a reachable signed host without publishing the S3 port directly. S3 requests require SigV4, so
@@ -130,7 +130,7 @@ curl -fsS "https://$CADDY_DOMAIN/healthz/ready"
 
 ## Why the app services have no healthcheck
 
-The five app images are built on `mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled`. A chiseled image has
+The .NET app images use immutable ASP.NET runtime pins: Gateway uses `mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled@sha256:9651fa59abcdf177c30392cb44a820605ca5d618429ab37acbf6e7c644510b02`; API, Scheduler, DatabaseMigrator, Functions, and Blazor use `mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra@sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28`. A chiseled image has
 no shell and no `curl`, so there is nothing for `healthcheck:` to exec - a `CMD-SHELL` probe would fail
 permanently and a `CMD` probe has no binary to call. Adding `curl` back to the runtime image to satisfy a
 probe would trade the attack surface the chiseled base exists to remove for a status column.

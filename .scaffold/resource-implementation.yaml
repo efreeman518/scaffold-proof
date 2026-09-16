@@ -82,7 +82,7 @@ localDefaults: { searchProvider: Sql, aiProvider: None }
 
 compatibleProviderOptIns:
   Azure: { searchProvider: AzureAiSearch, aiProvider: AzureInference }
-  NonAzure: { searchProvider: PgVector, aiProvider: [OpenAICompatible, FoundryLocal] }
+  NonAzure: { searchProvider: PgVector, aiProvider: OpenAICompatible }
 zeroAzureNonAzure: { reject: [AppConfig:Endpoint, ConnectionStrings:AppConfig, KeyVault:Endpoint, KeyVault:Uri, DataProtectionEncryptionKeyUrl], config: [appsettings, environment], encryptionKeyPath: local }
 
 storageProviders: [AzureBlob, S3]                                   # Storage:Provider, see D-037
@@ -90,7 +90,7 @@ readModelProviders: [Cosmos, PostgreSqlJsonb, MongoDb]                 # Canonic
 readModelProviderAliases: { Relational: PostgreSqlJsonb, expires: one-release } # Deprecated compatibility alias
 auditProviders: [AzureTable, Relational]                             # Audit:Provider, see D-039
 searchProviders: [AzureAiSearch, PgVector, Sql]                      # Search:Provider, see D-040 (Sql = NoOpSearchService prefix search)
-aiProviders: [AzureInference, OpenAICompatible, FoundryLocal, None]  # AiServices:Provider, see D-041
+aiProviders: [AzureInference, OpenAICompatible, None]  # AiServices:Provider, see D-041
 dataProtectionPersistence: [AzureBlob, Redis, None]                  # DataProtection:Persistence, see D-043 (None logs a warning)
 
 deployTargets: [ContainerApps, DockerCompose]

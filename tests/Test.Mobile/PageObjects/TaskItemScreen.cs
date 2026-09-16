@@ -70,5 +70,11 @@ internal sealed class TaskItemScreen
 
     public bool HasText(string text) => _app.HasText(text);
 
+    /// <summary>
+    /// Requires the Save control's accessibility label to be discoverable, including when Uno's
+    /// long Skia form has preserved a scroll position that places the header outside the viewport.
+    /// </summary>
+    public void RequireAccessibleSave() => _app.Element(SaveButtonId);
+
     public void WaitForText(string text) => _app.WaitForText(text);
 }

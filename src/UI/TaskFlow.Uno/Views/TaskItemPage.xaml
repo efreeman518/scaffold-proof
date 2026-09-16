@@ -7,7 +7,7 @@
       xmlns:uer="using:Uno.Extensions.Reactive.UI"
       Background="{ThemeResource BackgroundBrush}">
 
-    <ScrollViewer>
+    <ScrollViewer x:Name="TaskFormScrollViewer">
         <utu:AutoLayout Spacing="20"
                         Padding="{utu:Responsive Normal='16,12,16,24', Wide='32,20,32,32'}"
                         MaxWidth="{StaticResource ContentMaxWidth}">
@@ -47,7 +47,8 @@
                              PlaceholderText="What needs to be done?"
                              Style="{StaticResource FormTextBoxStyle}"
                              AutomationProperties.AutomationId="TaskTitleBox"
-                             AutomationProperties.Name="Task title" />
+                             AutomationProperties.Name="Task title"
+                             AutomationProperties.HelpText="{Binding Title}" />
 
                     <TextBox Header="Description"
                              Text="{Binding Description, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"

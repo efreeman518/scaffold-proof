@@ -49,6 +49,17 @@ internal sealed class MobileTaskAppDriver
         return By.XPath($"//*[contains(@content-desc, {literal}) or contains(@text, {literal})]");
     }
 
+    /// <summary>
+    /// Matches an exact exposed value. Uno 6.7 Skia maps AutomationProperties.HelpText to Android's
+    /// hint attribute because TextBox.Text is not projected to the UiAutomator text attribute.
+    /// Remove the hint branch when Uno projects editable values through AccessibilityNodeInfo.Text.
+    /// </summary>
+    private static By ByExactValue(string value)
+    {
+        var literal = XPathLiteral(value);
+        return By.XPath($"//*[@content-desc = {literal} or @text = {literal} or @hint = {literal}]");
+    }
+
     private static bool IsFatalDriverError(WebDriverException ex)
     {
         var message = ex.Message;
@@ -294,7 +305,8 @@ internal sealed class MobileTaskAppDriver
         return null;
     }
 
-    public bool HasText(string text) => _driver.FindElements(ByLabel(text)).Count > 0;
+    public bool HasText(string text) =>
+        _driver.FindElements(ByLabel(text)).Count > 0 || _driver.FindElements(ByExactValue(text)).Count > 0;
 
     public void WaitForText(string text) =>
         WaitFor(() => FirstOrNull(ByLabel(text)), $"text '{text}'");

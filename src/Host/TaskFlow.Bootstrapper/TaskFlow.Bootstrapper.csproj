@@ -43,14 +43,12 @@
     <PackageReference Include="EF.FlowEngine.Clients.ServiceBus" />
     <PackageReference Include="EF.FlowEngine.AdminApi" />
     <PackageReference Include="Aspire.Azure.AI.Inference" />
-    <PackageReference Include="Microsoft.AI.Foundry.Local" PrivateAssets="all" />
     <!-- D-042: Azure App Configuration + Microsoft.FeatureManagement, gated on AppConfig:Endpoint. -->
     <PackageReference Include="Microsoft.Azure.AppConfiguration.AspNetCore" />
     <PackageReference Include="Microsoft.FeatureManagement.AspNetCore" />
     <PackageReference Include="EF.AI" />
     <PackageReference Include="Microsoft.Extensions.AI" />
-    <!-- Deployed (D-041): the FoundryLocal arm adapts its OpenAI-compatible endpoint with the OpenAI SDK
-         directly; the OpenAICompatible arm goes through EF.AI, which carries the SDK itself. -->
+    <!-- Deployed (D-041): the OpenAICompatible arm goes through EF.AI, which carries the SDK itself. -->
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
     <PackageReference Include="OpenAI" />
   </ItemGroup>

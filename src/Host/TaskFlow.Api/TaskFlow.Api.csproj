@@ -51,7 +51,6 @@
     <!-- D-054: server side of the internal gRPC read service. The contract assembly carries the generated
          types; this brings the ASP.NET Core endpoint routing integration (AddGrpc/MapGrpcService). -->
     <PackageReference Include="Grpc.AspNetCore" />
-    <PackageReference Include="Microsoft.AI.Foundry.Local" PrivateAssets="all" />
     <PackageReference Include="Microsoft.AspNetCore.HeaderPropagation" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <!-- D-042: FeatureGateEndpointFilter reads IVariantFeatureManager directly. -->

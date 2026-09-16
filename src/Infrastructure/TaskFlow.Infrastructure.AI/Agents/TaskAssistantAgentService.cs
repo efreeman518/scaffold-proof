@@ -6,8 +6,8 @@ using System.Reflection;
 namespace TaskFlow.Infrastructure.AI.Agents;
 
 /// <summary>
-/// Live task assistant backed by a Microsoft.Extensions.AI <see cref="IChatClient"/> (wired by Aspire
-/// to Foundry Local or Azure AI Foundry) and the Microsoft Agent Framework. It loads the embedded
+/// Live task assistant backed by a Microsoft.Extensions.AI <see cref="IChatClient"/> (wired to Azure AI
+/// Foundry or an OpenAI-compatible endpoint) and the Microsoft Agent Framework. It loads the embedded
 /// system prompt, exposes TaskItemTools as function tools, and keeps one agent session per DI scope.
 /// </summary>
 public class TaskAssistantAgentService : ITaskAssistantAgent

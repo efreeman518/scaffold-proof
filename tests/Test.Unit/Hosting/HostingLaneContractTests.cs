@@ -97,10 +97,10 @@ public sealed class HostingLaneContractTests
             (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
             (HostingLaneResolver.ReadModelConfigurationKey, "MongoDb"),
             (HostingLaneResolver.SearchConfigurationKey, "PgVector"),
-            (HostingLaneResolver.AiConfigurationKey, "FoundryLocal"));
+            (HostingLaneResolver.AiConfigurationKey, "OpenAICompatible"));
         Assert.AreEqual("MongoDb", nonAzure.ReadModel);
         Assert.AreEqual("PgVector", nonAzure.Search);
-        Assert.AreEqual("FoundryLocal", nonAzure.AiServices);
+        Assert.AreEqual("OpenAICompatible", nonAzure.AiServices);
     }
 
     [TestMethod]
@@ -273,15 +273,15 @@ public sealed class HostingLaneContractTests
             new[]
             {
                 "mcr.microsoft.com/mssql/server:2025-CU8-ubuntu-22.04",
-                "mcr.microsoft.com/azure-messaging/servicebus-emulator:latest",
-                "mcr.microsoft.com/mssql/server:2022-latest",
-                "mcr.microsoft.com/azure-storage/azurite:latest",
-                "mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext-latest",
-                "pgvector/pgvector:pg18",
-                "rabbitmq:4-management",
-                "chrislusf/seaweedfs:latest",
-                "mongo:8",
-                "redis:8"
+                "mcr.microsoft.com/azure-messaging/servicebus-emulator:2.0.1@sha256:5a96d893b245031740f7d46e0fe5ff282d24b78c4b7d761dd57590f3f010a9b3",
+                "mcr.microsoft.com/mssql/server:2022-CU27-ubuntu-22.04@sha256:4402d880dd4c34bfa7d8705e56a86cd6c88da80a1f6bbbe741f999e76264a090",
+                "mcr.microsoft.com/azure-storage/azurite:3.37.0@sha256:830430c1da1a2d537e08f3e6764dd1f5ae00cf0346bcaf625b968ec3f0971fd5",
+                "mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext-EN20260907@sha256:2db1f9e74c506bcf6fc347aa937aea1c00fa756061296a5a9efba530ce86ec02",
+                "pgvector/pgvector:0.8.6-pg18@sha256:2ba9ca5f2e7daa0f0e7723cba1ee9167bab54efd3640516a44ac1a928dd67e7a",
+                "rabbitmq:4.3.6-management@sha256:5935b8b172f3351664b7f1610a109b3c883cec000bebeeca894d1719d18ffc76",
+                "chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882",
+                "mongo:8.3.11@sha256:2609aaf7a1abbff404101af896e05f243d22be742471ed857b50b9ce0270fdbd",
+                "redis:8.8.2@sha256:37227fff5638322f4ebea25d6d0dc3ee50848604e82b81426f11507b3ec7d2cc"
             },
             new[]
             {

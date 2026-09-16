@@ -31,7 +31,7 @@ x-app-common: &app-common
 
 services:
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
     restart: unless-stopped
     # The only published ports in the stack. Everything else talks over scoped Compose networks.
     ports:
@@ -292,14 +292,14 @@ services:
       - edge
 
   postgres:
-    image: pgvector/pgvector:pg18
+    image: pgvector/pgvector:0.8.6-pg18@sha256:2ba9ca5f2e7daa0f0e7723cba1ee9167bab54efd3640516a44ac1a928dd67e7a
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env.base}
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env.base}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.base}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
@@ -310,7 +310,7 @@ services:
       - data
 
   rabbitmq:
-    image: rabbitmq:4-management
+    image: rabbitmq:4.3.6-management@sha256:5935b8b172f3351664b7f1610a109b3c883cec000bebeeca894d1719d18ffc76
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:?set RABBITMQ_DEFAULT_USER in .env.base}
@@ -329,7 +329,7 @@ services:
   # SeaweedFS exposes its S3-compatible endpoint only on the internal network. Caddy publishes the
   # browser-reachable S3 origin configured by Storage__S3__PublicServiceUrl.
   seaweedfs:
-    image: chrislusf/seaweedfs:latest
+    image: chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
     restart: unless-stopped
     command: ["mini", "-dir=/data"]
     environment:
@@ -350,7 +350,7 @@ services:
   # Explicit NonAzure read-model alternative. It is never started unless `--profile mongo` is supplied
   # and ReadModel__Provider is changed to MongoDb with ConnectionStrings__MongoDb1 configured.
   mongo:
-    image: mongo:8
+    image: mongo:8.3.11@sha256:2609aaf7a1abbff404101af896e05f243d22be742471ed857b50b9ce0270fdbd
     profiles: ["mongo"]
     restart: unless-stopped
     environment:
@@ -369,7 +369,7 @@ services:
       - data
 
   redis:
-    image: redis:8
+    image: redis:8.8.2@sha256:37227fff5638322f4ebea25d6d0dc3ee50848604e82b81426f11507b3ec7d2cc
     restart: unless-stopped
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.base}
@@ -394,7 +394,7 @@ services:
   # remains internal on the telemetry network. v1.0.0 has no image healthcheck or shell utility, so a
   # Compose probe would be synthetic and unreliable.
   openobserve:
-    image: public.ecr.aws/zinclabs/openobserve:v1.0.0
+    image: public.ecr.aws/zinclabs/openobserve:v1.0.0@sha256:d581789cb03b5f061ed56a3e864b5e4bbc86bbf6d317ec863372e98ee49b30d5
     restart: unless-stopped
     environment:
       ZO_LOCAL_MODE: "true"
@@ -418,7 +418,7 @@ services:
   # D-045 opt-in: `docker compose --profile pooler up -d`. Point the app connection strings at
   # pgbouncer:6432 and set Database__PostgreSql__PoolerMode=Transaction in .env.base when this runs.
   pgbouncer:
-    image: ${PGBOUNCER_IMAGE:-edoburu/pgbouncer:v1.25.2-p0}
+    image: ${PGBOUNCER_IMAGE:-edoburu/pgbouncer:v1.25.2-p0@sha256:7d7a27d9e90985cab5cf42256f5c13a3120baa4b055b69df37beb272b89b2340}
     profiles: ["pooler"]
     restart: unless-stopped
     volumes:

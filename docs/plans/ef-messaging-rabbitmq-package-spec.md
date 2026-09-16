@@ -151,7 +151,7 @@ public sealed class RabbitMqPublishException : Exception
 5. Options validation with `ValidateOnStart`: `PublisherChannelPoolSize >= 1`, every `PrefetchCount >= 1`, every `MaxDeliveryCount >= 1`, a connection source present (registered `IConnection` or `ConnectionString`).
 6. No silent failure anywhere: every dropped, nacked, or dead-lettered message produces a log line with MessageId and a metric.
 
-## Acceptance tests (ship in the package test project; Testcontainers.RabbitMq, image `rabbitmq:4-management`)
+## Acceptance tests (ship in the package test project; Testcontainers.RabbitMq, image `rabbitmq:4.3.6-management@sha256:5935b8b172f3351664b7f1610a109b3c883cec000bebeeca894d1719d18ffc76`)
 
 - Multiplexer: 50 concurrent `RentPublisherChannelAsync` calls with pool size 8 never exceed 8 open publisher channels (management API); a channel closed by the broker (publish to a missing exchange) is not returned to the pool and the next rent succeeds.
 - Publisher: a 1000-message batch is confirmed within the timeout; publishing to a non-existent exchange throws `RabbitMqPublishException`; MessageId, CorrelationId, ContentType, headers, and the persistent flag round-trip.

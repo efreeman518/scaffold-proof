@@ -88,7 +88,7 @@
 </tr>
 <tr>
 <td><strong>AI</strong></td>
-<td>Azure AI Search + Azure AI Foundry / Foundry Local via <code>IChatClient</code> (no-op fallback)</td>
+<td>Azure AI Search + Azure AI Foundry or OpenAI-compatible inference via <code>IChatClient</code> (no-op fallback)</td>
 </tr>
 <tr>
 <td><strong>Workflow Orchestration</strong></td>
@@ -115,7 +115,7 @@
 <li><strong>Multi-Tenant First</strong> - Tenant isolation at query filter, service, and authorization layers</li>
 <li><strong>Event-Driven</strong> - Integration events flow through Service Bus to Azure Functions for async processing</li>
 <li><strong>Config-Driven Auth</strong> - Single build, multiple deployment profiles (dev scaffold vs Entra ID prod)</li>
-<li><strong>Local-First Runtime</strong> - Core infrastructure runs through Aspire emulators; AI can run fully local through Foundry Local, against real Azure AI Foundry, or as a no-op fallback with no cloud credentials</li>
+<li><strong>Local-First Runtime</strong> - Core infrastructure runs through Aspire emulators; AI can use a configured OpenAI-compatible endpoint, real Azure AI Foundry, or a no-op fallback with no cloud credentials</li>
 </ul>
 <hr>
 <h2 id="2-c4-architecture-diagrams">2. C4 Architecture Diagrams</h2>
@@ -469,7 +469,7 @@
 <p><strong>UTC normalization</strong> (D-024): <code>UtcDateTimeOffsetConverter</code>/<code>UtcDateTimeConverter</code> (<code>Infrastructure.Data/Conventions/</code>) are registered once in <code>TaskFlowDbContextBase.ConfigureConventions</code> for every <code>DateTimeOffset</code>/<code>DateTime</code> property - required because Npgsql&#39;s <code>timestamptz</code> rejects a non-zero offset on write.</p>
 <p><strong>Column encryption and blind index</strong> (D-023, supersedes D-019 Always Encrypted): <code>Infrastructure.Data/Encryption/</code> holds a provider-neutral <code>IColumnEncryptor</code> (<code>AesGcmColumnEncryptor</code>: AES-256-GCM, <code>nonce(12) || ciphertext || tag(16)</code>) plus <code>BlindIndex</code> (HMAC-SHA256 into a shadow column, indexed, for equality search on an otherwise-randomized encrypted column) and a <code>ColumnEncryptionOptionsExtension</code> wired through <code>UseColumnEncryption</code>/<code>AddColumnEncryption(config, "Database:Encryption")</code>. Config keys: <code>Database:Encryption:{Enabled, LocalKeyBase64, BlindIndexKeyBase64, KeyVaultKeyUrl, WrappedDekBase64}</code>. SQL Server Always Encrypted (D-019) is kept only as a documented alternative in a code comment at the converter registration (<code>Configurations/TaskItemConfiguration.cs</code>) - it is not implemented, because it has no PostgreSQL equivalent.</p>
 <p><strong>Migrations</strong> (D-025): one fresh baseline migration set per (context x provider) - six sets total - lives in two migration assemblies, <code>TaskFlow.Infrastructure.Data.Migrations.SqlServer</code> and <code>...Migrations.PostgreSql</code>, each with <code>Migrations/{TaskFlow,FlowEngine,TickerQ}/</code>. <code>TaskFlow.DatabaseMigrator</code>&#39;s design-time factories resolve the provider the same way as runtime and apply targets in order Trxn -&gt; FlowEngine -&gt; TickerQ, each keeping its own migration history table even when local Aspire maps all three onto one database.</p>
-<p><strong>Provider-matrixed tests</strong>: <code>TASKFLOW_LANE=Azure|NonAzure</code> selects the container-backed test topology; <code>TASKFLOW_TEST_DB_PROVIDER</code> remains a deprecated test-only alias for one release. <code>Test.Support/Hosting/TestDatabaseContainer.cs</code> wraps either SQL Server 2025 or PostgreSQL (<code>pgvector/pgvector:pg18</code>) behind one facade, consumed by <code>Test.Integration/Infrastructure/DbContainerFixture.cs</code> and <code>Test.E2E/DbApiFactory.cs</code>. Manual CI and local acceptance run the same assemblies against each selected lane rather than parameterizing individual test cases.</p>
+<p><strong>Provider-matrixed tests</strong>: <code>TASKFLOW_LANE=Azure|NonAzure</code> selects the container-backed test topology; <code>TASKFLOW_TEST_DB_PROVIDER</code> remains a deprecated test-only alias for one release. <code>Test.Support/Hosting/TestDatabaseContainer.cs</code> wraps either SQL Server 2025 or PostgreSQL (<code>pgvector/pgvector:0.8.6-pg18@sha256:2ba9ca5f2e7daa0f0e7723cba1ee9167bab54efd3640516a44ac1a928dd67e7a</code>) behind one facade, consumed by <code>Test.Integration/Infrastructure/DbContainerFixture.cs</code> and <code>Test.E2E/DbApiFactory.cs</code>. Manual CI and local acceptance run the same assemblies against each selected lane rather than parameterizing individual test cases.</p>
 <p><strong>Read-model and audit-sink arms</strong> (D-038, D-039, D-060): Azure selects Cosmos and Azure Table. NonAzure defaults the read model to <code>PostgreSqlJsonb</code> and audit to <code>Relational</code>; <code>MongoDb</code> is the explicit NonAzure read-model alternative, while <code>Relational</code> remains a deprecated alias for <code>PostgreSqlJsonb</code> for one release. The PostgreSQL read model is a <code>TaskView</code> table in the <code>taskflow</code> schema, PK <code>(TenantId, Id)</code>, index <code>(TenantId, LastModifiedUtc desc, Id desc)</code>, with its serialized body mapped to native <code>jsonb</code>. The MongoDB adapter stores the same projection contract and provisions tenant-first query indexes before consumers start. Counters patch atomically; paging uses an opaque, tenant-bound, schema-versioned keyset continuation token so <code>TaskViewEndpoints</code> never sees provider-specific cursor shape. The relational audit sink is keyed <code>(TenantId, RecordedUtc, Id)</code> with retention via <code>ExecuteDeleteBatchedAsync</code>. Neither relational arm is an <code>ITenantEntity</code> - tenant id is passed explicitly, matching the Cosmos partition-key boundary.</p>
 <p><strong>pgvector semantic search</strong> (D-040): <code>Search:Provider = AzureAiSearch | PgVector | Sql</code> (env <code>TASKFLOW_SEARCH_PROVIDER</code>) adds a Postgres-native similarity-search arm. <code>PgVector</code> requires the NonAzure PostgreSQL lane and fails startup immediately otherwise; it also fails startup if <code>Search:PgVector:Dimensions</code> is configured to anything other than the fixed <code>1536</code>-dimension model the embedding consumer writes. <code>TaskItemEmbedding</code> (<code>TenantId, TaskItemId, Embedding vector(1536), ModelId, UpdatedUtc</code>) with an HNSW cosine index is mapped in <code>OnModelCreating</code> only when the active provider is Npgsql - the one provider-forced branch this refactor added (D-030) - and its migration lives only in the PostgreSql migration assembly. <code>TaskItemContentChangedEvent</code> drives a dedicated embedding consumer over its own RabbitMQ queue when PgVector is selected. Both lanes default search to <code>Sql</code>; <code>AzureAiSearch</code> is an Azure opt-in and <code>PgVector</code> is a NonAzure opt-in.</p>
 <hr>
@@ -810,12 +810,12 @@ TASKFLOW_LANE=NonAzure dotnet run --project src/Host/Aspire/AppHost/AppHost.cspr
 <tr><td>Read model</td><td><code>ReadModel:Provider</code> / <code>TASKFLOW_READMODEL_PROVIDER</code></td><td><code>Cosmos</code></td><td><code>PostgreSqlJsonb</code> default; <code>MongoDb</code> opt-in</td></tr>
 <tr><td>Audit sink</td><td><code>Audit:Provider</code> / <code>TASKFLOW_AUDIT_PROVIDER</code></td><td><code>AzureTable</code></td><td><code>Relational</code></td></tr>
 <tr><td>Search</td><td><code>Search:Provider</code> / <code>TASKFLOW_SEARCH_PROVIDER</code></td><td><code>Sql</code> default; <code>AzureAiSearch</code> opt-in</td><td><code>Sql</code> default; <code>PgVector</code> opt-in</td></tr>
-<tr><td>LLM client</td><td><code>AiServices:Provider</code> / <code>TASKFLOW_AI_PROVIDER</code></td><td><code>None</code> default; <code>AzureInference</code> opt-in</td><td><code>None</code> default; <code>OpenAICompatible</code> or <code>FoundryLocal</code> opt-in</td></tr>
+<tr><td>LLM client</td><td><code>AiServices:Provider</code> / <code>TASKFLOW_AI_PROVIDER</code></td><td><code>None</code> default; <code>AzureInference</code> opt-in</td><td><code>None</code> default; <code>OpenAICompatible</code> opt-in</td></tr>
 <tr><td>Data Protection persistence</td><td><code>DataProtection:Persistence</code> / <code>TASKFLOW_DATAPROTECTION_PERSISTENCE</code></td><td><code>AzureBlob</code></td><td><code>Redis</code></td></tr>
 <tr><td>Postgres pooler mode</td><td><code>Database:PostgreSql:PoolerMode</code> (config only)</td><td>Not applicable</td><td><code>None</code> default; <code>Transaction</code> with the optional PgBouncer profile</td></tr>
 </tbody>
 </table>
-<p><strong>Local lane images</strong>: Aspire and Testcontainers consume the shared <code>TaskFlow.Hosting.ContainerImages</code> catalog. Azure uses the reviewed exact SQL Server tag <code>2025-CU8-ubuntu-22.04</code>, Service Bus emulator <code>latest</code> with its SQL Server <code>2022-latest</code> sidecar, Azurite <code>latest</code>, and Cosmos emulator <code>vnext-latest</code>. NonAzure uses <code>pgvector/pgvector:pg18</code>, <code>rabbitmq:4-management</code>, <code>chrislusf/seaweedfs:latest</code>, and optional <code>mongo:8</code>. Both use <code>redis:8</code>.</p>
+<p><strong>Local lane images</strong>: Aspire and Testcontainers consume the shared <code>TaskFlow.Hosting.ContainerImages</code> catalog. Azure uses the reviewed exact SQL Server tag <code>2025-CU8-ubuntu-22.04</code>, Service Bus emulator <code>2.0.1@sha256:5a96d893b245031740f7d46e0fe5ff282d24b78c4b7d761dd57590f3f010a9b3</code> with its SQL Server <code>2022-CU27-ubuntu-22.04@sha256:4402d880dd4c34bfa7d8705e56a86cd6c88da80a1f6bbbe741f999e76264a090</code> sidecar, Azurite <code>3.37.0@sha256:830430c1da1a2d537e08f3e6764dd1f5ae00cf0346bcaf625b968ec3f0971fd5</code>, and Cosmos emulator <code>vnext-EN20260907@sha256:2db1f9e74c506bcf6fc347aa937aea1c00fa756061296a5a9efba530ce86ec02</code>. Service Bus, Azurite, and Cosmos use MCR multi-arch indexes for linux/amd64 and linux/arm64. MCR publishes the SQL Server CU27 sidecar only as linux/amd64; replace that manifest pin when an arm64 or multi-arch SQL Server image is published. NonAzure uses <code>pgvector/pgvector:0.8.6-pg18@sha256:2ba9ca5f2e7daa0f0e7723cba1ee9167bab54efd3640516a44ac1a928dd67e7a</code>, <code>rabbitmq:4.3.6-management@sha256:5935b8b172f3351664b7f1610a109b3c883cec000bebeeca894d1719d18ffc76</code>, <code>chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882</code>, and optional <code>mongo:8.3.11@sha256:2609aaf7a1abbff404101af896e05f243d22be742471ed857b50b9ce0270fdbd</code>. Both use <code>redis:8.8.2@sha256:37227fff5638322f4ebea25d6d0dc3ee50848604e82b81426f11507b3ec7d2cc</code>.</p>
 <p><strong>Common application surface</strong>: both lanes run one migration owner, API, Gateway, Scheduler with TickerQ, Blazor, React, and Uno WASM against the same contracts. Functions runs only in Azure. <code>deploy/compose/docker-compose.yml</code> is the canonical NonAzure stack; <code>docker-compose.override.local.yml</code> changes TaskFlow image sources for local builds without changing provider topology. PostgreSQL JSONB is the default read model, while the <code>mongo</code> profile enables MongoDB when <code>ReadModel__Provider=MongoDb</code>. The optional <code>pooler</code> profile adds PgBouncer transaction pooling. Deployed NonAzure also runs pinned OpenObserve OSS v1.0.0 as a separate persistent logs-and-traces container; metrics export is off by default, retention is short and operator-configurable, and its UI is private/loopback-bound by default. This single-node shape minimizes license and infrastructure cost but is not highly available. Caddy is the only public edge and actively probes <code>/healthz/ready</code>; TaskFlow deployment images are digest-pinned by <code>deploy-vps.yml</code>.</p>
 <p><strong>CI lanes</strong>: pull-request CI builds and analyzes the solution, runs the complete <code>Test.Unit</code> project with a 50-second process deadline and a one-minute step timeout, then runs architecture and endpoint contracts. Container-heavy Aspire, component integration, E2E, full acceptance, Playwright, and Compose smoke lanes are explicit <code>workflow_dispatch</code> options so routine PR pushes do not spend hosted-runner minutes on full stacks. Manual lane inputs cover Azure, NonAzure with PostgreSQL JSONB, and NonAzure with MongoDB.</p>
 <hr>
@@ -1139,14 +1139,8 @@ TASKFLOW_LANE=NonAzure dotnet run --project src/Host/Aspire/AppHost/AppHost.cspr
 <tr>
 <td><strong>Test.Aspire</strong></td>
 <td>Mesh-tier verification of cross-service workflows by booting the <strong>Aspire AppHost</strong> in-process: SQL Server, Redis, Service Bus emulator, Azure Table Storage, API, Gateway, Blazor, and every optional local host/tool the harness can prove runnable. Covers app-surface health, API and Function audit pipelines, plus Azure Foundry smoke when Azure config is present. The graph starts lazily on the first mesh class via <code>AspireTestHost.EnsureStartedAsync</code> and is torn down once by <code>AspireMeshLifecycle</code>; every class is <code>[DoNotParallelize]</code>.</td>
-<td>Highest-fidelity tests that still run on a developer laptop, isolated from the fast component tier so the graph boot is paid only when a mesh test runs. The mesh is RID-free and forces <code>AiServices:DisableFoundryLocal=true</code>; local model smoke lives in <code>Test.FoundryLocal</code>. Azure Foundry tests return inconclusive when no Azure provider is exposed. Capability probes still gate React, Uno, and Functions because those hosts require local assets or tools.</td>
+<td>Highest-fidelity tests that still run on a developer laptop, isolated from the fast component tier so the graph boot is paid only when a mesh test runs. Azure Foundry tests return inconclusive when no Azure provider is exposed. Capability probes still gate React, Uno, and Functions because those hosts require local assets or tools.</td>
 <td>MSTest, <strong>Aspire.Hosting.Testing</strong> (<code>DistributedApplicationTestingBuilder</code>), <code>EF.IntegrationTesting</code>, <code>Azure.Data.Tables</code></td>
-</tr>
-<tr>
-<td><strong>Test.FoundryLocal</strong></td>
-<td>RID-bound live smoke project for the bootstrapper-owned <code>Microsoft.AI.Foundry.Local</code> path. Boots <code>TaskFlow.Api</code> directly, checks <code>GET /api/v1/ai/status</code> for <code>provider: local</code>, then covers chat, no-tool agent chat (<code>AgentChatRequest.UseTools=false</code> maps to <code>ChatToolMode.None</code>), and one safe write-adjacent AI demo.</td>
-<td>Keeps native Foundry Local assets out of RID-free WAF/Aspire tiers and prevents live local tests from passing green on no-op. Tests are inconclusive only when the local runtime is missing or undiscoverable. Installed-but-broken runtime, provider mismatch, no-op fallback, or live endpoint timeout is failure.</td>
-<td>MSTest, <code>Microsoft.AspNetCore.Mvc.Testing</code>, EF Core InMemory, <code>Microsoft.AI.Foundry.Local</code></td>
 </tr>
 <tr>
 <td><strong>Test.E2E</strong></td>
@@ -1401,7 +1395,7 @@ public sealed class SqlApiFactory
 <li>Pass parameters via <code>configureBuilder: (appOptions, hostSettings) =&gt; hostSettings.Configuration[&quot;Parameters:sql-password&quot;] = ...</code> instead of mutating process env vars; the AppHost picks them up through normal <code>IConfiguration</code> binding.</li>
 <li>Keep harness-only state internal: <code>TASKFLOW_ASPIRE_TESTING</code> selects isolated test-mode resources, and <code>TASKFLOW_ASPIRE_FUNCTIONS_AVAILABLE</code> is set only after the harness finds <code>func.exe</code>.</li>
 <li>Add optional app-facing hosts by capability, not opt-in: <code>TASKFLOW_ASPIRE_REACT_AVAILABLE</code> and <code>TASKFLOW_ASPIRE_UNO_WASM_AVAILABLE</code> are set by the harness after checking local prerequisites.</li>
-<li>Keep live Foundry coverage split: <code>Test.Aspire</code> runs Azure Foundry smoke only when Azure config is present. It never requests Foundry Local; the RID-bound <code>Test.FoundryLocal</code> project owns local model smoke. The no-op fallback stays covered in unit and endpoint tests.</li>
+<li>Run Azure Foundry smoke in <code>Test.Aspire</code> only when Azure config is present. The no-op fallback stays covered in unit and endpoint tests.</li>
 <li>Set <code>appOptions.DisableDashboard = true</code> (default in the testing builder, but explicit beats implicit).</li>
 <li>Quiet framework chatter with <code>builder.Services.AddLogging(l =&gt; { l.SetMinimumLevel(Information); l.AddFilter(&quot;Microsoft.AspNetCore&quot;, Warning); l.AddFilter(&quot;Aspire.&quot;, Warning); })</code>.</li>
 </ul>
@@ -1520,9 +1514,6 @@ dotnet test tests/Test.Integration/Test.Integration.csproj
 # Aspire mesh tests (Docker required - full AppHost graph)
 dotnet test tests/Test.Aspire/Test.Aspire.csproj
 
-# Foundry Local live smoke (RID-bound local model path)
-dotnet test tests/Test.FoundryLocal/Test.FoundryLocal.csproj --filter TestCategory=FoundryLocal
-
 # Load tests (manual - start Aspire AppHost first; set TASKFLOW_LOAD_BASE_URL if taskflowapi uses a non-default port)
 dotnet test tests/Test.Load/Test.Load.csproj --filter &quot;TestCategory=Load&quot;
 
@@ -1535,7 +1526,7 @@ dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj
 # Direct TypeScript UI E2E (requires AppHost and requested browser UI running)
 cd tests/Test.PlaywrightUI &amp;&amp; npm run test
 </code></pre>
-<p>GitHub Actions mirrors this split. Push and pull request runs execute the CI default gate. Manual <code>workflow_dispatch</code> inputs opt into <code>Test.E2E</code>, <code>Test.Integration</code>, <code>Test.Aspire</code>, <code>Test.FoundryLocal</code>, and <code>Test.PlaywrightUI</code>.</p>
+<p>GitHub Actions mirrors this split. Push and pull request runs execute the CI default gate. Manual <code>workflow_dispatch</code> inputs opt into <code>Test.E2E</code>, <code>Test.Integration</code>, <code>Test.Aspire</code>, and <code>Test.PlaywrightUI</code>.</p>
 <hr>
 <h2 id="13-ui-architecture">13. UI Architecture</h2>
 <h3 id="131-uno-platform-wasm-primary-ui">13.1 Uno Platform WASM (Primary UI)</h3>
@@ -1894,12 +1885,12 @@ cd tests/Test.PlaywrightUI &amp;&amp; npm run test
 <tr>
 <td><code>ai-agent</code></td>
 <td><code>IChatClient</code></td>
-<td>Resolves the shared host-registered <code>Microsoft.Extensions.AI.IChatClient</code> via <code>EF.FlowEngine.Clients.AI</code>. The client is real when Aspire wires a <code>chat</code> deployment and no-op otherwise. Used by <code>n-classify</code>, <code>n-propose-subtasks</code>, <code>n-extract</code>.</td>
+<td>Resolves the shared host-registered <code>Microsoft.Extensions.AI.IChatClient</code> via <code>EF.FlowEngine.Clients.AI</code>. The client is real when Aspire wires a complete <code>chat</code> connection and no-op otherwise. Used by <code>n-classify</code>, <code>n-propose-subtasks</code>, <code>n-extract</code>.</td>
 </tr>
 </tbody></table>
 <p>The agent-client wiring is the integration point with the existing AI stack: FlowEngine does not duplicate model configuration; it uses the same <code>IChatClient</code> as chat, streaming, code-hosted agent, and inference demos. When no model is wired, the no-op <code>IChatClient</code> lets the app boot and the workflow start, but schema-constrained agent output is expected to route to the workflow fault path.</p>
-<h4 id="foundry-model-modes-and-configuration">Foundry Model Modes and Configuration</h4>
-<p>Azure model selection stays in the AppHost and creates the <code>chat</code> connection directly. The shared bootstrapper registration wires <code>AddAzureChatCompletionsClient(&quot;chat&quot;).AddChatClient()</code> when that connection exists. When Azure is absent, the same bootstrapper path attempts the temporary SDK-direct Foundry Local bootstrap unless <code>AiServices:DisableFoundryLocal=true</code>. This keeps D1-D9 on one <code>IChatClient</code> contract without duplicating provider policy across hosts.</p>
+<h4 id="foundry-model-modes-and-configuration">AI Model Modes and Configuration</h4>
+<p>Azure AI Foundry resources and model deployments are provisioned externally. The AppHost validates and injects the <code>chat</code> connection, and the shared bootstrapper registration wires <code>AddAzureChatCompletionsClient(&quot;chat&quot;).AddChatClient()</code> when that connection exists. NonAzure deployments can instead select <code>OpenAICompatible</code> and configure an endpoint, API key, and model. This keeps D1-D9 on one <code>IChatClient</code> contract without duplicating provider policy across hosts.</p>
 <table>
 <thead>
 <tr>
@@ -1909,40 +1900,36 @@ cd tests/Test.PlaywrightUI &amp;&amp; npm run test
 </tr>
 </thead>
 <tbody><tr>
-<td><strong>Foundry Local</strong></td>
-<td>no Azure Foundry mode selected and <code>AiServices:DisableFoundryLocal=false</code></td>
-<td>The AppHost wires no local <code>chat</code> resource. The bootstrapper uses <code>Microsoft.AI.Foundry.Local</code> directly, starts the OpenAI-compatible local endpoint, records <code>AiProviderInfo(&quot;local&quot;)</code>, and registers it as the shared <code>IChatClient</code>. If the local SDK cannot bootstrap, the bootstrapper logs the failure and falls back to no-op AI.</td>
+<td><strong>Azure AI Foundry, keyless</strong></td>
+<td>Azure lane with <code>AiServices:FoundryEndpoint</code> and <code>AiServices:AgentModelDeployment</code></td>
+<td>The AppHost validates an absolute HTTPS endpoint and non-empty deployment, injects <code>Endpoint=...;Deployment=...</code>, and <code>Aspire.Azure.AI.Inference</code> authenticates through <code>DefaultAzureCredential</code>.</td>
 </tr>
 <tr>
-<td><strong>Real Azure AI Foundry</strong></td>
-<td>publish mode, <code>AiServices:FoundryEndpoint</code>, or <code>TASKFLOW_USE_AZURE_FOUNDRY=true</code></td>
-<td><code>AddFoundry(&quot;foundry&quot;).AddDeployment(&quot;chat&quot;, FoundryModel.OpenAI.Gpt4oMini)</code> provisions or connects to an Azure deployment and injects the same <code>chat</code> connection contract.</td>
+<td><strong>Azure AI Foundry, connection string</strong></td>
+<td>Azure lane with complete <code>ConnectionStrings:chat</code></td>
+<td>The AppHost validates <code>Endpoint</code> and <code>Deployment</code>, then passes the connection through <code>AddConnectionString</code>/<code>WithReference</code>. An optional <code>Key</code> selects key authentication.</td>
+</tr>
+<tr>
+<td><strong>OpenAI-compatible endpoint</strong></td>
+<td>NonAzure lane with <code>TASKFLOW_AI_PROVIDER=OpenAICompatible</code></td>
+<td>The bootstrapper uses the configured <code>AiServices:Endpoint</code>, API key, and model to register the shared <code>IChatClient</code>. This supports OpenAI, OpenRouter, Ollama, vLLM, and compatible gateways.</td>
 </tr>
 <tr>
 <td><strong>Disabled</strong></td>
-<td><code>AiServices:DisableFoundryLocal=true</code>, or local bootstrap unavailable and no Azure setting</td>
+<td><code>TASKFLOW_AI_PROVIDER=None</code>, the default in both hosting lanes</td>
 <td>No provider is active. <code>TaskFlow.Infrastructure.AI</code> registers <code>AiProviderInfo(&quot;none&quot;)</code> and <code>NoOpChatClient</code>, so the app starts without model credentials.</td>
 </tr>
 </tbody></table>
-<p>Local setup for a fully local AI run:</p>
-<pre><code class="language-powershell">winget install Microsoft.FoundryLocal
-foundry --version
-foundry service status
-foundry model info qwen2.5-0.5b
-foundry model download qwen2.5-0.5b
-
-dotnet run --project src/Host/Aspire/AppHost
-</code></pre>
-<p><code>qwen2.5-0.5b</code> is used because the FlowEngine agent nodes and the code-hosted agent demos need a local model whose task list includes <code>tools</code>. The SDK-direct path does not need the <code>foundry</code> CLI on PATH; the CLI commands above are diagnostics for local runtime state. Aspire tests do not probe the CLI and do not run local model smoke. The RID-bound <code>Test.FoundryLocal</code> project gates on <code>GET /api/v1/ai/status</code>.</p>
-<p>Real Azure Foundry setup for local runs:</p>
+<p>Provision the Azure AI Foundry account and deployment through platform IaC or Azure tooling before configuring a local run:</p>
 <pre><code class="language-powershell">dotnet user-secrets set &quot;AiServices:FoundryEndpoint&quot; &quot;https://&lt;your-foundry-resource&gt;.services.ai.azure.com/&quot; --project src/Host/Aspire/AppHost
+dotnet user-secrets set &quot;AiServices:AgentModelDeployment&quot; &quot;&lt;deployment-name&gt;&quot; --project src/Host/Aspire/AppHost
 # or
-$env:TASKFLOW_USE_AZURE_FOUNDRY = &quot;true&quot;
+dotnet user-secrets set &quot;ConnectionStrings:chat&quot; &quot;Endpoint=https://&lt;your-foundry-resource&gt;.services.ai.azure.com/;Deployment=&lt;deployment-name&gt;&quot; --project src/Host/Aspire/AppHost
 
 dotnet run --project src/Host/Aspire/AppHost
 </code></pre>
-<p><code>aspire publish</code> always selects the real Azure path and provisions an Azure AI Foundry resource/deployment. If the target environment requires keyless managed-identity inference instead of the generated connection secret, update the host-side <code>AddAzureChatCompletionsClient(&quot;chat&quot;)</code> registration to use the required credential overload before testing model behavior.</p>
-<p>When AI is disabled, D1-D8 return the no-op &quot;not configured&quot; response. D9 can still start a workflow instance, but the schema-constrained <code>agent</code> node should land on the fault path because the no-op text is not valid structured model output. Live Azure Foundry tests return inconclusive when Azure is not configured. Live Foundry Local tests return inconclusive only when the local runtime is missing or undiscoverable; once installed, local provider mismatch, no-op fallback, or timeout is failure. No-op fallback is covered in unit and endpoint tests, not by silently passing live-AI tests.</p>
+<p><code>TASKFLOW_USE_AZURE_FOUNDRY=true</code> is an explicit intent flag only; it fails startup unless a complete connection or endpoint-plus-deployment pair is configured. <code>aspire publish</code> does not provision the Foundry account or deployment. The endpoint-only credential path is keyless and uses <code>DefaultAzureCredential</code>.</p>
+<p>When AI is disabled, D1-D8 return the no-op &quot;not configured&quot; response. D9 can still start a workflow instance, but the schema-constrained <code>agent</code> node should land on the fault path because the no-op text is not valid structured model output. Live Azure Foundry tests return inconclusive when Azure is not configured. No-op fallback is covered in unit and endpoint tests, not by silently passing live-AI tests.</p>
 <p>TaskFlow has no <code>.foundry/agent-metadata.yaml</code> by default because shipped agents are code-hosted over <code>IChatClient</code>, not server-hosted Foundry agents. Add <code>.foundry/agent-metadata.yaml</code> under the agent source folder only when a hosted or prompt agent joins Foundry deploy/eval workflows; keep project endpoint, agent name, datasets, evaluators, and thresholds there.</p>
 <h3 id="146-workflow-triggering">14.6 Workflow Triggering</h3>
 <p><code>Application.MessageHandlers.WorkflowTriggerHandler</code> implements <code>IWorkflowTrigger</code> with a single method <code>OnTaskItemCreatedAsync(TaskItemCreatedEvent)</code> that calls <code>engine.StartBackgroundAsync(StartRequest { WorkflowId = &quot;ai-task-triage&quot;, ... })</code>.</p>
@@ -2020,7 +2007,7 @@ curl -sk &quot;$GW/api/flowengine/instances/$INSTANCE_ID&quot; | jq &#39;{ statu
 <li><code>https://&lt;blazor-host&gt;/workflows/registry</code> - three workflows Active.</li>
 <li><code>/workflows/new</code> - drag a few tiles; Import JSON of <code>ai-task-triage.json</code> and confirm parse.</li>
 <li><code>/workflows/run</code> - pick <code>ai-task-triage</code>, paste params, fire; see it appear under <code>/instances</code>.</li>
-<li><code>/human-tasks</code> - only populated once an instance reaches a <code>human</code> node (the Critical branch of triage, or the optional review in decomposer). Requires a real Foundry Local or Azure model for the upstream <code>agent</code> step to produce schema-valid output.</li>
+<li><code>/human-tasks</code> - only populated once an instance reaches a <code>human</code> node (the Critical branch of triage, or the optional review in decomposer). Requires a real Azure or OpenAI-compatible model for the upstream <code>agent</code> step to produce schema-valid output.</li>
 </ol>
 <p><strong>Without a real model wired</strong>, the no-op <code>IChatClient</code> response is not schema-valid for <code>n-classify</code>, so the instance lands at <code>n-faulted</code> immediately. That is the expected no-AI scaffold posture and matches the reference app&#39;s no-op stub pattern.</p>
 <p>D4/D5/D6/D9 exercise write or enqueue paths. Local scaffold auth supplies a predictable development tenant and admin/member roles, but persistent side-effect verification in production should use a real authenticated tenant context so the tenant-boundary validator and audit path are exercised.</p>

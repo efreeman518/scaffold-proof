@@ -9,21 +9,9 @@ namespace TaskFlow.Bootstrapper;
 /// </summary>
 internal static partial class LogMessages
 {
-    /// <summary>Logs that a Foundry Local model is being downloaded if needed.</summary>
-    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 1, Level = LogLevel.Information, Message = "Downloading Foundry Local model {ModelAlias} if needed.")]
-    public static partial void DownloadingFoundryModel(this ILogger logger, string modelAlias);
-
-    /// <summary>Logs that a Foundry Local model is being loaded.</summary>
-    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 2, Level = LogLevel.Information, Message = "Loading Foundry Local model {ModelId}.")]
-    public static partial void LoadingFoundryModel(this ILogger logger, string modelId);
-
     /// <summary>Logs that the Azure AI Foundry chat client is being configured.</summary>
     [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 3, Level = LogLevel.Information, Message = "{AppName} {Environment} - Configure Azure AI Foundry chat client.")]
     public static partial void ConfigureAzureChatClient(this ILogger logger, string appName, string environment);
-
-    /// <summary>Logs that the Foundry Local chat client is being configured.</summary>
-    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 4, Level = LogLevel.Information, Message = "{AppName} {Environment} - Configure Foundry Local chat client.")]
-    public static partial void ConfigureFoundryLocalChatClient(this ILogger logger, string appName, string environment);
 
     /// <summary>Logs that a provisioned external resource exists and is usable.</summary>
     [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 5, Level = LogLevel.Information, Message = "External resource ready: {ResourceKind} {ResourceName}")]
@@ -59,10 +47,6 @@ internal static partial class LogMessages
     /// <summary>Logs that a legacy AiServices:Use* kill switch is superseded by dynamic feature flags (D-042).</summary>
     [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 14, Level = LogLevel.Warning, Message = "{AppName} {Environment} - {ConfigKey}=false is a legacy AI kill switch superseded by dynamic feature flags (D-042); honored one more release, then removed. Configure App Configuration/appsettings feature flags instead.")]
     public static partial void LegacyAiSwitchSuperseded(this ILogger logger, string appName, string environment, string configKey);
-
-    /// <summary>Logs that Foundry Local is unavailable and the process is falling back to the no-op AI client.</summary>
-    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 15, Level = LogLevel.Warning, Message = "{AppName} {Environment} - Foundry Local unavailable. Falling back to no-op AI client.")]
-    public static partial void FoundryLocalUnavailable(this ILogger logger, Exception exception, string appName, string environment);
 
     /// <summary>Logs that startup dependency warmup completed.</summary>
     [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 16, Level = LogLevel.Information, Message = "Database warmup completed")]

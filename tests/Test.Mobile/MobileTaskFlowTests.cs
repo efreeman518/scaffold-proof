@@ -19,6 +19,6 @@ public sealed class MobileTaskFlowTests : MobileUiTestBase
         Assert.IsTrue(App.TaskEditor.HasText("Task description"), "Description field accessibility label missing.");
         Assert.IsTrue(App.TaskEditor.HasText("Task priority"), "Priority field accessibility label missing.");
         Assert.IsTrue(App.TaskEditor.HasText("Task status"), "Status field accessibility label missing.");
-        Assert.IsTrue(App.TaskEditor.HasText("Save task"), "Save button accessibility label missing.");
+        App.TaskEditor.RequireAccessibleSave();
     });
 }
