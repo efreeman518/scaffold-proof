@@ -14,7 +14,7 @@ public class TaskFlowAiSettings
     public string? FoundryEndpoint { get; set; }
 
     // TODO: [CONFIGURE] Model deployment names in your Foundry project
-    public string AgentModelDeployment { get; set; } = "gpt-4o-deploy";
+    public string AgentModelDeployment { get; set; } = "chat-deploy";
     public string EmbeddingModelDeployment { get; set; } = "embedding-deploy";
 
     // TODO: [CONFIGURE] Set to your Azure AI Search endpoint
