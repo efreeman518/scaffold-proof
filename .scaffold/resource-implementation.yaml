@@ -465,7 +465,7 @@ aiServices:
     models:
       - name: gpt-4o
         purpose: agent-reasoning
-        deploymentName: gpt-4o-deploy
+        deploymentName: chat-deploy
       - name: text-embedding-3-small
         purpose: embedding
         deploymentName: embedding-deploy
