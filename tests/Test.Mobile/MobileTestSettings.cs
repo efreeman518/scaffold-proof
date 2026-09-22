@@ -28,7 +28,7 @@ internal sealed record MobileTestSettings
         var configuredAppPath = GetValue(context, PlatformAppPathKey(platform));
         var appPath = ResolveAppPath(repoRoot, configuredAppPath, platform);
         var screenshotDirectory = GetValue(context, "TASKFLOW_MOBILE_SCREENSHOT_DIR")
-            ?? Path.Combine(repoRoot, "tests", "Test.Mobile", "TestResults", "screenshots");
+            ?? Path.Combine(repoRoot, "tests", "TestResults", "Mobile", "screenshots");
 
         return new MobileTestSettings
         {

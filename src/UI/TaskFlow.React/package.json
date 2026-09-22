@@ -5,7 +5,7 @@
   "type": "module",
   "taskflow": {
     "toolingNotes": {
-      "typescript": "Pinned to ~6.0.3 because typescript-eslint 8.70 supports TypeScript >=4.8.4 <6.1.0. Remove this pin when typescript-eslint supports the next selected TypeScript line."
+      "typescript": "Pinned to ~6.0.3 because typescript-eslint 8.70 supports TypeScript >=4.8.4 <6.1.0. Remove this pin when typescript-eslint supports the next selected TypeScript line. Validating check: npm ci --prefix src/UI/TaskFlow.React (ci.yml, deploy.yml) fails on typescript-eslint's peer range when TypeScript moves outside it; run npm run lint after any bump."
     }
   },
   "scripts": {
