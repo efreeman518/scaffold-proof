@@ -145,28 +145,28 @@ jobs:
               --no-build --configuration Release \
               --blame-hang --blame-hang-timeout 15s \
               --logger "trx;LogFileName=unit-results.trx" \
-              --results-directory ./TestResults
+              --results-directory ./tests/TestResults
 
       - name: Architecture Tests
         run: >
           dotnet test tests/Test.Architecture/Test.Architecture.csproj
           --no-build --configuration Release
           --logger "trx;LogFileName=arch-results.trx"
-          --results-directory ./TestResults
+          --results-directory ./tests/TestResults
 
       - name: Endpoint Tests
         run: >
           dotnet test tests/Test.Endpoints/Test.Endpoints.csproj
           --no-build --configuration Release
           --logger "trx;LogFileName=endpoint-results.trx"
-          --results-directory ./TestResults
+          --results-directory ./tests/TestResults
 
       - name: FlowEngine Definition Tests
         run: >
           dotnet test tests/Test.Integration.FlowEngine/Test.Integration.FlowEngine.csproj
           --no-build --configuration Release
           --logger "trx;LogFileName=flowengine-results.trx"
-          --results-directory ./TestResults
+          --results-directory ./tests/TestResults
 
       # Deterministic graph construction only. This proves exact resource membership without claiming the
       # containers or hosts started; the manual workstation job below owns runnable full-lane proof.
@@ -176,7 +176,7 @@ jobs:
           --no-build --configuration Release
           --filter "FullyQualifiedName~AppHostLaneTopologyTests|FullyQualifiedName~AppHostMigratorTopologyTests"
           --logger "trx;LogFileName=aspire-topology-results.trx"
-          --results-directory ./TestResults
+          --results-directory ./tests/TestResults
 
       - name: Aspire Core Lane Mesh Tests (manual)
         id: aspire_mesh
@@ -241,7 +241,7 @@ jobs:
                 --no-build --configuration Release \
                 -m:1 \
                 --logger "trx;LogFileName=aspire-${lane}-${read_model}-results.trx" \
-                --results-directory ./TestResults
+                --results-directory ./tests/TestResults
           }
 
           test_exit=0
@@ -350,7 +350,7 @@ jobs:
                 --no-build --configuration Release \
                 -m:1 \
                 --logger "trx;LogFileName=playwrightui-${lane}-${read_model}-results.trx" \
-                --results-directory ./TestResults
+                --results-directory ./tests/TestResults
           }
 
           if [ "${{ inputs.lane }}" = "both" ] || [ "${{ inputs.lane }}" = "Azure" ]; then
@@ -366,7 +366,7 @@ jobs:
           --no-build --configuration Release
           --filter FullyQualifiedName~MigrationModelContractTests
           --logger "trx;LogFileName=migration-model-results.trx"
-          --results-directory ./TestResults
+          --results-directory ./tests/TestResults
 
       - name: Deployment workflow contract gate
         run: >
@@ -374,7 +374,7 @@ jobs:
           --no-build --configuration Release
           --filter FullyQualifiedName~DeploymentWorkflowContractTests
           --logger "trx;LogFileName=deployment-contract-results.trx"
-          --results-directory ./TestResults
+          --results-directory ./tests/TestResults
 
       - name: Upload Test Results
         if: always()
@@ -382,9 +382,9 @@ jobs:
         with:
           name: test-results
           path: |
-            ./TestResults/**/*.trx
-            ./TestResults/**/*.xml
-            ./TestResults/**/*.dmp
+            ./tests/TestResults/**/*.trx
+            ./tests/TestResults/**/*.xml
+            ./tests/TestResults/**/*.dmp
           if-no-files-found: warn
 
   # Complete runnable graph proof is manual and uses the zero-billable-minute workstation runner. Unlike
@@ -506,14 +506,14 @@ jobs:
               --no-build --configuration Release -m:1 `
               --filter $aspireFilter `
               --logger "trx;LogFileName=full-aspire-${Lane}-${ReadModel}-results.trx" `
-              --results-directory ./TestResults
+              --results-directory ./tests/TestResults
             if ($LASTEXITCODE -ne 0) { throw "${Lane} complete Aspire graph acceptance failed." }
 
             dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj `
               --no-build --configuration Release -m:1 `
               --filter "TestCategory=PlaywrightUI|TestCategory=WasmUI" `
               --logger "trx;LogFileName=full-ui-${Lane}-${ReadModel}-results.trx" `
-              --results-directory ./TestResults
+              --results-directory ./tests/TestResults
             if ($LASTEXITCODE -ne 0) { throw "${Lane} browser acceptance failed." }
           }
 
@@ -529,7 +529,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: full-lane-test-results
-          path: ./TestResults/**/*.trx
+          path: ./tests/TestResults/**/*.trx
           if-no-files-found: warn
 
   # Manual Docker-backed acceptance runs through the same canonical lane contract as Aspire and production.
@@ -587,7 +587,7 @@ jobs:
           dotnet test tests/Test.E2E/Test.E2E.csproj
           --no-build --configuration Release
           --logger "trx;LogFileName=e2e-${{ matrix.lane }}-results.trx"
-          --results-directory ./TestResults
+          --results-directory ./tests/TestResults
 
       - name: Integration Tests (${{ matrix.lane }}, component)
         if: ${{ inputs.includeIntegration == true && (inputs.lane == 'both' || inputs.lane == matrix.lane) }}
@@ -596,14 +596,14 @@ jobs:
           dotnet test tests/Test.Integration/Test.Integration.csproj
           --no-build --configuration Release
           --logger "trx;LogFileName=integration-${{ matrix.lane }}-results.trx"
-          --results-directory ./TestResults
+          --results-directory ./tests/TestResults
 
       - name: Upload Test Results
         if: ${{ always() && (inputs.lane == 'both' || inputs.lane == matrix.lane) }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-results-${{ matrix.lane }}
-          path: ./TestResults/**/*.trx
+          path: ./tests/TestResults/**/*.trx
           if-no-files-found: warn
 
   # NonAzure lane end-to-end proof (D-060). Dispatch-gated: it builds the app images from source, so

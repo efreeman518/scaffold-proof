@@ -462,11 +462,11 @@ aiServices:
 
   foundry:
     projectName: TaskFlowAI
-    models:
-      - name: gpt-4o
+    models:                   # names resolve from the model catalog at deploy time (AiServices:ChatModel stays empty in appsettings)
+      - name: <latest-stable>
         purpose: agent-reasoning
         deploymentName: chat-deploy
-      - name: text-embedding-3-small
+      - name: <latest-stable>
         purpose: embedding
         deploymentName: embedding-deploy
     useFoundryAgentService: false
@@ -489,8 +489,8 @@ aiServices:
           - { name: DueDate, type: sortable }
         searchMode: hybrid
         semanticConfig: true
-    embeddingModel: text-embedding-3-small
-    embeddingDimensions: 1536
+    embeddingModel: <latest-stable>
+    embeddingDimensions: 1536 # dimension of the resolved embedding model; TaskItemEmbedding.DefaultDimensions and vector fields must match
     vectorizationStrategy: on-write
 
   agents:
@@ -498,7 +498,7 @@ aiServices:
     agents:
       - name: TaskAssistant
         type: ChatClientAgent
-        model: gpt-4o
+        model: <latest-stable>
         systemPrompt: "You are TaskAssistant, an AI helper for the TaskFlow application. Help users manage their tasks through natural language. You can create, search, update, and summarize tasks."
         tools: [SearchTasks, CreateTask, UpdateTask, GetTaskDetails, SummarizeTasks]
         groundingSource: taskitems-index

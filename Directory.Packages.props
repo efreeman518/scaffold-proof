@@ -38,19 +38,19 @@
   </ItemGroup>
   <ItemGroup Label="EF.Packages.Enterprise (Private Feed)">
     <PackageVersion Include="EF.FilterBuilder" Version="1.0.179" />
-    <PackageVersion Include="EF.FlowEngine" Version="1.0.179" />
-    <PackageVersion Include="EF.FlowEngine.StateStore.Sql" Version="1.0.179" />
-    <PackageVersion Include="EF.FlowEngine.Locks.Sql" Version="1.0.179" />
-    <PackageVersion Include="EF.FlowEngine.WorkflowRegistry.Sql" Version="1.0.179" />
-    <PackageVersion Include="EF.FlowEngine.HumanTaskStore.Sql" Version="1.0.179" />
-    <PackageVersion Include="EF.FlowEngine.Outbox.Sql" Version="1.0.179" />
-    <PackageVersion Include="EF.FlowEngine.CircuitBreaker.Sql" Version="1.0.179" />
-    <PackageVersion Include="EF.FlowEngine.Clients.AI" Version="1.0.179" />
-    <PackageVersion Include="EF.FlowEngine.Clients.Http" Version="1.0.179" />
-    <PackageVersion Include="EF.FlowEngine.Clients.ServiceBus" Version="1.0.179" />
-    <PackageVersion Include="EF.FlowEngine.AdminApi" Version="1.0.179" />
-    <PackageVersion Include="EF.FlowEngine.Dashboard" Version="1.0.179" />
-    <PackageVersion Include="EF.FlowEngine.Testing" Version="1.0.179" />
+    <PackageVersion Include="EF.FlowEngine" Version="1.0.191" />
+    <PackageVersion Include="EF.FlowEngine.StateStore.Sql" Version="1.0.191" />
+    <PackageVersion Include="EF.FlowEngine.Locks.Sql" Version="1.0.191" />
+    <PackageVersion Include="EF.FlowEngine.WorkflowRegistry.Sql" Version="1.0.191" />
+    <PackageVersion Include="EF.FlowEngine.HumanTaskStore.Sql" Version="1.0.191" />
+    <PackageVersion Include="EF.FlowEngine.Outbox.Sql" Version="1.0.191" />
+    <PackageVersion Include="EF.FlowEngine.CircuitBreaker.Sql" Version="1.0.191" />
+    <PackageVersion Include="EF.FlowEngine.Clients.AI" Version="1.0.191" />
+    <PackageVersion Include="EF.FlowEngine.Clients.Http" Version="1.0.191" />
+    <PackageVersion Include="EF.FlowEngine.Clients.ServiceBus" Version="1.0.191" />
+    <PackageVersion Include="EF.FlowEngine.AdminApi" Version="1.0.191" />
+    <PackageVersion Include="EF.FlowEngine.Dashboard" Version="1.0.191" />
+    <PackageVersion Include="EF.FlowEngine.Testing" Version="1.0.191" />
   </ItemGroup>
   <ItemGroup Label="Microsoft Entity Framework Core">
     <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.12" />

@@ -261,7 +261,7 @@ public sealed class DeploymentWorkflowContractTests
         Assert.IsFalse(
             unitStep.Contains("TestCategory=Unit", StringComparison.Ordinal),
             "The complete Test.Unit project includes untagged provider and regression contracts.");
-        StringAssert.Contains(workflow, "./TestResults/**/*.dmp");
+        StringAssert.Contains(workflow, "./tests/TestResults/**/*.dmp");
     }
 
     [TestMethod]
