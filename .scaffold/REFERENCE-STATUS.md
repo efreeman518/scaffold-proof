@@ -10,7 +10,7 @@ The 2026-09-16 provider/toolchain refresh removed the deprecated local AI provid
 
 | Field | Value |
 |---|---|
-| Last verified | 2026-09-16 |
+| Last verified | 2026-09-25 (fast matrix, Release build, analyzers); 2026-09-16 (container, Aspire, UI, deployment lanes) |
 | Solution | `TaskFlow.slnx` |
 | Target framework | .NET 10 |
 | Configuration | Release |
@@ -32,14 +32,16 @@ All current Release fast projects passed serially with no failed, skipped, or in
 
 | Project | Passed | Duration |
 |---|---:|---:|
-| Test.Unit | 544 | 8.2 s |
-| Test.UI | 59 | 1.3 s |
-| Test.Architecture | 77 | 2.4 s |
-| Test.Endpoints | 166 | 7.5 s |
-| Test.Integration.FlowEngine | 18 | 0.9 s |
-| Test.Mutation | 33 | 0.8 s |
-| Test.PlaywrightUI (`TestCategory=Unit`) | 5 | 1.1 s |
-| **Total** | **902** | |
+| Test.Unit | 561 | 6 s |
+| Test.UI | 59 | 0.6 s |
+| Test.Architecture | 77 | 1 s |
+| Test.Endpoints | 170 | 6 s |
+| Test.Integration.FlowEngine | 18 | 0.2 s |
+| Test.Mutation | 33 | 0.1 s |
+| Test.PlaywrightUI (`TestCategory=Unit`) | 5 | 0.1 s |
+| **Total** | **923** | |
+
+2026-09-25 rerun after the D-062..D-065 scale alignment; the container, Aspire, UI, and deployment lanes below were not rerun and keep their 2026-09-16 evidence.
 
 `Test.Unit` used a 15-second blame-hang timeout. `dotnet format analyzers TaskFlow.slnx --severity warn --verify-no-changes --no-restore` passed with no changes or diagnostics.
 
@@ -179,6 +181,10 @@ Status meanings:
 | Internal gRPC read service (D-054) | proven | `Test.Endpoints/TaskFlowReadGrpcTests.cs` (in-memory `GrpcChannel` parity with the REST summary); `Test.Unit/Contracts/TaskFlowReadGrpcMapperTests.cs`; `Test.Architecture/GrpcArchitectureTests.cs` (gRPC service lives only in the Api host) |
 | MessagePack L2 cache serializer (D-048/D-056) | proven | `Test.Unit/Infrastructure/CacheSerializerTests.cs` (round trip, both serializers); `Test.Integration/MessagePackCacheTests.cs` (L2 Redis round trip) |
 | Compose lane (Docker Compose + Caddy) + VPS deploy workflow (D-036) | proven (Compose); CI-only (VPS deploy) | Canonical and local JSONB/Mongo Compose shapes pass; worker also validated eight none, Mongo, pooler, and combined shapes. `deploy-vps.yml` remains `workflow_dispatch` deploy/rollback evidence only. |
+| In-house load runner (D-062) | proven (runner); deployment-only (load gate) | `Test.Unit/Load/LoadRunnerTests.cs` (percentile, failure counting, saturation drops); `Test.Load/TaskItemLoadTests.cs` scenarios assert error rate and p95/p99 but stay manual |
+| No unsafe-method retry (D-063) | proven | `Test.Unit/Hosting/ServiceDefaultsScaleTests.cs` (transient 503: POST sent once, GET retried three times); Blazor Refit clients carry `DisableForUnsafeHttpMethods()`, the read-only gRPC client keeps retries |
+| Request timeouts, shutdown drain, runtime evidence (D-064) | proven (wiring); deployment-only (live drain) | `Test.Endpoints/RequestTimeoutEndpointTests.cs` and `Test.Unit/Gateway/GatewayRequestTimeoutTests.cs` (default policies, streaming opt-outs, YARP `TimeoutPolicy: Disable`); `Test.Unit/Hosting/ServiceDefaultsScaleTests.cs` (readiness unhealthy for the drain, budget validation); `Test.Unit/Infrastructure/BicepInfrastructureContractTests.cs` and `DeploymentWorkflowContractTests.cs` (Container Apps drain, Compose budget) |
+| Head trace sampling (D-065) | proven | `Test.Unit/Hosting/ServiceDefaultsScaleTests.cs` (ratio 0 drops and ratio 1 records a root span; out-of-range fails startup) |
 | NonAzure deployment observability (D-061) | proven (wiring and contracts); deployment-only (live runtime) | `Test.Unit/Hosting/OpenTelemetryMetricsRegistrationTests.cs` proves the runtime metrics switch; `Test.Endpoints/GlobalExceptionHandlerTests.cs` proves server `requestId` plus W3C `traceId`/`spanId` exception correlation; endpoint contracts prove the same correlation fields on typed errors; `Test.Unit/Infrastructure/DeploymentWorkflowContractTests.cs` proves OpenObserve isolation, credentials, OTLP, retention, and deploy gates. `deploy/compose/docker-compose.yml`, `docker-compose.override.local.yml`, and `.github/workflows/deploy-vps.yml` wire deployed OpenObserve OSS with metrics export disabled by default; local Aspire retains its Dashboard defaults. Compose shapes and workflow YAML validated, but no live OpenObserve container or deployment ran. |
 
 The declared flags and matrix must agree with `.scaffold/resource-implementation.yaml`. Proof paths are validated against the scaffold-owned [TaskFlow proof map](https://github.com/efreeman518/scaffold-ai/blob/main/support/taskflow-proof-map.md).
