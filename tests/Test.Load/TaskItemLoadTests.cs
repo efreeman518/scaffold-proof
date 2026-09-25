@@ -56,14 +56,17 @@ public class TaskItemLoadTests
             Filter = new TaskItemSearchFilter()
         };
 
-        // Starts one new search invocation per second for 30 seconds - unchanged from the prior configuration.
+        async Task<bool> Search(CancellationToken ct)
+        {
+            using var response = await HttpClient.PostAsJsonAsync(TaskItemsSearchPath, searchRequest, JsonOptions, ct);
+            return response.IsSuccessStatusCode;
+        }
+
+        // Warm up first so cold-start work (JIT, pools, caches) is not measured, then one search per second
+        // for 30 seconds - unchanged from the prior configuration.
+        await WarmUpAsync(Search);
         var result = await LoadRunner.RunAsync(
-            async ct =>
-            {
-                using var response = await HttpClient.PostAsJsonAsync(TaskItemsSearchPath, searchRequest, JsonOptions, ct);
-                return response.IsSuccessStatusCode;
-            },
-            ratePerSecond: 1, duration: TimeSpan.FromSeconds(30), maxInFlight: 20, TestContext.CancellationToken);
+            Search, ratePerSecond: 1, duration: TimeSpan.FromSeconds(30), maxInFlight: 20, TestContext.CancellationToken);
 
         TestContext.WriteLine($"{result}");
         Assert.IsLessThanOrEqualTo(0.05, result.ErrorRate, $"Error rate {result.ErrorRate:P2} exceeds budget.");
@@ -78,6 +81,7 @@ public class TaskItemLoadTests
     {
         // The prior ramp (30s) and steady (60s) phases both injected at rate 1; the in-house runner has no
         // ramping concept, so they collapse into one flat rate 1 run over the combined 90s duration.
+        await WarmUpAsync(ct => RunCrudWorkflowAsync(HttpClient, ct));
         var result = await LoadRunner.RunAsync(
             ct => RunCrudWorkflowAsync(HttpClient, ct),
             ratePerSecond: 1, duration: TimeSpan.FromSeconds(90), maxInFlight: 10, TestContext.CancellationToken);
@@ -87,6 +91,11 @@ public class TaskItemLoadTests
         Assert.IsLessThan(TimeSpan.FromMilliseconds(2000), result.P99, $"p99 {result.P99} exceeds budget.");
         Assert.IsLessThan(TimeSpan.FromMilliseconds(1000), result.P95, $"p95 {result.P95} exceeds budget.");
     }
+
+    /// <summary>Runs the scenario for 10 seconds at the measured rate and discards the result.</summary>
+    private Task WarmUpAsync(Func<CancellationToken, Task<bool>> operation) =>
+        LoadRunner.RunAsync(operation, ratePerSecond: 1, duration: TimeSpan.FromSeconds(10), maxInFlight: 10,
+            TestContext.CancellationToken);
 
     /// <summary>Runs one search-create-get-update-delete-verify cycle; false on any unexpected status code.</summary>
     private static async Task<bool> RunCrudWorkflowAsync(HttpClient httpClient, CancellationToken ct)
