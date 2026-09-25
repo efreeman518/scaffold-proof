@@ -217,7 +217,7 @@ else
         // the ETag the REST response carries, and D-054 scopes the proof to the aggregate reads.
         var result = await FloatService.ExecuteWithProgressAsync(
             () => ReadSettings.UseGrpcReads
-                ? GrpcReads.GetTaskMetadataDtoAsync()
+                ? GrpcReads.GetTaskMetadataDtoAsync(ReadSettings)
                 : Api.GetTaskMetadataAsync(),
             "Failed to load categories.");
         _categories = result?.Categories?.Where(c => c.IsActive).ToList() ?? [];

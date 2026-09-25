@@ -62,6 +62,11 @@ public static class WebApplicationBuilderExtensions
         // 8. Authorization
         app.UseAuthorization();
 
+        // 9. Request timeouts (D-064): after routing/auth so endpoint metadata (DisableRequestTimeout on
+        // the streaming routes) applies. No explicit UseRouting/UseEndpoints call exists in this minimal
+        // API pipeline, so routing already ran implicitly before the first middleware above.
+        app.UseRequestTimeouts();
+
         // OpenAPI / Scalar
         if (app.Configuration.GetValue<bool>("OpenApiSettings:Enable", true))
         {

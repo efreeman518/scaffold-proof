@@ -17,17 +17,27 @@ public static class TaskFlowReadClientExtensions
 {
     /// <summary>Tenant task counts by status plus overdue and total.</summary>
     public static async Task<TaskItemSummaryDto> GetTaskItemSummaryDtoAsync(
-        this TaskFlowRead.TaskFlowReadClient client, CancellationToken ct = default)
+        this TaskFlowRead.TaskFlowReadClient client, ClientReadSettings settings, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(client);
-        return (await client.GetTaskItemSummaryAsync(new GetTaskItemSummaryRequest(), cancellationToken: ct)).ToDto();
+        ArgumentNullException.ThrowIfNull(settings);
+        // D-064: per-call deadline, so a stalled read fails instead of hanging the circuit.
+        return (await client.GetTaskItemSummaryAsync(
+            new GetTaskItemSummaryRequest(),
+            deadline: DateTime.UtcNow.AddSeconds(settings.DeadlineSeconds),
+            cancellationToken: ct)).ToDto();
     }
 
     /// <summary>Full category and tag lists for pickers.</summary>
     public static async Task<TaskMetadataDto> GetTaskMetadataDtoAsync(
-        this TaskFlowRead.TaskFlowReadClient client, CancellationToken ct = default)
+        this TaskFlowRead.TaskFlowReadClient client, ClientReadSettings settings, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(client);
-        return (await client.GetTaskMetadataAsync(new GetTaskMetadataRequest(), cancellationToken: ct)).ToDto();
+        ArgumentNullException.ThrowIfNull(settings);
+        // D-064: per-call deadline, so a stalled read fails instead of hanging the circuit.
+        return (await client.GetTaskMetadataAsync(
+            new GetTaskMetadataRequest(),
+            deadline: DateTime.UtcNow.AddSeconds(settings.DeadlineSeconds),
+            cancellationToken: ct)).ToDto();
     }
 }

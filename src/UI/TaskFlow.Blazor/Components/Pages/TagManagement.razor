@@ -84,7 +84,7 @@
         // D-054: gRPC when the internal read hop is configured, REST through the gateway otherwise.
         var result = await FloatService.ExecuteWithProgressAsync(
             () => ReadSettings.UseGrpcReads
-                ? GrpcReads.GetTaskMetadataDtoAsync()
+                ? GrpcReads.GetTaskMetadataDtoAsync(ReadSettings)
                 : Api.GetTaskMetadataAsync(),
             "Failed to load tags.");
         _tags = result?.Tags?.OrderBy(t => t.Name).ToList() ?? [];

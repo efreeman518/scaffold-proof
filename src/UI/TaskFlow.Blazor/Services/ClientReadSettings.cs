@@ -10,4 +10,8 @@ namespace TaskFlow.Blazor.Services;
 /// the choice behind an interface would hide exactly the thing worth seeing.
 /// </summary>
 /// <param name="UseGrpcReads">True when summary and metadata reads go through the gRPC client.</param>
-public sealed record ClientReadSettings(bool UseGrpcReads);
+/// <param name="DeadlineSeconds">
+/// D-064: per-call deadline applied to the gRPC read call sites, from Grpc:TaskFlowRead:DeadlineSeconds
+/// (default 10). A stalled read fails at this deadline instead of hanging the circuit indefinitely.
+/// </param>
+public sealed record ClientReadSettings(bool UseGrpcReads, int DeadlineSeconds = 10);

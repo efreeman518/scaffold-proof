@@ -1,6 +1,7 @@
 using Azure.Core;
 using Azure.Identity;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Globalization;
 using System.Net.Http.Headers;
@@ -36,7 +37,26 @@ public static class RegisterGatewayServices
         AddCors(services, config);
         AddHealthChecks(services, config);
         AddRateLimiting(services, config);
+        AddRequestTimeouts(services, config);
         return services;
+    }
+
+    /// <summary>
+    /// Registers request-timeout dependencies in the service container (D-064). The default policy sits
+    /// above the Api's own budget so the gateway is never the tighter of the two; the routes that proxy the
+    /// Api's streaming endpoints (SSE token stream, NDJSON export) carry their own "Disable" TimeoutPolicy in
+    /// ReverseProxy:Routes so a long-held proxied connection is not cut by this default either.
+    /// </summary>
+    private static void AddRequestTimeouts(IServiceCollection services, IConfiguration config)
+    {
+        var defaultSeconds = config.GetValue<int?>("RequestTimeouts:DefaultSeconds") ?? 35;
+        services.AddRequestTimeouts(options =>
+        {
+            options.DefaultPolicy = new RequestTimeoutPolicy
+            {
+                Timeout = TimeSpan.FromSeconds(defaultSeconds)
+            };
+        });
     }
 
     /// <summary>Registers authentication dependencies in the service container.</summary>
