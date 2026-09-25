@@ -160,7 +160,6 @@
     <PackageVersion Include="Appium.WebDriver" Version="8.4.0" />
     <PackageVersion Include="Moq" Version="4.20.72" />
     <PackageVersion Include="NetArchTest.Rules" Version="1.3.2" />
-    <PackageVersion Include="NBomber" Version="6.6.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
   </ItemGroup>
   <ItemGroup Label="UI">
@@ -174,12 +173,10 @@
     <PackageVersion Include="Uno.Extensions.Reactive" Version="7.3.6" />
   </ItemGroup>
   <ItemGroup Label="Security transitive overrides">
-    <!-- Temporary exception: NBomber resolves a transitive with a high-severity advisory.
-         Reason: direct reference lifts the vulnerable transitive. Remove when NBomber resolves a non-vulnerable release.
-         Validate with the transitive vulnerability audit and the Test.Load build.
-         Also a first-class direct dependency since D-048: Infrastructure.Caching references MessagePack for
-         ContractlessStandardResolver, so this pin now outlives the NBomber advisory - only the comment above
-         goes away when NBomber is fixed, not the line. -->
+    <!-- Not a transitive-override exception: first-class direct dependency since D-048, Infrastructure.Caching
+         references MessagePack directly for ContractlessStandardResolver. Pinned here, alongside its former
+         exception neighbors, for centralized version control.
+         Validate with the Infrastructure.Caching consumers and the Test.Support build. -->
     <PackageVersion Include="MessagePack" Version="3.1.8" />
     <!-- Temporary exception: the Uno toolchain resolves a vulnerable cryptography transitive.
          Reason: direct reference lifts the vulnerable transitive. Remove when the parent resolves a non-vulnerable release.

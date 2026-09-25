@@ -139,7 +139,7 @@ Status meanings:
 | Live Entra or CIAM sign-in | deployment-only | Scaffold auth is the local proof |
 | Azure AI Foundry, Azure AI Inference, and Azure AI Search | deployment-only | Azure AI resources are externally provisioned. Configuration and provider-selection contracts pass; five live cloud tests were not run without an endpoint, deployment, and credentials |
 | Key Vault backed encryption and data-protection keys | deployment-only | AppHost and Bicep wiring exist; live vault, CMK, identity, RBAC require deployment |
-| 5,000 RPS load gate | deployment-only | Test.Load exists (NBomber) but is manual |
+| 5,000 RPS load gate | deployment-only | Test.Load exists (in-house LoadRunner) but is manual |
 | Production infrastructure rollout | deployment-only | Deployment workflow and Bicep validated without a live rollout |
 | Existing Foundry account, prompt agent, pre-existing agent opt-ins | documented-only | Commented examples only |
 | Notifications | not enabled | `includeNotifications: false` |

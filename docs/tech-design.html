@@ -104,7 +104,7 @@
 </tr>
 <tr>
 <td><strong>Testing</strong></td>
-<td>MSTest, Moq, NetArchTest, WebApplicationFactory, Testcontainers.MsSql/PostgreSql/RabbitMq, Aspire.Hosting.Testing, Stryker.NET, BenchmarkDotNet, NBomber, Playwright</td>
+<td>MSTest, Moq, NetArchTest, WebApplicationFactory, Testcontainers.MsSql/PostgreSql/RabbitMq, Aspire.Hosting.Testing, Stryker.NET, BenchmarkDotNet, in-house LoadRunner, Playwright</td>
 </tr>
 </tbody></table>
 <h3 id="design-principles">Design Principles</h3>
@@ -1150,9 +1150,9 @@ TASKFLOW_LANE=NonAzure dotnet run --project src/Host/Aspire/AppHost/AppHost.cspr
 </tr>
 <tr>
 <td><strong>Test.Load</strong></td>
-<td>NBomber HTTP scenarios - task-search throughput and CRUD generation - with assertions on success rate (&gt;= 95 %) and P99 latency (&lt; 2 s). Manual reports write under <code>tests/Test.Load/load-reports</code>.</td>
+<td>In-house <code>LoadRunner</code> HTTP scenarios - task-search throughput and CRUD generation - with assertions on error rate (&lt;= 5 %) and P95/P99 latency (&lt; 2 s). Manual reports write under <code>tests/Test.Load/load-reports</code>.</td>
 <td>Catches pre-prod throughput regressions and gives a reproducible perf baseline. Tests are <code>[Ignore]</code>&#39;d by default (manual run) so they never gate CI on infra availability.</td>
-<td>MSTest, <strong>NBomber</strong>, NBomber.Http</td>
+<td>MSTest, in-house <code>LoadRunner</code> (<code>Test.Support</code>)</td>
 </tr>
 <tr>
 <td><strong>Test.Benchmarks</strong></td>
@@ -1233,9 +1233,9 @@ dotnet test tests/Test.Mutation/Test.Mutation.csproj
 <td>Warmup / iteration control, statistical noise rejection, <code>[MemoryDiagnoser]</code> for GC allocations, console summary tables. Run as <code>dotnet run -c Release --project tests/Test.Benchmarks</code>.</td>
 </tr>
 <tr>
-<td><strong>NBomber + NBomber.Http</strong></td>
-<td>Load-test framework</td>
-<td><code>Scenario.Create(...)</code>, <code>Simulation.Inject(rate, interval, during)</code> for arrival-rate load, percentile assertions on latency / success. HTTP helpers for request building.</td>
+<td><strong>LoadRunner (in-house)</strong></td>
+<td>No load-test package</td>
+<td>Open-model fixed-schedule runner in <code>Test.Support</code>: <code>LoadRunner.RunAsync(operation, ratePerSecond, duration, maxInFlight, ct)</code> schedules requests on a fixed clock so a slow server cannot throttle offered load, drops requests past <code>maxInFlight</code>, and returns a <code>LoadResult</code> with offered/failed/dropped counts and P50/P95/P99 latency.</td>
 </tr>
 <tr>
 <td><strong><code>Microsoft.AspNetCore.Mvc.Testing</code></strong></td>

@@ -6,10 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="EF.Common.Contracts" />
-    <!-- Temporary direct reference lifting a vulnerable NBomber transitive - see Directory.Packages.props. -->
-    <PackageReference Include="MessagePack" />
     <PackageReference Include="MSTest" />
-    <PackageReference Include="NBomber" />
   </ItemGroup>
 
   <ItemGroup>

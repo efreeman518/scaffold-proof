@@ -143,7 +143,7 @@ Runtime/edge concerns (tests-after, within 5b):
   - API depends on Application.Contracts only (not Application.Services directly)
 - [ ] Workflow E2E tests in `Test.E2E` (multi-endpoint chains via WebApplicationFactory + Testcontainers SQL)
 - [ ] Browser UI tests in `Test.PlaywrightUI` (runs against hosted Aspire AppHost stack, not WebApplicationFactory)
-- [ ] Load tests (NBomber): task CRUD throughput, search latency, p95/p99
+- [ ] Load tests (in-house LoadRunner): task CRUD throughput, search latency, p95/p99
 - [ ] Benchmarks (BenchmarkDotNet): search projection, entity mapping, cache hit/miss
 - [ ] Dockerfiles per host (API, Gateway, Scheduler, Functions)
 - [ ] IaC (Bicep) - `infra/main.bicep` plus modules under `infra/modules/`
