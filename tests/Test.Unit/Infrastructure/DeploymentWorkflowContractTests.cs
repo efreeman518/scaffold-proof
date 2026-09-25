@@ -619,6 +619,7 @@ public sealed class DeploymentWorkflowContractTests
             StringAssert.Contains(block, "organization=${OPENOBSERVE_ORGANIZATION:-default}", host);
             StringAssert.Contains(block, "stream-name=${OPENOBSERVE_STREAM_NAME:-taskflow}", host);
             StringAssert.Contains(block, "OpenTelemetry__MetricsEnabled: ${OpenTelemetry__MetricsEnabled:-false}", host);
+            StringAssert.Contains(block, "Hosting__ShutdownTimeoutSeconds: ${Hosting__ShutdownTimeoutSeconds:-8}", host);
             StringAssert.Contains(block, "- telemetry", host);
         }
 
@@ -692,7 +693,7 @@ public sealed class DeploymentWorkflowContractTests
             "ConnectionStrings__MongoDb1", "Database__Encryption__LocalKeyBase64", "Grpc__TaskFlowRead__Address",
             "OPENOBSERVE_ROOT_EMAIL", "OPENOBSERVE_ROOT_PASSWORD", "OPENOBSERVE_OTLP_BASIC_CREDENTIAL",
             "OPENOBSERVE_ORGANIZATION", "OPENOBSERVE_STREAM_NAME", "OPENOBSERVE_RETENTION_DAYS",
-            "OpenTelemetry__MetricsEnabled", "CADDY_DOMAIN", "ACME_EMAIL", "GATEWAY_BASE_URL",
+            "OpenTelemetry__MetricsEnabled", "Hosting__ShutdownTimeoutSeconds", "CADDY_DOMAIN", "ACME_EMAIL", "GATEWAY_BASE_URL",
             "REACT_UI_ORIGIN", "UNO_UI_ORIGIN", "REACT_UI_DOMAIN", "UNO_UI_DOMAIN",
             "S3_PUBLIC_DOMAIN"
         })

@@ -44,15 +44,20 @@ public sealed class SchedulingMetrics
             new KeyValuePair<string, object?>("job.name", jobName));
     }
 
-    /// <summary>Records job failure for scheduler diagnostics.</summary>
-    public void RecordJobFailure(string jobName, string reason)
+    /// <summary>
+    /// Records job failure for scheduler diagnostics. The "failure.reason" tag is the exception's type
+    /// name, not its message: a message is free-form (can carry an id, a path, or other high-cardinality
+    /// or sensitive detail) and would blow up the tag's cardinality, while the type name is a small,
+    /// bounded set that stays meaningful in aggregate.
+    /// </summary>
+    public void RecordJobFailure(string jobName, Exception exception)
     {
         _jobExecutionsCounter.Add(1,
             new KeyValuePair<string, object?>("job.name", jobName),
             new KeyValuePair<string, object?>("job.status", "failure"));
         _jobFailuresCounter.Add(1,
             new KeyValuePair<string, object?>("job.name", jobName),
-            new KeyValuePair<string, object?>("failure.reason", reason));
+            new KeyValuePair<string, object?>("failure.reason", exception.GetType().Name));
     }
 
     /// <summary>Records job retry for scheduler diagnostics.</summary>

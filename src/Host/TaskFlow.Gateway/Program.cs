@@ -18,7 +18,7 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
-// Pipeline order: security -> CORS -> middleware -> endpoints -> reverse proxy
+// Pipeline order: security -> CORS -> middleware -> request timeouts -> endpoints -> reverse proxy
 // Azure App Configuration sentinel-key refresh middleware (D-042), guarded the same way the config
 // source itself was added - registering it without the provider having been added throws.
 if (GatewayAppConfiguration.IsAppConfigurationConfigured(app.Configuration))
@@ -41,6 +41,10 @@ app.UseHeaderPropagation();
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// D-064: must run before MapReverseProxy so a route's Timeout/TimeoutPolicy metadata applies - YARP reads
+// the same ASP.NET Core request-timeout feature MapReverseProxy's routes are checked against.
+app.UseRequestTimeouts();
 
 app.MapDefaultEndpoints();
 app.MapHealthChecks("/health/full", new HealthCheckOptions

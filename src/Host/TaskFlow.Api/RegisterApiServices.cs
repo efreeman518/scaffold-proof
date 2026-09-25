@@ -2,6 +2,7 @@ using EF.AspNetCore.Correlation;
 using EF.AspNetCore.Versioning;
 using EF.Grpc;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http.Timeouts;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using TaskFlow.Api.Auth;
@@ -42,6 +43,7 @@ public static class RegisterApiServices
         AddExceptionHandling(services);
         services.AddCorrelationHeaderPropagation();
         AddRateLimiting(services, config);
+        AddRequestTimeouts(services, config);
         AddVersionedOpenApi(services, config);
 
         // D-054: the internal gRPC read service. Nothing else changes here - it shares this host's
@@ -199,6 +201,23 @@ public static class RegisterApiServices
                 var limiters = context.HttpContext.RequestServices.GetRequiredService<TenantRateLimiterFactory>();
                 limiters.RecordRejected(context.HttpContext.User?.FindFirst("tenant_id")?.Value);
                 return ValueTask.CompletedTask;
+            };
+        });
+    }
+
+    /// <summary>
+    /// Registers request-timeout dependencies in the service container (D-064). Only the default policy is
+    /// configured here; streaming endpoints (SSE token stream, NDJSON export) opt out at their own mapping
+    /// site with DisableRequestTimeout(), and health endpoints are left on the default.
+    /// </summary>
+    private static void AddRequestTimeouts(IServiceCollection services, IConfiguration config)
+    {
+        var defaultSeconds = config.GetValue<int?>("RequestTimeouts:DefaultSeconds") ?? 30;
+        services.AddRequestTimeouts(options =>
+        {
+            options.DefaultPolicy = new RequestTimeoutPolicy
+            {
+                Timeout = TimeSpan.FromSeconds(defaultSeconds)
             };
         });
     }

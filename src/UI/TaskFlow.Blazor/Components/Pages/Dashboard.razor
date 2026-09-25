@@ -93,7 +93,7 @@
         // return the identical DTO, which is the point of the proof.
         var summary = await FloatService.ExecuteWithProgressAsync(
             () => ReadSettings.UseGrpcReads
-                ? GrpcReads.GetTaskItemSummaryDtoAsync()
+                ? GrpcReads.GetTaskItemSummaryDtoAsync(ReadSettings)
                 : Api.GetTaskItemSummaryAsync(),
             "Failed to load task summary.");
         if (summary is not null)

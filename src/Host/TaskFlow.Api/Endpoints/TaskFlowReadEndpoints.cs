@@ -46,6 +46,9 @@ public static class TaskFlowReadEndpoints
             .WithMetadata(new ExportRateLimitPolicy())
             .RequireRateLimiting(ExportRateLimitPolicy.PolicyName)
             .RequireFeature(TaskFlowFeatures.Export)
+            // D-064: this holds the connection for as long as the tenant has rows, so it must not share
+            // the host's default request timeout either.
+            .DisableRequestTimeout()
             .WithSummary("Stream the tenant's tasks as newline-delimited JSON, resumable by afterId");
 
         app.MapGet("/task-metadata", GetMetadata)

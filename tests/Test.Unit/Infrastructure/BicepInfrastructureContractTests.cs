@@ -177,6 +177,29 @@ public sealed class BicepInfrastructureContractTests
         Assert.IsFalse(functions.Contains("ftpsState", StringComparison.Ordinal));
     }
 
+    /// <summary>D-064: every app that serves traffic drains readiness on shutdown; the migrator job does not.</summary>
+    [TestMethod]
+    public void ContainerApps_ServingHostsDrainOnShutdown_MigratorDoesNot()
+    {
+        var main = ReadInfraFile("main.bicep");
+        StringAssert.Contains(main, "{ name: 'Hosting__DrainDelaySeconds', value: '5' }");
+        foreach (var app in new[] { "gateway", "api", "scheduler", "blazor" })
+        {
+            var start = main.IndexOf($"module {app} 'modules/container-app.bicep'", StringComparison.Ordinal);
+            Assert.IsTrue(start >= 0, app);
+            var envVars = main.IndexOf("envVars: union(", start, StringComparison.Ordinal);
+            StringAssert.StartsWith(main[(envVars + "envVars: union(".Length)..], "servingEnvVars,", app);
+        }
+
+        var migrator = main.IndexOf("module migrator 'modules/container-app-job.bicep'", StringComparison.Ordinal);
+        var migratorEnv = main.IndexOf("envVars: union(", migrator, StringComparison.Ordinal);
+        StringAssert.StartsWith(main[(migratorEnv + "envVars: union(".Length)..], "commonEnvVars,");
+
+        var compiled = ReadInfraFile("main.json");
+        Assert.AreEqual(4, compiled.Split("Hosting__DrainDelaySeconds").Length - 1,
+            "the compiled template must be rebuilt: one inlined drain setting per serving app");
+    }
+
     [TestMethod]
     public void CompiledFunctionsFlexConsumption_HasRequiredSemanticStructure()
     {

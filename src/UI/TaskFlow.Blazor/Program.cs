@@ -1,4 +1,5 @@
 using EF.FlowEngine.Dashboard;
+using Microsoft.Extensions.Http.Resilience;
 using MudBlazor;
 using MudBlazor.Services;
 using Refit;
@@ -69,7 +70,9 @@ var apiClient = builder.Services
     })
     .ConfigureAdditionalHttpMessageHandlers((handlers, _) => handlers.Clear());
 
-apiClient.AddStandardResilienceHandler();
+// D-063: retry only the safe (idempotent) HTTP methods. The standard handler retries every method by
+// default, which duplicated creates and uploads on a 5xx or timeout.
+apiClient.AddStandardResilienceHandler(o => o.Retry.DisableForUnsafeHttpMethods());
 
 // D-051: this is the read pipeline a rendered page waits on, so a slow tail costs a visibly stalled
 // component. Hedging is applied here and nowhere else - the attachment upload client and the AI client below
@@ -100,7 +103,10 @@ if (useGrpcReads && grpcReadAddress is null)
         "under the AppHost, which injects the taskflowapi 'Grpc' endpoint address.");
 }
 
-builder.Services.AddSingleton(new ClientReadSettings(useGrpcReads));
+// D-064: per-call deadline for the two gRPC read call sites (TaskFlowReadClientExtensions), from
+// Grpc:TaskFlowRead:DeadlineSeconds so a stalled read does not hang the circuit indefinitely.
+var grpcReadDeadlineSeconds = builder.Configuration.GetValue("Grpc:TaskFlowRead:DeadlineSeconds", 10);
+builder.Services.AddSingleton(new ClientReadSettings(useGrpcReads, grpcReadDeadlineSeconds));
 
 // Registered unconditionally so the pages can inject the client the same way they inject the Refit one.
 // With no address configured the flag above is off and the client is constructed but never called; the
@@ -113,6 +119,9 @@ builder.Services
     // through ConfigureHttpClientDefaults, and this host runs no UseHeaderPropagation middleware, so an
     // inherited handler would throw on every call from inside a SignalR circuit.
     .ConfigureAdditionalHttpMessageHandlers((handlers, _) => handlers.Clear())
+    // D-063: unlike the Refit clients above, this keeps retrying every method. Every gRPC call this client
+    // makes is technically an HTTP POST, but the client serves only the two idempotent reads in
+    // TaskFlowReadClientExtensions (summary, metadata), so retrying is safe here.
     .AddStandardResilienceHandler();
 
 // Attachment upload is a request shape (StreamPart) the Refit source generator cannot build (RF006),
@@ -129,7 +138,8 @@ builder.Services
         client.DefaultRequestHeaders.Add("Accept", "application/json");
     })
     .ConfigureAdditionalHttpMessageHandlers((handlers, _) => handlers.Clear())
-    .AddStandardResilienceHandler();
+    // D-063: an upload is a POST; retrying it after an ambiguous failure could duplicate the attachment.
+    .AddStandardResilienceHandler(o => o.Retry.DisableForUnsafeHttpMethods());
 
 // Raw HTTP client for the AI demo endpoints (the typed Refit client does not cover the AI routes,
 // and the streaming chat demo needs raw Server-Sent Events). Points at the gateway like the others.

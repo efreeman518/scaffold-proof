@@ -329,6 +329,13 @@ var commonEnvVars = [
   { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.outputs.connectionString }
 ]
 
+// D-064: hosts that serve traffic hold readiness unhealthy this long on shutdown so Container Apps ingress
+// stops routing to the replica before in-flight requests are cut. Below the 25 s shutdown budget and the
+// 30 s termination grace. The migrator job has no traffic to drain.
+var servingEnvVars = union(commonEnvVars, [
+  { name: 'Hosting__DrainDelaySeconds', value: '5' }
+])
+
 // SQL Hyperscale routes read traffic to a secondary replica via ApplicationIntent=ReadOnly on the same server.
 var dbConnectionString = sqlDatabase.outputs.connectionString
 var dbReadConnectionString = '${sqlDatabase.outputs.connectionString}ApplicationIntent=ReadOnly;'
@@ -373,7 +380,7 @@ module gateway 'modules/container-app.bicep' = {
     minReplicas: gatewayProfile.minReplicas
     maxReplicas: gatewayProfile.maxReplicas
     concurrentRequests: gatewayProfile.concurrentRequests
-    envVars: union(commonEnvVars, [
+    envVars: union(servingEnvVars, [
       { name: 'ReverseProxy__Clusters__api-cluster__Destinations__api__Address', value: 'https://${api.outputs.fqdn}' }
       { name: 'AggregateHealthCheck__TaskFlowApiHealthUrl', value: 'https://${api.outputs.fqdn}/health/full' }
       { name: 'AggregateHealthCheck__TaskFlowApiClusterId', value: '' }
@@ -406,7 +413,7 @@ module api 'modules/container-app.bicep' = {
     maxReplicas: apiProfile.maxReplicas
     concurrentRequests: apiProfile.concurrentRequests
     userAssignedIdentityId: runtimeSqlIdentity.outputs.id
-    envVars: union(commonEnvVars, [
+    envVars: union(servingEnvVars, [
       { name: 'ConnectionStrings__TaskFlowDbContextTrxn', value: dbConnectionString }
       { name: 'ConnectionStrings__TaskFlowDbContextQuery', value: dbReadConnectionString }
       { name: 'ConnectionStrings__TaskFlowFlowEngineDbContext', value: dbConnectionString }
@@ -444,7 +451,7 @@ module scheduler 'modules/container-app.bicep' = {
     minReplicas: schedulerProfile.minReplicas
     maxReplicas: schedulerProfile.maxReplicas
     userAssignedIdentityId: runtimeSqlIdentity.outputs.id
-    envVars: union(commonEnvVars, [
+    envVars: union(servingEnvVars, [
       { name: 'ConnectionStrings__TaskFlowDbContextTrxn', value: dbConnectionString }
       { name: 'ConnectionStrings__TaskFlowDbContextQuery', value: dbReadConnectionString }
       { name: 'ConnectionStrings__TaskFlowFlowEngineDbContext', value: dbConnectionString }
@@ -481,7 +488,7 @@ module blazor 'modules/container-app.bicep' = {
     // D-049: the only host that needs affinity. A Blazor Server circuit is per-connection server state, so a
     // reconnect landing on another replica loses it; every other app here is stateless across replicas.
     stickySessions: 'sticky'
-    envVars: union(commonEnvVars, [
+    envVars: union(servingEnvVars, [
       // The key the Blazor host actually reads is Gateway:BaseUrl (src/UI/TaskFlow.Blazor/Program.cs), and it
       // throws at startup when it is missing. This used to be spelled ApiBaseUrl, which nothing binds -
       // BicepInfrastructureContractTests now pins the name against the source that reads it.

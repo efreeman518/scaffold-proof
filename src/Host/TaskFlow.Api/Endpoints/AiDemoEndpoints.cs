@@ -47,7 +47,10 @@ public static class AiDemoEndpoints
             [FromServices] IChatClient chatClient,
             CancellationToken ct) =>
             TypedResults.ServerSentEvents(StreamTokens(chatClient, request.Message, ct), eventType: "token"))
-            .WithName("AiChatStream");
+            .WithName("AiChatStream")
+            // D-064: an open SSE stream has no fixed duration, so the host's default request timeout must
+            // not cut it off.
+            .DisableRequestTimeout();
 
         // D4 - Structured classification/decisioning: typed triage that can drive a deterministic apply.
         group.MapPost("/triage/{taskId:guid}", async (

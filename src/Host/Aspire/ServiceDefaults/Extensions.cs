@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using Azure.Monitor.OpenTelemetry.AspNetCore;
@@ -25,13 +26,16 @@ public static class Extensions
     {
         builder.ConfigureOpenTelemetry();
         builder.AddDefaultHealthChecks();
+        builder.AddHostLifecycle();
 
         builder.Services.AddServiceDiscovery();
         builder.Services.ConfigureHttpClientDefaults(http =>
         {
             if (addHeaderPropagation)
                 http.AddHeaderPropagation();
-            http.AddStandardResilienceHandler();
+            // D-063: the standard handler retries every method by default, so a 5xx or timeout on a POST would
+            // repeat a non-idempotent write. Safe methods keep their retries.
+            http.AddStandardResilienceHandler(o => o.Retry.DisableForUnsafeHttpMethods());
             http.AddServiceDiscovery();
         });
 
@@ -47,6 +51,16 @@ public static class Extensions
         var azureMonitorConnectionString =
             builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"];
         var useAzureMonitor = !string.IsNullOrWhiteSpace(azureMonitorConnectionString);
+
+        // D-065: head sampling ratio. Unset keeps each exporter's default: always-on for OTLP, the distro's
+        // rate-limited sampling for Azure Monitor. An out-of-range value fails startup instead of silently
+        // exporting everything or nothing.
+        var sampleRatio = builder.Configuration.GetValue<double?>("OpenTelemetry:Tracing:SampleRatio");
+        if (sampleRatio is { } configuredRatio && !(configuredRatio >= 0 && configuredRatio <= 1))
+        {
+            throw new InvalidOperationException(
+                $"OpenTelemetry:Tracing:SampleRatio must be between 0 and 1; got {configuredRatio}.");
+        }
 
         builder.Logging.AddOpenTelemetry(logging =>
         {
@@ -112,6 +126,13 @@ public static class Extensions
         {
             tracing.AddHttpClientInstrumentation();
 
+            // Parent-based so a sampled caller's trace stays whole across hosts. The Azure Monitor distro
+            // installs its own sampler, which is configured through its options below instead.
+            if (sampleRatio is { } ratio)
+            {
+                tracing.SetSampler(new ParentBasedSampler(new TraceIdRatioBasedSampler(ratio)));
+            }
+
             // D-053: TaskFlow's own sources, named once here for the same reason the meters are - a
             // source added inside a shared library is only exported by hosts that remembered its name.
             tracing.AddSource(
@@ -137,7 +158,15 @@ public static class Extensions
 
         if (useAzureMonitor && metricsEnabled)
         {
-            builder.Services.AddOpenTelemetry().UseAzureMonitor();
+            builder.Services.AddOpenTelemetry().UseAzureMonitor(options =>
+            {
+                if (sampleRatio is { } ratio)
+                {
+                    // TracesPerSecond takes precedence over SamplingRatio when both are set, so clear it.
+                    options.SamplingRatio = (float)ratio;
+                    options.TracesPerSecond = null;
+                }
+            });
         }
 
         return builder;

@@ -30,7 +30,7 @@ public sealed class TaskFlowSchedulerExceptionHandler(
         var jobName = ResolveJobName(tickerId);
         logger.SchedulerJobFailed(exception, jobName, tickerId, tickerType);
 
-        metrics.RecordJobFailure(jobName, exception.Message);
+        metrics.RecordJobFailure(jobName, exception);
         UnregisterJobName(tickerId);
         return Task.CompletedTask;
     }
