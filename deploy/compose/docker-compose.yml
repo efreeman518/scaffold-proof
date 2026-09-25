@@ -78,6 +78,8 @@ services:
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic ${OPENOBSERVE_OTLP_BASIC_CREDENTIAL:?set OPENOBSERVE_OTLP_BASIC_CREDENTIAL in .env.base},organization=${OPENOBSERVE_ORGANIZATION:-default},stream-name=${OPENOBSERVE_STREAM_NAME:-taskflow}"
       OpenTelemetry__MetricsEnabled: ${OpenTelemetry__MetricsEnabled:-false}
+      # D-064: below Compose's 10 s default stop grace, so hosted services finish before SIGKILL.
+      Hosting__ShutdownTimeoutSeconds: ${Hosting__ShutdownTimeoutSeconds:-8}
     depends_on:
       postgres:
         condition: service_healthy
@@ -124,6 +126,8 @@ services:
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic ${OPENOBSERVE_OTLP_BASIC_CREDENTIAL:?set OPENOBSERVE_OTLP_BASIC_CREDENTIAL in .env.base},organization=${OPENOBSERVE_ORGANIZATION:-default},stream-name=${OPENOBSERVE_STREAM_NAME:-taskflow}"
       OpenTelemetry__MetricsEnabled: ${OpenTelemetry__MetricsEnabled:-false}
+      # D-064: below Compose's 10 s default stop grace, so hosted services finish before SIGKILL.
+      Hosting__ShutdownTimeoutSeconds: ${Hosting__ShutdownTimeoutSeconds:-8}
       # 8080 REST, 8081 cleartext HTTP/2 for the internal gRPC read service (D-054). Both come from the
       # image's own Kestrel:Endpoints section; nothing here overrides them.
     deploy:
@@ -170,6 +174,8 @@ services:
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic ${OPENOBSERVE_OTLP_BASIC_CREDENTIAL:?set OPENOBSERVE_OTLP_BASIC_CREDENTIAL in .env.base},organization=${OPENOBSERVE_ORGANIZATION:-default},stream-name=${OPENOBSERVE_STREAM_NAME:-taskflow}"
       OpenTelemetry__MetricsEnabled: ${OpenTelemetry__MetricsEnabled:-false}
+      # D-064: below Compose's 10 s default stop grace, so hosted services finish before SIGKILL.
+      Hosting__ShutdownTimeoutSeconds: ${Hosting__ShutdownTimeoutSeconds:-8}
     depends_on:
       api:
         condition: service_started
@@ -211,6 +217,8 @@ services:
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic ${OPENOBSERVE_OTLP_BASIC_CREDENTIAL:?set OPENOBSERVE_OTLP_BASIC_CREDENTIAL in .env.base},organization=${OPENOBSERVE_ORGANIZATION:-default},stream-name=${OPENOBSERVE_STREAM_NAME:-taskflow}"
       OpenTelemetry__MetricsEnabled: ${OpenTelemetry__MetricsEnabled:-false}
+      # D-064: below Compose's 10 s default stop grace, so hosted services finish before SIGKILL.
+      Hosting__ShutdownTimeoutSeconds: ${Hosting__ShutdownTimeoutSeconds:-8}
     depends_on:
       mongo:
         condition: service_healthy
@@ -250,6 +258,8 @@ services:
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic ${OPENOBSERVE_OTLP_BASIC_CREDENTIAL:?set OPENOBSERVE_OTLP_BASIC_CREDENTIAL in .env.base},organization=${OPENOBSERVE_ORGANIZATION:-default},stream-name=${OPENOBSERVE_STREAM_NAME:-taskflow}"
       OpenTelemetry__MetricsEnabled: ${OpenTelemetry__MetricsEnabled:-false}
+      # D-064: below Compose's 10 s default stop grace, so hosted services finish before SIGKILL.
+      Hosting__ShutdownTimeoutSeconds: ${Hosting__ShutdownTimeoutSeconds:-8}
     depends_on:
       api:
         condition: service_started
