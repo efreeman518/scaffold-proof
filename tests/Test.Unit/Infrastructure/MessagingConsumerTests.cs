@@ -20,7 +20,9 @@ namespace Test.Unit.Infrastructure;
 /// <para>
 /// The claim timings are scaled down (200 ms lease) and run on the real clock: the renewal loop and the wait are
 /// driven by the consumer's own timers, and every assertion waits on an observed event (a poll, a renewal),
-/// not on a fixed sleep, except where the point is that nothing happens afterwards.
+/// not on a fixed sleep, except where the point is that nothing happens afterwards. A test whose outcome depends
+/// on a lease lapsing or not decides that lapse without the real clock (<c>LiveForPolls</c>, <c>FrozenClock</c>), so a
+/// stalled runner delays it but cannot flip it.
 /// </para>
 /// </summary>
 [TestClass]
@@ -123,16 +125,20 @@ public sealed class MessagingConsumerTests
     [TestCategory("Unit")]
     public async Task Consumer_WithAHandlerLongerThanTheLease_RenewalKeepsTheClaim()
     {
+        // The store's clock is frozen and moved only here, so a stalled runner cannot lapse the lease between two
+        // renewals; the renewal timer itself still runs, and each step waits on an observed renewal.
         var ct = TestContext.CancellationToken;
-        var inbox = new FakeInboxStore();
+        var inbox = new FakeInboxStore { FrozenClock = true };
         var envelope = Envelope();
         InboxClaimStatus? duringRun = null;
         var holder = new CountingConsumer(inbox)
         {
             During = async () =>
             {
-                // Four renewals at a third of the lease each: the run has outlived the initial 200 ms lease.
-                await inbox.RenewalsReached(4).WaitAsync(TimeSpan.FromSeconds(10), ct);
+                await inbox.RenewalsReached(1).WaitAsync(TimeSpan.FromSeconds(10), ct);
+                // Past the initial lease: without a later renewal the claim now reads as expired.
+                var renewals = inbox.Advance(Fast.ClaimLease + Fast.WaitMargin);
+                await inbox.RenewalsReached(renewals + 1).WaitAsync(TimeSpan.FromSeconds(10), ct);
                 duringRun = (await inbox.TryClaimAsync("test", envelope.Id, Fast.ClaimLease, ct)).Status;
             }
         };
@@ -364,6 +370,25 @@ public sealed class MessagingConsumerTests
         private readonly TaskCompletionSource _firstInProgressPoll = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int _renewals;
         private int _inProgressPolls;
+        private DateTimeOffset? _frozenNow;
+
+        /// <summary>When set, the store's clock stands still until <see cref="Advance"/> moves it.</summary>
+        public bool FrozenClock
+        {
+            init => _frozenNow = value ? new DateTimeOffset(2026, 9, 4, 12, 0, 0, TimeSpan.Zero) : null;
+        }
+
+        private DateTimeOffset Now => _frozenNow ?? DateTimeOffset.UtcNow;
+
+        /// <summary>Moves the frozen clock and returns the renewals attempted before the move.</summary>
+        public int Advance(TimeSpan by)
+        {
+            lock (_gate)
+            {
+                _frozenNow = (_frozenNow ?? throw new InvalidOperationException("Advance needs FrozenClock.")) + by;
+                return _renewals;
+            }
+        }
 
         /// <summary>When set, a held claim reads as live for this many in-progress polls, then as expired.</summary>
         public int? LiveForPolls { get; init; }
@@ -407,7 +432,7 @@ public sealed class MessagingConsumerTests
             lock (_gate)
             {
                 _events.Add("claim");
-                var now = DateTimeOffset.UtcNow;
+                var now = Now;
                 var key = (consumer, messageId);
                 if (_claims.TryGetValue(key, out var claim))
                 {
@@ -442,7 +467,7 @@ public sealed class MessagingConsumerTests
                 var key = (consumer, messageId);
                 if (!_claims.TryGetValue(key, out var claim) || claim.Token != claimToken || claim.Completed)
                     return Task.FromResult(false);
-                _claims[key] = (claimToken, DateTimeOffset.UtcNow + leaseDuration, false);
+                _claims[key] = (claimToken, Now + leaseDuration, false);
                 return Task.FromResult(true);
             }
         }
