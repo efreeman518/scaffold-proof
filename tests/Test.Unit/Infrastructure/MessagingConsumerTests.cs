@@ -75,17 +75,24 @@ public sealed class MessagingConsumerTests
     [TestCategory("Unit")]
     public async Task Consumer_AfterTheHolderCrashes_WaitsOutTheLeaseAndTakesTheClaimOver()
     {
+        // The crashed claim lapses after a fixed number of polls rather than on the clock, and the waiter's bound
+        // is far away: on the real clock a cold first call (JIT, meter setup) could outlast a 200 ms lease.
         var ct = TestContext.CancellationToken;
-        var inbox = new FakeInboxStore();
+        var inbox = new FakeInboxStore { LiveForPolls = 3 };
         var envelope = Envelope();
-        var crashed = await inbox.TryClaimAsync("test", envelope.Id, Fast.ClaimLease, ct);
+        var crashed = await inbox.TryClaimAsync("test", envelope.Id, TimeSpan.FromHours(1), ct);
         Assert.AreEqual(InboxClaimStatus.Acquired, crashed.Status);
 
-        var redelivery = new CountingConsumer(inbox);
+        var redelivery = new CountingConsumer(inbox, options: new InboxClaimOptions
+        {
+            ClaimLease = TimeSpan.FromMinutes(5),
+            PollInterval = Fast.PollInterval,
+            WaitMargin = Fast.WaitMargin
+        });
         await redelivery.HandleAsync(envelope, ct);
 
         Assert.AreEqual(1, redelivery.Consumed, "the redelivery runs the effect exactly once, without a transport retry");
-        Assert.IsGreaterThan(1, inbox.InProgressPolls, "the redelivery waited on the live claim before taking it over");
+        Assert.AreEqual(3, inbox.InProgressPolls, "the redelivery waited on the live claim before taking it over");
         Assert.AreEqual(FakeInboxStore.State.Completed, inbox.StateOf("test", envelope.Id));
     }
 
@@ -358,6 +365,8 @@ public sealed class MessagingConsumerTests
         private int _renewals;
         private int _inProgressPolls;
 
+        /// <summary>When set, a held claim reads as live for this many in-progress polls, then as expired.</summary>
+        public int? LiveForPolls { get; init; }
         public bool CompleteResult { get; init; } = true;
         public bool ReleaseThrows { get; init; }
         public bool RenewThrows { get; init; }
@@ -403,7 +412,7 @@ public sealed class MessagingConsumerTests
                 if (_claims.TryGetValue(key, out var claim))
                 {
                     if (claim.Completed) return Task.FromResult(new InboxClaim(InboxClaimStatus.Duplicate, Guid.Empty));
-                    if (claim.Expires >= now)
+                    if (LiveForPolls is { } polls ? _inProgressPolls < polls : claim.Expires >= now)
                     {
                         Interlocked.Increment(ref _inProgressPolls);
                         _firstInProgressPoll.TrySetResult();
@@ -474,8 +483,8 @@ public sealed class MessagingConsumerTests
         }
     }
 
-    private sealed class CountingConsumer(IInboxStore inbox, ILogger? logger = null)
-        : IntegrationEventConsumer(inbox, new MessagingMetrics(), logger ?? NullLogger.Instance, Options.Create(Fast))
+    private sealed class CountingConsumer(IInboxStore inbox, ILogger? logger = null, InboxClaimOptions? options = null)
+        : IntegrationEventConsumer(inbox, new MessagingMetrics(), logger ?? NullLogger.Instance, Options.Create(options ?? Fast))
     {
         public int Consumed { get; private set; }
 
