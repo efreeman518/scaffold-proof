@@ -1,3 +1,4 @@
+using EF.AspNetCore.HealthChecks;
 using EF.Audit.Contracts;
 using EF.Storage.Contracts;
 using Microsoft.Extensions.Azure;
@@ -251,7 +252,9 @@ public static partial class RegisterServices
     private static void AddHealthChecks(IServiceCollection services, IConfiguration config)
     {
         var builder = services.AddHealthChecks()
-            .AddCheck<HealthChecks.MemoryHealthCheck>("memory", tags: ["memory", "full"])
+            // Degraded (never Unhealthy) once GC allocated bytes reach MemoryHealthCheckBytesThreshold (default 1 GiB).
+            .AddMemoryHealthCheck("memory", tags: ["memory", "full"],
+                thresholdInBytes: config.GetValue<long?>("MemoryHealthCheckBytesThreshold"))
             .AddCheck<HealthChecks.SqlHealthCheck>("sql", tags: ["ready", "db", "full"]);
 
         if (!config.GetValue<bool>("HealthChecks:EnableExternalServices", false))

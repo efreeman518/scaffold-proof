@@ -162,6 +162,8 @@ public static class RegisterGatewayServices
         var fullPermitLimit = config.GetValue<int?>("RateLimiting:Health:FullPermitLimit") ?? 3;
         var edge = config.GetSection(EdgeRateLimitSettings.ConfigSectionName).Get<EdgeRateLimitSettings>()
             ?? new EdgeRateLimitSettings();
+        if (edge.Enabled)
+            edge.Validate();
 
         services.AddRateLimiter(options =>
         {
@@ -224,7 +226,7 @@ public static class RegisterGatewayServices
                     {
                         TokenLimit = edge.TokensPerPeriod,
                         TokensPerPeriod = edge.TokensPerPeriod,
-                        ReplenishmentPeriod = TimeSpan.FromSeconds(Math.Max(1, edge.ReplenishmentSeconds)),
+                        ReplenishmentPeriod = TimeSpan.FromSeconds(edge.ReplenishmentSeconds),
                         QueueLimit = edge.QueueLimit,
                         QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
                         AutoReplenishment = true
@@ -251,7 +253,7 @@ public static class RegisterGatewayServices
         {
             var retryAfter = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var wait)
                 ? wait
-                : TimeSpan.FromSeconds(Math.Max(1, edge.ReplenishmentSeconds));
+                : TimeSpan.FromSeconds(edge.ReplenishmentSeconds);
 
             context.HttpContext.Response.Headers.RetryAfter =
                 ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);

@@ -104,7 +104,6 @@ var responseHeaders = new Action<StaticFileResponseContext>(context =>
     }
 });
 
-app.MapGet("/health", () => Results.Ok(new { status = "Healthy", distPath }));
 app.Use(async (context, next) =>
 {
     if (!HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method))

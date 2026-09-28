@@ -96,6 +96,27 @@ public sealed class GatewayEdgeRateLimitTests
         Assert.IsNull(options.GlobalLimiter);
     }
 
+    /// <summary>
+    /// A budget the limiter constructors would refuse fails gateway registration, rather than starting a
+    /// gateway that 500s every proxied request from the first one on.
+    /// </summary>
+    [TestMethod]
+    [DataRow("TokensPerPeriod", "0")]
+    [DataRow("ReplenishmentSeconds", "0")]
+    [DataRow("QueueLimit", "-1")]
+    [DataRow("MaxConcurrentRequests", "0")]
+    public void AddGatewayServices_InvalidEdgeBudget_FailsAtRegistration(string key, string value)
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.Configuration["CorsSettings:AllowedOrigins:0"] = "https://localhost";
+        builder.Configuration[$"RateLimiting:Edge:{key}"] = value;
+
+        var ex = Assert.ThrowsExactly<InvalidOperationException>(
+            () => builder.Services.AddGatewayServices(builder.Configuration));
+
+        Assert.Contains($"RateLimiting:Edge:{key}", ex.Message);
+    }
+
     private static RateLimiterOptions BuildLimiterOptions(bool enabled)
     {
         var builder = WebApplication.CreateBuilder();

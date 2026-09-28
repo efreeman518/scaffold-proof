@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.AspNetCore.Hosting;
 
 namespace Test.Endpoints;
 
@@ -59,5 +60,26 @@ public sealed class HealthProbeContractTests
         using var response = await client.GetAsync("/readyz", TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    /// <summary>
+    /// The memory probe reads MemoryHealthCheckBytesThreshold: healthy under the 1 GiB default, Degraded (still
+    /// HTTP 200, never Unhealthy) once allocated bytes reach a configured threshold.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [TestMethod]
+    public async Task Given_MemoryProbe_When_ThresholdReached_Then_DegradedNotUnhealthy()
+    {
+        using var defaultClient = _factory.CreateClient();
+        using var lowThreshold = new CustomApiFactory().WithWebHostBuilder(builder =>
+            builder.UseSetting("MemoryHealthCheckBytesThreshold", "1"));
+        using var lowThresholdClient = lowThreshold.CreateClient();
+
+        using var healthy = await defaultClient.GetAsync("/health/memory", TestContext.CancellationToken);
+        using var degraded = await lowThresholdClient.GetAsync("/health/memory", TestContext.CancellationToken);
+
+        Assert.AreEqual("Healthy", await healthy.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        Assert.AreEqual(HttpStatusCode.OK, degraded.StatusCode);
+        Assert.AreEqual("Degraded", await degraded.Content.ReadAsStringAsync(TestContext.CancellationToken));
     }
 }

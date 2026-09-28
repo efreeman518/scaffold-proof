@@ -1,10 +1,14 @@
 ﻿using Microsoft.FeatureManagement;
+using Microsoft.FeatureManagement.AspNetCore;
 
 namespace TaskFlow.Api.Filters;
 
 /// <summary>
-/// Gates a route behind a dynamic feature flag (D-042). Answers 404, not 403: a disabled surface should
-/// look absent, not merely forbidden, so its existence does not leak to a caller probing the API.
+/// Gates the requests <c>appliesWhen</c> selects behind a dynamic feature flag (D-042). Answers 404, not 403: a
+/// disabled surface should look absent, not merely forbidden, so its existence does not leak to a caller probing
+/// the API. A whole-route gate needs no app code - <see cref="FeatureGateEndpointExtensions.RequireFeature{TBuilder}(TBuilder, string)"/>
+/// uses Microsoft.FeatureManagement's own <c>WithFeatureGate</c>, which has the same 404 contract; only this
+/// per-request narrowing has no Microsoft equivalent.
 /// Constructed directly (not DI-activated) so the flag name can be supplied per route; the feature
 /// manager itself is still resolved per-request from <see cref="HttpContext.RequestServices"/>.
 /// </summary>
@@ -32,13 +36,19 @@ internal sealed class FeatureGateEndpointFilter(
     }
 }
 
-/// <summary>Route-builder helper for the D-042 feature-flag contract.</summary>
+/// <summary>
+/// Route-builder helpers for the D-042 feature-flag contract. They live here so Microsoft.FeatureManagement stays
+/// inside TaskFlow.Api.Filters (the architecture boundary D-042 sets for the Api host).
+/// </summary>
 public static class FeatureGateEndpointExtensions
 {
-    /// <summary>Adds the feature-gate filter so the route answers 404 while <paramref name="featureName"/> is off.</summary>
+    /// <summary>The route answers 404 while <paramref name="featureName"/> is off (Microsoft's <c>WithFeatureGate</c>).</summary>
     public static TBuilder RequireFeature<TBuilder>(this TBuilder builder, string featureName)
-        where TBuilder : IEndpointConventionBuilder =>
-        builder.AddEndpointFilter(new FeatureGateEndpointFilter(featureName));
+        where TBuilder : IEndpointConventionBuilder
+    {
+        builder.WithFeatureGate(featureName);
+        return builder;
+    }
 
     /// <summary>
     /// Same gate, applied only to the requests <paramref name="appliesWhen"/> selects. For a flag that gates

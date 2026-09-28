@@ -16,6 +16,12 @@ internal sealed class TenantBoundaryValidator : ITenantBoundaryValidator
         IReadOnlyCollection<string> roles, Guid? entityTenantId,
         string operation, string entityName, Guid? entityId = null)
     {
+        // The system identity (no HTTP request: consumers, jobs, the AI reviewer) has no tenant to compare
+        // and acts for the tenant the data names, so the boundary does not apply to it. HTTP callers never
+        // carry this role - the request-context factory strips it from claims.
+        if (roles.Contains(AppConstants.ROLE_SYSTEM))
+            return Result.Success();
+
         return ValidationHelper.EnsureTenantBoundary(
             logger, requestTenantId, roles, entityTenantId,
             operation, entityName, entityId);

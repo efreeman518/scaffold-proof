@@ -66,6 +66,29 @@ public class TokenServiceTests
         Assert.AreEqual(2, credential.Calls, "the failed acquisition was evicted and retried");
     }
 
+    /// <summary>
+    /// The caller whose request started the shared acquisition disconnects mid-flight: only that caller is
+    /// cancelled. Every other waiter still receives the token, and the acquisition stays cached.
+    /// </summary>
+    [TestMethod]
+    public async Task GetAccessTokenAsync_FirstCallerCancels_OtherWaitersStillGetToken()
+    {
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var credential = new CountingCredential(_ => DateTimeOffset.UtcNow.AddHours(1), release.Task);
+        var service = Build(credential);
+        using var firstCallerAborted = new CancellationTokenSource();
+
+        var first = service.GetAccessTokenAsync(ClusterId, firstCallerAborted.Token);
+        var second = service.GetAccessTokenAsync(ClusterId, TestContext.CancellationToken);
+        await firstCallerAborted.CancelAsync();
+        release.SetResult();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => first);
+        Assert.AreEqual("token-1", await second);
+        Assert.AreEqual("token-1", await service.GetAccessTokenAsync(ClusterId, TestContext.CancellationToken));
+        Assert.AreEqual(1, credential.Calls, "the cancelled caller neither aborted nor evicted the shared acquisition");
+    }
+
     /// <summary>A token inside the refresh window is replaced before it is ever handed out.</summary>
     [TestMethod]
     public async Task GetAccessTokenAsync_TokenNearExpiry_IsRefreshedBeforeUse()
@@ -116,7 +139,7 @@ public class TokenServiceTests
     }
 
     /// <summary>Counts acquisitions and lets each test decide the expiry (or throw) per call.</summary>
-    private sealed class CountingCredential(Func<int, DateTimeOffset> expiryForCall) : TokenCredential
+    private sealed class CountingCredential(Func<int, DateTimeOffset> expiryForCall, Task? gate = null) : TokenCredential
     {
         private int _calls;
 
@@ -126,8 +149,10 @@ public class TokenServiceTests
             TokenRequestContext requestContext, CancellationToken cancellationToken)
         {
             var call = Interlocked.Increment(ref _calls);
-            // Yield so concurrent callers genuinely overlap inside the factory.
+            // Yield so concurrent callers genuinely overlap inside the factory; a gate holds the acquisition
+            // open, observing the token it was given the way a real credential would.
             await Task.Yield();
+            if (gate is not null) await gate.WaitAsync(cancellationToken);
             return new AccessToken($"token-{call}", expiryForCall(call));
         }
 

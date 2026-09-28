@@ -33,4 +33,20 @@ public sealed class EdgeRateLimitSettings
 
     /// <summary>Concurrent proxied requests across all clients, the backstop against a slow downstream.</summary>
     public int MaxConcurrentRequests { get; set; } = 1000;
+
+    /// <summary>
+    /// Rejects a budget the limiter constructors would refuse. Checked at registration so a bad value fails
+    /// startup, instead of starting a gateway whose first proxied request - and every one after it - 500s.
+    /// Nothing is clamped: a silently corrected value is a budget nobody configured.
+    /// </summary>
+    public void Validate()
+    {
+        if (TokensPerPeriod < 1) throw Invalid(nameof(TokensPerPeriod), TokensPerPeriod, "at least 1");
+        if (ReplenishmentSeconds < 1) throw Invalid(nameof(ReplenishmentSeconds), ReplenishmentSeconds, "at least 1");
+        if (QueueLimit < 0) throw Invalid(nameof(QueueLimit), QueueLimit, "0 or more");
+        if (MaxConcurrentRequests < 1) throw Invalid(nameof(MaxConcurrentRequests), MaxConcurrentRequests, "at least 1");
+    }
+
+    private static InvalidOperationException Invalid(string name, int value, string rule) =>
+        new($"{ConfigSectionName}:{name} is {value}; it must be {rule}.");
 }

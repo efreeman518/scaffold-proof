@@ -40,8 +40,17 @@ public static class ProxyForwardingExtensions
                 }
 
                 // Use only when network policy prevents direct access to this process. A publicly
-                // reachable host must use explicit KnownProxies/KnownNetworks instead.
-                options.ForwardLimit = null;
+                // reachable host must use explicit KnownProxies/KnownNetworks instead. An unset ForwardLimit
+                // reads the whole X-Forwarded-For chain; set it to the number of proxy hops in front of the
+                // host (1 behind Container Apps ingress) so a client-supplied X-Forwarded-For entry cannot
+                // become the remote address - per-IP rate-limit partitions depend on that.
+                options.ForwardLimit = configuration.GetValue<int?>("ForwardLimit");
+                if (options.ForwardLimit <= 0)
+                {
+                    throw new InvalidOperationException(
+                        $"{ForwardedHeadersSection}:ForwardLimit must be greater than zero.");
+                }
+
                 options.KnownProxies.Clear();
                 options.KnownIPNetworks.Clear();
             }

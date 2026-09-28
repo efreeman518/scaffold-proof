@@ -73,6 +73,26 @@ public sealed class BicepInfrastructureContractTests
             StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// The deployed gateway partitions its edge limiter by client IP, so it must apply the one
+    /// X-Forwarded-For hop Container Apps ingress appends; without it every client shares the ingress
+    /// address's bucket. The compiled template must carry the same settings.
+    /// </summary>
+    [TestMethod]
+    public void MainBicep_GatewayAppliesExactlyOneForwardedHop()
+    {
+        var main = ReadInfraFile("main.bicep");
+        var start = main.IndexOf("module gateway 'modules/container-app.bicep'", StringComparison.Ordinal);
+        var end = main.IndexOf("module api 'modules/container-app.bicep'", start, StringComparison.Ordinal);
+        var gateway = main[start..end];
+
+        StringAssert.Contains(gateway, "{ name: 'Proxy__ForwardedHeaders__Enabled', value: 'true' }");
+        StringAssert.Contains(gateway, "{ name: 'Proxy__ForwardedHeaders__TrustAllProxies', value: 'true' }");
+        StringAssert.Contains(gateway, "{ name: 'Proxy__ForwardedHeaders__ForwardLimit', value: '1' }");
+        StringAssert.Contains(ReadInfraFile("main.json"), "createObject('name', 'Proxy__ForwardedHeaders__ForwardLimit', 'value', '1')",
+            "the compiled template must be rebuilt after main.bicep changes");
+    }
+
     [TestMethod]
     public void AzureSqlIdentities_AreProvisionedBeforeMigrationAndRuntimeActivation()
     {

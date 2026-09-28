@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using TaskFlow.Application.Models.Serialization;
 using TaskFlow.Bootstrapper;
+using TaskFlow.Functions;
 
 var builder = FunctionsApplication.CreateBuilder(args);
 
@@ -26,6 +27,9 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration[RegisterServices.AppConfigE
 }
 
 builder.ConfigureFunctionsWebApplication();
+// After the HTTP proxying middleware ConfigureFunctionsWebApplication registers: HTTP triggers resolve the
+// request context against their HttpContext (scaffold identity), everything else gets the system identity.
+builder.UseMiddleware<HttpContextAccessorMiddleware>();
 
 // Service Bus triggers execute outside an HTTP request. HeaderPropagationMessageHandler throws in that
 // context and prevents explicit complete/dead-letter settlement through the worker's internal gRPC client.

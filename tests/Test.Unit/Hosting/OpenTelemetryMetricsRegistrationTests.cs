@@ -1,7 +1,9 @@
+using Azure.Monitor.OpenTelemetry.AspNetCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
@@ -43,6 +45,53 @@ public sealed class OpenTelemetryMetricsRegistrationTests
         StringAssert.Contains(source, "logging.AddAzureMonitorLogExporter(options =>");
         StringAssert.Contains(source, "tracing.AddAzureMonitorTraceExporter(options =>");
     }
+
+    /// <summary>
+    /// Functions sets TASKFLOW_SUPPRESS_ASPNETCORE_INSTRUMENTATION because its host already reports each
+    /// invocation. The Azure Monitor distro always adds ASP.NET Core instrumentation, so it must not run
+    /// there; all three signals still export through the per-signal exporters.
+    /// </summary>
+    [TestMethod]
+    public void ServiceDefaults_SuppressedAspNetCoreInstrumentation_SkipsTheDistroAndKeepsEverySignal()
+    {
+        var suppressed = CreateBuilder(metricsEnabled: true);
+        suppressed.Configuration["TASKFLOW_SUPPRESS_ASPNETCORE_INSTRUMENTATION"] = "true";
+        suppressed.ConfigureOpenTelemetry();
+        var distro = CreateBuilder(metricsEnabled: true);
+        distro.ConfigureOpenTelemetry();
+
+        Assert.IsFalse(RegistersAzureMonitorDistro(suppressed.Services), "the distro re-adds ASP.NET Core instrumentation");
+        Assert.IsTrue(RegistersAzureMonitorDistro(distro.Services), "control: the probe detects the distro");
+
+        using var provider = suppressed.Services.BuildServiceProvider();
+        Assert.IsNotNull(provider.GetService<MeterProvider>());
+        Assert.IsNotNull(provider.GetService<TracerProvider>());
+        Assert.IsTrue(provider.GetServices<ILoggerProvider>()
+            .Any(loggerProvider => loggerProvider is OpenTelemetryLoggerProvider));
+        StringAssert.Contains(File.ReadAllText(RepoRoot.Combine(
+            "src", "Host", "Aspire", "ServiceDefaults", "Extensions.cs")), "metrics.AddAzureMonitorMetricExporter(options =>");
+    }
+
+    /// <summary>
+    /// The RabbitMQ transport meter (publish, confirm, consume, dead-letter) is exported. Probed with the
+    /// package's own constant, so a rename in the package fails here instead of silently dropping the meter.
+    /// </summary>
+    [TestMethod]
+    public void ServiceDefaults_ExportsTheRabbitMqTransportMeter()
+    {
+        var builder = CreateBuilder(metricsEnabled: true);
+        builder.ConfigureOpenTelemetry();
+        using var provider = builder.Services.BuildServiceProvider();
+        _ = provider.GetRequiredService<MeterProvider>();
+
+        using var meter = new System.Diagnostics.Metrics.Meter(EF.Messaging.RabbitMq.RabbitMqMetrics.MeterName);
+        var probe = meter.CreateCounter<long>("taskflow.test.rabbitmq.probe");
+
+        Assert.IsTrue(probe.Enabled, "no MeterProvider listens to the RabbitMQ transport meter");
+    }
+
+    private static bool RegistersAzureMonitorDistro(IServiceCollection services) =>
+        services.Any(descriptor => descriptor.ServiceType == typeof(IConfigureOptions<AzureMonitorOptions>));
 
     [TestMethod]
     public void Caching_MetricsSetting_DefaultsEnabledAndCanDisableMeterProvider()

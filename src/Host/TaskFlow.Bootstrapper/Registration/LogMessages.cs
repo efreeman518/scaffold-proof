@@ -33,12 +33,12 @@ internal static partial class LogMessages
     [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 10, Level = LogLevel.Information, Message = "Provisioning lock {LockKey} held elsewhere; waiting for the holder to finish.")]
     public static partial void ProvisioningDeferred(this ILogger logger, string lockKey);
 
-    /// <summary>Logs that the provisioning holder finished, so this replica skipped the work.</summary>
-    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 11, Level = LogLevel.Information, Message = "Provisioning lock {LockKey} released by its holder; external resources already provisioned.")]
-    public static partial void ProvisioningSkipped(this ILogger logger, string lockKey);
+    /// <summary>Logs that the previous holder released the provisioning lock and this replica now holds it.</summary>
+    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 11, Level = LogLevel.Information, Message = "Provisioning lock {LockKey} released by its holder and acquired; re-running the idempotent provisioning.")]
+    public static partial void ProvisioningAcquiredAfterWait(this ILogger logger, string lockKey);
 
     /// <summary>Logs that the wait for another replica's provisioning ran out of budget.</summary>
-    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 12, Level = LogLevel.Warning, Message = "Provisioning lock {LockKey} still held after {WaitSeconds}s; continuing without confirmation that external resources exist.")]
+    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 12, Level = LogLevel.Warning, Message = "Provisioning lock {LockKey} still held after {WaitSeconds}s; provisioning without the lock.")]
     public static partial void ProvisioningWaitTimedOut(this ILogger logger, string lockKey, int waitSeconds);
     /// <summary>Logs that the OpenAI-compatible chat client is being configured (D-041).</summary>
     [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 13, Level = LogLevel.Information, Message = "{AppName} {Environment} - Configure OpenAI-compatible chat client at {Endpoint}.")]
