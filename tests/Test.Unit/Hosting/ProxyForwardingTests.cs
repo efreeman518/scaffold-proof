@@ -68,7 +68,7 @@ public sealed class ProxyForwardingTests
     [TestMethod]
     public void IsolatedNetworkOptIn_ClearsTrustListsAndHopLimit()
     {
-        var builder = WebApplication.CreateBuilder();
+        var builder = TestWebApplication.CreateBuilder();
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Proxy:ForwardedHeaders:Enabled"] = "true",
@@ -117,7 +117,7 @@ public sealed class ProxyForwardingTests
         IReadOnlyDictionary<string, string?> configuration,
         CancellationToken cancellationToken)
     {
-        var builder = WebApplication.CreateBuilder();
+        var builder = TestWebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
         builder.Configuration.AddInMemoryCollection(configuration);
         builder.AddProxyForwarding();

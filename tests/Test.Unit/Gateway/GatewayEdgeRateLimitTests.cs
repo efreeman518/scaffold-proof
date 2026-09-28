@@ -107,7 +107,7 @@ public sealed class GatewayEdgeRateLimitTests
     [DataRow("MaxConcurrentRequests", "0")]
     public void AddGatewayServices_InvalidEdgeBudget_FailsAtRegistration(string key, string value)
     {
-        var builder = WebApplication.CreateBuilder();
+        var builder = TestWebApplication.CreateBuilder();
         builder.Configuration["CorsSettings:AllowedOrigins:0"] = "https://localhost";
         builder.Configuration[$"RateLimiting:Edge:{key}"] = value;
 
@@ -119,7 +119,7 @@ public sealed class GatewayEdgeRateLimitTests
 
     private static RateLimiterOptions BuildLimiterOptions(bool enabled)
     {
-        var builder = WebApplication.CreateBuilder();
+        var builder = TestWebApplication.CreateBuilder();
         builder.Configuration["CorsSettings:AllowedOrigins:0"] = "https://localhost";
         builder.Configuration["RateLimiting:Edge:Enabled"] = enabled ? "true" : "false";
         builder.Configuration["RateLimiting:Edge:TokensPerPeriod"] = Tokens.ToString(CultureInfo.InvariantCulture);
