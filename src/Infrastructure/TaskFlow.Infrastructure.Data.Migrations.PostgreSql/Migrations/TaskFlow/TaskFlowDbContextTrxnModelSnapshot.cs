@@ -19,7 +19,7 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.TaskFlow
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("taskflow")
-                .HasAnnotation("ProductVersion", "10.0.11")
+                .HasAnnotation("ProductVersion", "10.0.12")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "vector");
@@ -294,7 +294,7 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.TaskFlow
                     b.Property<byte[]>("SecureDeterministic")
                         .HasMaxLength(256)
                         .HasColumnType("bytea")
-                        .HasAnnotation("TaskFlow:BlindIndex", "SecureDeterministicBlindIndex");
+                        .HasAnnotation("EF.Data.Encryption:BlindIndex", "SecureDeterministicBlindIndex");
 
                     b.Property<byte[]>("SecureDeterministicBlindIndex")
                         .HasMaxLength(32)
@@ -513,13 +513,22 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.TaskFlow
                     b.Property<Guid>("MessageId")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTimeOffset>("ProcessedAtUtc")
+                    b.Property<Guid>("ClaimToken")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("ClaimedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("LeaseExpiresUtc")
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Consumer", "MessageId");
 
-                    b.HasIndex("ProcessedAtUtc")
-                        .HasDatabaseName("IX_ConsumerInbox_ProcessedAtUtc");
+                    b.HasIndex("CompletedAtUtc", "LeaseExpiresUtc")
+                        .HasDatabaseName("IX_ConsumerInbox_Retention");
 
                     b.ToTable("ConsumerInbox", "taskflow");
                 });
@@ -578,6 +587,14 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.TaskFlow
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("TraceParent")
+                        .HasMaxLength(55)
+                        .HasColumnType("character varying(55)");
+
+                    b.Property<string>("TraceState")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
 
                     b.HasKey("Id");
 

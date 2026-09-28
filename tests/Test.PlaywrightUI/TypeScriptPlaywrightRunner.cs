@@ -24,7 +24,7 @@ internal static class TypeScriptPlaywrightRunner
         if (!File.Exists(PlaywrightCliPath))
         {
             return new BrowserReadiness(false,
-                "TypeScript Playwright dependencies are missing. Run: rtk npm install in tests\\Test.PlaywrightUI.");
+                "TypeScript Playwright dependencies are missing. Run `npm ci --prefix tests/Test.PlaywrightUI`, or set TASKFLOW_PLAYWRIGHT_TESTS_ENABLED=false to opt out.");
         }
 
         var managedBrowser = GetManagedHeadlessShellPath();
@@ -45,7 +45,7 @@ internal static class TypeScriptPlaywrightRunner
         }
 
         return new BrowserReadiness(false,
-            "Playwright Chromium is missing and no system Chrome fallback is available. Run: rtk npx playwright install chromium in tests\\Test.PlaywrightUI.");
+            "Playwright Chromium is missing and no system Chrome fallback is available. Run `npx --prefix tests/Test.PlaywrightUI playwright install chromium`, or set TASKFLOW_PLAYWRIGHT_TESTS_ENABLED=false to opt out.");
     }
 
     internal static async Task<CommandResult> RunAsync(

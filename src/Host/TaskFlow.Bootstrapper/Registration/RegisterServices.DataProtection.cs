@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
+using TaskFlow.Application.Contracts;
 
 namespace TaskFlow.Bootstrapper;
 
@@ -42,10 +43,7 @@ public static partial class RegisterServices
     }
 
     private static DataProtectionPersistence ParseDataProtectionPersistence(string value) =>
-        Enum.TryParse<DataProtectionPersistence>(value, ignoreCase: true, out var persistence)
-            ? persistence
-            : throw new ArgumentException(
-                $"Unknown Data Protection persistence '{value}'. Allowed values: {string.Join(", ", Enum.GetNames<DataProtectionPersistence>())}.");
+        StrictEnum.Parse<DataProtectionPersistence>(value, "Data Protection persistence");
 
     /// <summary>
     /// Configures the Data Protection key ring: persistence (AzureBlob/Redis/None, D-043) plus key

@@ -205,7 +205,8 @@ public static class TaskItemCqrsEndpoints
         return result.Match(
             response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, traceId: httpContext.TraceIdentifier,
+                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
+                traceId: httpContext.TraceIdentifier,
                 includeStackTrace: _problemDetailsIncludeStackTrace)));
     }
 
@@ -222,7 +223,8 @@ public static class TaskItemCqrsEndpoints
         return result.Match(
             response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, traceId: httpContext.TraceIdentifier,
+                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
+                traceId: httpContext.TraceIdentifier,
                 includeStackTrace: _problemDetailsIncludeStackTrace)));
     }
 
@@ -238,7 +240,8 @@ public static class TaskItemCqrsEndpoints
         return result.Match<IResult>(
             () => TypedResults.NoContent(),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, traceId: httpContext.TraceIdentifier,
+                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
+                traceId: httpContext.TraceIdentifier,
                 includeStackTrace: _problemDetailsIncludeStackTrace)));
     }
 
@@ -258,7 +261,8 @@ public static class TaskItemCqrsEndpoints
                     ? TypedResults.Ok(response)
                     : TypedResults.Created($"{httpContext.Request.Path}/{response.Item.Id}", response),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, traceId: httpContext.TraceIdentifier,
+                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
+                traceId: httpContext.TraceIdentifier,
                 includeStackTrace: _problemDetailsIncludeStackTrace)));
     }
 
@@ -277,7 +281,8 @@ public static class TaskItemCqrsEndpoints
         return result.Match(
             response => response.Item is null ? Results.NotFound(commentId) : TypedResults.Ok(response),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, traceId: httpContext.TraceIdentifier,
+                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
+                traceId: httpContext.TraceIdentifier,
                 includeStackTrace: _problemDetailsIncludeStackTrace)));
     }
 
@@ -295,7 +300,8 @@ public static class TaskItemCqrsEndpoints
         return result.Match<IResult>(
             () => TypedResults.NoContent(),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, traceId: httpContext.TraceIdentifier,
+                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
+                traceId: httpContext.TraceIdentifier,
                 includeStackTrace: _problemDetailsIncludeStackTrace)));
     }
 
@@ -315,7 +321,8 @@ public static class TaskItemCqrsEndpoints
                     ? TypedResults.Ok(response)
                     : TypedResults.Created($"{httpContext.Request.Path}/{response.Item.Id}", response),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, traceId: httpContext.TraceIdentifier,
+                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
+                traceId: httpContext.TraceIdentifier,
                 includeStackTrace: _problemDetailsIncludeStackTrace)));
     }
 
@@ -334,7 +341,8 @@ public static class TaskItemCqrsEndpoints
         return result.Match(
             response => response.Item is null ? Results.NotFound(checklistItemId) : TypedResults.Ok(response),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, traceId: httpContext.TraceIdentifier,
+                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
+                traceId: httpContext.TraceIdentifier,
                 includeStackTrace: _problemDetailsIncludeStackTrace)));
     }
 
@@ -352,7 +360,8 @@ public static class TaskItemCqrsEndpoints
         return result.Match<IResult>(
             () => TypedResults.NoContent(),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, traceId: httpContext.TraceIdentifier,
+                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
+                traceId: httpContext.TraceIdentifier,
                 includeStackTrace: _problemDetailsIncludeStackTrace)));
     }
 
@@ -372,7 +381,8 @@ public static class TaskItemCqrsEndpoints
                     ? TypedResults.Ok(response)
                     : TypedResults.Created($"{httpContext.Request.Path}", response),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, traceId: httpContext.TraceIdentifier,
+                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
+                traceId: httpContext.TraceIdentifier,
                 includeStackTrace: _problemDetailsIncludeStackTrace)));
     }
 
@@ -389,7 +399,8 @@ public static class TaskItemCqrsEndpoints
         return result.Match<IResult>(
             () => TypedResults.NoContent(),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, traceId: httpContext.TraceIdentifier,
+                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
+                traceId: httpContext.TraceIdentifier,
                 includeStackTrace: _problemDetailsIncludeStackTrace)));
     }
 }

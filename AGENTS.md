@@ -31,10 +31,10 @@ dotnet test tests/Test.Unit/Test.Unit.csproj                    # full unit proj
 dotnet test TaskFlow.slnx --filter "TestCategory=Unit"         # category-filtered solution fast lane
 dotnet test TaskFlow.slnx --filter "TestCategory=Architecture|TestCategory=Endpoint"
 dotnet test TaskFlow.slnx --no-build -m:1                     # unfiltered serial acceptance; full-stack projects are resource-heavy
-# Dual EF Core provider: TASKFLOW_DB_PROVIDER=SqlServer|PostgreSql selects the runtime provider (default SqlServer)
+# Dual EF Core provider: TASKFLOW_DB_PROVIDER=SqlServer|PostgreSql selects the runtime provider (lane default: PostgreSql, SqlServer on Azure)
 # TASKFLOW_TEST_DB_PROVIDER=SqlServer|PostgreSql is a deprecated test-only alias for one release; new orchestration uses TASKFLOW_LANE
-# TASKFLOW_MESSAGING_PROVIDER=ServiceBus|RabbitMq selects the messaging transport (default ServiceBus); RabbitMq needs no code change, only config
-# TASKFLOW_LANE=Azure|NonAzure owns the core provider topology (default Azure); Portable is a deprecated NonAzure alias for one release - D-060
+# TASKFLOW_MESSAGING_PROVIDER=ServiceBus|RabbitMq selects the messaging transport (lane default: RabbitMq, ServiceBus on Azure); switching needs no code change, only config
+# TASKFLOW_LANE=Azure|NonAzure owns the core provider topology (default NonAzure; Azure is the explicit opt-in); Portable is a deprecated NonAzure alias for one release - D-060
 # Azure: SqlServer, ServiceBus, AzureBlob/Azurite, Cosmos, AzureTable, Blob Data Protection, and Azure-only Functions
 # NonAzure: PostgreSql, RabbitMq, S3/SeaweedFS, Relational audit, Redis Data Protection, PostgreSqlJsonb read model by default, optional MongoDb
 # Lane-owned provider conflicts fail fast; NonAzure also rejects non-empty Azure App Configuration and Key Vault service settings
@@ -52,8 +52,8 @@ dotnet test TaskFlow.slnx --no-build -m:1                     # unfiltered seria
 # Podman on Windows/WSL2 uses mirrored networking on this machine, so published localhost ports work without TESTCONTAINERS_HOST_OVERRIDE.
 # Under legacy WSL NAT, only the component Testcontainers lanes can use a run-scoped TESTCONTAINERS_HOST_OVERRIDE=<podman machine ip>;
 # Aspire/DCP and full-stack Playwright require localhost forwarding and therefore need mirrored WSL networking or Docker.
-dotnet run --project src/Host/Aspire/AppHost                   # full local Azure stack (default)
-$env:TASKFLOW_LANE = "NonAzure"; dotnet run --project src/Host/Aspire/AppHost   # PostgreSQL JSONB + RabbitMQ + SeaweedFS + Redis, zero Azure
+dotnet run --project src/Host/Aspire/AppHost                   # NonAzure stack (default): PostgreSQL JSONB + RabbitMQ + SeaweedFS + Redis, zero Azure
+$env:TASKFLOW_LANE = "Azure"; dotnet run --project src/Host/Aspire/AppHost      # full local Azure emulator stack (explicit opt-in)
 $env:TASKFLOW_READMODEL_PROVIDER = "MongoDb"; dotnet run --project src/Host/Aspire/AppHost # explicit NonAzure document database alternative
 ```
 

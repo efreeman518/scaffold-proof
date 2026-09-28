@@ -54,8 +54,8 @@ useAspire: true
 # ---------------------------------------------------------------------------
 hostingLanes: [Azure, NonAzure]
 
-# TASKFLOW_LANE selects a strict lane. Portable is a deprecated input alias for
-# NonAzure for one release. Lane-owned core conflicts fail fast. See D-060.
+# TASKFLOW_LANE selects a strict lane; unset means NonAzure and Azure is the explicit
+# opt-in. Portable is a deprecated input alias for NonAzure for one release. Lane-owned core conflicts fail fast. See D-060.
 hostingLaneDefaults:
   Azure:
     deploymentTarget: ContainerApps

@@ -25,6 +25,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Test.Unit" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\TaskFlow.Bootstrapper\TaskFlow.Bootstrapper.csproj" />
     <ProjectReference Include="..\Aspire\ServiceDefaults\ServiceDefaults.csproj" />
     <ProjectReference Include="..\..\Shared\TaskFlow.Observability\TaskFlow.Observability.csproj" />

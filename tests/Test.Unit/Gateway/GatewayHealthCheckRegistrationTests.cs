@@ -14,7 +14,7 @@ public sealed class GatewayHealthCheckRegistrationTests
     [TestMethod]
     public void AddGatewayServices_WithServiceDefaults_ResolvesHealthCheckService()
     {
-        var builder = WebApplication.CreateBuilder();
+        var builder = TestWebApplication.CreateBuilder();
         builder.Configuration["CorsSettings:AllowedOrigins:0"] = "https://localhost";
 
         builder.AddServiceDefaults();

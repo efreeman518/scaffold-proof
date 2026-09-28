@@ -1,9 +1,6 @@
-using EF.Common.Contracts;
 using EF.Messaging.RabbitMq;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using TaskFlow.Infrastructure.Data.Messaging;
 
 namespace TaskFlow.Infrastructure.Messaging.RabbitMq;
@@ -73,14 +70,11 @@ public static class RabbitMqRegistration
             }
         });
 
-        // D-052: TaskFlow's own topology startup instead of the package's, so declaration is serialized
-        // across replicas by the distributed lock. Inserted at the front for the same reason the package
-        // inserts its own there - the topology has to exist before any consumer subscribes.
-        services.Insert(0, ServiceDescriptor.Singleton<IHostedService>(sp => new TaskFlowRabbitMqTopologyStartup(
-            TaskFlowRabbitMqTopology.Build(includeEmbedding),
-            sp.GetRequiredService<IRabbitMqTopologyDeclarer>(),
-            sp.GetRequiredService<IDistributedLock>(),
-            sp.GetRequiredService<ILogger<TaskFlowRabbitMqTopologyStartup>>())));
+        // The package startup inserts itself at the front so the topology exists before any consumer
+        // subscribes. Every replica declares, unlocked: identical declarations are idempotent, and the
+        // PRECONDITION_FAILED a changed definition raises happens whether or not two declarations overlap in
+        // time, so a distributed lock around it only added a startup wait without preventing anything.
+        services.AddRabbitMqTopology(TaskFlowRabbitMqTopology.Build(includeEmbedding));
 
         services.AddRabbitMqConsumer<RabbitMqProjectionHandler>(TaskFlowRabbitMqTopology.ProjectionQueue);
         services.AddRabbitMqConsumer<RabbitMqAiReviewHandler>(TaskFlowRabbitMqTopology.AiReviewQueue);

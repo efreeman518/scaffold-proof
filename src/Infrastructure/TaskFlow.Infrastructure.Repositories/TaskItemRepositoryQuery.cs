@@ -134,7 +134,7 @@ public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryption
     // one query per status. The overdue predicate matches the IsOverdue search filter exactly.
     public async Task<TaskItemSummaryDto> GetSummaryAsync(Guid tenantId, CancellationToken ct = default)
     {
-        var typedTenantId = DomainId.From<TenantId>(tenantId);
+        var typedTenantId = TenantId.From(tenantId);
         var now = DateTimeOffset.UtcNow;
 
         var aggregate = await DB.Set<TaskItem>()
@@ -181,12 +181,12 @@ public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryption
     public async IAsyncEnumerable<TaskItemExportDto> StreamExportAsync(
         Guid tenantId, Guid? afterId, int batchSize, [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var typedTenantId = DomainId.From<TenantId>(tenantId);
+        var typedTenantId = TenantId.From(tenantId);
         var q = DB.Set<TaskItem>().AsNoTracking().Where(t => t.TenantId == typedTenantId);
 
         if (afterId is Guid resume)
         {
-            var typedAfterId = DomainId.From<TaskItemId>(resume);
+            var typedAfterId = TaskItemId.From(resume);
             q = q.Where(t => t.Id > typedAfterId);
         }
 
@@ -247,19 +247,19 @@ public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryption
 
         if (filter.CategoryId.HasValue)
         {
-            var categoryId = DomainId.From<CategoryId>(filter.CategoryId.Value);
+            var categoryId = CategoryId.From(filter.CategoryId.Value);
             q = q.Where(e => e.CategoryId == categoryId);
         }
 
         if (filter.ParentTaskItemId.HasValue)
         {
-            var parentTaskItemId = DomainId.From<TaskItemId>(filter.ParentTaskItemId.Value);
+            var parentTaskItemId = TaskItemId.From(filter.ParentTaskItemId.Value);
             q = q.Where(e => e.ParentTaskItemId == parentTaskItemId);
         }
 
         if (filter.TenantId.HasValue)
         {
-            var tenantId = DomainId.From<TenantId>(filter.TenantId.Value);
+            var tenantId = TenantId.From(filter.TenantId.Value);
             q = q.Where(e => e.TenantId == tenantId);
         }
 

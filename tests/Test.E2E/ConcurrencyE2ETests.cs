@@ -159,15 +159,9 @@ public class ConcurrencyE2ETests
             "A resumable export must not emit the same row twice.");
     }
 
-    /// <summary>Marks tests inconclusive when no container runtime is available.</summary>
+    /// <summary>Inconclusive without a container runtime; fails when a container failed to start.</summary>
     [TestInitialize]
-    public void TestSetup()
-    {
-        if (DbApiFactory.DockerUnavailableReason is not null)
-            Assert.Inconclusive(DbApiFactory.DockerUnavailableReason);
-        if (DbApiFactory.StartupError is not null)
-            Assert.Inconclusive($"SQL container failed to start: {DbApiFactory.StartupError}");
-    }
+    public void TestSetup() => DbApiFactory.AssertContainersAvailable();
 
     public TestContext TestContext { get; set; } = null!;
 }

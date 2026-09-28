@@ -1,5 +1,8 @@
 using BenchmarkDotNet.Attributes;
 using EF.Common.Contracts;
+using EF.IntegrationTesting.EntityFramework;
+using EF.IntegrationTesting.Environment;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using System.Net.Http.Json;
@@ -7,24 +10,29 @@ using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Models;
 using TaskFlow.Application.Models.Paging;
 using TaskFlow.Domain.Shared.Enums;
+using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Data;
 using Test.Support;
+using Test.Support.Hosting;
 
 namespace Test.Benchmarks;
 
 /// <summary>
 /// BenchmarkDotNet endpoint benchmarks that compare the Service and Cqrs application styles behind the
-/// same HTTP contract. Each style uses an isolated in-memory API host and EF Core database.
+/// same HTTP contract. Each style uses an isolated in-memory API host and EF Core database on the NonAzure lane
+/// (the default, pinned here so an ambient <c>TASKFLOW_LANE</c> cannot move it).
 /// Run from repo root with:
 /// <c>dotnet run -c Release --project tests\Test.Benchmarks\Test.Benchmarks.csproj -- --filter *ApplicationStyleBenchmarks*</c>.
 /// Output is saved under <c>tests\Test.Benchmarks\BenchmarkDotNet.Artifacts\results</c>.
+/// <c>Test.Endpoints/BenchmarkHostSetupTests</c> runs this setup in the test matrix so it cannot rot unnoticed.
 /// </summary>
 [MemoryDiagnoser]
 [SimpleJob(warmupCount: 3, iterationCount: 10)]
 public class ApplicationStyleBenchmarks
 {
-    private const string RateLimitPermitEnvironmentVariable = "RateLimiting__PerTenant__PermitLimit";
-    private const string RateLimitWindowEnvironmentVariable = "RateLimiting__PerTenant__WindowSeconds";
+    // The scaffold tenant gets the default tier; a measurement runs far more requests than its 100 per minute.
+    private const string RateLimitPermitEnvironmentVariable = "RateLimiting__Tiers__standard__PermitLimit";
+    private const string RateLimitWindowEnvironmentVariable = "RateLimiting__Tiers__standard__WindowSeconds";
 
     private ApplicationStyleBenchmarkApiFactory _factory = null!;
     private HttpClient _client = null!;
@@ -32,9 +40,7 @@ public class ApplicationStyleBenchmarks
     // TaskItem search is cursor-only (GR-18): there is no PageIndex/offset request shape any more, so
     // this benchmark always measures the first cursor page at the standard default size (50).
     private TaskItemCursorSearchRequest _searchRequest = null!;
-    private string? _previousStyle;
-    private string? _previousRateLimitPermit;
-    private string? _previousRateLimitWindow;
+    private EnvironmentVariableScope? _environment;
     private int _createIndex;
 
     [Params(nameof(ApplicationStyle.Service), nameof(ApplicationStyle.Cqrs))]
@@ -44,13 +50,11 @@ public class ApplicationStyleBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        _previousStyle = Environment.GetEnvironmentVariable(ApplicationStyleResolver.EnvironmentVariable);
-        _previousRateLimitPermit = Environment.GetEnvironmentVariable(RateLimitPermitEnvironmentVariable);
-        _previousRateLimitWindow = Environment.GetEnvironmentVariable(RateLimitWindowEnvironmentVariable);
-
-        Environment.SetEnvironmentVariable(ApplicationStyleResolver.EnvironmentVariable, Style);
-        Environment.SetEnvironmentVariable(RateLimitPermitEnvironmentVariable, "1000000");
-        Environment.SetEnvironmentVariable(RateLimitWindowEnvironmentVariable, "1");
+        _environment = new EnvironmentVariableScope()
+            .Set(ApplicationStyleResolver.EnvironmentVariable, Style)
+            .Set(HostingLaneResolver.LaneEnvironmentVariable, nameof(HostingLane.NonAzure))
+            .Set(RateLimitPermitEnvironmentVariable, "1000000")
+            .Set(RateLimitWindowEnvironmentVariable, "1");
 
         _factory = new ApplicationStyleBenchmarkApiFactory(Style);
         _client = _factory.CreateClient();
@@ -69,9 +73,8 @@ public class ApplicationStyleBenchmarks
     {
         _client.Dispose();
         _factory.Dispose();
-        Environment.SetEnvironmentVariable(ApplicationStyleResolver.EnvironmentVariable, _previousStyle);
-        Environment.SetEnvironmentVariable(RateLimitPermitEnvironmentVariable, _previousRateLimitPermit);
-        Environment.SetEnvironmentVariable(RateLimitWindowEnvironmentVariable, _previousRateLimitWindow);
+        _environment?.Dispose();
+        _environment = null;
     }
 
     /// <summary>Measures search task items throughput and allocation cost for the selected application style.</summary>
@@ -123,7 +126,11 @@ public class ApplicationStyleBenchmarks
         }
     }
 
-    /// <summary>Builds application style benchmark API test hosts with deterministic dependencies for repeatable test execution.</summary>
+    /// <summary>
+    /// Builds the benchmark API host on the NonAzure lane with every external data plane replaced through the
+    /// <see cref="InertNonAzureLane"/> shape <c>Test.Endpoints/CustomApiFactory</c> shares, so a measurement is the
+    /// API and the in-memory database only - no network.
+    /// </summary>
     private sealed class ApplicationStyleBenchmarkApiFactory
         : WebApplicationFactoryBase<global::Program, TaskFlowDbContextTrxn, TaskFlowDbContextQuery>
     {
@@ -136,23 +143,36 @@ public class ApplicationStyleBenchmarks
             _applicationStyle = applicationStyle;
         }
 
+        /// <summary>
+        /// Registration-time settings go in as host settings: ConfigureAppConfiguration sources land after
+        /// Program.cs has already read them to choose providers.
+        /// </summary>
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            foreach (var (key, value) in LaneSettings())
+                builder.UseSetting(key, value);
+            base.ConfigureWebHost(builder);
+            builder.ConfigureServices(InertNonAzureLane.ReplaceDataPlanes);
+        }
+
         /// <summary>Supports benchmark execution for application style benchmark API factory.</summary>
         protected override void ConfigureTestConfiguration(IConfigurationBuilder config)
         {
-            config.AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                [ApplicationStyleResolver.ConfigKey] = _applicationStyle,
-                ["RateLimiting:PerTenant:PermitLimit"] = "1000000",
-                ["RateLimiting:PerTenant:WindowSeconds"] = "1"
-            });
+            config.AddInMemoryCollection(LaneSettings());
+            config.AddInMemoryCollection(TestColumnEncryption.Configuration);
         }
+
+        private Dictionary<string, string?> LaneSettings() => new(InertNonAzureLane.Settings)
+        {
+            [ApplicationStyleResolver.ConfigKey] = _applicationStyle
+        };
 
         /// <summary>Builds trxn options for the isolated benchmark host.</summary>
         protected override DbContextOptions BuildTrxnOptions() =>
-            new DbContextOptionsBuilder<TaskFlowDbContextTrxn>().UseInMemoryDatabase(_dbName).Options;
+            DbContextOptionsFactory.BuildInMemoryOptions<TaskFlowDbContextTrxn>(_dbName);
 
         /// <summary>Builds query options for the isolated benchmark host.</summary>
         protected override DbContextOptions BuildQueryOptions() =>
-            new DbContextOptionsBuilder<TaskFlowDbContextQuery>().UseInMemoryDatabase(_dbName).Options;
+            DbContextOptionsFactory.BuildInMemoryOptions<TaskFlowDbContextQuery>(_dbName);
     }
 }

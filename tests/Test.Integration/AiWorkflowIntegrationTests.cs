@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -11,7 +11,8 @@ namespace Test.Integration;
 /// TaskFlow.Api host in-process against the SQL container, starts a workflow through the public
 /// FlowEngine API, lets the background engine drive it to a terminal node, and then asserts the REAL
 /// database side effects the workflow produced through its self-calls (priority patched / child tasks
-/// created) - not just the engine's terminal state. Inconclusive when the SQL container did not start.
+/// created) - not just the engine's terminal state. Inconclusive without a container runtime; fails when the
+/// SQL container did not start.
 /// </summary>
 [TestClass]
 [TestCategory("Integration")]
@@ -99,7 +100,7 @@ public sealed class AiWorkflowIntegrationTests
     // Runtime hosts do not migrate. Component test owns schema prep before API factory starts.
     private static async Task<string> IsolatedMigratedConnectionStringAsync(CancellationToken ct)
     {
-        var connectionString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("TaskFlow_FlowEngineWorkflowTests");
+        var connectionString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("TaskFlow_AiWorkflow");
 
         await using var trxn = DbContainerFixture.CreateTrxnContext(connectionString);
         await trxn.Database.MigrateAsync(ct);

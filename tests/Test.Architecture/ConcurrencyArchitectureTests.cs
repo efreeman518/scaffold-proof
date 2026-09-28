@@ -51,6 +51,24 @@ public class ConcurrencyArchitectureTests : BaseTest
             "The rule must detect a direct SaveChangesAsync call; ConcurrencyGuard is the known positive.");
     }
 
+    /// <summary>
+    /// Verifies the detector sees inside async methods. An <c>await</c> moves the method body into a
+    /// compiler-generated nested state machine, so a rule that reads only the declaring type's own methods
+    /// passes every async service. ConcurrencyGuard.SaveAsync is not async, so it cannot prove this.
+    /// </summary>
+    [TestMethod]
+    public void Given_AnAsyncDirectSave_When_ScannedByTheRule_Then_IsFlagged()
+    {
+        var result = Types.InAssembly(typeof(AsyncDirectSaveControl).Assembly)
+            .That().HaveName(nameof(AsyncDirectSaveControl))
+            .Should()
+            .MeetCustomRule(new NoDirectSaveChangesRule())
+            .GetResult();
+
+        Assert.IsFalse(result.IsSuccessful,
+            "The rule must detect a direct SaveChangesAsync call inside an async method body.");
+    }
+
     /// <summary>Verifies the guard itself still uses the throwing policy rather than ClientWins.</summary>
     [TestMethod]
     public void Given_ConcurrencyGuard_When_Inspected_Then_UsesThrowPolicy()
@@ -76,12 +94,18 @@ public class ConcurrencyArchitectureTests : BaseTest
 
     /// <summary>
     /// Fails any type whose IL calls <c>SaveChangesAsync</c> on a repository. ConcurrencyGuard itself is
-    /// the one permitted caller - it is the policy.
+    /// the one permitted caller - it is the policy. Nested types are scanned too: async state machines and
+    /// lambda closures are compiler-generated nested types that hold the real method bodies.
     /// </summary>
     private sealed class NoDirectSaveChangesRule : ICustomRule
     {
         public bool MeetsRule(TypeDefinition type)
         {
+            foreach (var nested in type.NestedTypes)
+            {
+                if (!MeetsRule(nested)) return false;
+            }
+
             foreach (var method in type.Methods)
             {
                 if (!method.HasBody) continue;

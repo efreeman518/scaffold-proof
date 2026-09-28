@@ -30,7 +30,7 @@ public class MessagePackCacheTests
 {
     private static readonly DateTimeOffset GeneratedAt = new(2026, 9, 8, 14, 30, 15, TimeSpan.Zero);
 
-    /// <summary>Marks the test Inconclusive when the Redis container failed to start.</summary>
+    /// <summary>Inconclusive without a container runtime; fails when the Redis container failed to start.</summary>
     [TestInitialize]
     public void TestSetup() => IntegrationTestSetup.AssertAvailable("Redis", RedisContainerFixture.StartupError);
 

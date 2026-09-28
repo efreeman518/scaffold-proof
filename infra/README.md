@@ -27,8 +27,11 @@ Gateway, API, Scheduler, and Blazor each take a `<host>Profile` object param (`m
 
 ### Azure lane contract
 
-`infra/main.bicep` is Azure-only under D-060. Every relevant host receives `Hosting__Lane=Azure` plus SQL Server,
-Service Bus, Azure Blob, Cosmos, Azure Table, and Blob Data Protection settings. `searchProvider` defaults to `Sql`
+`infra/main.bicep` is Azure-only under D-060. NonAzure is the default lane when `Hosting__Lane` is unset, so every
+container app, the migrator job, and the Functions app set `Hosting__Lane=Azure` explicitly (pinned by
+`BicepInfrastructureContractTests`), plus SQL Server, Service Bus, Azure Blob, Cosmos, Azure Table, and Blob Data
+Protection settings. A host that lost the setting fails at startup on its Azure App Configuration and Key Vault
+settings rather than running the NonAzure lane. `searchProvider` defaults to `Sql`
 because this template does not provision or configure Azure AI Search. `AzureAiSearch` remains a strict opt-in for a
 deployment that supplies that external service and its application configuration. PostgreSQL, RabbitMQ, S3, and
 MongoDB belong to the separate NonAzure Compose lane and are not Azure Bicep alternatives.

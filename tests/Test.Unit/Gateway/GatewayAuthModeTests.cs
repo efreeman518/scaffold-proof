@@ -49,7 +49,7 @@ public sealed class GatewayAuthModeTests
     [TestCategory("Endpoint")]
     public async Task AuthModeEndpoint_IsAnonymousAndReturnsScaffold()
     {
-        var builder = WebApplication.CreateBuilder();
+        var builder = TestWebApplication.CreateBuilder();
         await using var app = builder.Build();
         app.MapAuthModeEndpoint(AuthMode.Scaffold);
 
@@ -102,7 +102,7 @@ public sealed class GatewayAuthModeTests
 
     private static WebApplicationBuilder CreateGatewayBuilder()
     {
-        var builder = WebApplication.CreateBuilder();
+        var builder = TestWebApplication.CreateBuilder();
         builder.Configuration[AuthModeResolver.ConfigKey] = "Scaffold";
         builder.Configuration["CorsSettings:AllowedOrigins:0"] = "https://localhost";
         builder.AddServiceDefaults();

@@ -223,5 +223,21 @@ public class TaskItemServiceTests
         Assert.IsNull(response.NextCursor);
     }
 
+    /// <summary>
+    /// S3: a cancelled or timed-out search propagates (the host answers 499/504); an empty page with
+    /// HasMore = false would tell a pager it had seen every row.
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public async Task Given_CancelledSearch_When_SearchAsync_Then_CancellationPropagates()
+    {
+        _repoQueryMock.Setup(r => r.SearchTaskItemsAsync(
+                It.IsAny<TaskItemCursorSearchRequest>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException());
+
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
+            CreateService().SearchAsync(new TaskItemCursorSearchRequest { PageSize = 10 }, TestContext.CancellationToken));
+    }
+
     public TestContext TestContext { get; set; } = null!;
 }

@@ -25,7 +25,7 @@ namespace Test.Integration;
 [TestCategory("Integration")]
 public class RedisCacheAndLimiterTests
 {
-    /// <summary>Marks the test Inconclusive when the Redis container failed to start.</summary>
+    /// <summary>Inconclusive without a container runtime; fails when the Redis container failed to start.</summary>
     [TestInitialize]
     public void TestSetup() => IntegrationTestSetup.AssertAvailable("Redis", RedisContainerFixture.StartupError);
 
@@ -105,7 +105,8 @@ public class RedisCacheAndLimiterTests
     public async Task RedisUnreachable_LimiterFailsOpen()
     {
         // A port nothing is listening on, with a short connect timeout so the test is not the retry policy.
-        var deadRedis = "127.0.0.1:6399,connectTimeout=250,abortConnect=false,connectRetry=1";
+        // No abortConnect=false: the factory must survive the default (throwing) string Aspire and compose emit.
+        var deadRedis = "127.0.0.1:6399,connectTimeout=250,connectRetry=1";
         var factory = BuildLimiterFactory(Tiers(permitLimit: 1, windowSeconds: 60), deadRedis);
 
         using var limiter = factory.CreateTenantLimiter(Guid.NewGuid().ToString());

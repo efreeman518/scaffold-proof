@@ -1,3 +1,4 @@
+using EF.IntegrationTesting.Environment;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -25,8 +26,10 @@ public class AiProviderSelectorTests
             .Build();
 
     [TestMethod]
-    public void ResolveAiProvider_Unset_AzureLane_DefaultsToNone() =>
-        Assert.AreEqual(AiProvider.None, RegisterServices.ResolveAiProvider(Config()));
+    public void ResolveAiProvider_AzureLane_DefaultsToNone() =>
+        Assert.AreEqual(
+            AiProvider.None,
+            RegisterServices.ResolveAiProvider(Config((HostingLaneResolver.LaneConfigurationKey, "Azure"))));
 
     [TestMethod]
     public void ResolveAiProvider_NonAzureLane_DefaultsToNone() =>
@@ -51,18 +54,11 @@ public class AiProviderSelectorTests
     [DoNotParallelize]
     public void ResolveAiProvider_EnvWinsOverConfig()
     {
-        var original = Environment.GetEnvironmentVariable(RegisterServices.AiProviderEnvVar);
-        Environment.SetEnvironmentVariable(RegisterServices.AiProviderEnvVar, "None");
-        try
-        {
-            Assert.AreEqual(
-                AiProvider.None,
-                RegisterServices.ResolveAiProvider(Config((RegisterServices.AiProviderConfigKey, "AzureInference"))));
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable(RegisterServices.AiProviderEnvVar, original);
-        }
+        using var environment = new EnvironmentVariableScope().Set(RegisterServices.AiProviderEnvVar, "None");
+
+        Assert.AreEqual(
+            AiProvider.None,
+            RegisterServices.ResolveAiProvider(Config((RegisterServices.AiProviderConfigKey, "AzureInference"))));
     }
 
     [TestMethod]
@@ -152,6 +148,7 @@ public class AiProviderSelectorTests
     {
         var builder = CreateHostBuilder(new Dictionary<string, string?>
         {
+            [HostingLaneResolver.LaneConfigurationKey] = "Azure",
             [RegisterServices.AiProviderConfigKey] = "AzureInference",
             ["ConnectionStrings:chat"] = "Endpoint=https://example.services.ai.azure.com/;Key=fake"
         });

@@ -120,6 +120,29 @@ public class TaskItemEndpointTests
         Assert.AreEqual("After Update", updated!.Title);
     }
 
+    /// <summary>
+    /// Verifies a PUT the service rejects on validation is a 400. The errors-only ProblemDetails helper
+    /// defaults to 500 when no status is passed, so every Update/Patch/Delete/child handler states 400.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_InvalidPayload_When_PutUpdate_Then_Returns400(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
+        var dto = new TaskItemDto { Title = "Valid Before Update", Priority = Priority.Medium };
+        var createResponse = await client.PostAsJsonAsync("/api/v1/task-items", new DefaultRequest<TaskItemDto> { Item = dto }, cancellationToken: TestContext.CancellationToken);
+        var created = (await createResponse.Content.ReadFromJsonAsync<DefaultResponse<TaskItemDto>>(_jsonOptions, TestContext.CancellationToken))!.Item;
+
+        var invalid = new TaskItemDto { Id = created!.Id, Title = "", Priority = Priority.Medium, Status = created.Status };
+        using var response = await client.PutWithIfMatchAsync($"/api/v1/task-items/{created.Id}", new DefaultRequest<TaskItemDto> { Item = invalid }, ConcurrencyHttpExtensions.IfMatch(created.Version!.Value), TestContext.CancellationToken);
+
+        var body = await response.Content.ReadAsStringAsync(TestContext.CancellationToken);
+        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode, body);
+    }
+
     /// <summary>Verifies that given existing task item, when delete, then returns 204.</summary>
     [TestCategory("Endpoint")]
     [DataRow(EndpointStyles.Service)]

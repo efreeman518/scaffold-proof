@@ -91,7 +91,7 @@ public static class TaskItemMapper
     {
         var categoryId = DomainId.FromNullable<CategoryId>(dto.CategoryId);
         var parentTaskItemId = DomainId.FromNullable<TaskItemId>(dto.ParentTaskItemId);
-        var result = TaskItem.Create(DomainId.From<TenantId>(tenantId), dto.Title, dto.Description, dto.Priority, categoryId, parentTaskItemId,
+        var result = TaskItem.Create(TenantId.From(tenantId), dto.Title, dto.Description, dto.Priority, categoryId, parentTaskItemId,
             id: DomainId.FromNullable<TaskItemId>(dto.Id));
         if (result.IsFailure) return result;
 

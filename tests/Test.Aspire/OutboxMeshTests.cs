@@ -38,19 +38,21 @@ public class OutboxMeshTests
     public static Task ClassInit(TestContext context) => AspireTestHost.EnsureStartedAsync(context);
 
     /// <summary>Consumers run in the Functions host on Service Bus and in the Scheduler on RabbitMQ.</summary>
-    private static bool UsesRabbitMq => string.Equals(
-        Environment.GetEnvironmentVariable("TASKFLOW_MESSAGING_PROVIDER"), "RabbitMq", StringComparison.OrdinalIgnoreCase);
+    private static bool UsesRabbitMq => TestHostingLane.Current.Messaging == "RabbitMq";
 
-    /// <summary>The dispatcher lives in the Scheduler and the Service Bus consumers live in Functions.</summary>
+    /// <summary>
+    /// The dispatcher lives in the Scheduler and the Service Bus consumers live in Functions. Either one absent is
+    /// Inconclusive with its enabling step; a Functions host that is present but never turns healthy fails.
+    /// </summary>
     [TestInitialize]
-    public void TestSetup()
+    public async Task TestSetup()
     {
         if (Environment.GetEnvironmentVariable("TASKFLOW_ASPIRE_SCHEDULER_AVAILABLE") != "true")
             Assert.Inconclusive(
-                "TASKFLOW_ASPIRE_SCHEDULER_AVAILABLE is not set, so no outbox dispatcher runs in this graph.");
+                "No outbox dispatcher runs in this graph. Set TASKFLOW_ASPIRE_SCHEDULER_AVAILABLE=true to add the Scheduler.");
 
-        if (!UsesRabbitMq && !AspireTestHost.EnsureFuncToolAvailable())
-            Assert.Inconclusive("Azure Functions Core Tools are unavailable, so no consumer runs in this graph.");
+        if (!UsesRabbitMq)
+            await AspireTestHost.RequireFunctionsHostAsync(TestContext.CancellationToken);
     }
 
     [TestMethod]

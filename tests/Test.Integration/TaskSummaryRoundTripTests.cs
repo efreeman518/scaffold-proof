@@ -1,4 +1,4 @@
-﻿using EF.Data.Contracts;
+using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using System.Data.Common;
@@ -31,7 +31,7 @@ public class TaskSummaryRoundTripTests
         await db.Database.MigrateAsync(context.CancellationToken);
     }
 
-    /// <summary>Marks the test Inconclusive when the database container failed to start.</summary>
+    /// <summary>Inconclusive without a container runtime; fails when the database container failed to start.</summary>
     [TestInitialize]
     public void TestSetup() => IntegrationTestSetup.AssertAvailable("database", DbContainerFixture.StartupError);
 
@@ -41,7 +41,7 @@ public class TaskSummaryRoundTripTests
     public async Task GetSummaryAsync_IssuesExactlyOneQuery()
     {
         var tenantId = Guid.NewGuid();
-        var typedTenantId = DomainId.From<TenantId>(tenantId);
+        var typedTenantId = TenantId.From(tenantId);
 
         await using (var seed = DbContainerFixture.CreateTrxnContext())
         {

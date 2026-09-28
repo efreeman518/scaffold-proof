@@ -19,6 +19,14 @@ namespace Microsoft.Extensions.Hosting;
 /// <summary>Configures extensions host behavior for TaskFlow runtime services.</summary>
 public static class Extensions
 {
+    /// <summary>
+    /// <c>EF.Messaging.RabbitMq.RabbitMqMetrics.MeterName</c> (publish, confirm, consume and dead-letter
+    /// instruments), spelled out so ServiceDefaults - which every host, the Gateway and UI hosts included,
+    /// references - does not take a RabbitMQ client dependency for one string. A unit test probes the export
+    /// with the package constant, so a rename there fails the test.
+    /// </summary>
+    private const string RabbitMqMeterName = "EF.Messaging.RabbitMq";
+
     /// <summary>Registers service defaults dependencies in the service container.</summary>
     public static IHostApplicationBuilder AddServiceDefaults(
         this IHostApplicationBuilder builder,
@@ -62,6 +70,22 @@ public static class Extensions
                 $"OpenTelemetry:Tracing:SampleRatio must be between 0 and 1; got {configuredRatio}.");
         }
 
+        // The Azure Functions host process already emits request telemetry for each invocation. The Azure
+        // Monitor distro always adds ASP.NET Core instrumentation (it cannot be switched off), so a worker
+        // running it would report every HTTP-triggered invocation twice with the same OperationId. Functions
+        // sets this flag; the worker then skips the distro and exports its own logs, traces and metrics through
+        // the per-signal Azure Monitor exporters, with no ASP.NET Core instrumentation.
+        var suppressAspNetCoreInstrumentation = string.Equals(
+            builder.Configuration["TASKFLOW_SUPPRESS_ASPNETCORE_INSTRUMENTATION"],
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+
+        // The distro owns all three signals only when metrics are on and ASP.NET Core instrumentation is
+        // wanted; otherwise each enabled signal gets its own exporter, so disabled metrics create no
+        // MeterProvider and suppressed instrumentation is not re-added behind the flag's back.
+        var useAzureMonitorDistro = useAzureMonitor && metricsEnabled && !suppressAspNetCoreInstrumentation;
+        var useAzureMonitorSignalExporters = useAzureMonitor && !useAzureMonitorDistro;
+
         builder.Logging.AddOpenTelemetry(logging =>
         {
             logging.IncludeFormattedMessage = true;
@@ -72,24 +96,12 @@ public static class Extensions
                 logging.AddOtlpExporter();
             }
 
-            // The Azure Monitor distro owns all three signals when metrics are enabled. When metrics are
-            // intentionally disabled, use the signal-specific exporter so logs continue without creating
-            // the MeterProvider that the switch promises to omit.
-            if (useAzureMonitor && !metricsEnabled)
+            if (useAzureMonitorSignalExporters)
             {
                 logging.AddAzureMonitorLogExporter(options =>
                     options.ConnectionString = azureMonitorConnectionString);
             }
         });
-
-        // The Azure Functions host process already emits request telemetry for each invocation. When this
-        // worker also runs the Azure Monitor distro (which includes ASP.NET Core instrumentation), that
-        // request would be reported twice with the same OperationId. Functions sets this flag so the worker
-        // skips ASP.NET Core request instrumentation while still exporting its own traces, metrics, and logs.
-        var suppressAspNetCoreInstrumentation = string.Equals(
-            builder.Configuration["TASKFLOW_SUPPRESS_ASPNETCORE_INSTRUMENTATION"],
-            "true",
-            StringComparison.OrdinalIgnoreCase);
 
         var openTelemetry = builder.Services.AddOpenTelemetry();
 
@@ -108,7 +120,8 @@ public static class Extensions
                     CacheMeter.MeterName,
                     RateLimitingMeter.MeterName,
                     StreamingMeter.MeterName,
-                    MessagingMetrics.MeterName);
+                    MessagingMetrics.MeterName,
+                    RabbitMqMeterName);
 
                 if (!suppressAspNetCoreInstrumentation)
                 {
@@ -118,6 +131,12 @@ public static class Extensions
                 if (useOtlpExporter)
                 {
                     metrics.AddOtlpExporter();
+                }
+
+                if (useAzureMonitorSignalExporters)
+                {
+                    metrics.AddAzureMonitorMetricExporter(options =>
+                        options.ConnectionString = azureMonitorConnectionString);
                 }
             });
         }
@@ -149,14 +168,14 @@ public static class Extensions
                 tracing.AddOtlpExporter();
             }
 
-            if (useAzureMonitor && !metricsEnabled)
+            if (useAzureMonitorSignalExporters)
             {
                 tracing.AddAzureMonitorTraceExporter(options =>
                     options.ConnectionString = azureMonitorConnectionString);
             }
         });
 
-        if (useAzureMonitor && metricsEnabled)
+        if (useAzureMonitorDistro)
         {
             builder.Services.AddOpenTelemetry().UseAzureMonitor(options =>
             {

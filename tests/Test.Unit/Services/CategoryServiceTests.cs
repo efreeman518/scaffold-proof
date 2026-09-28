@@ -1,11 +1,13 @@
 using EF.Cache;
 using EF.Common.Contracts;
 using EF.Data.Contracts;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Caching;
+using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Models;
 using TaskFlow.Application.Services;
@@ -179,6 +181,74 @@ public class CategoryServiceTests
 
         Assert.AreEqual(2, response.Total);
         Assert.HasCount(2, response.Data);
+    }
+
+    // ----- S4: save failures return a fixed message, cancellation propagates, a lost create race replays or 409s. -----
+
+    private const string ProviderText = "Violation of PRIMARY KEY constraint 'PK_Category'. Cannot insert duplicate key in object 'taskflow.Category'.";
+
+    /// <summary>Arranges a create with a caller id whose existence check finds nothing and whose save throws.</summary>
+    private CategoryDto ArrangeFailingCreate(Exception saveFailure)
+    {
+        _repoTrxnMock.Setup(r => r.GetCategoryAsync(It.IsAny<CategoryId>(), It.IsAny<CancellationToken>())).ReturnsAsync((Category?)null);
+        _repoTrxnMock.Setup(r => r.Create(ref It.Ref<Category>.IsAny));
+        _repoTrxnMock.Setup(r => r.SaveChangesAsync(It.IsAny<OptimisticConcurrencyWinner>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(saveFailure);
+        return new CategoryDto { Id = Guid.CreateVersion7(), Name = "Test Category", Description = "Test description", IsActive = true };
+    }
+
+    /// <summary>Verifies a provider save failure reaches the caller as a fixed message, never the provider text.</summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public async Task Given_ProviderSaveFailure_When_CreateAsync_Then_ReturnsFixedMessage()
+    {
+        var dto = ArrangeFailingCreate(new DbUpdateException("An error occurred while saving the entity changes.", new InvalidOperationException(ProviderText)));
+        _repoQueryMock.Setup(r => r.GetCategoryAsync(It.IsAny<CategoryId>(), It.IsAny<CancellationToken>())).ReturnsAsync((Category?)null);
+
+        var result = await CreateService().CreateAsync(new DefaultRequest<CategoryDto> { Item = dto }, TestContext.CancellationToken);
+
+        Assert.IsTrue(result.IsFailure);
+        Assert.AreEqual(ErrorConstants.ERROR_SAVE_FAILED, result.ErrorMessage);
+        Assert.DoesNotContain("PK_Category", string.Join(";", result.Errors));
+    }
+
+    /// <summary>Verifies a cancelled save propagates instead of becoming a 400 failure result.</summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public async Task Given_CancelledSave_When_CreateAsync_Then_CancellationPropagates()
+    {
+        var dto = ArrangeFailingCreate(new OperationCanceledException());
+
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
+            CreateService().CreateAsync(new DefaultRequest<CategoryDto> { Item = dto }, TestContext.CancellationToken));
+    }
+
+    /// <summary>Verifies a create that lost the insert race to a different payload with the same id is a 409.</summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public async Task Given_ConcurrentDifferentCreate_When_SaveLosesRace_Then_ThrowsConflict()
+    {
+        var dto = ArrangeFailingCreate(new DbUpdateException("duplicate", new InvalidOperationException(ProviderText)));
+        _repoQueryMock.Setup(r => r.GetCategoryAsync(It.IsAny<CategoryId>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CategoryBuilder().WithName("Someone else's category").Build());
+
+        await Assert.ThrowsExactlyAsync<IdempotentCreateConflictException>(() =>
+            CreateService().CreateAsync(new DefaultRequest<CategoryDto> { Item = dto }, TestContext.CancellationToken));
+    }
+
+    /// <summary>Verifies a create that lost the insert race to an equivalent payload replays the stored row.</summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public async Task Given_ConcurrentEquivalentCreate_When_SaveLosesRace_Then_ReplaysStoredRow()
+    {
+        var dto = ArrangeFailingCreate(new DbUpdateException("duplicate", new InvalidOperationException(ProviderText)));
+        _repoQueryMock.Setup(r => r.GetCategoryAsync(It.IsAny<CategoryId>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CategoryBuilder().Build());
+
+        var result = await CreateService().CreateAsync(new DefaultRequest<CategoryDto> { Item = dto }, TestContext.CancellationToken);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.IsTrue(result.Value!.IsReplay);
     }
 
     public TestContext TestContext { get; set; } = null!;

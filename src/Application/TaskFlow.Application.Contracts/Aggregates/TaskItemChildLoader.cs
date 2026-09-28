@@ -29,7 +29,7 @@ public static class TaskItemChildLoader
         string operation,
         CancellationToken ct)
     {
-        var entity = await repoTrxn.GetTaskItemAsync(DomainId.From<TaskItemId>(taskItemId), inclChildren: false, ct);
+        var entity = await repoTrxn.GetTaskItemAsync(TaskItemId.From(taskItemId), inclChildren: false, ct);
         if (entity is null) return (null, null);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
@@ -40,15 +40,15 @@ public static class TaskItemChildLoader
     /// <summary>Loads one tracked comment of the aggregate, or null when it does not belong to it.</summary>
     public static Task<Comment?> LoadCommentAsync(
         ITaskItemRepositoryTrxn repoTrxn, Guid taskItemId, Guid commentId, CancellationToken ct) =>
-        repoTrxn.GetCommentAsync(DomainId.From<TaskItemId>(taskItemId), DomainId.From<CommentId>(commentId), ct);
+        repoTrxn.GetCommentAsync(TaskItemId.From(taskItemId), CommentId.From(commentId), ct);
 
     /// <summary>Loads one tracked checklist item of the aggregate, or null when it does not belong to it.</summary>
     public static Task<ChecklistItem?> LoadChecklistItemAsync(
         ITaskItemRepositoryTrxn repoTrxn, Guid taskItemId, Guid checklistItemId, CancellationToken ct) =>
-        repoTrxn.GetChecklistItemAsync(DomainId.From<TaskItemId>(taskItemId), DomainId.From<ChecklistItemId>(checklistItemId), ct);
+        repoTrxn.GetChecklistItemAsync(TaskItemId.From(taskItemId), ChecklistItemId.From(checklistItemId), ct);
 
     /// <summary>Loads one tracked tag association of the aggregate, or null when the tag is not associated.</summary>
     public static Task<TaskItemTag?> LoadTaskItemTagAsync(
         ITaskItemRepositoryTrxn repoTrxn, Guid taskItemId, Guid tagId, CancellationToken ct) =>
-        repoTrxn.GetTaskItemTagAsync(DomainId.From<TaskItemId>(taskItemId), DomainId.From<TagId>(tagId), ct);
+        repoTrxn.GetTaskItemTagAsync(TaskItemId.From(taskItemId), TagId.From(tagId), ct);
 }

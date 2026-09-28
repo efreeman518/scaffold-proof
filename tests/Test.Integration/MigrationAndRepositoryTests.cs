@@ -1,4 +1,4 @@
-﻿using EF.Data.Contracts;
+using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Application.Models;
 using TaskFlow.Domain.Model;
@@ -24,9 +24,9 @@ public class MigrationAndRepositoryTests
 {
     private static readonly Guid TenantA = TestConstants.TenantId;
     private static readonly Guid TenantB = Guid.Parse("00000000-0000-0000-0000-000000000099");
-    private static TenantId TenantAId => DomainId.From<TenantId>(TenantA);
+    private static TenantId TenantAId => TenantId.From(TenantA);
 
-    /// <summary>Marks the test Inconclusive when the SQL container failed to start (assembly-init safety).</summary>
+    /// <summary>Inconclusive without a container runtime; fails when the SQL container failed to start (assembly-init safety).</summary>
     [TestInitialize]
     public void TestSetup()
     {
@@ -68,7 +68,7 @@ public class MigrationAndRepositoryTests
         Assert.AreNotEqual(Guid.Empty, id);
 
         // Read
-        var fetched = await db.Categories.FindAsync([TenantAId, DomainId.From<CategoryId>(id)], TestContext.CancellationToken);
+        var fetched = await db.Categories.FindAsync([TenantAId, CategoryId.From(id)], TestContext.CancellationToken);
         Assert.IsNotNull(fetched);
         Assert.AreEqual("Integration Cat", fetched.Name);
 
@@ -76,14 +76,14 @@ public class MigrationAndRepositoryTests
         fetched.Update(name: "Updated Cat");
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 
-        var updated = await db.Categories.FindAsync([TenantAId, DomainId.From<CategoryId>(id)], TestContext.CancellationToken);
+        var updated = await db.Categories.FindAsync([TenantAId, CategoryId.From(id)], TestContext.CancellationToken);
         Assert.AreEqual("Updated Cat", updated!.Name);
 
         // Delete
         db.Categories.Remove(updated);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 
-        var deleted = await db.Categories.FindAsync([TenantAId, DomainId.From<CategoryId>(id)], TestContext.CancellationToken);
+        var deleted = await db.Categories.FindAsync([TenantAId, CategoryId.From(id)], TestContext.CancellationToken);
         Assert.IsNull(deleted);
     }
 
@@ -102,7 +102,7 @@ public class MigrationAndRepositoryTests
         var id = task.Id;
 
         // Read
-        var fetched = await db.TaskItems.FindAsync([TenantAId, DomainId.From<TaskItemId>(id)], TestContext.CancellationToken);
+        var fetched = await db.TaskItems.FindAsync([TenantAId, TaskItemId.From(id)], TestContext.CancellationToken);
         Assert.IsNotNull(fetched);
         Assert.AreEqual("Integration Task", fetched.Title);
         Assert.AreEqual(Priority.High, fetched.Priority);
@@ -112,14 +112,14 @@ public class MigrationAndRepositoryTests
         fetched.Update(title: "Updated Task");
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 
-        var updated = await db.TaskItems.FindAsync([TenantAId, DomainId.From<TaskItemId>(id)], TestContext.CancellationToken);
+        var updated = await db.TaskItems.FindAsync([TenantAId, TaskItemId.From(id)], TestContext.CancellationToken);
         Assert.AreEqual("Updated Task", updated!.Title);
 
         // Delete
         db.TaskItems.Remove(updated);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 
-        var deleted = await db.TaskItems.FindAsync([TenantAId, DomainId.From<TaskItemId>(id)], TestContext.CancellationToken);
+        var deleted = await db.TaskItems.FindAsync([TenantAId, TaskItemId.From(id)], TestContext.CancellationToken);
         Assert.IsNull(deleted);
     }
 
@@ -203,7 +203,7 @@ public class MigrationAndRepositoryTests
 
         // Reload the parent (tracked, with children) in a fresh context - mirrors the handler/service path.
         await using var db = DbContainerFixture.CreateTrxnContext();
-        var typedParentId = DomainId.From<TaskItemId>(parentId);
+        var typedParentId = TaskItemId.From(parentId);
         var loaded = await db.TaskItems
             .IgnoreQueryFilters()
             .Include(t => t.Comments)
@@ -313,7 +313,7 @@ public class MigrationAndRepositoryTests
         // The filter is active - the count depends on the context's TenantId.
         // Since our test context doesn't match either tenant, we may get 0 or partial.
         // The key assertion: IgnoreQueryFilters returns MORE than filtered query.
-        Assert.IsGreaterThanOrEqualTo(allViaEf.Count, filteredCount, "Query filter should restrict results");
+        Assert.IsGreaterThanOrEqualTo(filteredCount, allViaEf.Count, "Query filter should restrict results");
     }
 
     /// <summary>Verifies attachment table and constraints exist correctly behavior and protects the expected test contract.</summary>

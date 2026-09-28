@@ -48,4 +48,12 @@ internal static partial class LogMessages
     /// <summary>Logs once that no object-storage backend is configured, so IObjectStorageRepository is the no-op.</summary>
     [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 11, Level = LogLevel.Warning, Message = "No object-storage backend configured: attachment upload, download, and URL generation will fail; deferred blob deletes will be treated as already gone.")]
     public static partial void NoOpBlobStorageConfigured(this ILogger logger);
+
+    /// <summary>Logs an outbox message that can never fit a Service Bus batch; it is reported permanent and dead-lettered.</summary>
+    [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 12, Level = LogLevel.Error, Message = "Outbox message {MessageId} ({EventType}) to {Destination} exceeds the Service Bus batch limit of {MaxSizeInBytes} bytes; it will be dead-lettered")]
+    public static partial void OutboxMessageTooLarge(this ILogger logger, Guid messageId, string eventType, string destination, long maxSizeInBytes);
+
+    /// <summary>Logs a Service Bus send that failed part way; earlier batches stayed sent, the rest is retried.</summary>
+    [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 13, Level = LogLevel.Warning, Message = "Service Bus send to {Destination} failed after {SentCount} message(s); {FailedCount} message(s) will be retried")]
+    public static partial void OutboxBatchSendFailed(this ILogger logger, string destination, int sentCount, int failedCount, Exception exception);
 }

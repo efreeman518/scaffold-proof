@@ -1,7 +1,6 @@
 using EF.Common.Extensions;
 using EF.Storage.Contracts;
 using Microsoft.Extensions.Options;
-using System.Collections.Concurrent;
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Infrastructure.Data.Operational;
 
@@ -18,73 +17,59 @@ public sealed class BlobDeleteWorkerService(
     : OperationalLeasedWorker<BlobDeleteWork, BlobDeleteSettings>(scopeFactory, options, loggerFactory)
 {
     /// <inheritdoc />
-    protected override async Task HandleBatchAsync(
-        IServiceProvider scope, IOperationalWorkRepository work, LeasedBatch<BlobDeleteWork> batch, CancellationToken ct)
+    protected override Task HandleBatchAsync(
+        IServiceProvider scope, IReadOnlyList<BlobDeleteWork> items, WorkBatchResult result, CancellationToken ct)
     {
         // IObjectStorageRepository always resolves - a no-op fallback stands in when no object-storage
         // backend is configured and treats a delete as already-gone (D-037), so no null guard is needed here.
         var blobs = scope.GetRequiredService<IObjectStorageRepository>();
-
-        var outcome = await DeleteBatchAsync(blobs, batch.Items, Options.MaxConcurrency, ct)
-            .ConfigureAwait(false);
-
-        // Lease bookkeeping stays sequential on purpose: IOperationalWorkRepository is backed by the scoped
-        // DbContext, which is not thread safe, so it must not be touched from inside the concurrent phase.
-        foreach (var (item, error) in outcome.Failed)
-        {
-            Logger.BlobDeleteFailed(item.ContainerName, item.BlobName, error);
-            await work.ReleaseAsync<BlobDeleteWork>(
-                batch.LeaseToken, item.Id, item.AttemptCount, error.GetBaseException().Message, ct)
-                .ConfigureAwait(false);
-        }
-
-        await work.CompleteAsync<BlobDeleteWork>(batch.LeaseToken, outcome.Deleted, ct).ConfigureAwait(false);
+        return DeleteBatchAsync(blobs, items, result, Options.MaxConcurrency, Logger, ct);
     }
 
     /// <summary>
     /// Deletes every blob in the batch with at most <paramref name="maxConcurrency"/> deletes in flight
-    /// (D-055), and reports which rows succeeded and which failed. The rows are independent - each names one
+    /// (D-055), and reports each row into <paramref name="result"/>. The rows are independent - each names one
     /// blob and nothing orders them - so the sequential loop this replaced spent the whole batch waiting on
-    /// one storage round trip at a time.
+    /// one storage round trip at a time. Nothing here touches the work repository: it is backed by the scoped
+    /// DbContext, which is not thread safe, so the worker settles the outcomes sequentially afterwards.
     /// </summary>
     /// <param name="blobs">Blob store to delete from.</param>
     /// <param name="items">Claimed work rows.</param>
+    /// <param name="result">Receives Complete for each deleted row and Fail for each row whose delete threw.</param>
     /// <param name="maxConcurrency">Deletes in flight; values below 1 are clamped to 1.</param>
+    /// <param name="logger">Logger for failed deletes.</param>
     /// <param name="ct">Cancellation token; a requested cancellation propagates instead of being recorded.</param>
-    /// <returns>Ids to complete, and the rows to release with the error that stopped them.</returns>
-    public static async Task<(IReadOnlyCollection<Guid> Deleted, IReadOnlyCollection<(BlobDeleteWork Item, Exception Error)> Failed)>
-        DeleteBatchAsync(
-            IObjectStorageRepository blobs,
-            IReadOnlyList<BlobDeleteWork> items,
-            int maxConcurrency,
-            CancellationToken ct)
+    public static async Task DeleteBatchAsync(
+        IObjectStorageRepository blobs,
+        IReadOnlyList<BlobDeleteWork> items,
+        WorkBatchResult result,
+        int maxConcurrency,
+        ILogger logger,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(blobs);
         ArgumentNullException.ThrowIfNull(items);
-
-        var deleted = new ConcurrentQueue<Guid>();
-        var failed = new ConcurrentQueue<(BlobDeleteWork, Exception)>();
+        ArgumentNullException.ThrowIfNull(result);
 
         await items.ToAsyncEnumerable().ConcurrentPipeAsync(async item =>
         {
             try
             {
                 await blobs.DeleteAsync(item.ContainerName, item.BlobName, ct).ConfigureAwait(false);
-                deleted.Enqueue(item.Id);
+                result.Complete(item.Id);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                // Shutdown, not a delete failure. Rethrowing abandons the batch with its lease intact, so
-                // the next replica to claim it retries every row - including the ones already deleted, which
-                // is safe because a missing blob is a success.
+                // Shutdown, not a delete failure. The row stays unreported, so the worker abandons it without
+                // consuming an attempt while the rows already deleted are still completed. Retrying a row whose
+                // delete did land is safe, because a missing blob is a success.
                 throw;
             }
             catch (Exception ex)
             {
-                failed.Enqueue((item, ex));
+                logger.BlobDeleteFailed(item.ContainerName, item.BlobName, ex);
+                result.Fail(item.Id, ex);
             }
         }, Math.Max(1, maxConcurrency), ct).ConfigureAwait(false);
-
-        return ([.. deleted], [.. failed]);
     }
 }

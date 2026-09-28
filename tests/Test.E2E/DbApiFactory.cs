@@ -20,7 +20,7 @@ namespace Test.E2E;
 
 /// <summary>
 /// Real-database WebApplicationFactory backed by a Testcontainer for the provider selected by
-/// <c>TASKFLOW_LANE</c> (Azure default, NonAzure alternate). Exercises the full stack:
+/// <c>TASKFLOW_LANE</c> (NonAzure default, Azure opt-in). Exercises the full stack:
 /// HTTP -> endpoint style -> application layer -> EF -> database.
 /// Set TASKFLOW_APPLICATION_STYLE=Cqrs to run the same workflow tests against CQRS endpoint mappings.
 /// </summary>
@@ -48,6 +48,22 @@ public sealed class DbApiFactory : WebApplicationFactoryBase<Program, TaskFlowDb
     public static string? DockerUnavailableReason { get; private set; }
 
     public static Exception? StartupError { get; private set; }
+
+    /// <summary>
+    /// Test prerequisite rule for every E2E class: no container runtime is Inconclusive with the enabling step; a
+    /// container that fails to start after the preflight passed fails the test with its startup error.
+    /// </summary>
+    public static void AssertContainersAvailable()
+    {
+        if (DockerUnavailableReason is not null)
+        {
+            Assert.Inconclusive(DockerUnavailableReason);
+            return;
+        }
+
+        if (StartupError is not null)
+            Assert.Fail($"E2E container startup failed after Docker preflight succeeded:{Environment.NewLine}{StartupError}");
+    }
 
     /// <summary>Initializes the API factory with required dependencies and default state.</summary>
     public DbApiFactory(string? applicationStyle = null)

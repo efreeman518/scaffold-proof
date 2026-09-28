@@ -23,6 +23,6 @@ public sealed class ConsumerInboxRetentionHandler(
         var cutoffUtc = timeProvider.GetUtcNow()
             .AddDays(-config.GetValue("Scheduling:Retention:ConsumerInboxDays", DefaultRetentionDays));
 
-        meter.RecordRetention("consumerinbox", await inboxStore.PurgeProcessedAsync(cutoffUtc, ct));
+        meter.RecordRetention("consumerinbox", await inboxStore.PurgeAsync(cutoffUtc, ct));
     }
 }

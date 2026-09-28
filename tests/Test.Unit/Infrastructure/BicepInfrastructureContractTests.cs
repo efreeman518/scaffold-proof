@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Test.Unit.Infrastructure;
 
@@ -31,6 +32,45 @@ public sealed class BicepInfrastructureContractTests
         Assert.IsFalse(main.Contains("rabbitmq-container-app.bicep", StringComparison.Ordinal));
         Assert.IsFalse(File.Exists(RepoRoot.Combine("infra", "modules", "postgres-flexible-server.bicep")));
         Assert.IsFalse(File.Exists(RepoRoot.Combine("infra", "modules", "rabbitmq-container-app.bicep")));
+    }
+
+    /// <summary>
+    /// D-060: an unset lane resolves NonAzure, so every Azure-deployed host must set Hosting__Lane=Azure
+    /// itself. Each container app and job must take its env from the shared lane block, and the Functions
+    /// app and the compiled template must carry the same setting.
+    /// </summary>
+    [TestMethod]
+    public void AzureDeployment_EveryHostSetsTheAzureLaneExplicitly()
+    {
+        const string laneSetting = "{ name: 'Hosting__Lane', value: 'Azure' }";
+        var main = ReadInfraFile("main.bicep");
+
+        var commonStart = main.IndexOf("var commonEnvVars = [", StringComparison.Ordinal);
+        Assert.IsGreaterThanOrEqualTo(0, commonStart, "main.bicep must define commonEnvVars");
+        StringAssert.Contains(main[commonStart..main.IndexOf(']', commonStart)], laneSetting);
+        StringAssert.Contains(main, "var servingEnvVars = union(commonEnvVars, [");
+
+        var hosts = Regex.Matches(
+            main, @"^module (\w+) 'modules/container-app(-job)?\.bicep'", RegexOptions.Multiline);
+        Assert.IsGreaterThan(0, hosts.Count, "no container app or job modules found");
+        foreach (Match host in hosts)
+        {
+            var next = main.IndexOf("\nmodule ", host.Index + host.Length, StringComparison.Ordinal);
+            var block = main[host.Index..(next < 0 ? main.Length : next)];
+            Assert.IsTrue(
+                Regex.IsMatch(block, @"envVars: union\((commonEnvVars|servingEnvVars),"),
+                $"{host.Groups[1].Value} must build its envVars from commonEnvVars or servingEnvVars");
+        }
+
+        StringAssert.Contains(ReadInfraFile(Path.Combine("modules", "functions.bicep")), laneSetting);
+        // The Functions host is Azure-only, so a standalone `func start` must not fall to the NonAzure default.
+        StringAssert.Contains(
+            File.ReadAllText(RepoRoot.Combine("src", "Host", "TaskFlow.Functions", "local.settings.json")),
+            "\"Hosting__Lane\": \"Azure\"");
+        Assert.AreEqual(
+            hosts.Count,
+            ReadInfraFile("main.json").Split("createObject('name', 'Hosting__Lane', 'value', 'Azure')").Length - 1,
+            "the compiled template must carry the lane for every container app and job");
     }
 
     [TestMethod]
@@ -71,6 +111,26 @@ public sealed class BicepInfrastructureContractTests
         Assert.IsFalse(main.Contains(
             "ReverseProxy__Clusters__api__Destinations__default__Address",
             StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// The deployed gateway partitions its edge limiter by client IP, so it must apply the one
+    /// X-Forwarded-For hop Container Apps ingress appends; without it every client shares the ingress
+    /// address's bucket. The compiled template must carry the same settings.
+    /// </summary>
+    [TestMethod]
+    public void MainBicep_GatewayAppliesExactlyOneForwardedHop()
+    {
+        var main = ReadInfraFile("main.bicep");
+        var start = main.IndexOf("module gateway 'modules/container-app.bicep'", StringComparison.Ordinal);
+        var end = main.IndexOf("module api 'modules/container-app.bicep'", start, StringComparison.Ordinal);
+        var gateway = main[start..end];
+
+        StringAssert.Contains(gateway, "{ name: 'Proxy__ForwardedHeaders__Enabled', value: 'true' }");
+        StringAssert.Contains(gateway, "{ name: 'Proxy__ForwardedHeaders__TrustAllProxies', value: 'true' }");
+        StringAssert.Contains(gateway, "{ name: 'Proxy__ForwardedHeaders__ForwardLimit', value: '1' }");
+        StringAssert.Contains(ReadInfraFile("main.json"), "createObject('name', 'Proxy__ForwardedHeaders__ForwardLimit', 'value', '1')",
+            "the compiled template must be rebuilt after main.bicep changes");
     }
 
     [TestMethod]

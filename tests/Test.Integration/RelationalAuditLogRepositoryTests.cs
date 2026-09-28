@@ -37,7 +37,7 @@ public class RelationalAuditLogRepositoryTests
     private const int RetentionRowCount = 250;
     private const int RetentionBatchSize = 100;
 
-    /// <summary>Marks the test Inconclusive when the database container failed to start.</summary>
+    /// <summary>Inconclusive without a container runtime; fails when the database container failed to start.</summary>
     [TestInitialize]
     public void TestSetup()
     {
@@ -91,7 +91,7 @@ public class RelationalAuditLogRepositoryTests
         await host.StartAsync(ct);
         try
         {
-            var tenantId = DomainId.From<TenantId>(Guid.CreateVersion7());
+            var tenantId = TenantId.From(Guid.CreateVersion7());
             var category = Category.Create(tenantId, $"Audited {Guid.NewGuid():N}").Value!;
             using (var scope = host.Services.CreateScope())
             {

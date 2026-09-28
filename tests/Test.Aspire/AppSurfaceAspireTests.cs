@@ -98,10 +98,12 @@ public class AppSurfaceAspireTests
     {
         if (!AspireTestHost.ReactAvailable)
         {
-            if (IsExplicitlyDisabled("TASKFLOW_REACT_TESTS_ENABLED"))
+            if (AspireTestHost.IsExplicitlyDisabled("TASKFLOW_REACT_TESTS_ENABLED"))
                 Assert.Inconclusive("TASKFLOW_REACT_TESTS_ENABLED=false - React full-stack smoke opted out.");
 
-            Assert.Fail("React host prerequisites are missing. Run npm ci in src/UI/TaskFlow.React or set TASKFLOW_REACT_TESTS_ENABLED=false to opt out explicitly.");
+            AspireTestHost.ReportMissingPrerequisite(
+                "TASKFLOW_REACT_TESTS_ENABLED",
+                "React Node dependencies are not restored. Run `npm ci --prefix src/UI/TaskFlow.React`, or set TASKFLOW_REACT_TESTS_ENABLED=false to opt out.");
         }
 
         var ct = TestContext.CancellationToken;
@@ -122,10 +124,14 @@ public class AppSurfaceAspireTests
     {
         if (!AspireTestHost.UnoWasmAvailable)
         {
-            if (IsExplicitlyDisabled("TASKFLOW_WASM_TESTS_ENABLED"))
+            if (AspireTestHost.IsExplicitlyDisabled("TASKFLOW_WASM_TESTS_ENABLED"))
                 Assert.Inconclusive("TASKFLOW_WASM_TESTS_ENABLED=false - Uno WASM full-stack smoke opted out.");
 
-            Assert.Fail("Uno WASM assets are missing. Build the browserwasm target or set TASKFLOW_WASM_TESTS_ENABLED=false to opt out explicitly.");
+            AspireTestHost.ReportMissingPrerequisite(
+                "TASKFLOW_WASM_TESTS_ENABLED",
+                "Uno WASM assets are not built. Run `dotnet restore src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj -p:BuildAllUnoTargets=true -p:EnableUnoWasm=true` "
+                + "then `dotnet build src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj -p:TargetFrameworkOverride=net10.0-browserwasm -p:EnableUnoWasm=true --no-restore`, "
+                + "or set TASKFLOW_WASM_TESTS_ENABLED=false to opt out.");
         }
 
         var ct = TestContext.CancellationToken;
@@ -152,8 +158,4 @@ public class AppSurfaceAspireTests
 
     /// <summary>Gets MSTest context for cancellation.</summary>
     public TestContext TestContext { get; set; } = null!;
-
-    private static bool IsExplicitlyDisabled(string variableName) =>
-        string.Equals(Environment.GetEnvironmentVariable(variableName), "false", StringComparison.OrdinalIgnoreCase);
-
 }

@@ -6,9 +6,16 @@ namespace Test.Support.Hosting;
 /// <summary>
 /// Performs one bounded Docker-compatible runtime capability check. Redirected stdout and stderr are
 /// drained concurrently so a noisy CLI cannot deadlock the preflight.
+/// Test prerequisite rule: a non-null reason (no usable runtime) is a missing optional prerequisite and reports
+/// Inconclusive on a default run, or fails when the caller's lane was explicitly enabled; once the preflight
+/// passes, a container or host that fails to start fails the test.
 /// </summary>
 public static class DockerRuntimePreflight
 {
+    /// <summary>The enabling step every unavailable reason ends with, so an Inconclusive result says how to run it.</summary>
+    public const string EnablingStep =
+        "Start a Docker-compatible runtime (Docker Desktop, Docker Engine, or Podman) until `docker info` succeeds.";
+
     public static async Task<string?> GetUnavailableReasonAsync(
         TimeSpan timeout,
         CancellationToken cancellationToken)
@@ -31,11 +38,11 @@ public static class DockerRuntimePreflight
         }
         catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
         {
-            return $"Container runtime unavailable: {ex.Message}. Start a Docker-compatible runtime.";
+            return $"Container runtime unavailable: {ex.Message}. {EnablingStep}";
         }
 
         if (process is null)
-            return "Container runtime unavailable: docker info did not start. Start a Docker-compatible runtime.";
+            return $"Container runtime unavailable: docker info did not start. {EnablingStep}";
 
         using (process)
         {
@@ -53,7 +60,7 @@ public static class DockerRuntimePreflight
                 TryKill(process);
                 await process.WaitForExitAsync(CancellationToken.None);
                 var timedOutOutput = await ReadOutputAsync(stdoutTask, stderrTask);
-                return $"Container runtime unavailable: docker info exceeded {timeout.TotalSeconds:0} seconds."
+                return $"Container runtime unavailable: docker info exceeded {timeout.TotalSeconds:0} seconds. {EnablingStep}"
                     + FormatOutput(timedOutOutput);
             }
             catch
@@ -67,7 +74,7 @@ public static class DockerRuntimePreflight
             var output = await ReadOutputAsync(stdoutTask, stderrTask);
             return process.ExitCode == 0
                 ? null
-                : $"Container runtime unavailable: docker info exited {process.ExitCode}. Start a Docker-compatible runtime."
+                : $"Container runtime unavailable: docker info exited {process.ExitCode}. {EnablingStep}"
                     + FormatOutput(output);
         }
     }

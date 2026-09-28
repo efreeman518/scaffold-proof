@@ -125,7 +125,8 @@ public static class CategoryEndpoints
         return result.Match(
             response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, traceId: httpContext.TraceIdentifier,
+                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
+                traceId: httpContext.TraceIdentifier,
                 includeStackTrace: _problemDetailsIncludeStackTrace)));
     }
 
@@ -139,7 +140,8 @@ public static class CategoryEndpoints
             () => TypedResults.NoContent(),
             errors => TypedResults.Problem(
                 ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                    errors: errors, traceId: httpContext.TraceIdentifier,
+                    errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
+                    traceId: httpContext.TraceIdentifier,
                     includeStackTrace: _problemDetailsIncludeStackTrace)));
     }
 }

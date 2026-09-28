@@ -32,7 +32,7 @@ public class PgVectorSearchTests
 {
     private static readonly Guid TenantId = Guid.CreateVersion7();
 
-    /// <summary>Marks the test Inconclusive when the database container failed to start.</summary>
+    /// <summary>Inconclusive without a container runtime; fails when the database container failed to start.</summary>
     [TestInitialize]
     public void TestSetup() => IntegrationTestSetup.AssertAvailable("SQL", DbContainerFixture.StartupError);
 
@@ -178,7 +178,7 @@ public class PgVectorSearchTests
     {
         await using var db = DbContainerFixture.CreateTrxnContext(connString);
         db.TenantId = TenantId;
-        var task = TaskItem.Create(DomainId.From<TaskFlow.Domain.Shared.TenantId>(TenantId), title).Value!;
+        var task = TaskItem.Create(TaskFlow.Domain.Shared.TenantId.From(TenantId), title).Value!;
         db.Add(task);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: ct);
         return task.Id.Value;

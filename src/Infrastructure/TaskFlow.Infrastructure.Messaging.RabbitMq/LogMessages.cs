@@ -6,8 +6,8 @@ namespace TaskFlow.Infrastructure.Messaging.RabbitMq;
 /// <summary>
 /// Source-generated logging methods for the RabbitMQ consumer handlers. Using
 /// <see cref="LoggerMessageAttribute"/> defers argument evaluation until the log level is enabled,
-/// satisfying CA1873 and avoiding needless work. Topology-related events live in
-/// <see cref="RabbitMqTopologyLog"/> (<c>TaskFlowRabbitMqTopologyStartup.cs</c>).
+/// satisfying CA1873 and avoiding needless work. EventIds <c>InfrastructureMessagingRabbitMqBase + 1</c> and
+/// <c>+ 2</c> were the topology-lock events of the removed TaskFlow topology startup; retired, never reused.
 /// </summary>
 internal static partial class LogMessages
 {

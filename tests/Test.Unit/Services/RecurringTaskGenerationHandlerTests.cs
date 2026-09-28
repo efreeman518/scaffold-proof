@@ -147,7 +147,7 @@ public class RecurringTaskGenerationHandlerTests
         DateTimeOffset nextOccurrenceAtUtc, string frequency, int interval, DateTimeOffset? endDate = null)
     {
         var template = TaskItem.Create(
-            DomainId.From<TenantId>(TenantA), "Weekly report", "template", Priority.Medium).Value!;
+            TenantId.From(TenantA), "Weekly report", "template", Priority.Medium).Value!;
         template.Update(features: TaskFeatures.Recurring);
         template.UpdateDateRange(null, nextOccurrenceAtUtc);
         template.UpdateRecurrencePattern(new RecurrencePattern

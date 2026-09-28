@@ -12,14 +12,14 @@ namespace Test.Unit.Domain;
 [TestClass]
 public class CommentTests
 {
-    private static TenantId TenantId => DomainId.From<TenantId>(TestConstants.TenantId);
+    private static TenantId TenantId => TenantId.From(TestConstants.TenantId);
 
     /// <summary>Verifies that given valid input, when comment created, then returns success.</summary>
     [TestMethod]
     [TestCategory("Unit")]
     public void Given_ValidInput_When_CommentCreated_Then_ReturnsSuccess()
     {
-        var taskItemId = DomainId.From<TaskItemId>(Guid.NewGuid());
+        var taskItemId = TaskItemId.From(Guid.NewGuid());
         var result = Comment.Create(TenantId, taskItemId, "Test comment body");
         Assert.IsTrue(result.IsSuccess);
         Assert.IsNotNull(result.Value);
@@ -35,7 +35,7 @@ public class CommentTests
     [DataRow("   ")]
     public void Given_EmptyBody_When_CommentCreated_Then_ReturnsDomainFailure(string? body)
     {
-        var result = Comment.Create(TenantId, DomainId.From<TaskItemId>(Guid.NewGuid()), body!);
+        var result = Comment.Create(TenantId, TaskItemId.From(Guid.NewGuid()), body!);
         Assert.IsTrue(result.IsFailure);
     }
 
@@ -44,7 +44,7 @@ public class CommentTests
     [TestCategory("Unit")]
     public void Given_EmptyTaskItemId_When_CommentCreated_Then_ReturnsDomainFailure()
     {
-        var result = Comment.Create(TenantId, DomainId.From<TaskItemId>(Guid.Empty), "Body");
+        var result = Comment.Create(TenantId, TaskItemId.From(Guid.Empty), "Body");
         Assert.IsTrue(result.IsFailure);
     }
 
@@ -53,7 +53,7 @@ public class CommentTests
     [TestCategory("Unit")]
     public void Given_ExistingComment_When_Updated_Then_ReturnsUpdatedValues()
     {
-        var comment = Comment.Create(TenantId, DomainId.From<TaskItemId>(Guid.NewGuid()), "Original").Value!;
+        var comment = Comment.Create(TenantId, TaskItemId.From(Guid.NewGuid()), "Original").Value!;
         var result = comment.Update(body: "Updated body");
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual("Updated body", result.Value!.Body);
@@ -64,7 +64,7 @@ public class CommentTests
     [TestCategory("Unit")]
     public void Given_NullUpdate_When_Updated_Then_OriginalValuesPreserved()
     {
-        var comment = Comment.Create(TenantId, DomainId.From<TaskItemId>(Guid.NewGuid()), "Original").Value!;
+        var comment = Comment.Create(TenantId, TaskItemId.From(Guid.NewGuid()), "Original").Value!;
         var result = comment.Update();
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual("Original", result.Value!.Body);

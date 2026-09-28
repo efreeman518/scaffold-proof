@@ -1,4 +1,4 @@
-﻿using EF.Data.Encryption;
+using EF.Data.Encryption;
 using EF.IntegrationTesting.Testcontainers;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -89,6 +89,12 @@ public sealed class TestDatabaseContainer(TaskFlowDbProvider provider) : IAsyncD
         ? new(ContainerImages.PostgreSql)
         : null;
 
+    /// <summary>
+    /// Longest prefix <see cref="CreateEmptyDatabaseAsync"/> accepts: PostgreSQL silently truncates identifiers
+    /// to 63 bytes, and the generated name adds 33 characters (an underscore and a 32-digit GUID).
+    /// </summary>
+    public const int MaxDatabasePrefixLength = 30;
+
     public TaskFlowDbProvider Provider { get; } = provider;
 
     public string ConnectionString => _sql?.ConnectionString ?? _postgres!.ConnectionString;
@@ -100,7 +106,7 @@ public sealed class TestDatabaseContainer(TaskFlowDbProvider provider) : IAsyncD
     /// <summary>Creates an empty database on the running container and returns a connection string pointing at it.</summary>
     public async Task<string> CreateEmptyDatabaseAsync(string prefix)
     {
-        var databaseName = $"{prefix}_{Guid.NewGuid():N}";
+        var databaseName = NewDatabaseName(prefix);
         if (Provider == TaskFlowDbProvider.SqlServer)
         {
             var target = new SqlConnectionStringBuilder(ConnectionString) { InitialCatalog = databaseName };
@@ -123,6 +129,18 @@ public sealed class TestDatabaseContainer(TaskFlowDbProvider provider) : IAsyncD
             await command.ExecuteNonQueryAsync();
             return target.ConnectionString;
         }
+    }
+
+    /// <summary>Builds a unique database name that fits the PostgreSQL identifier limit without truncation.</summary>
+    public static string NewDatabaseName(string prefix)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(prefix);
+        if (prefix.Length > MaxDatabasePrefixLength)
+            throw new ArgumentException(
+                $"Database prefix '{prefix}' is {prefix.Length} characters; the limit is {MaxDatabasePrefixLength}.",
+                nameof(prefix));
+
+        return $"{prefix}_{Guid.NewGuid():N}";
     }
 
     /// <summary>

@@ -62,7 +62,7 @@ internal class CategoryService(
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<Result<DefaultResponse<CategoryDto>>> GetAsync(Guid id, CancellationToken ct = default)
     {
-        var entity = await repoQuery.GetCategoryAsync(DomainId.From<CategoryId>(id), ct);
+        var entity = await repoQuery.GetCategoryAsync(CategoryId.From(id), ct);
         if (entity == null) return Result<DefaultResponse<CategoryDto>>.None();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
@@ -91,15 +91,11 @@ internal class CategoryService(
         // D-033: the row itself is the idempotency record for a caller-supplied UUIDv7 id.
         if (dto.Id is Guid callerId && callerId != Guid.Empty)
         {
-            var existing = await repoTrxn.GetCategoryAsync(DomainId.From<CategoryId>(callerId), ct);
+            var existing = await repoTrxn.GetCategoryAsync(CategoryId.From(callerId), ct);
             if (existing is not null)
             {
-                var existingDto = existing.ToDto();
-                if (!IdempotentCreateGuard.IsEquivalent(existingDto, dto))
-                    throw new IdempotentCreateConflictException(nameof(Category), callerId);
-
-                return Result<DefaultResponse<CategoryDto>>.Success(
-                    new DefaultResponse<CategoryDto> { Item = existingDto, IsReplay = true });
+                return Result<DefaultResponse<CategoryDto>>.Success(IdempotentCreateGuard.ReplayOrThrow(
+                    existing.ToDto(), dto, IdempotentCreateGuard.IsEquivalent, nameof(Category), callerId));
             }
         }
 
@@ -113,10 +109,21 @@ internal class CategoryService(
         {
             await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
         }
-        catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
+        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
         {
             logger.CategoryCreateFailed(ex);
-            return Result<DefaultResponse<CategoryDto>>.Failure(ex.GetBaseException().Message);
+
+            // D-033: a concurrent create with the same id passed the existence check too and won the insert.
+            // Re-read on the query context (this one still tracks the failed insert): the winner makes this a
+            // replay or a 409. Absent (or not yet replicated) means the save failed for another reason.
+            if (dto.Id is Guid racedId && racedId != Guid.Empty
+                && await repoQuery.GetCategoryAsync(CategoryId.From(racedId), ct) is { } raced)
+            {
+                return Result<DefaultResponse<CategoryDto>>.Success(IdempotentCreateGuard.ReplayOrThrow(
+                    raced.ToDto(), dto, IdempotentCreateGuard.IsEquivalent, nameof(Category), racedId));
+            }
+
+            return Result<DefaultResponse<CategoryDto>>.Failure(ErrorConstants.ERROR_SAVE_FAILED);
         }
 
         await InvalidateMetadataAsync(ct);
@@ -133,7 +140,7 @@ internal class CategoryService(
         var validation = CategoryStructureValidator.ValidateUpdate(dto);
         if (validation.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(validation.Errors);
 
-        var entity = await repoTrxn.GetCategoryAsync(DomainId.From<CategoryId>(dto.Id!.Value), ct);
+        var entity = await repoTrxn.GetCategoryAsync(CategoryId.From(dto.Id!.Value), ct);
         if (entity == null)
             return Result<DefaultResponse<CategoryDto>>.Success(new DefaultResponse<CategoryDto> { Item = null });
 
@@ -157,10 +164,10 @@ internal class CategoryService(
         {
             await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
         }
-        catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
+        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
         {
             logger.CategoryUpdateFailed(ex, dto.Id);
-            return Result<DefaultResponse<CategoryDto>>.Failure(ex.GetBaseException().Message);
+            return Result<DefaultResponse<CategoryDto>>.Failure(ErrorConstants.ERROR_SAVE_FAILED);
         }
 
         await InvalidateMetadataAsync(ct);
@@ -170,7 +177,7 @@ internal class CategoryService(
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
     public async Task<Result> DeleteAsync(Guid id, long? expectedVersion, CancellationToken ct = default)
     {
-        var entity = await repoTrxn.GetCategoryAsync(DomainId.From<CategoryId>(id), ct);
+        var entity = await repoTrxn.GetCategoryAsync(CategoryId.From(id), ct);
         if (entity == null) return Result.Success();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
@@ -187,10 +194,10 @@ internal class CategoryService(
             repoTrxn.Delete(entity);
             await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
         }
-        catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
+        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
         {
             logger.CategoryDeleteFailed(ex, id);
-            return Result.Failure(ex.GetBaseException().Message);
+            return Result.Failure(ErrorConstants.ERROR_SAVE_FAILED);
         }
 
         await InvalidateMetadataAsync(ct);

@@ -26,8 +26,9 @@ var schedulerAvailableInTesting =
 // override via Parameters__sql-password / Parameters__postgres-password.
 var defaultSqlPassword = LocalSqlSettings.SharedSaPassword;
 
-// D-060: the strict lane resolver owns every core provider. Unset means Azure; Portable remains a deprecated
-// input alias that normalizes to NonAzure before this graph is built.
+// D-060: the strict lane resolver owns every core provider. Unset means NonAzure (TASKFLOW_LANE=Azure opts into
+// the Azure topology); Portable remains a deprecated input alias that normalizes to NonAzure before this
+// graph is built.
 var lane = LaneDefaults.Resolve(builder.Configuration);
 var nonAzureLane = lane.Lane == HostingLane.NonAzure;
 
@@ -238,18 +239,33 @@ if (nonAzureLane && string.Equals(lane.ReadModel, "MongoDb", StringComparison.Or
 // Azure AI Foundry provisioning is external because its former hosting package also installed a native
 // local-model runtime. Accept either a complete ConnectionStrings:chat value or build a keyless connection
 // from an HTTPS endpoint plus deployment. Aspire.Azure.AI.Inference uses DefaultAzureCredential when Key is absent.
+// The resolved AI provider is the only switch (D-041/D-060): the hosts receive it as AiServices__Provider through
+// WithLaneEnvironment and register the Foundry client only for AzureInference, so the graph wires the chat
+// connection only then too. Foundry settings under any other provider would be wired into hosts that ignore them.
 var foundryEndpoint = builder.Configuration["AiServices:FoundryEndpoint"];
 var foundryDeployment = builder.Configuration["AiServices:AgentModelDeployment"];
 var chatConnectionString = builder.Configuration["ConnectionStrings:chat"];
-var azureFoundryRequested = !nonAzureLane
-    && (string.Equals(lane.AiServices, "AzureInference", StringComparison.OrdinalIgnoreCase)
-        || !string.IsNullOrWhiteSpace(chatConnectionString)
-        || !string.IsNullOrWhiteSpace(foundryEndpoint)
-        || !string.IsNullOrWhiteSpace(foundryDeployment)
-        || string.Equals(
-            Environment.GetEnvironmentVariable("TASKFLOW_USE_AZURE_FOUNDRY"),
-            "true",
-            StringComparison.OrdinalIgnoreCase));
+var azureFoundryRequested = string.Equals(lane.AiServices, "AzureInference", StringComparison.Ordinal);
+if (!azureFoundryRequested)
+{
+    var strayFoundrySettings = new (string Key, string? Value)[]
+        {
+            ("ConnectionStrings:chat", chatConnectionString),
+            ("AiServices:FoundryEndpoint", foundryEndpoint),
+            ("AiServices:AgentModelDeployment", foundryDeployment)
+        }
+        .Where(setting => !string.IsNullOrWhiteSpace(setting.Value))
+        .Select(setting => setting.Key)
+        .ToArray();
+    if (strayFoundrySettings.Length > 0)
+    {
+        throw new InvalidOperationException(
+            $"Azure AI Foundry settings ({string.Join(", ", strayFoundrySettings)}) are configured, but the resolved " +
+            $"AI provider ({HostingLaneResolver.AiConfigurationKey} / {HostingLaneResolver.AiEnvironmentVariable}) is " +
+            $"'{lane.AiServices}' on the {lane.Lane} lane, so no host would use them. Select AzureInference on the " +
+            "Azure lane to use Azure AI Foundry, or remove the Foundry settings.");
+    }
+}
 
 IResourceBuilder<IResourceWithConnectionString>? chat = null;
 string? keylessChatConnectionString = null;
@@ -528,10 +544,9 @@ IResourceBuilder<T> WithReadModel<T>(IResourceBuilder<T> host)
     return host;
 }
 
-// D-035: every host learns the lane and the switch values this graph actually declared containers for, the
-// same way Bicep and the compose lane set them. In the Azure lane this is only Hosting__Lane=Azure - the
-// remaining switches keep their own runtime-derived defaults, which is what "Azure means today's behavior"
-// has to mean for the AI, Search and DataProtection switches.
+// D-060: every host learns the explicit lane and every resolved switch value this graph declared containers
+// for, the same way Bicep and the compose lane set them, so no host falls back to the unset NonAzure default
+// on its own.
 IResourceBuilder<T> WithLaneEnvironment<T>(IResourceBuilder<T> host)
     where T : IResourceWithEnvironment
 {

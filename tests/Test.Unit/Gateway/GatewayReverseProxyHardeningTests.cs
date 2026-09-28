@@ -64,7 +64,7 @@ public sealed class GatewayReverseProxyHardeningTests
 
     private static ServiceProvider BuildProvider()
     {
-        var builder = WebApplication.CreateBuilder();
+        var builder = TestWebApplication.CreateBuilder();
         builder.Configuration.AddJsonFile(
             RepoRoot.Combine("src", "Host", "TaskFlow.Gateway", "appsettings.json"), optional: false);
 

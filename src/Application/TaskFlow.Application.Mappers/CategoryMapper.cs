@@ -31,7 +31,7 @@ public static class CategoryMapper
     public static DomainResult<Category> ToEntity(this CategoryDto dto, Guid tenantId)
     {
         var parentCategoryId = DomainId.FromNullable<CategoryId>(dto.ParentCategoryId);
-        return Category.Create(DomainId.From<TenantId>(tenantId), dto.Name, dto.Description, dto.SortOrder, parentCategoryId,
+        return Category.Create(TenantId.From(tenantId), dto.Name, dto.Description, dto.SortOrder, parentCategoryId,
             DomainId.FromNullable<CategoryId>(dto.Id));
     }
 }

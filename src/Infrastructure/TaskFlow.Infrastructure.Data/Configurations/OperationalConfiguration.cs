@@ -38,6 +38,9 @@ public sealed class OutboxMessageConfiguration : OperationalWorkConfiguration<Ou
         // No HasColumnType: nvarchar(max) / text today; jsonb (PostgreSQL) or json (SQL Server 2025) is the upgrade.
         builder.Property(e => e.Payload).IsRequired();
         builder.Property(e => e.CorrelationId).HasMaxLength(128);
+        // A W3C traceparent is exactly 55 characters (version-traceid-spanid-flags).
+        builder.Property(e => e.TraceParent).HasMaxLength(OutboxMessageLimits.TraceParentLength);
+        builder.Property(e => e.TraceState).HasMaxLength(OutboxMessageLimits.TraceStateLength);
     }
 }
 
@@ -61,7 +64,7 @@ public sealed class ConsumerInboxConfiguration : IEntityTypeConfiguration<Consum
         builder.ToTable("ConsumerInbox");
         builder.HasKey(e => new { e.Consumer, e.MessageId });
         builder.Property(e => e.Consumer).HasMaxLength(64);
-        // Retention sweeps by processed time.
-        builder.HasIndex(e => e.ProcessedAtUtc).HasDatabaseName("IX_ConsumerInbox_ProcessedAtUtc");
+        // Retention sweeps completed claims by completion time and abandoned in-progress claims by lease expiry.
+        builder.HasIndex(e => new { e.CompletedAtUtc, e.LeaseExpiresUtc }).HasDatabaseName("IX_ConsumerInbox_Retention");
     }
 }

@@ -27,7 +27,7 @@ public class CategoryBuilder
     public Category Build()
     {
         var result = Category.Create(
-            DomainId.From<TenantId>(_tenantId),
+            TenantId.From(_tenantId),
             _name,
             _description,
             _sortOrder,

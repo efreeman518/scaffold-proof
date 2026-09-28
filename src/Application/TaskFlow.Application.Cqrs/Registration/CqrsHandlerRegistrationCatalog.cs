@@ -1,3 +1,4 @@
+using EF.CQRS.DependencyInjection;
 using TaskFlow.Application.Cqrs.Features.Attachments;
 using TaskFlow.Application.Cqrs.Features.Categories;
 using TaskFlow.Application.Cqrs.Features.ChecklistItems;
@@ -7,16 +8,13 @@ using TaskFlow.Application.Cqrs.Features.TaskItems;
 
 namespace TaskFlow.Application.Cqrs.Registration;
 
-/// <summary>Provides CQRS handler registration behavior for the Application Registration layer.</summary>
-public sealed record CqrsHandlerRegistration(Type RequestType, Type ResponseType, Type HandlerType);
-
 /// <summary>
 /// Aggregates handler registrations from feature-owned fragments.
 /// DTOs and mappers stay shared in this demo so both application styles keep one API contract.
 /// </summary>
 public static class CqrsHandlerRegistrationCatalog
 {
-    public static IReadOnlyList<CqrsHandlerRegistration> Registrations { get; } =
+    public static IReadOnlyList<RequestHandlerRegistration> Registrations { get; } =
     [
         ..CategoryCqrsRegistrations.Registrations,
         ..TagCqrsRegistrations.Registrations,

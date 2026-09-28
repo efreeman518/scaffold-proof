@@ -49,7 +49,7 @@ internal class ChecklistItemService(
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<Result<DefaultResponse<ChecklistItemDto>>> GetAsync(Guid id, CancellationToken ct = default)
     {
-        var entity = await repoQuery.GetChecklistItemAsync(DomainId.From<ChecklistItemId>(id), ct);
+        var entity = await repoQuery.GetChecklistItemAsync(ChecklistItemId.From(id), ct);
         if (entity == null) return Result<DefaultResponse<ChecklistItemDto>>.None();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(

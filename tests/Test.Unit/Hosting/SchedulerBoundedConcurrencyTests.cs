@@ -27,11 +27,11 @@ public class SchedulerBoundedConcurrencyTests
         var blobs = new ConcurrencyObservingBlobStore(TimeSpan.FromMilliseconds(20));
         var items = Enumerable.Range(0, 24).Select(NewWork).ToList();
 
-        var (deleted, failed) = await BlobDeleteWorkerService.DeleteBatchAsync(
-            blobs, items, maxConcurrency, CancellationToken.None);
+        var result = new WorkBatchResult(items.Select(i => i.Id));
+        await BlobDeleteWorkerService.DeleteBatchAsync(
+            blobs, items, result, maxConcurrency, NullLogger.Instance, CancellationToken.None);
 
-        Assert.AreEqual(items.Count, deleted.Count, "Every row should be reported as deleted.");
-        Assert.AreEqual(0, failed.Count, "No delete failed, so nothing should be released.");
+        Assert.IsTrue(items.All(i => result.OutcomeOf(i.Id)?.IsCompleted == true), "Every row should be reported as deleted.");
         Assert.AreEqual(items.Count, blobs.Calls, "Every row should have been attempted exactly once.");
         Assert.IsTrue(blobs.MaxInFlight <= maxConcurrency,
             $"{blobs.MaxInFlight} deletes were in flight with a bound of {maxConcurrency}.");
@@ -49,14 +49,16 @@ public class SchedulerBoundedConcurrencyTests
         var blobs = new ConcurrencyObservingBlobStore(
             TimeSpan.Zero, failOn: name => name == doomed.BlobName);
 
-        var (deleted, failed) = await BlobDeleteWorkerService.DeleteBatchAsync(
-            blobs, items, maxConcurrency: 4, CancellationToken.None);
+        var result = new WorkBatchResult(items.Select(i => i.Id));
+        await BlobDeleteWorkerService.DeleteBatchAsync(
+            blobs, items, result, maxConcurrency: 4, NullLogger.Instance, CancellationToken.None);
 
-        Assert.AreEqual(5, deleted.Count);
-        Assert.AreEqual(1, failed.Count);
-        Assert.AreEqual(doomed.Id, failed.Single().Item.Id);
-        CollectionAssert.DoesNotContain(deleted.ToList(), doomed.Id,
-            "A row whose delete threw must not be hard-deleted from the work table.");
+        Assert.AreEqual(5, items.Count(i => result.OutcomeOf(i.Id)?.IsCompleted == true));
+        var outcome = result.OutcomeOf(doomed.Id);
+        Assert.IsNotNull(outcome);
+        Assert.IsFalse(outcome.IsCompleted, "A row whose delete threw must not be hard-deleted from the work table.");
+        Assert.IsFalse(outcome.Permanent, "A failed delete is transient: it is retried with backoff.");
+        StringAssert.Contains(outcome.Error, "InvalidOperationException");
     }
 
     /// <summary>Verifies a bound below 1 is clamped instead of throwing or fanning out unbounded.</summary>
@@ -66,69 +68,117 @@ public class SchedulerBoundedConcurrencyTests
         var blobs = new ConcurrencyObservingBlobStore(TimeSpan.FromMilliseconds(5));
         var items = Enumerable.Range(0, 4).Select(NewWork).ToList();
 
-        var (deleted, _) = await BlobDeleteWorkerService.DeleteBatchAsync(
-            blobs, items, maxConcurrency: 0, CancellationToken.None);
+        var result = new WorkBatchResult(items.Select(i => i.Id));
+        await BlobDeleteWorkerService.DeleteBatchAsync(
+            blobs, items, result, maxConcurrency: 0, NullLogger.Instance, CancellationToken.None);
 
-        Assert.AreEqual(items.Count, deleted.Count);
+        Assert.IsTrue(items.All(i => result.OutcomeOf(i.Id)?.IsCompleted == true));
         Assert.AreEqual(1, blobs.MaxInFlight, "A bound of 0 must run sequentially, not unbounded.");
     }
 
     /// <summary>
-    /// Verifies the dispatcher sends every destination group and hard-deletes only the rows a transport
-    /// confirmed. This is the property that keeps the outbox at-least-once: a group whose send threw must
-    /// keep its rows, and a group that succeeded must lose them.
+    /// Verifies the dispatcher sends every destination group and reports completion only for the rows a transport
+    /// confirmed. This is the property that keeps the outbox at-least-once: a group whose send threw must keep
+    /// its rows, and a group that succeeded must lose them.
     /// </summary>
     [TestMethod]
-    public async Task Given_MultipleDestinations_When_Dispatched_Then_OnlyConfirmedGroupsAreDeleted()
+    public async Task Given_MultipleDestinations_When_Dispatched_Then_OnlyConfirmedGroupsAreCompleted()
     {
         var good = Enumerable.Range(0, 3).Select(i => NewOutbox("DomainEvents", i)).ToList();
         var bad = Enumerable.Range(0, 2).Select(i => NewOutbox("Projections", i)).ToList();
-        var batch = new LeasedBatch<OutboxMessage>(Guid.CreateVersion7(), [.. good, .. bad]);
+        List<OutboxMessage> items = [.. good, .. bad];
+        var result = new WorkBatchResult(items.Select(m => m.Id));
 
         var transport = new RecordingTransport(failDestination: "Projections");
-        var work = new RecordingWorkRepository();
         using var metrics = new MessagingMetrics();
 
         await OutboxDispatcherService.DispatchBatchAsync(
-            batch, transport, work, metrics, NullLogger.Instance, CancellationToken.None);
+            items, transport, result, metrics, NullLogger.Instance, CancellationToken.None);
 
         CollectionAssert.AreEquivalent(
             new[] { "DomainEvents", "Projections" },
             transport.Sent.Keys.ToList(),
             "Every destination group must be sent, including ones that go on to fail.");
+        Assert.IsTrue(good.All(m => result.OutcomeOf(m.Id)?.IsCompleted == true),
+            "The confirmed destination's rows must be completed.");
+        Assert.IsTrue(bad.All(m => result.OutcomeOf(m.Id) is { IsCompleted: false, Permanent: false }),
+            "A thrown send fails every row of its group transiently, so each is released for retry.");
+    }
 
-        CollectionAssert.AreEquivalent(
-            good.Select(m => m.Id).ToList(), work.Completed,
-            "Only the confirmed destination's rows may be hard-deleted.");
-        CollectionAssert.AreEquivalent(
-            bad.Select(m => m.Id).ToList(), work.Released,
-            "The failed destination's rows must be released for retry, one by one, with their lease token.");
-        Assert.IsTrue(work.LeaseTokens.All(t => t == batch.LeaseToken),
-            "Settlement must carry the batch lease token, or a stolen lease could be settled.");
+    /// <summary>
+    /// Verifies one message a transport did not accept fails alone. With RabbitMQ the confirmed messages of a
+    /// partially confirmed batch used to be re-published with the failures; with Service Bus one oversize message
+    /// used to fail - and eventually dead-letter - every healthy row claimed with it.
+    /// </summary>
+    [TestMethod]
+    public async Task Given_PartialTransportFailure_When_Dispatched_Then_OnlyTheReportedMessagesFail()
+    {
+        var items = Enumerable.Range(0, 5).Select(i => NewOutbox("DomainEvents", i)).ToList();
+        var result = new WorkBatchResult(items.Select(m => m.Id));
+        var transport = new RecordingTransport(failures:
+        [
+            new OutboxSendFailure(1, "not confirmed", Permanent: false),
+            new OutboxSendFailure(3, "exceeds the batch limit", Permanent: true)
+        ]);
+        using var metrics = new MessagingMetrics();
+
+        await OutboxDispatcherService.DispatchBatchAsync(
+            items, transport, result, metrics, NullLogger.Instance, CancellationToken.None);
+
+        foreach (var index in new[] { 0, 2, 4 })
+            Assert.IsTrue(result.OutcomeOf(items[index].Id)?.IsCompleted == true, $"row {index} was accepted by the broker");
+
+        Assert.AreEqual(WorkItemOutcome.Failed("not confirmed", permanent: false), result.OutcomeOf(items[1].Id));
+        Assert.AreEqual(WorkItemOutcome.Failed("exceeds the batch limit", permanent: true), result.OutcomeOf(items[3].Id));
+    }
+
+    /// <summary>
+    /// Verifies a shutdown mid-send leaves only the unfinished group unreported (the worker abandons it) while a
+    /// group the broker already accepted is still reported complete, instead of the first cancellation skipping
+    /// the settlement of every group.
+    /// </summary>
+    [TestMethod]
+    public async Task Given_StoppingMidSend_When_Dispatched_Then_FinishedGroupsAreStillReported()
+    {
+        var finished = NewOutbox("DomainEvents", 0);
+        var hanging = NewOutbox("Projections", 0);
+        var result = new WorkBatchResult([finished.Id, hanging.Id]);
+        using var stopping = new CancellationTokenSource();
+        var transport = new RecordingTransport(hangDestination: "Projections", onSent: d =>
+        {
+            if (d == "DomainEvents") stopping.Cancel();
+        });
+        using var metrics = new MessagingMetrics();
+
+        await OutboxDispatcherService.DispatchBatchAsync(
+            [finished, hanging], transport, result, metrics, NullLogger.Instance, stopping.Token);
+
+        Assert.IsTrue(result.OutcomeOf(finished.Id)?.IsCompleted == true, "the accepted group must still be deleted");
+        Assert.IsNull(result.OutcomeOf(hanging.Id), "the abandoned group is left unreported, so it is abandoned, not failed");
     }
 
     /// <summary>Verifies destination sends overlap rather than queueing behind one another.</summary>
     [TestMethod]
     public async Task Given_SlowDestination_When_Dispatched_Then_GroupsSendConcurrently()
     {
-        var batch = new LeasedBatch<OutboxMessage>(Guid.CreateVersion7(),
+        List<OutboxMessage> items =
         [
             NewOutbox("DomainEvents", 0),
             NewOutbox("Projections", 0),
             NewOutbox("AiReview", 0)
-        ]);
+        ];
+        var result = new WorkBatchResult(items.Select(m => m.Id));
 
         var transport = new RecordingTransport(delay: TimeSpan.FromMilliseconds(30));
-        var work = new RecordingWorkRepository();
         using var metrics = new MessagingMetrics();
 
         await OutboxDispatcherService.DispatchBatchAsync(
-            batch, transport, work, metrics, NullLogger.Instance, CancellationToken.None);
+            items, transport, result, metrics, NullLogger.Instance, CancellationToken.None);
 
         Assert.AreEqual(3, transport.MaxInFlight,
             "All three destination sends should overlap; a lower figure means a slow channel is still "
             + "holding up the ones behind it (D-055).");
-        Assert.AreEqual(3, work.Completed.Count);
+        Assert.IsTrue(items.All(m => result.OutcomeOf(m.Id)?.IsCompleted == true));
     }
 
     /// <summary>Verifies the pooled body buffer round-trips payloads and rejects use after disposal.</summary>
@@ -225,7 +275,12 @@ public class SchedulerBoundedConcurrencyTests
     }
 
     /// <summary>Transport that records what was sent per destination and peak concurrent sends.</summary>
-    private sealed class RecordingTransport(string? failDestination = null, TimeSpan delay = default)
+    private sealed class RecordingTransport(
+        string? failDestination = null,
+        TimeSpan delay = default,
+        IReadOnlyList<OutboxSendFailure>? failures = null,
+        string? hangDestination = null,
+        Action<string>? onSent = null)
         : IIntegrationEventTransport
     {
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _sent = new(StringComparer.Ordinal);
@@ -237,57 +292,26 @@ public class SchedulerBoundedConcurrencyTests
 
         public bool CanDispatch => true;
 
-        public async Task SendBatchAsync(string destination, IReadOnlyList<OutboxMessage> messages, CancellationToken ct)
+        public async Task<IReadOnlyList<OutboxSendFailure>> SendBatchAsync(
+            string destination, IReadOnlyList<OutboxMessage> messages, CancellationToken ct)
         {
             var current = Interlocked.Increment(ref _inFlight);
             InterlockedMax(ref _maxInFlight, current);
             try
             {
                 _sent[destination] = messages.Count;
+                if (destination == hangDestination) await Task.Delay(Timeout.InfiniteTimeSpan, ct);
                 if (delay > TimeSpan.Zero) await Task.Delay(delay, ct);
                 if (destination == failDestination)
                     throw new InvalidOperationException($"broker rejected {destination}");
+                onSent?.Invoke(destination);
+                return failures ?? [];
             }
             finally
             {
                 Interlocked.Decrement(ref _inFlight);
             }
         }
-    }
-
-    /// <summary>Work repository recording settlement calls; only the outbox members are exercised.</summary>
-    private sealed class RecordingWorkRepository : IOperationalWorkRepository
-    {
-        public List<Guid> Completed { get; } = [];
-        public List<Guid> Released { get; } = [];
-        public List<Guid> LeaseTokens { get; } = [];
-
-        public Task<int> CompleteAsync<TWork>(Guid leaseToken, IReadOnlyCollection<Guid> ids, CancellationToken ct)
-            where TWork : OperationalWorkBase
-        {
-            LeaseTokens.Add(leaseToken);
-            Completed.AddRange(ids);
-            return Task.FromResult(ids.Count);
-        }
-
-        public Task ReleaseAsync<TWork>(Guid leaseToken, Guid id, int attemptCount, string error, CancellationToken ct)
-            where TWork : OperationalWorkBase
-        {
-            LeaseTokens.Add(leaseToken);
-            Released.Add(id);
-            return Task.CompletedTask;
-        }
-
-        public Task<LeasedBatch<TWork>> ClaimAsync<TWork>(int batchSize, TimeSpan leaseDuration, string owner, CancellationToken ct)
-            where TWork : OperationalWorkBase => throw new NotSupportedException();
-
-        public Task<bool> RetryDeadLetteredAsync<TWork>(Guid id, CancellationToken ct)
-            where TWork : OperationalWorkBase => throw new NotSupportedException();
-
-        public Task<int> PurgeDeadLetteredAsync<TWork>(DateTimeOffset cutoffUtc, CancellationToken ct)
-            where TWork : OperationalWorkBase => throw new NotSupportedException();
-
-        public Task<OutboxBacklog> GetOutboxBacklogAsync(CancellationToken ct) => throw new NotSupportedException();
     }
 
     /// <summary>Lock-free running maximum; the fakes are written to from several worker threads at once.</summary>

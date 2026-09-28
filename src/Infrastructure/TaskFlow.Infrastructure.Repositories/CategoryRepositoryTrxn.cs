@@ -48,7 +48,7 @@ public class CategoryRepositoryTrxn(TaskFlowDbContextTrxn db)
         var tracked = await tasks.ToListAsync(ct).ConfigureAwait(ConfigureAwaitOptions.None);
         foreach (var task in tracked)
         {
-            task.Update(categoryId: DomainId.From<CategoryId>(Guid.Empty));
+            task.Update(categoryId: CategoryId.From(Guid.Empty));
         }
 
         return tracked.Count;

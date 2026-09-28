@@ -33,7 +33,7 @@ Multi-tenant (row-level tenancy). Event-driven async via Service Bus. IaC via Bi
 
 - **.NET 10 SDK** - the exact version is pinned by [`global.json`](global.json).
 - **Workloads:** `dotnet workload install wasm-tools aspire` (required for the Uno WASM host and the Aspire AppHost).
-- **Docker-compatible container runtime** (Docker Desktop, headless Docker Engine, or Podman) - no desktop UI is required. Aspire starts only the selected lane: Azure emulators or PostgreSQL/RabbitMQ/SeaweedFS with optional MongoDB, plus common Redis and application services.
+- **Docker-compatible container runtime** (Docker Desktop, headless Docker Engine, or Podman) - no desktop UI is required. Aspire starts only the selected lane: PostgreSQL/RabbitMQ/SeaweedFS with optional MongoDB by default, or the Azure emulators with `TASKFLOW_LANE=Azure`, plus common Redis and application services.
 - **Private NuGet feed access:** the `EF.*` (FlowEngine) packages restore from GitHub Packages via the `efreeman518-github` source in [`nuget.config`](nuget.config). Supply a `NUGET_PAT` (a GitHub token with `read:packages`) before restoring.
 - **Local tools:** `dotnet tool restore` restores Stryker.NET and the other tools declared in the tool manifest.
 
@@ -72,11 +72,11 @@ Generated API clients (Blazor Refit, React `openapi-typescript`) regenerate per 
 
 ### Hosting lanes: Azure vs NonAzure
 
-`TASKFLOW_LANE = Azure | NonAzure` defaults to `Azure`. `Portable` is a deprecated input alias for `NonAzure` for one release. Lane-owned core provider conflicts fail fast instead of creating a mixed topology.
+`TASKFLOW_LANE = Azure | NonAzure` defaults to `NonAzure`; Azure is the explicit opt-in, and every Azure deployment sets `Hosting__Lane=Azure` itself. `Portable` is a deprecated input alias for `NonAzure` for one release. Lane-owned core provider conflicts fail fast instead of creating a mixed topology.
 
 ```powershell
-dotnet run --project src/Host/Aspire/AppHost                                      # Azure: SQL Server/Cosmos/Service Bus/Azurite
-$env:TASKFLOW_LANE = "NonAzure"; dotnet run --project src/Host/Aspire/AppHost     # PostgreSQL JSONB/RabbitMQ/SeaweedFS, zero Azure
+dotnet run --project src/Host/Aspire/AppHost                                      # NonAzure (default): PostgreSQL JSONB/RabbitMQ/SeaweedFS, zero Azure
+$env:TASKFLOW_LANE = "Azure"; dotnet run --project src/Host/Aspire/AppHost        # Azure: SQL Server/Cosmos/Service Bus/Azurite emulators
 $env:TASKFLOW_READMODEL_PROVIDER = "MongoDb"; dotnet run --project src/Host/Aspire/AppHost # explicit MongoDB alternative
 ```
 
@@ -167,6 +167,8 @@ Supply `AiServices:ApiKey` through the configured secret source. The bootstrappe
 Provision the Azure AI Foundry account and model deployment outside this AppHost, using your platform IaC or Azure tooling. Then configure one of these two consumption paths.
 
 ```powershell
+$env:TASKFLOW_LANE = "Azure"
+$env:TASKFLOW_AI_PROVIDER = "AzureInference"
 dotnet user-secrets set "AiServices:FoundryEndpoint" "https://<your-foundry-resource>.services.ai.azure.com/" --project src/Host/Aspire/AppHost
 dotnet user-secrets set "AiServices:AgentModelDeployment" "<deployment-name>" --project src/Host/Aspire/AppHost
 # or
@@ -175,7 +177,7 @@ dotnet user-secrets set "ConnectionStrings:chat" "Endpoint=https://<your-foundry
 dotnet run --project src/Host/Aspire/AppHost
 ```
 
-The endpoint-plus-deployment path injects `Endpoint=...;Deployment=...` and `Aspire.Azure.AI.Inference` authenticates with `DefaultAzureCredential`. A complete connection string can additionally include `Key=...` when key authentication is required. `TASKFLOW_USE_AZURE_FOUNDRY=true` is only an explicit intent flag; it does not supply configuration and fails startup unless one complete path is configured. `aspire publish` does not provision the Foundry account or deployment.
+The endpoint-plus-deployment path injects `Endpoint=...;Deployment=...` and `Aspire.Azure.AI.Inference` authenticates with `DefaultAzureCredential`. A complete connection string can additionally include `Key=...` when key authentication is required. The resolved AI provider is the only switch: the AppHost wires Foundry, and the hosts register the Foundry client, only when it is `AzureInference`. That provider without a complete path fails startup, and Foundry settings under any other provider (including the `None` default) fail startup naming both, instead of being wired into hosts that would ignore them. `aspire publish` does not provision the Foundry account or deployment.
 
 ### Run With AI Disabled
 
@@ -187,9 +189,9 @@ Leave the lane default or set `TASKFLOW_AI_PROVIDER=None` to force no-op locally
 
 | Test condition | Result |
 |----------------|--------|
-| Complete Azure Foundry config exists (`AiServices:FoundryEndpoint` plus `AiServices:AgentModelDeployment`, or complete `ConnectionStrings:chat`) | `Test.Aspire` `TestCategory=Foundry` runs against Azure Foundry |
-| Azure Foundry is requested but endpoint or deployment is missing | AppHost configuration fails; the live test does not silently become inconclusive |
-| No Azure Foundry config exists | `Test.Aspire` live Foundry tests are inconclusive |
+| Azure lane with `TASKFLOW_AI_PROVIDER=AzureInference` (or `AiServices__Provider`) and complete Foundry config (`AiServices:FoundryEndpoint` plus `AiServices:AgentModelDeployment`, or complete `ConnectionStrings:chat`) | `Test.Aspire` `TestCategory=Foundry` runs against Azure Foundry |
+| `AzureInference` is selected but endpoint or deployment is missing, or Foundry settings exist under another provider | AppHost configuration fails; the live test does not silently become inconclusive |
+| The resolved AI provider is not `AzureInference` and no Foundry settings exist | `Test.Aspire` live Foundry tests are inconclusive |
 
 `TestCategory=AzureFoundry` is reserved for Azure-specific provider-selection or provisioning checks. The no-op AI fallback path is covered by unit and endpoint tests. Load, benchmark, and mobile suites stay explicit because they require a running target, BenchmarkDotNet process control, or Appium/emulator setup.
 
@@ -207,7 +209,7 @@ GitHub Actions runs the fast, no-Docker gate on every pull request: Unit, Archit
 
 | Input | Default | Effect |
 |-------|---------|--------|
-| `lane` | `both` | Runs Azure and NonAzure, or one explicitly selected lane |
+| `lane` | `both` | Runs NonAzure then Azure, or one explicitly selected lane |
 | `nonAzureReadModel` | `PostgreSqlJsonb` | Selects the NonAzure JSONB default; `MongoDb` is explicit |
 | `includeE2E` | `false` | Runs selected Testcontainers-backed HTTP lane(s) |
 | `includeIntegration` | `false` | Runs selected component lane(s) |
@@ -224,7 +226,7 @@ Unfiltered CI acceptance uses explicit false opt-outs for unavailable Functions,
 
 `dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj -m:1` boots the AppHost through `Aspire.Hosting.Testing`, runs the C# Gateway/Blazor happy-path smoke with `Microsoft.Playwright`, and invokes the installed TypeScript Playwright projects for Blazor, React, and Uno.
 
-The C# page objects stay intentionally narrow: Gateway root/`/alive` plus Blazor `/tasks`. React coverage remains DOM/ARIA based. Uno coverage is canvas-first: wait for painted canvas, click stable app chrome, compare visual fingerprints. Do not assert Uno Skia text through DOM selectors. `PLAYWRIGHT_GATEWAY_URL`, `PLAYWRIGHT_BLAZOR_URL`, `PLAYWRIGHT_REACT_URL`, and `PLAYWRIGHT_UNO_URL` are target overrides, not test opt-ins. `AspireTestHostContext` is shared by mesh and Playwright/WASM fixtures and owns Docker preflight, one cumulative startup deadline, named waits, default state/health/exit/timestamp diagnostics, and bounded stop/dispose. `TASKFLOW_ASPIRE_STARTUP_TIMEOUT_SECONDS` or `TASKFLOW_WASM_STARTUP_TIMEOUT_SECONDS` sets the one wall-clock budget; project/test timeouts are shorter caps only. Explicit `TASKFLOW_PLAYWRIGHT_TESTS_ENABLED=false` / `TASKFLOW_WASM_TESTS_ENABLED=false` and failed Docker preflight are inconclusive. Once Docker succeeds, missing selected-lane tooling and AppHost/resource/browser failures are red.
+The C# page objects stay intentionally narrow: Gateway root/`/alive` plus Blazor `/tasks`. React coverage remains DOM/ARIA based. Uno coverage is canvas-first: wait for painted canvas, click stable app chrome, compare visual fingerprints. Do not assert Uno Skia text through DOM selectors. `PLAYWRIGHT_GATEWAY_URL`, `PLAYWRIGHT_BLAZOR_URL`, `PLAYWRIGHT_REACT_URL`, and `PLAYWRIGHT_UNO_URL` are target overrides, not test opt-ins. `AspireTestHostContext` is shared by mesh and Playwright/WASM fixtures and owns Docker preflight, one cumulative startup deadline, named waits, default state/health/exit/timestamp diagnostics, and bounded stop/dispose. `TASKFLOW_ASPIRE_STARTUP_TIMEOUT_SECONDS` or `TASKFLOW_WASM_STARTUP_TIMEOUT_SECONDS` sets the one wall-clock budget; project/test timeouts are shorter caps only. Explicit `TASKFLOW_PLAYWRIGHT_TESTS_ENABLED=false` / `TASKFLOW_WASM_TESTS_ENABLED=false` is inconclusive. On a default run (lane switch unset) a failed Docker preflight or a missing optional prerequisite (Playwright npm dependencies, browser, Node.js, `wasm-tools` workload) is inconclusive and the message names the enabling command or opt-out variable; with the lane switch explicitly `true` the same gap is red. Once Docker succeeds, AppHost/resource/browser startup failures and test failures are red.
 
 ### Projects and agents (opt-in, Azure-only)
 

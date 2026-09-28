@@ -85,7 +85,7 @@ internal static class TaskItemUpdater
                 dto.Tags ?? [],
                 e => e.TagId.Value,
                 i => i.Id,
-                incomingDto => updatedEntity.AssociateTag(DomainId.From<TagId>(incomingDto.Id!.Value)),
+                incomingDto => updatedEntity.AssociateTag(TagId.From(incomingDto.Id!.Value)),
                 removeFunc: toRemove =>
                 {
                     if (relatedDeleteBehavior == RelatedDeleteBehavior.None) return DomainResult.Success();

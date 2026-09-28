@@ -4,15 +4,17 @@ using Aspire.Hosting.Testing;
 using EF.IntegrationTesting.Aspire;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using TaskFlow.Hosting;
 using Test.Support.Aspire;
+using Test.Support.Hosting;
 using EnvironmentVariableScope = EF.IntegrationTesting.Environment.EnvironmentVariableScope;
 using FunctionsCoreToolsDiscovery = EF.IntegrationTesting.Environment.FunctionsCoreToolsDiscovery;
 
 namespace Test.Aspire;
 
 /// <summary>
-/// Lazy assembly-scoped fixture that starts the full Aspire AppHost graph (API, Functions, SQL, Table
-/// Storage) the first time a mesh test class calls <see cref="EnsureStartedAsync"/> from
+/// Lazy assembly-scoped fixture that starts the Aspire AppHost graph for the selected D-060 lane (NonAzure
+/// unless TASKFLOW_LANE=Azure) the first time a mesh test class calls <see cref="EnsureStartedAsync"/> from
 /// <c>[ClassInitialize]</c>. Mesh tier (Aspire.Hosting.Testing) - the only tier that exercises the full
 /// service mesh (HTTP -> API -> Service Bus -> Function -> projection -> audit row), which no lighter tier
 /// reproduces. Teardown runs once via <c>AspireMeshLifecycle.[AssemblyCleanup]</c>. The shared
@@ -32,7 +34,12 @@ internal static class AspireTestHost
 
     private static EnvironmentVariableScope? _environment;
     private static AspireTestHostContext? _hostContext;
-    private static string? _resourceUnavailableReason;
+
+    /// <summary>
+    /// Set once the graph failed to start after the Docker preflight passed. Later mesh classes fail on it at once
+    /// instead of paying another full startup budget; a startup failure is never Inconclusive.
+    /// </summary>
+    private static string? _startupFailure;
     internal static string ConnectionString = null!;
 
     internal static TimeSpan DefaultTimeout =>
@@ -60,9 +67,9 @@ internal static class AspireTestHost
     /// </summary>
     internal static async Task EnsureStartedAsync(TestContext context)
     {
-        if (_resourceUnavailableReason is not null)
+        if (_startupFailure is not null)
         {
-            Assert.Inconclusive(_resourceUnavailableReason);
+            Assert.Fail(_startupFailure);
             return;
         }
 
@@ -81,9 +88,9 @@ internal static class AspireTestHost
         await Gate.WaitAsync(context.CancellationToken);
         try
         {
-            if (_resourceUnavailableReason is not null)
+            if (_startupFailure is not null)
             {
-                Assert.Inconclusive(_resourceUnavailableReason);
+                Assert.Fail(_startupFailure);
                 return;
             }
 
@@ -97,7 +104,7 @@ internal static class AspireTestHost
             if (dockerUnavailableReason is not null)
             {
                 _hostContext = null;
-                Assert.Inconclusive(dockerUnavailableReason);
+                ReportMissingPrerequisite(RunAspireTestsEnvironmentVariable, dockerUnavailableReason);
                 return;
             }
 
@@ -129,13 +136,9 @@ internal static class AspireTestHost
                     Console.Error.WriteLine($"Aspire cleanup after startup failure also failed: {cleanupException.Message}");
                 }
 
-                if (ex is TimeoutException)
-                {
-                    _resourceUnavailableReason = $"Aspire resources unavailable: {ex.Message}";
-                    Assert.Inconclusive(_resourceUnavailableReason);
-                    return;
-                }
-
+                // Docker passed its preflight, so a graph that does not come up (timeout included) is a failed
+                // start, not a missing prerequisite.
+                _startupFailure = $"Aspire mesh graph failed to start after Docker preflight succeeded: {ex.Message}";
                 throw;
             }
         }
@@ -252,18 +255,41 @@ internal static class AspireTestHost
         }
     }
 
-    /// <summary>Waits for a named resource within the one cumulative startup budget.</summary>
-    internal static async Task WaitForResourceHealthyAsync(string resourceName, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Waits for a named resource within the one cumulative startup budget. A resource in the started graph that
+    /// never turns healthy failed to start, so the timeout fails the test (diagnostics are dumped first).
+    /// </summary>
+    internal static Task WaitForResourceHealthyAsync(string resourceName, CancellationToken cancellationToken = default)
     {
         var hostContext = _hostContext ?? throw new InvalidOperationException("Aspire host context is not initialized.");
-        try
+        return hostContext.WaitForResourceHealthyAsync(resourceName, cancellationToken);
+    }
+
+    /// <summary>
+    /// Functions Core Tools are an optional prerequisite: opted out, or not installed on a default run, reports
+    /// Inconclusive with the opt-out variable and the install command; not installed with
+    /// <c>TASKFLOW_RUN_FUNCTIONS_TESTS=true</c> fails. Once <c>func</c> is present the graph includes the Functions
+    /// host, and a host that does not become healthy fails the test.
+    /// </summary>
+    internal static async Task RequireFunctionsHostAsync(CancellationToken cancellationToken)
+    {
+        if (IsExplicitlyDisabled(RunFunctionsTestsEnvironmentVariable))
         {
-            await hostContext.WaitForResourceHealthyAsync(resourceName, cancellationToken);
+            Assert.Inconclusive($"{RunFunctionsTestsEnvironmentVariable}=false - Functions full-stack tests opted out.");
+            return;
         }
-        catch (TimeoutException ex)
+
+        if (!EnsureFuncToolAvailable())
         {
-            Assert.Inconclusive($"Aspire resource '{resourceName}' unavailable: {ex.Message}");
+            ReportMissingPrerequisite(
+                RunFunctionsTestsEnvironmentVariable,
+                "Azure Functions Core Tools ('func') not found. Install them with "
+                + "`npm install -g azure-functions-core-tools@4`, or set "
+                + $"{RunFunctionsTestsEnvironmentVariable}=false to opt out.");
+            return;
         }
+
+        await WaitForResourceHealthyAsync("taskflowfunctions", cancellationToken);
     }
 
     internal static Task RunStartupStepAsync(
@@ -290,6 +316,17 @@ internal static class AspireTestHost
     /// </summary>
     internal static bool EnsureFuncToolAvailable() => FunctionsCoreToolsDiscovery.EnsureFuncToolAvailable();
 
+    /// <summary>
+    /// D-060: NonAzure is the unset default, so a mesh class that only exists on one lane (the Table audit
+    /// sink, the Functions host) reports inconclusive on the other instead of timing out on a missing resource.
+    /// </summary>
+    internal static void RequireLaneOrInconclusive(HostingLane lane)
+    {
+        var current = TestHostingLane.Current.Lane;
+        if (current != lane)
+            Assert.Inconclusive($"Requires {HostingLaneResolver.LaneEnvironmentVariable}={lane}; current lane is {current}.");
+    }
+
     internal static void RequireAzureFoundryOrInconclusive()
     {
         if (IsExplicitlyDisabled(RunAzureFoundryTestsEnvironmentVariable))
@@ -302,7 +339,9 @@ internal static class AspireTestHost
         if (provider != AspireAiProvider.AzureFoundry)
         {
             Assert.Inconclusive(
-                "Azure AI Foundry is not configured.");
+                $"Azure AI Foundry is not selected. Set {HostingLaneResolver.LaneEnvironmentVariable}=Azure and "
+                + $"{HostingLaneResolver.AiEnvironmentVariable}=AzureInference with AiServices:FoundryEndpoint configured, "
+                + $"or set {RunAzureFoundryTestsEnvironmentVariable}=false to opt out.");
         }
     }
 
@@ -311,30 +350,19 @@ internal static class AspireTestHost
         return IsAzureFoundryRequested() ? AspireAiProvider.AzureFoundry : AspireAiProvider.None;
     }
 
-    private static bool IsAzureFoundryRequested()
-    {
-        return IsAzureInferenceProvider("TASKFLOW_AI_PROVIDER")
-            || IsAzureInferenceProvider("AiServices__Provider")
-            || IsAzureInferenceProvider("AiServices:Provider")
-            || IsEnabled("TASKFLOW_USE_AZURE_FOUNDRY")
-            || HasValue("ConnectionStrings__chat")
-            || HasValue("ConnectionStrings:chat")
-            || HasValue("AiServices__FoundryEndpoint")
-            || HasValue("AiServices:FoundryEndpoint")
-            || HasValue("AiServices__AgentModelDeployment")
-            || HasValue("AiServices:AgentModelDeployment");
-    }
+    /// <summary>
+    /// Live Foundry runs exactly when the AppHost wires Foundry: when the shared lane resolver selects
+    /// AzureInference. Foundry settings under any other provider make the AppHost fail at build, not select Foundry.
+    /// </summary>
+    private static bool IsAzureFoundryRequested() =>
+        string.Equals(HostingLaneResolver.ResolveFromEnvironment().AiServices, "AzureInference", StringComparison.Ordinal);
 
-    private static bool IsAzureInferenceProvider(string variableName) =>
-        string.Equals(
-            Environment.GetEnvironmentVariable(variableName),
-            "AzureInference",
-            StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsEnabled(string variableName) =>
-        string.Equals(Environment.GetEnvironmentVariable(variableName), "true", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsExplicitlyDisabled(string variableName)
+    /// <summary>
+    /// True when an opt-out variable is <c>false</c>, <c>0</c> or <c>no</c>. The one check for every
+    /// <c>TASKFLOW_*_TESTS_ENABLED</c> switch, so the host skipping a surface and the test explaining the
+    /// skip can never disagree about what counts as an opt-out.
+    /// </summary>
+    internal static bool IsExplicitlyDisabled(string variableName)
     {
         var value = Environment.GetEnvironmentVariable(variableName);
         return string.Equals(value, "false", StringComparison.OrdinalIgnoreCase)
@@ -342,8 +370,27 @@ internal static class AspireTestHost
             || string.Equals(value, "no", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool HasValue(string variableName) =>
-        !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(variableName));
+    /// <summary>True when a lane switch is <c>true</c>, <c>1</c> or <c>yes</c>: the operator asked for that lane.</summary>
+    internal static bool IsExplicitlyEnabled(string variableName)
+    {
+        var value = Environment.GetEnvironmentVariable(variableName);
+        return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Test prerequisite rule for a missing optional prerequisite: Inconclusive on a default run, with the enabling
+    /// command in <paramref name="message"/>; a failure when the operator explicitly enabled the lane through
+    /// <paramref name="laneVariable"/>, because an enabled lane that cannot run is not a skip.
+    /// </summary>
+    internal static void ReportMissingPrerequisite(string laneVariable, string message)
+    {
+        if (IsExplicitlyEnabled(laneVariable))
+            Assert.Fail($"{laneVariable} is explicitly enabled, but a prerequisite is missing. {message}");
+
+        Assert.Inconclusive(message);
+    }
 
     private static bool IsReactRunnable()
     {

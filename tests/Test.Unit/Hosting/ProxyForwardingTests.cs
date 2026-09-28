@@ -68,7 +68,7 @@ public sealed class ProxyForwardingTests
     [TestMethod]
     public void IsolatedNetworkOptIn_ClearsTrustListsAndHopLimit()
     {
-        var builder = WebApplication.CreateBuilder();
+        var builder = TestWebApplication.CreateBuilder();
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Proxy:ForwardedHeaders:Enabled"] = "true",
@@ -84,12 +84,40 @@ public sealed class ProxyForwardingTests
         Assert.IsEmpty(options.KnownIPNetworks);
     }
 
+    /// <summary>
+    /// Behind Container Apps ingress (no fixed proxy subnet to allowlist) the gateway trusts the connecting hop
+    /// and reads exactly one X-Forwarded-For entry: the one ingress appended. A client-supplied entry to its
+    /// left must not become the remote address, or a caller could pick its own edge rate-limit partition.
+    /// </summary>
+    [TestMethod]
+    public async Task TrustAllProxiesWithForwardLimit_UsesOnlyTheIngressAppendedClientAddress()
+    {
+        await using var app = await CreateAppAsync(
+            IPAddress.Parse("100.100.0.7"),
+            new Dictionary<string, string?>
+            {
+                ["Proxy:ForwardedHeaders:Enabled"] = "true",
+                ["Proxy:ForwardedHeaders:TrustAllProxies"] = "true",
+                ["Proxy:ForwardedHeaders:ForwardLimit"] = "1"
+            },
+            TestContext.CancellationToken);
+
+        using var client = app.GetTestClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "http://internal:8080/probe");
+        request.Headers.Add("X-Forwarded-For", "6.6.6.6, 198.51.100.42");
+        using var response = await client.SendAsync(request, TestContext.CancellationToken);
+        var result = await response.Content.ReadFromJsonAsync<RequestMetadata>(TestContext.CancellationToken);
+
+        Assert.IsNotNull(result);
+        Assert.AreEqual("198.51.100.42", result.RemoteIp);
+    }
+
     private static async Task<WebApplication> CreateAppAsync(
         IPAddress remoteAddress,
         IReadOnlyDictionary<string, string?> configuration,
         CancellationToken cancellationToken)
     {
-        var builder = WebApplication.CreateBuilder();
+        var builder = TestWebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
         builder.Configuration.AddInMemoryCollection(configuration);
         builder.AddProxyForwarding();
@@ -105,7 +133,8 @@ public sealed class ProxyForwardingTests
             context.Request.Scheme,
             context.Request.Host.Value ?? "",
             context.Request.PathBase.Value ?? "",
-            context.Request.Path.Value ?? "")));
+            context.Request.Path.Value ?? "",
+            context.Connection.RemoteIpAddress?.ToString() ?? "")));
         await app.StartAsync(cancellationToken);
         return app;
     }
@@ -119,7 +148,7 @@ public sealed class ProxyForwardingTests
         return request;
     }
 
-    private sealed record RequestMetadata(string Scheme, string Host, string PathBase, string Path);
+    private sealed record RequestMetadata(string Scheme, string Host, string PathBase, string Path, string RemoteIp);
 
     public TestContext TestContext { get; set; } = null!;
 }

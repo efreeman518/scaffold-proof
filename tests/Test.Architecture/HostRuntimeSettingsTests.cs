@@ -310,6 +310,35 @@ public class HostRuntimeSettingsTests
             + "handler would break worker gRPC calls used to complete or dead-letter Service Bus messages.");
     }
 
+    /// <summary>
+    /// Blazor's API calls run inside the SignalR circuit, outside any HTTP request, so header propagation must
+    /// be off at the source - not stripped per client with handlers.Clear(), which also removed service
+    /// discovery and the D-063 safe-methods-only resilience handler.
+    /// </summary>
+    [TestMethod]
+    public void Given_BlazorCircuitClients_When_ServiceDefaultsAdded_Then_HeaderPropagationIsOffWithoutClearingHandlers()
+    {
+        var program = ReadRepoFile("src/UI/TaskFlow.Blazor/Program.cs");
+
+        StringAssert.Contains(program, "AddServiceDefaults(addHeaderPropagation: false)");
+        Assert.IsFalse(program.Contains("handlers.Clear()", StringComparison.Ordinal),
+            "clearing the inherited handlers drops service discovery and the standard resilience handler");
+    }
+
+    /// <summary>
+    /// The Uno WASM host is externally reachable; its only probes are the D-049 /healthz routes from
+    /// MapDefaultEndpoints. A bespoke /health route returned the server's absolute dist path to anonymous callers.
+    /// </summary>
+    [TestMethod]
+    public void Given_UnoWasmHost_When_ProbesMapped_Then_NoBespokeHealthRouteLeaksServerPaths()
+    {
+        var program = ReadRepoFile("src/Host/TaskFlow.Uno.WasmHost/Program.cs");
+
+        StringAssert.Contains(program, "app.MapDefaultEndpoints();");
+        Assert.IsFalse(program.Contains("MapGet(\"/health\"", StringComparison.Ordinal),
+            "use the /healthz probes; a custom health payload exposed distPath");
+    }
+
     [TestMethod]
     public void Given_ApiStartupFailure_When_Logged_Then_ProcessFailureIsPreserved()
     {

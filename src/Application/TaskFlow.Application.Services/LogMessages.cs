@@ -18,10 +18,6 @@ internal static partial class LogMessages
     [LoggerMessage(EventId = LogEventIds.ApplicationServicesBase + 20, Level = LogLevel.Debug, Message = "TaskView {Id} projection skipped: event {OccurredAtUtc} is older than projection {LastModifiedUtc}")]
     public static partial void TaskViewProjectionSkipped(this ILogger logger, Guid id, DateTimeOffset occurredAtUtc, DateTimeOffset lastModifiedUtc);
 
-    /// <summary>Logs that a TaskItem search was cancelled by the client.</summary>
-    [LoggerMessage(EventId = LogEventIds.ApplicationServicesBase + 21, Level = LogLevel.Debug, Message = "TaskItem search cancelled by client.")]
-    public static partial void TaskItemSearchCancelled(this ILogger logger);
-
     /// <summary>Logs a Category create failure.</summary>
     [LoggerMessage(EventId = LogEventIds.ApplicationServicesBase + 22, Level = LogLevel.Error, Message = "Error creating Category")]
     public static partial void CategoryCreateFailed(this ILogger logger, Exception exception);

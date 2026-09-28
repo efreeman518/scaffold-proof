@@ -22,7 +22,7 @@ public static class WebApplicationBuilderExtensions
 
     /// <summary>
     /// Builds the middleware pipeline in dependency order: security, correlation, exception
-    /// handling, rate limiting, CORS, auth, docs, health, domain endpoints, then FlowEngine admin.
+    /// handling, CORS, auth, rate limiting, docs, health, domain endpoints, then FlowEngine admin.
     /// </summary>
     public static WebApplication ConfigurePipeline(this WebApplication app)
     {
@@ -50,17 +50,20 @@ public static class WebApplicationBuilderExtensions
         // 4. Exception handler (before routing)
         app.UseExceptionHandler();
 
-        // 5. Rate limiter
-        app.UseRateLimiter();
-
-        // 6. CORS
+        // 5. CORS
         app.UseCors("TaskFlowUi");
 
-        // 7. Authentication
+        // 6. Authentication
         app.UseAuthentication();
 
-        // 8. Authorization
+        // 7. Authorization
         app.UseAuthorization();
+
+        // 8. Rate limiter. After authentication, because the tenant budgets partition on the caller's
+        // tenant_id claim: ahead of it the user is anonymous, every request falls back to the remote address,
+        // and behind the gateway all tenants share one bucket. Routing already ran implicitly, so endpoint
+        // policies (Export, health) still apply.
+        app.UseRateLimiter();
 
         // 9. Request timeouts (D-064): after routing/auth so endpoint metadata (DisableRequestTimeout on
         // the streaming routes) applies. No explicit UseRouting/UseEndpoints call exists in this minimal
@@ -152,8 +155,9 @@ public static class WebApplicationBuilderExtensions
             .ToArray();
 
         var versionSet = app.BuildApiVersionSet(apiDocuments);
-        var api = app.MapVersionedApiGroup(ApiContract.VersionedRoutePrefix, versionSet, ApiContract.DefaultVersion)
-            .RequireRateLimiting("PerTenant");
+        // The tenant budget is the global limiter (RegisterApiServices.AddRateLimiting); a group policy over
+        // the same Redis key would spend two permits per request.
+        var api = app.MapVersionedApiGroup(ApiContract.VersionedRoutePrefix, versionSet, ApiContract.DefaultVersion);
 
         var style = ApplicationStyleResolver.Resolve(app.Configuration[ApplicationStyleResolver.ConfigKey]);
         if (style == ApplicationStyle.Cqrs)

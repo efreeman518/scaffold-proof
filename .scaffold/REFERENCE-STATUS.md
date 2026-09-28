@@ -10,7 +10,7 @@ The 2026-09-16 provider/toolchain refresh removed the deprecated local AI provid
 
 | Field | Value |
 |---|---|
-| Last verified | 2026-09-25 (fast matrix, Release build, analyzers); 2026-09-16 (container, Aspire, UI, deployment lanes) |
+| Last verified | 2026-09-28 (Release build, fast matrix, analyzers, component containers on both lanes, Aspire topology and AI selection); 2026-09-16 (full Aspire graphs, browser, mobile, images, deployment lanes) |
 | Solution | `TaskFlow.slnx` |
 | Target framework | .NET 10 |
 | Configuration | Release |
@@ -32,22 +32,33 @@ All current Release fast projects passed serially with no failed, skipped, or in
 
 | Project | Passed | Duration |
 |---|---:|---:|
-| Test.Unit | 561 | 6 s |
-| Test.UI | 59 | 0.6 s |
-| Test.Architecture | 77 | 1 s |
-| Test.Endpoints | 170 | 6 s |
+| Test.Unit | 683 | 12 s |
+| Test.UI | 75 | 1 s |
+| Test.Architecture | 81 | 1 s |
+| Test.Endpoints | 189 | 7 s |
 | Test.Integration.FlowEngine | 18 | 0.2 s |
-| Test.Mutation | 33 | 0.1 s |
-| Test.PlaywrightUI (`TestCategory=Unit`) | 5 | 0.1 s |
-| **Total** | **923** | |
+| Test.Mutation | 27 | 0.1 s |
+| Test.PlaywrightUI (`TestCategory=Unit`) | 1 | 0.1 s |
+| **Total** | **1074** | |
 
-2026-09-25 rerun after the D-062..D-065 scale alignment; the container, Aspire, UI, and deployment lanes below were not rerun and keep their 2026-09-16 evidence.
+2026-09-28 rerun after the package-readiness fixes (D-066..D-070 and the in-place updates listed in DESIGN-DECISIONS) and the NonAzure default lane. Test.Mutation dropped the deleted `Domain.Model/Rules` samples; Test.PlaywrightUI unit tests for the deleted WasmHost helpers moved to the HTTP-level `Test.UI/WasmHost/WasmHostHttpContractTests.cs`. The full Aspire graphs, browser, mobile, image, and deployment lanes below were not rerun and keep their 2026-09-16 evidence.
 
 `Test.Unit` used a 15-second blame-hang timeout. `dotnet format analyzers TaskFlow.slnx --severity warn --verify-no-changes --no-restore` passed with no changes or diagnostics.
 
 ### Component containers
 
-The Podman Docker-compatible context ran every component lane with `--no-build --no-restore -m:1`. All 213 tests passed with no failed, skipped, inconclusive, or warning results:
+2026-09-28, Release `--no-build`, Docker-compatible context:
+
+| Lane | Project | Passed | Skipped | Duration |
+|---|---|---:|---:|---:|
+| unset (resolves NonAzure) | Test.Integration | 81 | 6 (Azure-only) | 104 s |
+| `TASKFLOW_LANE=Azure` | Test.Integration | 68 | 19 (NonAzure-only) | 175 s |
+| unset (resolves NonAzure) | Test.E2E | 10 | 0 | 14 s |
+| `TASKFLOW_LANE=Azure` | Test.E2E | 10 | 0 | 33 s |
+
+Test.Aspire AppHost lane topology, migrator topology, and AI provider selection tests passed 38/38 (no containers). The earlier per-lane evidence, including the MongoDB read-model lane, is kept below.
+
+2026-09-16: the Podman Docker-compatible context ran every component lane with `--no-build --no-restore -m:1`. All 213 tests passed with no failed, skipped, inconclusive, or warning results:
 
 | Lane | Project | Passed | Duration | Services observed |
 |---|---|---:|---:|---|
@@ -181,8 +192,20 @@ Status meanings:
 | Internal gRPC read service (D-054) | proven | `Test.Endpoints/TaskFlowReadGrpcTests.cs` (in-memory `GrpcChannel` parity with the REST summary); `Test.Unit/Contracts/TaskFlowReadGrpcMapperTests.cs`; `Test.Architecture/GrpcArchitectureTests.cs` (gRPC service lives only in the Api host) |
 | MessagePack L2 cache serializer (D-048/D-056) | proven | `Test.Unit/Infrastructure/CacheSerializerTests.cs` (round trip, both serializers); `Test.Integration/MessagePackCacheTests.cs` (L2 Redis round trip) |
 | Compose lane (Docker Compose + Caddy) + VPS deploy workflow (D-036) | proven (Compose); CI-only (VPS deploy) | Canonical and local JSONB/Mongo Compose shapes pass; worker also validated eight none, Mongo, pooler, and combined shapes. `deploy-vps.yml` remains `workflow_dispatch` deploy/rollback evidence only. |
-| In-house load runner (D-062) | proven (runner); deployment-only (load gate) | `Test.Unit/Load/LoadRunnerTests.cs` (percentile, failure counting, saturation drops); `Test.Load/TaskItemLoadTests.cs` scenarios assert error rate and p95/p99 but stay manual |
-| No unsafe-method retry (D-063) | proven | `Test.Unit/Hosting/ServiceDefaultsScaleTests.cs` (transient 503: POST sent once, GET retried three times); Blazor Refit clients carry `DisableForUnsafeHttpMethods()`, the read-only gRPC client keeps retries |
+| In-house load runner (D-062) | proven (runner); deployment-only (load gate) | `Test.Unit/Load/LoadRunnerTests.cs` (percentile, failure counting with reasons for any exception, saturation drops, cancellation, argument validation, rounding, success-only percentiles); `Test.Load/TaskItemLoadTests.cs` scenarios assert error rate and p95/p99 but stay manual |
+| No unsafe-method retry (D-063) | proven | `Test.Unit/Hosting/ServiceDefaultsScaleTests.cs` (transient 503: POST sent once, GET retried three times); Blazor clients inherit the ServiceDefaults handler with header propagation off, the read-only gRPC client keeps retries |
+| Read hedging with request snapshots (D-051) | proven | `Test.Unit/Hosting/ReadHedgingTests.cs` (slow GET and HEAD hedged, slow POST and transient 503 POST sent once, hedged attempts use distinct request messages, invalid settings throw) |
+| Api error mapping (D-066) | proven | `Test.Endpoints/GlobalExceptionHandlerTests.cs` (499 only on abort, 504 on timeout cause, framework faults 500, app `ArgumentException` 400, no 5xx detail outside Development); `TaskItemEndpointTests.Given_InvalidPayload_When_PutUpdate_Then_Returns400`; `CategoryServiceTests`/`CqrsFailureMappingTests` (fixed save message, cancellation propagates, create race replays or 409) |
+| System request context (D-067) | proven | `Test.Unit` `SystemRequestContextTests` (no tenant, System role, token cannot claim it, AI reviewer write path through the real validator); `TenantBoundaryValidatorTests.Given_NullRoles_When_EnsureTenantBoundary_Then_FailsClosed`; `TenantTargetingContextAccessorTests.GetContextAsync_SequentialRequestsFromDifferentTenants_TargetsEachTenant` |
+| Gateway identity relay and token acquisition (D-068) | proven | `GatewayClaimsTransformerTests` (app-only gateway token only, fresh principal); `TokenServiceTests.GetAccessTokenAsync_FirstCallerCancels_OtherWaitersStillGetToken` |
+| Tenant rate limiting and edge limits (D-050) | proven | `TenantRateLimitEndpointTests` (tenant tier applied after auth, export counted once); `TenantRateLimiterFactoryTests` (no cached connect failure); `AddGatewayServices_InvalidEdgeBudget_FailsAtRegistration`; `BicepInfrastructureContractTests.MainBicep_GatewayAppliesExactlyOneForwardedHop` |
+| Two-state inbox and outbox settlement (D-026, D-029, D-053) | proven | `Test.Unit/Infrastructure/MessagingConsumerTests.cs` (crash takeover after the lease, completion during the wait acks without running, renewal keeps a long handler's claim, bound expiry throws, renewal stops after completion); `Test.Integration/InboxStoreTests.cs` and `OutboxClaimTests.cs` on both providers; `WorkSettlementTests`; `OutboxTransportTests`; `BrokerTracePropagationTests.OutboxHop_ConsumerContinuesTheRequestTrace_NotTheDrain` |
+| Scheduler cron seeding and health (D-009) | proven | `SchedulerCronRegistrationTests`; `Test.Integration/SchedulerCronSeedingTests.HostStart_SeedsEveryDeclaredCronJob_AndARestartAddsNone`; `SchedulerHealthCheckTests`; `AppConfigurationRefreshServiceTests` |
+| Strict config and id validation (D-069) | proven | `StrictEnumTests`; `TaskFlowDbProviderSelectorTests.PoolerModeSelector_NumericOrCombinedValue_Throws`; `ConcurrencyContractTests.Given_CallerIds_When_Validated_Then_OnlyUuidV7Passes` |
+| Audit masking of secure columns (D-023) | proven | `AuditMaskingTests.Given_SecureTaskItemValues_When_CreatedAndUpdated_Then_AuditPayloadsCarryNoPlaintext` |
+| Uno WASM host contract (D-070) | proven | `Test.UI/WasmHost/WasmHostHttpContractTests.cs` (encoding by Accept-Encoding quality, immutable fingerprinted assets, no-cache index, 404 for missing assets, SPA fallback, `/app-config.json`); nginx static contract in `DeploymentWorkflowContractTests` |
+| Test prerequisites and default-lane test hosts (D-071) | proven | `Test.Unit` `TestPrerequisiteContractTests`; `Test.Endpoints/EndpointHostLaneTests.cs` (endpoint host boots the NonAzure lane container-free) |
+| NonAzure default lane (D-060) | proven | `HostingLaneContractTests.Resolve_Unset_ReturnsExactNonAzureProfile`; `AppHostLaneTopologyTests.FullLane_UnsetLaneGraph_IsNonAzureTopology`; `BicepInfrastructureContractTests.AzureDeployment_EveryHostSetsTheAzureLaneExplicitly`; AI provider switch in `AppHostLaneTopologyTests.AzureFoundry_*` |
 | Request timeouts, shutdown drain, runtime evidence (D-064) | proven (wiring); deployment-only (live drain) | `Test.Endpoints/RequestTimeoutEndpointTests.cs` and `Test.Unit/Gateway/GatewayRequestTimeoutTests.cs` (default policies, streaming opt-outs, YARP `TimeoutPolicy: Disable`); `Test.Unit/Hosting/ServiceDefaultsScaleTests.cs` (readiness unhealthy for the drain, budget validation); `Test.Unit/Infrastructure/BicepInfrastructureContractTests.cs` and `DeploymentWorkflowContractTests.cs` (Container Apps drain, Compose budget) |
 | Head trace sampling (D-065) | proven | `Test.Unit/Hosting/ServiceDefaultsScaleTests.cs` (ratio 0 drops and ratio 1 records a root span; out-of-range fails startup) |
 | NonAzure deployment observability (D-061) | proven (wiring and contracts); deployment-only (live runtime) | `Test.Unit/Hosting/OpenTelemetryMetricsRegistrationTests.cs` proves the runtime metrics switch; `Test.Endpoints/GlobalExceptionHandlerTests.cs` proves server `requestId` plus W3C `traceId`/`spanId` exception correlation; endpoint contracts prove the same correlation fields on typed errors; `Test.Unit/Infrastructure/DeploymentWorkflowContractTests.cs` proves OpenObserve isolation, credentials, OTLP, retention, and deploy gates. `deploy/compose/docker-compose.yml`, `docker-compose.override.local.yml`, and `.github/workflows/deploy-vps.yml` wire deployed OpenObserve OSS with metrics export disabled by default; local Aspire retains its Dashboard defaults. Compose shapes and workflow YAML validated, but no live OpenObserve container or deployment ran. |

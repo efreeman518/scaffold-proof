@@ -11,6 +11,9 @@ namespace Test.PlaywrightUI;
 [DoNotParallelize]
 public sealed class TypeScriptPlaywrightSuiteTests
 {
+    private const string PlaywrightLaneVariable = "TASKFLOW_PLAYWRIGHT_TESTS_ENABLED";
+    private const string WasmLaneVariable = "TASKFLOW_WASM_TESTS_ENABLED";
+
     /// <summary>
     /// Gets MSTest context command output.
     /// </summary>
@@ -46,14 +49,14 @@ public sealed class TypeScriptPlaywrightSuiteTests
         string[] requestedProjects,
         bool runGatewayBlazorSmoke = false)
     {
-        if (IsExplicitlyDisabled("TASKFLOW_PLAYWRIGHT_TESTS_ENABLED"))
+        if (IsExplicitlyDisabled(PlaywrightLaneVariable))
         {
             Assert.Inconclusive("TASKFLOW_PLAYWRIGHT_TESTS_ENABLED=false - Playwright full-stack tier opted out.");
             return;
         }
 
         if (requestedProjects.Any(project => project.StartsWith("uno", StringComparison.OrdinalIgnoreCase))
-            && IsExplicitlyDisabled("TASKFLOW_WASM_TESTS_ENABLED"))
+            && IsExplicitlyDisabled(WasmLaneVariable))
         {
             Assert.Inconclusive("TASKFLOW_WASM_TESTS_ENABLED=false - Uno WASM full-stack tier opted out.");
             return;
@@ -63,7 +66,7 @@ public sealed class TypeScriptPlaywrightSuiteTests
         TestContext.WriteLine(readiness.Message);
         if (!readiness.CanRun)
         {
-            Assert.Inconclusive(readiness.Message);
+            ReportMissingPrerequisite(PlaywrightLaneVariable, readiness.Message);
             return;
         }
 
@@ -82,19 +85,20 @@ public sealed class TypeScriptPlaywrightSuiteTests
                 host = await PlaywrightAspireHost.StartAsync(requestedProjects, TestContext.CancellationToken);
             }
         }
+        // Test prerequisite rule: no container runtime or no wasm-tools workload is Inconclusive with the enabling
+        // command on a default run and a failure when the lane is explicitly enabled. Once Docker passed its
+        // preflight, an AppHost or resource that does not come up (a second pre-launch failure or the startup
+        // deadline included) fails the test.
         catch (PlaywrightAspireHost.DockerUnavailableException ex)
         {
-            Assert.Inconclusive(ex.Message);
+            ReportMissingPrerequisite(PlaywrightLaneVariable, ex.Message);
             return;
         }
-        catch (PlaywrightAspireHost.ResourceUnavailableException ex)
+        catch (WasmPrerequisiteException ex)
         {
-            Assert.Inconclusive(ex.Message);
-            return;
-        }
-        catch (TimeoutException ex)
-        {
-            Assert.Inconclusive($"Aspire resources unavailable: {ex.Message}");
+            ReportMissingPrerequisite(
+                WasmLaneVariable,
+                $"Uno WASM prerequisite missing (or set {WasmLaneVariable}=false to opt out): {ex.Message}");
             return;
         }
         await using var hostScope = host;
@@ -137,13 +141,19 @@ public sealed class TypeScriptPlaywrightSuiteTests
         catch (InvalidOperationException ex) when (
             ex.Message.Equals("Node.js is not available on PATH.", StringComparison.Ordinal))
         {
-            Assert.Inconclusive(ex.Message);
+            ReportMissingPrerequisite(
+                PlaywrightLaneVariable,
+                "Node.js is not available on PATH. Install Node.js LTS so `node --version` succeeds, "
+                + "or set TASKFLOW_PLAYWRIGHT_TESTS_ENABLED=false to opt out.");
             return;
         }
         catch (PlaywrightException ex) when (
             ex.Message.Contains("Executable doesn't exist", StringComparison.OrdinalIgnoreCase))
         {
-            Assert.Inconclusive("Playwright browser executable is unavailable: " + ex.Message);
+            ReportMissingPrerequisite(
+                PlaywrightLaneVariable,
+                "Playwright browser executable is unavailable. Run `npx --prefix tests/Test.PlaywrightUI playwright install chromium`, "
+                + "or set TASKFLOW_PLAYWRIGHT_TESTS_ENABLED=false to opt out. " + ex.Message);
             return;
         }
         TestContext.WriteLine(result.StandardOutput);
@@ -167,6 +177,23 @@ public sealed class TypeScriptPlaywrightSuiteTests
 
     private static string Truncate(string value)
         => value.Length <= 12_000 ? value : value[..12_000] + "...";
+
+    /// <summary>
+    /// Test prerequisite rule for a missing optional prerequisite: Inconclusive on a default run, with the enabling
+    /// command in <paramref name="message"/>; a failure when the operator explicitly enabled the lane.
+    /// </summary>
+    private static void ReportMissingPrerequisite(string laneVariable, string message)
+    {
+        var value = Environment.GetEnvironmentVariable(laneVariable);
+        if (string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase))
+        {
+            Assert.Fail($"{laneVariable} is explicitly enabled, but a prerequisite is missing. {message}");
+        }
+
+        Assert.Inconclusive(message);
+    }
 
     private static bool IsExplicitlyDisabled(string variableName)
     {

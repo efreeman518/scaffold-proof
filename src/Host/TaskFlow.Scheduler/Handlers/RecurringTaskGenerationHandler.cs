@@ -73,7 +73,7 @@ public sealed class RecurringTaskGenerationHandler(
             var occurrenceId = OccurrenceId(tenantId, templateId, occurrenceUtc);
             var created = TaskItem.CreateOccurrence(
                 template.TenantId,
-                DomainId.From<TaskItemId>(occurrenceId),
+                TaskItemId.From(occurrenceId),
                 template.Id,
                 occurrenceUtc,
                 template.Title,

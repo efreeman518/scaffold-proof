@@ -1,5 +1,6 @@
 using Aspire.Hosting;
 using Aspire.Hosting.Testing;
+using EF.IntegrationTesting.Environment;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Test.Support.Aspire;
@@ -29,7 +30,7 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
     ];
 
     private readonly AspireTestHostContext _hostContext;
-    private readonly Dictionary<string, string?> _originalEnvironment;
+    private readonly EnvironmentVariableScope _environment;
 
     private PlaywrightAspireHost(
         AspireTestHostContext hostContext,
@@ -37,14 +38,14 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
         string blazorBaseUrl,
         IReadOnlyList<string> typeScriptProjects,
         IReadOnlyList<string> diagnosticMessages,
-        Dictionary<string, string?> originalEnvironment)
+        EnvironmentVariableScope environment)
     {
         _hostContext = hostContext;
         GatewayBaseUrl = gatewayBaseUrl.TrimEnd('/');
         BlazorBaseUrl = blazorBaseUrl.TrimEnd('/');
         TypeScriptProjects = typeScriptProjects;
         DiagnosticMessages = diagnosticMessages;
-        _originalEnvironment = originalEnvironment;
+        _environment = environment;
     }
 
     internal string GatewayBaseUrl { get; }
@@ -75,15 +76,9 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
             AspireTestHostContext.ReadPositiveSeconds(startupTimeoutVariable, wantsUno ? 1_800 : 900),
             ResourceLoggingEnvironmentVariable);
 
-        var originalEnvironment = CaptureEnvironment(
-            "TASKFLOW_ASPIRE_TESTING",
-            "TASKFLOW_ASPIRE_REACT_AVAILABLE",
-            "TASKFLOW_ASPIRE_UNO_WASM_AVAILABLE",
-            "TASKFLOW_UNO_WASM_DIST_PATH",
-            "PLAYWRIGHT_GATEWAY_URL",
-            "PLAYWRIGHT_BLAZOR_URL",
-            "PLAYWRIGHT_REACT_URL",
-            "PLAYWRIGHT_UNO_URL");
+        // Every variable this host (and WasmAppHost) writes goes through this one scope, which restores the
+        // originals when the host is disposed or its startup fails.
+        var environment = new EnvironmentVariableScope();
 
         DistributedApplication? app = null;
         try
@@ -94,13 +89,14 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
 
             var reactRunnable = wantsReact && IsReactRunnable();
             var unoTarget = wantsUno
-                ? await WasmAppHost.PrepareAsync(hostContext, wantsUnoColdStart, ct)
+                ? await WasmAppHost.PrepareAsync(hostContext, environment, wantsUnoColdStart, ct)
                 : new WasmHostTarget(false, false, "Uno WASM project not requested.");
             var diagnostics = new List<string> { unoTarget.Message };
 
-            Environment.SetEnvironmentVariable("TASKFLOW_ASPIRE_TESTING", "true");
-            SetOrClear("TASKFLOW_ASPIRE_REACT_AVAILABLE", reactRunnable);
-            SetOrClear("TASKFLOW_ASPIRE_UNO_WASM_AVAILABLE", unoTarget.HostWithAspire);
+            environment
+                .Set("TASKFLOW_ASPIRE_TESTING", "true")
+                .Set("TASKFLOW_ASPIRE_REACT_AVAILABLE", reactRunnable ? "true" : null)
+                .Set("TASKFLOW_ASPIRE_UNO_WASM_AVAILABLE", unoTarget.HostWithAspire ? "true" : null);
 
             var appHostProgramType = Type.GetType("Program, AppHost", throwOnError: true)!;
             var builder = await hostContext.RunStartupStepAsync(
@@ -136,6 +132,7 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
             var gatewayBaseUrl = await ResolveEndpointAsync(
                 app,
                 hostContext,
+                environment,
                 GatewayResourceName,
                 "PLAYWRIGHT_GATEWAY_URL",
                 ct);
@@ -146,6 +143,7 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
                 blazorBaseUrl = await ResolveEndpointAsync(
                     app,
                     hostContext,
+                    environment,
                     BlazorResourceName,
                     "PLAYWRIGHT_BLAZOR_URL",
                     ct);
@@ -161,12 +159,12 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
             {
                 var reactBaseUrl = Environment.GetEnvironmentVariable("PLAYWRIGHT_REACT_URL")
                     ?? Environment.GetEnvironmentVariable("TASKFLOW_REACT_BASE_URL");
-                Environment.SetEnvironmentVariable("PLAYWRIGHT_REACT_URL", reactBaseUrl?.TrimEnd('/'));
+                environment.Set("PLAYWRIGHT_REACT_URL", reactBaseUrl?.TrimEnd('/'));
                 typeScriptProjects.Add("react");
             }
             else if (reactRunnable)
             {
-                await ResolveEndpointAsync(app, hostContext, ReactResourceName, "PLAYWRIGHT_REACT_URL", ct);
+                await ResolveEndpointAsync(app, hostContext, environment, ReactResourceName, "PLAYWRIGHT_REACT_URL", ct);
                 typeScriptProjects.Add("react");
             }
 
@@ -174,7 +172,7 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
             {
                 if (unoTarget.HostWithAspire)
                 {
-                    var unoBaseUrl = await WasmAppHost.ResolveEndpointAsync(hostContext, app, ct);
+                    var unoBaseUrl = await WasmAppHost.ResolveEndpointAsync(hostContext, environment, app, ct);
                     diagnostics.Add($"Uno WASM hosted by Aspire at {unoBaseUrl}.");
                 }
 
@@ -195,11 +193,11 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
                 blazorBaseUrl,
                 typeScriptProjects,
                 diagnostics,
-                originalEnvironment);
+                environment);
         }
         catch (DockerUnavailableException)
         {
-            RestoreEnvironment(originalEnvironment);
+            environment.Dispose();
             throw;
         }
         catch (Exception ex)
@@ -225,7 +223,7 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
                 }
             }
 
-            RestoreEnvironment(originalEnvironment);
+            environment.Dispose();
             if (resourcesUnavailable)
                 throw new ResourceUnavailableException(
                     "Aspire could not launch the test resources. No application process started.", ex);
@@ -241,7 +239,7 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
         }
         finally
         {
-            RestoreEnvironment(_originalEnvironment);
+            _environment.Dispose();
         }
     }
 
@@ -288,6 +286,7 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
     private static async Task<string> ResolveEndpointAsync(
         DistributedApplication app,
         AspireTestHostContext hostContext,
+        EnvironmentVariableScope environment,
         string resourceName,
         string environmentVariableName,
         CancellationToken ct)
@@ -301,23 +300,9 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
         await hostContext.WaitForResourceHealthyAsync(resourceName, ct);
 
         var endpoint = app.GetEndpoint(resourceName, HttpEndpointName).ToString().TrimEnd('/');
-        Environment.SetEnvironmentVariable(environmentVariableName, endpoint);
+        environment.Set(environmentVariableName, endpoint);
         return endpoint;
     }
-
-    private static Dictionary<string, string?> CaptureEnvironment(params string[] names) =>
-        names.ToDictionary(name => name, Environment.GetEnvironmentVariable);
-
-    private static void RestoreEnvironment(IReadOnlyDictionary<string, string?> values)
-    {
-        foreach (var (name, value) in values)
-        {
-            Environment.SetEnvironmentVariable(name, value);
-        }
-    }
-
-    private static void SetOrClear(string name, bool enabled) =>
-        Environment.SetEnvironmentVariable(name, enabled ? "true" : null);
 
     private static bool HasValue(string variableName) =>
         !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(variableName));

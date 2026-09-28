@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
 using TaskFlow.Infrastructure.Repositories;
@@ -48,7 +48,7 @@ public class ScaleFixtureExportTests
         await fixture.SeedAsync(db, RowCount, ct: context.CancellationToken);
     }
 
-    /// <summary>Marks the test Inconclusive when the database container failed to start.</summary>
+    /// <summary>Inconclusive without a container runtime; fails when the database container failed to start.</summary>
     [TestInitialize]
     public void TestSetup() => IntegrationTestSetup.AssertAvailable("database", DbContainerFixture.StartupError);
 
@@ -62,7 +62,7 @@ public class ScaleFixtureExportTests
 
         var expected = await query.Set<TaskItem>()
             .IgnoreQueryFilters()
-            .CountAsync(t => t.TenantId == DomainId.From<TenantId>(PrimaryTenant), TestContext.CancellationToken);
+            .CountAsync(t => t.TenantId == TenantId.From(PrimaryTenant), TestContext.CancellationToken);
         Assert.IsGreaterThan(0, expected, "the skewed fixture must put rows in the primary tenant");
 
         var seen = new HashSet<Guid>();

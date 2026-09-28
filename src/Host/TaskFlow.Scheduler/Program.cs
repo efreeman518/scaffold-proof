@@ -1,5 +1,6 @@
 using TaskFlow.Bootstrapper;
 using TaskFlow.Scheduler;
+using TaskFlow.Scheduler.Infrastructure;
 using TaskFlow.Scheduler.Telemetry;
 using TickerQ.DependencyInjection;
 
@@ -35,6 +36,5 @@ await app.ValidateTickerQDatabase();
 app.UseTickerQ();
 app.MapDefaultEndpoints();
 
-await app.SeedCronJobs();
-
+// Cron schedules are declared on [TickerFunction] in TaskMaintenanceJobs; TickerQ seeds them during RunAsync.
 await app.RunAsync();

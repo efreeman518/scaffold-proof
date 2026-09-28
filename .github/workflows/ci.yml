@@ -10,7 +10,7 @@ on:
       lane:
         type: choice
         default: both
-        options: [both, Azure, NonAzure]
+        options: [both, NonAzure, Azure]
         description: "Hosting lane(s) for manually dispatched acceptance"
       nonAzureReadModel:
         type: choice
@@ -20,11 +20,11 @@ on:
       includeE2E:
         type: boolean
         default: false
-        description: "Run selected Azure/NonAzure Test.E2E lane(s) (requires Docker)"
+        description: "Run selected NonAzure/Azure Test.E2E lane(s) (requires Docker)"
       includeIntegration:
         type: boolean
         default: false
-        description: "Run selected Azure/NonAzure Testcontainers lane(s) (requires Docker)"
+        description: "Run selected NonAzure/Azure Testcontainers lane(s) (requires Docker)"
       includeAspireMesh:
         type: boolean
         default: false
@@ -244,13 +244,14 @@ jobs:
                 --results-directory ./tests/TestResults
           }
 
+          # NonAzure is the default lane (D-060), so it runs first; Azure is the explicit opt-in.
           test_exit=0
-          if [ "${{ inputs.lane }}" = "both" ] || [ "${{ inputs.lane }}" = "Azure" ]; then
-            run_lane Azure Cosmos || test_exit=$?
+          if [ "${{ inputs.lane }}" = "both" ] || [ "${{ inputs.lane }}" = "NonAzure" ]; then
+            run_lane NonAzure "${{ inputs.nonAzureReadModel }}" || test_exit=$?
           fi
           if [ "$test_exit" -eq 0 ]; then
-            if [ "${{ inputs.lane }}" = "both" ] || [ "${{ inputs.lane }}" = "NonAzure" ]; then
-              run_lane NonAzure "${{ inputs.nonAzureReadModel }}" || test_exit=$?
+            if [ "${{ inputs.lane }}" = "both" ] || [ "${{ inputs.lane }}" = "Azure" ]; then
+              run_lane Azure Cosmos || test_exit=$?
             fi
           fi
 
@@ -353,11 +354,11 @@ jobs:
                 --results-directory ./tests/TestResults
           }
 
-          if [ "${{ inputs.lane }}" = "both" ] || [ "${{ inputs.lane }}" = "Azure" ]; then
-            run_lane Azure Cosmos
-          fi
           if [ "${{ inputs.lane }}" = "both" ] || [ "${{ inputs.lane }}" = "NonAzure" ]; then
             run_lane NonAzure "${{ inputs.nonAzureReadModel }}"
+          fi
+          if [ "${{ inputs.lane }}" = "both" ] || [ "${{ inputs.lane }}" = "Azure" ]; then
+            run_lane Azure Cosmos
           fi
 
       - name: Migration model drift gate
@@ -517,11 +518,11 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "${Lane} browser acceptance failed." }
           }
 
-          if ("${{ inputs.lane }}" -in @("both", "Azure")) {
-            Invoke-LaneAcceptance -Lane Azure -ReadModel Cosmos -RunFunctions $true
-          }
           if ("${{ inputs.lane }}" -in @("both", "NonAzure")) {
             Invoke-LaneAcceptance -Lane NonAzure -ReadModel "${{ inputs.nonAzureReadModel }}" -RunFunctions $false
+          }
+          if ("${{ inputs.lane }}" -in @("both", "Azure")) {
+            Invoke-LaneAcceptance -Lane Azure -ReadModel Cosmos -RunFunctions $true
           }
 
       - name: Upload full-lane test results
@@ -542,7 +543,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lane: [Azure, NonAzure]
+        lane: [NonAzure, Azure]
     env:
       TASKFLOW_LANE: ${{ matrix.lane }}
       TASKFLOW_READMODEL_PROVIDER: ${{ matrix.lane == 'Azure' && 'Cosmos' || inputs.nonAzureReadModel }}

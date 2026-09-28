@@ -20,7 +20,7 @@ public class TagBuilder
     /// <summary>Builds test data used by focused test cases.</summary>
     public Tag Build()
     {
-        var result = Tag.Create(DomainId.From<TenantId>(_tenantId), _name, _color);
+        var result = Tag.Create(TenantId.From(_tenantId), _name, _color);
         return result.Value!;
     }
 }

@@ -27,7 +27,9 @@
   </Target>
 
   <ItemGroup>
-    <ProjectReference Include="..\Aspire\ServiceDefaults\ServiceDefaults.csproj" />
+    <!-- SkipUnoWasmBuild only concerns this project: test projects pass it as a global property, and letting it flow
+         down would build ServiceDefaults and everything below it a second time into the same obj folders (CS2012). -->
+    <ProjectReference Include="..\Aspire\ServiceDefaults\ServiceDefaults.csproj" GlobalPropertiesToRemove="SkipUnoWasmBuild" />
   </ItemGroup>
 
 </Project>

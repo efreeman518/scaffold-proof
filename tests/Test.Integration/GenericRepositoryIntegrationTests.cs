@@ -1,4 +1,4 @@
-﻿using EF.Data.Contracts;
+using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
@@ -21,7 +21,7 @@ public class GenericRepositoryIntegrationTests
 {
     // Matches the tenant the query context filters by (see DomainEventPipelineTests), so query-side
     // reads are not excluded by the ITenantEntity query filter.
-    private static readonly TenantId TenantId = DomainId.From<TenantId>(Guid.Parse("11111111-1111-1111-1111-111111111111"));
+    private static readonly TenantId TenantId = TenantId.From(Guid.Parse("11111111-1111-1111-1111-111111111111"));
 
     /// <summary>Ensures the shared SQL schema exists before this class runs (idempotent migrate).</summary>
     [ClassInitialize]
@@ -33,7 +33,7 @@ public class GenericRepositoryIntegrationTests
         await db.Database.MigrateAsync(_.CancellationToken);
     }
 
-    /// <summary>Marks the test Inconclusive when the SQL container failed to start (assembly-init safety).</summary>
+    /// <summary>Inconclusive without a container runtime; fails when the SQL container failed to start (assembly-init safety).</summary>
     [TestInitialize]
     public void TestSetup()
     {
@@ -68,7 +68,7 @@ public class GenericRepositoryIntegrationTests
         Assert.AreEqual(tag.Name, read.Name);
 
         // Assert - GetAsync for a missing id returns null
-        Assert.IsNull(await queryRepo.GetAsync(DomainId.From<TagId>(Guid.NewGuid()), TestContext.CancellationToken));
+        Assert.IsNull(await queryRepo.GetAsync(TagId.From(Guid.NewGuid()), TestContext.CancellationToken));
     }
 
     /// <summary>Verifies the generic Query repo's ListAsync returns exactly the entities matching the predicate.</summary>

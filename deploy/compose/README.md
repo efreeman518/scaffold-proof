@@ -1,6 +1,6 @@
 # TaskFlow NonAzure lane - Docker Compose runbook
 
-The NonAzure hosting lane (D-060, D-036) runs the whole app as containers on one VPS: Caddy terminates TLS
+The NonAzure hosting lane (D-060, D-036) is the default lane. It runs the whole app as containers on one VPS: Caddy terminates TLS
 in front of the YARP gateway, PostgreSQL / RabbitMQ / S3 replace Azure data services, and the lane has no
 Azure service dependency. These files are hand-written on purpose - the AppHost is not published to Compose.
 

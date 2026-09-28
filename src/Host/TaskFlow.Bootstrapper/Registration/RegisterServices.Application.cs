@@ -23,7 +23,7 @@ public static partial class RegisterServices
     /// <summary>Registers application services dependencies in the service container.</summary>
     private static void AddApplicationServices(IServiceCollection services, IConfiguration config)
     {
-        AddMessageHandlers(services);
+        AddMessageHandlers(services, config);
         AddVectorSearchServices(services, config);
         AddSharedApplicationServices(services);
         AddServiceApplicationServices(services);
@@ -81,8 +81,14 @@ public static partial class RegisterServices
     }
 
     /// <summary>Registers message handlers dependencies in the service container.</summary>
-    private static void AddMessageHandlers(IServiceCollection services)
+    private static void AddMessageHandlers(IServiceCollection services, IConfiguration config)
     {
+        // D-029 claim timings (lease, poll, wait margin); defaults suit RabbitMQ and Service Bus alike.
+        services.AddOptions<InboxClaimOptions>()
+            .Bind(config.GetSection(InboxClaimOptions.ConfigSectionName))
+            .Validate(o => o.IsValid(), "Messaging:Inbox timings must be positive with PollInterval below ClaimLease.")
+            .ValidateOnStart();
+
         services.AddScoped<IMessageHandler<AuditEntry<string, Guid>>, AuditHandler>();
         services.AddScoped<IMessageHandler<AuditEntry<string, Guid?>>, AuditHandler>();
         services.AddScoped<IWorkflowTrigger, WorkflowTriggerHandler>();

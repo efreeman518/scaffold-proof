@@ -1,3 +1,4 @@
+using EF.IntegrationTesting.Environment;
 using Microsoft.Extensions.Configuration;
 using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Data.Provider;
@@ -21,8 +22,14 @@ public class TaskFlowDbProviderSelectorTests
             .Build();
 
     [TestMethod]
-    public void Resolve_Unset_AzureLane_DefaultsToSqlServer() =>
-        Assert.AreEqual(TaskFlowDbProvider.SqlServer, TaskFlowDbProviderSelector.Resolve(Config()));
+    public void Resolve_Unset_DefaultsToPostgreSql() =>
+        Assert.AreEqual(TaskFlowDbProvider.PostgreSql, TaskFlowDbProviderSelector.Resolve(Config()));
+
+    [TestMethod]
+    public void Resolve_AzureLane_DefaultsToSqlServer() =>
+        Assert.AreEqual(
+            TaskFlowDbProvider.SqlServer,
+            TaskFlowDbProviderSelector.Resolve(Config((HostingLaneResolver.LaneConfigurationKey, "Azure"))));
 
     [TestMethod]
     public void Resolve_NonAzureLane_DefaultsToPostgreSql() =>
@@ -42,27 +49,21 @@ public class TaskFlowDbProviderSelectorTests
     {
         var ex = Assert.ThrowsExactly<ArgumentException>(() =>
             TaskFlowDbProviderSelector.Resolve(Config((TaskFlowDbProviderSelector.ConfigurationKey, "MySql"))));
-        StringAssert.Contains(ex.Message, "SqlServer");
+        StringAssert.Contains(ex.Message, "PostgreSql");
     }
 
     [TestMethod]
     [DoNotParallelize]
     public void Resolve_EnvWinsOverConfig()
     {
-        var original = Environment.GetEnvironmentVariable(TaskFlowDbProviderSelector.EnvironmentVariable);
-        Environment.SetEnvironmentVariable(TaskFlowDbProviderSelector.EnvironmentVariable, "PostgreSql");
-        try
-        {
-            Assert.AreEqual(
-                TaskFlowDbProvider.PostgreSql,
-                TaskFlowDbProviderSelector.Resolve(Config(
-                    (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
-                    (TaskFlowDbProviderSelector.ConfigurationKey, "SqlServer"))));
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable(TaskFlowDbProviderSelector.EnvironmentVariable, original);
-        }
+        using var environment = new EnvironmentVariableScope()
+            .Set(TaskFlowDbProviderSelector.EnvironmentVariable, "PostgreSql");
+
+        Assert.AreEqual(
+            TaskFlowDbProvider.PostgreSql,
+            TaskFlowDbProviderSelector.Resolve(Config(
+                (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
+                (TaskFlowDbProviderSelector.ConfigurationKey, "SqlServer"))));
     }
 
     // ----- Pooler mode (D-045): config-only, no env var, no lane default. -----
@@ -81,6 +82,26 @@ public class TaskFlowDbProviderSelectorTests
     public void PoolerModeSelector_UnknownValue_Throws() =>
         Assert.ThrowsExactly<ArgumentException>(() =>
             PoolerModeSelector.Resolve(Config((PoolerModeSelector.ConfigurationKey, "Session"))));
+
+    // Enum.TryParse accepted "2" as an undefined PoolerMode that compared unequal to Transaction, so the
+    // PgBouncer flags were silently skipped; numbers and combinations must fail like any unknown name.
+    [TestMethod]
+    [DataRow("1")]
+    [DataRow("2")]
+    [DataRow("-1")]
+    [DataRow("None,Transaction")]
+    public void PoolerModeSelector_NumericOrCombinedValue_Throws(string value)
+    {
+        var ex = Assert.ThrowsExactly<ArgumentException>(() =>
+            PoolerModeSelector.Resolve(Config((PoolerModeSelector.ConfigurationKey, value))));
+        StringAssert.Contains(ex.Message, "Allowed values: None, Transaction.");
+    }
+
+    [TestMethod]
+    public void PoolerModeSelector_NameAnyCaseWithWhitespace_Resolves() =>
+        Assert.AreEqual(
+            PoolerMode.Transaction,
+            PoolerModeSelector.Resolve(Config((PoolerModeSelector.ConfigurationKey, " transaction "))));
 
     [TestMethod]
     public void UseTaskFlowProvider_TransactionPoolerMode_AppendsNoResetAndMaxAutoPrepareFlags()
