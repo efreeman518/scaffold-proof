@@ -1,20 +1,12 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using EF.Audit.Contracts;
 using EF.IntegrationTesting.EntityFramework;
-using EF.Storage.Contracts;
 using TaskFlow.Application.Contracts;
-using TaskFlow.Application.Contracts.Storage;
-using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Interceptors;
-using TaskFlow.Infrastructure.Data.Messaging;
-using TaskFlow.Infrastructure.Storage;
-using TaskFlow.Infrastructure.Storage.CosmosDb;
 using Test.Support;
+using Test.Support.Hosting;
 
 namespace Test.Endpoints;
 
@@ -26,12 +18,6 @@ namespace Test.Endpoints;
 /// </summary>
 public sealed class CustomApiFactory : WebApplicationFactoryBase<Program, TaskFlowDbContextTrxn, TaskFlowDbContextQuery>
 {
-    private const string TestDataProtectionKeysFileUrl =
-        "https://taskflowtest.blob.core.windows.net/data-protection/keys.xml";
-    private const string TestBlobEndpoint = "https://taskflowtest.blob.core.windows.net/";
-    private const string TestTableEndpoint = "https://taskflowtest.table.core.windows.net/";
-    private const string TestCosmosEndpoint = "https://taskflowtest.documents.azure.com:443/";
-    private const string TestServiceBusNamespace = "taskflowtest.servicebus.windows.net";
     private readonly string _applicationStyle;
     private readonly string _dbName = $"TestDb_{Guid.NewGuid()}";
 
@@ -51,45 +37,25 @@ public sealed class CustomApiFactory : WebApplicationFactoryBase<Program, TaskFl
     /// </summary>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseSetting(ApplicationStyleResolver.ConfigKey, _applicationStyle);
-        // D-060: the endpoint contract runs on the explicit Azure lane with every data plane replaced below.
-        builder.UseSetting(HostingLaneResolver.LaneConfigurationKey, "Azure");
-        builder.UseSetting("DataProtectionKeysFileUrl", TestDataProtectionKeysFileUrl);
-        builder.UseSetting("ConnectionStrings:BlobStorage1", TestBlobEndpoint);
-        builder.UseSetting("ConnectionStrings:TableStorage1", TestTableEndpoint);
-        builder.UseSetting("ConnectionStrings:CosmosDb1", TestCosmosEndpoint);
-        builder.UseSetting("ServiceBus1:fullyQualifiedNamespace", TestServiceBusNamespace);
+        // D-060: the endpoint contract runs on the default NonAzure lane, pinned here, with every data plane
+        // replaced in process so requests stay deterministic, network-free, and container-free.
+        foreach (var (key, value) in HostSettings())
+            builder.UseSetting(key, value);
         base.ConfigureWebHost(builder);
-        builder.ConfigureServices(services =>
-        {
-            // Strict Azure registration still requires every core endpoint above. Endpoint tests replace
-            // those external data planes explicitly so requests stay deterministic and network-free.
-            services.RemoveAll<IObjectStorageRepository>();
-            services.AddSingleton<IObjectStorageRepository, NoOpBlobStorageRepository>();
-            services.RemoveAll<IAuditLogRepository>();
-            services.AddSingleton<IAuditLogRepository, NoOpAuditLogRepository>();
-            services.RemoveAll<IIntegrationEventTransport>();
-            services.AddSingleton<IIntegrationEventTransport, NoOpEventTransport>();
-            services.RemoveAll<ITaskViewRepository>();
-            services.AddSingleton<ITaskViewRepository, NoOpTaskViewRepository>();
-        });
+        builder.ConfigureServices(InertNonAzureLane.ReplaceDataPlanes);
     }
 
     /// <summary>Verifies configure test configuration behavior and protects the expected test contract.</summary>
     protected override void ConfigureTestConfiguration(IConfigurationBuilder config)
     {
-        config.AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            [ApplicationStyleResolver.ConfigKey] = _applicationStyle,
-            [HostingLaneResolver.LaneConfigurationKey] = "Azure",
-            ["DataProtectionKeysFileUrl"] = TestDataProtectionKeysFileUrl,
-            ["ConnectionStrings:BlobStorage1"] = TestBlobEndpoint,
-            ["ConnectionStrings:TableStorage1"] = TestTableEndpoint,
-            ["ConnectionStrings:CosmosDb1"] = TestCosmosEndpoint,
-            ["ServiceBus1:fullyQualifiedNamespace"] = TestServiceBusNamespace
-        });
+        config.AddInMemoryCollection(HostSettings());
         config.AddInMemoryCollection(TestColumnEncryption.Configuration);
     }
+
+    private Dictionary<string, string?> HostSettings() => new(InertNonAzureLane.Settings)
+    {
+        [ApplicationStyleResolver.ConfigKey] = _applicationStyle
+    };
 
     // The version/timestamp interceptor is part of the concurrency contract (D-021), not of the SQL
     // provider: without it here every entity would report Version 0 and the whole ETag surface would

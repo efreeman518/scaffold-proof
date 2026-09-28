@@ -35,7 +35,7 @@ public class RepositorySearchTranslationTests
         await db.Database.MigrateAsync(_.CancellationToken);
     }
 
-    /// <summary>Marks the test Inconclusive when the SQL container failed to start.</summary>
+    /// <summary>Inconclusive without a container runtime; fails when the SQL container failed to start.</summary>
     [TestInitialize]
     public void TestSetup()
     {

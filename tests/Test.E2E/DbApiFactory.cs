@@ -49,6 +49,22 @@ public sealed class DbApiFactory : WebApplicationFactoryBase<Program, TaskFlowDb
 
     public static Exception? StartupError { get; private set; }
 
+    /// <summary>
+    /// Test prerequisite rule for every E2E class: no container runtime is Inconclusive with the enabling step; a
+    /// container that fails to start after the preflight passed fails the test with its startup error.
+    /// </summary>
+    public static void AssertContainersAvailable()
+    {
+        if (DockerUnavailableReason is not null)
+        {
+            Assert.Inconclusive(DockerUnavailableReason);
+            return;
+        }
+
+        if (StartupError is not null)
+            Assert.Fail($"E2E container startup failed after Docker preflight succeeded:{Environment.NewLine}{StartupError}");
+    }
+
     /// <summary>Initializes the API factory with required dependencies and default state.</summary>
     public DbApiFactory(string? applicationStyle = null)
     {

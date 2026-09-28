@@ -39,7 +39,7 @@ public class DomainEventPipelineTests
         await db.Database.MigrateAsync(_.CancellationToken);
     }
 
-    /// <summary>Marks the test Inconclusive when the SQL container failed to start (assembly-init safety).</summary>
+    /// <summary>Inconclusive without a container runtime; fails when the SQL container failed to start (assembly-init safety).</summary>
     [TestInitialize]
     public void TestSetup()
     {

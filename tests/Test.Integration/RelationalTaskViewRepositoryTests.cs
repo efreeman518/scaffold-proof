@@ -23,7 +23,7 @@ public class RelationalTaskViewRepositoryTests
 {
     private const int ConcurrentPatchers = 8;
 
-    /// <summary>Marks the test Inconclusive when the database container failed to start.</summary>
+    /// <summary>Inconclusive without a container runtime; fails when the database container failed to start.</summary>
     [TestInitialize]
     public void TestSetup()
     {

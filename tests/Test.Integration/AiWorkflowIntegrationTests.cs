@@ -11,7 +11,8 @@ namespace Test.Integration;
 /// TaskFlow.Api host in-process against the SQL container, starts a workflow through the public
 /// FlowEngine API, lets the background engine drive it to a terminal node, and then asserts the REAL
 /// database side effects the workflow produced through its self-calls (priority patched / child tasks
-/// created) - not just the engine's terminal state. Inconclusive when the SQL container did not start.
+/// created) - not just the engine's terminal state. Inconclusive without a container runtime; fails when the
+/// SQL container did not start.
 /// </summary>
 [TestClass]
 [TestCategory("Integration")]

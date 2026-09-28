@@ -26,7 +26,7 @@ public class OutboxClaimTests
     private const int MaxAttempts = 10;
     private static readonly TimeSpan Lease = TimeSpan.FromMinutes(5);
 
-    /// <summary>Marks the test Inconclusive when the database container failed to start.</summary>
+    /// <summary>Inconclusive without a container runtime; fails when the database container failed to start.</summary>
     [TestInitialize]
     public void TestSetup() => IntegrationTestSetup.AssertAvailable("SQL", DbContainerFixture.StartupError);
 

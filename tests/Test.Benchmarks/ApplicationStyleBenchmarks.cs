@@ -1,27 +1,19 @@
 using BenchmarkDotNet.Attributes;
-using EF.Audit.Contracts;
 using EF.Common.Contracts;
 using EF.IntegrationTesting.EntityFramework;
 using EF.IntegrationTesting.Environment;
-using EF.Storage.Contracts;
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Net.Http.Json;
 using TaskFlow.Application.Contracts;
-using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Application.Models;
 using TaskFlow.Application.Models.Paging;
 using TaskFlow.Domain.Shared.Enums;
 using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Data;
-using TaskFlow.Infrastructure.Data.Messaging;
-using TaskFlow.Infrastructure.Storage;
-using TaskFlow.Infrastructure.Storage.CosmosDb;
 using Test.Support;
+using Test.Support.Hosting;
 
 namespace Test.Benchmarks;
 
@@ -135,26 +127,13 @@ public class ApplicationStyleBenchmarks
     }
 
     /// <summary>
-    /// Builds the benchmark API host on the NonAzure lane with every external data plane replaced, the way
-    /// <c>Test.Endpoints/CustomApiFactory</c> does for the Azure lane: strict lane registration still requires each
-    /// lane endpoint, so they are set to inert values, and the services that would reach them are swapped for
-    /// in-process ones, so a measurement is the API and the in-memory database only - no network.
+    /// Builds the benchmark API host on the NonAzure lane with every external data plane replaced through the
+    /// <see cref="InertNonAzureLane"/> shape <c>Test.Endpoints/CustomApiFactory</c> shares, so a measurement is the
+    /// API and the in-memory database only - no network.
     /// </summary>
     private sealed class ApplicationStyleBenchmarkApiFactory
         : WebApplicationFactoryBase<global::Program, TaskFlowDbContextTrxn, TaskFlowDbContextQuery>
     {
-        private const string InertS3Endpoint = "http://127.0.0.1:1";
-
-        // The NonAzure Data Protection arm (D-043) opens its Redis connection while the host registers services, so
-        // it needs a connection string; abortConnect=false keeps that registration from failing. The key ring it would
-        // back is replaced by the ephemeral provider below, so nothing ever reads or writes through it.
-        private const string InertRedisConnection = "127.0.0.1:1,abortConnect=false,connectTimeout=250";
-        private const string InertRabbitMqConnection = "amqp://taskflow:taskflow@127.0.0.1:1/";
-
-        // Caching and the rate limiter would share Redis1; pointed at a name with no connection string they stay
-        // in-process, as they do in every endpoint test.
-        private const string NoRedisConnectionName = "BenchmarkNoRedis";
-
         private readonly string _applicationStyle;
         private readonly string _dbName = $"BenchmarkDb_{Guid.NewGuid()}";
 
@@ -173,19 +152,7 @@ public class ApplicationStyleBenchmarks
             foreach (var (key, value) in LaneSettings())
                 builder.UseSetting(key, value);
             base.ConfigureWebHost(builder);
-            builder.ConfigureServices(services =>
-            {
-                services.RemoveAll<IDataProtectionProvider>();
-                services.AddSingleton<IDataProtectionProvider, EphemeralDataProtectionProvider>();
-                services.RemoveAll<IObjectStorageRepository>();
-                services.AddSingleton<IObjectStorageRepository, NoOpBlobStorageRepository>();
-                services.RemoveAll<IAuditLogRepository>();
-                services.AddSingleton<IAuditLogRepository, NoOpAuditLogRepository>();
-                services.RemoveAll<IIntegrationEventTransport>();
-                services.AddSingleton<IIntegrationEventTransport, NoOpEventTransport>();
-                services.RemoveAll<ITaskViewRepository>();
-                services.AddSingleton<ITaskViewRepository, NoOpTaskViewRepository>();
-            });
+            builder.ConfigureServices(InertNonAzureLane.ReplaceDataPlanes);
         }
 
         /// <summary>Supports benchmark execution for application style benchmark API factory.</summary>
@@ -195,18 +162,9 @@ public class ApplicationStyleBenchmarks
             config.AddInMemoryCollection(TestColumnEncryption.Configuration);
         }
 
-        private Dictionary<string, string?> LaneSettings() => new()
+        private Dictionary<string, string?> LaneSettings() => new(InertNonAzureLane.Settings)
         {
-            [ApplicationStyleResolver.ConfigKey] = _applicationStyle,
-            [HostingLaneResolver.LaneConfigurationKey] = nameof(HostingLane.NonAzure),
-            ["ConnectionStrings:Redis1"] = InertRedisConnection,
-            ["CacheSettings:0:RedisConnectionStringName"] = NoRedisConnectionName,
-            ["RateLimiting:RedisConnectionStringName"] = NoRedisConnectionName,
-            ["Storage:S3:ServiceUrl"] = InertS3Endpoint,
-            ["Storage:S3:PublicServiceUrl"] = InertS3Endpoint,
-            ["Storage:S3:AccessKeyId"] = "taskflow-benchmark",
-            ["Storage:S3:SecretAccessKey"] = "taskflow-benchmark-secret",
-            ["Messaging:RabbitMq:ConnectionString"] = InertRabbitMqConnection
+            [ApplicationStyleResolver.ConfigKey] = _applicationStyle
         };
 
         /// <summary>Builds trxn options for the isolated benchmark host.</summary>

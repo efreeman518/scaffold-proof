@@ -1,4 +1,4 @@
-﻿extern alias SchedulerHost;
+extern alias SchedulerHost;
 
 using EF.Data.Contracts;
 using Microsoft.Extensions.Configuration;
@@ -39,7 +39,7 @@ public class SchedulerJobIntegrationTests
         await db.Database.MigrateAsync(context.CancellationToken);
     }
 
-    /// <summary>Marks the test Inconclusive when the database container failed to start.</summary>
+    /// <summary>Inconclusive without a container runtime; fails when the database container failed to start.</summary>
     [TestInitialize]
     public void TestSetup() => IntegrationTestSetup.AssertAvailable("database", DbContainerFixture.StartupError);
 

@@ -16,7 +16,7 @@ public class RedisDistributedLockTests
     /// <summary>MSTest-injected context; supplies the per-test cancellation token.</summary>
     public TestContext TestContext { get; set; } = null!;
 
-    /// <summary>Marks the test Inconclusive when the Redis container failed to start.</summary>
+    /// <summary>Inconclusive without a container runtime; fails when the Redis container failed to start.</summary>
     [TestInitialize]
     public void TestSetup() => IntegrationTestSetup.AssertAvailable("Redis", RedisContainerFixture.StartupError);
 

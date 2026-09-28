@@ -33,7 +33,7 @@ public class SchedulerCronSeedingTests
         ["AuditRetention"] = "0 40 4 * * *"
     };
 
-    /// <summary>Marks the test Inconclusive when the database container failed to start.</summary>
+    /// <summary>Inconclusive without a container runtime; fails when the database container failed to start.</summary>
     [TestInitialize]
     public void TestSetup() => IntegrationTestSetup.AssertAvailable("database", DbContainerFixture.StartupError);
 

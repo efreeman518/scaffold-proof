@@ -34,7 +34,12 @@ internal static class AspireTestHost
 
     private static EnvironmentVariableScope? _environment;
     private static AspireTestHostContext? _hostContext;
-    private static string? _resourceUnavailableReason;
+
+    /// <summary>
+    /// Set once the graph failed to start after the Docker preflight passed. Later mesh classes fail on it at once
+    /// instead of paying another full startup budget; a startup failure is never Inconclusive.
+    /// </summary>
+    private static string? _startupFailure;
     internal static string ConnectionString = null!;
 
     internal static TimeSpan DefaultTimeout =>
@@ -62,9 +67,9 @@ internal static class AspireTestHost
     /// </summary>
     internal static async Task EnsureStartedAsync(TestContext context)
     {
-        if (_resourceUnavailableReason is not null)
+        if (_startupFailure is not null)
         {
-            Assert.Inconclusive(_resourceUnavailableReason);
+            Assert.Fail(_startupFailure);
             return;
         }
 
@@ -83,9 +88,9 @@ internal static class AspireTestHost
         await Gate.WaitAsync(context.CancellationToken);
         try
         {
-            if (_resourceUnavailableReason is not null)
+            if (_startupFailure is not null)
             {
-                Assert.Inconclusive(_resourceUnavailableReason);
+                Assert.Fail(_startupFailure);
                 return;
             }
 
@@ -131,13 +136,9 @@ internal static class AspireTestHost
                     Console.Error.WriteLine($"Aspire cleanup after startup failure also failed: {cleanupException.Message}");
                 }
 
-                if (ex is TimeoutException)
-                {
-                    _resourceUnavailableReason = $"Aspire resources unavailable: {ex.Message}";
-                    Assert.Inconclusive(_resourceUnavailableReason);
-                    return;
-                }
-
+                // Docker passed its preflight, so a graph that does not come up (timeout included) is a failed
+                // start, not a missing prerequisite.
+                _startupFailure = $"Aspire mesh graph failed to start after Docker preflight succeeded: {ex.Message}";
                 throw;
             }
         }
@@ -254,18 +255,39 @@ internal static class AspireTestHost
         }
     }
 
-    /// <summary>Waits for a named resource within the one cumulative startup budget.</summary>
-    internal static async Task WaitForResourceHealthyAsync(string resourceName, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Waits for a named resource within the one cumulative startup budget. A resource in the started graph that
+    /// never turns healthy failed to start, so the timeout fails the test (diagnostics are dumped first).
+    /// </summary>
+    internal static Task WaitForResourceHealthyAsync(string resourceName, CancellationToken cancellationToken = default)
     {
         var hostContext = _hostContext ?? throw new InvalidOperationException("Aspire host context is not initialized.");
-        try
+        return hostContext.WaitForResourceHealthyAsync(resourceName, cancellationToken);
+    }
+
+    /// <summary>
+    /// Functions Core Tools are an optional prerequisite: opted out or not installed reports Inconclusive with the
+    /// opt-out variable and the install command. Once <c>func</c> is present the graph includes the Functions host,
+    /// and a host that does not become healthy fails the test.
+    /// </summary>
+    internal static async Task RequireFunctionsHostAsync(CancellationToken cancellationToken)
+    {
+        if (IsExplicitlyDisabled(RunFunctionsTestsEnvironmentVariable))
         {
-            await hostContext.WaitForResourceHealthyAsync(resourceName, cancellationToken);
+            Assert.Inconclusive($"{RunFunctionsTestsEnvironmentVariable}=false - Functions full-stack tests opted out.");
+            return;
         }
-        catch (TimeoutException ex)
+
+        if (!EnsureFuncToolAvailable())
         {
-            Assert.Inconclusive($"Aspire resource '{resourceName}' unavailable: {ex.Message}");
+            Assert.Inconclusive(
+                "Azure Functions Core Tools ('func') not found. Install them with "
+                + "`npm install -g azure-functions-core-tools@4`, or set "
+                + $"{RunFunctionsTestsEnvironmentVariable}=false to opt out.");
+            return;
         }
+
+        await WaitForResourceHealthyAsync("taskflowfunctions", cancellationToken);
     }
 
     internal static Task RunStartupStepAsync(
@@ -315,7 +337,9 @@ internal static class AspireTestHost
         if (provider != AspireAiProvider.AzureFoundry)
         {
             Assert.Inconclusive(
-                "Azure AI Foundry is not configured.");
+                $"Azure AI Foundry is not selected. Set {HostingLaneResolver.LaneEnvironmentVariable}=Azure and "
+                + $"{HostingLaneResolver.AiEnvironmentVariable}=AzureInference with AiServices:FoundryEndpoint configured, "
+                + $"or set {RunAzureFoundryTestsEnvironmentVariable}=false to opt out.");
         }
     }
 

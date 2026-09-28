@@ -82,19 +82,17 @@ public sealed class TypeScriptPlaywrightSuiteTests
                 host = await PlaywrightAspireHost.StartAsync(requestedProjects, TestContext.CancellationToken);
             }
         }
+        // Test prerequisite rule: no container runtime or no wasm-tools workload is Inconclusive with the enabling
+        // command. Once Docker passed its preflight, an AppHost or resource that does not come up (a second
+        // pre-launch failure or the startup deadline included) fails the test.
         catch (PlaywrightAspireHost.DockerUnavailableException ex)
         {
             Assert.Inconclusive(ex.Message);
             return;
         }
-        catch (PlaywrightAspireHost.ResourceUnavailableException ex)
+        catch (WasmPrerequisiteException ex)
         {
-            Assert.Inconclusive(ex.Message);
-            return;
-        }
-        catch (TimeoutException ex)
-        {
-            Assert.Inconclusive($"Aspire resources unavailable: {ex.Message}");
+            Assert.Inconclusive($"Uno WASM prerequisite missing (or set TASKFLOW_WASM_TESTS_ENABLED=false to opt out): {ex.Message}");
             return;
         }
         await using var hostScope = host;
@@ -137,13 +135,17 @@ public sealed class TypeScriptPlaywrightSuiteTests
         catch (InvalidOperationException ex) when (
             ex.Message.Equals("Node.js is not available on PATH.", StringComparison.Ordinal))
         {
-            Assert.Inconclusive(ex.Message);
+            Assert.Inconclusive(
+                "Node.js is not available on PATH. Install Node.js LTS so `node --version` succeeds, "
+                + "or set TASKFLOW_PLAYWRIGHT_TESTS_ENABLED=false to opt out.");
             return;
         }
         catch (PlaywrightException ex) when (
             ex.Message.Contains("Executable doesn't exist", StringComparison.OrdinalIgnoreCase))
         {
-            Assert.Inconclusive("Playwright browser executable is unavailable: " + ex.Message);
+            Assert.Inconclusive(
+                "Playwright browser executable is unavailable. Run `npx --prefix tests/Test.PlaywrightUI playwright install chromium`, "
+                + "or set TASKFLOW_PLAYWRIGHT_TESTS_ENABLED=false to opt out. " + ex.Message);
             return;
         }
         TestContext.WriteLine(result.StandardOutput);
