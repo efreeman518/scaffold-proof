@@ -60,7 +60,7 @@
 </tr>
 <tr>
 <td><strong>Background Jobs</strong></td>
-<td>Azure Functions (isolated worker v4), TickerQ Scheduler</td>
+<td>TickerQ Scheduler (also hosts the RabbitMQ consumers); Azure Functions (isolated worker v4) on the Azure lane</td>
 </tr>
 <tr>
 <td><strong>UI</strong></td>
@@ -68,7 +68,7 @@
 </tr>
 <tr>
 <td><strong>Database</strong></td>
-<td>SQL Server or PostgreSQL (<code>Database:Provider</code>; EF Core, dual DbContext, one model - see <a href="#55-dual-provider-data-layer">Section 5.5</a>)</td>
+<td>PostgreSQL (NonAzure lane, the default) or SQL Server (Azure lane) (<code>Database:Provider</code>; EF Core, dual DbContext, one model - see <a href="#55-dual-provider-data-layer">Section 5.5</a>)</td>
 </tr>
 <tr>
 <td><strong>Cache</strong></td>
@@ -76,15 +76,15 @@
 </tr>
 <tr>
 <td><strong>Messaging</strong></td>
-<td>Azure Service Bus or RabbitMQ (<code>Messaging:Provider</code>) behind a transactional outbox + consumer inbox</td>
+<td>RabbitMQ (NonAzure) or Azure Service Bus (Azure) (<code>Messaging:Provider</code>) behind a transactional outbox + consumer inbox</td>
 </tr>
 <tr>
 <td><strong>Read Model</strong></td>
-<td>Azure Cosmos DB (denormalized projections)</td>
+<td>Denormalized projections: PostgreSQL JSONB or MongoDB (NonAzure), Azure Cosmos DB (Azure)</td>
 </tr>
 <tr>
 <td><strong>File Storage</strong></td>
-<td>Azure Blob Storage</td>
+<td>S3-compatible object storage, SeaweedFS (NonAzure), or Azure Blob Storage (Azure)</td>
 </tr>
 <tr>
 <td><strong>AI</strong></td>
@@ -111,11 +111,11 @@
 <ul>
 <li><strong>Domain-Driven Design</strong> - Aggregates, value objects, domain events, bounded contexts</li>
 <li><strong>Selectable Application Style</strong> - Same Domain, Infrastructure, UI, DTO contracts, and HTTP routes can run through the default Service layer or direct CQRS handlers</li>
-<li><strong>CQRS-like</strong> - Separate read/write DbContexts; denormalized Cosmos read model alongside normalized SQL</li>
+<li><strong>CQRS-like</strong> - Separate read/write DbContexts; denormalized read model alongside the normalized relational schema</li>
 <li><strong>Multi-Tenant First</strong> - Tenant isolation at query filter, service, and authorization layers</li>
-<li><strong>Event-Driven</strong> - Integration events flow through Service Bus to Azure Functions for async processing</li>
+<li><strong>Event-Driven</strong> - Integration events flow through the lane&#39;s broker (RabbitMQ or Service Bus) to the Scheduler&#39;s consumers or Azure Functions for async processing</li>
 <li><strong>Config-Driven Auth</strong> - Single build, multiple deployment profiles (dev scaffold vs Entra ID prod)</li>
-<li><strong>Local-First Runtime</strong> - Core infrastructure runs through Aspire emulators; AI can use a configured OpenAI-compatible endpoint, real Azure AI Foundry, or a no-op fallback with no cloud credentials</li>
+<li><strong>Local-First Runtime</strong> - Core infrastructure runs as Aspire containers (NonAzure services by default, Azure emulators on the Azure lane); AI can use a configured OpenAI-compatible endpoint, real Azure AI Foundry, or a no-op fallback with no cloud credentials</li>
 </ul>
 <hr>
 <h2 id="2-c4-architecture-diagrams">2. C4 Architecture Diagrams</h2>
@@ -487,7 +487,8 @@
 <figure class="diagram-container">
 <img src="diagrams/diagram-09.svg" alt="6.2 Event Processing Flow - Outbox to Consumers">
 </figure>
-<p>Domain events never publish directly (D-026). <code>TaskItem.Create</code>/<code>TransitionStatus</code> raise events into an in-memory buffer (<code>IHasDomainEvents</code>); <code>OutboxStagingInterceptor</code> converts pending events into <code>OutboxMessage</code> rows in the same <code>SaveChangesAsync</code> that persisted the aggregate - so a rolled-back save stages nothing. Scheduler jobs that mutate outside a tracked aggregate (overdue, recurrence) stage directly via <code>IOutboxStaging.Stage(envelope, deterministicId)</code>. The Scheduler&#39;s <code>OutboxDispatcherService</code> (every replica, lease-based, poll 1s backing off to 5s idle) claims a batch with an <code>ExecuteUpdateAsync</code> lease, groups by destination, and sends through <code>IIntegrationEventTransport</code> - <code>Messaging:Provider</code> selects <code>ServiceBusEventTransport</code> or <code>RabbitMqEventTransport</code> (D-034); a message poisoned past <code>AttemptCount &gt;= 10</code> is dead-lettered in place (row kept, admin retry endpoint) rather than lost. Three subscriptions/queues (<code>projection</code>, <code>ai-review</code>, <code>workflow</code>) fan out by <code>EventType</code>, each with its own broker dead-letter path for malformed envelopes or exhausted delivery attempts. Every consumer claims a <code>ConsumerInbox</code> row (<code>Consumer</code>, <code>MessageId</code>) before doing work (D-029), so broker at-least-once redelivery cannot double-project, double-comment, or double-start a workflow.</p>
+<p>Domain events never publish directly (D-026). <code>TaskItem.Create</code>/<code>TransitionStatus</code> raise events into an in-memory buffer (<code>IHasDomainEvents</code>); <code>OutboxStagingInterceptor</code> converts pending events into <code>OutboxMessage</code> rows in the same <code>SaveChangesAsync</code> that persisted the aggregate - so a rolled-back save stages nothing. Scheduler jobs that mutate outside a tracked aggregate (overdue, recurrence) stage directly via <code>IOutboxStaging.Stage(envelope, deterministicId)</code>. The Scheduler&#39;s <code>OutboxDispatcherService</code> (every replica, lease-based, poll 1s backing off to 5s idle) claims a batch with an <code>ExecuteUpdateAsync</code> lease that skips rows already at the configured <code>MaxAttempts</code> (<code>OutboxDispatcher:MaxAttempts</code>, 10 in the Scheduler&#39;s appsettings), groups by destination, and sends through <code>IIntegrationEventTransport</code> - <code>Messaging:Provider</code> selects <code>ServiceBusEventTransport</code> or <code>RabbitMqEventTransport</code> (D-034). A row whose final attempt never settled (the worker crashed or the send outlived the lease) is dead-lettered by the next claim once its lease has expired, instead of being re-sent on every expiry. Settlement is per message and runs after the send on its own bounded token (<code>OperationalLeasedWorker.SettlementTimeout</code>, 30 s), never the stopping token, so a shutdown right after the broker accepted a batch still deletes the sent rows: a sent message is deleted, a permanent failure (an oversize message) is dead-lettered at once, a transient failure is released with backoff, and a failure on the last attempt is dead-lettered in place (row kept, admin retry endpoint) rather than lost. Each producer span is parented on the W3C trace context stored on the row at staging (<code>TraceParent</code>, <code>TraceState</code>), so the published message continues the trace of the request that staged it. Three subscriptions/queues (<code>projection</code>, <code>ai-review</code>, <code>workflow</code>) fan out by <code>EventType</code>, each with its own broker dead-letter path for malformed envelopes or exhausted delivery attempts.</p>
+<p>Every consumer holds a two-state <code>ConsumerInbox</code> claim keyed by (<code>Consumer</code>, <code>MessageId</code>) (D-029). The claim inserts <code>ClaimToken</code>, <code>ClaimedAtUtc</code>, and a 60 s <code>LeaseExpiresUtc</code>; the owning delivery renews the lease every 20 s while its work runs, and sets <code>CompletedAtUtc</code> only after the work succeeded. A failed consume releases the claim so the redelivery runs at once; complete and release are guarded by the claim token. A redelivery that finds a completed claim acknowledges without running. One that finds a live claim waits for it, polling every 1 s for up to the lease plus 5 s, because RabbitMQ requeues a thrown delivery immediately and throwing at once would spend the message&#39;s delivery budget in milliseconds; it takes the claim over if the lease expires, acknowledges if the claim completes, and throws <code>InboxClaimInProgressException</code> for a transport retry only if the claim is still live at the end of the wait. Broker at-least-once redelivery therefore cannot double-project, double-comment, or double-start a workflow, and a consumer that crashes mid-work loses its claim within one lease. Timings bind from <code>Messaging:Inbox</code> (<code>InboxClaimOptions</code>).</p>
 <h3 id="63-attachment-upload-flow">6.3 Attachment Upload Flow</h3>
 <figure class="diagram-container">
 <img src="diagrams/diagram-10.svg" alt="6.3 Attachment Upload Flow">
@@ -847,7 +848,7 @@ TASKFLOW_LANE=Azure dotnet run --project src/Host/Aspire/AppHost/AppHost.csproj
 </tr>
 </tbody></table>
 <p><strong>Deployment baseline (D-061):</strong> applications export directly through the OpenTelemetry SDK. The deployed NonAzure lane does not require an OpenTelemetry Collector; add one only when a concrete need for tail sampling justifies the extra stateful component. OpenObserve retention is intentionally short and operator-configurable to bound disk use. OpenObserve Open Source Edition is AGPL-3.0; hosted and enterprise offerings have separate licensing and cost. The selected single-node container is a low-cost baseline, not an HA topology.</p>
-<p><strong>Broker trace propagation (D-053):</strong> before this refactor a trace ended at the process boundary - every async hop (outbox dispatch, a consumed message) started a new, disconnected trace. <code>TaskFlow.Observability/Tracing/TaskFlowActivitySources.cs</code> declares two additional <code>ActivitySource</code>s, <code>TaskFlow.Messaging</code> and <code>TaskFlow.Scheduler</code>, registered into the OTel pipeline alongside the framework sources. <code>MessagingTrace</code> injects the W3C <code>traceparent</code>/<code>tracestate</code> into the outgoing message headers at the producer (<code>ActivityKind.Producer</code>) for both the RabbitMQ and Service Bus transports, and extracts the producer context as the consumer span&#39;s parent (<code>ActivityKind.Consumer</code>) in the Scheduler&#39;s RabbitMQ handler wrappers and the Service Bus envelope reader. Every Scheduler job execution and TickerQ job wrapper (<code>BaseTickerQJob</code>) also gets its own root activity, since a scheduled run has no incoming request to inherit a trace from.</p>
+<p><strong>Broker trace propagation (D-053):</strong> a trace continues across every async hop (outbox dispatch, a consumed message). <code>TaskFlow.Observability/Tracing/TaskFlowActivitySources.cs</code> declares two additional <code>ActivitySource</code>s, <code>TaskFlow.Messaging</code> and <code>TaskFlow.Scheduler</code>, registered into the OTel pipeline alongside the framework sources. <code>OutboxStagingInterceptor</code> stores the staging operation&#39;s W3C <code>traceparent</code>/<code>tracestate</code> on the <code>OutboxMessage</code> row; at dispatch <code>MessagingTrace.StartOutboxPublish</code> starts the producer span (<code>ActivityKind.Producer</code>) parented on that stored context and linked to the dispatcher&#39;s drain span, and injects the headers into the outgoing message for both the RabbitMQ and Service Bus transports (with no listener it forwards the stored context verbatim), and extracts the producer context as the consumer span&#39;s parent (<code>ActivityKind.Consumer</code>) in the Scheduler&#39;s RabbitMQ handler wrappers and the Service Bus envelope reader. Every Scheduler job execution and TickerQ job wrapper (<code>BaseTickerQJob</code>) also gets its own root activity, since a scheduled run has no incoming request to inherit a trace from.</p>
 <p><strong>Source-generated logging (D-053 enforcement):</strong> every <code>ILogger</code> call site under <code>src/</code> goes through a <code>[LoggerMessage]</code>-generated delegate rather than a runtime-formatted <code>ILogger.Log*()</code> call (see the README <a href="../README.md#logging-and-code-quality">Logging and Code Quality</a> section for the EventId ranges); <code>src/.editorconfig</code> sets <code>dotnet_diagnostic.CA1848.severity=error</code> so a raw call fails the build for anything under <code>src/</code> (tests stay advisory).</p>
 <h3 id="102-health-checks">10.2 Health Checks</h3>
 <table>
@@ -2045,19 +2046,19 @@ curl -sk &quot;$GW/api/flowengine/instances/$INSTANCE_ID&quot; | jq &#39;{ statu
 <td><code>ProcessTaskProjection</code></td>
 <td>Service Bus Topic</td>
 <td><code>DomainEvents</code> topic, <code>projection</code> subscription</td>
-<td>Claims a <code>ConsumerInbox</code> row, then delta-patches or fully re-projects the Cosmos DB read model (Created/StatusChanged/Completed/CommentAdded/AttachmentUploaded)</td>
+<td>Holds a two-state <code>ConsumerInbox</code> claim (completed after the work), delta-patches or fully re-projects the Cosmos DB read model (Created/StatusChanged/Completed/CommentAdded/AttachmentUploaded)</td>
 </tr>
 <tr>
 <td><code>ProcessTaskAiReview</code></td>
 <td>Service Bus Topic</td>
 <td><code>DomainEvents</code> topic, <code>ai-review</code> subscription</td>
-<td>Claims the inbox and the AI review comment in one <code>SaveChangesAsync</code> (duplicate PK = already processed); handles <code>TaskItemCreatedEvent</code> only</td>
+<td>Holds a two-state inbox claim while the AI review runs and adds its comment, completing the claim after the comment is saved; handles <code>TaskItemCreatedEvent</code> only</td>
 </tr>
 <tr>
 <td><code>ProcessTaskWorkflowStart</code></td>
 <td>Service Bus Topic</td>
 <td><code>DomainEvents</code> topic, <code>workflow</code> subscription</td>
-<td>Claims the inbox, starts <code>ai-task-triage</code> with <code>StartRequest.IdempotencyKey = "{EventType}:{EventId}"</code>; handles <code>TaskItemCreatedEvent</code> only</td>
+<td>Holds a two-state inbox claim and starts <code>ai-task-triage</code> with <code>StartRequest.IdempotencyKey = "{EventType}:{EventId}"</code> (FlowEngine also rejects a duplicate start on that key); handles <code>TaskItemCreatedEvent</code> only</td>
 </tr>
 <tr>
 <td><code>ProcessAttachment</code></td>
@@ -2066,7 +2067,7 @@ curl -sk &quot;$GW/api/flowengine/instances/$INSTANCE_ID&quot; | jq &#39;{ statu
 <td>Validates files, extracts metadata, updates Attachment record</td>
 </tr>
 </tbody></table>
-<p>All three Service Bus triggers share <code>ServiceBusEnvelopeReader</code>: malformed or unknown envelopes dead-letter with a reason, transient failures rethrow (Functions retries then dead-letters after <code>maxDeliveryCount</code>), success completes the message. The former log-only <code>StaleTaskCleanup</code> timer trigger is deleted - stale cleanup is now a real Scheduler job (below). When <code>Messaging:Provider=RabbitMq</code>, these three triggers are individually disabled (<code>AzureWebJobs.&lt;FunctionName&gt;.Disabled=true</code>) and the same handler classes run instead as RabbitMQ consumer hosted services inside <code>TaskFlow.Scheduler</code> - see <a href="#62-event-processing-flow---cosmos-projection">Section 6.2</a>.</p>
+<p>All three Service Bus triggers share <code>ServiceBusEnvelopeReader</code>: malformed or unknown envelopes dead-letter with a reason, transient failures rethrow (Functions retries then dead-letters after <code>maxDeliveryCount</code>), success completes the message. Stale cleanup is a Scheduler job (below), not a Functions timer trigger. When <code>Messaging:Provider=RabbitMq</code>, these three triggers are individually disabled (<code>AzureWebJobs.&lt;FunctionName&gt;.Disabled=true</code>) and the same handler classes run instead as RabbitMQ consumer hosted services inside <code>TaskFlow.Scheduler</code> - see <a href="#62-event-processing-flow---cosmos-projection">Section 6.2</a>.</p>
 <h3 id="scheduler-jobs-tickerq">Scheduler Jobs (TickerQ)</h3>
 <table>
 <thead>
@@ -2093,26 +2094,26 @@ curl -sk &quot;$GW/api/flowengine/instances/$INSTANCE_ID&quot; | jq &#39;{ statu
 </tr>
 <tr>
 <td><code>OutboxRetention</code></td>
-<td>Config-driven (default: with the other retention jobs)</td>
+<td>Hourly at :15</td>
 <td>Purges dead-lettered <code>OutboxMessage</code> and <code>BlobDeleteWork</code> rows older than <code>Scheduling:Retention:OutboxDays</code> (default 7)</td>
 </tr>
 <tr>
 <td><code>ConsumerInboxRetention</code></td>
-<td>Config-driven</td>
-<td>Purges processed <code>ConsumerInbox</code> rows older than <code>Scheduling:Retention:ConsumerInboxDays</code> (default 7)</td>
+<td>Hourly at :20</td>
+<td>Purges completed <code>ConsumerInbox</code> claims, and abandoned in-progress claims whose lease expired, older than <code>Scheduling:Retention:ConsumerInboxDays</code> (default 7)</td>
 </tr>
 <tr>
 <td><code>TickerQOccurrenceRetention</code></td>
-<td>Config-driven</td>
+<td>Daily 4:30 AM UTC</td>
 <td>Deletes executed TickerQ cron occurrence rows older than <code>Scheduling:Retention:TickerQOccurrenceHours</code> (default 24)</td>
 </tr>
 <tr>
 <td><code>AuditRetention</code></td>
-<td>Config-driven</td>
+<td>Daily 4:40 AM UTC</td>
 <td>Purges Table Storage audit rows older than <code>AuditLogStorageSettings:RetentionDays</code> (default 30), batched by the <code>tenantId|yyyyMMdd</code> partition key</td>
 </tr>
 </tbody></table>
-<p>Every job above replaces a former log-only stub. Outbox and blob-delete dispatch are separate lease-based <code>BackgroundService</code> workers (<code>OutboxDispatcherService</code>, <code>BlobDeleteWorkerService</code>, both deriving from <code>LeasedWorkerBase&lt;TWork&gt;</code>: adaptive poll 1s backing off to 5s idle, lease owner <code>{MachineName}:{ProcessId}</code>), not TickerQ cron jobs, so they run continuously on every Scheduler replica. FlowEngine&#39;s own <code>UseRetentionPolicy</code> (7 day max age, 6h run interval) is enabled only when <code>Scheduling:OwnsRetention=true</code>, so exactly one deployed host owns it.</p>
+<p>Each schedule is a cron expression declared on the job method&#39;s <code>[TickerFunction]</code> attribute in <code>TaskMaintenanceJobs</code>; all times are UTC. TickerQ&#39;s initializer seeds those expressions into the operational store at host start, keyed by function, so a changed expression is updated in place and a restart or a second replica never inserts a duplicate ticker; no code seeds cron tickers by hand. Retention sweeps are staggered off the hour and off each other because they all delete. Outbox and blob-delete dispatch are separate lease-based <code>BackgroundService</code> workers (<code>OutboxDispatcherService</code>, <code>BlobDeleteWorkerService</code>, both deriving from <code>LeasedWorkerBase&lt;TWork&gt;</code>: adaptive poll 1s backing off to 5s idle, lease owner <code>{MachineName}:{ProcessId}</code>), not TickerQ cron jobs, so they run continuously on every Scheduler replica. FlowEngine&#39;s own <code>UseRetentionPolicy</code> (7 day max age, 6h run interval) is enabled only when <code>Scheduling:OwnsRetention=true</code>, so exactly one deployed host owns it.</p>
 <p>TickerQ uses an EF Core operational store (<code>TickerQDbContext</code>, schema <code>&quot;scheduler&quot;</code>, lowercase) for job persistence when <code>Scheduling:UsePersistence=true</code>. Startup validates the schema, can create it for local development (<code>Scheduling:AutoCreateSchema=true</code>), and can emit a deployment script (<code>Scheduling:GenerateDeploymentScript=true</code>). <code>NodeIdentifier</code> is set to <code>{MachineName}:{ProcessId}</code> (not machine name alone) because Aspire runs the Scheduler with two replicas locally. Job execution records OpenTelemetry metrics through <code>TaskFlow.Scheduler</code>, and global TickerQ failures flow through <code>TaskFlowSchedulerExceptionHandler</code>.</p>
 
 </div>
