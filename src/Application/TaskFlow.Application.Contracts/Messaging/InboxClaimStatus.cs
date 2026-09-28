@@ -9,6 +9,6 @@ public enum InboxClaimStatus
     /// <summary>The effect already ran; the delivery is settled without running it again.</summary>
     Duplicate,
 
-    /// <summary>Another delivery holds a live claim; this one must be retried later, never acknowledged.</summary>
+    /// <summary>Another delivery holds a live claim; this one waits for it to resolve or is retried, never acknowledged.</summary>
     InProgress
 }

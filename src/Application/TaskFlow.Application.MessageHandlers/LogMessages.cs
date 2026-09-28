@@ -30,8 +30,8 @@ internal static partial class LogMessages
     [LoggerMessage(EventId = LogEventIds.ApplicationMessageHandlersBase + 5, Level = LogLevel.Debug, Message = "Embedded TaskItem {TaskId} with {ModelId} ({Dimensions} dimensions)")]
     public static partial void TaskEmbeddingUpserted(this ILogger logger, Guid taskId, string modelId, int dimensions);
 
-    /// <summary>Logs a delivery sent back for retry because another delivery holds a live inbox claim.</summary>
-    [LoggerMessage(EventId = LogEventIds.ApplicationMessageHandlersBase + 6, Level = LogLevel.Warning, Message = "Consumer {Consumer} found {EventType} {MessageId} in progress under another delivery; retrying later")]
+    /// <summary>Logs a delivery sent back for retry because another delivery still held a live inbox claim after the wait.</summary>
+    [LoggerMessage(EventId = LogEventIds.ApplicationMessageHandlersBase + 6, Level = LogLevel.Warning, Message = "Consumer {Consumer} waited a full claim lease on {EventType} {MessageId}, still in progress under another delivery; retrying later")]
     public static partial void ConsumerClaimInProgress(this ILogger logger, string consumer, string eventType, Guid messageId);
 
     /// <summary>Logs a completed consume whose inbox claim had been taken over after its lease expired.</summary>
@@ -41,4 +41,12 @@ internal static partial class LogMessages
     /// <summary>Logs a failed consume whose inbox claim could not be released; the lease expiry recovers it.</summary>
     [LoggerMessage(EventId = LogEventIds.ApplicationMessageHandlersBase + 8, Level = LogLevel.Error, Message = "Consumer {Consumer} failed {EventType} {MessageId} and could not release its inbox claim; a redelivery takes it over when the lease expires")]
     public static partial void ConsumerReleaseFailed(this ILogger logger, Exception exception, string consumer, string eventType, Guid messageId);
+
+    /// <summary>Logs a renewal that found the claim gone: another delivery took it over, so renewal stops.</summary>
+    [LoggerMessage(EventId = LogEventIds.ApplicationMessageHandlersBase + 9, Level = LogLevel.Warning, Message = "Consumer {Consumer} lost its inbox claim on {EventType} {MessageId} while still running; the effect may run twice")]
+    public static partial void ConsumerClaimRenewalLost(this ILogger logger, string consumer, string eventType, Guid messageId);
+
+    /// <summary>Logs a renewal that failed; the handler keeps going and the next renewal retries.</summary>
+    [LoggerMessage(EventId = LogEventIds.ApplicationMessageHandlersBase + 10, Level = LogLevel.Warning, Message = "Consumer {Consumer} could not renew its inbox claim on {EventType} {MessageId}; retrying at the next renewal")]
+    public static partial void ConsumerClaimRenewalFailed(this ILogger logger, Exception exception, string consumer, string eventType, Guid messageId);
 }

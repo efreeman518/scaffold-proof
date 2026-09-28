@@ -10,10 +10,15 @@ namespace TaskFlow.Infrastructure.Repositories;
 /// <summary>
 /// D-028/D-029 two-state inbox. The claim is an insert-if-absent through the package upsert (MERGE on SQL Server,
 /// ON CONFLICT DO NOTHING on PostgreSQL), then a conditional takeover of an expired in-progress claim; both are
-/// single statements, so of two racing deliveries exactly one acquires. Every statement runs immediately on the
-/// write context's connection so it shares the consumer's ambient transaction when one is open.
+/// single statements, so of two racing deliveries exactly one acquires. Claim, complete and release run immediately
+/// on the write context's connection so they share the consumer's ambient transaction when one is open. Renewal is
+/// the exception: it runs while the handler is using that same context, and a DbContext is not thread safe, so it
+/// takes a short-lived context of its own from <paramref name="renewalContexts"/>.
 /// </summary>
-public sealed class InboxStore(TaskFlowDbContextTrxn db, TimeProvider? timeProvider = null)
+public sealed class InboxStore(
+    TaskFlowDbContextTrxn db,
+    IDbContextFactory<TaskFlowDbContextTrxn> renewalContexts,
+    TimeProvider? timeProvider = null)
     : RepositoryBase<TaskFlowDbContextTrxn, string, Guid?>(db), IInboxStore
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
@@ -73,6 +78,22 @@ public sealed class InboxStore(TaskFlowDbContextTrxn db, TimeProvider? timeProvi
         }
 
         return new InboxClaim(InboxClaimStatus.InProgress, Guid.Empty);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> RenewAsync(
+        string consumer, Guid messageId, Guid claimToken, TimeSpan leaseDuration, CancellationToken ct = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(leaseDuration, TimeSpan.Zero);
+
+        var expires = _timeProvider.GetUtcNow() + leaseDuration;
+        await using var renewal = await renewalContexts.CreateDbContextAsync(ct).ConfigureAwait(ConfigureAwaitOptions.None);
+        var renewed = await renewal.ConsumerInbox
+            .Where(x => x.Consumer == consumer && x.MessageId == messageId
+                        && x.ClaimToken == claimToken && x.CompletedAtUtc == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.LeaseExpiresUtc, expires), ct)
+            .ConfigureAwait(ConfigureAwaitOptions.None);
+        return renewed > 0;
     }
 
     /// <inheritdoc />

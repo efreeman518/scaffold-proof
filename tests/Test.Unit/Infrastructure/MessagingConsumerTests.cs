@@ -1,6 +1,7 @@
 using EF.Messaging;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using System.Text;
 using System.Text.Json;
 using TaskFlow.Application.Contracts.Messaging;
@@ -16,10 +17,22 @@ namespace Test.Unit.Infrastructure;
 /// D-029 two-state inbox guard and the release backoff. Both are pure decision logic that an integration test
 /// would only reach through a container, so they are asserted here directly; the store's own SQL is proven
 /// against both providers in Test.Integration InboxStoreTests.
+/// <para>
+/// The claim timings are scaled down (200 ms lease) and run on the real clock: the renewal loop and the wait are
+/// driven by the consumer's own timers, and every assertion waits on an observed event (a poll, a renewal),
+/// not on a fixed sleep, except where the point is that nothing happens afterwards.
+/// </para>
 /// </summary>
 [TestClass]
 public sealed class MessagingConsumerTests
 {
+    private static readonly InboxClaimOptions Fast = new()
+    {
+        ClaimLease = TimeSpan.FromMilliseconds(200),
+        PollInterval = TimeSpan.FromMilliseconds(10),
+        WaitMargin = TimeSpan.FromMilliseconds(50)
+    };
+
     [TestMethod]
     [TestCategory("Unit")]
     public async Task Consumer_RunsOnce_ThenShortCircuitsTheRedelivery()
@@ -54,62 +67,141 @@ public sealed class MessagingConsumerTests
     }
 
     /// <summary>
-    /// The claim is not a completion: until the effect has run, a second delivery of the same message (a Service
-    /// Bus redelivery after a lock loss, a RabbitMQ requeue) must be thrown back for retry, not acknowledged as a
-    /// duplicate - acknowledging it would lose the effect if the first delivery then failed.
+    /// RabbitMQ crash semantics: the holder died without renewing, and the broker redelivers at once. The
+    /// redelivery must wait the lease out and take the claim over - throwing at once would requeue it
+    /// immediately and burn its whole delivery budget in milliseconds, dead-lettering it.
     /// </summary>
     [TestMethod]
     [TestCategory("Unit")]
-    public async Task Consumer_WhileAnotherDeliveryIsProcessing_ThrowsInProgressAndDoesNotConsume()
+    public async Task Consumer_AfterTheHolderCrashes_WaitsOutTheLeaseAndTakesTheClaimOver()
     {
         var ct = TestContext.CancellationToken;
         var inbox = new FakeInboxStore();
         var envelope = Envelope();
-        var concurrent = new CountingConsumer(inbox);
-        InboxClaimInProgressException? observed = null;
-        var first = new CountingConsumer(inbox)
-        {
-            During = async () => observed = await Assert.ThrowsExactlyAsync<InboxClaimInProgressException>(
-                () => concurrent.HandleAsync(envelope, ct))
-        };
+        var crashed = await inbox.TryClaimAsync("test", envelope.Id, Fast.ClaimLease, ct);
+        Assert.AreEqual(InboxClaimStatus.Acquired, crashed.Status);
 
-        await first.HandleAsync(envelope, ct);
+        var redelivery = new CountingConsumer(inbox);
+        await redelivery.HandleAsync(envelope, ct);
 
-        Assert.IsNotNull(observed);
-        Assert.AreEqual(envelope.Id, observed.MessageId);
-        Assert.AreEqual(0, concurrent.Consumed, "the in-progress delivery must not run the effect");
-        Assert.AreEqual(1, first.Consumed);
-        Assert.AreEqual(FakeInboxStore.State.Completed, inbox.StateOf("test", envelope.Id),
-            "the claim is completed only after the effect ran");
+        Assert.AreEqual(1, redelivery.Consumed, "the redelivery runs the effect exactly once, without a transport retry");
+        Assert.IsGreaterThan(1, inbox.InProgressPolls, "the redelivery waited on the live claim before taking it over");
+        Assert.AreEqual(FakeInboxStore.State.Completed, inbox.StateOf("test", envelope.Id));
+    }
 
-        // Once completed, the same redelivery is a plain duplicate.
-        await concurrent.HandleAsync(envelope, ct);
-        Assert.AreEqual(0, concurrent.Consumed);
+    /// <summary>A holder that finishes while the redelivery waits turns it into a duplicate: ack, do not run.</summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public async Task Consumer_WhenTheHolderCompletesDuringTheWait_AcksWithoutRunning()
+    {
+        var ct = TestContext.CancellationToken;
+        var inbox = new FakeInboxStore();
+        var envelope = Envelope();
+        var holder = await inbox.TryClaimAsync("test", envelope.Id, TimeSpan.FromHours(1), ct);
+        var waiter = new CountingConsumer(inbox);
+
+        var waiting = waiter.HandleAsync(envelope, ct);
+        await inbox.FirstInProgressPoll.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        Assert.IsTrue(await inbox.CompleteAsync("test", envelope.Id, holder.ClaimToken, ct));
+        await waiting;
+
+        Assert.AreEqual(0, waiter.Consumed, "the holder already ran the effect");
     }
 
     /// <summary>
-    /// A crash between claim and complete leaves the claim in progress; once its lease expires the redelivery
-    /// takes it over and the effect runs, instead of being skipped forever as it was with the one-state inbox.
+    /// The holder renews while it runs, so a handler slower than the lease keeps its claim: a redelivery during
+    /// the run still finds it in progress and cannot take it over.
     /// </summary>
     [TestMethod]
     [TestCategory("Unit")]
-    public async Task Consumer_AfterACrashedDeliveryLeaseExpires_TakesTheClaimOverAndRuns()
+    public async Task Consumer_WithAHandlerLongerThanTheLease_RenewalKeepsTheClaim()
     {
         var ct = TestContext.CancellationToken;
         var inbox = new FakeInboxStore();
         var envelope = Envelope();
-        var crashedToken = await inbox.TryClaimAsync("test", envelope.Id, TimeSpan.FromMinutes(10), ct);
-        Assert.AreEqual(InboxClaimStatus.Acquired, crashedToken.Status);
+        InboxClaimStatus? duringRun = null;
+        var holder = new CountingConsumer(inbox)
+        {
+            During = async () =>
+            {
+                // Four renewals at a third of the lease each: the run has outlived the initial 200 ms lease.
+                await inbox.RenewalsReached(4).WaitAsync(TimeSpan.FromSeconds(10), ct);
+                duringRun = (await inbox.TryClaimAsync("test", envelope.Id, Fast.ClaimLease, ct)).Status;
+            }
+        };
 
-        var redelivery = new CountingConsumer(inbox);
-        await Assert.ThrowsExactlyAsync<InboxClaimInProgressException>(() => redelivery.HandleAsync(envelope, ct));
+        await holder.HandleAsync(envelope, ct);
 
-        inbox.ExpireLeases();
-        await redelivery.HandleAsync(envelope, ct);
-
-        Assert.AreEqual(1, redelivery.Consumed);
+        Assert.AreEqual(InboxClaimStatus.InProgress, duringRun, "a renewed claim must not be taken over mid-run");
+        Assert.AreEqual(1, holder.Consumed);
         Assert.AreEqual(FakeInboxStore.State.Completed, inbox.StateOf("test", envelope.Id));
-        Assert.AreEqual(TimeSpan.FromMinutes(10), inbox.LastLease, "the consumer's claim lease reaches the store");
+    }
+
+    /// <summary>
+    /// A claim that stays live for the whole wait belongs to a holder that is alive and renewing: the waiter
+    /// gives up after one lease plus the margin and throws for a transport retry, without running the effect.
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public async Task Consumer_WhenTheClaimStaysLivePastTheWaitBound_ThrowsInProgress()
+    {
+        var ct = TestContext.CancellationToken;
+        var inbox = new FakeInboxStore();
+        var envelope = Envelope();
+        await inbox.TryClaimAsync("test", envelope.Id, TimeSpan.FromHours(1), ct);
+        var waiter = new CountingConsumer(inbox);
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+
+        var thrown = await Assert.ThrowsExactlyAsync<InboxClaimInProgressException>(() => waiter.HandleAsync(envelope, ct));
+
+        Assert.AreEqual(envelope.Id, thrown.MessageId);
+        Assert.AreEqual(0, waiter.Consumed);
+        Assert.IsGreaterThanOrEqualTo(Fast.WaitBound, System.Diagnostics.Stopwatch.GetElapsedTime(started),
+            "the waiter must hold the delivery for the whole bound before throwing");
+    }
+
+    /// <summary>Renewal ends before the claim is completed, and nothing renews it afterwards.</summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public async Task Consumer_AfterCompletion_RenewalHasStopped()
+    {
+        var ct = TestContext.CancellationToken;
+        var inbox = new FakeInboxStore();
+        var consumer = new CountingConsumer(inbox)
+        {
+            During = () => inbox.RenewalsReached(2).WaitAsync(TimeSpan.FromSeconds(10), ct)
+        };
+
+        await consumer.HandleAsync(Envelope(), ct);
+        var renewalsAtCompletion = inbox.Renewals;
+
+        // The point is that nothing happens afterwards, so this one waits: three renewal periods.
+        await Task.Delay(Fast.RenewalInterval * 3, ct);
+
+        Assert.AreEqual(renewalsAtCompletion, inbox.Renewals, "a renewal ran after the claim was settled");
+        Assert.AreEqual("complete", inbox.Events.Last(), "complete is the last store call");
+    }
+
+    /// <summary>A failing renewal is logged and the handler still finishes and completes its claim.</summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public async Task Consumer_WhenRenewalFails_LogsAndStillCompletes()
+    {
+        var ct = TestContext.CancellationToken;
+        var inbox = new FakeInboxStore { RenewThrows = true };
+        var logger = new RecordingLogger();
+        var envelope = Envelope();
+        var consumer = new CountingConsumer(inbox, logger)
+        {
+            During = () => inbox.RenewalsReached(2).WaitAsync(TimeSpan.FromSeconds(10), ct)
+        };
+
+        await consumer.HandleAsync(envelope, ct);
+
+        Assert.AreEqual(1, consumer.Consumed);
+        Assert.AreEqual(FakeInboxStore.State.Completed, inbox.StateOf("test", envelope.Id));
+        Assert.IsTrue(logger.Entries.Any(e => e.Level == LogLevel.Warning && e.Exception is TimeoutException),
+            "a failed renewal must be visible");
     }
 
     /// <summary>The effect ran, so a claim lost to a takeover is logged, not failed: failing would re-run it.</summary>
@@ -152,7 +244,7 @@ public sealed class MessagingConsumerTests
     {
         using var delivery = new CancellationTokenSource();
         var inbox = new FakeInboxStore();
-        var consumer = new CountingConsumer(inbox) { During = () => { delivery.Cancel(); return Task.CompletedTask; } };
+        var consumer = new CountingConsumer(inbox) { During = () => delivery.CancelAsync() };
         var envelope = Envelope();
 
         await consumer.HandleAsync(envelope, delivery.Token);
@@ -170,8 +262,22 @@ public sealed class MessagingConsumerTests
 
         await consumer.HandleAsync(Envelope() with { Type = nameof(TaskItemCompletedEvent) }, TestContext.CancellationToken);
 
-        Assert.AreEqual(0, inbox.Calls);
+        Assert.IsEmpty(inbox.Events);
         Assert.AreEqual(0, consumer.Consumed);
+    }
+
+    [TestMethod]
+    [TestCategory("Unit")]
+    public void ClaimOptions_Defaults_AreTheDocumentedTimings()
+    {
+        var defaults = new InboxClaimOptions();
+
+        Assert.AreEqual(TimeSpan.FromSeconds(60), defaults.ClaimLease);
+        Assert.AreEqual(TimeSpan.FromSeconds(20), defaults.RenewalInterval);
+        Assert.AreEqual(TimeSpan.FromSeconds(1), defaults.PollInterval);
+        Assert.AreEqual(TimeSpan.FromSeconds(65), defaults.WaitBound);
+        Assert.IsTrue(defaults.IsValid());
+        Assert.IsFalse(new InboxClaimOptions { PollInterval = TimeSpan.FromSeconds(60) }.IsValid());
     }
 
     [TestMethod]
@@ -239,75 +345,137 @@ public sealed class MessagingConsumerTests
         correlationId: null,
         id: Guid.Parse("0199e3f0-0000-7000-8000-000000000001"));
 
-    /// <summary>In-memory two-state inbox with the store's claim rules and switchable failure modes.</summary>
+    /// <summary>In-memory two-state inbox with the store's claim rules on the real clock; thread safe.</summary>
     private sealed class FakeInboxStore : IInboxStore
     {
-        public enum State { InProgress, Expired, Completed }
+        public enum State { InProgress, Completed }
 
-        private readonly Dictionary<(string, Guid), (State State, Guid Token)> _claims = [];
+        private readonly Lock _gate = new();
+        private readonly Dictionary<(string, Guid), (Guid Token, DateTimeOffset Expires, bool Completed)> _claims = [];
+        private readonly List<string> _events = [];
+        private readonly List<(int Count, TaskCompletionSource Signal)> _renewalWaits = [];
+        private readonly TaskCompletionSource _firstInProgressPoll = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _renewals;
+        private int _inProgressPolls;
 
         public bool CompleteResult { get; init; } = true;
         public bool ReleaseThrows { get; init; }
+        public bool RenewThrows { get; init; }
         public bool CompleteSawCancelledToken { get; private set; }
-        public TimeSpan LastLease { get; private set; }
-        public int Calls { get; private set; }
+        public int Renewals => Volatile.Read(ref _renewals);
+        public int InProgressPolls => Volatile.Read(ref _inProgressPolls);
+        public Task FirstInProgressPoll => _firstInProgressPoll.Task;
 
-        public State? StateOf(string consumer, Guid messageId) =>
-            _claims.TryGetValue((consumer, messageId), out var claim) ? claim.State : null;
-
-        public void ExpireLeases()
+        public IReadOnlyList<string> Events
         {
-            foreach (var key in _claims.Keys.ToList())
+            get { lock (_gate) return [.. _events]; }
+        }
+
+        /// <summary>Completes once <paramref name="count"/> renewals were attempted.</summary>
+        public Task RenewalsReached(int count)
+        {
+            lock (_gate)
             {
-                if (_claims[key].State == State.InProgress) _claims[key] = (State.Expired, _claims[key].Token);
+                var signal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                if (_renewals >= count) signal.SetResult();
+                else _renewalWaits.Add((count, signal));
+                return signal.Task;
+            }
+        }
+
+        public State? StateOf(string consumer, Guid messageId)
+        {
+            lock (_gate)
+            {
+                return _claims.TryGetValue((consumer, messageId), out var claim)
+                    ? claim.Completed ? State.Completed : State.InProgress
+                    : null;
             }
         }
 
         public Task<InboxClaim> TryClaimAsync(string consumer, Guid messageId, TimeSpan leaseDuration, CancellationToken ct = default)
         {
-            Calls++;
-            LastLease = leaseDuration;
-            var key = (consumer, messageId);
-            if (_claims.TryGetValue(key, out var claim) && claim.State != State.Expired)
+            lock (_gate)
             {
-                return Task.FromResult(new InboxClaim(
-                    claim.State == State.Completed ? InboxClaimStatus.Duplicate : InboxClaimStatus.InProgress, Guid.Empty));
-            }
+                _events.Add("claim");
+                var now = DateTimeOffset.UtcNow;
+                var key = (consumer, messageId);
+                if (_claims.TryGetValue(key, out var claim))
+                {
+                    if (claim.Completed) return Task.FromResult(new InboxClaim(InboxClaimStatus.Duplicate, Guid.Empty));
+                    if (claim.Expires >= now)
+                    {
+                        Interlocked.Increment(ref _inProgressPolls);
+                        _firstInProgressPoll.TrySetResult();
+                        return Task.FromResult(new InboxClaim(InboxClaimStatus.InProgress, Guid.Empty));
+                    }
+                }
 
-            var token = Guid.NewGuid();
-            _claims[key] = (State.InProgress, token);
-            return Task.FromResult(new InboxClaim(InboxClaimStatus.Acquired, token));
+                var token = Guid.NewGuid();
+                _claims[key] = (token, now + leaseDuration, false);
+                return Task.FromResult(new InboxClaim(InboxClaimStatus.Acquired, token));
+            }
+        }
+
+        public Task<bool> RenewAsync(string consumer, Guid messageId, Guid claimToken, TimeSpan leaseDuration, CancellationToken ct = default)
+        {
+            lock (_gate)
+            {
+                _events.Add("renew");
+                _renewals++;
+                foreach (var wait in _renewalWaits.Where(w => _renewals >= w.Count).ToList())
+                {
+                    wait.Signal.TrySetResult();
+                    _renewalWaits.Remove(wait);
+                }
+
+                if (RenewThrows) throw new TimeoutException("database unavailable");
+                var key = (consumer, messageId);
+                if (!_claims.TryGetValue(key, out var claim) || claim.Token != claimToken || claim.Completed)
+                    return Task.FromResult(false);
+                _claims[key] = (claimToken, DateTimeOffset.UtcNow + leaseDuration, false);
+                return Task.FromResult(true);
+            }
         }
 
         public Task<bool> CompleteAsync(string consumer, Guid messageId, Guid claimToken, CancellationToken ct = default)
         {
-            Calls++;
-            CompleteSawCancelledToken |= ct.IsCancellationRequested;
-            if (!CompleteResult) return Task.FromResult(false);
-            var key = (consumer, messageId);
-            if (!_claims.TryGetValue(key, out var claim) || claim.Token != claimToken) return Task.FromResult(false);
-            _claims[key] = (State.Completed, claimToken);
-            return Task.FromResult(true);
+            lock (_gate)
+            {
+                _events.Add("complete");
+                CompleteSawCancelledToken |= ct.IsCancellationRequested;
+                if (!CompleteResult) return Task.FromResult(false);
+                var key = (consumer, messageId);
+                if (!_claims.TryGetValue(key, out var claim) || claim.Token != claimToken) return Task.FromResult(false);
+                _claims[key] = (claimToken, claim.Expires, true);
+                return Task.FromResult(true);
+            }
         }
 
         public Task<bool> ReleaseAsync(string consumer, Guid messageId, Guid claimToken, CancellationToken ct = default)
         {
-            Calls++;
-            if (ReleaseThrows) throw new TimeoutException("database unavailable");
-            var key = (consumer, messageId);
-            return Task.FromResult(_claims.TryGetValue(key, out var claim) && claim.Token == claimToken && _claims.Remove(key));
+            lock (_gate)
+            {
+                _events.Add("release");
+                if (ReleaseThrows) throw new TimeoutException("database unavailable");
+                var key = (consumer, messageId);
+                return Task.FromResult(_claims.TryGetValue(key, out var claim) && claim.Token == claimToken && _claims.Remove(key));
+            }
         }
 
         public Task<int> PurgeAsync(DateTimeOffset cutoffUtc, CancellationToken ct = default)
         {
-            var removed = _claims.Count;
-            _claims.Clear();
-            return Task.FromResult(removed);
+            lock (_gate)
+            {
+                var removed = _claims.Count;
+                _claims.Clear();
+                return Task.FromResult(removed);
+            }
         }
     }
 
     private sealed class CountingConsumer(IInboxStore inbox, ILogger? logger = null)
-        : IntegrationEventConsumer(inbox, new MessagingMetrics(), logger ?? NullLogger.Instance)
+        : IntegrationEventConsumer(inbox, new MessagingMetrics(), logger ?? NullLogger.Instance, Options.Create(Fast))
     {
         public int Consumed { get; private set; }
 
@@ -330,13 +498,21 @@ public sealed class MessagingConsumerTests
 
     private sealed class RecordingLogger : ILogger
     {
-        public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
+        private readonly List<(LogLevel Level, string Message, Exception? Exception)> _entries = [];
+
+        public IReadOnlyList<(LogLevel Level, string Message, Exception? Exception)> Entries
+        {
+            get { lock (_entries) return [.. _entries]; }
+        }
 
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
         public bool IsEnabled(LogLevel logLevel) => true;
 
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
-            Func<TState, Exception?, string> formatter) => Entries.Add((logLevel, formatter(state, exception), exception));
+            Func<TState, Exception?, string> formatter)
+        {
+            lock (_entries) _entries.Add((logLevel, formatter(state, exception), exception));
+        }
     }
 }

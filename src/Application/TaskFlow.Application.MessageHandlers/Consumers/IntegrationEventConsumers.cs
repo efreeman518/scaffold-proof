@@ -1,6 +1,7 @@
 using EF.Messaging;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System.Diagnostics;
 using System.Text.Json;
 using TaskFlow.Application.Contracts.Messaging;
@@ -19,28 +20,54 @@ namespace TaskFlow.Application.MessageHandlers.Consumers;
 /// a transient failure and the transport redelivers.
 /// </summary>
 /// <remarks>
-/// Idempotency is the D-029 two-state inbox: take an in-progress claim with a lease, run the effect, then mark
-/// the claim completed. A redelivery that finds the claim completed is a duplicate; one that finds it still in
-/// progress is thrown back for retry (<see cref="InboxClaimInProgressException"/>), never acknowledged, because
-/// the delivery holding it may yet fail; a crashed delivery's claim is taken over once its lease expires. A
-/// duplicate-PK rollback would have to read provider-specific exception shapes (SqlException 2627 vs
+/// Idempotency is the D-029 two-state inbox, tuned for RabbitMQ first (immediate redelivery, immediate requeue of
+/// a thrown delivery) and Service Bus second:
+/// <list type="number">
+/// <item>Claim with a short lease (<see cref="InboxClaimOptions.ClaimLease"/>), renewed every third of it while
+/// the handler runs, so a live holder keeps its claim however long it works and a crashed one loses it within
+/// one lease.</item>
+/// <item>A delivery that meets a live foreign claim waits for it, polling: completed means duplicate (acknowledge
+/// without running), expired means take it over and run. Only a claim still live after one lease plus a margin
+/// throws <see cref="InboxClaimInProgressException"/> for a transport retry. Throwing at once instead would burn
+/// a RabbitMQ message's whole delivery budget in milliseconds after a consumer crash and dead-letter it.</item>
+/// <item>Complete only after the effect ran; a failed effect releases the claim. Both are guarded by the claim
+/// token and ignore the delivery token.</item>
+/// </list>
+/// A duplicate-PK rollback would have to read provider-specific exception shapes (SqlException 2627 vs
 /// PostgresException 23505), which D-030 rules out.
 /// </remarks>
-public abstract class IntegrationEventConsumer(IInboxStore inbox, MessagingMetrics metrics, ILogger logger)
+public abstract class IntegrationEventConsumer
 {
+    private readonly IInboxStore _inbox;
+    private readonly MessagingMetrics _metrics;
+    private readonly ILogger _logger;
+    private readonly InboxClaimOptions _claim;
+    private readonly TimeProvider _timeProvider;
+
+    /// <summary>Creates the consumer base.</summary>
+    /// <param name="inbox">Two-state inbox.</param>
+    /// <param name="metrics">Messaging metrics.</param>
+    /// <param name="logger">Logger.</param>
+    /// <param name="claimOptions">Claim timings; defaults when null.</param>
+    /// <param name="timeProvider">Clock for the lease, the renewal period and the wait; tests supply a fake.</param>
+    protected IntegrationEventConsumer(
+        IInboxStore inbox,
+        MessagingMetrics metrics,
+        ILogger logger,
+        IOptions<InboxClaimOptions>? claimOptions = null,
+        TimeProvider? timeProvider = null)
+    {
+        _inbox = inbox;
+        _metrics = metrics;
+        _logger = logger;
+        _claim = claimOptions?.Value ?? new InboxClaimOptions();
+        if (!_claim.IsValid())
+            throw new ArgumentException("Inbox claim timings must be positive with PollInterval below ClaimLease.", nameof(claimOptions));
+        _timeProvider = timeProvider ?? TimeProvider.System;
+    }
+
     /// <summary>Inbox consumer name; also the Service Bus subscription and RabbitMQ queue suffix.</summary>
     public abstract string ConsumerName { get; }
-
-    /// <summary>
-    /// How long a claim stays in progress before a redelivery may take it over. It must outlive the longest
-    /// handler run: Service Bus redelivers a still-running message only once the lock can no longer be renewed,
-    /// which is <c>maxAutoLockRenewalDuration</c> (5 minutes, host.json) plus one <c>lockDuration</c> (5 minutes,
-    /// infra), so a shorter lease would let that redelivery take over a healthy claim and run the effect twice.
-    /// The cost of a long lease is recovery time: after a crash, redeliveries are thrown back as in progress until
-    /// it expires, and one that exhausts its delivery count lands in the dead-letter queue, from which a replay
-    /// is safe (it is then either a takeover or a duplicate).
-    /// </summary>
-    protected virtual TimeSpan ClaimLease => TimeSpan.FromMinutes(10);
 
     /// <summary>True when this consumer acts on the envelope's event type at all.</summary>
     public abstract bool Handles(string eventType);
@@ -49,48 +76,115 @@ public abstract class IntegrationEventConsumer(IInboxStore inbox, MessagingMetri
     protected abstract Task ConsumeAsync(IntegrationEventEnvelope envelope, CancellationToken ct);
 
     /// <summary>
-    /// Claims, consumes, then completes the claim. A duplicate returns without running; a claim held by another
-    /// live delivery throws <see cref="InboxClaimInProgressException"/> so the transport retries; a failed
-    /// consume releases the claim and rethrows the original exception.
+    /// Claims (waiting out a live foreign claim for up to one lease), consumes while renewing the claim, then
+    /// completes it. A duplicate returns without running; a claim still held by another live delivery at the end
+    /// of the wait throws <see cref="InboxClaimInProgressException"/> so the transport retries; a failed consume
+    /// releases the claim and rethrows the original exception.
     /// </summary>
     public async Task HandleAsync(IntegrationEventEnvelope envelope, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(envelope);
         if (!Handles(envelope.Type)) return;
 
-        var claim = await inbox.TryClaimAsync(ConsumerName, envelope.Id, ClaimLease, ct).ConfigureAwait(false);
-        switch (claim.Status)
+        var claim = await ClaimAsync(envelope, ct).ConfigureAwait(false);
+        if (claim.Status == InboxClaimStatus.Duplicate)
         {
-            case InboxClaimStatus.Duplicate:
-                metrics.RecordInboxDuplicate(ConsumerName);
-                logger.ConsumerDuplicateSkipped(ConsumerName, envelope.Type, envelope.Id);
-                return;
-            case InboxClaimStatus.InProgress:
-                metrics.RecordInboxInProgress(ConsumerName);
-                logger.ConsumerClaimInProgress(ConsumerName, envelope.Type, envelope.Id);
-                throw new InboxClaimInProgressException(ConsumerName, envelope.Id);
+            _metrics.RecordInboxDuplicate(ConsumerName);
+            _logger.ConsumerDuplicateSkipped(ConsumerName, envelope.Type, envelope.Id);
+            return;
         }
 
         var started = Stopwatch.GetTimestamp();
+        using var renewalStop = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var renewal = RenewWhileRunningAsync(envelope, claim.ClaimToken, renewalStop.Token);
         try
         {
             await ConsumeAsync(envelope, ct).ConfigureAwait(false);
         }
         catch (Exception consumeFailure)
         {
+            await StopRenewalAsync(renewalStop, renewal).ConfigureAwait(false);
             await ReleaseAfterFailureAsync(envelope, claim.ClaimToken, consumeFailure).ConfigureAwait(false);
             throw;
         }
 
+        // Renewal stops before the claim is settled, so it can never extend a claim that is being completed.
+        await StopRenewalAsync(renewalStop, renewal).ConfigureAwait(false);
+
         // Not the delivery token: the effect has run, and a shutdown now must not leave the claim in progress,
         // which would hold every redelivery back until the lease expired.
-        if (!await inbox.CompleteAsync(ConsumerName, envelope.Id, claim.ClaimToken, CancellationToken.None)
+        if (!await _inbox.CompleteAsync(ConsumerName, envelope.Id, claim.ClaimToken, CancellationToken.None)
                 .ConfigureAwait(false))
         {
-            logger.ConsumerClaimLost(ConsumerName, envelope.Type, envelope.Id);
+            _logger.ConsumerClaimLost(ConsumerName, envelope.Type, envelope.Id);
         }
 
-        metrics.RecordConsumerDuration(ConsumerName, Stopwatch.GetElapsedTime(started));
+        _metrics.RecordConsumerDuration(ConsumerName, Stopwatch.GetElapsedTime(started));
+    }
+
+    /// <summary>
+    /// Takes the claim, or waits for a live foreign claim to resolve: re-reads it every
+    /// <see cref="InboxClaimOptions.PollInterval"/> until it is completed (duplicate) or expired (taken over),
+    /// for at most <see cref="InboxClaimOptions.WaitBound"/> and never past the delivery token.
+    /// </summary>
+    private async Task<InboxClaim> ClaimAsync(IntegrationEventEnvelope envelope, CancellationToken ct)
+    {
+        var deadline = _timeProvider.GetUtcNow() + _claim.WaitBound;
+        while (true)
+        {
+            var claim = await _inbox.TryClaimAsync(ConsumerName, envelope.Id, _claim.ClaimLease, ct).ConfigureAwait(false);
+            if (claim.Status != InboxClaimStatus.InProgress) return claim;
+
+            if (_timeProvider.GetUtcNow() >= deadline)
+            {
+                // Still live after a whole lease plus margin: the holder is alive and renewing. The transport
+                // retries this delivery; by then the holder has completed (duplicate) or failed (released).
+                _metrics.RecordInboxInProgress(ConsumerName);
+                _logger.ConsumerClaimInProgress(ConsumerName, envelope.Type, envelope.Id);
+                throw new InboxClaimInProgressException(ConsumerName, envelope.Id);
+            }
+
+            await Task.Delay(_claim.PollInterval, _timeProvider, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Renews the claim every <see cref="InboxClaimOptions.RenewalInterval"/> until stopped. A failed renewal is
+    /// logged and the handler keeps going - the next renewal may succeed, and the lease still has two thirds
+    /// left; a renewal that finds the claim gone (taken over) stops renewing and warns. It never faults.
+    /// </summary>
+    private async Task RenewWhileRunningAsync(IntegrationEventEnvelope envelope, Guid claimToken, CancellationToken stop)
+    {
+        using var timer = new PeriodicTimer(_claim.RenewalInterval, _timeProvider);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(stop).ConfigureAwait(false))
+            {
+                try
+                {
+                    if (!await _inbox.RenewAsync(ConsumerName, envelope.Id, claimToken, _claim.ClaimLease, stop)
+                            .ConfigureAwait(false))
+                    {
+                        _logger.ConsumerClaimRenewalLost(ConsumerName, envelope.Type, envelope.Id);
+                        return;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException || !stop.IsCancellationRequested)
+                {
+                    _logger.ConsumerClaimRenewalFailed(ex, ConsumerName, envelope.Type, envelope.Id);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (stop.IsCancellationRequested)
+        {
+            // Stopped: the handler finished, or the delivery was cancelled.
+        }
+    }
+
+    private static async Task StopRenewalAsync(CancellationTokenSource renewalStop, Task renewal)
+    {
+        await renewalStop.CancelAsync().ConfigureAwait(false);
+        await renewal.ConfigureAwait(false);
     }
 
     /// <summary>
@@ -102,11 +196,11 @@ public abstract class IntegrationEventConsumer(IInboxStore inbox, MessagingMetri
     {
         try
         {
-            await inbox.ReleaseAsync(ConsumerName, envelope.Id, claimToken, CancellationToken.None).ConfigureAwait(false);
+            await _inbox.ReleaseAsync(ConsumerName, envelope.Id, claimToken, CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception releaseFailure)
         {
-            logger.ConsumerReleaseFailed(
+            _logger.ConsumerReleaseFailed(
                 new AggregateException(consumeFailure, releaseFailure), ConsumerName, envelope.Type, envelope.Id);
         }
     }
@@ -134,7 +228,8 @@ public sealed class TaskProjectionConsumer(
     IInboxStore inbox,
     ITaskViewProjectionService projection,
     MessagingMetrics metrics,
-    ILogger<TaskProjectionConsumer> logger) : IntegrationEventConsumer(inbox, metrics, logger)
+    ILogger<TaskProjectionConsumer> logger,
+    IOptions<InboxClaimOptions>? claimOptions = null) : IntegrationEventConsumer(inbox, metrics, logger, claimOptions)
 {
     /// <summary>Subscription and queue name for this consumer.</summary>
     public const string Name = "projection";
@@ -172,7 +267,8 @@ public sealed class TaskEmbeddingConsumer(
     ITaskEmbeddingRepository embeddings,
     IEmbeddingGenerator<string, Embedding<float>> generator,
     MessagingMetrics metrics,
-    ILogger<TaskEmbeddingConsumer> logger) : IntegrationEventConsumer(inbox, metrics, logger)
+    ILogger<TaskEmbeddingConsumer> logger,
+    IOptions<InboxClaimOptions>? claimOptions = null) : IntegrationEventConsumer(inbox, metrics, logger, claimOptions)
 {
     /// <summary>Subscription and queue name for this consumer.</summary>
     public const string Name = "embedding";
@@ -223,7 +319,8 @@ public sealed class TaskAiReviewConsumer(
     IInboxStore inbox,
     IAiTaskReviewer reviewer,
     MessagingMetrics metrics,
-    ILogger<TaskAiReviewConsumer> logger) : IntegrationEventConsumer(inbox, metrics, logger)
+    ILogger<TaskAiReviewConsumer> logger,
+    IOptions<InboxClaimOptions>? claimOptions = null) : IntegrationEventConsumer(inbox, metrics, logger, claimOptions)
 {
     /// <summary>Subscription and queue name for this consumer.</summary>
     public const string Name = "ai-review";
@@ -245,7 +342,8 @@ public sealed class TaskWorkflowConsumer(
     IInboxStore inbox,
     IWorkflowTrigger workflowTrigger,
     MessagingMetrics metrics,
-    ILogger<TaskWorkflowConsumer> logger) : IntegrationEventConsumer(inbox, metrics, logger)
+    ILogger<TaskWorkflowConsumer> logger,
+    IOptions<InboxClaimOptions>? claimOptions = null) : IntegrationEventConsumer(inbox, metrics, logger, claimOptions)
 {
     /// <summary>Subscription and queue name for this consumer.</summary>
     public const string Name = "workflow";

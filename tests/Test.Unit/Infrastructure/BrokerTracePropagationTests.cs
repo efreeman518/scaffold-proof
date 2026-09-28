@@ -211,6 +211,9 @@ public sealed class BrokerTracePropagationTests
         public Task<bool> CompleteAsync(string consumer, Guid messageId, Guid claimToken, CancellationToken ct = default) =>
             Task.FromResult(true);
 
+        public Task<bool> RenewAsync(string consumer, Guid messageId, Guid claimToken, TimeSpan leaseDuration, CancellationToken ct = default)
+            => Task.FromResult(true);
+
         public Task<bool> ReleaseAsync(string consumer, Guid messageId, Guid claimToken, CancellationToken ct = default) =>
             Task.FromResult(_claims.Remove((consumer, messageId)));
 

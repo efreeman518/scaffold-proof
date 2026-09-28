@@ -1,10 +1,10 @@
 namespace TaskFlow.Application.Contracts.Messaging;
 
 /// <summary>
-/// D-029 consumer idempotency as a two-state claim. A delivery first takes an in-progress claim with a lease,
-/// runs its effect, then marks the claim completed. A redelivery that finds a completed claim is a duplicate; one
-/// that finds a live in-progress claim must retry later; one that finds an expired in-progress claim (the
-/// earlier delivery crashed or hung) takes it over. Committing the claim only as "done" after the work is what
+/// D-029 consumer idempotency as a two-state claim. A delivery first takes an in-progress claim with a short lease,
+/// renews it while its effect runs, then marks the claim completed. A redelivery that finds a completed claim is a
+/// duplicate; one that finds a live in-progress claim waits for it to resolve; one that finds an expired
+/// in-progress claim (the earlier delivery crashed and stopped renewing) takes it over. Committing the claim only as "done" after the work is what
 /// stops a crash or a concurrent redelivery from swallowing the effect.
 /// </summary>
 public interface IInboxStore
@@ -16,11 +16,19 @@ public interface IInboxStore
     /// <param name="consumer">Consumer name.</param>
     /// <param name="messageId">Broker message id (the outbox row id).</param>
     /// <param name="leaseDuration">
-    /// How long the claim stays in progress before another delivery may take it over. Must exceed the longest
-    /// handler run and, on Service Bus, the message lock renewal window.
+    /// How long the claim stays in progress before another delivery may take it over, unless the holder renews
+    /// it with <see cref="RenewAsync"/>. Also the read: calling this again reports whether a foreign claim has
+    /// since completed (Duplicate), expired (Acquired by takeover) or is still live (InProgress).
     /// </param>
     /// <param name="ct">Cancellation token.</param>
     Task<InboxClaim> TryClaimAsync(string consumer, Guid messageId, TimeSpan leaseDuration, CancellationToken ct = default);
+
+    /// <summary>
+    /// Extends an acquired, still in-progress claim to <paramref name="leaseDuration"/> from now. Called by the
+    /// holding delivery while its handler runs, concurrently with the handler, so an implementation must not use
+    /// the unit of work the handler writes through. False when the claim was taken over or already completed.
+    /// </summary>
+    Task<bool> RenewAsync(string consumer, Guid messageId, Guid claimToken, TimeSpan leaseDuration, CancellationToken ct = default);
 
     /// <summary>
     /// Marks an acquired claim completed after its effect ran. False when the claim was taken over after its
