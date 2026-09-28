@@ -60,6 +60,75 @@ public static class MessagingTrace
     }
 
     /// <summary>
+    /// Starts the producer span for one outbox row, parented to the trace context stored when the row was staged,
+    /// and injects the propagated context through <paramref name="setHeader"/>.
+    /// <para>
+    /// The dispatcher runs long after the request that raised the event, inside its own drain span, so the ambient
+    /// <see cref="Activity.Current"/> is the wrong parent: a consumer hung off it would join the Scheduler's trace,
+    /// not the request's. The stored context is the parent; the drain span, when there is one, is kept as an
+    /// <see cref="ActivityLink"/> so the batch that carried the message stays reachable. Without a stored context
+    /// (a row staged outside any trace) this behaves like <see cref="StartPublish"/>.
+    /// </para>
+    /// <para>
+    /// Headers carry the producer span when one was started; otherwise the stored context verbatim, so an
+    /// unsampled dispatcher still links consumer to request; otherwise the ambient context.
+    /// </para>
+    /// </summary>
+    /// <param name="system">Broker identity for <c>messaging.system</c>.</param>
+    /// <param name="destination">Queue, topic or exchange name.</param>
+    /// <param name="eventType">Integration event type; also the span name prefix.</param>
+    /// <param name="messageId">Broker message id (the outbox row id).</param>
+    /// <param name="storedTraceParent">W3C traceparent captured at staging, or null.</param>
+    /// <param name="storedTraceState">W3C tracestate captured at staging, or null.</param>
+    /// <param name="setHeader">Writes one header on the outgoing message.</param>
+    /// <returns>
+    /// The producer activity, or null when nothing is listening. The caller disposes it only after the broker send
+    /// that carries the message has completed, so the span measures the send.
+    /// </returns>
+    public static Activity? StartOutboxPublish(
+        string system,
+        string destination,
+        string eventType,
+        string messageId,
+        string? storedTraceParent,
+        string? storedTraceState,
+        Action<string, string> setHeader)
+    {
+        ArgumentNullException.ThrowIfNull(setHeader);
+
+        // default (invalid or absent) falls back to Activity.Current as the parent inside StartActivity.
+        var stored = ActivityContext.TryParse(storedTraceParent, storedTraceState, isRemote: true, out var parsed)
+            ? parsed
+            : default;
+        var drain = stored == default ? null : Activity.Current;
+
+        var activity = TaskFlowActivitySources.Messaging.StartActivity(
+            $"{eventType} publish",
+            ActivityKind.Producer,
+            stored,
+            links: drain is null ? null : [new ActivityLink(drain.Context)]);
+
+        activity?.SetTag("messaging.system", system)
+            .SetTag("messaging.operation.name", "publish")
+            .SetTag("messaging.destination.name", destination)
+            .SetTag("messaging.message.id", messageId);
+
+        if (activity is null && stored != default)
+        {
+            setHeader(MessagingTraceContext.TraceParentHeader, MessagingTraceContext.FormatTraceParent(stored));
+            if (!string.IsNullOrEmpty(stored.TraceState))
+                setHeader(MessagingTraceContext.TraceStateHeader, stored.TraceState);
+        }
+        else
+        {
+            // Null activity falls back to Activity.Current inside the package.
+            MessagingTraceContext.Inject(activity, setHeader);
+        }
+
+        return activity;
+    }
+
+    /// <summary>
     /// Starts the consumer span for one delivery, parented to the producer's context.
     /// <para>
     /// Parent, not <see cref="ActivityLink"/>: the outbox hop is one business operation continuing across a

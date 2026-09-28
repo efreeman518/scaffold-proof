@@ -137,6 +137,54 @@ public sealed class OutboxStagingTests
         Assert.AreEqual("round trip", payload.Title);
     }
 
+    /// <summary>
+    /// D-053: the row stores the W3C context of the operation that saved it, so the dispatcher can continue that
+    /// trace instead of starting the producer span under the Scheduler drain.
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public async Task Save_UnderAnActivity_StoresItsTraceContextOnTheRow()
+    {
+        var ct = TestContext.CancellationToken;
+        var task = TaskItem.Create(TenantId.From(TestConstants.TenantId), "traced").Value!;
+
+        await using var db = Create(Guid.NewGuid().ToString());
+        db.TaskItems.Add(task);
+
+        using (var request = new System.Diagnostics.Activity("request").SetIdFormat(System.Diagnostics.ActivityIdFormat.W3C).Start())
+        {
+            request.TraceStateString = "vendor=abc";
+            await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: ct);
+
+            var row = await db.OutboxMessages.SingleAsync(ct);
+            Assert.AreEqual($"00-{request.TraceId.ToHexString()}-{request.SpanId.ToHexString()}-00", row.TraceParent);
+            Assert.AreEqual("vendor=abc", row.TraceState);
+        }
+    }
+
+    /// <summary>A row staged outside any trace carries no trace context rather than an invalid one.</summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public void ToRow_WithoutAnActivity_LeavesTraceContextNull()
+    {
+        var previous = System.Diagnostics.Activity.Current;
+        System.Diagnostics.Activity.Current = null;
+        try
+        {
+            var envelope = TaskFlowIntegrationEvents.Envelope(
+                new TaskItemCreatedEvent(Guid.CreateVersion7(), TestConstants.TenantId, "untraced"), Now, correlationId: null);
+
+            var row = OutboxStagingInterceptor.ToRow(envelope, TestConstants.TenantId, Now);
+
+            Assert.IsNull(row.TraceParent);
+            Assert.IsNull(row.TraceState);
+        }
+        finally
+        {
+            System.Diagnostics.Activity.Current = previous;
+        }
+    }
+
     [TestMethod]
     [TestCategory("Unit")]
     public void UnknownEventType_IsRejectedBeforeAConsumerSeesIt()

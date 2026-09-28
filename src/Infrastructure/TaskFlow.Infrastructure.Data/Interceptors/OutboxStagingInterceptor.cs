@@ -1,4 +1,5 @@
 using EF.Messaging;
+using EF.Messaging.Tracing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using System.Diagnostics;
@@ -70,20 +71,34 @@ public sealed class OutboxStagingInterceptor(TimeProvider? timeProvider = null, 
     /// <summary>
     /// Maps an envelope to its outbox row; the row id IS the MessageId so replay is detectable. The tenant is
     /// passed in because the package envelope frame does not carry one - it lives in the payload, and the row
-    /// column is the denormalized copy the dispatcher reads.
+    /// column is the denormalized copy the dispatcher reads. The W3C context of the ambient operation (the
+    /// request or job that is saving) is stored with it so the dispatcher can continue that trace (D-053),
+    /// independent of the correlation value.
     /// </summary>
-    public static OutboxMessage ToRow(IntegrationEventEnvelope envelope, Guid tenantId, DateTimeOffset availableAtUtc) => new()
+    public static OutboxMessage ToRow(IntegrationEventEnvelope envelope, Guid tenantId, DateTimeOffset availableAtUtc)
     {
-        Id = envelope.Id,
-        TenantId = tenantId,
-        AvailableAtUtc = availableAtUtc,
-        Destination = DefaultDestination,
-        EventType = envelope.Type,
-        EventVersion = envelope.Version,
-        // D-048: generated metadata, reached through the context's own options. This runs inside SaveChanges
-        // on every write that raised an event, so it is the hottest envelope serialization in the app.
-        Payload = EnvelopeSerializer.Serialize(envelope, TaskFlowMessagingJsonContext.Default.Options),
-        CorrelationId = envelope.CorrelationId,
-        OccurredAtUtc = envelope.OccurredAtUtc
-    };
+        var trace = Activity.Current?.Context ?? default;
+        var hasTrace = trace != default;
+
+        return new OutboxMessage
+        {
+            Id = envelope.Id,
+            TenantId = tenantId,
+            AvailableAtUtc = availableAtUtc,
+            Destination = DefaultDestination,
+            EventType = envelope.Type,
+            EventVersion = envelope.Version,
+            // D-048: generated metadata, reached through the context's own options. This runs inside SaveChanges
+            // on every write that raised an event, so it is the hottest envelope serialization in the app.
+            Payload = EnvelopeSerializer.Serialize(envelope, TaskFlowMessagingJsonContext.Default.Options),
+            CorrelationId = envelope.CorrelationId,
+            TraceParent = hasTrace ? MessagingTraceContext.FormatTraceParent(trace) : null,
+            // Dropped rather than truncated when over the column: a cut tracestate is malformed, a missing one is not.
+            TraceState = hasTrace && !string.IsNullOrEmpty(trace.TraceState)
+                         && trace.TraceState.Length <= OutboxMessageLimits.TraceStateLength
+                ? trace.TraceState
+                : null,
+            OccurredAtUtc = envelope.OccurredAtUtc
+        };
+    }
 }

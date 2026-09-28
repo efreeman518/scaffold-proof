@@ -73,11 +73,26 @@ internal static partial class LogMessages
     [LoggerMessage(EventId = LogEventIds.SchedulerBase + 17, Level = LogLevel.Information, Message = "TickerQ operational-store schema validated.")]
     public static partial void TickerQSchemaValidated(this ILogger logger);
 
-    /// <summary>Logs that cron seeding was skipped because no ICronTickerManager is available.</summary>
-    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 18, Level = LogLevel.Warning, Message = "ICronTickerManager not available - cron seeding skipped.")]
-    public static partial void TickerQCronManagerUnavailable(this ILogger logger);
+    // EventIds SchedulerBase + 18 and + 19 were TickerQCronManagerUnavailable / TickerQCronJobsSeeded. The cron
+    // expressions now live on [TickerFunction] and TickerQ seeds them itself; retired, never reused.
 
-    /// <summary>Logs that TickerQ cron jobs were seeded successfully.</summary>
-    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 19, Level = LogLevel.Information, Message = "TickerQ cron jobs seeded successfully")]
-    public static partial void TickerQCronJobsSeeded(this ILogger logger);
+    /// <summary>Logs a work-table handler that threw; the rows it did not report are released for retry.</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 20, Level = LogLevel.Error, Message = "{WorkType} handler failed on a batch of {Count}; unreported rows are released for retry")]
+    public static partial void WorkBatchHandlerFailed(this ILogger logger, string workType, int count, Exception exception);
+
+    /// <summary>Logs a work row parked after a permanent failure or its last attempt.</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 21, Level = LogLevel.Warning, Message = "{WorkType} row {Id} dead-lettered after {Attempts} attempt(s): {Error}")]
+    public static partial void WorkItemDeadLettered(this ILogger logger, string workType, Guid id, int attempts, string error);
+
+    /// <summary>Logs settlement statements that changed no row because another replica took the lease over.</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 22, Level = LogLevel.Warning, Message = "{WorkType}: lease {LeaseToken} was lost for {Count} row(s) before settlement; another replica owns them")]
+    public static partial void WorkLeaseLost(this ILogger logger, string workType, int count, Guid leaseToken);
+
+    /// <summary>Logs the first failed Azure App Configuration refresh of a failure streak.</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 23, Level = LogLevel.Warning, Message = "Azure App Configuration refresh failed; the Scheduler keeps its last configuration and flags until a refresh succeeds")]
+    public static partial void AppConfigurationRefreshFailed(this ILogger logger);
+
+    /// <summary>Logs the first successful Azure App Configuration refresh after a failure streak.</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 24, Level = LogLevel.Information, Message = "Azure App Configuration refresh recovered after {FailedRefreshes} failed attempt(s)")]
+    public static partial void AppConfigurationRefreshRecovered(this ILogger logger, int failedRefreshes);
 }

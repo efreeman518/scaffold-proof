@@ -154,7 +154,7 @@ public class CategoryEndpointTests
             Filter = new CategorySearchFilter { SearchTerm = "SearchMe" }
         };
 
-        var response = await client.PostAsJsonAsync("/api/v1/categories/search", searchRequest, cancellationToken: TestContext.CancellationToken);
+        var response = await client.PostAsJsonAsync("/api/v1/categories/search?includeTotal=true", searchRequest, cancellationToken: TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
         var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(TestContext.CancellationToken), cancellationToken: TestContext.CancellationToken);

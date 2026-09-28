@@ -9,12 +9,6 @@ var builder = WebApplication.CreateBuilder(args);
 // Azure App Configuration (D-042): dynamic config + feature flags, no-op unless AppConfig:Endpoint
 // (or ConnectionStrings:AppConfig) is set. Runs first so later configuration reads see values it overrides.
 builder.AddTaskFlowAppConfiguration();
-// No request middleware refreshes it here, so a hosted service does - same guard as the provider itself.
-if (!string.IsNullOrWhiteSpace(builder.Configuration[RegisterServices.AppConfigEndpointConfigKey])
-    || !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("AppConfig")))
-{
-    builder.Services.AddHostedService<AppConfigurationRefreshService>();
-}
 
 builder.AddServiceDefaults();
 
@@ -42,6 +36,5 @@ await app.ValidateTickerQDatabase();
 app.UseTickerQ();
 app.MapDefaultEndpoints();
 
-await app.SeedCronJobs();
-
+// Cron schedules are declared on [TickerFunction] in TaskMaintenanceJobs; TickerQ seeds them during RunAsync.
 await app.RunAsync();

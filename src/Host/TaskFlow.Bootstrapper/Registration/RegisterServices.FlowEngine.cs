@@ -11,8 +11,6 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
-using RabbitMQ.Client;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Interceptors;
 using TaskFlow.Infrastructure.Messaging.RabbitMq;
@@ -101,12 +99,10 @@ public static partial class RegisterServices
 
         if (ResolveMessagingProvider(config) == MessagingProvider.RabbitMq)
         {
-            // Workflow messages are topic publications and may intentionally have no subscriber. Reuse the
-            // package's confirmed publisher-channel pool, but publish mandatory:false so that zero bindings is
-            // accepted just like a Service Bus topic with zero subscriptions.
-            fe.AddClient(sp => CreateRabbitMqFlowEngineMessageClient(
-                sp.GetRequiredService<IRabbitMqConnectionMultiplexer>(),
-                sp.GetRequiredService<IOptionsMonitor<RabbitMqOptions>>()));
+            // Workflow messages are topic publications and may intentionally have no subscriber. The package
+            // publisher publishes mandatory:false, so zero bindings is accepted just like a Service Bus topic
+            // with zero subscriptions, and awaits the broker confirm under PublisherConfirmTimeout.
+            fe.AddClient(sp => CreateRabbitMqFlowEngineMessageClient(sp.GetRequiredService<IRabbitMqPublisher>()));
         }
         else
         {
@@ -137,12 +133,14 @@ public static partial class RegisterServices
         ?? config["DomainEventsTopic"]
         ?? OutboxStagingInterceptor.DefaultDestination;
 
-    internal static DelegatingMessageClient CreateRabbitMqFlowEngineMessageClient(
-        IRabbitMqConnectionMultiplexer multiplexer,
-        IOptionsMonitor<RabbitMqOptions> options)
+    /// <summary>
+    /// FlowEngine "integration-events" client over the package publisher. A timeout or broker refusal surfaces as
+    /// <see cref="RabbitMqPublishException"/> (the primary failure as its inner exception); caller cancellation
+    /// stays an <see cref="OperationCanceledException"/>.
+    /// </summary>
+    internal static DelegatingMessageClient CreateRabbitMqFlowEngineMessageClient(IRabbitMqPublisher publisher)
     {
-        ArgumentNullException.ThrowIfNull(multiplexer);
-        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(publisher);
 
         return new DelegatingMessageClient(
             "integration-events",
@@ -160,8 +158,7 @@ public static partial class RegisterServices
                 var message = CreateRabbitMqFlowEngineMessage(request, messageId, out var publishActivity);
                 using (publishActivity)
                 {
-                    await PublishRabbitMqFlowEngineMessageAsync(multiplexer, options, message, ct)
-                        .ConfigureAwait(false);
+                    await publisher.PublishAsync(TaskFlowRabbitMqTopology.Exchange, message, ct).ConfigureAwait(false);
                 }
 
                 return new MessageResult
@@ -207,69 +204,6 @@ public static partial class RegisterServices
             ContentType: contentType,
             CorrelationId: request.CorrelationId,
             Headers: headers);
-    }
-
-    /// <summary>
-    /// Uses EF.Messaging.RabbitMq's pooled, confirm-tracking channel while allowing topic publications
-    /// that currently have no binding. Awaiting BasicPublishAsync retains publisher-confirm semantics.
-    /// </summary>
-    private static async Task PublishRabbitMqFlowEngineMessageAsync(
-        IRabbitMqConnectionMultiplexer multiplexer,
-        IOptionsMonitor<RabbitMqOptions> options,
-        RabbitMqMessage message,
-        CancellationToken ct)
-    {
-        using var pooledChannel = await multiplexer.RentPublisherChannelAsync(ct).ConfigureAwait(false);
-        var properties = new BasicProperties
-        {
-            MessageId = message.MessageId,
-            CorrelationId = message.CorrelationId,
-            ContentType = message.ContentType,
-            // FlowEngine properties and W3C propagation values are strings, which are valid AMQP
-            // field-table values. Copy them into the mutable table required by RabbitMQ.Client.
-            Headers = message.Headers?.ToDictionary(
-                pair => pair.Key,
-                pair => pair.Value,
-                StringComparer.Ordinal),
-            Persistent = message.Persistent
-        };
-
-        await AwaitRabbitMqPublisherConfirmAsync(
-            publishCancellation => pooledChannel.Channel.BasicPublishAsync(
-                TaskFlowRabbitMqTopology.Exchange,
-                message.RoutingKey,
-                mandatory: false,
-                properties,
-                message.Body,
-                publishCancellation),
-            options.CurrentValue.PublisherConfirmTimeout,
-            ct).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Bounds RabbitMQ.Client's confirm-tracking await with the package's configured timeout. Caller
-    /// cancellation remains an OperationCanceledException; only expiration of this timeout is translated.
-    /// </summary>
-    internal static async Task AwaitRabbitMqPublisherConfirmAsync(
-        Func<CancellationToken, ValueTask> publish,
-        TimeSpan confirmTimeout,
-        CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(publish);
-        using var confirmCancellation = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        confirmCancellation.CancelAfter(confirmTimeout);
-
-        try
-        {
-            await publish(confirmCancellation.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException exception)
-            when (!ct.IsCancellationRequested && confirmCancellation.IsCancellationRequested)
-        {
-            throw new TimeoutException(
-                $"RabbitMQ publisher confirmation was not received within {confirmTimeout}.",
-                exception);
-        }
     }
 
     // JSON workflow definitions live in TaskFlow.Api/Workflows/. The seeding service is a

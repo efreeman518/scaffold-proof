@@ -2,6 +2,7 @@ using Azure.Messaging.ServiceBus;
 using EF.Messaging.ServiceBus;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 using TaskFlow.Infrastructure.Data.Messaging;
 using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Observability.Tracing;
@@ -32,13 +33,23 @@ public sealed class ServiceBusEventTransport : IIntegrationEventTransport
     public bool CanDispatch => true;
 
     /// <inheritdoc />
-    public async Task SendBatchAsync(string destination, IReadOnlyList<OutboxMessage> messages, CancellationToken ct)
+    /// <remarks>
+    /// Rows are packed into broker batches in order. A row too large for an empty batch can never be sent, so it is
+    /// reported permanent and skipped while packing continues: one oversize event must not fail - and eventually
+    /// dead-letter - the healthy rows claimed with it. Each <c>SendMessagesAsync</c> is atomic; the first one that
+    /// fails reports its own rows and every row not yet sent as transient, and earlier batches stay sent.
+    /// </remarks>
+    public async Task<IReadOnlyList<OutboxSendFailure>> SendBatchAsync(
+        string destination, IReadOnlyList<OutboxMessage> messages, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(destination);
         ArgumentNullException.ThrowIfNull(messages);
-        if (messages.Count == 0) return;
+        if (messages.Count == 0) return [];
 
         var sender = _senders.Get(destination);
+        var failures = new List<OutboxSendFailure>();
+        // Rows in the batch being packed, with their producer spans; the spans end when that batch's send does.
+        var packed = new List<(int Index, Activity? Span)>();
 
         // D-047 hot path: one pooled UTF-8 buffer for the whole batch instead of a byte[] per row. Disposed
         // after the last send, because a message body is a slice of it.
@@ -47,37 +58,104 @@ public sealed class ServiceBusEventTransport : IIntegrationEventTransport
         var batch = await sender.CreateMessageBatchAsync(ct).ConfigureAwait(false);
         try
         {
-            foreach (var row in messages)
+            for (var i = 0; i < messages.Count; i++)
             {
-                var message = ToServiceBusMessage(row, destination, bodies);
-                if (batch.TryAddMessage(message)) continue;
+                var (message, span) = ToServiceBusMessage(messages[i], destination, bodies);
+                if (batch.TryAddMessage(message))
+                {
+                    packed.Add((i, span));
+                    continue;
+                }
 
-                if (batch.Count == 0)
-                    throw new InvalidOperationException(
-                        $"Outbox message {row.Id} ({row.EventType}) exceeds the Service Bus batch size limit.");
+                if (batch.Count > 0)
+                {
+                    var sendError = await TrySendAsync(sender, batch, packed, ct).ConfigureAwait(false);
+                    if (sendError is not null)
+                    {
+                        EndSpan(span, sendError.Message);
+                        failures.AddRange(packed.Select(p => new OutboxSendFailure(p.Index, sendError.Message, Permanent: false)));
+                        for (var rest = i; rest < messages.Count; rest++)
+                            failures.Add(new OutboxSendFailure(rest, sendError.Message, Permanent: false));
+                        packed.Clear();
+                        _logger.OutboxBatchSendFailed(destination, messages.Count - failures.Count, failures.Count, sendError);
+                        return failures;
+                    }
 
-                await sender.SendMessagesAsync(batch, ct).ConfigureAwait(false);
-                batch.Dispose();
-                batch = await sender.CreateMessageBatchAsync(ct).ConfigureAwait(false);
+                    packed.Clear();
+                    batch.Dispose();
+                    batch = await sender.CreateMessageBatchAsync(ct).ConfigureAwait(false);
+                    if (batch.TryAddMessage(message))
+                    {
+                        packed.Add((i, span));
+                        continue;
+                    }
+                }
 
-                if (!batch.TryAddMessage(message))
-                    throw new InvalidOperationException(
-                        $"Outbox message {row.Id} ({row.EventType}) exceeds the Service Bus batch size limit.");
+                var tooLarge = $"Outbox message {messages[i].Id} ({messages[i].EventType}) exceeds the Service Bus "
+                               + $"batch limit of {batch.MaxSizeInBytes} bytes.";
+                EndSpan(span, tooLarge);
+                failures.Add(new OutboxSendFailure(i, tooLarge, Permanent: true));
+                _logger.OutboxMessageTooLarge(messages[i].Id, messages[i].EventType, destination, batch.MaxSizeInBytes);
             }
 
             if (batch.Count > 0)
-                await sender.SendMessagesAsync(batch, ct).ConfigureAwait(false);
+            {
+                var sendError = await TrySendAsync(sender, batch, packed, ct).ConfigureAwait(false);
+                if (sendError is not null)
+                {
+                    failures.AddRange(packed.Select(p => new OutboxSendFailure(p.Index, sendError.Message, Permanent: false)));
+                    packed.Clear();
+                    _logger.OutboxBatchSendFailed(destination, messages.Count - failures.Count, failures.Count, sendError);
+                    return failures;
+                }
+
+                packed.Clear();
+            }
         }
         finally
         {
+            // Only reached with spans still open when cancellation propagated out of a send or a batch create.
+            foreach (var (_, span) in packed) span?.Dispose();
             batch.Dispose();
         }
 
-        _logger.OutboxBatchSent(destination, messages.Count);
+        _logger.OutboxBatchSent(destination, messages.Count - failures.Count);
+        return failures;
     }
 
-    /// <summary>Envelope JSON as the body; type, version and tenant as properties so a subscription rule can filter.</summary>
-    private static ServiceBusMessage ToServiceBusMessage(OutboxMessage row, string destination, OutboxBodyBuffer bodies)
+    /// <summary>
+    /// Sends one packed batch and ends its producer spans after the send completes. Returns the failure, or null
+    /// on success; cancellation of <paramref name="ct"/> propagates.
+    /// </summary>
+    private static async Task<Exception?> TrySendAsync(
+        ServiceBusSender sender, ServiceBusMessageBatch batch, List<(int Index, Activity? Span)> packed, CancellationToken ct)
+    {
+        try
+        {
+            await sender.SendMessagesAsync(batch, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            foreach (var (_, span) in packed) EndSpan(span, ex.Message);
+            return ex;
+        }
+
+        foreach (var (_, span) in packed) span?.Dispose();
+        return null;
+    }
+
+    private static void EndSpan(Activity? span, string error)
+    {
+        span?.SetStatus(ActivityStatusCode.Error, error);
+        span?.Dispose();
+    }
+
+    /// <summary>
+    /// Envelope JSON as the body; type, version and tenant as properties so a subscription rule can filter. The
+    /// producer span is returned open: the caller ends it after the send that carries the message.
+    /// </summary>
+    private static (ServiceBusMessage Message, Activity? Span) ToServiceBusMessage(
+        OutboxMessage row, string destination, OutboxBodyBuffer bodies)
     {
         var message = new ServiceBusMessage(bodies.Append(row.Payload))
         {
@@ -93,16 +171,19 @@ public sealed class ServiceBusEventTransport : IIntegrationEventTransport
         message.ApplicationProperties["EventVersion"] = row.EventVersion;
         message.ApplicationProperties["TenantId"] = row.TenantId.ToString();
 
-        // D-053: one producer span per message, its trace context written into that message's own application
-        // properties. Per message rather than per batch, because a batch mixes rows staged by unrelated
-        // requests and a single batch span would attach every consumer to an arbitrary one.
-        using var publish = MessagingTrace.StartPublish(
+        // D-053: one producer span per message, parented to the trace that staged the row and its context written
+        // into that message's own application properties. Per message rather than per batch, because a batch
+        // mixes rows staged by unrelated requests and a single batch span would attach every consumer to an
+        // arbitrary one.
+        var span = MessagingTrace.StartOutboxPublish(
             MessagingTrace.ServiceBusSystem,
             destination,
             row.EventType,
             row.Id.ToString(),
+            row.TraceParent,
+            row.TraceState,
             (key, value) => message.ApplicationProperties[key] = value);
 
-        return message;
+        return (message, span);
     }
 }

@@ -23,6 +23,8 @@ public class OutboxClaimTests
 {
     private const int RowCount = 1000;
     private const int ClaimerCount = 4;
+    private const int MaxAttempts = 10;
+    private static readonly TimeSpan Lease = TimeSpan.FromMinutes(5);
 
     /// <summary>Marks the test Inconclusive when the database container failed to start.</summary>
     [TestInitialize]
@@ -63,22 +65,25 @@ public class OutboxClaimTests
         await SeedOutboxAsync(connString, 1, ct);
 
         await using var db = DbContainerFixture.CreateTrxnContext(connString);
-        var work = new OperationalWorkRepository(db);
+        var clock = new MutableClock(DateTimeOffset.UtcNow);
+        var work = new OperationalWorkRepository(db, clock);
 
         // A replica claims and then dies without releasing: the lease must expire, not park the row forever.
-        var abandoned = await work.ClaimAsync<OutboxMessage>(10, TimeSpan.FromMilliseconds(-1), "dead-replica", ct);
+        var abandoned = await work.ClaimAsync<OutboxMessage>(10, Lease, MaxAttempts, "dead-replica", ct);
         Assert.AreEqual(1, abandoned.Items.Count);
         Assert.AreEqual(1, abandoned.Items[0].AttemptCount);
+        Assert.AreEqual(0, (await work.ClaimAsync<OutboxMessage>(10, Lease, MaxAttempts, "live-replica", ct)).Items.Count,
+            "a live lease is not claimable");
 
-        var reclaimed = await work.ClaimAsync<OutboxMessage>(10, TimeSpan.FromMinutes(5), "live-replica", ct);
+        clock.Advance(Lease + TimeSpan.FromSeconds(1));
+        var reclaimed = await work.ClaimAsync<OutboxMessage>(10, Lease, MaxAttempts, "live-replica", ct);
         Assert.AreEqual(1, reclaimed.Items.Count);
         Assert.AreNotEqual(abandoned.LeaseToken, reclaimed.LeaseToken);
         Assert.AreEqual(2, reclaimed.Items[0].AttemptCount, "each claim counts as an attempt");
 
-        // Past the ceiling the row is parked, not deleted: it is the only surviving copy of the event.
+        // Dead-lettered, the row is parked, not deleted: it is the only surviving copy of the event.
         var row = reclaimed.Items[0];
-        await work.ReleaseAsync<OutboxMessage>(
-            reclaimed.LeaseToken, row.Id, OperationalWorkBase.MaxAttempts, "poison", ct);
+        Assert.IsTrue(await work.DeadLetterAsync<OutboxMessage>(reclaimed.LeaseToken, row.Id, "poison", ct));
 
         await using var verify = DbContainerFixture.CreateTrxnContext(connString);
         var parked = await verify.OutboxMessages.AsNoTracking().SingleAsync(m => m.Id == row.Id, ct);
@@ -86,13 +91,110 @@ public class OutboxClaimTests
         Assert.AreEqual("poison", parked.LastError);
         Assert.IsNull(parked.LeaseToken);
 
-        var afterDeadLetter = await work.ClaimAsync<OutboxMessage>(10, TimeSpan.FromMinutes(5), "live-replica", ct);
+        var afterDeadLetter = await work.ClaimAsync<OutboxMessage>(10, Lease, MaxAttempts, "live-replica", ct);
         Assert.AreEqual(0, afterDeadLetter.Items.Count, "a dead-lettered row is never claimed again");
 
         // The admin retry endpoint puts it back in play.
         Assert.IsTrue(await work.RetryDeadLetteredAsync<OutboxMessage>(row.Id, ct));
-        var afterRetry = await work.ClaimAsync<OutboxMessage>(10, TimeSpan.FromMinutes(5), "live-replica", ct);
+        var afterRetry = await work.ClaimAsync<OutboxMessage>(10, Lease, MaxAttempts, "live-replica", ct);
         Assert.AreEqual(1, afterRetry.Items.Count);
+    }
+
+    /// <summary>
+    /// A row whose last attempt never settled - the Scheduler crashed, or the send hung past the lease - is parked
+    /// on the next claim once its lease expires, instead of being re-leased and re-sent forever.
+    /// </summary>
+    [TestMethod]
+    [Timeout(300000, CooperativeCancellation = true)]
+    public async Task ExhaustedRowWithExpiredLease_IsDeadLetteredOnTheNextClaim()
+    {
+        var ct = TestContext.CancellationToken;
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("outboxpoison");
+        await MigrateAsync(connString, ct);
+        await SeedOutboxAsync(connString, 1, ct);
+
+        await using var db = DbContainerFixture.CreateTrxnContext(connString);
+        var clock = new MutableClock(DateTimeOffset.UtcNow);
+        var work = new OperationalWorkRepository(db, clock);
+        const int maxAttempts = 3;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            var claim = await work.ClaimAsync<OutboxMessage>(10, Lease, maxAttempts, "crashing-replica", ct);
+            Assert.AreEqual(1, claim.Items.Count, $"attempt {attempt} should still claim the row");
+            Assert.AreEqual(attempt, claim.Items[0].AttemptCount);
+            clock.Advance(Lease + TimeSpan.FromSeconds(1)); // the replica dies holding the lease
+        }
+
+        var afterLast = await work.ClaimAsync<OutboxMessage>(10, Lease, maxAttempts, "live-replica", ct);
+        Assert.AreEqual(0, afterLast.Items.Count, "an exhausted row must not be leased a fourth time");
+
+        await using var verify = DbContainerFixture.CreateTrxnContext(connString);
+        var parked = await verify.OutboxMessages.AsNoTracking().SingleAsync(ct);
+        Assert.IsNotNull(parked.DeadLetteredAtUtc, "the exhausted row is parked, and kept");
+        Assert.AreEqual(OperationalWorkRepository.LeaseExpiredOnFinalAttempt, parked.LastError);
+        Assert.IsNull(parked.LeaseToken);
+        Assert.AreEqual(maxAttempts, parked.AttemptCount);
+    }
+
+    /// <summary>
+    /// The attempt ceiling comes from the caller (the worker's MaxAttempts option), not a constant: a row at
+    /// attempt 2 is claimed under a ceiling of 3, and under a ceiling of 2 it is parked instead.
+    /// </summary>
+    [TestMethod]
+    [Timeout(300000, CooperativeCancellation = true)]
+    public async Task Claim_HonorsTheCallersAttemptCeiling()
+    {
+        var ct = TestContext.CancellationToken;
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("outboxceiling");
+        await MigrateAsync(connString, ct);
+        await SeedOutboxAsync(connString, 1, ct);
+
+        await using var db = DbContainerFixture.CreateTrxnContext(connString);
+        await db.OutboxMessages.ExecuteUpdateAsync(s => s.SetProperty(m => m.AttemptCount, 2), ct);
+        var work = new OperationalWorkRepository(db);
+
+        var underThree = await work.ClaimAsync<OutboxMessage>(10, Lease, 3, "replica", ct);
+        Assert.AreEqual(1, underThree.Items.Count, "attempt 3 of 3 is still allowed");
+        Assert.AreEqual(3, underThree.Items[0].AttemptCount);
+        Assert.AreEqual(1, await work.AbandonAsync<OutboxMessage>(underThree.LeaseToken, [underThree.Items[0].Id], ct));
+
+        var underTwo = await work.ClaimAsync<OutboxMessage>(10, Lease, 2, "replica", ct);
+        Assert.AreEqual(0, underTwo.Items.Count, "two attempts are spent under a ceiling of 2");
+
+        await using var verify = DbContainerFixture.CreateTrxnContext(connString);
+        var parked = await verify.OutboxMessages.AsNoTracking().SingleAsync(ct);
+        Assert.IsNotNull(parked.DeadLetteredAtUtc, "the exhausted row is parked by the claim, not left live");
+    }
+
+    /// <summary>
+    /// Shutdown hands claimed rows back immediately and without spending an attempt; a settlement under a token
+    /// that no longer owns the rows changes nothing.
+    /// </summary>
+    [TestMethod]
+    [Timeout(300000, CooperativeCancellation = true)]
+    public async Task Abandon_RestoresTheAttempt_AndForeignTokensSettleNothing()
+    {
+        var ct = TestContext.CancellationToken;
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("outboxabandon");
+        await MigrateAsync(connString, ct);
+        await SeedOutboxAsync(connString, 1, ct);
+
+        await using var db = DbContainerFixture.CreateTrxnContext(connString);
+        var work = new OperationalWorkRepository(db);
+        var claim = await work.ClaimAsync<OutboxMessage>(10, Lease, MaxAttempts, "stopping-replica", ct);
+        var id = claim.Items[0].Id;
+        var foreign = Guid.CreateVersion7();
+
+        Assert.AreEqual(0, await work.CompleteAsync<OutboxMessage>(foreign, [id], ct));
+        Assert.IsFalse(await work.ReleaseAsync<OutboxMessage>(foreign, id, 1, "x", ct));
+        Assert.IsFalse(await work.DeadLetterAsync<OutboxMessage>(foreign, id, "x", ct));
+        Assert.AreEqual(0, await work.AbandonAsync<OutboxMessage>(foreign, [id], ct));
+
+        Assert.AreEqual(1, await work.AbandonAsync<OutboxMessage>(claim.LeaseToken, [id], ct));
+        var reclaimed = await work.ClaimAsync<OutboxMessage>(10, Lease, MaxAttempts, "next-replica", ct);
+        Assert.AreEqual(1, reclaimed.Items.Count, "an abandoned row is claimable at once, without waiting out the lease");
+        Assert.AreEqual(1, reclaimed.Items[0].AttemptCount, "the abandoned claim did not consume an attempt");
     }
 
     [TestMethod]
@@ -164,7 +266,7 @@ public class OutboxClaimTests
         {
             await using var db = DbContainerFixture.CreateTrxnContext(connString);
             var work = new OperationalWorkRepository(db);
-            var batch = await work.ClaimAsync<OutboxMessage>(25, TimeSpan.FromMinutes(5), owner, ct);
+            var batch = await work.ClaimAsync<OutboxMessage>(25, Lease, MaxAttempts, owner, ct);
             if (batch.Items.Count == 0) break;
 
             foreach (var item in batch.Items)
@@ -180,5 +282,15 @@ public class OutboxClaimTests
         }
 
         return claimed;
+    }
+
+    /// <summary>Clock a test moves forward to expire leases, instead of claiming with a negative lease.</summary>
+    private sealed class MutableClock(DateTimeOffset start) : TimeProvider
+    {
+        private DateTimeOffset _now = start;
+
+        public void Advance(TimeSpan by) => _now += by;
+
+        public override DateTimeOffset GetUtcNow() => _now;
     }
 }
