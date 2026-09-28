@@ -69,9 +69,20 @@ public sealed class AppHostLaneTopologyTests
     }
 
     [TestMethod]
-    public void AzureLane_ResolvesExactProfile()
+    public void UnsetLane_ResolvesExactNonAzureProfile()
     {
         var switches = ResolveWithLane(lane: null);
+
+        Assert.AreEqual(HostingLane.NonAzure, switches.Lane);
+        CollectionAssert.AreEquivalent(
+            ResolveWithLane("NonAzure").HostEnvironment.ToArray(), switches.HostEnvironment.ToArray());
+        AssertHostEnvironmentMatches(switches);
+    }
+
+    [TestMethod]
+    public void AzureLane_ResolvesExactProfile()
+    {
+        var switches = ResolveWithLane("Azure");
 
         Assert.AreEqual(HostingLane.Azure, switches.Lane);
         Assert.AreEqual("SqlServer", switches.Database);
@@ -104,7 +115,7 @@ public sealed class AppHostLaneTopologyTests
             ResolveWithLane("NonAzure", (HostingLaneResolver.StorageEnvironmentVariable, "AzureBlob")));
 
     [TestMethod]
-    public void UnknownLane_FailsFastInsteadOfRunningAzure()
+    public void UnknownLane_FailsFastInsteadOfRunningDefaultLane()
     {
         var exception = Assert.ThrowsExactly<ArgumentException>(() => ResolveWithLane("Vps"));
         StringAssert.Contains(exception.Message, "NonAzure");
@@ -213,10 +224,16 @@ public sealed class AppHostLaneTopologyTests
     }
 
     [TestMethod]
-    public async Task FullLane_NonAzureGraph_ContainsEveryCommonHostAndNoAzureResource()
-    {
-        var resources = (await BuildResourceGraphAsync("NonAzure")).ResourceNames;
+    public async Task FullLane_NonAzureGraph_ContainsEveryCommonHostAndNoAzureResource() =>
+        AssertNonAzureTopology((await BuildResourceGraphAsync("NonAzure")).ResourceNames);
 
+    /// <summary>D-060: a plain dotnet run of the AppHost with no lane set brings up the NonAzure topology.</summary>
+    [TestMethod]
+    public async Task FullLane_UnsetLaneGraph_IsNonAzureTopology() =>
+        AssertNonAzureTopology((await BuildResourceGraphAsync(lane: null)).ResourceNames);
+
+    private static void AssertNonAzureTopology(IReadOnlySet<string> resources)
+    {
         AssertPresent(resources, "postgres", "taskflowdb", "redis", "rabbitmq", "seaweedfs",
             "taskflowmigrator", "taskflowapi", "taskflowgateway", "taskflowscheduler", "taskflowblazor",
             "taskflowreact", "taskflowuno");
@@ -437,7 +454,7 @@ public sealed class AppHostLaneTopologyTests
     }
 
     private static async Task<AppHostGraph> BuildResourceGraphAsync(
-        string lane,
+        string? lane,
         string? readModel = null,
         bool manifestMode = false,
         bool useAzureFoundry = false,

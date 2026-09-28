@@ -26,8 +26,9 @@ var schedulerAvailableInTesting =
 // override via Parameters__sql-password / Parameters__postgres-password.
 var defaultSqlPassword = LocalSqlSettings.SharedSaPassword;
 
-// D-060: the strict lane resolver owns every core provider. Unset means Azure; Portable remains a deprecated
-// input alias that normalizes to NonAzure before this graph is built.
+// D-060: the strict lane resolver owns every core provider. Unset means NonAzure (TASKFLOW_LANE=Azure opts into
+// the Azure topology); Portable remains a deprecated input alias that normalizes to NonAzure before this
+// graph is built.
 var lane = LaneDefaults.Resolve(builder.Configuration);
 var nonAzureLane = lane.Lane == HostingLane.NonAzure;
 
@@ -528,10 +529,9 @@ IResourceBuilder<T> WithReadModel<T>(IResourceBuilder<T> host)
     return host;
 }
 
-// D-035: every host learns the lane and the switch values this graph actually declared containers for, the
-// same way Bicep and the compose lane set them. In the Azure lane this is only Hosting__Lane=Azure - the
-// remaining switches keep their own runtime-derived defaults, which is what "Azure means today's behavior"
-// has to mean for the AI, Search and DataProtection switches.
+// D-060: every host learns the explicit lane and every resolved switch value this graph declared containers
+// for, the same way Bicep and the compose lane set them, so no host falls back to the unset NonAzure default
+// on its own.
 IResourceBuilder<T> WithLaneEnvironment<T>(IResourceBuilder<T> host)
     where T : IResourceWithEnvironment
 {

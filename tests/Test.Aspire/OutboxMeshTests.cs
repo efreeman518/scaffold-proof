@@ -38,8 +38,7 @@ public class OutboxMeshTests
     public static Task ClassInit(TestContext context) => AspireTestHost.EnsureStartedAsync(context);
 
     /// <summary>Consumers run in the Functions host on Service Bus and in the Scheduler on RabbitMQ.</summary>
-    private static bool UsesRabbitMq => string.Equals(
-        Environment.GetEnvironmentVariable("TASKFLOW_MESSAGING_PROVIDER"), "RabbitMq", StringComparison.OrdinalIgnoreCase);
+    private static bool UsesRabbitMq => TestHostingLane.Current.Messaging == "RabbitMq";
 
     /// <summary>The dispatcher lives in the Scheduler and the Service Bus consumers live in Functions.</summary>
     [TestInitialize]

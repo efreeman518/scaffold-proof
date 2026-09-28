@@ -303,6 +303,15 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(fullJob, "Invoke-LaneAcceptance -Lane Azure -ReadModel Cosmos -RunFunctions $true");
         StringAssert.Contains(fullJob, "Invoke-LaneAcceptance -Lane NonAzure");
         StringAssert.Contains(fullJob, "-RunFunctions $false");
+        // D-060: NonAzure is the default lane, so it runs first everywhere both lanes run.
+        Assert.IsLessThan(
+            fullJob.IndexOf("Invoke-LaneAcceptance -Lane Azure -ReadModel", StringComparison.Ordinal),
+            fullJob.IndexOf("Invoke-LaneAcceptance -Lane NonAzure -ReadModel", StringComparison.Ordinal));
+        var meshStep = workflow[meshStart..workflow.IndexOf("      - name: Aspire Mesh Diagnostics", StringComparison.Ordinal)];
+        StringAssert.Contains(meshStep, "run_lane NonAzure");
+        Assert.IsLessThan(
+            meshStep.IndexOf("run_lane Azure Cosmos", StringComparison.Ordinal),
+            meshStep.IndexOf("run_lane NonAzure", StringComparison.Ordinal));
         StringAssert.Contains(fullJob, "docker info | Out-Null");
         StringAssert.Contains(fullJob, "Docker runtime is required for complete lane acceptance.");
         Assert.IsTrue(
@@ -334,6 +343,7 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(workflow, "run: dotnet workload install wasm-tools");
 
         var databaseLanes = workflow[databaseStart..workflow.IndexOf("  compose-smoke:", StringComparison.Ordinal)];
+        StringAssert.Contains(databaseLanes, "lane: [NonAzure, Azure]");
         StringAssert.Contains(databaseLanes, "dotnet restore tests/Test.E2E/Test.E2E.csproj -p:Configuration=Release");
         StringAssert.Contains(databaseLanes, "dotnet restore tests/Test.Integration/Test.Integration.csproj -p:Configuration=Release");
         Assert.IsFalse(databaseLanes.Contains("dotnet workload install", StringComparison.Ordinal),

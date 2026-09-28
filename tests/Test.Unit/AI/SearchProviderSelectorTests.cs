@@ -95,7 +95,9 @@ public class SearchProviderSelectorTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(Mock.Of<ITaskItemRepositoryQuery>());
-        var config = Config((AiServiceCollectionExtensions.SearchProviderConfigKey, "AzureAiSearch"));
+        var config = Config(
+            (HostingLaneResolver.LaneConfigurationKey, "Azure"),
+            (AiServiceCollectionExtensions.SearchProviderConfigKey, "AzureAiSearch"));
 
         var ex = Assert.ThrowsExactly<InvalidOperationException>(() => services.AddAiServices(config));
         StringAssert.Contains(ex.Message, "SearchEndpoint");
@@ -111,6 +113,7 @@ public class SearchProviderSelectorTests
     public void AddVectorSearchServices_PgVectorOnAzureLane_ThrowsStrictLaneDiagnostic()
     {
         var config = Config(
+            (HostingLaneResolver.LaneConfigurationKey, "Azure"),
             (AiServiceCollectionExtensions.SearchProviderConfigKey, "PgVector"),
             (TaskFlowDbProviderSelector.ConfigurationKey, "SqlServer"));
 

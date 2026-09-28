@@ -20,7 +20,7 @@ namespace Test.E2E;
 
 /// <summary>
 /// Real-database WebApplicationFactory backed by a Testcontainer for the provider selected by
-/// <c>TASKFLOW_LANE</c> (Azure default, NonAzure alternate). Exercises the full stack:
+/// <c>TASKFLOW_LANE</c> (NonAzure default, Azure opt-in). Exercises the full stack:
 /// HTTP -> endpoint style -> application layer -> EF -> database.
 /// Set TASKFLOW_APPLICATION_STYLE=Cqrs to run the same workflow tests against CQRS endpoint mappings.
 /// </summary>

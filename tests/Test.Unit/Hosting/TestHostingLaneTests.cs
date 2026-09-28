@@ -31,12 +31,23 @@ public sealed class TestHostingLaneTests
     ];
 
     [TestMethod]
-    public void Default_SelectsOnlyAzureDatabaseAndDefaultReadModel() => WithEnvironment([], () =>
+    public void Default_SelectsNonAzurePostgreSqlAndDefaultReadModel() => WithEnvironment([], () =>
     {
-        Assert.AreEqual(HostingLane.Azure, TestHostingLane.Current.Lane);
-        Assert.AreEqual(TaskFlowDbProvider.SqlServer, TestHostingLane.DatabaseProvider);
+        Assert.AreEqual(HostingLane.NonAzure, TestHostingLane.Current.Lane);
+        Assert.AreEqual(TaskFlowDbProvider.PostgreSql, TestHostingLane.DatabaseProvider);
+        Assert.AreEqual("PostgreSqlJsonb", TestHostingLane.Current.ReadModel);
         Assert.IsFalse(TestHostingLane.UsesMongoDb);
     });
+
+    [TestMethod]
+    public void Azure_SelectsOnlyAzureDatabaseAndDefaultReadModel() => WithEnvironment(
+        new() { [HostingLaneResolver.LaneEnvironmentVariable] = "Azure" }, () =>
+        {
+            Assert.AreEqual(HostingLane.Azure, TestHostingLane.Current.Lane);
+            Assert.AreEqual(TaskFlowDbProvider.SqlServer, TestHostingLane.DatabaseProvider);
+            Assert.AreEqual("Cosmos", TestHostingLane.Current.ReadModel);
+            Assert.IsFalse(TestHostingLane.UsesMongoDb);
+        });
 
     [TestMethod]
     public void NonAzure_SelectsPostgreSqlJsonbAndMongoOnlyWhenExplicit() => WithEnvironment(
@@ -57,8 +68,8 @@ public sealed class TestHostingLaneTests
     [TestMethod]
     public void LegacyDatabaseProvider_MapsToCanonicalLane() => WithEnvironment(new()
     {
-        [TestHostingLane.LegacyDatabaseProviderEnvironmentVariable] = "PostgreSql"
-    }, () => Assert.AreEqual(HostingLane.NonAzure, TestHostingLane.Current.Lane));
+        [TestHostingLane.LegacyDatabaseProviderEnvironmentVariable] = "SqlServer"
+    }, () => Assert.AreEqual(HostingLane.Azure, TestHostingLane.Current.Lane));
 
     [TestMethod]
     public void ConflictingLegacyDatabaseProvider_FailsFast() => WithEnvironment(new()

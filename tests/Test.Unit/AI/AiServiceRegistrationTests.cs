@@ -29,6 +29,7 @@ public class AiServiceRegistrationTests
     {
         var builder = CreateHostBuilder(new Dictionary<string, string?>
         {
+            [HostingLaneResolver.LaneConfigurationKey] = "Azure",
             [RegisterServices.AiProviderConfigKey] = "AzureInference",
             ["ConnectionStrings:chat"] = "Endpoint=https://example.services.ai.azure.com/;Key=fake",
         });

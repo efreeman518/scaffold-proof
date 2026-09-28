@@ -28,9 +28,41 @@ public sealed class HostingLaneContractTests
     ];
 
     [TestMethod]
-    public void Resolve_Unset_ReturnsExactAzureProfile()
+    public void Resolve_Unset_ReturnsExactNonAzureProfile()
     {
         var settings = Resolve();
+
+        Assert.AreEqual(Resolve((HostingLaneResolver.LaneConfigurationKey, "NonAzure")), settings);
+        Assert.AreEqual(HostingLane.NonAzure, settings.Lane);
+    }
+
+    [TestMethod]
+    public void ResolveFromEnvironment_Unset_ReturnsNonAzure()
+    {
+        WithCleanEnvironment(() =>
+        {
+            Assert.AreEqual(HostingLane.NonAzure, HostingLaneResolver.ResolveFromEnvironment().Lane);
+            Assert.AreEqual(HostingLane.NonAzure, HostingLaneResolver.ResolveLaneFromEnvironment());
+            Assert.AreEqual(HostingLane.NonAzure, HostingLaneResolver.ResolveLane(Config()));
+        });
+    }
+
+    [TestMethod]
+    public void Resolve_UnsetLaneWithAzureServiceSetting_FailsFast()
+    {
+        // An Azure deployment that forgets Hosting__Lane=Azure must not silently boot the NonAzure lane:
+        // its Azure-only settings are rejected at startup instead.
+        var exception = Assert.ThrowsExactly<InvalidOperationException>(() =>
+            Resolve((HostingLaneResolver.AppConfigEndpointConfigurationKey, "https://azure.example")));
+
+        StringAssert.Contains(exception.Message, "NonAzure");
+        StringAssert.Contains(exception.Message, HostingLaneResolver.AppConfigEndpointConfigurationKey);
+    }
+
+    [TestMethod]
+    public void Resolve_Azure_ReturnsExactProfile()
+    {
+        var settings = Resolve((HostingLaneResolver.LaneConfigurationKey, "Azure"));
 
         Assert.AreEqual(HostingLane.Azure, settings.Lane);
         Assert.AreEqual("SqlServer", settings.Database);
@@ -89,6 +121,7 @@ public sealed class HostingLaneContractTests
     public void Resolve_SameLaneOptIns_AreAccepted()
     {
         var azure = Resolve(
+            (HostingLaneResolver.LaneConfigurationKey, "Azure"),
             (HostingLaneResolver.SearchConfigurationKey, "AzureAiSearch"),
             (HostingLaneResolver.AiConfigurationKey, "AzureInference"));
         Assert.AreEqual("AzureAiSearch", azure.Search);
@@ -139,7 +172,9 @@ public sealed class HostingLaneContractTests
     public void Resolve_UnknownProvider_ThrowsDiagnostic()
     {
         var exception = Assert.ThrowsExactly<ArgumentException>(() =>
-            Resolve((HostingLaneResolver.DatabaseConfigurationKey, "Oracle")));
+            Resolve(
+                (HostingLaneResolver.LaneConfigurationKey, "Azure"),
+                (HostingLaneResolver.DatabaseConfigurationKey, "Oracle")));
 
         StringAssert.Contains(exception.Message, "Azure");
         StringAssert.Contains(exception.Message, HostingLaneResolver.DatabaseConfigurationKey);

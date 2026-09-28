@@ -33,11 +33,13 @@ public class ProviderSwitchSelectorTests
             .AddInMemoryCollection(entries.ToDictionary(e => e.Key, e => e.Value))
             .Build();
 
+    private static IConfiguration AzureLane() => Config((HostingLaneResolver.LaneConfigurationKey, "Azure"));
+
     // ----- HostingLane -----
 
     [TestMethod]
-    public void ResolveHostingLane_Unset_DefaultsToAzure() =>
-        Assert.AreEqual(HostingLane.Azure, HostingLaneResolver.ResolveLane(Config()));
+    public void ResolveHostingLane_Unset_DefaultsToNonAzure() =>
+        Assert.AreEqual(HostingLane.NonAzure, HostingLaneResolver.ResolveLane(Config()));
 
     [TestMethod]
     public void ResolveHostingLane_ConfigPortable_ReturnsNonAzure() =>
@@ -66,8 +68,8 @@ public class ProviderSwitchSelectorTests
     // ----- Storage -----
 
     [TestMethod]
-    public void ResolveStorageProvider_Unset_AzureLane_DefaultsToAzureBlob() =>
-        Assert.AreEqual(StorageProvider.AzureBlob, RegisterServices.ResolveStorageProvider(Config()));
+    public void ResolveStorageProvider_AzureLane_DefaultsToAzureBlob() =>
+        Assert.AreEqual(StorageProvider.AzureBlob, RegisterServices.ResolveStorageProvider(AzureLane()));
 
     [TestMethod]
     public void ResolveStorageProvider_NonAzureLane_DefaultsToS3() =>
@@ -189,8 +191,8 @@ public class ProviderSwitchSelectorTests
     // ----- ReadModel -----
 
     [TestMethod]
-    public void ResolveReadModelProvider_Unset_AzureLane_DefaultsToCosmos() =>
-        Assert.AreEqual(ReadModelProvider.Cosmos, RegisterServices.ResolveReadModelProvider(Config()));
+    public void ResolveReadModelProvider_AzureLane_DefaultsToCosmos() =>
+        Assert.AreEqual(ReadModelProvider.Cosmos, RegisterServices.ResolveReadModelProvider(AzureLane()));
 
     [TestMethod]
     public void ResolveReadModelProvider_NonAzureLane_DefaultsToPostgreSqlJsonb() =>
@@ -279,8 +281,8 @@ public class ProviderSwitchSelectorTests
     // ----- Audit -----
 
     [TestMethod]
-    public void ResolveAuditProvider_Unset_AzureLane_DefaultsToAzureTable() =>
-        Assert.AreEqual(AuditProvider.AzureTable, RegisterServices.ResolveAuditProvider(Config()));
+    public void ResolveAuditProvider_AzureLane_DefaultsToAzureTable() =>
+        Assert.AreEqual(AuditProvider.AzureTable, RegisterServices.ResolveAuditProvider(AzureLane()));
 
     [TestMethod]
     public void ResolveAuditProvider_NonAzureLane_DefaultsToRelational() =>
@@ -331,8 +333,8 @@ public class ProviderSwitchSelectorTests
     // ----- Messaging (D-034 selector extended with the lane default and fail-fast in this slice) -----
 
     [TestMethod]
-    public void ResolveMessagingProvider_Unset_AzureLane_DefaultsToServiceBus() =>
-        Assert.AreEqual(MessagingProvider.ServiceBus, RegisterServices.ResolveMessagingProvider(Config()));
+    public void ResolveMessagingProvider_AzureLane_DefaultsToServiceBus() =>
+        Assert.AreEqual(MessagingProvider.ServiceBus, RegisterServices.ResolveMessagingProvider(AzureLane()));
 
     [TestMethod]
     public void ResolveMessagingProvider_NonAzureLane_DefaultsToRabbitMq() =>
@@ -366,8 +368,8 @@ public class ProviderSwitchSelectorTests
     // ----- DataProtection persistence -----
 
     [TestMethod]
-    public void ResolveDataProtectionPersistence_Unset_AzureLane_DefaultsToAzureBlob() =>
-        Assert.AreEqual(DataProtectionPersistence.AzureBlob, RegisterServices.ResolveDataProtectionPersistence(Config()));
+    public void ResolveDataProtectionPersistence_AzureLane_DefaultsToAzureBlob() =>
+        Assert.AreEqual(DataProtectionPersistence.AzureBlob, RegisterServices.ResolveDataProtectionPersistence(AzureLane()));
 
     [TestMethod]
     public void ResolveDataProtectionPersistence_NonAzureLane_DefaultsToRedis() =>
@@ -394,7 +396,9 @@ public class ProviderSwitchSelectorTests
         WithEnv(RegisterServices.DataProtectionPersistenceEnvVar, "AzureBlob", () =>
             Assert.AreEqual(
                 DataProtectionPersistence.AzureBlob,
-                RegisterServices.ResolveDataProtectionPersistence(Config((RegisterServices.DataProtectionPersistenceConfigKey, "None")))));
+                RegisterServices.ResolveDataProtectionPersistence(Config(
+                    (HostingLaneResolver.LaneConfigurationKey, "Azure"),
+                    (RegisterServices.DataProtectionPersistenceConfigKey, "None")))));
     }
 
     /// <summary>

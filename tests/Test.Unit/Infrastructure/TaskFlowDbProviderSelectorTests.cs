@@ -22,8 +22,14 @@ public class TaskFlowDbProviderSelectorTests
             .Build();
 
     [TestMethod]
-    public void Resolve_Unset_AzureLane_DefaultsToSqlServer() =>
-        Assert.AreEqual(TaskFlowDbProvider.SqlServer, TaskFlowDbProviderSelector.Resolve(Config()));
+    public void Resolve_Unset_DefaultsToPostgreSql() =>
+        Assert.AreEqual(TaskFlowDbProvider.PostgreSql, TaskFlowDbProviderSelector.Resolve(Config()));
+
+    [TestMethod]
+    public void Resolve_AzureLane_DefaultsToSqlServer() =>
+        Assert.AreEqual(
+            TaskFlowDbProvider.SqlServer,
+            TaskFlowDbProviderSelector.Resolve(Config((HostingLaneResolver.LaneConfigurationKey, "Azure"))));
 
     [TestMethod]
     public void Resolve_NonAzureLane_DefaultsToPostgreSql() =>
@@ -43,7 +49,7 @@ public class TaskFlowDbProviderSelectorTests
     {
         var ex = Assert.ThrowsExactly<ArgumentException>(() =>
             TaskFlowDbProviderSelector.Resolve(Config((TaskFlowDbProviderSelector.ConfigurationKey, "MySql"))));
-        StringAssert.Contains(ex.Message, "SqlServer");
+        StringAssert.Contains(ex.Message, "PostgreSql");
     }
 
     [TestMethod]

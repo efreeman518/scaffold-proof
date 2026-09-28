@@ -11,7 +11,7 @@ namespace Test.Architecture;
 /// <summary>
 /// Architecture rules for the D-035..D-045 provider switches: cloud-SDK namespaces stay confined to the
 /// layers allowed to use them, and every switch discovered via <see cref="ProviderSwitchAttribute"/>
-/// leaves its contract resolvable in the default (unconfigured) arm - the same property the "S3 is not
+/// leaves its contract resolvable in the Azure arm - the same property the "S3 is not
 /// implemented yet" style throws would otherwise silently defeat if a switch shipped with no fallback at
 /// all. Search (Infrastructure.AI) is not attribute-tagged - tagging it would require Infrastructure.AI to
 /// reference TaskFlow.Bootstrapper, an inversion of the existing dependency direction - so its default-arm
@@ -56,7 +56,7 @@ public class ProviderSwitchArchitectureTests : BaseTest
     }
 
     /// <summary>
-    /// Every dispatcher tagged <see cref="ProviderSwitchAttribute"/> is discovered, and its default
+    /// Every dispatcher tagged <see cref="ProviderSwitchAttribute"/> is discovered, and its explicit
     /// Azure arm registers <see cref="ProviderSwitchAttribute.ContractType"/> when its strict core
     /// dependencies are present. Inert endpoints prove composition without contacting Azure.
     /// </summary>
@@ -65,6 +65,8 @@ public class ProviderSwitchArchitectureTests : BaseTest
     {
         var azureRegistration = new Dictionary<string, string?>
         {
+            // D-060: NonAzure is the unset default, so the Azure arm is selected explicitly.
+            ["Hosting:Lane"] = "Azure",
             ["ConnectionStrings:BlobStorage1"] = "https://taskflow.blob.core.windows.net/",
             ["ConnectionStrings:TableStorage1"] = "https://taskflow.table.core.windows.net/",
             ["ConnectionStrings:CosmosDb1"] = "https://taskflow.documents.azure.com:443/",

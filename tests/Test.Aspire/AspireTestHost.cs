@@ -4,15 +4,17 @@ using Aspire.Hosting.Testing;
 using EF.IntegrationTesting.Aspire;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using TaskFlow.Hosting;
 using Test.Support.Aspire;
+using Test.Support.Hosting;
 using EnvironmentVariableScope = EF.IntegrationTesting.Environment.EnvironmentVariableScope;
 using FunctionsCoreToolsDiscovery = EF.IntegrationTesting.Environment.FunctionsCoreToolsDiscovery;
 
 namespace Test.Aspire;
 
 /// <summary>
-/// Lazy assembly-scoped fixture that starts the full Aspire AppHost graph (API, Functions, SQL, Table
-/// Storage) the first time a mesh test class calls <see cref="EnsureStartedAsync"/> from
+/// Lazy assembly-scoped fixture that starts the Aspire AppHost graph for the selected D-060 lane (NonAzure
+/// unless TASKFLOW_LANE=Azure) the first time a mesh test class calls <see cref="EnsureStartedAsync"/> from
 /// <c>[ClassInitialize]</c>. Mesh tier (Aspire.Hosting.Testing) - the only tier that exercises the full
 /// service mesh (HTTP -> API -> Service Bus -> Function -> projection -> audit row), which no lighter tier
 /// reproduces. Teardown runs once via <c>AspireMeshLifecycle.[AssemblyCleanup]</c>. The shared
@@ -289,6 +291,17 @@ internal static class AspireTestHost
     /// Mutates PATH to include the discovery location on Windows if found via LocalAppData fallback.
     /// </summary>
     internal static bool EnsureFuncToolAvailable() => FunctionsCoreToolsDiscovery.EnsureFuncToolAvailable();
+
+    /// <summary>
+    /// D-060: NonAzure is the unset default, so a mesh class that only exists on one lane (the Table audit
+    /// sink, the Functions host) reports inconclusive on the other instead of timing out on a missing resource.
+    /// </summary>
+    internal static void RequireLaneOrInconclusive(HostingLane lane)
+    {
+        var current = TestHostingLane.Current.Lane;
+        if (current != lane)
+            Assert.Inconclusive($"Requires {HostingLaneResolver.LaneEnvironmentVariable}={lane}; current lane is {current}.");
+    }
 
     internal static void RequireAzureFoundryOrInconclusive()
     {
