@@ -33,7 +33,7 @@ Multi-tenant (row-level tenancy). Event-driven async via Service Bus. IaC via Bi
 
 - **.NET 10 SDK** - the exact version is pinned by [`global.json`](global.json).
 - **Workloads:** `dotnet workload install wasm-tools aspire` (required for the Uno WASM host and the Aspire AppHost).
-- **Docker-compatible container runtime** (Docker Desktop, headless Docker Engine, or Podman) - no desktop UI is required. Aspire starts only the selected lane: Azure emulators or PostgreSQL/RabbitMQ/SeaweedFS with optional MongoDB, plus common Redis and application services.
+- **Docker-compatible container runtime** (Docker Desktop, headless Docker Engine, or Podman) - no desktop UI is required. Aspire starts only the selected lane: PostgreSQL/RabbitMQ/SeaweedFS with optional MongoDB by default, or the Azure emulators with `TASKFLOW_LANE=Azure`, plus common Redis and application services.
 - **Private NuGet feed access:** the `EF.*` (FlowEngine) packages restore from GitHub Packages via the `efreeman518-github` source in [`nuget.config`](nuget.config). Supply a `NUGET_PAT` (a GitHub token with `read:packages`) before restoring.
 - **Local tools:** `dotnet tool restore` restores Stryker.NET and the other tools declared in the tool manifest.
 
@@ -72,11 +72,11 @@ Generated API clients (Blazor Refit, React `openapi-typescript`) regenerate per 
 
 ### Hosting lanes: Azure vs NonAzure
 
-`TASKFLOW_LANE = Azure | NonAzure` defaults to `Azure`. `Portable` is a deprecated input alias for `NonAzure` for one release. Lane-owned core provider conflicts fail fast instead of creating a mixed topology.
+`TASKFLOW_LANE = Azure | NonAzure` defaults to `NonAzure`; Azure is the explicit opt-in, and every Azure deployment sets `Hosting__Lane=Azure` itself. `Portable` is a deprecated input alias for `NonAzure` for one release. Lane-owned core provider conflicts fail fast instead of creating a mixed topology.
 
 ```powershell
-dotnet run --project src/Host/Aspire/AppHost                                      # Azure: SQL Server/Cosmos/Service Bus/Azurite
-$env:TASKFLOW_LANE = "NonAzure"; dotnet run --project src/Host/Aspire/AppHost     # PostgreSQL JSONB/RabbitMQ/SeaweedFS, zero Azure
+dotnet run --project src/Host/Aspire/AppHost                                      # NonAzure (default): PostgreSQL JSONB/RabbitMQ/SeaweedFS, zero Azure
+$env:TASKFLOW_LANE = "Azure"; dotnet run --project src/Host/Aspire/AppHost        # Azure: SQL Server/Cosmos/Service Bus/Azurite emulators
 $env:TASKFLOW_READMODEL_PROVIDER = "MongoDb"; dotnet run --project src/Host/Aspire/AppHost # explicit MongoDB alternative
 ```
 
@@ -207,7 +207,7 @@ GitHub Actions runs the fast, no-Docker gate on every pull request: Unit, Archit
 
 | Input | Default | Effect |
 |-------|---------|--------|
-| `lane` | `both` | Runs Azure and NonAzure, or one explicitly selected lane |
+| `lane` | `both` | Runs NonAzure then Azure, or one explicitly selected lane |
 | `nonAzureReadModel` | `PostgreSqlJsonb` | Selects the NonAzure JSONB default; `MongoDb` is explicit |
 | `includeE2E` | `false` | Runs selected Testcontainers-backed HTTP lane(s) |
 | `includeIntegration` | `false` | Runs selected component lane(s) |

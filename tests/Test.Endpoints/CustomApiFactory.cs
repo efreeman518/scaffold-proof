@@ -8,6 +8,7 @@ using EF.IntegrationTesting.EntityFramework;
 using EF.Storage.Contracts;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Storage;
+using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Interceptors;
 using TaskFlow.Infrastructure.Data.Messaging;
@@ -51,6 +52,8 @@ public sealed class CustomApiFactory : WebApplicationFactoryBase<Program, TaskFl
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting(ApplicationStyleResolver.ConfigKey, _applicationStyle);
+        // D-060: the endpoint contract runs on the explicit Azure lane with every data plane replaced below.
+        builder.UseSetting(HostingLaneResolver.LaneConfigurationKey, "Azure");
         builder.UseSetting("DataProtectionKeysFileUrl", TestDataProtectionKeysFileUrl);
         builder.UseSetting("ConnectionStrings:BlobStorage1", TestBlobEndpoint);
         builder.UseSetting("ConnectionStrings:TableStorage1", TestTableEndpoint);
@@ -78,6 +81,7 @@ public sealed class CustomApiFactory : WebApplicationFactoryBase<Program, TaskFl
         config.AddInMemoryCollection(new Dictionary<string, string?>
         {
             [ApplicationStyleResolver.ConfigKey] = _applicationStyle,
+            [HostingLaneResolver.LaneConfigurationKey] = "Azure",
             ["DataProtectionKeysFileUrl"] = TestDataProtectionKeysFileUrl,
             ["ConnectionStrings:BlobStorage1"] = TestBlobEndpoint,
             ["ConnectionStrings:TableStorage1"] = TestTableEndpoint,

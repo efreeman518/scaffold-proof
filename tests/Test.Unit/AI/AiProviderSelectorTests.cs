@@ -26,8 +26,10 @@ public class AiProviderSelectorTests
             .Build();
 
     [TestMethod]
-    public void ResolveAiProvider_Unset_AzureLane_DefaultsToNone() =>
-        Assert.AreEqual(AiProvider.None, RegisterServices.ResolveAiProvider(Config()));
+    public void ResolveAiProvider_AzureLane_DefaultsToNone() =>
+        Assert.AreEqual(
+            AiProvider.None,
+            RegisterServices.ResolveAiProvider(Config((HostingLaneResolver.LaneConfigurationKey, "Azure"))));
 
     [TestMethod]
     public void ResolveAiProvider_NonAzureLane_DefaultsToNone() =>
@@ -146,6 +148,7 @@ public class AiProviderSelectorTests
     {
         var builder = CreateHostBuilder(new Dictionary<string, string?>
         {
+            [HostingLaneResolver.LaneConfigurationKey] = "Azure",
             [RegisterServices.AiProviderConfigKey] = "AzureInference",
             ["ConnectionStrings:chat"] = "Endpoint=https://example.services.ai.azure.com/;Key=fake"
         });

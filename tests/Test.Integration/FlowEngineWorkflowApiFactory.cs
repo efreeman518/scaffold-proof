@@ -39,8 +39,8 @@ namespace Test.Integration;
 internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Program>
 {
     // Overrides are pushed through environment variables (set before the host's WebApplication.CreateBuilder
-    // runs) because appsettings.Development.json hardcodes a localdb connection string that wins over
-    // ConfigureAppConfiguration in the minimal-hosting model. Env vars are read after appsettings, so they win.
+    // runs) because Program reads configuration while registering services, before ConfigureAppConfiguration
+    // sources apply in the minimal-hosting model. Env vars are read after appsettings, so they win.
     // The scope restores each variable's original value on dispose, so a value set in the shell survives.
     private readonly EnvironmentVariableScope _environment = new();
 

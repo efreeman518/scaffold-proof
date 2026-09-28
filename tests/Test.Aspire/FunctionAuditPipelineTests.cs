@@ -6,6 +6,7 @@ using EF.IntegrationTesting.Aspire;
 using System.Net;
 using System.Net.Http.Json;
 using TaskFlow.Application.Models;
+using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Storage;
 
 namespace Test.Aspire;
@@ -27,7 +28,11 @@ public class FunctionAuditPipelineTests
 
     /// <summary>Boots the Aspire graph lazily on first mesh-test class to run; teardown is owned by <c>AspireMeshLifecycle</c>.</summary>
     [ClassInitialize]
-    public static Task ClassInit(TestContext context) => AspireTestHost.EnsureStartedAsync(context);
+    public static Task ClassInit(TestContext context)
+    {
+        AspireTestHost.RequireLaneOrInconclusive(HostingLane.Azure);
+        return AspireTestHost.EnsureStartedAsync(context);
+    }
 
     /// <summary>Verifies that given function category create, when request handled, then audit entry persisted to table storage.</summary>
     [TestMethod]

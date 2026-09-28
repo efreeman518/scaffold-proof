@@ -133,7 +133,8 @@ public static class HostingLaneResolver
 
     private static HostingLane ParseLane(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value)) return HostingLane.Azure;
+        // D-060: NonAzure is the default lane; Azure is the explicit opt-in every Azure deployment sets.
+        if (string.IsNullOrWhiteSpace(value)) return HostingLane.NonAzure;
         var normalized = value.Trim();
         if (normalized.Equals("Azure", StringComparison.OrdinalIgnoreCase)) return HostingLane.Azure;
         if (normalized.Equals("NonAzure", StringComparison.OrdinalIgnoreCase)) return HostingLane.NonAzure;
