@@ -1,5 +1,4 @@
 using TaskFlow.Uno.WasmHost;
-using Microsoft.AspNetCore.StaticFiles;
 
 namespace Test.PlaywrightUI;
 
@@ -8,50 +7,7 @@ namespace Test.PlaywrightUI;
 public sealed class WasmHostContractTests
 {
     [TestMethod]
-    public void SelectEncoding_RespectsQualityValuesAndServerPreference()
-    {
-        Assert.AreEqual("gzip", PublishedAssetContract.SelectEncoding("br;q=0.2, gzip;q=0.9", true, true));
-        Assert.AreEqual("br", PublishedAssetContract.SelectEncoding("gzip, br", true, true));
-        Assert.IsNull(PublishedAssetContract.SelectEncoding("br;q=0, gzip;q=0", true, true));
-        Assert.AreEqual("gzip", PublishedAssetContract.SelectEncoding("*;q=0.5, br;q=0", true, true));
-    }
-
-    [TestMethod]
-    public void CacheControl_OnlyTreatsFingerprintedFilesAsImmutable()
-    {
-        Assert.AreEqual(
-            PublishedAssetContract.ImmutableCacheControl,
-            PublishedAssetContract.CacheControlFor("/_framework/TaskFlow.Uno.3ugbcrq8gq.wasm.br"));
-        Assert.AreEqual(
-            PublishedAssetContract.RevalidateCacheControl,
-            PublishedAssetContract.CacheControlFor("/index.html"));
-        Assert.AreEqual(
-            PublishedAssetContract.RevalidateCacheControl,
-            PublishedAssetContract.CacheControlFor("/service-worker.js.gz"));
-    }
-
-    [TestMethod]
-    public void AssetRouting_DistinguishesMissingAssetsFromClientRoutes()
-    {
-        Assert.IsTrue(PublishedAssetContract.LooksLikeAssetRequest("/_framework/missing.wasm"));
-        Assert.IsFalse(PublishedAssetContract.LooksLikeAssetRequest("/tasks/active"));
-    }
-
-    [TestMethod]
-    public void PrecompressedContentTypes_AllowStaticFileMiddlewareToServeTransportFiles()
-    {
-        var provider = new FileExtensionContentTypeProvider();
-
-        PublishedAssetContract.AddPrecompressedContentTypes(provider);
-
-        Assert.IsTrue(provider.TryGetContentType("require.js.br", out var brotliContentType));
-        Assert.AreEqual("application/octet-stream", brotliContentType);
-        Assert.IsTrue(provider.TryGetContentType("uno-bootstrap.css.gz", out var gzipContentType));
-        Assert.AreEqual("application/octet-stream", gzipContentType);
-    }
-
-    [TestMethod]
-    public void Validate_RequiresIndexAndExactlyOneCurrentApplicationAssembly()
+    public void Validate_RequiresIndexPackageAssetsOneApplicationAssemblyAndTheEndpointManifest()
     {
         var root = Path.Combine(Path.GetTempPath(), $"taskflow-wasm-contract-{Guid.NewGuid():N}");
         try
@@ -75,6 +31,9 @@ public sealed class WasmHostContractTests
 
             File.WriteAllText(Path.Combine(package, "require.js"), string.Empty);
             File.WriteAllText(Path.Combine(package, "uno-bootstrap.css"), string.Empty);
+            Assert.Throws<InvalidOperationException>(() => PublishedAssetContract.Validate(root));
+
+            File.WriteAllText(Path.Combine(root, PublishedAssetContract.EndpointsManifestFileName), "{}");
             Assert.AreEqual(Path.Combine(root, "wwwroot"), PublishedAssetContract.Validate(root));
 
             File.WriteAllBytes(Path.Combine(framework, "TaskFlow.Uno.ijklmnop.wasm"), [0]);

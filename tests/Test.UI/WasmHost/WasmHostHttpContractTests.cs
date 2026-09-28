@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Net;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -10,7 +12,8 @@ namespace Test.UI.WasmHost;
 /// minimal published-output fixture: precompressed assets are negotiated by Accept-Encoding quality, fingerprinted
 /// assets are immutable, the document and client routes revalidate, a missing asset is a 404 rather than the SPA
 /// shell, client routes fall back to index.html, and <c>/app-config.json</c> carries the gateway base URL uncached.
-/// The asserts are on behavior, not on header spelling, so they hold for any implementation of the host.
+/// The asserts are on behavior, not on header spelling, so they hold for any implementation of the host. The host runs
+/// in Development over a Build-type manifest, the combination Aspire runs locally and the strictest one for caching.
 /// </summary>
 [TestClass]
 [TestCategory("Unit")]
@@ -33,6 +36,7 @@ public sealed class WasmHostHttpContractTests
         _distPath = CreatePublishedOutputFixture();
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
+            builder.UseEnvironment("Development");
             builder.UseSetting("Gateway:BaseUrl", GatewayBaseUrl);
             builder.UseSetting("UnoWasm:DistPath", _distPath);
         });
@@ -155,8 +159,9 @@ public sealed class WasmHostHttpContractTests
 
     /// <summary>
     /// The smallest output <c>PublishedAssetContract.Validate</c> accepts: index.html referencing the package's
-    /// require.js and uno-bootstrap.css, and exactly one fingerprinted application assembly, here with brotli and
-    /// gzip siblings. Each representation has distinct content so the test can tell which one was served.
+    /// require.js and uno-bootstrap.css, exactly one fingerprinted application assembly (here with brotli and gzip
+    /// siblings), and the SDK's static web assets endpoint manifest for those files. Each representation has
+    /// distinct content so the test can tell which one was served.
     /// </summary>
     private static string CreatePublishedOutputFixture()
     {
@@ -181,6 +186,67 @@ public sealed class WasmHostHttpContractTests
         File.WriteAllText(appAssembly, Marker("identity"));
         File.WriteAllText(appAssembly + ".br", Marker("br"));
         File.WriteAllText(appAssembly + ".gz", Marker("gzip"));
+
+        WriteEndpointsManifest(dist, wwwroot);
         return dist;
+    }
+
+    /// <summary>
+    /// Writes the manifest the way the SDK emits it for the Uno output (compare
+    /// <c>TaskFlow.Uno.staticwebassets.endpoints.json</c> in a real build or publish): each route has an identity endpoint
+    /// plus one endpoint per precompressed sibling, selected by Content-Encoding with the SDK's size-based quality;
+    /// fingerprinted routes are immutable and the rest revalidate.
+    /// </summary>
+    private static void WriteEndpointsManifest(string dist, string wwwroot)
+    {
+        var appAssembly = AppAssemblyRoute.TrimStart('/');
+        var endpoints = new List<object>();
+        AddRoute(appAssembly, "application/wasm", fingerprinted: true, compressed: true);
+        AddRoute("index.html", "text/html", fingerprinted: false, compressed: false);
+        AddRoute($"{PackageFolder}/require.js", "text/javascript", fingerprinted: false, compressed: false);
+        AddRoute($"{PackageFolder}/uno-bootstrap.css", "text/css", fingerprinted: false, compressed: false);
+
+        File.WriteAllText(
+            Path.Combine(dist, "TaskFlow.Uno.staticwebassets.endpoints.json"),
+            JsonSerializer.Serialize(new { Version = 1, ManifestType = "Build", Endpoints = endpoints }));
+
+        void AddRoute(string route, string contentType, bool fingerprinted, bool compressed)
+        {
+            var cacheControl = fingerprinted ? "max-age=31536000, immutable" : "no-cache";
+            if (compressed)
+            {
+                endpoints.Add(Endpoint(route, route + ".br", contentType, cacheControl, "br"));
+                endpoints.Add(Endpoint(route, route + ".gz", contentType, cacheControl, "gzip"));
+            }
+
+            endpoints.Add(Endpoint(route, route, contentType, cacheControl, encoding: null));
+        }
+
+        object Endpoint(string route, string assetFile, string contentType, string cacheControl, string? encoding)
+        {
+            var file = new FileInfo(Path.Combine(wwwroot, assetFile));
+            var etag = $"\"{Convert.ToBase64String(SHA256.HashData(File.ReadAllBytes(file.FullName)))}\"";
+            var headers = new List<object> { Header("Cache-Control", cacheControl) };
+            if (encoding is not null) headers.Add(Header("Content-Encoding", encoding));
+            headers.Add(Header("Content-Length", file.Length.ToString(CultureInfo.InvariantCulture)));
+            headers.Add(Header("Content-Type", contentType));
+            headers.Add(Header("ETag", etag));
+            headers.Add(Header("Last-Modified", file.LastWriteTimeUtc.ToString("R", CultureInfo.InvariantCulture)));
+            headers.Add(Header("Vary", "Accept-Encoding"));
+
+            var quality = (1d / (file.Length + 1)).ToString("0.############", CultureInfo.InvariantCulture);
+            return new
+            {
+                Route = route,
+                AssetFile = assetFile,
+                Selectors = encoding is null
+                    ? Array.Empty<object>()
+                    : new object[] { new { Name = "Content-Encoding", Value = encoding, Quality = quality } },
+                ResponseHeaders = headers,
+                EndpointProperties = Array.Empty<object>()
+            };
+        }
+
+        static object Header(string name, string value) => new { Name = name, Value = value };
     }
 }

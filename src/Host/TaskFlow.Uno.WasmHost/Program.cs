@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Hosting.StaticWebAssets;
-using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Net.Http.Headers;
 using TaskFlow.Uno.WasmHost;
@@ -45,12 +44,35 @@ else
     distPath = Path.GetFullPath(distPath);
 }
 
+var requirePublishedAssets = (builder.Configuration.GetValue<bool?>("UnoWasm:RequirePublishedAssets")
+    ?? builder.Environment.IsProduction())
+    || !string.IsNullOrWhiteSpace(configuredDistPath);
+string webRootPath;
+if (requirePublishedAssets)
+{
+    webRootPath = PublishedAssetContract.Validate(distPath);
+}
+else
+{
+    webRootPath = Path.Combine(distPath, "wwwroot");
+    Directory.CreateDirectory(webRootPath);
+}
+
+// The Uno output is the web root: MapStaticAssets and MapFallbackToFile both serve from it.
+builder.Environment.WebRootPath = webRootPath;
+builder.Environment.WebRootFileProvider = new PhysicalFileProvider(webRootPath);
+
 var staticWebAssetsManifestPath = Path.Combine(distPath, "TaskFlow.Uno.staticwebassets.runtime.json");
 if (File.Exists(staticWebAssetsManifestPath))
 {
     builder.Configuration[WebHostDefaults.StaticWebAssetsKey] = staticWebAssetsManifestPath;
     StaticWebAssetsLoader.UseStaticWebAssets(builder.Environment, builder.Configuration);
 }
+
+// In Development, MapStaticAssets serves a Build-type manifest (the non-published Uno output Aspire runs) with
+// no-cache on every route unless this is set. The manifest's own answer (immutable for fingerprinted assets,
+// no-cache for the rest) is right here in every environment: a rebuilt asset gets a new fingerprint.
+builder.Configuration["EnableStaticAssetsDevelopmentCaching"] = "true";
 
 var app = builder.Build();
 
@@ -61,106 +83,24 @@ app.MapGet("/app-config.json", (HttpContext context) =>
     return Results.Json(new { gatewayBaseUrl });
 });
 
-var indexPath = Path.Combine(distPath, "wwwroot", "index.html");
-var requirePublishedAssets = (builder.Configuration.GetValue<bool?>("UnoWasm:RequirePublishedAssets")
-    ?? app.Environment.IsProduction())
-    || !string.IsNullOrWhiteSpace(configuredDistPath);
-string webRootPath;
-if (requirePublishedAssets)
+// The SDK's endpoint manifest for the Uno output: one endpoint per route, with Content-Encoding selectors for
+// the .br/.gz siblings (chosen by Accept-Encoding quality), Vary, strong ETags, and max-age=31536000,immutable on
+// fingerprinted routes and no-cache on the rest.
+var endpointsManifestPath = Path.Combine(distPath, PublishedAssetContract.EndpointsManifestFileName);
+if (File.Exists(endpointsManifestPath))
 {
-    webRootPath = PublishedAssetContract.Validate(distPath);
+    app.MapStaticAssets(endpointsManifestPath);
 }
 else
 {
-    if (!File.Exists(indexPath))
-    {
-        app.Logger.UnoWasmAssetsNotFound(distPath);
-    }
-
-    Directory.CreateDirectory(distPath);
-    webRootPath = Path.Combine(distPath, "wwwroot");
-    Directory.CreateDirectory(webRootPath);
+    app.Logger.UnoWasmAssetsNotFound(distPath);
 }
 
-var fileProvider = new PhysicalFileProvider(webRootPath);
-
-var contentTypeProvider = new FileExtensionContentTypeProvider();
-contentTypeProvider.Mappings[".dat"] = "application/octet-stream";
-contentTypeProvider.Mappings[".pdb"] = "application/octet-stream";
-PublishedAssetContract.AddPrecompressedContentTypes(contentTypeProvider);
-
-const string originalAssetPathKey = "TaskFlow.Uno.OriginalAssetPath";
-var responseHeaders = new Action<StaticFileResponseContext>(context =>
-{
-    var requestPath = context.Context.Items.TryGetValue(originalAssetPathKey, out var originalPath)
-        ? (string)originalPath!
-        : context.Context.Request.Path.Value ?? string.Empty;
-    context.Context.Response.Headers[HeaderNames.CacheControl] = PublishedAssetContract.CacheControlFor(requestPath);
-
-    if (context.Context.Items.TryGetValue(originalAssetPathKey, out _)
-        && contentTypeProvider.TryGetContentType(requestPath, out var contentType))
-    {
-        context.Context.Response.ContentType = contentType;
-    }
-});
-
-app.Use(async (context, next) =>
-{
-    if (!HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method))
-    {
-        await next();
-        return;
-    }
-
-    var originalPath = context.Request.Path.Value ?? string.Empty;
-    var relativePath = originalPath.TrimStart('/');
-    var brotliExists = fileProvider.GetFileInfo(relativePath + ".br").Exists;
-    var gzipExists = fileProvider.GetFileInfo(relativePath + ".gz").Exists;
-    if (brotliExists || gzipExists)
-    {
-        context.Response.Headers.Append(HeaderNames.Vary, HeaderNames.AcceptEncoding);
-    }
-
-    var encoding = PublishedAssetContract.SelectEncoding(
-        context.Request.Headers.AcceptEncoding.ToString(),
-        brotliExists,
-        gzipExists);
-    if (encoding is not null)
-    {
-        context.Items[originalAssetPathKey] = originalPath;
-        context.Request.Path = originalPath + (encoding == "br" ? ".br" : ".gz");
-        context.Response.Headers.ContentEncoding = encoding;
-    }
-
-    await next();
-});
-app.UseDefaultFiles(new DefaultFilesOptions
-{
-    FileProvider = fileProvider
-});
-app.UseStaticFiles(new StaticFileOptions
-{
-    FileProvider = fileProvider,
-    ContentTypeProvider = contentTypeProvider,
-    OnPrepareResponse = responseHeaders
-});
-app.Use(async (context, next) =>
-{
-    var requestPath = context.Request.Path.Value ?? string.Empty;
-    if (!string.Equals(requestPath, "/app-config.json", StringComparison.OrdinalIgnoreCase)
-        && PublishedAssetContract.LooksLikeAssetRequest(requestPath))
-    {
-        context.Response.StatusCode = StatusCodes.Status404NotFound;
-        return;
-    }
-
-    await next();
-});
+// Client routes only: the fallback pattern is {*path:nonfile}, so a request for a missing .wasm or .js is a 404,
+// never the SPA shell. The document revalidates so a new deployment is picked up on the next navigation.
 app.MapFallbackToFile("index.html", new StaticFileOptions
 {
-    FileProvider = fileProvider,
-    ContentTypeProvider = contentTypeProvider,
-    OnPrepareResponse = responseHeaders
+    OnPrepareResponse = context => context.Context.Response.Headers[HeaderNames.CacheControl] = "no-cache"
 });
 
 app.Run();
