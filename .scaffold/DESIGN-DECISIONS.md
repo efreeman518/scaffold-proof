@@ -74,6 +74,7 @@ flowchart TD
     D068["D-068: Gateway identity relay and token acquisition"]
     D069["D-069: Strict config and id validation"]
     D070["D-070: Uno WASM host on MapStaticAssets"]
+    D071["D-071: Test prerequisite rule and default-lane test hosts"]
 
     D001 --> D002
     D001 --> D003
@@ -154,6 +155,8 @@ flowchart TD
     D060 --> D069
     D021 --> D069
     D060 --> D070
+    D060 --> D071
+    D010 --> D071
 ```
 
 ## Decisions
@@ -228,6 +231,7 @@ flowchart TD
 | D-068 | Security | Gateway identity relay and token acquisition | The Api honours relayed user claims only from an app-only Gateway token (`azp`/`appid` matches `GatewayAppId`, no `scp`) and builds a fresh principal holding only the relayed user plus `relayed_by`; an empty `GatewayAppId` trusts nobody. The Gateway `TokenService` acquires a cluster token single-flight on `CancellationToken.None`; each caller cancels only its own wait, and only a faulted acquisition is evicted. | D-002, D-050 | confirmed | Merging relayed claims into the Gateway's service identity would attribute requests to the Gateway and inherit its roles, and a delegated token for the Gateway client could forge claims. One disconnecting client had cancelled the shared token fetch for every concurrent request. | Api, Gateway |
 | D-069 | Config | Strict configuration and id validation | Config enum switches parse by declared name only (`StrictEnum.Parse`, "Unknown X ... Allowed values ..."), rejecting numeric and combined values. `UuidV7.IsV7` requires version 7 and the RFC 9562 variant. Edge rate-limit settings and inbox timings validate at registration. | D-060, D-021 | confirmed | `Enum.TryParse` accepted `PoolerMode=2`, silently skipping the PgBouncer flags, and a caller id with the wrong variant passed GR-17. | Bootstrapper, Application.Contracts, Gateway |
 | D-070 | UI hosting | Uno WebAssembly host | The dev/test `TaskFlow.Uno.WasmHost` serves the Uno output as its web root through `MapStaticAssets(<dist>/TaskFlow.Uno.staticwebassets.endpoints.json)` plus `MapFallbackToFile("index.html")` with `no-cache`, keeping only the Uno-publish `Validate` step and `/app-config.json`; `EnableStaticAssetsDevelopmentCaching=true` keeps fingerprinted assets immutable under the Development build manifest. The deployed Uno image is nginx and follows the same contract: 404 for a missing asset path, `no-cache` on `index.html`. | D-060 | confirmed | The SDK endpoint manifest already carries br/gzip selection by Accept-Encoding quality, `Vary`, strong ETags and immutable caching, so the custom encoding, cache and 404 middleware (and its latent over-broad fingerprint match) is deleted. `Test.UI/WasmHost/WasmHostHttpContractTests.cs` pins the HTTP contract against both implementations. | WasmHost, compose static nginx |
+| D-071 | Testing | Test prerequisites and default-lane test hosts | A test that runs by default and finds an optional prerequisite missing (container runtime, Functions Core Tools, React `node_modules`, Uno WASM assets, the `wasm-tools` workload, browsers) reports Inconclusive naming the exact enabling command or opt-out variable. A lane the operator explicitly enabled treats a missing prerequisite as a failure, and a prerequisite that is present but fails to start, or any app/host startup failure, always fails. The endpoint and benchmark hosts run the default NonAzure lane container-free through `Test.Support/Hosting/InertNonAzureLane.cs` (inert lane endpoints plus in-process Data Protection, storage, audit, transport and read model). | D-060, D-010 | confirmed | Startup failures had been reported as Inconclusive (hiding real defects) while a missing optional tool failed the run; the endpoint tier had pinned the Azure lane, so the default lane was unproven there. `TestPrerequisiteContractTests` and `EndpointHostLaneTests` pin both. | Test.Support, Test.Endpoints, Test.E2E, Test.Aspire, Test.PlaywrightUI |
 
 ## Deferred Decisions
 

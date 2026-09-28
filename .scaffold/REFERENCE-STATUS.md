@@ -32,14 +32,14 @@ All current Release fast projects passed serially with no failed, skipped, or in
 
 | Project | Passed | Duration |
 |---|---:|---:|
-| Test.Unit | 681 | 12 s |
+| Test.Unit | 683 | 12 s |
 | Test.UI | 75 | 1 s |
 | Test.Architecture | 81 | 1 s |
-| Test.Endpoints | 188 | 10 s |
+| Test.Endpoints | 189 | 7 s |
 | Test.Integration.FlowEngine | 18 | 0.2 s |
 | Test.Mutation | 27 | 0.1 s |
 | Test.PlaywrightUI (`TestCategory=Unit`) | 1 | 0.1 s |
-| **Total** | **1071** | |
+| **Total** | **1074** | |
 
 2026-09-28 rerun after the package-readiness fixes (D-066..D-070 and the in-place updates listed in DESIGN-DECISIONS) and the NonAzure default lane. Test.Mutation dropped the deleted `Domain.Model/Rules` samples; Test.PlaywrightUI unit tests for the deleted WasmHost helpers moved to the HTTP-level `Test.UI/WasmHost/WasmHostHttpContractTests.cs`. The full Aspire graphs, browser, mobile, image, and deployment lanes below were not rerun and keep their 2026-09-16 evidence.
 
@@ -204,6 +204,7 @@ Status meanings:
 | Strict config and id validation (D-069) | proven | `StrictEnumTests`; `TaskFlowDbProviderSelectorTests.PoolerModeSelector_NumericOrCombinedValue_Throws`; `ConcurrencyContractTests.Given_CallerIds_When_Validated_Then_OnlyUuidV7Passes` |
 | Audit masking of secure columns (D-023) | proven | `AuditMaskingTests.Given_SecureTaskItemValues_When_CreatedAndUpdated_Then_AuditPayloadsCarryNoPlaintext` |
 | Uno WASM host contract (D-070) | proven | `Test.UI/WasmHost/WasmHostHttpContractTests.cs` (encoding by Accept-Encoding quality, immutable fingerprinted assets, no-cache index, 404 for missing assets, SPA fallback, `/app-config.json`); nginx static contract in `DeploymentWorkflowContractTests` |
+| Test prerequisites and default-lane test hosts (D-071) | proven | `Test.Unit` `TestPrerequisiteContractTests`; `Test.Endpoints/EndpointHostLaneTests.cs` (endpoint host boots the NonAzure lane container-free) |
 | NonAzure default lane (D-060) | proven | `HostingLaneContractTests.Resolve_Unset_ReturnsExactNonAzureProfile`; `AppHostLaneTopologyTests.FullLane_UnsetLaneGraph_IsNonAzureTopology`; `BicepInfrastructureContractTests.AzureDeployment_EveryHostSetsTheAzureLaneExplicitly`; AI provider switch in `AppHostLaneTopologyTests.AzureFoundry_*` |
 | Request timeouts, shutdown drain, runtime evidence (D-064) | proven (wiring); deployment-only (live drain) | `Test.Endpoints/RequestTimeoutEndpointTests.cs` and `Test.Unit/Gateway/GatewayRequestTimeoutTests.cs` (default policies, streaming opt-outs, YARP `TimeoutPolicy: Disable`); `Test.Unit/Hosting/ServiceDefaultsScaleTests.cs` (readiness unhealthy for the drain, budget validation); `Test.Unit/Infrastructure/BicepInfrastructureContractTests.cs` and `DeploymentWorkflowContractTests.cs` (Container Apps drain, Compose budget) |
 | Head trace sampling (D-065) | proven | `Test.Unit/Hosting/ServiceDefaultsScaleTests.cs` (ratio 0 drops and ratio 1 records a root span; out-of-range fails startup) |
