@@ -27,4 +27,27 @@ public sealed class AspireTestHostOptOutTests
 
         Assert.AreEqual(expected, AspireTestHost.IsExplicitlyDisabled(VariableName));
     }
+
+    /// <summary>
+    /// Test prerequisite rule: a missing optional prerequisite is Inconclusive on a default run (lane switch unset)
+    /// and a failure once the operator explicitly enabled that lane.
+    /// </summary>
+    [TestMethod]
+    [DataRow(null, false)]
+    [DataRow("true", true)]
+    [DataRow("1", true)]
+    [DataRow("yes", true)]
+    public void Given_AMissingPrerequisite_When_Reported_Then_FailsOnlyWhenTheLaneIsExplicitlyEnabled(
+        string? value,
+        bool expectFailure)
+    {
+        using var environment = new EnvironmentVariableScope().Set(VariableName, value);
+
+        void Report() => AspireTestHost.ReportMissingPrerequisite(VariableName, "Run `enable-probe`.");
+
+        var outcome = expectFailure
+            ? (Exception)Assert.ThrowsExactly<AssertFailedException>(Report)
+            : Assert.ThrowsExactly<AssertInconclusiveException>(Report);
+        StringAssert.Contains(outcome.Message, "Run `enable-probe`.");
+    }
 }

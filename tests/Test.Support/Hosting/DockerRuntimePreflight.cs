@@ -7,7 +7,8 @@ namespace Test.Support.Hosting;
 /// Performs one bounded Docker-compatible runtime capability check. Redirected stdout and stderr are
 /// drained concurrently so a noisy CLI cannot deadlock the preflight.
 /// Test prerequisite rule: a non-null reason (no usable runtime) is a missing optional prerequisite and reports
-/// Inconclusive; once the preflight passes, a container or host that fails to start fails the test.
+/// Inconclusive on a default run, or fails when the caller's lane was explicitly enabled; once the preflight
+/// passes, a container or host that fails to start fails the test.
 /// </summary>
 public static class DockerRuntimePreflight
 {

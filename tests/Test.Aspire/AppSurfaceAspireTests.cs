@@ -101,7 +101,9 @@ public class AppSurfaceAspireTests
             if (AspireTestHost.IsExplicitlyDisabled("TASKFLOW_REACT_TESTS_ENABLED"))
                 Assert.Inconclusive("TASKFLOW_REACT_TESTS_ENABLED=false - React full-stack smoke opted out.");
 
-            Assert.Inconclusive("React Node dependencies are not restored. Run `npm ci --prefix src/UI/TaskFlow.React`, or set TASKFLOW_REACT_TESTS_ENABLED=false to opt out.");
+            AspireTestHost.ReportMissingPrerequisite(
+                "TASKFLOW_REACT_TESTS_ENABLED",
+                "React Node dependencies are not restored. Run `npm ci --prefix src/UI/TaskFlow.React`, or set TASKFLOW_REACT_TESTS_ENABLED=false to opt out.");
         }
 
         var ct = TestContext.CancellationToken;
@@ -125,7 +127,8 @@ public class AppSurfaceAspireTests
             if (AspireTestHost.IsExplicitlyDisabled("TASKFLOW_WASM_TESTS_ENABLED"))
                 Assert.Inconclusive("TASKFLOW_WASM_TESTS_ENABLED=false - Uno WASM full-stack smoke opted out.");
 
-            Assert.Inconclusive(
+            AspireTestHost.ReportMissingPrerequisite(
+                "TASKFLOW_WASM_TESTS_ENABLED",
                 "Uno WASM assets are not built. Run `dotnet restore src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj -p:BuildAllUnoTargets=true -p:EnableUnoWasm=true` "
                 + "then `dotnet build src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj -p:TargetFrameworkOverride=net10.0-browserwasm -p:EnableUnoWasm=true --no-restore`, "
                 + "or set TASKFLOW_WASM_TESTS_ENABLED=false to opt out.");
