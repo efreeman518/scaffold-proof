@@ -167,6 +167,8 @@ Supply `AiServices:ApiKey` through the configured secret source. The bootstrappe
 Provision the Azure AI Foundry account and model deployment outside this AppHost, using your platform IaC or Azure tooling. Then configure one of these two consumption paths.
 
 ```powershell
+$env:TASKFLOW_LANE = "Azure"
+$env:TASKFLOW_AI_PROVIDER = "AzureInference"
 dotnet user-secrets set "AiServices:FoundryEndpoint" "https://<your-foundry-resource>.services.ai.azure.com/" --project src/Host/Aspire/AppHost
 dotnet user-secrets set "AiServices:AgentModelDeployment" "<deployment-name>" --project src/Host/Aspire/AppHost
 # or
@@ -175,7 +177,7 @@ dotnet user-secrets set "ConnectionStrings:chat" "Endpoint=https://<your-foundry
 dotnet run --project src/Host/Aspire/AppHost
 ```
 
-The endpoint-plus-deployment path injects `Endpoint=...;Deployment=...` and `Aspire.Azure.AI.Inference` authenticates with `DefaultAzureCredential`. A complete connection string can additionally include `Key=...` when key authentication is required. `TASKFLOW_USE_AZURE_FOUNDRY=true` is only an explicit intent flag; it does not supply configuration and fails startup unless one complete path is configured. `aspire publish` does not provision the Foundry account or deployment.
+The endpoint-plus-deployment path injects `Endpoint=...;Deployment=...` and `Aspire.Azure.AI.Inference` authenticates with `DefaultAzureCredential`. A complete connection string can additionally include `Key=...` when key authentication is required. The resolved AI provider is the only switch: the AppHost wires Foundry, and the hosts register the Foundry client, only when it is `AzureInference`. That provider without a complete path fails startup, and Foundry settings under any other provider (including the `None` default) fail startup naming both, instead of being wired into hosts that would ignore them. `aspire publish` does not provision the Foundry account or deployment.
 
 ### Run With AI Disabled
 
@@ -187,9 +189,9 @@ Leave the lane default or set `TASKFLOW_AI_PROVIDER=None` to force no-op locally
 
 | Test condition | Result |
 |----------------|--------|
-| Complete Azure Foundry config exists (`AiServices:FoundryEndpoint` plus `AiServices:AgentModelDeployment`, or complete `ConnectionStrings:chat`) | `Test.Aspire` `TestCategory=Foundry` runs against Azure Foundry |
-| Azure Foundry is requested but endpoint or deployment is missing | AppHost configuration fails; the live test does not silently become inconclusive |
-| No Azure Foundry config exists | `Test.Aspire` live Foundry tests are inconclusive |
+| Azure lane with `TASKFLOW_AI_PROVIDER=AzureInference` (or `AiServices__Provider`) and complete Foundry config (`AiServices:FoundryEndpoint` plus `AiServices:AgentModelDeployment`, or complete `ConnectionStrings:chat`) | `Test.Aspire` `TestCategory=Foundry` runs against Azure Foundry |
+| `AzureInference` is selected but endpoint or deployment is missing, or Foundry settings exist under another provider | AppHost configuration fails; the live test does not silently become inconclusive |
+| The resolved AI provider is not `AzureInference` and no Foundry settings exist | `Test.Aspire` live Foundry tests are inconclusive |
 
 `TestCategory=AzureFoundry` is reserved for Azure-specific provider-selection or provisioning checks. The no-op AI fallback path is covered by unit and endpoint tests. Load, benchmark, and mobile suites stay explicit because they require a running target, BenchmarkDotNet process control, or Appium/emulator setup.
 

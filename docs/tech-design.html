@@ -1902,12 +1902,12 @@ cd tests/Test.PlaywrightUI &amp;&amp; npm run test
 </thead>
 <tbody><tr>
 <td><strong>Azure AI Foundry, keyless</strong></td>
-<td>Azure lane with <code>AiServices:FoundryEndpoint</code> and <code>AiServices:AgentModelDeployment</code></td>
+<td>Azure lane, <code>TASKFLOW_AI_PROVIDER=AzureInference</code>, <code>AiServices:FoundryEndpoint</code> and <code>AiServices:AgentModelDeployment</code></td>
 <td>The AppHost validates an absolute HTTPS endpoint and non-empty deployment, injects <code>Endpoint=...;Deployment=...</code>, and <code>Aspire.Azure.AI.Inference</code> authenticates through <code>DefaultAzureCredential</code>.</td>
 </tr>
 <tr>
 <td><strong>Azure AI Foundry, connection string</strong></td>
-<td>Azure lane with complete <code>ConnectionStrings:chat</code></td>
+<td>Azure lane, <code>TASKFLOW_AI_PROVIDER=AzureInference</code>, complete <code>ConnectionStrings:chat</code></td>
 <td>The AppHost validates <code>Endpoint</code> and <code>Deployment</code>, then passes the connection through <code>AddConnectionString</code>/<code>WithReference</code>. An optional <code>Key</code> selects key authentication.</td>
 </tr>
 <tr>
@@ -1922,14 +1922,16 @@ cd tests/Test.PlaywrightUI &amp;&amp; npm run test
 </tr>
 </tbody></table>
 <p>Provision the Azure AI Foundry account and deployment through platform IaC or Azure tooling before configuring a local run:</p>
-<pre><code class="language-powershell">dotnet user-secrets set &quot;AiServices:FoundryEndpoint&quot; &quot;https://&lt;your-foundry-resource&gt;.services.ai.azure.com/&quot; --project src/Host/Aspire/AppHost
+<pre><code class="language-powershell">$env:TASKFLOW_LANE = &quot;Azure&quot;
+$env:TASKFLOW_AI_PROVIDER = &quot;AzureInference&quot;
+dotnet user-secrets set &quot;AiServices:FoundryEndpoint&quot; &quot;https://&lt;your-foundry-resource&gt;.services.ai.azure.com/&quot; --project src/Host/Aspire/AppHost
 dotnet user-secrets set &quot;AiServices:AgentModelDeployment&quot; &quot;&lt;deployment-name&gt;&quot; --project src/Host/Aspire/AppHost
 # or
 dotnet user-secrets set &quot;ConnectionStrings:chat&quot; &quot;Endpoint=https://&lt;your-foundry-resource&gt;.services.ai.azure.com/;Deployment=&lt;deployment-name&gt;&quot; --project src/Host/Aspire/AppHost
 
 dotnet run --project src/Host/Aspire/AppHost
 </code></pre>
-<p><code>TASKFLOW_USE_AZURE_FOUNDRY=true</code> is an explicit intent flag only; it fails startup unless a complete connection or endpoint-plus-deployment pair is configured. <code>aspire publish</code> does not provision the Foundry account or deployment. The endpoint-only credential path is keyless and uses <code>DefaultAzureCredential</code>.</p>
+<p>The resolved AI provider (<code>AiServices:Provider</code> / <code>TASKFLOW_AI_PROVIDER</code>, through <code>HostingLaneResolver</code>) is the only switch. The AppHost passes it to every host as <code>AiServices__Provider</code> and wires the Foundry chat connection only when it is <code>AzureInference</code>, the same condition under which the Api and Functions register the Foundry client. <code>AzureInference</code> without a complete connection or endpoint-plus-deployment pair fails startup, and Foundry settings under any other provider (including the <code>None</code> default) fail startup with a diagnostic naming the settings and the resolved provider. <code>aspire publish</code> does not provision the Foundry account or deployment. The endpoint-only credential path is keyless and uses <code>DefaultAzureCredential</code>.</p>
 <p>When AI is disabled, D1-D8 return the no-op &quot;not configured&quot; response. D9 can still start a workflow instance, but the schema-constrained <code>agent</code> node should land on the fault path because the no-op text is not valid structured model output. Live Azure Foundry tests return inconclusive when Azure is not configured. No-op fallback is covered in unit and endpoint tests, not by silently passing live-AI tests.</p>
 <p>TaskFlow has no <code>.foundry/agent-metadata.yaml</code> by default because shipped agents are code-hosted over <code>IChatClient</code>, not server-hosted Foundry agents. Add <code>.foundry/agent-metadata.yaml</code> under the agent source folder only when a hosted or prompt agent joins Foundry deploy/eval workflows; keep project endpoint, agent name, datasets, evaluators, and thresholds there.</p>
 <h3 id="146-workflow-triggering">14.6 Workflow Triggering</h3>
