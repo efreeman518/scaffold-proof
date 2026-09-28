@@ -36,6 +36,12 @@ internal static class ValidationHelper
         if (callerRoles.Contains(AppConstants.ROLE_GLOBAL_ADMIN))
             return Result.Success();
 
+        // The system identity (no HTTP request: consumers, jobs, the AI reviewer) has no tenant to compare
+        // and acts for the tenant the data names, so the boundary does not apply to it. HTTP callers never
+        // carry this role - the request-context factory strips it from claims.
+        if (callerRoles.Contains(AppConstants.ROLE_SYSTEM))
+            return Result.Success();
+
         if (entityTenantId is null)
         {
             logger.LogTenantBoundaryGlobalEntity(operation, entityName, entityId);

@@ -313,7 +313,7 @@ public class MigrationAndRepositoryTests
         // The filter is active - the count depends on the context's TenantId.
         // Since our test context doesn't match either tenant, we may get 0 or partial.
         // The key assertion: IgnoreQueryFilters returns MORE than filtered query.
-        Assert.IsGreaterThanOrEqualTo(allViaEf.Count, filteredCount, "Query filter should restrict results");
+        Assert.IsGreaterThanOrEqualTo(filteredCount, allViaEf.Count, "Query filter should restrict results");
     }
 
     /// <summary>Verifies attachment table and constraints exist correctly behavior and protects the expected test contract.</summary>

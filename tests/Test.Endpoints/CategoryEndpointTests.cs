@@ -159,7 +159,7 @@ public class CategoryEndpointTests
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
         var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(TestContext.CancellationToken), cancellationToken: TestContext.CancellationToken);
         var root = doc.RootElement;
-        Assert.IsGreaterThanOrEqualTo(root.GetProperty("total").GetInt32(), 1);
+        Assert.IsGreaterThanOrEqualTo(1, root.GetProperty("total").GetInt32());
         var data = root.GetProperty("data");
         Assert.Contains(e => e.GetProperty("name").GetString()!.Contains("SearchMe"), data.EnumerateArray());
     }
