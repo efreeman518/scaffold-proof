@@ -18,7 +18,7 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TaskFlow
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("taskflow")
-                .HasAnnotation("ProductVersion", "10.0.11")
+                .HasAnnotation("ProductVersion", "10.0.12")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -292,7 +292,7 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TaskFlow
                     b.Property<byte[]>("SecureDeterministic")
                         .HasMaxLength(256)
                         .HasColumnType("varbinary(256)")
-                        .HasAnnotation("TaskFlow:BlindIndex", "SecureDeterministicBlindIndex");
+                        .HasAnnotation("EF.Data.Encryption:BlindIndex", "SecureDeterministicBlindIndex");
 
                     b.Property<byte[]>("SecureDeterministicBlindIndex")
                         .HasMaxLength(32)
@@ -512,13 +512,22 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TaskFlow
                     b.Property<Guid>("MessageId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<DateTimeOffset>("ProcessedAtUtc")
+                    b.Property<Guid>("ClaimToken")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ClaimedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("LeaseExpiresUtc")
                         .HasColumnType("datetimeoffset");
 
                     b.HasKey("Consumer", "MessageId");
 
-                    b.HasIndex("ProcessedAtUtc")
-                        .HasDatabaseName("IX_ConsumerInbox_ProcessedAtUtc");
+                    b.HasIndex("CompletedAtUtc", "LeaseExpiresUtc")
+                        .HasDatabaseName("IX_ConsumerInbox_Retention");
 
                     b.ToTable("ConsumerInbox", "taskflow");
                 });
@@ -577,6 +586,14 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TaskFlow
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TraceParent")
+                        .HasMaxLength(55)
+                        .HasColumnType("nvarchar(55)");
+
+                    b.Property<string>("TraceState")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
 
                     b.HasKey("Id");
 

@@ -1,11 +1,14 @@
 using EF.Messaging;
 using EF.Messaging.RabbitMq;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.MessageHandlers.Consumers;
+using TaskFlow.Infrastructure.Data.Interceptors;
+using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Infrastructure.Messaging.RabbitMq;
 using TaskFlow.Observability.Meters;
 using TaskFlow.Observability.Tracing;
@@ -90,6 +93,55 @@ public sealed class BrokerTracePropagationTests
         Assert.IsNull(consumed.ParentId);
     }
 
+    /// <summary>
+    /// The whole outbox hop: the request that saved the aggregate, the Scheduler drain that dispatched the row
+    /// later, and the consumer. The consumer must land in the request's trace; before the row stored the trace
+    /// context, it landed in the drain's (or in none).
+    /// </summary>
+    [TestMethod]
+    public async Task OutboxHop_ConsumerContinuesTheRequestTrace_NotTheDrain()
+    {
+        using var listener = Listen(out var started);
+        var messageId = Guid.NewGuid();
+        var envelope = new IntegrationEventEnvelope(
+            messageId, "TaskItemCreatedEvent", 1, DateTimeOffset.UtcNow, CorrelationId: null,
+            Payload: JsonDocument.Parse($$"""{"TenantId":"{{Guid.NewGuid()}}"}""").RootElement);
+
+        // 1. The request stages the row.
+        OutboxMessage row;
+        ActivityTraceId requestTrace;
+        using (var request = new Activity("POST /tasks").SetIdFormat(ActivityIdFormat.W3C).Start())
+        {
+            requestTrace = request.TraceId;
+            row = OutboxStagingInterceptor.ToRow(envelope, Guid.NewGuid(), DateTimeOffset.UtcNow);
+        }
+
+        // 2. Later, unrelated to the request, the Scheduler drain dispatches it.
+        IReadOnlyDictionary<string, object?>? headers = null;
+        var publisher = new Mock<IRabbitMqPublisher>();
+        publisher
+            .Setup(p => p.PublishBatchAsync(It.IsAny<string>(), It.IsAny<IReadOnlyList<RabbitMqMessage>>(), It.IsAny<CancellationToken>()))
+            .Callback<string, IReadOnlyList<RabbitMqMessage>, CancellationToken>((_, messages, _) => headers = messages.Single().Headers)
+            .Returns(Task.CompletedTask);
+        ActivityTraceId drainTrace;
+        using (var drain = new Activity("OutboxMessage drain").SetIdFormat(ActivityIdFormat.W3C).Start())
+        {
+            drainTrace = drain.TraceId;
+            await new RabbitMqEventTransport(publisher.Object).SendBatchAsync("DomainEvents", [row], TestContext.CancellationToken);
+        }
+
+        // 3. The consumer receives what was published.
+        Assert.IsNotNull(headers);
+        var traceparent = (string)headers["traceparent"]!;
+        var result = await new ProbeHandler().HandleAsync(
+            Delivery(traceparent, messageId), TestContext.CancellationToken);
+
+        Assert.AreEqual(ConsumeOutcome.Ack, result.Outcome);
+        var consumed = ConsumerSpanFor(started, messageId);
+        Assert.AreEqual(requestTrace, consumed.TraceId, "the consumer must continue the request that raised the event");
+        Assert.AreNotEqual(drainTrace, consumed.TraceId);
+    }
+
     // One listener per test method, but every live listener sees every activity, so tests running side by
     // side share each other's spans. Selecting by message id keeps each assertion on its own span.
     private static Activity ConsumerSpanFor(List<Activity> started, Guid messageId) =>
@@ -151,16 +203,18 @@ public sealed class BrokerTracePropagationTests
     {
         private readonly HashSet<(string, Guid)> _claims = [];
 
-        public Task<bool> TryClaimAsync(string consumer, Guid messageId, CancellationToken ct = default) =>
-            Task.FromResult(_claims.Add((consumer, messageId)));
+        public Task<InboxClaim> TryClaimAsync(string consumer, Guid messageId, TimeSpan leaseDuration, CancellationToken ct = default) =>
+            Task.FromResult(_claims.Add((consumer, messageId))
+                ? new InboxClaim(InboxClaimStatus.Acquired, Guid.NewGuid())
+                : new InboxClaim(InboxClaimStatus.Duplicate, Guid.Empty));
 
-        public Task ReleaseAsync(string consumer, Guid messageId, CancellationToken ct = default)
-        {
-            _claims.Remove((consumer, messageId));
-            return Task.CompletedTask;
-        }
+        public Task<bool> CompleteAsync(string consumer, Guid messageId, Guid claimToken, CancellationToken ct = default) =>
+            Task.FromResult(true);
 
-        public Task<int> PurgeProcessedAsync(DateTimeOffset cutoffUtc, CancellationToken ct = default) =>
+        public Task<bool> ReleaseAsync(string consumer, Guid messageId, Guid claimToken, CancellationToken ct = default) =>
+            Task.FromResult(_claims.Remove((consumer, messageId)));
+
+        public Task<int> PurgeAsync(DateTimeOffset cutoffUtc, CancellationToken ct = default) =>
             Task.FromResult(0);
     }
 

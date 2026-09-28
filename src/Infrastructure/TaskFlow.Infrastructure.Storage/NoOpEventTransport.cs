@@ -15,10 +15,11 @@ public sealed class NoOpEventTransport(ILogger<NoOpEventTransport> logger) : IIn
     public bool CanDispatch => false;
 
     /// <inheritdoc />
-    public Task SendBatchAsync(string destination, IReadOnlyList<OutboxMessage> messages, CancellationToken ct)
+    public Task<IReadOnlyList<OutboxSendFailure>> SendBatchAsync(
+        string destination, IReadOnlyList<OutboxMessage> messages, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(messages);
         logger.NoOpTransport(destination, messages.Count);
-        return Task.CompletedTask;
+        return Task.FromResult<IReadOnlyList<OutboxSendFailure>>([]);
     }
 }

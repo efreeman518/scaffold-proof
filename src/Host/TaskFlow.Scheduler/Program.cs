@@ -35,6 +35,5 @@ await app.ValidateTickerQDatabase();
 app.UseTickerQ();
 app.MapDefaultEndpoints();
 
-await app.SeedCronJobs();
-
+// Cron schedules are declared on [TickerFunction] in TaskMaintenanceJobs; TickerQ seeds them during RunAsync.
 await app.RunAsync();

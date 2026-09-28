@@ -39,8 +39,13 @@ internal static class ServiceBusEnvelopeReader
             message.MessageId,
             key => message.ApplicationProperties.TryGetValue(key, out var value) ? value?.ToString() : null);
 
-        // Transient failures propagate on purpose: settling here would lose the retry the broker owns.
+        // Transient failures propagate on purpose: settling here would lose the retry the broker owns. That
+        // includes InboxClaimInProgressException - another delivery holds a live claim - which the runtime
+        // abandons so the message comes back once that delivery has completed or its lease has expired.
         await consumer.HandleAsync(envelope, ct);
-        await actions.CompleteMessageAsync(message, cancellationToken: ct);
+
+        // Not the invocation token: the effect has run and the inbox claim is completed, so a shutdown now must
+        // not turn a finished message into a redelivery.
+        await actions.CompleteMessageAsync(message, CancellationToken.None);
     }
 }

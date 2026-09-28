@@ -4,7 +4,6 @@ using EF.Messaging.RabbitMq;
 using Moq;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using System.Diagnostics;
 using System.Text.Json;
 using TaskFlow.Bootstrapper;
@@ -82,11 +81,8 @@ public sealed class RabbitMqFlowEngineRegistrationTests
     [TestMethod]
     public async Task IntegrationEventsClient_RejectsUnsupportedRequestReplyBeforePublishing()
     {
-        var multiplexer = new Mock<IRabbitMqConnectionMultiplexer>(MockBehavior.Strict);
-        var options = new Mock<IOptionsMonitor<RabbitMqOptions>>(MockBehavior.Strict);
-        var client = RegisterServices.CreateRabbitMqFlowEngineMessageClient(
-            multiplexer.Object,
-            options.Object);
+        var publisher = new Mock<IRabbitMqPublisher>(MockBehavior.Strict);
+        var client = RegisterServices.CreateRabbitMqFlowEngineMessageClient(publisher.Object);
 
         var exception = await Assert.ThrowsExactlyAsync<NotSupportedException>(() => client.SendAsync(
             new MessageRequest
@@ -100,46 +96,64 @@ public sealed class RabbitMqFlowEngineRegistrationTests
         StringAssert.Contains(exception.Message, "fire-and-forget");
     }
 
+    /// <summary>
+    /// Workflow messages go through the package publisher (pooled confirm channel, mandatory:false,
+    /// PublisherConfirmTimeout) to the TaskFlow exchange; the producer span stays open until the confirm.
+    /// </summary>
     [TestMethod]
-    public async Task PublisherConfirmAwait_ConfiguredTimeoutFailsClearly()
+    public async Task IntegrationEventsClient_PublishesThroughThePackagePublisher()
     {
-        var timeout = TimeSpan.FromMilliseconds(25);
+        using var listener = Listen(out var started);
+        var publisher = new Mock<IRabbitMqPublisher>(MockBehavior.Strict);
+        RabbitMqMessage? published = null;
+        var spanOpenAtPublish = false;
+        publisher
+            .Setup(p => p.PublishAsync(TaskFlowRabbitMqTopology.Exchange, It.IsAny<RabbitMqMessage>(), It.IsAny<CancellationToken>()))
+            .Callback<string, RabbitMqMessage, CancellationToken>((_, message, _) =>
+            {
+                published = message;
+                spanOpenAtPublish = started.Any(a =>
+                    (string?)a.GetTagItem("messaging.message.id") == "wf-publish-1" && a.Duration == TimeSpan.Zero);
+            })
+            .Returns(Task.CompletedTask);
+        var client = RegisterServices.CreateRabbitMqFlowEngineMessageClient(publisher.Object);
 
-        var exception = await Assert.ThrowsExactlyAsync<TimeoutException>(() =>
-            RegisterServices.AwaitRabbitMqPublisherConfirmAsync(
-                cancellation => new ValueTask(Task.Delay(Timeout.InfiniteTimeSpan, cancellation)),
-                timeout,
-                TestContext.CancellationToken));
+        var result = await client.SendAsync(
+            new MessageRequest
+            {
+                Subject = "taskitem.triaged",
+                Body = JsonSerializer.SerializeToElement(new { taskId = "task-42" }),
+                IdempotencyKey = "wf-publish-1"
+            },
+            TestContext.CancellationToken);
 
-        StringAssert.Contains(exception.Message, timeout.ToString());
-        Assert.IsInstanceOfType<OperationCanceledException>(exception.InnerException);
+        Assert.IsTrue(result.Sent);
+        Assert.AreEqual("wf-publish-1", result.MessageId);
+        Assert.IsNotNull(published);
+        Assert.AreEqual("taskitem.triaged", published.RoutingKey);
+        Assert.IsTrue(spanOpenAtPublish, "the producer span must cover the confirmed publish, not end before it");
+        publisher.VerifyAll();
     }
 
+    /// <summary>
+    /// A confirm timeout or broker refusal surfaces as the package's RabbitMqPublishException carrying the primary
+    /// failure, so the workflow node fails instead of reporting a message it never delivered.
+    /// </summary>
     [TestMethod]
-    public async Task PublisherConfirmAwait_CallerCancellationRemainsCancellation()
+    public async Task IntegrationEventsClient_BrokerFailure_PropagatesThePublishException()
     {
-        using var callerCancellation = new CancellationTokenSource();
-        callerCancellation.Cancel();
+        var primary = new InvalidOperationException("broker channel closed");
+        var publisher = new Mock<IRabbitMqPublisher>(MockBehavior.Strict);
+        publisher
+            .Setup(p => p.PublishAsync(It.IsAny<string>(), It.IsAny<RabbitMqMessage>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new RabbitMqPublishException("not confirmed", [0], primary));
+        var client = RegisterServices.CreateRabbitMqFlowEngineMessageClient(publisher.Object);
 
-        await Assert.ThrowsExactlyAsync<TaskCanceledException>(() =>
-            RegisterServices.AwaitRabbitMqPublisherConfirmAsync(
-                cancellation => new ValueTask(Task.Delay(Timeout.InfiniteTimeSpan, cancellation)),
-                TimeSpan.FromMinutes(1),
-                callerCancellation.Token));
-    }
+        var observed = await Assert.ThrowsExactlyAsync<RabbitMqPublishException>(() => client.SendAsync(
+            new MessageRequest { Subject = "taskitem.triaged", Body = JsonSerializer.SerializeToElement(new { }) },
+            TestContext.CancellationToken));
 
-    [TestMethod]
-    public async Task PublisherConfirmAwait_BrokerFailurePreservesPrimaryException()
-    {
-        var primaryFailure = new InvalidOperationException("broker channel closed");
-
-        var observed = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
-            RegisterServices.AwaitRabbitMqPublisherConfirmAsync(
-                _ => ValueTask.FromException(primaryFailure),
-                TimeSpan.FromSeconds(1),
-                TestContext.CancellationToken));
-
-        Assert.AreSame(primaryFailure, observed);
+        Assert.AreSame(primary, observed.InnerException);
     }
 
     private static ActivityListener Listen(out List<Activity> started)

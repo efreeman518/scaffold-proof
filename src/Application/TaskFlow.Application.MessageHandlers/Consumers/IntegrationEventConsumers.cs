@@ -19,14 +19,28 @@ namespace TaskFlow.Application.MessageHandlers.Consumers;
 /// a transient failure and the transport redelivers.
 /// </summary>
 /// <remarks>
-/// Idempotency is the D-029 inbox: claim first so a redelivery short-circuits, release the claim if the work
-/// throws so the redelivery is actually retried. A duplicate-PK rollback would have to read provider-specific
-/// exception shapes (SqlException 2627 vs PostgresException 23505), which D-030 rules out.
+/// Idempotency is the D-029 two-state inbox: take an in-progress claim with a lease, run the effect, then mark
+/// the claim completed. A redelivery that finds the claim completed is a duplicate; one that finds it still in
+/// progress is thrown back for retry (<see cref="InboxClaimInProgressException"/>), never acknowledged, because
+/// the delivery holding it may yet fail; a crashed delivery's claim is taken over once its lease expires. A
+/// duplicate-PK rollback would have to read provider-specific exception shapes (SqlException 2627 vs
+/// PostgresException 23505), which D-030 rules out.
 /// </remarks>
 public abstract class IntegrationEventConsumer(IInboxStore inbox, MessagingMetrics metrics, ILogger logger)
 {
     /// <summary>Inbox consumer name; also the Service Bus subscription and RabbitMQ queue suffix.</summary>
     public abstract string ConsumerName { get; }
+
+    /// <summary>
+    /// How long a claim stays in progress before a redelivery may take it over. It must outlive the longest
+    /// handler run: Service Bus redelivers a still-running message only once the lock can no longer be renewed,
+    /// which is <c>maxAutoLockRenewalDuration</c> (5 minutes, host.json) plus one <c>lockDuration</c> (5 minutes,
+    /// infra), so a shorter lease would let that redelivery take over a healthy claim and run the effect twice.
+    /// The cost of a long lease is recovery time: after a crash, redeliveries are thrown back as in progress until
+    /// it expires, and one that exhausts its delivery count lands in the dead-letter queue, from which a replay
+    /// is safe (it is then either a takeover or a duplicate).
+    /// </summary>
+    protected virtual TimeSpan ClaimLease => TimeSpan.FromMinutes(10);
 
     /// <summary>True when this consumer acts on the envelope's event type at all.</summary>
     public abstract bool Handles(string eventType);
@@ -34,17 +48,27 @@ public abstract class IntegrationEventConsumer(IInboxStore inbox, MessagingMetri
     /// <summary>Runs the consumer's own work for an envelope it has claimed.</summary>
     protected abstract Task ConsumeAsync(IntegrationEventEnvelope envelope, CancellationToken ct);
 
-    /// <summary>Claims, consumes and records; releases the claim when the work throws.</summary>
+    /// <summary>
+    /// Claims, consumes, then completes the claim. A duplicate returns without running; a claim held by another
+    /// live delivery throws <see cref="InboxClaimInProgressException"/> so the transport retries; a failed
+    /// consume releases the claim and rethrows the original exception.
+    /// </summary>
     public async Task HandleAsync(IntegrationEventEnvelope envelope, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(envelope);
         if (!Handles(envelope.Type)) return;
 
-        if (!await inbox.TryClaimAsync(ConsumerName, envelope.Id, ct).ConfigureAwait(false))
+        var claim = await inbox.TryClaimAsync(ConsumerName, envelope.Id, ClaimLease, ct).ConfigureAwait(false);
+        switch (claim.Status)
         {
-            metrics.RecordInboxDuplicate(ConsumerName);
-            logger.ConsumerDuplicateSkipped(ConsumerName, envelope.Type, envelope.Id);
-            return;
+            case InboxClaimStatus.Duplicate:
+                metrics.RecordInboxDuplicate(ConsumerName);
+                logger.ConsumerDuplicateSkipped(ConsumerName, envelope.Type, envelope.Id);
+                return;
+            case InboxClaimStatus.InProgress:
+                metrics.RecordInboxInProgress(ConsumerName);
+                logger.ConsumerClaimInProgress(ConsumerName, envelope.Type, envelope.Id);
+                throw new InboxClaimInProgressException(ConsumerName, envelope.Id);
         }
 
         var started = Stopwatch.GetTimestamp();
@@ -52,13 +76,39 @@ public abstract class IntegrationEventConsumer(IInboxStore inbox, MessagingMetri
         {
             await ConsumeAsync(envelope, ct).ConfigureAwait(false);
         }
-        catch
+        catch (Exception consumeFailure)
         {
-            await inbox.ReleaseAsync(ConsumerName, envelope.Id, CancellationToken.None).ConfigureAwait(false);
+            await ReleaseAfterFailureAsync(envelope, claim.ClaimToken, consumeFailure).ConfigureAwait(false);
             throw;
         }
 
+        // Not the delivery token: the effect has run, and a shutdown now must not leave the claim in progress,
+        // which would hold every redelivery back until the lease expired.
+        if (!await inbox.CompleteAsync(ConsumerName, envelope.Id, claim.ClaimToken, CancellationToken.None)
+                .ConfigureAwait(false))
+        {
+            logger.ConsumerClaimLost(ConsumerName, envelope.Type, envelope.Id);
+        }
+
         metrics.RecordConsumerDuration(ConsumerName, Stopwatch.GetElapsedTime(started));
+    }
+
+    /// <summary>
+    /// Releases the claim of a failed consume so the redelivery runs immediately. A release failure (typically the
+    /// same outage that failed the work) is logged against the original failure and does not replace it: the
+    /// caller rethrows the original, and the claim's lease expiry lets the redelivery take it over.
+    /// </summary>
+    private async Task ReleaseAfterFailureAsync(IntegrationEventEnvelope envelope, Guid claimToken, Exception consumeFailure)
+    {
+        try
+        {
+            await inbox.ReleaseAsync(ConsumerName, envelope.Id, claimToken, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception releaseFailure)
+        {
+            logger.ConsumerReleaseFailed(
+                new AggregateException(consumeFailure, releaseFailure), ConsumerName, envelope.Type, envelope.Id);
+        }
     }
 
     /// <summary>Reads a required Guid property from the envelope payload.</summary>

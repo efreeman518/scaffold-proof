@@ -13,11 +13,15 @@ public interface IIntegrationEventTransport
     bool CanDispatch { get; }
 
     /// <summary>
-    /// Sends one claimed batch to a single destination. Throwing releases the lease so the rows are retried,
-    /// so a partial send must throw rather than report success.
+    /// Sends one claimed batch to a single destination, in list order, and reports per message: an index absent
+    /// from the result was accepted (confirmed or committed) by the broker. A thrown exception other than
+    /// cancellation means every message failed transiently. <see cref="OperationCanceledException"/> while
+    /// <paramref name="ct"/> is cancelled means the send was abandoned, which is not a failure.
     /// </summary>
     /// <param name="destination">Logical channel name from <see cref="OutboxMessage.Destination"/>.</param>
     /// <param name="messages">Claimed rows, all with the same destination.</param>
     /// <param name="ct">Cancellation token.</param>
-    Task SendBatchAsync(string destination, IReadOnlyList<OutboxMessage> messages, CancellationToken ct);
+    /// <returns>The messages the broker did not accept; empty when all were.</returns>
+    Task<IReadOnlyList<OutboxSendFailure>> SendBatchAsync(
+        string destination, IReadOnlyList<OutboxMessage> messages, CancellationToken ct);
 }

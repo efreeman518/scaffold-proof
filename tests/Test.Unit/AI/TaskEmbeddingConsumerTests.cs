@@ -90,16 +90,18 @@ public sealed class TaskEmbeddingConsumerTests
     {
         private readonly HashSet<(string, Guid)> _claims = [];
 
-        public Task<bool> TryClaimAsync(string consumer, Guid messageId, CancellationToken ct = default)
-            => Task.FromResult(_claims.Add((consumer, messageId)));
+        public Task<InboxClaim> TryClaimAsync(string consumer, Guid messageId, TimeSpan leaseDuration, CancellationToken ct = default)
+            => Task.FromResult(_claims.Add((consumer, messageId))
+                ? new InboxClaim(InboxClaimStatus.Acquired, Guid.NewGuid())
+                : new InboxClaim(InboxClaimStatus.Duplicate, Guid.Empty));
 
-        public Task ReleaseAsync(string consumer, Guid messageId, CancellationToken ct = default)
-        {
-            _claims.Remove((consumer, messageId));
-            return Task.CompletedTask;
-        }
+        public Task<bool> CompleteAsync(string consumer, Guid messageId, Guid claimToken, CancellationToken ct = default)
+            => Task.FromResult(true);
 
-        public Task<int> PurgeProcessedAsync(DateTimeOffset cutoffUtc, CancellationToken ct = default)
+        public Task<bool> ReleaseAsync(string consumer, Guid messageId, Guid claimToken, CancellationToken ct = default)
+            => Task.FromResult(_claims.Remove((consumer, messageId)));
+
+        public Task<int> PurgeAsync(DateTimeOffset cutoffUtc, CancellationToken ct = default)
             => Task.FromResult(0);
     }
 

@@ -16,8 +16,6 @@ using TaskFlow.Scheduler.Workers;
 using TickerQ.Dashboard.DependencyInjection;
 using TickerQ.DependencyInjection;
 using TickerQ.EntityFrameworkCore.DependencyInjection;
-using TickerQ.Utilities.Entities;
-using TickerQ.Utilities.Interfaces.Managers;
 
 namespace TaskFlow.Scheduler;
 
@@ -63,6 +61,15 @@ public static class RegisterSchedulerServices
                 config,
                 includeEmbedding: AiServiceCollectionExtensions.ResolveSearchProvider(config) == SearchProvider.PgVector);
         }
+
+        // Azure App Configuration (D-042) has no HTTP middleware to trigger refresh on a worker host; this polls
+        // the refreshers instead, and is a no-op when App Configuration is not configured.
+        services.AddHostedService<AppConfigurationRefreshService>();
+
+        // Registered as a hosted service so the start time is taken when the host starts, not when the health
+        // check is first resolved.
+        services.AddSingleton<SchedulerStartTime>();
+        services.AddHostedService(sp => sp.GetRequiredService<SchedulerStartTime>());
 
         services.AddHealthChecks()
             .AddCheck<SchedulerHealthCheck>("scheduler", tags: ["ready", "memory"])
@@ -165,40 +172,5 @@ public static class RegisterSchedulerServices
         }
 
         logger.TickerQSchemaValidated();
-    }
-
-    public static async Task SeedCronJobs(this WebApplication app)
-    {
-        using var scope = app.Services.CreateScope();
-        var cronManager = scope.ServiceProvider.GetService<ICronTickerManager<CronTickerEntity>>();
-        if (cronManager is null)
-        {
-            app.Logger.TickerQCronManagerUnavailable();
-            return;
-        }
-
-        // Retention sweeps are staggered off the hour and off each other: they all delete, and running them
-        // together would concentrate the lock and log pressure they exist to spread out.
-        (string Function, string Expression)[] jobs =
-        [
-            (OverdueTaskCheckHandler.JobName, "0 0 */6 * * *"),
-            (RecurringTaskGenerationHandler.JobName, "0 0 2 * * *"),
-            (StaleTaskCleanupHandler.JobName, "0 0 3 * * 0"),
-            (OutboxRetentionHandler.JobName, "0 15 * * * *"),
-            (ConsumerInboxRetentionHandler.JobName, "0 20 * * * *"),
-            (TickerQOccurrenceRetentionHandler.JobName, "0 30 4 * * *"),
-            (AuditRetentionHandler.JobName, "0 40 4 * * *")
-        ];
-
-        foreach (var (function, expression) in jobs)
-        {
-            await cronManager.AddAsync(new CronTickerEntity
-            {
-                Function = function,
-                Expression = expression
-            });
-        }
-
-        app.Logger.TickerQCronJobsSeeded();
     }
 }

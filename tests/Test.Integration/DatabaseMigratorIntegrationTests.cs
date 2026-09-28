@@ -52,7 +52,7 @@ public sealed class DatabaseMigratorIntegrationTests
         // The AfterSchema data step ran once per RunAsync and stayed idempotent (BeforeSchema clears, AfterSchema inserts).
         var proofRows = await trxn.ConsumerInbox.Where(x => x.Consumer == ProofConsumer).ToListAsync(TestContext.CancellationToken);
         Assert.HasCount(1, proofRows);
-        Assert.AreEqual(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero), proofRows[0].ProcessedAtUtc);
+        Assert.AreEqual(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero), proofRows[0].CompletedAtUtc);
     }
 
     [TestMethod]
@@ -106,8 +106,9 @@ public sealed class DatabaseMigratorIntegrationTests
             DatabaseMigrationStepPhase.AfterSchema,
             10,
             $"""
-            INSERT INTO taskflow."ConsumerInbox" ("Consumer", "MessageId", "ProcessedAtUtc")
-            VALUES ('{ProofConsumer}', '00000000-0000-0000-0000-000000000001', '2026-01-01T00:00:00+00:00')
+            INSERT INTO taskflow."ConsumerInbox" ("Consumer", "MessageId", "ClaimToken", "ClaimedAtUtc", "CompletedAtUtc")
+            VALUES ('{ProofConsumer}', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002',
+                    '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')
             """)
     ];
 
