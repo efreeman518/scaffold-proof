@@ -17,8 +17,9 @@ namespace Test.Aspire;
 /// Storage row, with a polling read-back.
 /// Aspire tier (Aspire.Hosting.Testing) - required because the Functions host has the longest cold-start
 /// of any resource and the test depends on both <c>taskflowfunctions</c> and <c>TableStorage1</c>. Missing
-/// Core Tools or <c>TASKFLOW_RUN_FUNCTIONS_TESTS=false</c> is Inconclusive with the install command; a present
-/// <c>func</c> whose host does not become healthy fails (<see cref="AspireTestHost.RequireFunctionsHostAsync"/>).
+/// Core Tools on a default run, or <c>TASKFLOW_RUN_FUNCTIONS_TESTS=false</c>, is Inconclusive with the install command;
+/// missing Core Tools with <c>TASKFLOW_RUN_FUNCTIONS_TESTS=true</c>, or a present <c>func</c> whose host does not
+/// become healthy, fails (<see cref="AspireTestHost.RequireFunctionsHostAsync"/>).
 /// </summary>
 [TestClass]
 [TestCategory("Aspire")]

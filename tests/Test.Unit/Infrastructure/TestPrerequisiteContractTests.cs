@@ -3,9 +3,10 @@ using System.Text.RegularExpressions;
 namespace Test.Unit.Infrastructure;
 
 /// <summary>
-/// Test prerequisite rule for the host-backed tiers: a missing optional prerequisite (no container runtime, no
-/// Functions Core Tools, Node dependencies not restored) reports Inconclusive and names its enabling command or opt-out
-/// variable; a prerequisite that is present but fails to start, and any app or host startup failure, fails the test.
+/// Test prerequisite rule for the host-backed tiers: on a default run a missing optional prerequisite (no container
+/// runtime, no Functions Core Tools, Node dependencies not restored) reports Inconclusive and names its enabling command
+/// or opt-out variable, while an explicitly enabled lane fails on it (Test.Aspire AspireTestHostOptOutTests covers that
+/// branch); a prerequisite that is present but fails to start, and any app or host startup failure, fails the test.
 /// Locks the two ways the tiers drifted: a startup failure mapped to Inconclusive, and a Docker reason with no way to
 /// enable it.
 /// </summary>

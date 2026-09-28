@@ -104,7 +104,7 @@ internal static class AspireTestHost
             if (dockerUnavailableReason is not null)
             {
                 _hostContext = null;
-                Assert.Inconclusive(dockerUnavailableReason);
+                ReportMissingPrerequisite(RunAspireTestsEnvironmentVariable, dockerUnavailableReason);
                 return;
             }
 
@@ -266,9 +266,10 @@ internal static class AspireTestHost
     }
 
     /// <summary>
-    /// Functions Core Tools are an optional prerequisite: opted out or not installed reports Inconclusive with the
-    /// opt-out variable and the install command. Once <c>func</c> is present the graph includes the Functions host,
-    /// and a host that does not become healthy fails the test.
+    /// Functions Core Tools are an optional prerequisite: opted out, or not installed on a default run, reports
+    /// Inconclusive with the opt-out variable and the install command; not installed with
+    /// <c>TASKFLOW_RUN_FUNCTIONS_TESTS=true</c> fails. Once <c>func</c> is present the graph includes the Functions
+    /// host, and a host that does not become healthy fails the test.
     /// </summary>
     internal static async Task RequireFunctionsHostAsync(CancellationToken cancellationToken)
     {
@@ -280,7 +281,8 @@ internal static class AspireTestHost
 
         if (!EnsureFuncToolAvailable())
         {
-            Assert.Inconclusive(
+            ReportMissingPrerequisite(
+                RunFunctionsTestsEnvironmentVariable,
                 "Azure Functions Core Tools ('func') not found. Install them with "
                 + "`npm install -g azure-functions-core-tools@4`, or set "
                 + $"{RunFunctionsTestsEnvironmentVariable}=false to opt out.");
@@ -366,6 +368,28 @@ internal static class AspireTestHost
         return string.Equals(value, "false", StringComparison.OrdinalIgnoreCase)
             || string.Equals(value, "0", StringComparison.OrdinalIgnoreCase)
             || string.Equals(value, "no", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>True when a lane switch is <c>true</c>, <c>1</c> or <c>yes</c>: the operator asked for that lane.</summary>
+    internal static bool IsExplicitlyEnabled(string variableName)
+    {
+        var value = Environment.GetEnvironmentVariable(variableName);
+        return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Test prerequisite rule for a missing optional prerequisite: Inconclusive on a default run, with the enabling
+    /// command in <paramref name="message"/>; a failure when the operator explicitly enabled the lane through
+    /// <paramref name="laneVariable"/>, because an enabled lane that cannot run is not a skip.
+    /// </summary>
+    internal static void ReportMissingPrerequisite(string laneVariable, string message)
+    {
+        if (IsExplicitlyEnabled(laneVariable))
+            Assert.Fail($"{laneVariable} is explicitly enabled, but a prerequisite is missing. {message}");
+
+        Assert.Inconclusive(message);
     }
 
     private static bool IsReactRunnable()
