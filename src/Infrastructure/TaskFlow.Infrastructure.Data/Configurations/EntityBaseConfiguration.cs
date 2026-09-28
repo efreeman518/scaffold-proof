@@ -6,7 +6,7 @@ using TaskFlow.Domain.Shared;
 
 namespace TaskFlow.Infrastructure.Data.Configurations;
 
-/// <summary>Shared mapping for every tenant entity: composite key, app-managed concurrency token, timestamps.</summary>
+/// <summary>Shared mapping for every tenant entity: composite key, timestamps; the concurrency token is model-wide.</summary>
 public abstract class EntityBaseConfiguration<TEntity, TId> : IEntityTypeConfiguration<TEntity>
     where TEntity : TaskFlowEntityBase<TId>, ITenantEntity<TenantId>
     where TId : struct, IDomainId<TId>
@@ -20,11 +20,11 @@ public abstract class EntityBaseConfiguration<TEntity, TId> : IEntityTypeConfigu
         builder.Property(e => e.Id).ValueGeneratedNever();
         builder.Property(e => e.TenantId).IsRequired();
 
-        // D-021: provider-neutral concurrency token, EF.Domain.EntityBase<TId>.Version, incremented by
-        // EF.Data.DbContextBase.SaveChangesAsync. Named rather than lambda-ignored for RowVersion: that
+        // D-021: EF.Domain.EntityBase<TId>.Version is the concurrency token (tokenized for every versioned
+        // entity by RegisterVersionConcurrencyTokens in TaskFlowDbContextBase), incremented by
+        // EF.Data.DbContextBase.SaveChangesAsync. RowVersion is named rather than lambda-ignored: that
         // member is [Obsolete] as of EF.Domain 1.1.100 (removed in 2.0) and an expression over it would be
         // a warning, i.e. an error here. It is a SQL Server rowversion assumption and is never mapped.
-        builder.Property(e => e.Version).IsConcurrencyToken();
         builder.Ignore("RowVersion");
     }
 }

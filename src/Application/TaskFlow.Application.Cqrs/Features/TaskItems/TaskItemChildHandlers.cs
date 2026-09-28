@@ -266,7 +266,7 @@ internal sealed class AssociateTaskItemTagHandler(
             return Result<DefaultResponse<TaskItemTagDto>>.Success(
                 new DefaultResponse<TaskItemTagDto> { Item = existing.ToDto(), IsReplay = true, AggregateVersion = entity.Version });
 
-        var associateResult = entity.AssociateTag(DomainId.From<TagId>(command.TagId));
+        var associateResult = entity.AssociateTag(TagId.From(command.TagId));
         if (associateResult.IsFailure) return Result<DefaultResponse<TaskItemTagDto>>.Failure(associateResult.ErrorMessage!);
 
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error associating Tag {TagId} with TaskItem {Id}", ct, command.TagId, command.TaskItemId);

@@ -25,14 +25,16 @@ internal static class ValidationHelper
         string entityName,
         Guid? entityId = null)
     {
-        if (callerRoles.Contains(AppConstants.ROLE_GLOBAL_ADMIN))
-            return Result.Success();
-
+        // Null or empty roles are checked before any role lookup so a missing role set fails closed
+        // with the no-roles log instead of throwing.
         if (callerRoles is null || callerRoles.Count == 0)
         {
             logger.LogTenantBoundaryNoRoles(operation, entityName, entityId);
             return Result.Failure($"Forbidden: Tenant boundary violation for operation: {operation}.");
         }
+
+        if (callerRoles.Contains(AppConstants.ROLE_GLOBAL_ADMIN))
+            return Result.Success();
 
         if (entityTenantId is null)
         {

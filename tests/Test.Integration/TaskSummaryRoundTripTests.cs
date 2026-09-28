@@ -41,7 +41,7 @@ public class TaskSummaryRoundTripTests
     public async Task GetSummaryAsync_IssuesExactlyOneQuery()
     {
         var tenantId = Guid.NewGuid();
-        var typedTenantId = DomainId.From<TenantId>(tenantId);
+        var typedTenantId = TenantId.From(tenantId);
 
         await using (var seed = DbContainerFixture.CreateTrxnContext())
         {

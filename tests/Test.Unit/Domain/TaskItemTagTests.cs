@@ -13,15 +13,15 @@ namespace Test.Unit.Domain;
 [TestClass]
 public class TaskItemTagTests
 {
-    private static TenantId TenantId => DomainId.From<TenantId>(TestConstants.TenantId);
+    private static TenantId TenantId => TenantId.From(TestConstants.TenantId);
 
     /// <summary>Verifies that given valid input, when task item tag created, then returns success.</summary>
     [TestMethod]
     [TestCategory("Unit")]
     public void Given_ValidInput_When_TaskItemTagCreated_Then_ReturnsSuccess()
     {
-        var taskItemId = DomainId.From<TaskItemId>(Guid.NewGuid());
-        var tagId = DomainId.From<TagId>(Guid.NewGuid());
+        var taskItemId = TaskItemId.From(Guid.NewGuid());
+        var tagId = TagId.From(Guid.NewGuid());
         var result = TaskItemTag.Create(TenantId, taskItemId, tagId);
         Assert.IsTrue(result.IsSuccess);
         Assert.IsNotNull(result.Value);
@@ -34,7 +34,7 @@ public class TaskItemTagTests
     [TestCategory("Unit")]
     public void Given_EmptyTaskItemId_When_TaskItemTagCreated_Then_ReturnsDomainFailure()
     {
-        var result = TaskItemTag.Create(TenantId, DomainId.From<TaskItemId>(Guid.Empty), DomainId.From<TagId>(Guid.NewGuid()));
+        var result = TaskItemTag.Create(TenantId, TaskItemId.From(Guid.Empty), TagId.From(Guid.NewGuid()));
         Assert.IsTrue(result.IsFailure);
     }
 
@@ -43,7 +43,7 @@ public class TaskItemTagTests
     [TestCategory("Unit")]
     public void Given_EmptyTagId_When_TaskItemTagCreated_Then_ReturnsDomainFailure()
     {
-        var result = TaskItemTag.Create(TenantId, DomainId.From<TaskItemId>(Guid.NewGuid()), DomainId.From<TagId>(Guid.Empty));
+        var result = TaskItemTag.Create(TenantId, TaskItemId.From(Guid.NewGuid()), TagId.From(Guid.Empty));
         Assert.IsTrue(result.IsFailure);
     }
 
@@ -53,9 +53,9 @@ public class TaskItemTagTests
     public void Given_EmptyTenantId_When_TaskItemTagCreated_Then_ReturnsDomainFailure()
     {
         var result = TaskItemTag.Create(
-            DomainId.From<TenantId>(Guid.Empty),
-            DomainId.From<TaskItemId>(Guid.NewGuid()),
-            DomainId.From<TagId>(Guid.NewGuid()));
+            TenantId.From(Guid.Empty),
+            TaskItemId.From(Guid.NewGuid()),
+            TagId.From(Guid.NewGuid()));
         Assert.IsTrue(result.IsFailure);
     }
 }

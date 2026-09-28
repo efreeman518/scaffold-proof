@@ -2,6 +2,9 @@
 
   <ItemGroup>
     <PackageReference Include="EF.Domain" />
+    <!-- fallback: only for EF.Common.Attributes.MaskAttribute on TaskItem's secure properties; drop when
+         EF.Packages 2.0 ships the single MaskAttribute in EF.Domain.Contracts (D25). -->
+    <PackageReference Include="EF.Common" />
     <PackageReference Include="EF.BackgroundServices" />
   </ItemGroup>
 

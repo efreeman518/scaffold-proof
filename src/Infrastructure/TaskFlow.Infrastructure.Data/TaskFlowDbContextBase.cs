@@ -47,8 +47,10 @@ public abstract class TaskFlowDbContextBase(DbContextOptions options) : DbContex
         // secure-column converters to the process encryptor carried by the options (D-023).
         modelBuilder.ApplyConfiguration(new TaskItemConfiguration(this.GetColumnEncryptor()));
         ConfigurePostgreSqlModel(modelBuilder);
-        SetTableNames(modelBuilder);
         ConfigureTenantQueryFilters(modelBuilder);
+        // D-021: the Version concurrency token on every IVersionedEntity; the operational, read-model and
+        // audit tables are not versioned, so nothing else is tokenized.
+        modelBuilder.RegisterVersionConcurrencyTokens();
     }
 
     /// <summary>
@@ -77,22 +79,6 @@ public abstract class TaskFlowDbContextBase(DbContextOptions options) : DbContex
 
     /// <summary>Assembly-qualified-free provider name Npgsql reports through <see cref="DatabaseFacade.ProviderName"/>.</summary>
     private const string NpgsqlProviderName = "Npgsql.EntityFrameworkCore.PostgreSQL";
-
-    /// <summary>Provides the set table names operation for task flow DB context base.</summary>
-    private static void SetTableNames(ModelBuilder modelBuilder)
-    {
-        foreach (var entity in modelBuilder.Model.GetEntityTypes())
-        {
-            // Do not force a table name for owned types; they share the owner's table
-            if (entity.IsOwned()) continue;
-
-            var current = entity.GetTableName();
-            if (string.IsNullOrWhiteSpace(current))
-            {
-                entity.SetTableName(entity.DisplayName());
-            }
-        }
-    }
 
     /// <summary>Configures tenant query filters behavior for this component.</summary>
     private void ConfigureTenantQueryFilters(ModelBuilder modelBuilder)

@@ -34,7 +34,7 @@ public sealed class ColumnEncryptionIntegrationTests
         {
             await db.Database.MigrateAsync(TestContext.CancellationToken);
             var task = TaskItem.Create(
-                DomainId.From<TenantId>(TestConstants.TenantId), $"Encrypted {token}",
+                TenantId.From(TestConstants.TenantId), $"Encrypted {token}",
                 secureDeterministic: token, secureRandom: secret).Value!;
             db.TaskItems.Add(task);
             await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
@@ -82,7 +82,7 @@ public sealed class ColumnEncryptionIntegrationTests
     {
         await using var db = DbContainerFixture.CreateTrxnContext();
         await db.Database.MigrateAsync(TestContext.CancellationToken);
-        var task = TaskItem.Create(DomainId.From<TenantId>(TestConstants.TenantId), $"Versioned {Guid.NewGuid():N}").Value!;
+        var task = TaskItem.Create(TenantId.From(TestConstants.TenantId), $"Versioned {Guid.NewGuid():N}").Value!;
         db.TaskItems.Add(task);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 

@@ -27,7 +27,7 @@ internal sealed class SearchTagsHandler(
     {
         var request = query.Request;
         HandlerHelpers.EnforceTenantFilter(request, requestContext.TenantId, requestContext.Roles, logger, "TagSearch");
-        return await CqrsHandlerSupport.SearchAsync(token => repoQuery.SearchTagsAsync(request, query.IncludeTotal, token), logger, "Tag", ct);
+        return await repoQuery.SearchTagsAsync(request, query.IncludeTotal, ct);
     }
 }
 
@@ -42,7 +42,7 @@ internal sealed class GetTagByIdHandler(
     /// <summary>Handles get tag by ID requests and returns the application result.</summary>
     public async Task<Result<DefaultResponse<TagDto>>> HandleAsync(GetTagByIdQuery query, CancellationToken ct = default)
     {
-        var entity = await repoQuery.GetTagAsync(DomainId.From<TagId>(query.Id), ct);
+        var entity = await repoQuery.GetTagAsync(TagId.From(query.Id), ct);
         if (entity is null) return Result<DefaultResponse<TagDto>>.None();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
@@ -59,6 +59,7 @@ internal sealed class CreateTagHandler(
     ILogger<CreateTagHandler> logger,
     IRequestContext<string, Guid?> requestContext,
     IRepositoryTrxn<Tag, TagId> repoTrxn,
+    ITagRepositoryQuery repoQuery,
     ITenantBoundaryValidator tenantBoundaryValidator,
     ITypedCache cache)
     : IRequestHandler<CreateTagCommand, Result<DefaultResponse<TagDto>>>
@@ -80,15 +81,11 @@ internal sealed class CreateTagHandler(
         // D-033: the row itself is the idempotency record for a caller-supplied UUIDv7 id.
         if (dto.Id is Guid callerId && callerId != Guid.Empty)
         {
-            var existing = await repoTrxn.GetAsync(DomainId.From<TagId>(callerId), ct);
+            var existing = await repoTrxn.GetAsync(TagId.From(callerId), ct);
             if (existing is not null)
             {
-                var existingDto = existing.ToDto();
-                if (!IdempotentCreateGuard.IsEquivalent(existingDto, dto))
-                    throw new IdempotentCreateConflictException(nameof(Tag), callerId);
-
-                return Result<DefaultResponse<TagDto>>.Success(
-                    new DefaultResponse<TagDto> { Item = existingDto, IsReplay = true });
+                return Result<DefaultResponse<TagDto>>.Success(IdempotentCreateGuard.ReplayOrThrow(
+                    existing.ToDto(), dto, IdempotentCreateGuard.IsEquivalent, nameof(Tag), callerId));
             }
         }
 
@@ -99,7 +96,20 @@ internal sealed class CreateTagHandler(
         repoTrxn.Create(ref entity);
 
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error creating Tag", ct);
-        if (save.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(save.ErrorMessage!);
+        if (save.IsFailure)
+        {
+            // D-033: a concurrent create with the same id passed the existence check too and won the insert.
+            // Re-read on the query context (this one still tracks the failed insert): the winner makes this a
+            // replay or a 409. Absent (or not yet replicated) means the save failed for another reason.
+            if (dto.Id is Guid racedId && racedId != Guid.Empty
+                && await repoQuery.GetTagAsync(TagId.From(racedId), ct) is { } raced)
+            {
+                return Result<DefaultResponse<TagDto>>.Success(IdempotentCreateGuard.ReplayOrThrow(
+                    raced.ToDto(), dto, IdempotentCreateGuard.IsEquivalent, nameof(Tag), racedId));
+            }
+
+            return Result<DefaultResponse<TagDto>>.Failure(save.ErrorMessage!);
+        }
 
         await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(Tag)), ct);
         return HandlerHelpers.Success(entity.ToDto());
@@ -124,7 +134,7 @@ internal sealed class UpdateTagHandler(
         var validation = TagStructureValidator.ValidateUpdate(dto);
         if (validation.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(validation.Errors);
 
-        var entity = await repoTrxn.GetAsync(DomainId.From<TagId>(dto.Id!.Value), ct);
+        var entity = await repoTrxn.GetAsync(TagId.From(dto.Id!.Value), ct);
         if (entity is null)
         {
             return HandlerHelpers.NotFoundResponse<TagDto>();
@@ -164,7 +174,7 @@ internal sealed class DeleteTagHandler(
     /// <summary>Handles delete tag requests and returns the application result.</summary>
     public async Task<Result> HandleAsync(DeleteTagCommand command, CancellationToken ct = default)
     {
-        var entity = await repoTrxn.GetAsync(DomainId.From<TagId>(command.Id), ct);
+        var entity = await repoTrxn.GetAsync(TagId.From(command.Id), ct);
         if (entity is null) return Result.Success();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(

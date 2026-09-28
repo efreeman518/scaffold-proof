@@ -21,8 +21,8 @@ public class CommentBuilder
     public Comment Build()
     {
         var result = Comment.Create(
-            DomainId.From<TenantId>(_tenantId),
-            DomainId.From<TaskItemId>(_taskItemId),
+            TenantId.From(_tenantId),
+            TaskItemId.From(_taskItemId),
             _body);
         return result.Value!;
     }

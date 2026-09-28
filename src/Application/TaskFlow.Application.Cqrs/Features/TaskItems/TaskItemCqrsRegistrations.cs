@@ -1,5 +1,5 @@
 using EF.Common.Contracts;
-using TaskFlow.Application.Cqrs.Registration;
+using EF.CQRS.DependencyInjection;
 using TaskFlow.Application.Models;
 using TaskFlow.Application.Models.Paging;
 
@@ -8,7 +8,7 @@ namespace TaskFlow.Application.Cqrs.Features.TaskItems;
 /// <summary>Provides task item CQRS registrations behavior for the Features Task Items layer.</summary>
 internal static class TaskItemCqrsRegistrations
 {
-    public static IReadOnlyList<CqrsHandlerRegistration> Registrations { get; } =
+    public static IReadOnlyList<RequestHandlerRegistration> Registrations { get; } =
     [
         new(typeof(SearchTaskItemsQuery), typeof(CursorPage<TaskItemDto>), typeof(SearchTaskItemsHandler)),
         new(typeof(GetTaskItemByIdQuery), typeof(Result<DefaultResponse<TaskItemDto>>), typeof(GetTaskItemByIdHandler)),

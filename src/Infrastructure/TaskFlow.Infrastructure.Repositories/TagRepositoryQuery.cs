@@ -61,7 +61,7 @@ public class TagRepositoryQuery(TaskFlowDbContextQuery db)
 
             if (filter.TenantId.HasValue)
             {
-                var tenantId = DomainId.From<TenantId>(filter.TenantId.Value);
+                var tenantId = TenantId.From(filter.TenantId.Value);
                 q = q.Where(e => e.TenantId == tenantId);
             }
         }

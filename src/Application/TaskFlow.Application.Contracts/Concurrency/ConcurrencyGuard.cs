@@ -41,4 +41,13 @@ public static class ConcurrencyGuard
     /// </summary>
     public static bool IsConcurrencyFailure(Exception ex) =>
         ex.GetType().FullName == "Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException";
+
+    /// <summary>
+    /// The filter for every catch that turns a failed write into a failure Result. A cancellation (client
+    /// disconnect or request timeout) must reach the host so it answers 499/504 instead of a 400, and a
+    /// lost update must reach it as 412; everything else becomes a Result carrying a fixed message - the
+    /// provider's own text (schema, table, key values) stays in the log.
+    /// </summary>
+    public static bool MapsToFailureResult(Exception ex) =>
+        ex is not OperationCanceledException && !IsConcurrencyFailure(ex);
 }

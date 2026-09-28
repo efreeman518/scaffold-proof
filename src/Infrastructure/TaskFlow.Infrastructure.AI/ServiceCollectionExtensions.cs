@@ -4,6 +4,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using TaskFlow.Application.Contracts;
 using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.AI.Agents;
 using TaskFlow.Infrastructure.AI.Agents.Tools;
@@ -54,10 +55,7 @@ public static class AiServiceCollectionExtensions
     }
 
     private static SearchProvider ParseSearchProvider(string value) =>
-        Enum.TryParse<SearchProvider>(value, ignoreCase: true, out var provider)
-            ? provider
-            : throw new ArgumentException(
-                $"Unknown search provider '{value}'. Allowed values: {string.Join(", ", Enum.GetNames<SearchProvider>())}.");
+        StrictEnum.Parse<SearchProvider>(value, "search provider");
 
     /// <summary>Configuration key for the vector dimension the deployed pgvector column was created with.</summary>
     public const string PgVectorDimensionsConfigKey = "Search:PgVector:Dimensions";

@@ -2,6 +2,7 @@ using EF.Audit.Contracts;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using TaskFlow.Application.Contracts;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Repositories;
 using TaskFlow.Infrastructure.Storage;
@@ -33,10 +34,7 @@ public static partial class RegisterServices
     }
 
     private static AuditProvider ParseAuditProvider(string value) =>
-        Enum.TryParse<AuditProvider>(value, ignoreCase: true, out var provider)
-            ? provider
-            : throw new ArgumentException(
-                $"Unknown audit provider '{value}'. Allowed values: {string.Join(", ", Enum.GetNames<AuditProvider>())}.");
+        StrictEnum.Parse<AuditProvider>(value, "audit provider");
 
     /// <summary>Dispatches to the selected audit-sink backend.</summary>
     [ProviderSwitch(typeof(IAuditLogRepository))]

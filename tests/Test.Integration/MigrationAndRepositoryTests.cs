@@ -24,7 +24,7 @@ public class MigrationAndRepositoryTests
 {
     private static readonly Guid TenantA = TestConstants.TenantId;
     private static readonly Guid TenantB = Guid.Parse("00000000-0000-0000-0000-000000000099");
-    private static TenantId TenantAId => DomainId.From<TenantId>(TenantA);
+    private static TenantId TenantAId => TenantId.From(TenantA);
 
     /// <summary>Marks the test Inconclusive when the SQL container failed to start (assembly-init safety).</summary>
     [TestInitialize]
@@ -68,7 +68,7 @@ public class MigrationAndRepositoryTests
         Assert.AreNotEqual(Guid.Empty, id);
 
         // Read
-        var fetched = await db.Categories.FindAsync([TenantAId, DomainId.From<CategoryId>(id)], TestContext.CancellationToken);
+        var fetched = await db.Categories.FindAsync([TenantAId, CategoryId.From(id)], TestContext.CancellationToken);
         Assert.IsNotNull(fetched);
         Assert.AreEqual("Integration Cat", fetched.Name);
 
@@ -76,14 +76,14 @@ public class MigrationAndRepositoryTests
         fetched.Update(name: "Updated Cat");
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 
-        var updated = await db.Categories.FindAsync([TenantAId, DomainId.From<CategoryId>(id)], TestContext.CancellationToken);
+        var updated = await db.Categories.FindAsync([TenantAId, CategoryId.From(id)], TestContext.CancellationToken);
         Assert.AreEqual("Updated Cat", updated!.Name);
 
         // Delete
         db.Categories.Remove(updated);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 
-        var deleted = await db.Categories.FindAsync([TenantAId, DomainId.From<CategoryId>(id)], TestContext.CancellationToken);
+        var deleted = await db.Categories.FindAsync([TenantAId, CategoryId.From(id)], TestContext.CancellationToken);
         Assert.IsNull(deleted);
     }
 
@@ -102,7 +102,7 @@ public class MigrationAndRepositoryTests
         var id = task.Id;
 
         // Read
-        var fetched = await db.TaskItems.FindAsync([TenantAId, DomainId.From<TaskItemId>(id)], TestContext.CancellationToken);
+        var fetched = await db.TaskItems.FindAsync([TenantAId, TaskItemId.From(id)], TestContext.CancellationToken);
         Assert.IsNotNull(fetched);
         Assert.AreEqual("Integration Task", fetched.Title);
         Assert.AreEqual(Priority.High, fetched.Priority);
@@ -112,14 +112,14 @@ public class MigrationAndRepositoryTests
         fetched.Update(title: "Updated Task");
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 
-        var updated = await db.TaskItems.FindAsync([TenantAId, DomainId.From<TaskItemId>(id)], TestContext.CancellationToken);
+        var updated = await db.TaskItems.FindAsync([TenantAId, TaskItemId.From(id)], TestContext.CancellationToken);
         Assert.AreEqual("Updated Task", updated!.Title);
 
         // Delete
         db.TaskItems.Remove(updated);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 
-        var deleted = await db.TaskItems.FindAsync([TenantAId, DomainId.From<TaskItemId>(id)], TestContext.CancellationToken);
+        var deleted = await db.TaskItems.FindAsync([TenantAId, TaskItemId.From(id)], TestContext.CancellationToken);
         Assert.IsNull(deleted);
     }
 
@@ -203,7 +203,7 @@ public class MigrationAndRepositoryTests
 
         // Reload the parent (tracked, with children) in a fresh context - mirrors the handler/service path.
         await using var db = DbContainerFixture.CreateTrxnContext();
-        var typedParentId = DomainId.From<TaskItemId>(parentId);
+        var typedParentId = TaskItemId.From(parentId);
         var loaded = await db.TaskItems
             .IgnoreQueryFilters()
             .Include(t => t.Comments)

@@ -91,7 +91,7 @@ public class RelationalAuditLogRepositoryTests
         await host.StartAsync(ct);
         try
         {
-            var tenantId = DomainId.From<TenantId>(Guid.CreateVersion7());
+            var tenantId = TenantId.From(Guid.CreateVersion7());
             var category = Category.Create(tenantId, $"Audited {Guid.NewGuid():N}").Value!;
             using (var scope = host.Services.CreateScope())
             {

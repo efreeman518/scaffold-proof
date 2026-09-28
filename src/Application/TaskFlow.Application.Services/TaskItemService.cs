@@ -77,23 +77,17 @@ internal class TaskItemService(
 
         var tenantId = request.Filter?.TenantId ?? RequestTenantId ?? Guid.Empty;
 
-        try
-        {
-            // The cursor is decoded and the next one minted by the repository, which owns the codec: a
-            // faulted cursor arrives here as ArgumentException (ERROR_CURSOR_INVALID), mapped to 400.
-            return await repoQuery.SearchTaskItemsAsync(request, tenantId, ct);
-        }
-        catch (OperationCanceledException)
-        {
-            logger.TaskItemSearchCancelled();
-            return new CursorPage<TaskItemDto>([], null, false);
-        }
+        // The cursor is decoded and the next one minted by the repository, which owns the codec: a
+        // faulted cursor arrives here as ArgumentException (ERROR_CURSOR_INVALID), mapped to 400. A
+        // cancellation or request timeout propagates (499/504): an empty page with HasMore = false would
+        // tell a pager it had seen every row.
+        return await repoQuery.SearchTaskItemsAsync(request, tenantId, ct);
     }
 
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<Result<DefaultResponse<TaskItemDto>>> GetAsync(Guid id, CancellationToken ct = default)
     {
-        var entity = await repoQuery.GetTaskItemAsync(DomainId.From<TaskItemId>(id), ct);
+        var entity = await repoQuery.GetTaskItemAsync(TaskItemId.From(id), ct);
         if (entity == null) return Result<DefaultResponse<TaskItemDto>>.None();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
@@ -128,15 +122,11 @@ internal class TaskItemService(
 
         if (dto.Id is Guid callerId && callerId != Guid.Empty)
         {
-            var existing = await repoTrxn.GetTaskItemAsync(DomainId.From<TaskItemId>(callerId), inclChildren: false, ct);
+            var existing = await repoTrxn.GetTaskItemAsync(TaskItemId.From(callerId), inclChildren: false, ct);
             if (existing is not null)
             {
-                var existingDto = existing.ToDto();
-                if (!IdempotentCreateGuard.IsEquivalent(existingDto, dto))
-                    throw new IdempotentCreateConflictException(nameof(TaskItem), callerId);
-
-                return Result<DefaultResponse<TaskItemDto>>.Success(
-                    new DefaultResponse<TaskItemDto> { Item = existingDto, IsReplay = true });
+                return Result<DefaultResponse<TaskItemDto>>.Success(IdempotentCreateGuard.ReplayOrThrow(
+                    existing.ToDto(), dto, IdempotentCreateGuard.IsEquivalent, nameof(TaskItem), callerId));
             }
         }
 
@@ -151,10 +141,21 @@ internal class TaskItemService(
         {
             await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
         }
-        catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
+        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
         {
             logger.TaskItemCreateFailed(ex);
-            return Result<DefaultResponse<TaskItemDto>>.Failure(ex.GetBaseException().Message);
+
+            // D-033: a concurrent create with the same id passed the existence check too and won the insert.
+            // Re-read on the query context (this one still tracks the failed insert): the winner makes this a
+            // replay or a 409. Absent (or not yet replicated) means the save failed for another reason.
+            if (dto.Id is Guid racedId && racedId != Guid.Empty
+                && await repoQuery.GetTaskItemAsync(TaskItemId.From(racedId), ct) is { } raced)
+            {
+                return Result<DefaultResponse<TaskItemDto>>.Success(IdempotentCreateGuard.ReplayOrThrow(
+                    raced.ToDto(), dto, IdempotentCreateGuard.IsEquivalent, nameof(TaskItem), racedId));
+            }
+
+            return Result<DefaultResponse<TaskItemDto>>.Failure(ErrorConstants.ERROR_SAVE_FAILED);
         }
 
         await InvalidateTaskSnapshotsAsync(ct);
@@ -176,7 +177,7 @@ internal class TaskItemService(
         var validation = TaskItemStructureValidator.ValidateUpdate(dto);
         if (validation.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(validation.Errors);
 
-        var entity = await repoTrxn.GetTaskItemAsync(DomainId.From<TaskItemId>(dto.Id!.Value), ct: ct);
+        var entity = await repoTrxn.GetTaskItemAsync(TaskItemId.From(dto.Id!.Value), ct: ct);
         if (entity == null)
             return Result<DefaultResponse<TaskItemDto>>.Success(new DefaultResponse<TaskItemDto> { Item = null });
 
@@ -233,10 +234,10 @@ internal class TaskItemService(
         {
             await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
         }
-        catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
+        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
         {
             logger.TaskItemUpdateFailed(ex, dto.Id);
-            return Result<DefaultResponse<TaskItemDto>>.Failure(ex.GetBaseException().Message);
+            return Result<DefaultResponse<TaskItemDto>>.Failure(ErrorConstants.ERROR_SAVE_FAILED);
         }
 
         await InvalidateTaskSnapshotsAsync(ct);
@@ -254,7 +255,7 @@ internal class TaskItemService(
     public async Task<Result<DefaultResponse<TaskItemDto>>> PatchAsync(
         Guid id, TaskItemPatchDto patch, long? expectedVersion, CancellationToken ct = default)
     {
-        var entity = await repoTrxn.GetTaskItemAsync(DomainId.From<TaskItemId>(id), ct: ct);
+        var entity = await repoTrxn.GetTaskItemAsync(TaskItemId.From(id), ct: ct);
         if (entity == null)
             return Result<DefaultResponse<TaskItemDto>>.Success(new DefaultResponse<TaskItemDto> { Item = null });
 
@@ -278,10 +279,10 @@ internal class TaskItemService(
         {
             await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
         }
-        catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
+        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
         {
             logger.TaskItemPatchFailed(ex, id);
-            return Result<DefaultResponse<TaskItemDto>>.Failure(ex.GetBaseException().Message);
+            return Result<DefaultResponse<TaskItemDto>>.Failure(ErrorConstants.ERROR_SAVE_FAILED);
         }
 
         await InvalidateTaskSnapshotsAsync(ct);
@@ -291,7 +292,7 @@ internal class TaskItemService(
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
     public async Task<Result> DeleteAsync(Guid id, long? expectedVersion, CancellationToken ct = default)
     {
-        var entity = await repoTrxn.GetTaskItemAsync(DomainId.From<TaskItemId>(id), ct: ct);
+        var entity = await repoTrxn.GetTaskItemAsync(TaskItemId.From(id), ct: ct);
         // Deleting an id that is already gone stays 204: the caller's desired state is reached, and a
         // 412 here would make a safe retry look like a conflict.
         if (entity == null) return Result.Success();
@@ -309,10 +310,10 @@ internal class TaskItemService(
         {
             await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
         }
-        catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
+        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
         {
             logger.TaskItemDeleteFailed(ex, id);
-            return Result.Failure(ex.GetBaseException().Message);
+            return Result.Failure(ErrorConstants.ERROR_SAVE_FAILED);
         }
 
         await InvalidateTaskSnapshotsAsync(ct);
@@ -329,10 +330,10 @@ internal class TaskItemService(
             await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
             return Result.Success();
         }
-        catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
+        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
         {
             logger.AggregateSaveFailed(ex, errorMessage, args);
-            return Result.Failure(ex.GetBaseException().Message);
+            return Result.Failure(ErrorConstants.ERROR_SAVE_FAILED);
         }
     }
 
@@ -511,7 +512,7 @@ internal class TaskItemService(
             return Result<DefaultResponse<TaskItemTagDto>>.Success(
                 new DefaultResponse<TaskItemTagDto> { Item = existing.ToDto(), IsReplay = true, AggregateVersion = entity.Version });
 
-        var associateResult = entity.AssociateTag(DomainId.From<TagId>(tagId));
+        var associateResult = entity.AssociateTag(TagId.From(tagId));
         if (associateResult.IsFailure) return Result<DefaultResponse<TaskItemTagDto>>.Failure(associateResult.ErrorMessage!);
 
         var save = await SaveAggregateAsync("Error associating Tag {TagId} with TaskItem {Id}", ct, tagId, taskItemId);

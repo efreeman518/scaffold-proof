@@ -62,7 +62,7 @@ public class ScaleFixtureExportTests
 
         var expected = await query.Set<TaskItem>()
             .IgnoreQueryFilters()
-            .CountAsync(t => t.TenantId == DomainId.From<TenantId>(PrimaryTenant), TestContext.CancellationToken);
+            .CountAsync(t => t.TenantId == TenantId.From(PrimaryTenant), TestContext.CancellationToken);
         Assert.IsGreaterThan(0, expected, "the skewed fixture must put rows in the primary tenant");
 
         var seen = new HashSet<Guid>();

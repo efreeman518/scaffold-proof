@@ -62,7 +62,7 @@ internal class TagService(
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<Result<DefaultResponse<TagDto>>> GetAsync(Guid id, CancellationToken ct = default)
     {
-        var entity = await repoQuery.GetTagAsync(DomainId.From<TagId>(id), ct);
+        var entity = await repoQuery.GetTagAsync(TagId.From(id), ct);
         if (entity == null) return Result<DefaultResponse<TagDto>>.None();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
@@ -91,15 +91,11 @@ internal class TagService(
         // D-033: the row itself is the idempotency record for a caller-supplied UUIDv7 id.
         if (dto.Id is Guid callerId && callerId != Guid.Empty)
         {
-            var existing = await repoTrxn.GetAsync(DomainId.From<TagId>(callerId), ct);
+            var existing = await repoTrxn.GetAsync(TagId.From(callerId), ct);
             if (existing is not null)
             {
-                var existingDto = existing.ToDto();
-                if (!IdempotentCreateGuard.IsEquivalent(existingDto, dto))
-                    throw new IdempotentCreateConflictException(nameof(Tag), callerId);
-
-                return Result<DefaultResponse<TagDto>>.Success(
-                    new DefaultResponse<TagDto> { Item = existingDto, IsReplay = true });
+                return Result<DefaultResponse<TagDto>>.Success(IdempotentCreateGuard.ReplayOrThrow(
+                    existing.ToDto(), dto, IdempotentCreateGuard.IsEquivalent, nameof(Tag), callerId));
             }
         }
 
@@ -113,10 +109,21 @@ internal class TagService(
         {
             await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
         }
-        catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
+        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
         {
             logger.TagCreateFailed(ex);
-            return Result<DefaultResponse<TagDto>>.Failure(ex.GetBaseException().Message);
+
+            // D-033: a concurrent create with the same id passed the existence check too and won the insert.
+            // Re-read on the query context (this one still tracks the failed insert): the winner makes this a
+            // replay or a 409. Absent (or not yet replicated) means the save failed for another reason.
+            if (dto.Id is Guid racedId && racedId != Guid.Empty
+                && await repoQuery.GetTagAsync(TagId.From(racedId), ct) is { } raced)
+            {
+                return Result<DefaultResponse<TagDto>>.Success(IdempotentCreateGuard.ReplayOrThrow(
+                    raced.ToDto(), dto, IdempotentCreateGuard.IsEquivalent, nameof(Tag), racedId));
+            }
+
+            return Result<DefaultResponse<TagDto>>.Failure(ErrorConstants.ERROR_SAVE_FAILED);
         }
 
         await InvalidateMetadataAsync(ct);
@@ -133,7 +140,7 @@ internal class TagService(
         var validation = TagStructureValidator.ValidateUpdate(dto);
         if (validation.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(validation.Errors);
 
-        var entity = await repoTrxn.GetAsync(DomainId.From<TagId>(dto.Id!.Value), ct);
+        var entity = await repoTrxn.GetAsync(TagId.From(dto.Id!.Value), ct);
         if (entity == null)
             return Result<DefaultResponse<TagDto>>.Success(new DefaultResponse<TagDto> { Item = null });
 
@@ -155,10 +162,10 @@ internal class TagService(
         {
             await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
         }
-        catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
+        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
         {
             logger.TagUpdateFailed(ex, dto.Id);
-            return Result<DefaultResponse<TagDto>>.Failure(ex.GetBaseException().Message);
+            return Result<DefaultResponse<TagDto>>.Failure(ErrorConstants.ERROR_SAVE_FAILED);
         }
 
         await InvalidateMetadataAsync(ct);
@@ -168,7 +175,7 @@ internal class TagService(
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
     public async Task<Result> DeleteAsync(Guid id, long? expectedVersion, CancellationToken ct = default)
     {
-        var entity = await repoTrxn.GetAsync(DomainId.From<TagId>(id), ct);
+        var entity = await repoTrxn.GetAsync(TagId.From(id), ct);
         if (entity == null) return Result.Success();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
@@ -184,10 +191,10 @@ internal class TagService(
         {
             await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
         }
-        catch (Exception ex) when (!ConcurrencyGuard.IsConcurrencyFailure(ex))
+        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
         {
             logger.TagDeleteFailed(ex, id);
-            return Result.Failure(ex.GetBaseException().Message);
+            return Result.Failure(ErrorConstants.ERROR_SAVE_FAILED);
         }
 
         await InvalidateMetadataAsync(ct);

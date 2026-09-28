@@ -17,8 +17,7 @@
       "break": 0
     },
     "mutate": [
-      "**/TaskItem.cs",
-      "**/Rules/TaskItemStatusTransitionRule.cs"
+      "**/TaskItem.cs"
     ]
   }
 }

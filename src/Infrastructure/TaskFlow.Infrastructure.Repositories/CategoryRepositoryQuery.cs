@@ -78,13 +78,13 @@ public class CategoryRepositoryQuery(TaskFlowDbContextQuery db)
 
             if (filter.ParentCategoryId.HasValue)
             {
-                var parentCategoryId = DomainId.From<CategoryId>(filter.ParentCategoryId.Value);
+                var parentCategoryId = CategoryId.From(filter.ParentCategoryId.Value);
                 q = q.Where(e => e.ParentCategoryId == parentCategoryId);
             }
 
             if (filter.TenantId.HasValue)
             {
-                var tenantId = DomainId.From<TenantId>(filter.TenantId.Value);
+                var tenantId = TenantId.From(filter.TenantId.Value);
                 q = q.Where(e => e.TenantId == tenantId);
             }
         }

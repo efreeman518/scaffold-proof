@@ -21,10 +21,7 @@ Stryker writes the HTML report under `tests/Test.Mutation/StrykerOutput/`.
 
 ## Scope
 
-`stryker-config.json` mutates only:
-
-- `TaskItem.cs`
-- `TaskItemStatusTransitionRule.cs`
+`stryker-config.json` mutates only `TaskItem.cs`.
 
 The sample tests assert domain boundaries, status transition rules, idempotent collection behavior, and failure messages. These are useful mutation-testing examples because weak assertions usually let comparison, boolean, collection, and string mutants survive.
 

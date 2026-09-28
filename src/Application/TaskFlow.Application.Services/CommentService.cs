@@ -49,7 +49,7 @@ internal class CommentService(
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<Result<DefaultResponse<CommentDto>>> GetAsync(Guid id, CancellationToken ct = default)
     {
-        var entity = await repoQuery.GetCommentAsync(DomainId.From<CommentId>(id), ct);
+        var entity = await repoQuery.GetCommentAsync(CommentId.From(id), ct);
         if (entity == null) return Result<DefaultResponse<CommentDto>>.None();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(

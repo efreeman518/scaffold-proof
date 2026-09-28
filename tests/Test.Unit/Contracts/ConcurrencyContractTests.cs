@@ -60,6 +60,10 @@ public class ConcurrencyContractTests
         Assert.IsTrue(UuidV7.IsV7(Guid.CreateVersion7()));
         Assert.IsFalse(UuidV7.IsV7(Guid.NewGuid()));
         Assert.IsFalse(UuidV7.IsV7(Guid.Empty), "Guid.Empty carries no version nibble and is not a v7 id.");
+        Assert.IsFalse(UuidV7.IsV7(Guid.Parse("01890a5d-ac96-774b-cbcb-cf2de2a0c1f0")),
+            "Version nibble 7 under the Microsoft variant (110) is not an RFC 9562 UUIDv7.");
+        Assert.IsTrue(UuidV7.IsV7(Guid.Parse("01890a5d-ac96-774b-bcbb-cf2de2a0c1f0")),
+            "The same id with the RFC variant (10x) is a UUIDv7.");
 
         Assert.IsTrue(UuidV7.ValidateCallerId(null).IsSuccess, "An absent id is valid: the server generates one.");
         Assert.IsTrue(UuidV7.ValidateCallerId(Guid.CreateVersion7()).IsSuccess);

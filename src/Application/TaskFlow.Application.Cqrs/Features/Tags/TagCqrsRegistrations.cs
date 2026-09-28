@@ -1,5 +1,5 @@
 using EF.Common.Contracts;
-using TaskFlow.Application.Cqrs.Registration;
+using EF.CQRS.DependencyInjection;
 using TaskFlow.Application.Models;
 
 namespace TaskFlow.Application.Cqrs.Features.Tags;
@@ -7,7 +7,7 @@ namespace TaskFlow.Application.Cqrs.Features.Tags;
 /// <summary>Provides tag CQRS registrations behavior for the Features Tags layer.</summary>
 internal static class TagCqrsRegistrations
 {
-    public static IReadOnlyList<CqrsHandlerRegistration> Registrations { get; } =
+    public static IReadOnlyList<RequestHandlerRegistration> Registrations { get; } =
     [
         new(typeof(SearchTagsQuery), typeof(PagedResponse<TagDto>), typeof(SearchTagsHandler)),
         new(typeof(GetTagByIdQuery), typeof(Result<DefaultResponse<TagDto>>), typeof(GetTagByIdHandler)),

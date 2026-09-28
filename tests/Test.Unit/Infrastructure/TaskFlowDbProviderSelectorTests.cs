@@ -82,6 +82,26 @@ public class TaskFlowDbProviderSelectorTests
         Assert.ThrowsExactly<ArgumentException>(() =>
             PoolerModeSelector.Resolve(Config((PoolerModeSelector.ConfigurationKey, "Session"))));
 
+    // Enum.TryParse accepted "2" as an undefined PoolerMode that compared unequal to Transaction, so the
+    // PgBouncer flags were silently skipped; numbers and combinations must fail like any unknown name.
+    [TestMethod]
+    [DataRow("1")]
+    [DataRow("2")]
+    [DataRow("-1")]
+    [DataRow("None,Transaction")]
+    public void PoolerModeSelector_NumericOrCombinedValue_Throws(string value)
+    {
+        var ex = Assert.ThrowsExactly<ArgumentException>(() =>
+            PoolerModeSelector.Resolve(Config((PoolerModeSelector.ConfigurationKey, value))));
+        StringAssert.Contains(ex.Message, "Allowed values: None, Transaction.");
+    }
+
+    [TestMethod]
+    public void PoolerModeSelector_NameAnyCaseWithWhitespace_Resolves() =>
+        Assert.AreEqual(
+            PoolerMode.Transaction,
+            PoolerModeSelector.Resolve(Config((PoolerModeSelector.ConfigurationKey, " transaction "))));
+
     [TestMethod]
     public void UseTaskFlowProvider_TransactionPoolerMode_AppendsNoResetAndMaxAutoPrepareFlags()
     {

@@ -24,8 +24,8 @@ public class ChecklistItemBuilder
     public ChecklistItem Build()
     {
         var result = ChecklistItem.Create(
-            DomainId.From<TenantId>(_tenantId),
-            DomainId.From<TaskItemId>(_taskItemId),
+            TenantId.From(_tenantId),
+            TaskItemId.From(_taskItemId),
             _title,
             _sortOrder);
         return result.Value!;

@@ -23,7 +23,7 @@ internal sealed class SearchChecklistItemsHandler(
     {
         var request = query.Request;
         HandlerHelpers.EnforceTenantFilter(request, requestContext.TenantId, requestContext.Roles, logger, "ChecklistItemSearch");
-        return await CqrsHandlerSupport.SearchAsync(token => repoQuery.SearchChecklistItemsAsync(request, query.IncludeTotal, token), logger, "ChecklistItem", ct);
+        return await repoQuery.SearchChecklistItemsAsync(request, query.IncludeTotal, ct);
     }
 }
 
@@ -38,7 +38,7 @@ internal sealed class GetChecklistItemByIdHandler(
     /// <summary>Handles get checklist item by ID requests and returns the application result.</summary>
     public async Task<Result<DefaultResponse<ChecklistItemDto>>> HandleAsync(GetChecklistItemByIdQuery query, CancellationToken ct = default)
     {
-        var entity = await repoQuery.GetChecklistItemAsync(DomainId.From<ChecklistItemId>(query.Id), ct);
+        var entity = await repoQuery.GetChecklistItemAsync(ChecklistItemId.From(query.Id), ct);
         if (entity is null) return Result<DefaultResponse<ChecklistItemDto>>.None();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(

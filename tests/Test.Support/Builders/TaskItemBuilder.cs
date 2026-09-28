@@ -31,7 +31,7 @@ public class TaskItemBuilder
     public TaskItem Build()
     {
         var result = TaskItem.Create(
-            DomainId.From<TenantId>(_tenantId),
+            TenantId.From(_tenantId),
             _title,
             _description,
             _priority,
