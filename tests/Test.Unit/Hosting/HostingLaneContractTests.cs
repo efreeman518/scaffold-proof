@@ -1,3 +1,4 @@
+using EF.IntegrationTesting.Environment;
 using Microsoft.Extensions.Configuration;
 using TaskFlow.Hosting;
 
@@ -312,30 +313,14 @@ public sealed class HostingLaneContractTests
 
     private static void WithCleanEnvironment(Action action)
     {
-        var saved = EnvironmentVariables.ToDictionary(
-            name => name, Environment.GetEnvironmentVariable, StringComparer.Ordinal);
-        try
-        {
-            foreach (var name in EnvironmentVariables) Environment.SetEnvironmentVariable(name, null);
-            action();
-        }
-        finally
-        {
-            foreach (var (name, value) in saved) Environment.SetEnvironmentVariable(name, value);
-        }
+        using var environment = new EnvironmentVariableScope();
+        foreach (var name in EnvironmentVariables) environment.Set(name, null);
+        action();
     }
 
     private static void WithEnvironment(string name, string value, Action action)
     {
-        var original = Environment.GetEnvironmentVariable(name);
-        Environment.SetEnvironmentVariable(name, value);
-        try
-        {
-            action();
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable(name, original);
-        }
+        using var environment = new EnvironmentVariableScope().Set(name, value);
+        action();
     }
 }

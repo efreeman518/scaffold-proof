@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Configuration;
+using EF.IntegrationTesting.Environment;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.AI;
 using Moq;
@@ -78,20 +79,14 @@ public class SearchProviderSelectorTests
     [DoNotParallelize]
     public void ResolveSearchProvider_EnvWinsOverConfig()
     {
-        var original = Environment.GetEnvironmentVariable(AiServiceCollectionExtensions.SearchProviderEnvVar);
-        Environment.SetEnvironmentVariable(AiServiceCollectionExtensions.SearchProviderEnvVar, "Sql");
-        try
-        {
-            Assert.AreEqual(
-                SearchProvider.Sql,
-                AiServiceCollectionExtensions.ResolveSearchProvider(
-                    Config((AiServiceCollectionExtensions.SearchProviderConfigKey, "AzureAiSearch")),
-                    new TaskFlowAiSettings()));
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable(AiServiceCollectionExtensions.SearchProviderEnvVar, original);
-        }
+        using var environment = new EnvironmentVariableScope()
+            .Set(AiServiceCollectionExtensions.SearchProviderEnvVar, "Sql");
+
+        Assert.AreEqual(
+            SearchProvider.Sql,
+            AiServiceCollectionExtensions.ResolveSearchProvider(
+                Config((AiServiceCollectionExtensions.SearchProviderConfigKey, "AzureAiSearch")),
+                new TaskFlowAiSettings()));
     }
 
     [TestMethod]

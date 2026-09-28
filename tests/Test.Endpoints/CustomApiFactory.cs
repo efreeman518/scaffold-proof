@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using EF.Audit.Contracts;
+using EF.IntegrationTesting.EntityFramework;
 using EF.Storage.Contracts;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Storage;
@@ -91,15 +92,11 @@ public sealed class CustomApiFactory : WebApplicationFactoryBase<Program, TaskFl
     // pass the tests while being inert.
     /// <summary>Builds trxn options used by focused test cases.</summary>
     protected override DbContextOptions BuildTrxnOptions() =>
-        new DbContextOptionsBuilder<TaskFlowDbContextTrxn>()
-            .UseInMemoryDatabase(_dbName)
-            .AddInterceptors(new VersionTimestampInterceptor())
-            .Options;
+        DbContextOptionsFactory.BuildInMemoryOptions<TaskFlowDbContextTrxn>(
+            _dbName, builder => builder.AddInterceptors(new VersionTimestampInterceptor()));
 
     /// <summary>Builds query options used by focused test cases.</summary>
     protected override DbContextOptions BuildQueryOptions() =>
-        new DbContextOptionsBuilder<TaskFlowDbContextQuery>()
-            .UseInMemoryDatabase(_dbName)
-            .AddInterceptors(new VersionTimestampInterceptor())
-            .Options;
+        DbContextOptionsFactory.BuildInMemoryOptions<TaskFlowDbContextQuery>(
+            _dbName, builder => builder.AddInterceptors(new VersionTimestampInterceptor()));
 }

@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -99,7 +99,7 @@ public sealed class AiWorkflowIntegrationTests
     // Runtime hosts do not migrate. Component test owns schema prep before API factory starts.
     private static async Task<string> IsolatedMigratedConnectionStringAsync(CancellationToken ct)
     {
-        var connectionString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("TaskFlow_FlowEngineWorkflowTests");
+        var connectionString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("TaskFlow_AiWorkflow");
 
         await using var trxn = DbContainerFixture.CreateTrxnContext(connectionString);
         await trxn.Database.MigrateAsync(ct);

@@ -1,3 +1,4 @@
+using EF.IntegrationTesting.Environment;
 using Microsoft.Extensions.Configuration;
 using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Data.Provider;
@@ -49,20 +50,14 @@ public class TaskFlowDbProviderSelectorTests
     [DoNotParallelize]
     public void Resolve_EnvWinsOverConfig()
     {
-        var original = Environment.GetEnvironmentVariable(TaskFlowDbProviderSelector.EnvironmentVariable);
-        Environment.SetEnvironmentVariable(TaskFlowDbProviderSelector.EnvironmentVariable, "PostgreSql");
-        try
-        {
-            Assert.AreEqual(
-                TaskFlowDbProvider.PostgreSql,
-                TaskFlowDbProviderSelector.Resolve(Config(
-                    (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
-                    (TaskFlowDbProviderSelector.ConfigurationKey, "SqlServer"))));
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable(TaskFlowDbProviderSelector.EnvironmentVariable, original);
-        }
+        using var environment = new EnvironmentVariableScope()
+            .Set(TaskFlowDbProviderSelector.EnvironmentVariable, "PostgreSql");
+
+        Assert.AreEqual(
+            TaskFlowDbProvider.PostgreSql,
+            TaskFlowDbProviderSelector.Resolve(Config(
+                (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
+                (TaskFlowDbProviderSelector.ConfigurationKey, "SqlServer"))));
     }
 
     // ----- Pooler mode (D-045): config-only, no env var, no lane default. -----

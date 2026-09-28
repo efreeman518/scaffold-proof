@@ -1,5 +1,6 @@
 using Aspire.Hosting;
 using Aspire.Hosting.Testing;
+using EF.IntegrationTesting.Environment;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
@@ -36,6 +37,7 @@ internal static class WasmAppHost
 
     internal static async Task<WasmHostTarget> PrepareAsync(
         AspireTestHostContext host,
+        EnvironmentVariableScope environment,
         bool publishRelease,
         CancellationToken ct)
     {
@@ -50,7 +52,7 @@ internal static class WasmAppHost
         var configuredUrl = Environment.GetEnvironmentVariable("PLAYWRIGHT_UNO_URL");
         if (!publishRelease && !string.IsNullOrWhiteSpace(configuredUrl))
         {
-            Environment.SetEnvironmentVariable("PLAYWRIGHT_UNO_URL", configuredUrl.TrimEnd('/'));
+            environment.Set("PLAYWRIGHT_UNO_URL", configuredUrl.TrimEnd('/'));
             return new WasmHostTarget(
                 RunTypeScriptProject: true,
                 HostWithAspire: false,
@@ -103,7 +105,7 @@ internal static class WasmAppHost
                 ],
                 ct);
 
-            Environment.SetEnvironmentVariable(PublishedDistPathVariable, outputPath);
+            environment.Set(PublishedDistPathVariable, outputPath);
         }
         else
         {
@@ -122,7 +124,7 @@ internal static class WasmAppHost
                 ],
                 ct);
 
-            Environment.SetEnvironmentVariable(PublishedDistPathVariable, null);
+            environment.Set(PublishedDistPathVariable, null);
         }
 
         _ = PublishedAssetContract.Validate(outputPath);
@@ -142,13 +144,14 @@ internal static class WasmAppHost
 
     internal static async Task<string> ResolveEndpointAsync(
         AspireTestHostContext host,
+        EnvironmentVariableScope environment,
         DistributedApplication app,
         CancellationToken ct)
     {
         await host.WaitForResourceHealthyAsync(UnoResourceName, ct);
 
         var endpoint = app.GetEndpoint(UnoResourceName, HttpEndpointName).ToString().TrimEnd('/');
-        Environment.SetEnvironmentVariable("PLAYWRIGHT_UNO_URL", endpoint);
+        environment.Set("PLAYWRIGHT_UNO_URL", endpoint);
         return endpoint;
     }
 

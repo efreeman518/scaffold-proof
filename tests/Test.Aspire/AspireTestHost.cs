@@ -334,7 +334,12 @@ internal static class AspireTestHost
     private static bool IsEnabled(string variableName) =>
         string.Equals(Environment.GetEnvironmentVariable(variableName), "true", StringComparison.OrdinalIgnoreCase);
 
-    private static bool IsExplicitlyDisabled(string variableName)
+    /// <summary>
+    /// True when an opt-out variable is <c>false</c>, <c>0</c> or <c>no</c>. The one check for every
+    /// <c>TASKFLOW_*_TESTS_ENABLED</c> switch, so the host skipping a surface and the test explaining the
+    /// skip can never disagree about what counts as an opt-out.
+    /// </summary>
+    internal static bool IsExplicitlyDisabled(string variableName)
     {
         var value = Environment.GetEnvironmentVariable(variableName);
         return string.Equals(value, "false", StringComparison.OrdinalIgnoreCase)

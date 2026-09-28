@@ -1,6 +1,7 @@
-﻿using EF.FlowEngine.Abstractions;
+using EF.FlowEngine.Abstractions;
 using EF.FlowEngine.Clients;
 using EF.FlowEngine.Model;
+using EF.IntegrationTesting.Environment;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Azure.Cosmos;
@@ -9,7 +10,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using System.Runtime.CompilerServices;
-using System.Threading.Channels;
 
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Bootstrapper;
@@ -41,31 +41,8 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
     // Overrides are pushed through environment variables (set before the host's WebApplication.CreateBuilder
     // runs) because appsettings.Development.json hardcodes a localdb connection string that wins over
     // ConfigureAppConfiguration in the minimal-hosting model. Env vars are read after appsettings, so they win.
-    private static readonly string[] OverrideKeys =
-    [
-        "ASPNETCORE_ENVIRONMENT",
-        "ConnectionStrings__TaskFlowDbContextTrxn",
-        "ConnectionStrings__TaskFlowDbContextQuery",
-        "ConnectionStrings__TaskFlowFlowEngineDbContext",
-        "ConnectionStrings__chat",
-        "FlowEngine__TaskFlowApiBaseUrl",
-        "RateLimiting__PerTenant__PermitLimit",
-        "Database__Encryption__LocalKeyBase64",
-        "Database__Encryption__BlindIndexKeyBase64",
-        "Database__Provider",
-        "DataProtectionKeysFileUrl",
-        "ConnectionStrings__BlobStorage1",
-        "ConnectionStrings__TableStorage1",
-        "ConnectionStrings__CosmosDb1",
-        "ServiceBus1__fullyQualifiedNamespace",
-        "ConnectionStrings__Redis1",
-        "Storage__S3__ServiceUrl",
-        "Storage__S3__PublicServiceUrl",
-        "Storage__S3__AccessKeyId",
-        "Storage__S3__SecretAccessKey",
-        "Messaging__RabbitMq__ConnectionString",
-        "ConnectionStrings__MongoDb1",
-    ];
+    // The scope restores each variable's original value on dispose, so a value set in the shell survives.
+    private readonly EnvironmentVariableScope _environment = new();
 
     private readonly Func<string, string> _chatReply;
 
@@ -76,24 +53,24 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
         // Development so the host AND Program's own config-driven gates (the migration startup tasks read
         // config["ASPNETCORE_ENVIRONMENT"]) both see Development. Set as an env var so WebApplication.CreateBuilder
         // picks it up; UseEnvironment alone sets the host env but not this config key.
-        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
+        _environment.Set("ASPNETCORE_ENVIRONMENT", "Development");
         // All three EF contexts (app trxn/query + FlowEngine state) read these connection strings.
-        Environment.SetEnvironmentVariable("ConnectionStrings__TaskFlowDbContextTrxn", connectionString);
-        Environment.SetEnvironmentVariable("ConnectionStrings__TaskFlowDbContextQuery", connectionString);
-        Environment.SetEnvironmentVariable("ConnectionStrings__TaskFlowFlowEngineDbContext", connectionString);
+        _environment.Set("ConnectionStrings__TaskFlowDbContextTrxn", connectionString);
+        _environment.Set("ConnectionStrings__TaskFlowDbContextQuery", connectionString);
+        _environment.Set("ConnectionStrings__TaskFlowFlowEngineDbContext", connectionString);
         // No live model and no Service Bus: leave the AI connection empty.
-        Environment.SetEnvironmentVariable("ConnectionStrings__chat", string.Empty);
+        _environment.Set("ConnectionStrings__chat", string.Empty);
         // Self-call base address; the in-process handler ignores the authority anyway.
-        Environment.SetEnvironmentVariable("FlowEngine__TaskFlowApiBaseUrl", "http://localhost");
+        _environment.Set("FlowEngine__TaskFlowApiBaseUrl", "http://localhost");
         // Polling the instance plus the workflow's own self-calls share the per-tenant budget; raise it so
         // the rate limiter never trips during a test (the production default stays 100/min via appsettings).
-        Environment.SetEnvironmentVariable("RateLimiting__PerTenant__PermitLimit", "1000000");
+        _environment.Set("RateLimiting__PerTenant__PermitLimit", "1000000");
         foreach (var (key, value) in TestColumnEncryption.EnvironmentVariables)
         {
-            Environment.SetEnvironmentVariable(key, value);
+            _environment.Set(key, value);
         }
         // The host must open the same provider as the container the test created the database on.
-        Environment.SetEnvironmentVariable("Database__Provider", TestHostingLane.DatabaseProvider.ToString());
+        _environment.Set("Database__Provider", TestHostingLane.DatabaseProvider.ToString());
         ConfigureStrictLaneEnvironment();
     }
 
@@ -145,29 +122,29 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
         });
     }
 
-    private static void ConfigureStrictLaneEnvironment()
+    private void ConfigureStrictLaneEnvironment()
     {
         if (TestHostingLane.Current.Lane == TaskFlow.Hosting.HostingLane.Azure)
         {
             var azurite = AzuriteContainerFixture.ConnectionString;
-            Environment.SetEnvironmentVariable("ConnectionStrings__BlobStorage1", azurite);
-            Environment.SetEnvironmentVariable("ConnectionStrings__TableStorage1", azurite);
-            Environment.SetEnvironmentVariable(
+            _environment.Set("ConnectionStrings__BlobStorage1", azurite);
+            _environment.Set("ConnectionStrings__TableStorage1", azurite);
+            _environment.Set(
                 "ConnectionStrings__CosmosDb1", "https://taskflow-integration.documents.azure.com:443/");
-            Environment.SetEnvironmentVariable(
+            _environment.Set(
                 "ServiceBus1__fullyQualifiedNamespace", "taskflow-integration.servicebus.windows.net");
             return;
         }
 
-        Environment.SetEnvironmentVariable("ConnectionStrings__Redis1", RedisContainerFixture.ConnectionString);
-        Environment.SetEnvironmentVariable("Storage__S3__ServiceUrl", SeaweedFsContainerFixture.ServiceUrl);
-        Environment.SetEnvironmentVariable("Storage__S3__PublicServiceUrl", SeaweedFsContainerFixture.ServiceUrl);
-        Environment.SetEnvironmentVariable("Storage__S3__AccessKeyId", SeaweedFsContainerFixture.AccessKey);
-        Environment.SetEnvironmentVariable("Storage__S3__SecretAccessKey", SeaweedFsContainerFixture.SecretKey);
-        Environment.SetEnvironmentVariable(
+        _environment.Set("ConnectionStrings__Redis1", RedisContainerFixture.ConnectionString);
+        _environment.Set("Storage__S3__ServiceUrl", SeaweedFsContainerFixture.ServiceUrl);
+        _environment.Set("Storage__S3__PublicServiceUrl", SeaweedFsContainerFixture.ServiceUrl);
+        _environment.Set("Storage__S3__AccessKeyId", SeaweedFsContainerFixture.AccessKey);
+        _environment.Set("Storage__S3__SecretAccessKey", SeaweedFsContainerFixture.SecretKey);
+        _environment.Set(
             "Messaging__RabbitMq__ConnectionString", RabbitMqBrokerFixture.ConnectionString);
         if (TestHostingLane.UsesMongoDb)
-            Environment.SetEnvironmentVariable("ConnectionStrings__MongoDb1", MongoDbContainerFixture.ConnectionString);
+            _environment.Set("ConnectionStrings__MongoDb1", MongoDbContainerFixture.ConnectionString);
     }
 
     private static bool IsIntegrationEventsClientRegistration(ServiceDescriptor descriptor)
@@ -184,17 +161,10 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
         {
             base.Dispose(disposing);
         }
-        catch (ChannelClosedException)
-        {
-            // Benign host-teardown race: EF.BackgroundServices' ChannelBackgroundTaskQueue.Dispose calls
-            // Complete() on a channel its shutdown handler already completed, so the second Complete throws.
-            // It happens only after the host has stopped, so it is safe to ignore here.
-        }
         finally
         {
             if (disposing)
-                foreach (var key in OverrideKeys)
-                    Environment.SetEnvironmentVariable(key, null);
+                _environment.Dispose();
         }
     }
 
