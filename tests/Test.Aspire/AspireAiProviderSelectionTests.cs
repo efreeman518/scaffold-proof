@@ -1,3 +1,5 @@
+using EF.IntegrationTesting.Environment;
+
 namespace Test.Aspire;
 
 /// <summary>Fast checks for the Aspire test harness AI provider defaults.</summary>
@@ -6,20 +8,24 @@ namespace Test.Aspire;
 [DoNotParallelize]
 public sealed class AspireAiProviderSelectionTests
 {
+    private static readonly string[] AiConfigurationVariables =
+    [
+        "TASKFLOW_AI_PROVIDER",
+        "AiServices__Provider",
+        "AiServices:Provider",
+        "TASKFLOW_USE_AZURE_FOUNDRY",
+        "ConnectionStrings__chat",
+        "ConnectionStrings:chat",
+        "AiServices__FoundryEndpoint",
+        "AiServices:FoundryEndpoint",
+        "AiServices__AgentModelDeployment",
+        "AiServices:AgentModelDeployment",
+    ];
+
     [TestMethod]
     public void Given_NoAzureConfig_When_SelectingLiveAiProvider_Then_NoProviderSelected()
     {
-        using var _ = new EnvironmentOverride(
-            ("TASKFLOW_AI_PROVIDER", null),
-            ("AiServices__Provider", null),
-            ("AiServices:Provider", null),
-            ("TASKFLOW_USE_AZURE_FOUNDRY", null),
-            ("ConnectionStrings__chat", null),
-            ("ConnectionStrings:chat", null),
-            ("AiServices__FoundryEndpoint", null),
-            ("AiServices:FoundryEndpoint", null),
-            ("AiServices__AgentModelDeployment", null),
-            ("AiServices:AgentModelDeployment", null));
+        using var _ = WithoutAiConfiguration();
 
         Assert.AreEqual(AspireAiProvider.None, AspireTestHost.SelectRequestedAiProviderForTesting());
     }
@@ -28,17 +34,9 @@ public sealed class AspireAiProviderSelectionTests
     [TestCategory("AzureFoundry")]
     public void Given_EndpointAndDeployment_When_SelectingLiveAiProvider_Then_AzureFoundryWins()
     {
-        using var _ = new EnvironmentOverride(
-            ("TASKFLOW_AI_PROVIDER", null),
-            ("AiServices__Provider", null),
-            ("AiServices:Provider", null),
-            ("TASKFLOW_USE_AZURE_FOUNDRY", null),
-            ("ConnectionStrings__chat", null),
-            ("ConnectionStrings:chat", null),
-            ("AiServices__FoundryEndpoint", "https://taskflow.services.ai.azure.com/"),
-            ("AiServices:FoundryEndpoint", null),
-            ("AiServices__AgentModelDeployment", "chat-deployment"),
-            ("AiServices:AgentModelDeployment", null));
+        using var _ = WithoutAiConfiguration()
+            .Set("AiServices__FoundryEndpoint", "https://taskflow.services.ai.azure.com/")
+            .Set("AiServices__AgentModelDeployment", "chat-deployment");
 
         Assert.AreEqual(AspireAiProvider.AzureFoundry, AspireTestHost.SelectRequestedAiProviderForTesting());
     }
@@ -47,17 +45,8 @@ public sealed class AspireAiProviderSelectionTests
     [TestCategory("AzureFoundry")]
     public void Given_CompleteConnection_When_SelectingLiveAiProvider_Then_AzureFoundryWins()
     {
-        using var _ = new EnvironmentOverride(
-            ("TASKFLOW_AI_PROVIDER", null),
-            ("AiServices__Provider", null),
-            ("AiServices:Provider", null),
-            ("TASKFLOW_USE_AZURE_FOUNDRY", null),
-            ("ConnectionStrings__chat", "Endpoint=https://taskflow.services.ai.azure.com/;Deployment=chat-deployment"),
-            ("ConnectionStrings:chat", null),
-            ("AiServices__FoundryEndpoint", null),
-            ("AiServices:FoundryEndpoint", null),
-            ("AiServices__AgentModelDeployment", null),
-            ("AiServices:AgentModelDeployment", null));
+        using var _ = WithoutAiConfiguration()
+            .Set("ConnectionStrings__chat", "Endpoint=https://taskflow.services.ai.azure.com/;Deployment=chat-deployment");
 
         Assert.AreEqual(AspireAiProvider.AzureFoundry, AspireTestHost.SelectRequestedAiProviderForTesting());
     }
@@ -66,17 +55,8 @@ public sealed class AspireAiProviderSelectionTests
     [TestCategory("AzureFoundry")]
     public void Given_AzureInferenceEnvironmentProvider_When_SelectingLiveAiProvider_Then_AzureFoundryWins()
     {
-        using var _ = new EnvironmentOverride(
-            ("TASKFLOW_AI_PROVIDER", "AzureInference"),
-            ("AiServices__Provider", null),
-            ("AiServices:Provider", null),
-            ("TASKFLOW_USE_AZURE_FOUNDRY", null),
-            ("ConnectionStrings__chat", null),
-            ("ConnectionStrings:chat", null),
-            ("AiServices__FoundryEndpoint", null),
-            ("AiServices:FoundryEndpoint", null),
-            ("AiServices__AgentModelDeployment", null),
-            ("AiServices:AgentModelDeployment", null));
+        using var _ = WithoutAiConfiguration()
+            .Set("TASKFLOW_AI_PROVIDER", "AzureInference");
 
         Assert.AreEqual(AspireAiProvider.AzureFoundry, AspireTestHost.SelectRequestedAiProviderForTesting());
     }
@@ -85,17 +65,8 @@ public sealed class AspireAiProviderSelectionTests
     [TestCategory("AzureFoundry")]
     public void Given_AzureInferenceConfigurationProvider_When_SelectingLiveAiProvider_Then_AzureFoundryWins()
     {
-        using var _ = new EnvironmentOverride(
-            ("TASKFLOW_AI_PROVIDER", null),
-            ("AiServices__Provider", "AzureInference"),
-            ("AiServices:Provider", null),
-            ("TASKFLOW_USE_AZURE_FOUNDRY", null),
-            ("ConnectionStrings__chat", null),
-            ("ConnectionStrings:chat", null),
-            ("AiServices__FoundryEndpoint", null),
-            ("AiServices:FoundryEndpoint", null),
-            ("AiServices__AgentModelDeployment", null),
-            ("AiServices:AgentModelDeployment", null));
+        using var _ = WithoutAiConfiguration()
+            .Set("AiServices__Provider", "AzureInference");
 
         Assert.AreEqual(AspireAiProvider.AzureFoundry, AspireTestHost.SelectRequestedAiProviderForTesting());
     }
@@ -104,38 +75,18 @@ public sealed class AspireAiProviderSelectionTests
     [TestCategory("AzureFoundry")]
     public void Given_DeploymentOnly_When_SelectingLiveAiProvider_Then_AzureFoundryWins()
     {
-        using var _ = new EnvironmentOverride(
-            ("TASKFLOW_AI_PROVIDER", null),
-            ("AiServices__Provider", null),
-            ("AiServices:Provider", null),
-            ("TASKFLOW_USE_AZURE_FOUNDRY", null),
-            ("ConnectionStrings__chat", null),
-            ("ConnectionStrings:chat", null),
-            ("AiServices__FoundryEndpoint", null),
-            ("AiServices:FoundryEndpoint", null),
-            ("AiServices__AgentModelDeployment", "chat-deployment"),
-            ("AiServices:AgentModelDeployment", null));
+        using var _ = WithoutAiConfiguration()
+            .Set("AiServices__AgentModelDeployment", "chat-deployment");
 
         Assert.AreEqual(AspireAiProvider.AzureFoundry, AspireTestHost.SelectRequestedAiProviderForTesting());
     }
 
-    private sealed class EnvironmentOverride : IDisposable
+    // Clears every input SelectRequestedAiProviderForTesting reads, so only the test's own values count.
+    // Later Set calls on the returned scope keep the original captured here and are restored on dispose.
+    private static EnvironmentVariableScope WithoutAiConfiguration()
     {
-        private readonly Dictionary<string, string?> _originalValues = new(StringComparer.Ordinal);
-
-        public EnvironmentOverride(params (string Name, string? Value)[] values)
-        {
-            foreach (var (name, value) in values)
-            {
-                _originalValues[name] = Environment.GetEnvironmentVariable(name);
-                Environment.SetEnvironmentVariable(name, value);
-            }
-        }
-
-        public void Dispose()
-        {
-            foreach (var (name, value) in _originalValues)
-                Environment.SetEnvironmentVariable(name, value);
-        }
+        var environment = new EnvironmentVariableScope();
+        foreach (var name in AiConfigurationVariables) environment.Set(name, null);
+        return environment;
     }
 }

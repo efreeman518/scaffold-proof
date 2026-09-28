@@ -1,3 +1,4 @@
+using EF.IntegrationTesting.Environment;
 using System.ComponentModel;
 using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Data.Provider;
@@ -83,21 +84,14 @@ public sealed class TestHostingLaneTests
             HostingLaneResolver.KeyVaultUriEnvironmentVariable,
             HostingLaneResolver.DataProtectionEncryptionKeyUrlEnvironmentVariable
         };
-        var originals = azureSettings.ToDictionary(name => name, Environment.GetEnvironmentVariable);
+        using var environment = new EnvironmentVariableScope();
+        foreach (var name in azureSettings) environment.Set(name, "azure-test-value");
 
-        try
+        WithEnvironment([], () =>
         {
-            foreach (var name in azureSettings) Environment.SetEnvironmentVariable(name, "azure-test-value");
-            WithEnvironment([], () =>
-            {
-                foreach (var name in azureSettings)
-                    Assert.IsNull(Environment.GetEnvironmentVariable(name), name);
-            });
-        }
-        finally
-        {
-            foreach (var (name, value) in originals) Environment.SetEnvironmentVariable(name, value);
-        }
+            foreach (var name in azureSettings)
+                Assert.IsNull(Environment.GetEnvironmentVariable(name), name);
+        });
     }
 
     [TestMethod]
@@ -112,16 +106,9 @@ public sealed class TestHostingLaneTests
 
     private static void WithEnvironment(Dictionary<string, string?> values, Action assertion)
     {
-        var originals = EnvironmentVariables.ToDictionary(name => name, Environment.GetEnvironmentVariable);
-        try
-        {
-            foreach (var name in EnvironmentVariables) Environment.SetEnvironmentVariable(name, null);
-            foreach (var (name, value) in values) Environment.SetEnvironmentVariable(name, value);
-            assertion();
-        }
-        finally
-        {
-            foreach (var (name, value) in originals) Environment.SetEnvironmentVariable(name, value);
-        }
+        using var environment = new EnvironmentVariableScope();
+        foreach (var name in EnvironmentVariables) environment.Set(name, null);
+        foreach (var (name, value) in values) environment.Set(name, value);
+        assertion();
     }
 }

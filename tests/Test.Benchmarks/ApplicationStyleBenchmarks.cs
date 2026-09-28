@@ -1,5 +1,7 @@
 using BenchmarkDotNet.Attributes;
 using EF.Common.Contracts;
+using EF.IntegrationTesting.EntityFramework;
+using EF.IntegrationTesting.Environment;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using System.Net.Http.Json;
@@ -32,9 +34,7 @@ public class ApplicationStyleBenchmarks
     // TaskItem search is cursor-only (GR-18): there is no PageIndex/offset request shape any more, so
     // this benchmark always measures the first cursor page at the standard default size (50).
     private TaskItemCursorSearchRequest _searchRequest = null!;
-    private string? _previousStyle;
-    private string? _previousRateLimitPermit;
-    private string? _previousRateLimitWindow;
+    private EnvironmentVariableScope? _environment;
     private int _createIndex;
 
     [Params(nameof(ApplicationStyle.Service), nameof(ApplicationStyle.Cqrs))]
@@ -44,13 +44,10 @@ public class ApplicationStyleBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        _previousStyle = Environment.GetEnvironmentVariable(ApplicationStyleResolver.EnvironmentVariable);
-        _previousRateLimitPermit = Environment.GetEnvironmentVariable(RateLimitPermitEnvironmentVariable);
-        _previousRateLimitWindow = Environment.GetEnvironmentVariable(RateLimitWindowEnvironmentVariable);
-
-        Environment.SetEnvironmentVariable(ApplicationStyleResolver.EnvironmentVariable, Style);
-        Environment.SetEnvironmentVariable(RateLimitPermitEnvironmentVariable, "1000000");
-        Environment.SetEnvironmentVariable(RateLimitWindowEnvironmentVariable, "1");
+        _environment = new EnvironmentVariableScope()
+            .Set(ApplicationStyleResolver.EnvironmentVariable, Style)
+            .Set(RateLimitPermitEnvironmentVariable, "1000000")
+            .Set(RateLimitWindowEnvironmentVariable, "1");
 
         _factory = new ApplicationStyleBenchmarkApiFactory(Style);
         _client = _factory.CreateClient();
@@ -69,9 +66,8 @@ public class ApplicationStyleBenchmarks
     {
         _client.Dispose();
         _factory.Dispose();
-        Environment.SetEnvironmentVariable(ApplicationStyleResolver.EnvironmentVariable, _previousStyle);
-        Environment.SetEnvironmentVariable(RateLimitPermitEnvironmentVariable, _previousRateLimitPermit);
-        Environment.SetEnvironmentVariable(RateLimitWindowEnvironmentVariable, _previousRateLimitWindow);
+        _environment?.Dispose();
+        _environment = null;
     }
 
     /// <summary>Measures search task items throughput and allocation cost for the selected application style.</summary>
@@ -149,10 +145,10 @@ public class ApplicationStyleBenchmarks
 
         /// <summary>Builds trxn options for the isolated benchmark host.</summary>
         protected override DbContextOptions BuildTrxnOptions() =>
-            new DbContextOptionsBuilder<TaskFlowDbContextTrxn>().UseInMemoryDatabase(_dbName).Options;
+            DbContextOptionsFactory.BuildInMemoryOptions<TaskFlowDbContextTrxn>(_dbName);
 
         /// <summary>Builds query options for the isolated benchmark host.</summary>
         protected override DbContextOptions BuildQueryOptions() =>
-            new DbContextOptionsBuilder<TaskFlowDbContextQuery>().UseInMemoryDatabase(_dbName).Options;
+            DbContextOptionsFactory.BuildInMemoryOptions<TaskFlowDbContextQuery>(_dbName);
     }
 }

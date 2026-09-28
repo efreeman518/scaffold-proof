@@ -1,4 +1,5 @@
 using EF.Audit.Contracts;
+using EF.IntegrationTesting.Environment;
 using EF.Storage.Contracts;
 using EF.Storage.S3;
 using Microsoft.Extensions.Configuration;
@@ -429,15 +430,7 @@ public class ProviderSwitchSelectorTests
     /// <summary>Sets an environment variable for the duration of <paramref name="action"/>, always restoring it.</summary>
     private static void WithEnv(string name, string value, Action action)
     {
-        var original = Environment.GetEnvironmentVariable(name);
-        Environment.SetEnvironmentVariable(name, value);
-        try
-        {
-            action();
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable(name, original);
-        }
+        using var environment = new EnvironmentVariableScope().Set(name, value);
+        action();
     }
 }

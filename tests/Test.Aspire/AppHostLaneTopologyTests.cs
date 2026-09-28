@@ -1,6 +1,7 @@
 using AppHost;
 using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Testing;
+using EF.IntegrationTesting.Environment;
 using Microsoft.Extensions.Configuration;
 using TaskFlow.Hosting;
 
@@ -415,22 +416,14 @@ public sealed class AppHostLaneTopologyTests
         (string Key, string Value)? environmentOverride = null,
         Dictionary<string, string?>? configuration = null)
     {
-        var saved = LaneEnvironmentVariables.ToDictionary(
-            name => name, Environment.GetEnvironmentVariable, StringComparer.Ordinal);
-        try
-        {
-            foreach (var name in LaneEnvironmentVariables) Environment.SetEnvironmentVariable(name, null);
-            Environment.SetEnvironmentVariable(LaneDefaults.LaneEnvironmentVariable, lane);
-            if (environmentOverride is { } pair) Environment.SetEnvironmentVariable(pair.Key, pair.Value);
+        using var environment = new EnvironmentVariableScope();
+        foreach (var name in LaneEnvironmentVariables) environment.Set(name, null);
+        environment.Set(LaneDefaults.LaneEnvironmentVariable, lane);
+        if (environmentOverride is { } pair) environment.Set(pair.Key, pair.Value);
 
-            return LaneDefaults.Resolve(new ConfigurationBuilder()
-                .AddInMemoryCollection(configuration ?? [])
-                .Build());
-        }
-        finally
-        {
-            foreach (var (name, value) in saved) Environment.SetEnvironmentVariable(name, value);
-        }
+        return LaneDefaults.Resolve(new ConfigurationBuilder()
+            .AddInMemoryCollection(configuration ?? [])
+            .Build());
     }
 
     private static string ReadAppHostSource()
@@ -454,48 +447,40 @@ public sealed class AppHostLaneTopologyTests
         string? aiProvider = null,
         string? providerConfiguration = null)
     {
-        var saved = GraphEnvironmentVariables.ToDictionary(
-            name => name, Environment.GetEnvironmentVariable, StringComparer.Ordinal);
-        try
+        using var environment = new EnvironmentVariableScope();
+        foreach (var name in GraphEnvironmentVariables) environment.Set(name, null);
+        environment.Set(HostingLaneResolver.LaneEnvironmentVariable, lane);
+        environment.Set(HostingLaneResolver.ReadModelEnvironmentVariable, readModel);
+        environment.Set(HostingLaneResolver.AiEnvironmentVariable, aiProvider);
+        environment.Set("TASKFLOW_ASPIRE_TESTING", "true");
+        environment.Set("TASKFLOW_ASPIRE_FULL_LANE", "true");
+        environment.Set("TASKFLOW_USE_AZURE_FOUNDRY", useAzureFoundry ? "true" : null);
+        environment.Set("AiServices__FoundryEndpoint", foundryEndpoint);
+        environment.Set("AiServices__AgentModelDeployment", foundryDeployment);
+        environment.Set("ConnectionStrings__chat", chatConnection);
+
+        var args = new List<string>
         {
-            foreach (var name in GraphEnvironmentVariables) Environment.SetEnvironmentVariable(name, null);
-            Environment.SetEnvironmentVariable(HostingLaneResolver.LaneEnvironmentVariable, lane);
-            Environment.SetEnvironmentVariable(HostingLaneResolver.ReadModelEnvironmentVariable, readModel);
-            Environment.SetEnvironmentVariable(HostingLaneResolver.AiEnvironmentVariable, aiProvider);
-            Environment.SetEnvironmentVariable("TASKFLOW_ASPIRE_TESTING", "true");
-            Environment.SetEnvironmentVariable("TASKFLOW_ASPIRE_FULL_LANE", "true");
-            Environment.SetEnvironmentVariable("TASKFLOW_USE_AZURE_FOUNDRY", useAzureFoundry ? "true" : null);
-            Environment.SetEnvironmentVariable("AiServices__FoundryEndpoint", foundryEndpoint);
-            Environment.SetEnvironmentVariable("AiServices__AgentModelDeployment", foundryDeployment);
-            Environment.SetEnvironmentVariable("ConnectionStrings__chat", chatConnection);
+            $"--AiServices:Provider={providerConfiguration ?? string.Empty}",
+            $"--AiServices:FoundryEndpoint={foundryEndpoint ?? string.Empty}",
+            $"--AiServices:AgentModelDeployment={foundryDeployment ?? string.Empty}",
+            $"--ConnectionStrings:chat={chatConnection ?? string.Empty}"
+        };
+        if (manifestMode) args.AddRange(["--publisher", "manifest"]);
 
-            var args = new List<string>
-            {
-                $"--AiServices:Provider={providerConfiguration ?? string.Empty}",
-                $"--AiServices:FoundryEndpoint={foundryEndpoint ?? string.Empty}",
-                $"--AiServices:AgentModelDeployment={foundryDeployment ?? string.Empty}",
-                $"--ConnectionStrings:chat={chatConnection ?? string.Empty}"
-            };
-            if (manifestMode) args.AddRange(["--publisher", "manifest"]);
+        var programType = Type.GetType("Program, AppHost", throwOnError: true)!;
+        var builder = await DistributedApplicationTestingBuilder.CreateAsync(
+            programType,
+            args: [.. args],
+            configureBuilder: (appOptions, _) => appOptions.DisableDashboard = true);
 
-            var programType = Type.GetType("Program, AppHost", throwOnError: true)!;
-            var builder = await DistributedApplicationTestingBuilder.CreateAsync(
-                programType,
-                args: [.. args],
-                configureBuilder: (appOptions, _) => appOptions.DisableDashboard = true);
+        var resourceNames = builder.Resources.Select(resource => resource.Name).ToHashSet(StringComparer.Ordinal);
+        var containerImages = builder.Resources
+            .Select(resource => resource.TryGetContainerImageName(out var imageName) ? imageName : null)
+            .OfType<string>()
+            .ToHashSet(StringComparer.Ordinal);
 
-            var resourceNames = builder.Resources.Select(resource => resource.Name).ToHashSet(StringComparer.Ordinal);
-            var containerImages = builder.Resources
-                .Select(resource => resource.TryGetContainerImageName(out var imageName) ? imageName : null)
-                .OfType<string>()
-                .ToHashSet(StringComparer.Ordinal);
-
-            return new(resourceNames, containerImages);
-        }
-        finally
-        {
-            foreach (var (name, value) in saved) Environment.SetEnvironmentVariable(name, value);
-        }
+        return new(resourceNames, containerImages);
     }
 
     private static void AssertPresent(IReadOnlySet<string> resources, params string[] expected)

@@ -155,12 +155,31 @@ internal static class MobileTestHost
             ?? throw new InvalidOperationException($"Could not start dotnet for {projectPath}.");
         var stdout = process.StandardOutput.ReadToEndAsync(cancellationToken);
         var stderr = process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
+        await WaitForExitOrKillAsync(process, cancellationToken);
         if (process.ExitCode != 0)
         {
             throw new InvalidOperationException(
                 $"dotnet {string.Join(' ', arguments)} failed with exit code {process.ExitCode}.{Environment.NewLine}"
                 + await ReadOutputAsync(stdout, stderr));
+        }
+    }
+
+    /// <summary>
+    /// Waits for a child process to exit. On cancellation (for example an MSTest cooperative timeout) the whole
+    /// process tree is killed before the cancellation propagates: disposing the handle alone leaves the
+    /// dotnet restore/build running, holding <c>obj/</c> locks that fail the next run.
+    /// </summary>
+    internal static async Task WaitForExitOrKillAsync(Process process, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync(CancellationToken.None);
+            throw;
         }
     }
 

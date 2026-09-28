@@ -1,3 +1,4 @@
+using EF.IntegrationTesting.Environment;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -51,18 +52,11 @@ public class AiProviderSelectorTests
     [DoNotParallelize]
     public void ResolveAiProvider_EnvWinsOverConfig()
     {
-        var original = Environment.GetEnvironmentVariable(RegisterServices.AiProviderEnvVar);
-        Environment.SetEnvironmentVariable(RegisterServices.AiProviderEnvVar, "None");
-        try
-        {
-            Assert.AreEqual(
-                AiProvider.None,
-                RegisterServices.ResolveAiProvider(Config((RegisterServices.AiProviderConfigKey, "AzureInference"))));
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable(RegisterServices.AiProviderEnvVar, original);
-        }
+        using var environment = new EnvironmentVariableScope().Set(RegisterServices.AiProviderEnvVar, "None");
+
+        Assert.AreEqual(
+            AiProvider.None,
+            RegisterServices.ResolveAiProvider(Config((RegisterServices.AiProviderConfigKey, "AzureInference"))));
     }
 
     [TestMethod]

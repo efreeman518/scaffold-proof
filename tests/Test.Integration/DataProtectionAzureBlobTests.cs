@@ -1,4 +1,5 @@
 using Azure.Storage.Blobs;
+using EF.IntegrationTesting.Environment;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,39 +30,32 @@ public sealed class DataProtectionAzureBlobTests
     [Timeout(300000, CooperativeCancellation = true)]
     public async Task ConnectionStringPersistence_CreatesContainer_AndSharesKeysAcrossProviders()
     {
-        var originalLane = Environment.GetEnvironmentVariable(HostingLaneResolver.LaneEnvironmentVariable);
-        Environment.SetEnvironmentVariable(HostingLaneResolver.LaneEnvironmentVariable, "Azure");
+        using var environment = new EnvironmentVariableScope()
+            .Set(HostingLaneResolver.LaneEnvironmentVariable, "Azure");
         var containerName = $"dp-{Guid.NewGuid():N}";
 
-        try
-        {
-            await using var firstServices = BuildProvider("TaskFlow.Api", containerName);
-            var first = firstServices.GetRequiredService<IDataProtectionProvider>().CreateProtector("shared-purpose");
-            var protectedPayload = first.Protect("shared payload");
+        await using var firstServices = BuildProvider("TaskFlow.Api", containerName);
+        var first = firstServices.GetRequiredService<IDataProtectionProvider>().CreateProtector("shared-purpose");
+        var protectedPayload = first.Protect("shared payload");
 
-            var container = new BlobServiceClient(AzuriteContainerFixture.ConnectionString)
-                .GetBlobContainerClient(containerName);
-            Assert.IsTrue((await container.ExistsAsync(TestContext.CancellationToken)).Value,
-                "registration must create the configured container before Data Protection writes its key ring");
+        var container = new BlobServiceClient(AzuriteContainerFixture.ConnectionString)
+            .GetBlobContainerClient(containerName);
+        Assert.IsTrue((await container.ExistsAsync(TestContext.CancellationToken)).Value,
+            "registration must create the configured container before Data Protection writes its key ring");
 
-            await using var secondServices = BuildProvider("TaskFlow.Api", containerName);
-            var second = secondServices.GetRequiredService<IDataProtectionProvider>().CreateProtector("shared-purpose");
-            Assert.AreEqual("shared payload", second.Unprotect(protectedPayload));
+        await using var secondServices = BuildProvider("TaskFlow.Api", containerName);
+        var second = secondServices.GetRequiredService<IDataProtectionProvider>().CreateProtector("shared-purpose");
+        Assert.AreEqual("shared payload", second.Unprotect(protectedPayload));
 
-            await container.DeleteIfExistsAsync(cancellationToken: TestContext.CancellationToken);
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable(HostingLaneResolver.LaneEnvironmentVariable, originalLane);
-        }
+        await container.DeleteIfExistsAsync(cancellationToken: TestContext.CancellationToken);
     }
 
     [TestMethod]
     [Timeout(300000, CooperativeCancellation = true)]
     public async Task ConnectionStringPersistence_PreservesPreChangeApplicationDiscriminator()
     {
-        var originalLane = Environment.GetEnvironmentVariable(HostingLaneResolver.LaneEnvironmentVariable);
-        Environment.SetEnvironmentVariable(HostingLaneResolver.LaneEnvironmentVariable, "Azure");
+        using var environment = new EnvironmentVariableScope()
+            .Set(HostingLaneResolver.LaneEnvironmentVariable, "Azure");
         var containerName = $"dp-{Guid.NewGuid():N}";
         var container = new BlobServiceClient(AzuriteContainerFixture.ConnectionString)
             .GetBlobContainerClient(containerName);
@@ -84,7 +78,6 @@ public sealed class DataProtectionAzureBlobTests
         finally
         {
             await container.DeleteIfExistsAsync(cancellationToken: TestContext.CancellationToken);
-            Environment.SetEnvironmentVariable(HostingLaneResolver.LaneEnvironmentVariable, originalLane);
         }
     }
 
