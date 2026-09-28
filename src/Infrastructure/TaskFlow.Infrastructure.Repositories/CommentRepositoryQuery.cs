@@ -49,13 +49,13 @@ public class CommentRepositoryQuery(TaskFlowDbContextQuery db)
 
             if (filter.TaskItemId.HasValue)
             {
-                var taskItemId = DomainId.From<TaskItemId>(filter.TaskItemId.Value);
+                var taskItemId = TaskItemId.From(filter.TaskItemId.Value);
                 q = q.Where(e => e.TaskItemId == taskItemId);
             }
 
             if (filter.TenantId.HasValue)
             {
-                var tenantId = DomainId.From<TenantId>(filter.TenantId.Value);
+                var tenantId = TenantId.From(filter.TenantId.Value);
                 q = q.Where(e => e.TenantId == tenantId);
             }
         }

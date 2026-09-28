@@ -16,7 +16,7 @@ namespace Test.Unit.Domain;
 [TestClass]
 public class TaskItemTests
 {
-    private static TenantId TenantId => DomainId.From<TenantId>(TestConstants.TenantId);
+    private static TenantId TenantId => TenantId.From(TestConstants.TenantId);
 
     /// <summary>Verifies that given valid input, when task item created, then returns success.</summary>
     [TestMethod]
@@ -98,7 +98,7 @@ public class TaskItemTests
     [TestCategory("Unit")]
     public void Given_EmptyTenantId_When_TaskItemCreated_Then_ReturnsDomainFailure()
     {
-        var result = TaskItem.Create(DomainId.From<TenantId>(Guid.Empty), "Test");
+        var result = TaskItem.Create(TenantId.From(Guid.Empty), "Test");
         Assert.IsTrue(result.IsFailure);
     }
 
@@ -183,7 +183,7 @@ public class TaskItemTests
     [TestCategory("Unit")]
     public void Given_TaskWithCategory_When_Created_Then_CategoryIdSet()
     {
-        var categoryId = DomainId.From<CategoryId>(Guid.NewGuid());
+        var categoryId = CategoryId.From(Guid.NewGuid());
         var result = TaskItem.Create(TenantId, "Task", categoryId: categoryId);
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual(categoryId, result.Value!.CategoryId!.Value);
@@ -194,7 +194,7 @@ public class TaskItemTests
     [TestCategory("Unit")]
     public void Given_TaskWithParent_When_Created_Then_ParentTaskItemIdSet()
     {
-        var parentId = DomainId.From<TaskItemId>(Guid.NewGuid());
+        var parentId = TaskItemId.From(Guid.NewGuid());
         var result = TaskItem.Create(TenantId, "SubTask", parentTaskItemId: parentId);
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual(parentId, result.Value!.ParentTaskItemId!.Value);

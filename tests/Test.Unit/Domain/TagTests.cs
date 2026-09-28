@@ -12,7 +12,7 @@ namespace Test.Unit.Domain;
 [TestClass]
 public class TagTests
 {
-    private static TenantId TenantId => DomainId.From<TenantId>(TestConstants.TenantId);
+    private static TenantId TenantId => TenantId.From(TestConstants.TenantId);
 
     /// <summary>Verifies that given valid input, when tag created, then returns success.</summary>
     [TestMethod]
@@ -43,7 +43,7 @@ public class TagTests
     [TestCategory("Unit")]
     public void Given_EmptyTenantId_When_TagCreated_Then_ReturnsDomainFailure()
     {
-        var result = Tag.Create(DomainId.From<TenantId>(Guid.Empty), "Test");
+        var result = Tag.Create(TenantId.From(Guid.Empty), "Test");
         Assert.IsTrue(result.IsFailure);
     }
 

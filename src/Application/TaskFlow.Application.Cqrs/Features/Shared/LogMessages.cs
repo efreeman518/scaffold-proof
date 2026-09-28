@@ -9,10 +9,6 @@ namespace TaskFlow.Application.Cqrs.Shared;
 /// </summary>
 internal static partial class LogMessages
 {
-    /// <summary>Logs that a search operation was cancelled by the client.</summary>
-    [LoggerMessage(EventId = LogEventIds.ApplicationCqrsBase + 1, Level = LogLevel.Debug, Message = "{Operation} search cancelled by client.")]
-    public static partial void SearchCancelled(this ILogger logger, string operation);
-
     /// <summary>
     /// Logs a save failure from <see cref="CqrsHandlerSupport.TrySaveAsync"/>, carrying the caller-supplied
     /// error message and args verbatim (the message template itself is fixed; only the values vary per call site).

@@ -27,8 +27,8 @@ public sealed class PgVectorTaskEmbeddingRepository(TaskFlowDbContextTrxn write,
     public async Task<TaskEmbeddingSource?> GetSourceAsync(
         Guid tenantId, Guid taskItemId, CancellationToken ct = default)
     {
-        var id = DomainId.From<TaskItemId>(taskItemId);
-        var tenant = DomainId.From<TenantId>(tenantId);
+        var id = TaskItemId.From(taskItemId);
+        var tenant = TenantId.From(tenantId);
 
         // Two scalar columns, no aggregate graph: the embedding only ever sees the text.
         return await read.Set<TaskItem>().AsNoTracking()
@@ -99,8 +99,8 @@ public sealed class PgVectorTaskEmbeddingRepository(TaskFlowDbContextTrxn write,
 
         if (nearest.Count == 0) return [];
 
-        var tenant = DomainId.From<TenantId>(tenantId);
-        var ids = nearest.Select(n => DomainId.From<TaskItemId>(n.TaskItemId)).ToList();
+        var tenant = TenantId.From(tenantId);
+        var ids = nearest.Select(n => TaskItemId.From(n.TaskItemId)).ToList();
         var tasks = await read.Set<TaskItem>().AsNoTracking()
             .Where(t => ids.Contains(t.Id) && t.TenantId == tenant)
             .Select(t => new

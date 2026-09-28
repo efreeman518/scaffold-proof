@@ -12,14 +12,14 @@ namespace Test.Unit.Domain;
 [TestClass]
 public class ChecklistItemTests
 {
-    private static TenantId TenantId => DomainId.From<TenantId>(TestConstants.TenantId);
+    private static TenantId TenantId => TenantId.From(TestConstants.TenantId);
 
     /// <summary>Verifies that given valid input, when checklist item created, then returns success.</summary>
     [TestMethod]
     [TestCategory("Unit")]
     public void Given_ValidInput_When_ChecklistItemCreated_Then_ReturnsSuccess()
     {
-        var taskItemId = DomainId.From<TaskItemId>(Guid.NewGuid());
+        var taskItemId = TaskItemId.From(Guid.NewGuid());
         var result = ChecklistItem.Create(TenantId, taskItemId, "Test Item", 1);
         Assert.IsTrue(result.IsSuccess);
         Assert.IsNotNull(result.Value);
@@ -36,7 +36,7 @@ public class ChecklistItemTests
     [DataRow("   ")]
     public void Given_EmptyTitle_When_ChecklistItemCreated_Then_ReturnsDomainFailure(string? title)
     {
-        var result = ChecklistItem.Create(TenantId, DomainId.From<TaskItemId>(Guid.NewGuid()), title!);
+        var result = ChecklistItem.Create(TenantId, TaskItemId.From(Guid.NewGuid()), title!);
         Assert.IsTrue(result.IsFailure);
     }
 
@@ -45,7 +45,7 @@ public class ChecklistItemTests
     [TestCategory("Unit")]
     public void Given_EmptyTaskItemId_When_ChecklistItemCreated_Then_ReturnsDomainFailure()
     {
-        var result = ChecklistItem.Create(TenantId, DomainId.From<TaskItemId>(Guid.Empty), "Title");
+        var result = ChecklistItem.Create(TenantId, TaskItemId.From(Guid.Empty), "Title");
         Assert.IsTrue(result.IsFailure);
     }
 
@@ -54,7 +54,7 @@ public class ChecklistItemTests
     [TestCategory("Unit")]
     public void Given_ExistingItem_When_UpdatedWithTitle_Then_ReturnsUpdatedValues()
     {
-        var item = ChecklistItem.Create(TenantId, DomainId.From<TaskItemId>(Guid.NewGuid()), "Original").Value!;
+        var item = ChecklistItem.Create(TenantId, TaskItemId.From(Guid.NewGuid()), "Original").Value!;
         var result = item.Update(title: "Updated");
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual("Updated", result.Value!.Title);
@@ -65,7 +65,7 @@ public class ChecklistItemTests
     [TestCategory("Unit")]
     public void Given_IncompleteItem_When_CompletionSet_Then_CompletedDateSet()
     {
-        var item = ChecklistItem.Create(TenantId, DomainId.From<TaskItemId>(Guid.NewGuid()), "Item").Value!;
+        var item = ChecklistItem.Create(TenantId, TaskItemId.From(Guid.NewGuid()), "Item").Value!;
         var result = item.Update(isCompleted: true);
         Assert.IsTrue(result.IsSuccess);
         Assert.IsTrue(result.Value!.IsCompleted);
@@ -77,7 +77,7 @@ public class ChecklistItemTests
     [TestCategory("Unit")]
     public void Given_CompletedItem_When_Uncompleted_Then_CompletedDateCleared()
     {
-        var item = ChecklistItem.Create(TenantId, DomainId.From<TaskItemId>(Guid.NewGuid()), "Item").Value!;
+        var item = ChecklistItem.Create(TenantId, TaskItemId.From(Guid.NewGuid()), "Item").Value!;
         item.Update(isCompleted: true);
         Assert.IsNotNull(item.CompletedDate);
 
@@ -92,7 +92,7 @@ public class ChecklistItemTests
     [TestCategory("Unit")]
     public void Given_NullUpdate_When_Updated_Then_OriginalValuesPreserved()
     {
-        var item = ChecklistItem.Create(TenantId, DomainId.From<TaskItemId>(Guid.NewGuid()), "Original", 5).Value!;
+        var item = ChecklistItem.Create(TenantId, TaskItemId.From(Guid.NewGuid()), "Original", 5).Value!;
         var result = item.Update();
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual("Original", result.Value!.Title);

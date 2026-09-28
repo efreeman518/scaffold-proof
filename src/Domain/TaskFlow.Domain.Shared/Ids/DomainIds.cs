@@ -2,12 +2,10 @@ using EF.Domain.Contracts;
 
 namespace TaskFlow.Domain.Shared;
 
+// Non-null ids use the static abstract IDomainId<TId>.From directly (TaskItemId.From(g)); only the
+// nullable lift lives here until EF.Domain.Contracts ships DomainId.FromNullable (EF.Packages 2.0 D26).
 public static class DomainId
 {
-    public static TId From<TId>(Guid value)
-        where TId : struct, IDomainId<TId>
-        => TId.From(value);
-
     public static TId? FromNullable<TId>(Guid? value)
         where TId : struct, IDomainId<TId>
         => value.HasValue ? TId.From(value.Value) : null;

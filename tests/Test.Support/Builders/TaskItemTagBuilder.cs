@@ -21,9 +21,9 @@ public class TaskItemTagBuilder
     public TaskItemTag Build()
     {
         var result = TaskItemTag.Create(
-            DomainId.From<TenantId>(_tenantId),
-            DomainId.From<TaskItemId>(_taskItemId),
-            DomainId.From<TagId>(_tagId));
+            TenantId.From(_tenantId),
+            TaskItemId.From(_taskItemId),
+            TagId.From(_tagId));
         return result.Value!;
     }
 }

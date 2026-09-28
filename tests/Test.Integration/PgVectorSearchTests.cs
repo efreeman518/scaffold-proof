@@ -178,7 +178,7 @@ public class PgVectorSearchTests
     {
         await using var db = DbContainerFixture.CreateTrxnContext(connString);
         db.TenantId = TenantId;
-        var task = TaskItem.Create(DomainId.From<TaskFlow.Domain.Shared.TenantId>(TenantId), title).Value!;
+        var task = TaskItem.Create(TaskFlow.Domain.Shared.TenantId.From(TenantId), title).Value!;
         db.Add(task);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: ct);
         return task.Id.Value;

@@ -34,7 +34,7 @@ public class AttachmentBuilder
     public Attachment Build()
     {
         var result = Attachment.Create(
-            DomainId.From<TenantId>(_tenantId),
+            TenantId.From(_tenantId),
             _fileName,
             _contentType,
             _fileSizeBytes,

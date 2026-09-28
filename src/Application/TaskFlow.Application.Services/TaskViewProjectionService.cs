@@ -38,7 +38,7 @@ public class TaskViewProjectionService : ITaskViewProjectionService
     /// </summary>
     public async Task ProjectTaskItemAsync(Guid taskItemId, DateTimeOffset occurredAtUtc, CancellationToken ct = default)
     {
-        var entity = await _taskItemRepo.GetTaskItemAsync(DomainId.From<TaskItemId>(taskItemId), ct);
+        var entity = await _taskItemRepo.GetTaskItemAsync(TaskItemId.From(taskItemId), ct);
         if (entity is null)
         {
             _logger.TaskViewNotFoundForProjection(taskItemId);

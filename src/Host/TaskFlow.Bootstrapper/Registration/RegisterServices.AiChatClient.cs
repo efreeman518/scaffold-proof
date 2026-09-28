@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using TaskFlow.Application.Contracts;
 using TaskFlow.Infrastructure.AI;
 
 namespace TaskFlow.Bootstrapper;
@@ -47,10 +48,7 @@ public static partial class RegisterServices
     }
 
     private static AiProvider ParseAiProvider(string value) =>
-        Enum.TryParse<AiProvider>(value, ignoreCase: true, out var provider)
-            ? provider
-            : throw new ArgumentException(
-                $"Unknown AI provider '{value}'. Allowed values: {string.Join(", ", Enum.GetNames<AiProvider>())}.");
+        StrictEnum.Parse<AiProvider>(value, "AI provider");
 
     /// <summary>
     /// Registers the shared AI chat client before application services bind agents and demos.

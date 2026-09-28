@@ -15,7 +15,7 @@ namespace Test.Unit.Domain;
 [TestClass]
 public class AttachmentTests
 {
-    private static TenantId TenantId => DomainId.From<TenantId>(TestConstants.TenantId);
+    private static TenantId TenantId => TenantId.From(TestConstants.TenantId);
 
     /// <summary>Verifies that given valid input, when attachment created, then returns success.</summary>
     [TestMethod]
@@ -56,7 +56,7 @@ public class AttachmentTests
     [TestCategory("Unit")]
     public void Given_EmptyTenantId_When_AttachmentCreated_Then_ReturnsDomainFailure()
     {
-        var result = Attachment.Create(DomainId.From<TenantId>(Guid.Empty), "file.pdf", "application/pdf", 1024, "https://storage/file.pdf", AttachmentOwnerType.TaskItem, Guid.NewGuid());
+        var result = Attachment.Create(TenantId.From(Guid.Empty), "file.pdf", "application/pdf", 1024, "https://storage/file.pdf", AttachmentOwnerType.TaskItem, Guid.NewGuid());
         Assert.IsTrue(result.IsFailure);
     }
 

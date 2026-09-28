@@ -29,7 +29,7 @@ public sealed class OutboxStagingTests
     {
         var ct = TestContext.CancellationToken;
         var dbName = Guid.NewGuid().ToString();
-        var task = TaskItem.Create(DomainId.From<TenantId>(TestConstants.TenantId), "staged").Value!;
+        var task = TaskItem.Create(TenantId.From(TestConstants.TenantId), "staged").Value!;
 
         await using var db = Create(dbName);
         db.TaskItems.Add(task);
@@ -64,7 +64,7 @@ public sealed class OutboxStagingTests
     {
         var ct = TestContext.CancellationToken;
         var dbName = Guid.NewGuid().ToString();
-        var task = TaskItem.Create(DomainId.From<TenantId>(TestConstants.TenantId), "completing").Value!;
+        var task = TaskItem.Create(TenantId.From(TestConstants.TenantId), "completing").Value!;
 
         await using var db = Create(dbName);
         db.TaskItems.Add(task);
@@ -90,7 +90,7 @@ public sealed class OutboxStagingTests
     {
         var ct = TestContext.CancellationToken;
         var dbName = Guid.NewGuid().ToString();
-        var task = TaskItem.Create(DomainId.From<TenantId>(TestConstants.TenantId), "not yet").Value!;
+        var task = TaskItem.Create(TenantId.From(TestConstants.TenantId), "not yet").Value!;
 
         await using var db = Create(dbName);
         db.TaskItems.Add(task);
@@ -114,7 +114,7 @@ public sealed class OutboxStagingTests
     {
         var ct = TestContext.CancellationToken;
         var dbName = Guid.NewGuid().ToString();
-        var tenantId = DomainId.From<TenantId>(TestConstants.TenantId);
+        var tenantId = TenantId.From(TestConstants.TenantId);
         var task = TaskItem.Create(tenantId, "round trip").Value!;
 
         await using var db = Create(dbName);

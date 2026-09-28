@@ -53,7 +53,7 @@ public class SchedulerJobIntegrationTests
         {
             for (var i = 0; i < 3; i++)
             {
-                var task = TaskItem.Create(DomainId.From<TenantId>(tenantId), $"Overdue {i}").Value!;
+                var task = TaskItem.Create(TenantId.From(tenantId), $"Overdue {i}").Value!;
                 task.UpdateDateRange(null, Now.AddDays(-2 - i));
                 seed.TaskItems.Add(task);
             }
@@ -77,7 +77,7 @@ public class SchedulerJobIntegrationTests
         var tenantId = Guid.NewGuid();
         await using (var seed = DbContainerFixture.CreateTrxnContext())
         {
-            var template = TaskItem.Create(DomainId.From<TenantId>(tenantId), "Weekly report").Value!;
+            var template = TaskItem.Create(TenantId.From(tenantId), "Weekly report").Value!;
             template.Update(features: TaskFeatures.Recurring);
             template.UpdateDateRange(null, Now.AddDays(-3));
             template.UpdateRecurrencePattern(new RecurrencePattern
@@ -107,7 +107,7 @@ public class SchedulerJobIntegrationTests
     public async Task StaleTaskCleanup_StagesBlobWork_ThenDeletesAndIsANoOpOnRerun()
     {
         var tenantId = Guid.NewGuid();
-        var typedTenantId = DomainId.From<TenantId>(tenantId);
+        var typedTenantId = TenantId.From(tenantId);
         Guid taskId;
 
         await using (var seed = DbContainerFixture.CreateTrxnContext())
@@ -164,7 +164,7 @@ public class SchedulerJobIntegrationTests
 
         await using var verify = DbContainerFixture.CreateTrxnContext();
         var notified = await verify.Set<TaskItem>().IgnoreQueryFilters()
-            .CountAsync(t => t.TenantId == DomainId.From<TenantId>(tenantId)
+            .CountAsync(t => t.TenantId == TenantId.From(tenantId)
                 && t.OverdueNotifiedForDueDate != null, TestContext.CancellationToken);
         // Only the announcements this job stages: seeding a task raises its own created event through the
         // staging interceptor, and counting those would measure the fixture rather than the job.
@@ -191,12 +191,12 @@ public class SchedulerJobIntegrationTests
 
         await using var verify = DbContainerFixture.CreateTrxnContext();
         var occurrences = await verify.Set<TaskItem>().IgnoreQueryFilters()
-            .CountAsync(t => t.TenantId == DomainId.From<TenantId>(tenantId) && t.RecurrenceTemplateId != null,
+            .CountAsync(t => t.TenantId == TenantId.From(tenantId) && t.RecurrenceTemplateId != null,
                 TestContext.CancellationToken);
         // The generated occurrences are upserted, which bypasses the staging interceptor, so every created
         // event whose message id is an occurrence id was staged by this job rather than by the seed.
         var occurrenceIds = await verify.Set<TaskItem>().IgnoreQueryFilters()
-            .Where(t => t.TenantId == DomainId.From<TenantId>(tenantId) && t.RecurrenceTemplateId != null)
+            .Where(t => t.TenantId == TenantId.From(tenantId) && t.RecurrenceTemplateId != null)
             .Select(t => t.Id.Value)
             .ToListAsync(TestContext.CancellationToken);
         var outboxRows = await verify.OutboxMessages.CountAsync(

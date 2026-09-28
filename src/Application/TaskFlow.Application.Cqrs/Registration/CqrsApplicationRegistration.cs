@@ -14,14 +14,6 @@ public static class CqrsApplicationRegistration
         services.AddScoped<IRequestValidator<CreateTaskItemCommand>, CreateTaskItemCommandValidator>();
         services.AddScoped<IRequestValidator<UpdateTaskItemCommand>, UpdateTaskItemCommandValidator>();
 
-        foreach (var registration in CqrsHandlerRegistrationCatalog.Registrations)
-        {
-            services.AddDecoratedRequestHandler(
-                registration.RequestType,
-                registration.ResponseType,
-                registration.HandlerType);
-        }
-
-        return services;
+        return services.AddDecoratedRequestHandlers(CqrsHandlerRegistrationCatalog.Registrations);
     }
 }

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TaskFlow.Application.Contracts.Storage;
+using TaskFlow.Application.Contracts;
 using TaskFlow.Infrastructure.Data.Provider;
 using TaskFlow.Infrastructure.Repositories;
 using TaskFlow.Infrastructure.Repositories.MongoDb;
@@ -36,10 +37,7 @@ public static partial class RegisterServices
     }
 
     private static ReadModelProvider ParseReadModelProvider(string value) =>
-        Enum.TryParse<ReadModelProvider>(value, ignoreCase: true, out var provider)
-            ? provider
-            : throw new ArgumentException(
-                $"Unknown read-model provider '{value}'. Allowed values: {string.Join(", ", Enum.GetNames<ReadModelProvider>())}.");
+        StrictEnum.Parse<ReadModelProvider>(value, "read-model provider");
 
     /// <summary>Dispatches to the selected read-model backend.</summary>
     [ProviderSwitch(typeof(ITaskViewRepository))]

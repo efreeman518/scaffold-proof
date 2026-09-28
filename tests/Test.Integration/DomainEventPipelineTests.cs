@@ -27,7 +27,7 @@ namespace Test.Integration;
 public class DomainEventPipelineTests
 {
     private static readonly Guid TenantGuid = Guid.Parse("11111111-1111-1111-1111-111111111111");
-    private static readonly TenantId TenantId = DomainId.From<TenantId>(TenantGuid);
+    private static readonly TenantId TenantId = TenantId.From(TenantGuid);
 
     /// <summary>Initializes shared test fixtures before the class-level test run begins.</summary>
     [ClassInitialize]

@@ -32,17 +32,8 @@ public static class ApplicationStyleResolver
             raw = configuredStyle;
         }
 
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            return DefaultStyle;
-        }
-
-        if (Enum.TryParse<ApplicationStyle>(raw, ignoreCase: true, out var style))
-        {
-            return style;
-        }
-
-        throw new InvalidOperationException(
-            $"Unsupported application style '{raw}'. Use '{ApplicationStyle.Service}' or '{ApplicationStyle.Cqrs}'.");
+        return string.IsNullOrWhiteSpace(raw)
+            ? DefaultStyle
+            : StrictEnum.Parse<ApplicationStyle>(raw, "application style");
     }
 }

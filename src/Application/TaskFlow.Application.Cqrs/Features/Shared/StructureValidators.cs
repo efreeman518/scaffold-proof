@@ -42,13 +42,4 @@ public static class StructureValidators
             Require(dto.TenantId != Guid.Empty, "TenantId is required.")
         );
     }
-
-    /// <summary>
-    /// Validates that an Id is present for update operations (no tenant check).
-    /// </summary>
-    internal static Result ValidateUpdateId<T>(T? dto) where T : class, IEntityBaseDto
-    {
-        if (dto is null) return Result.Failure("Payload is required.");
-        return Require(dto.Id.HasValue && dto.Id.Value != Guid.Empty, "Id is required for update.");
-    }
 }

@@ -99,7 +99,7 @@ public sealed class MillionRowTaskFixture
     /// <summary>Builds one task in the documented mix.</summary>
     private TaskItem Build(int index)
     {
-        var tenantId = DomainId.From<TenantId>(PickTenant());
+        var tenantId = TenantId.From(PickTenant());
         var roll = _random.NextDouble();
 
         var task = TaskItem.Create(

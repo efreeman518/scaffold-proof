@@ -36,7 +36,7 @@ public class MapperVersionProjectionTests
     public async Task Given_PersistedEntities_When_Mapped_Then_AllMappersProjectVersion()
     {
         await using var db = CreateContext();
-        var tenantId = DomainId.From<TenantId>(TestConstants.TenantId);
+        var tenantId = TenantId.From(TestConstants.TenantId);
 
         var category = Category.Create(tenantId, "Ops").Value!;
         var tag = Tag.Create(tenantId, "urgent").Value!;
@@ -68,7 +68,7 @@ public class MapperVersionProjectionTests
     public async Task Given_PersistedTaskItem_When_SearchProjected_Then_CarriesVersionAndModifiedAt()
     {
         await using var db = CreateContext();
-        var taskItem = TaskItem.Create(DomainId.From<TenantId>(TestConstants.TenantId), "Search shape").Value!;
+        var taskItem = TaskItem.Create(TenantId.From(TestConstants.TenantId), "Search shape").Value!;
         db.Add(taskItem);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: TestContext.CancellationToken);
 

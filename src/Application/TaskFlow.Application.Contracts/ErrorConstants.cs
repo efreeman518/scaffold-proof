@@ -15,4 +15,8 @@ public static class ErrorConstants
     public const string ERROR_ID_NOT_UUID_V7 = "Id '{0}' is not a UUIDv7; caller-supplied create ids must be UUIDv7.";
     public const string ERROR_CURSOR_INVALID = "Cursor is invalid, expired, or does not match the requested sort mode.";
     public const string ERROR_PAGE_SIZE_RANGE = "Page size must be between {0} and {1}.";
+
+    // Fixed client text for failed writes; the provider exception (schema, table, key values) is logged only.
+    public const string ERROR_SAVE_FAILED = "The change could not be saved.";
+    public const string ERROR_BLOB_UPLOAD_FAILED = "The file could not be uploaded.";
 }

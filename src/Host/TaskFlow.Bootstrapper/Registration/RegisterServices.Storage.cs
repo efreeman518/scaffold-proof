@@ -2,6 +2,7 @@ using EF.Storage.Contracts;
 using EF.Storage.S3;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using TaskFlow.Application.Contracts;
 
 namespace TaskFlow.Bootstrapper;
 
@@ -30,10 +31,7 @@ public static partial class RegisterServices
     }
 
     private static StorageProvider ParseStorageProvider(string value) =>
-        Enum.TryParse<StorageProvider>(value, ignoreCase: true, out var provider)
-            ? provider
-            : throw new ArgumentException(
-                $"Unknown storage provider '{value}'. Allowed values: {string.Join(", ", Enum.GetNames<StorageProvider>())}.");
+        StrictEnum.Parse<StorageProvider>(value, "storage provider");
 
     /// <summary>Dispatches to the selected object-storage backend.</summary>
     [ProviderSwitch(typeof(IObjectStorageRepository))]

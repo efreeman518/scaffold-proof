@@ -23,7 +23,7 @@ internal sealed class SearchCommentsHandler(
     {
         var request = query.Request;
         HandlerHelpers.EnforceTenantFilter(request, requestContext.TenantId, requestContext.Roles, logger, "CommentSearch");
-        return await CqrsHandlerSupport.SearchAsync(token => repoQuery.SearchCommentsAsync(request, query.IncludeTotal, token), logger, "Comment", ct);
+        return await repoQuery.SearchCommentsAsync(request, query.IncludeTotal, ct);
     }
 }
 
@@ -38,7 +38,7 @@ internal sealed class GetCommentByIdHandler(
     /// <summary>Handles get comment by ID requests and returns the application result.</summary>
     public async Task<Result<DefaultResponse<CommentDto>>> HandleAsync(GetCommentByIdQuery query, CancellationToken ct = default)
     {
-        var entity = await repoQuery.GetCommentAsync(DomainId.From<CommentId>(query.Id), ct);
+        var entity = await repoQuery.GetCommentAsync(CommentId.From(query.Id), ct);
         if (entity is null) return Result<DefaultResponse<CommentDto>>.None();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(

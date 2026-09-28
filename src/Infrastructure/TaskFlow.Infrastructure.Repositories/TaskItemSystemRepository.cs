@@ -49,8 +49,8 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
         Guid tenantId, IReadOnlyCollection<Guid> ids, DateTimeOffset asOfUtc, CancellationToken ct = default)
     {
         if (ids.Count == 0) return Task.FromResult(0);
-        var typedIds = ids.Select(DomainId.From<TaskItemId>).ToList();
-        var typedTenantId = DomainId.From<TenantId>(tenantId);
+        var typedIds = ids.Select(TaskItemId.From).ToList();
+        var typedTenantId = TenantId.From(tenantId);
 
         // The candidate predicate is restated here, not trusted from the scan: between the two statements a
         // task can be completed or rescheduled, and marking it then would suppress a notification it is owed.
@@ -92,8 +92,8 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
     public async Task<bool> AdvanceNextOccurrenceAsync(
         Guid tenantId, Guid templateId, DateTimeOffset expectedNextUtc, DateTimeOffset? newNextUtc, CancellationToken ct = default)
     {
-        var typedTenantId = DomainId.From<TenantId>(tenantId);
-        var typedTemplateId = DomainId.From<TaskItemId>(templateId);
+        var typedTenantId = TenantId.From(tenantId);
+        var typedTemplateId = TaskItemId.From(templateId);
 
         var affected = await DB.Set<TaskItem>()
             .IgnoreQueryFilters()
@@ -122,7 +122,7 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
         Guid tenantId, IReadOnlyCollection<Guid> taskIds, CancellationToken ct = default)
     {
         if (taskIds.Count == 0) return 0;
-        var typedTenantId = DomainId.From<TenantId>(tenantId);
+        var typedTenantId = TenantId.From(tenantId);
         var ids = taskIds.ToList();
 
         var attachments = await DB.Set<Attachment>()
@@ -166,9 +166,9 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
         Guid tenantId, IReadOnlyCollection<Guid> taskIds, DateTimeOffset cutoffUtc, CancellationToken ct = default)
     {
         if (taskIds.Count == 0) return 0;
-        var typedTenantId = DomainId.From<TenantId>(tenantId);
+        var typedTenantId = TenantId.From(tenantId);
         var ids = taskIds.ToList();
-        var typedIds = taskIds.Select(DomainId.From<TaskItemId>).ToList();
+        var typedIds = taskIds.Select(TaskItemId.From).ToList();
 
         // Attachments hang off a polymorphic owner, not a foreign key, so nothing cascades them.
         await DB.Set<Attachment>()
@@ -239,8 +239,8 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
     {
         if (after is { } position)
         {
-            var tenantId = DomainId.From<TenantId>(position.TenantId);
-            var id = DomainId.From<TaskItemId>(position.Id);
+            var tenantId = TenantId.From(position.TenantId);
+            var id = TaskItemId.From(position.Id);
             source = source.Where(e => e.TenantId > tenantId || (e.TenantId == tenantId && e.Id > id));
         }
 

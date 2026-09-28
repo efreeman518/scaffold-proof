@@ -13,6 +13,20 @@ namespace TaskFlow.Application.Contracts.Concurrency;
 /// </summary>
 public static class IdempotentCreateGuard
 {
+    /// <summary>
+    /// The D-033 outcome once a stored row already carries the caller's id: an equivalent payload is a replay
+    /// of that row, a different one is a 409. Applies both to the pre-insert existence check and to a create
+    /// whose insert lost the race to a concurrent create with the same id (both passed the existence check).
+    /// </summary>
+    public static DefaultResponse<TDto> ReplayOrThrow<TDto>(
+        TDto existing, TDto incoming, Func<TDto, TDto, bool> isEquivalent, string entityType, Guid entityId)
+    {
+        ArgumentNullException.ThrowIfNull(isEquivalent);
+        return isEquivalent(existing, incoming)
+            ? new DefaultResponse<TDto> { Item = existing, IsReplay = true }
+            : throw new IdempotentCreateConflictException(entityType, entityId);
+    }
+
     /// <summary>True when a repeated TaskItem create carries the same scalar payload.</summary>
     public static bool IsEquivalent(TaskItemDto existing, TaskItemDto incoming) =>
         existing.Title == incoming.Title

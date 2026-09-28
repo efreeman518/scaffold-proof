@@ -1114,7 +1114,7 @@ TASKFLOW_LANE=NonAzure dotnet run --project src/Host/Aspire/AppHost/AppHost.cspr
 </tr>
 <tr>
 <td><strong>Test.Mutation</strong></td>
-<td>Focused MSTest project for Stryker.NET runs against selected domain files (<code>TaskItem.cs</code>, <code>TaskItemStatusTransitionRule.cs</code>). Samples assert boundary values, failure messages, status transitions, optional-link updates, and idempotent child collections.</td>
+<td>Focused MSTest project for Stryker.NET runs against the <code>TaskItem.cs</code> aggregate. Samples assert boundary values, failure messages, status transitions, optional-link updates, and idempotent child collections.</td>
 <td>Demonstrates mutation testing without running the full solution suite. Stryker verifies that assertions kill comparison, boolean, string, and collection-behavior mutants in the configured domain scope.</td>
 <td>MSTest, <strong>Stryker.NET</strong></td>
 </tr>
@@ -1190,7 +1190,7 @@ TASKFLOW_LANE=NonAzure dotnet run --project src/Host/Aspire/AppHost/AppHost.cspr
 <p>CQRS-specific unit tests cover handler behavior, the custom <code>IRequestValidator&lt;TRequest&gt;</code> pattern, validation failure response mapping, and decorator order. Architecture tests guard the CQRS boundary: no central request dispatcher, no request bus, no generic <code>Send()</code> entrypoint, no Host dependency, no Infrastructure implementation dependency, and one request record per handler registration.</p>
 <p><code>ApplicationStyleBenchmarks</code> extends that parity check into performance. It creates isolated in-memory API hosts for <code>Service</code> and <code>Cqrs</code>, disables rate-limit noise through test configuration, seeds identical task data, then benchmarks search and create endpoints through the same HTTP routes.</p>
 <h3 id="1222-mutation-testing-scope">12.2.2 Mutation Testing Scope</h3>
-<p><code>Test.Mutation</code> is intentionally narrow. Its <code>stryker-config.json</code> mutates <code>TaskFlow.Domain.Model</code> only for <code>TaskItem.cs</code> and <code>TaskItemStatusTransitionRule.cs</code>, filters tests to <code>TestCategory=Mutation</code>, and emits progress, cleartext, and HTML reports. This makes the sample fast enough for local learning while keeping the report focused on domain invariants rather than framework wiring.</p>
+<p><code>Test.Mutation</code> is intentionally narrow. Its <code>stryker-config.json</code> mutates <code>TaskFlow.Domain.Model</code> only for <code>TaskItem.cs</code>, filters tests to <code>TestCategory=Mutation</code>, and emits progress, cleartext, and HTML reports. This makes the sample fast enough for local learning while keeping the report focused on domain invariants rather than framework wiring.</p>
 <p>Run from repo root:</p>
 <pre><code class="language-powershell">dotnet tool restore
 dotnet test tests/Test.Mutation/Test.Mutation.csproj

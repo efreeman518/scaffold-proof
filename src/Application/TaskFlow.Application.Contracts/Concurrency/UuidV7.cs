@@ -8,10 +8,11 @@ namespace TaskFlow.Application.Contracts.Concurrency;
 /// </summary>
 public static class UuidV7
 {
-    /// <summary>True when the version nibble of the RFC 9562 layout is 7. Guid.Empty is never a v7 id -
-    /// it carries no version nibble and is not an absent id (that is Guid?.HasValue == false), so it
-    /// must fail like any other non-v7 value rather than slip through as valid.</summary>
-    public static bool IsV7(Guid id) => id != Guid.Empty && (id.ToByteArray(bigEndian: true)[6] >> 4) == 7;
+    /// <summary>True when the RFC 9562 version nibble is 7 and the variant bits are the RFC <c>10x</c> form;
+    /// a version-7 nibble under another variant (for example Microsoft <c>110</c>) is not a UUIDv7. Guid.Empty
+    /// is never a v7 id - it carries no version nibble and is not an absent id (that is Guid?.HasValue ==
+    /// false), so it must fail like any other non-v7 value rather than slip through as valid.</summary>
+    public static bool IsV7(Guid id) => id != Guid.Empty && id.Version == 7 && (id.Variant & 0xC) == 0x8;
 
     /// <summary>
     /// The instant carried by a UUIDv7's leading 48-bit big-endian Unix-millisecond field (RFC 9562).

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using TaskFlow.Application.Contracts;
 using TaskFlow.Infrastructure.Data.Messaging;
 using TaskFlow.Infrastructure.Messaging.RabbitMq;
 
@@ -34,10 +35,7 @@ public static partial class RegisterServices
     }
 
     private static MessagingProvider ParseMessagingProvider(string value) =>
-        Enum.TryParse<MessagingProvider>(value, ignoreCase: true, out var provider)
-            ? provider
-            : throw new ArgumentException(
-                $"Unknown messaging provider '{value}'. Allowed values: {string.Join(", ", Enum.GetNames<MessagingProvider>())}.");
+        StrictEnum.Parse<MessagingProvider>(value, "messaging provider");
 
     /// <summary>Registers the outbox transport for the selected provider. Consumers are hosted separately.</summary>
     [ProviderSwitch(typeof(IIntegrationEventTransport))]

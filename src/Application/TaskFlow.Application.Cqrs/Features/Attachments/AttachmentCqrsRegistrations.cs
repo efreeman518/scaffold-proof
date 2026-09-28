@@ -1,5 +1,5 @@
 using EF.Common.Contracts;
-using TaskFlow.Application.Cqrs.Registration;
+using EF.CQRS.DependencyInjection;
 using TaskFlow.Application.Models;
 
 namespace TaskFlow.Application.Cqrs.Features.Attachments;
@@ -7,7 +7,7 @@ namespace TaskFlow.Application.Cqrs.Features.Attachments;
 /// <summary>Provides attachment CQRS registrations behavior for the Features Attachments layer.</summary>
 internal static class AttachmentCqrsRegistrations
 {
-    public static IReadOnlyList<CqrsHandlerRegistration> Registrations { get; } =
+    public static IReadOnlyList<RequestHandlerRegistration> Registrations { get; } =
     [
         new(typeof(SearchAttachmentsQuery), typeof(PagedResponse<AttachmentDto>), typeof(SearchAttachmentsHandler)),
         new(typeof(GetAttachmentByIdQuery), typeof(Result<DefaultResponse<AttachmentDto>>), typeof(GetAttachmentByIdHandler)),

@@ -41,8 +41,7 @@ internal sealed class SearchTaskItemsHandler(
         HandlerHelpers.EnforceCursorTenantFilter(request, requestContext.TenantId, requestContext.Roles, logger, "TaskItemSearch");
         var tenantId = request.Filter?.TenantId ?? requestContext.TenantId ?? Guid.Empty;
 
-        return await CqrsHandlerSupport.SearchCursorAsync(
-            token => repoQuery.SearchTaskItemsAsync(request, tenantId, token), logger, "TaskItem", ct);
+        return await repoQuery.SearchTaskItemsAsync(request, tenantId, ct);
     }
 }
 
@@ -57,7 +56,7 @@ internal sealed class GetTaskItemByIdHandler(
     /// <summary>Handles get task item by ID requests and returns the application result.</summary>
     public async Task<Result<DefaultResponse<TaskItemDto>>> HandleAsync(GetTaskItemByIdQuery query, CancellationToken ct = default)
     {
-        var entity = await repoQuery.GetTaskItemAsync(DomainId.From<TaskItemId>(query.Id), ct);
+        var entity = await repoQuery.GetTaskItemAsync(TaskItemId.From(query.Id), ct);
         if (entity is null) return Result<DefaultResponse<TaskItemDto>>.None();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
@@ -74,6 +73,7 @@ internal sealed class CreateTaskItemHandler(
     ILogger<CreateTaskItemHandler> logger,
     IRequestContext<string, Guid?> requestContext,
     ITaskItemRepositoryTrxn repoTrxn,
+    ITaskItemRepositoryQuery repoQuery,
     ITenantBoundaryValidator tenantBoundaryValidator,
     ITypedCache cache)
     : IRequestHandler<CreateTaskItemCommand, Result<DefaultResponse<TaskItemDto>>>
@@ -95,15 +95,11 @@ internal sealed class CreateTaskItemHandler(
         // D-033: the row itself is the idempotency record for a caller-supplied UUIDv7 id.
         if (dto.Id is Guid callerId && callerId != Guid.Empty)
         {
-            var existing = await repoTrxn.GetTaskItemAsync(DomainId.From<TaskItemId>(callerId), inclChildren: false, ct);
+            var existing = await repoTrxn.GetTaskItemAsync(TaskItemId.From(callerId), inclChildren: false, ct);
             if (existing is not null)
             {
-                var existingDto = existing.ToDto();
-                if (!IdempotentCreateGuard.IsEquivalent(existingDto, dto))
-                    throw new IdempotentCreateConflictException(nameof(TaskItem), callerId);
-
-                return Result<DefaultResponse<TaskItemDto>>.Success(
-                    new DefaultResponse<TaskItemDto> { Item = existingDto, IsReplay = true });
+                return Result<DefaultResponse<TaskItemDto>>.Success(IdempotentCreateGuard.ReplayOrThrow(
+                    existing.ToDto(), dto, IdempotentCreateGuard.IsEquivalent, nameof(TaskItem), callerId));
             }
         }
 
@@ -115,7 +111,20 @@ internal sealed class CreateTaskItemHandler(
         repoTrxn.Create(ref entity);
 
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error creating TaskItem", ct);
-        if (save.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(save.ErrorMessage!);
+        if (save.IsFailure)
+        {
+            // D-033: a concurrent create with the same id passed the existence check too and won the insert.
+            // Re-read on the query context (this one still tracks the failed insert): the winner makes this a
+            // replay or a 409. Absent (or not yet replicated) means the save failed for another reason.
+            if (dto.Id is Guid racedId && racedId != Guid.Empty
+                && await repoQuery.GetTaskItemAsync(TaskItemId.From(racedId), ct) is { } raced)
+            {
+                return Result<DefaultResponse<TaskItemDto>>.Success(IdempotentCreateGuard.ReplayOrThrow(
+                    raced.ToDto(), dto, IdempotentCreateGuard.IsEquivalent, nameof(TaskItem), racedId));
+            }
+
+            return Result<DefaultResponse<TaskItemDto>>.Failure(save.ErrorMessage!);
+        }
 
         await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(TaskItem)), ct);
         return HandlerHelpers.Success(entity.ToDto());
@@ -140,7 +149,7 @@ internal sealed class UpdateTaskItemHandler(
         var validation = TaskItemStructureValidator.ValidateUpdate(dto);
         if (validation.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(validation.Errors);
 
-        var entity = await repoTrxn.GetTaskItemAsync(DomainId.From<TaskItemId>(dto.Id!.Value), ct: ct);
+        var entity = await repoTrxn.GetTaskItemAsync(TaskItemId.From(dto.Id!.Value), ct: ct);
         if (entity is null)
         {
             return HandlerHelpers.NotFoundResponse<TaskItemDto>();
@@ -211,7 +220,7 @@ internal sealed class DeleteTaskItemHandler(
     /// <summary>Handles delete task item requests and returns the application result.</summary>
     public async Task<Result> HandleAsync(DeleteTaskItemCommand command, CancellationToken ct = default)
     {
-        var entity = await repoTrxn.GetTaskItemAsync(DomainId.From<TaskItemId>(command.Id), ct: ct);
+        var entity = await repoTrxn.GetTaskItemAsync(TaskItemId.From(command.Id), ct: ct);
         if (entity is null) return Result.Success();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
@@ -247,7 +256,7 @@ internal sealed class PatchTaskItemHandler(
     /// <summary>Handles patch task item requests and returns the application result.</summary>
     public async Task<Result<DefaultResponse<TaskItemDto>>> HandleAsync(PatchTaskItemCommand command, CancellationToken ct = default)
     {
-        var entity = await repoTrxn.GetTaskItemAsync(DomainId.From<TaskItemId>(command.Id), ct: ct);
+        var entity = await repoTrxn.GetTaskItemAsync(TaskItemId.From(command.Id), ct: ct);
         if (entity is null) return HandlerHelpers.NotFoundResponse<TaskItemDto>();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(

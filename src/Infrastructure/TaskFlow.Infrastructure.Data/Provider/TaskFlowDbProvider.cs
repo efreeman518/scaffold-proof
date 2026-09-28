@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
+using TaskFlow.Application.Contracts;
 using TaskFlow.Hosting;
 
 namespace TaskFlow.Infrastructure.Data.Provider;
@@ -72,10 +73,7 @@ public static class PoolerModeSelector
         var value = configuration[ConfigurationKey];
         return string.IsNullOrWhiteSpace(value)
             ? PoolerMode.None
-            : Enum.TryParse<PoolerMode>(value, ignoreCase: true, out var mode)
-                ? mode
-                : throw new ArgumentException(
-                    $"Unknown pooler mode '{value}'. Allowed values: {string.Join(", ", Enum.GetNames<PoolerMode>())}.");
+            : StrictEnum.Parse<PoolerMode>(value, "pooler mode");
     }
 }
 
@@ -106,10 +104,7 @@ public static class TaskFlowDbProviderSelector
     };
 
     private static TaskFlowDbProvider Parse(string value) =>
-        Enum.TryParse<TaskFlowDbProvider>(value, ignoreCase: true, out var provider)
-            ? provider
-            : throw new ArgumentException(
-                $"Unknown database provider '{value}'. Allowed values: {string.Join(", ", Enum.GetNames<TaskFlowDbProvider>())}.");
+        StrictEnum.Parse<TaskFlowDbProvider>(value, "database provider");
 }
 
 /// <summary>

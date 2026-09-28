@@ -110,7 +110,7 @@ public class OutboxClaimTests
         await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
         {
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
-            var task = TaskItem.Create(DomainId.From<TenantId>(TestConstants.TenantId), "rolled back").Value!;
+            var task = TaskItem.Create(TenantId.From(TestConstants.TenantId), "rolled back").Value!;
             db.TaskItems.Add(task);
             await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: ct);
 
