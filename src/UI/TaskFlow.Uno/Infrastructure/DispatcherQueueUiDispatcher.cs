@@ -7,6 +7,13 @@ namespace TaskFlow.Uno.Infrastructure;
 internal sealed class DispatcherQueueUiDispatcher(DispatcherQueue queue) : IUiDispatcher
 {
     public bool HasThreadAccess => queue.HasThreadAccess;
-    /// <summary>Sends a POST request through dispatcher queue UI dispatcher and returns the typed response.</summary>
-    public void Post(Action action) => queue.TryEnqueue(() => action());
+    /// <summary>
+    /// Queues <paramref name="action"/> on the UI thread. A queue that has shut down rejects the work; that is
+    /// raised rather than dropped, or busy and notification updates would silently stop reaching the UI.
+    /// </summary>
+    public void Post(Action action)
+    {
+        if (!queue.TryEnqueue(() => action()))
+            throw new InvalidOperationException("UI dispatcher queue rejected work (shut down).");
+    }
 }

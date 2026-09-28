@@ -21,6 +21,8 @@
     <PackageReference Include="Microsoft.AspNetCore.DataProtection.StackExchangeRedis" />
     <PackageReference Include="EF.Host" />
     <PackageReference Include="EF.Common" />
+    <!-- EF.AspNetCore.HealthChecks.MemoryHealthCheck; this project already references Microsoft.AspNetCore.App. -->
+    <PackageReference Include="EF.AspNetCore" />
     <PackageReference Include="EF.Data" />
     <PackageReference Include="EF.BackgroundServices" />
     <PackageReference Include="Newtonsoft.Json" />

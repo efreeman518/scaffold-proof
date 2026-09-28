@@ -13,6 +13,20 @@ public sealed class UnoReleasePackageTests
         StringAssert.Contains(dockerfile, "rm -rf /var/lib/apt/lists/*");
     }
 
+    /// <summary>
+    /// DispatcherQueue is a sealed WinUI type with no test seam outside the Uno runtime, so the contract is held
+    /// at the source: a rejected enqueue (queue shut down) is raised, never discarded.
+    /// </summary>
+    [TestMethod]
+    public void Given_UiDispatcher_When_QueueRejectsWork_Then_ItIsRaisedNotDropped()
+    {
+        var dispatcher = File.ReadAllText(RepoFiles.Path(
+            "src", "UI", "TaskFlow.Uno", "Infrastructure", "DispatcherQueueUiDispatcher.cs"));
+
+        StringAssert.Contains(dispatcher, "if (!queue.TryEnqueue(() => action()))");
+        StringAssert.Contains(dispatcher, "throw new InvalidOperationException(");
+    }
+
     [TestMethod]
     public void Given_UnoReleaseBuild_When_ProjectFileRead_Then_KeepsOptimizationForSdkAssetExclusion()
     {

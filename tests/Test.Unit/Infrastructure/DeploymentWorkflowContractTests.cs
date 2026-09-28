@@ -890,6 +890,12 @@ public sealed class DeploymentWorkflowContractTests
 
         var nginxConfig = File.ReadAllText(RepoRoot.Combine("deploy", "compose", "static", "default.conf"));
         StringAssert.Contains(nginxConfig, "alias /var/cache/nginx/app-config/app-config.json;");
+        // Same contract the dev WasmHost enforces: a missing asset is a 404 (not index.html as 200 text/html),
+        // and the shell is revalidated so a redeploy is not masked by a stale cached index.
+        StringAssert.Contains(nginxConfig, @"location ~ \.[^/]+$ {");
+        StringAssert.Contains(nginxConfig, "try_files $uri =404;");
+        StringAssert.Contains(nginxConfig, "location = /index.html {");
+        StringAssert.Contains(nginxConfig, "add_header Cache-Control \"no-cache\" always;");
 
         var bootstrap = File.ReadAllText(RepoRoot.Combine("infra", "scripts", "bootstrap.ps1"));
         Assert.IsFalse(bootstrap.Contains("--template-file \"$PSScriptRoot/../main.bicep\"", StringComparison.Ordinal));

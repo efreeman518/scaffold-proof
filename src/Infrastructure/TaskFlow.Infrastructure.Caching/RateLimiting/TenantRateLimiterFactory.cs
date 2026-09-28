@@ -23,9 +23,15 @@ public sealed class TenantRateLimiterFactory
     private readonly RateLimitingSettings _settings;
     private readonly RateLimitingMeter _meter;
     private readonly ILogger<TenantRateLimiterFactory> _logger;
-    private readonly Lazy<IConnectionMultiplexer>? _redis;
+    private readonly IConnectionMultiplexer? _redis;
 
-    /// <summary>Initializes the factory, connecting to Redis lazily so startup does not block on it.</summary>
+    /// <summary>
+    /// Initializes the factory and connects to Redis once. <c>AbortOnConnectFail = false</c> is forced whatever
+    /// the connection string says (Aspire and compose strings leave it at the throwing default): an unreachable
+    /// Redis then yields a multiplexer that keeps reconnecting in the background instead of an exception.
+    /// A throwing connect used to be cached by a <c>Lazy</c> and raised from the limiter constructor, outside
+    /// <see cref="FailOpenRateLimiter"/>, so one Redis blip at the first partition 500ed until restart.
+    /// </summary>
     public TenantRateLimiterFactory(
         IOptions<RateLimitingSettings> settings,
         IConfiguration config,
@@ -37,9 +43,12 @@ public sealed class TenantRateLimiterFactory
         _logger = logger;
 
         var connectionString = config.GetConnectionString(_settings.RedisConnectionStringName);
-        _redis = string.IsNullOrWhiteSpace(connectionString)
-            ? null
-            : new Lazy<IConnectionMultiplexer>(() => ConnectionMultiplexer.Connect(connectionString));
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return;
+
+        var options = ConfigurationOptions.Parse(connectionString);
+        options.AbortOnConnectFail = false;
+        _redis = ConnectionMultiplexer.Connect(options);
     }
 
     /// <summary>True when the limiter budget is shared across replicas.</summary>
@@ -67,7 +76,7 @@ public sealed class TenantRateLimiterFactory
     {
         var window = TimeSpan.FromSeconds(allowance.WindowSeconds);
 
-        if (_redis is null)
+        if (_redis is not { } redis)
         {
             _logger.RateLimiterInProcessFallback(partitionKey);
             return new SlidingWindowRateLimiter(new SlidingWindowRateLimiterOptions
@@ -83,7 +92,7 @@ public sealed class TenantRateLimiterFactory
         {
             PermitLimit = allowance.PermitLimit,
             Window = window,
-            ConnectionMultiplexerFactory = () => _redis.Value
+            ConnectionMultiplexerFactory = () => redis
         });
 
         return new FailOpenRateLimiter(redisLimiter, _meter, _logger);

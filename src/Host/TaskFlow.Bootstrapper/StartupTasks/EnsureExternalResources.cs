@@ -40,7 +40,7 @@ public sealed class EnsureExternalResources(
     /// </summary>
     private static readonly TimeSpan LockTtl = TimeSpan.FromSeconds(60);
 
-    /// <summary>How long a losing replica waits for the winner to finish before giving up on confirmation.</summary>
+    /// <summary>How long a losing replica waits for the lock before provisioning without it.</summary>
     private static readonly TimeSpan WaitBudget = TimeSpan.FromSeconds(90);
 
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
@@ -49,40 +49,46 @@ public sealed class EnsureExternalResources(
     /// Ensures the attachment container or S3 bucket, the audit table, and (in development) the Cosmos view
     /// store exist.
     /// <para>
-    /// D-052: one replica provisions, the rest wait for it. <c>CreateIfNotExists</c> is idempotent but not
-    /// serialized across processes, and Cosmos in particular answers a concurrent create with a conflict
+    /// D-052: the lock serializes provisioning; it does not deduplicate it. <c>CreateIfNotExists</c> is idempotent
+    /// but not serialized across processes, and Cosmos in particular answers a concurrent create with a conflict
     /// rather than a no-op - which would make this fatal startup task fail on the replica that lost the race.
-    /// The losing replicas wait rather than continuing immediately so this host does not report ready before
-    /// the resources it needs exist.
+    /// So every replica provisions, one at a time: a free lock only means the previous holder stopped, not that
+    /// it succeeded (it may have thrown, or died and let the TTL expire), and a replica that skipped the work on
+    /// that signal would report ready with no container or table. The re-run costs one round trip per resource.
+    /// </para>
+    /// <para>
+    /// A wait that outlasts <see cref="WaitBudget"/> provisions without the lock and logs a warning: a slow or
+    /// stuck peer must not keep this replica from ever confirming its resources exist.
     /// </para>
     /// </summary>
     public async Task ExecuteAsync(CancellationToken ct = default)
     {
         var lease = await distributedLock.TryAcquireAsync(ProvisionLockKey, LockTtl, ct).ConfigureAwait(false);
-        if (lease is null)
+        if (lease is not null)
+        {
+            logger.ProvisioningAcquired(ProvisionLockKey);
+        }
+        else
         {
             logger.ProvisioningDeferred(ProvisionLockKey);
-            await WaitForProvisioningAsync(ct).ConfigureAwait(false);
+            lease = await WaitForLockAsync(ct).ConfigureAwait(false);
+        }
+
+        if (lease is null)
+        {
+            logger.ProvisioningWaitTimedOut(ProvisionLockKey, (int)WaitBudget.TotalSeconds);
+            await ProvisionAsync(ct).ConfigureAwait(false);
             return;
         }
 
         await using (lease.ConfigureAwait(false))
         {
-            logger.ProvisioningAcquired(ProvisionLockKey);
-            await EnsureBlobContainerAsync(ct);
-            await EnsureS3BucketAsync(ct);
-            await EnsureAuditTableAsync(ct);
-            await EnsureCosmosAsync(ct);
-            await EnsureMongoDbAsync(ct);
+            await ProvisionAsync(ct).ConfigureAwait(false);
         }
     }
 
-    /// <summary>
-    /// Polls the lock until it is free, which is the signal that the holder finished, then releases it again
-    /// and skips provisioning - the work is already done. A timeout is logged as a warning rather than thrown:
-    /// the resources may well exist, and failing startup here would take down a replica for a slow peer.
-    /// </summary>
-    private async Task WaitForProvisioningAsync(CancellationToken ct)
+    /// <summary>Polls until the lock is free and returns it held, or null once the wait budget is spent.</summary>
+    private async Task<IAsyncDisposable?> WaitForLockAsync(CancellationToken ct)
     {
         var deadline = DateTimeOffset.UtcNow + WaitBudget;
 
@@ -93,12 +99,21 @@ public sealed class EnsureExternalResources(
             var lease = await distributedLock.TryAcquireAsync(ProvisionLockKey, LockTtl, ct).ConfigureAwait(false);
             if (lease is null) continue;
 
-            await lease.DisposeAsync().ConfigureAwait(false);
-            logger.ProvisioningSkipped(ProvisionLockKey);
-            return;
+            logger.ProvisioningAcquiredAfterWait(ProvisionLockKey);
+            return lease;
         }
 
-        logger.ProvisioningWaitTimedOut(ProvisionLockKey, (int)WaitBudget.TotalSeconds);
+        return null;
+    }
+
+    /// <summary>Runs every idempotent ensure step; each is a no-op when its provider is not configured.</summary>
+    private async Task ProvisionAsync(CancellationToken ct)
+    {
+        await EnsureBlobContainerAsync(ct);
+        await EnsureS3BucketAsync(ct);
+        await EnsureAuditTableAsync(ct);
+        await EnsureCosmosAsync(ct);
+        await EnsureMongoDbAsync(ct);
     }
 
     /// <summary>Creates the attachment container named by configuration.</summary>

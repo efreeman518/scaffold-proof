@@ -1,5 +1,4 @@
 using EF.FlowEngine.Dashboard;
-using Microsoft.Extensions.Http.Resilience;
 using MudBlazor;
 using MudBlazor.Services;
 using Refit;
@@ -17,7 +16,12 @@ var builder = WebApplication.CreateBuilder(args);
 // Shared Aspire service defaults: OpenTelemetry (incl. Azure Monitor when configured), health
 // checks, service discovery, and HTTP resilience. Keeps this server-hosted UI participating in
 // the same telemetry pipeline as the backend hosts while still running with no Azure config.
-builder.AddServiceDefaults();
+// No header propagation: its handler only works behind UseHeaderPropagation() middleware, which this Blazor
+// Server app does not run, and outbound API calls happen inside the interactive SignalR circuit, outside any
+// HTTP request - the handler would throw on every call and the standard resilience handler would retry that
+// failure until its total timeout. Every other default (service discovery, the D-063 standard resilience
+// handler that retries only safe methods) is kept on every client below.
+builder.AddServiceDefaults(addHeaderPropagation: false);
 builder.AddProxyForwarding();
 
 // Blazor Server host for CRUD pages and FlowEngine dashboard pages. API calls go through
@@ -50,13 +54,6 @@ jsonOptions.TypeInfoResolverChain.Add(new DefaultJsonTypeInfoResolver());
 var gatewayBaseUrl = builder.Configuration["Gateway:BaseUrl"]
     ?? throw new InvalidOperationException("Gateway:BaseUrl not configured.");
 
-// AddServiceDefaults applies AddHeaderPropagation() to EVERY HttpClient via ConfigureHttpClientDefaults.
-// That handler only works behind UseHeaderPropagation() middleware, which this Blazor Server app does not
-// run - and outbound API calls happen inside the interactive SignalR circuit, outside any HTTP request
-// scope. As a result HeaderPropagationValues.Headers is unset and the handler throws on every request; the
-// globally-added standard resilience handler then retries that failure until its 30s total timeout, so the
-// call hangs and FloatService silently swallows the resulting cancellation (no error shown, page never
-// navigates). Clear the inherited additional handlers and add a single clean resilience handler instead.
 // No auth handler yet - gateway dev mode accepts unauthenticated requests.
 var apiClient = builder.Services
     .AddRefitGeneratedClient<ITaskFlowApiClient>(new RefitSettings
@@ -67,16 +64,13 @@ var apiClient = builder.Services
     {
         client.BaseAddress = new Uri(gatewayBaseUrl);
         client.DefaultRequestHeaders.Add("Accept", "application/json");
-    })
-    .ConfigureAdditionalHttpMessageHandlers((handlers, _) => handlers.Clear());
-
-// D-063: retry only the safe (idempotent) HTTP methods. The standard handler retries every method by
-// default, which duplicated creates and uploads on a 5xx or timeout.
-apiClient.AddStandardResilienceHandler(o => o.Retry.DisableForUnsafeHttpMethods());
+    });
 
 // D-051: this is the read pipeline a rendered page waits on, so a slow tail costs a visibly stalled
 // component. Hedging is applied here and nowhere else - the attachment upload client and the AI client below
-// carry writes and a long-lived stream, neither of which is safe or useful to duplicate.
+// carry writes and a long-lived stream, neither of which is safe or useful to duplicate. It replaces this
+// client's standard resilience handler with the standard hedging pipeline (GET/HEAD only), so writes are
+// sent once, as D-063 requires.
 apiClient.AddReadHedging(builder.Configuration);
 
 // D-054: the internal gRPC read client - the one in-cluster service-to-service hop. Every public client
@@ -84,9 +78,8 @@ apiClient.AddReadHedging(builder.Configuration);
 //
 // The address is always a concrete URL from configuration: the AppHost injects it from the Api's named
 // "Grpc" endpoint, Bicep composes it from the Api container app's internal FQDN, and the compose lane
-// sets the same Grpc__TaskFlowRead__Address variable. Service discovery is deliberately NOT used here -
-// the handler that resolves a "http://_grpc.taskflowapi" name is one of the inherited additional handlers
-// this host clears below, so a name-shaped address would reach the resolver that is no longer there.
+// sets the same Grpc__TaskFlowRead__Address variable. Service discovery is deliberately NOT relied on here:
+// the concrete address passes through the inherited resolver unchanged, so every lane dials the same URL.
 //
 // This host also sends no credentials, exactly like the Refit clients above (see the note at their
 // registration): the Api authenticates every request with its own scheme, so the tenant a gRPC read sees
@@ -112,21 +105,25 @@ builder.Services.AddSingleton(new ClientReadSettings(useGrpcReads, grpcReadDeadl
 // With no address configured the flag above is off and the client is constructed but never called; the
 // placeholder is an unroutable loopback rather than a plausible host, so a future call site that forgot
 // the flag fails immediately instead of quietly reaching something else.
-builder.Services
+var grpcReadClient = builder.Services
     .AddGrpcClient<TaskFlowRead.TaskFlowReadClient>(options =>
-        options.Address = new Uri(grpcReadAddress ?? GrpcReadPlaceholderAddress))
-    // Same reason as the Refit clients above: ServiceDefaults adds header propagation to every HttpClient
-    // through ConfigureHttpClientDefaults, and this host runs no UseHeaderPropagation middleware, so an
-    // inherited handler would throw on every call from inside a SignalR circuit.
-    .ConfigureAdditionalHttpMessageHandlers((handlers, _) => handlers.Clear())
-    // D-063: unlike the Refit clients above, this keeps retrying every method. Every gRPC call this client
-    // makes is technically an HTTP POST, but the client serves only the two idempotent reads in
-    // TaskFlowReadClientExtensions (summary, metadata), so retrying is safe here.
-    .AddStandardResilienceHandler();
+        options.Address = new Uri(grpcReadAddress ?? GrpcReadPlaceholderAddress));
+
+// D-063: unlike the Refit clients above, this keeps retrying every method. Every gRPC call this client makes
+// is technically an HTTP POST, but the client serves only the two idempotent reads in
+// TaskFlowReadClientExtensions (summary, metadata), so retrying is safe here. That needs the inherited
+// safe-methods-only handler replaced, not stacked under a second one. RemoveAllResilienceHandlers is
+// experimental in Microsoft.Extensions.Http.Resilience and the only way to take a default handler off one
+// client; remove this suppression when the attribute is dropped.
+#pragma warning disable EXTEXP0001
+grpcReadClient.RemoveAllResilienceHandlers();
+#pragma warning restore EXTEXP0001
+grpcReadClient.AddStandardResilienceHandler();
 
 // Attachment upload is a request shape (StreamPart) the Refit source generator cannot build (RF006),
 // so it lives on its own interface registered via the reflection-based AddRefitClient rather than
-// AddRefitGeneratedClient. Same gateway base address and handler pipeline as the generated client.
+// AddRefitGeneratedClient. Same gateway base address; the inherited D-063 standard resilience handler does
+// not retry the upload POST, so an ambiguous failure cannot duplicate the attachment.
 builder.Services
     .AddRefitClient<IAttachmentUploadClient>(new RefitSettings
     {
@@ -136,20 +133,20 @@ builder.Services
     {
         client.BaseAddress = new Uri(gatewayBaseUrl);
         client.DefaultRequestHeaders.Add("Accept", "application/json");
-    })
-    .ConfigureAdditionalHttpMessageHandlers((handlers, _) => handlers.Clear())
-    // D-063: an upload is a POST; retrying it after an ambiguous failure could duplicate the attachment.
-    .AddStandardResilienceHandler(o => o.Retry.DisableForUnsafeHttpMethods());
+    });
 
 // Raw HTTP client for the AI demo endpoints (the typed Refit client does not cover the AI routes,
 // and the streaming chat demo needs raw Server-Sent Events). Points at the gateway like the others.
-// Same reasoning as above: drop the inherited header-propagation handler so streaming calls don't hang.
-builder.Services.AddHttpClient("TaskFlowAi", client =>
+// No resilience handler: its attempt and total timeouts would cut a long-lived event stream, and a streamed
+// chat reply is not safe to retry. Same experimental-API suppression and removal criterion as above.
+var aiClient = builder.Services.AddHttpClient("TaskFlowAi", client =>
 {
     client.BaseAddress = new Uri(gatewayBaseUrl);
     client.Timeout = TimeSpan.FromMinutes(2);
-})
-.ConfigureAdditionalHttpMessageHandlers((handlers, _) => handlers.Clear());
+});
+#pragma warning disable EXTEXP0001
+aiClient.RemoveAllResilienceHandlers();
+#pragma warning restore EXTEXP0001
 
 // FlowEngine Dashboard - talks to TaskFlow.Api's MapFlowEngineAdmin via the gateway.
 // Pages contributed by the package are picked up via Routes.razor's AdditionalAssemblies.

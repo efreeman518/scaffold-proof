@@ -387,6 +387,14 @@ module gateway 'modules/container-app.bicep' = {
       { name: 'CorsSettings__AllowedOrigins__0', value: 'https://${prefix}-blazor.${containerAppsEnv.outputs.defaultDomain}' }
       { name: 'CorsSettings__AllowedOrigins__1', value: 'https://${reactStaticWebApp.outputs.defaultHostname}' }
       { name: 'CorsSettings__AllowedOrigins__2', value: 'https://${unoStaticWebApp.outputs.defaultHostname}' }
+      // The edge limiter partitions by client IP, so the gateway must read the address ingress saw. The
+      // environment has no VNet, so there is no infrastructure subnet to allowlist; the app is reachable
+      // only through the environment's ingress, so the connecting hop is trusted and exactly one
+      // X-Forwarded-For entry (the one ingress appends) is read - a client-supplied entry cannot pick the
+      // partition.
+      { name: 'Proxy__ForwardedHeaders__Enabled', value: 'true' }
+      { name: 'Proxy__ForwardedHeaders__TrustAllProxies', value: 'true' }
+      { name: 'Proxy__ForwardedHeaders__ForwardLimit', value: '1' }
     ])
     tags: tags
   }

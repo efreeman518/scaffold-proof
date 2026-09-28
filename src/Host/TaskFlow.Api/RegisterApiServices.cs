@@ -147,12 +147,11 @@ public static class RegisterApiServices
                     || context.Request.Path.StartsWithSegments("/healthz"))
                     return RateLimitPartition.GetNoLimiter("health");
 
-                var limiters = context.RequestServices.GetRequiredService<TenantRateLimiterFactory>();
-                return RateLimitPartition.Get(TenantPartitionKey(context), limiters.CreateTenantLimiter);
-            });
+                // The export route counts only against its own Export budget (endpoint policy below); counting
+                // it here too would let one long export spend the tenant's interactive allowance.
+                if (context.GetEndpoint()?.Metadata.GetMetadata<ExportRateLimitPolicy>() is not null)
+                    return RateLimitPartition.GetNoLimiter("export");
 
-            options.AddPolicy("PerTenant", context =>
-            {
                 var limiters = context.RequestServices.GetRequiredService<TenantRateLimiterFactory>();
                 return RateLimitPartition.Get(TenantPartitionKey(context), limiters.CreateTenantLimiter);
             });

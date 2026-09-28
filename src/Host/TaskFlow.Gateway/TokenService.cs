@@ -42,20 +42,24 @@ public sealed class TokenService
         for (var attempt = 0; attempt < 2; attempt++)
         {
             // ExecutionAndPublication: exactly one thread runs the factory, everyone else awaits its task.
+            // The shared acquisition runs on no caller's token (the credential bounds it with its own retry
+            // and timeout): on the first caller's RequestAborted, that one client disconnecting would fail
+            // every concurrent request waiting on the same token. Each caller abandons only its own wait.
             var pending = _cache.GetOrAdd(
                 clusterId,
                 key => new Lazy<Task<AccessToken>>(
-                    () => AcquireAsync(key, ct), LazyThreadSafetyMode.ExecutionAndPublication));
+                    () => AcquireAsync(key, CancellationToken.None), LazyThreadSafetyMode.ExecutionAndPublication));
 
             AccessToken token;
             try
             {
-                token = await pending.Value.ConfigureAwait(false);
+                token = await pending.Value.WaitAsync(ct).ConfigureAwait(false);
             }
-            catch
+            catch when (pending.Value is { IsCompleted: true, IsCompletedSuccessfully: false })
             {
                 // A faulted Lazy would otherwise be cached forever and every later caller would replay the
                 // same failure. Remove this exact instance (never a newer one) and let the caller see the error.
+                // A caller that merely stopped waiting leaves the still-running acquisition for the others.
                 RemoveIfSame(clusterId, pending);
                 throw;
             }
