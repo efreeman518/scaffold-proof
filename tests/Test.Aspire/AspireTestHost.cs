@@ -324,28 +324,12 @@ internal static class AspireTestHost
         return IsAzureFoundryRequested() ? AspireAiProvider.AzureFoundry : AspireAiProvider.None;
     }
 
-    private static bool IsAzureFoundryRequested()
-    {
-        return IsAzureInferenceProvider("TASKFLOW_AI_PROVIDER")
-            || IsAzureInferenceProvider("AiServices__Provider")
-            || IsAzureInferenceProvider("AiServices:Provider")
-            || IsEnabled("TASKFLOW_USE_AZURE_FOUNDRY")
-            || HasValue("ConnectionStrings__chat")
-            || HasValue("ConnectionStrings:chat")
-            || HasValue("AiServices__FoundryEndpoint")
-            || HasValue("AiServices:FoundryEndpoint")
-            || HasValue("AiServices__AgentModelDeployment")
-            || HasValue("AiServices:AgentModelDeployment");
-    }
-
-    private static bool IsAzureInferenceProvider(string variableName) =>
-        string.Equals(
-            Environment.GetEnvironmentVariable(variableName),
-            "AzureInference",
-            StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsEnabled(string variableName) =>
-        string.Equals(Environment.GetEnvironmentVariable(variableName), "true", StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// Live Foundry runs exactly when the AppHost wires Foundry: when the shared lane resolver selects
+    /// AzureInference. Foundry settings under any other provider make the AppHost fail at build, not select Foundry.
+    /// </summary>
+    private static bool IsAzureFoundryRequested() =>
+        string.Equals(HostingLaneResolver.ResolveFromEnvironment().AiServices, "AzureInference", StringComparison.Ordinal);
 
     /// <summary>
     /// True when an opt-out variable is <c>false</c>, <c>0</c> or <c>no</c>. The one check for every
@@ -359,9 +343,6 @@ internal static class AspireTestHost
             || string.Equals(value, "0", StringComparison.OrdinalIgnoreCase)
             || string.Equals(value, "no", StringComparison.OrdinalIgnoreCase);
     }
-
-    private static bool HasValue(string variableName) =>
-        !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(variableName));
 
     private static bool IsReactRunnable()
     {
