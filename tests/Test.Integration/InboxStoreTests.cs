@@ -27,7 +27,7 @@ public class InboxStoreTests
     private const string Consumer = "projection";
     private static readonly TimeSpan Lease = TimeSpan.FromSeconds(60);
 
-    /// <summary>Marks the test Inconclusive when the database container failed to start.</summary>
+    /// <summary>Inconclusive without a container runtime; fails when the database container failed to start.</summary>
     [TestInitialize]
     public void TestSetup() => IntegrationTestSetup.AssertAvailable("SQL", DbContainerFixture.StartupError);
 

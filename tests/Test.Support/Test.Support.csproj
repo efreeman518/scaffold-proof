@@ -24,6 +24,8 @@
     <ProjectReference Include="..\..\src\Infrastructure\TaskFlow.Infrastructure.Data.Migrations.SqlServer\TaskFlow.Infrastructure.Data.Migrations.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Infrastructure\TaskFlow.Infrastructure.Data.Migrations.PostgreSql\TaskFlow.Infrastructure.Data.Migrations.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Infrastructure\TaskFlow.Infrastructure.Repositories\TaskFlow.Infrastructure.Repositories.csproj" />
+    <!-- InertNonAzureLane swaps the lane data planes for the storage project's no-op arms. -->
+    <ProjectReference Include="..\..\src\Infrastructure\TaskFlow.Infrastructure.Storage\TaskFlow.Infrastructure.Storage.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,4 +1,4 @@
-﻿using EF.Data.Contracts;
+using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Application.Models;
 using TaskFlow.Domain.Model;
@@ -26,7 +26,7 @@ public class MigrationAndRepositoryTests
     private static readonly Guid TenantB = Guid.Parse("00000000-0000-0000-0000-000000000099");
     private static TenantId TenantAId => TenantId.From(TenantA);
 
-    /// <summary>Marks the test Inconclusive when the SQL container failed to start (assembly-init safety).</summary>
+    /// <summary>Inconclusive without a container runtime; fails when the SQL container failed to start (assembly-init safety).</summary>
     [TestInitialize]
     public void TestSetup()
     {

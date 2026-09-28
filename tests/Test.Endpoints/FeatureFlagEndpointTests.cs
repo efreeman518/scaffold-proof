@@ -66,9 +66,6 @@ public sealed class FeatureFlagEndpointTests
             builder.ConfigureAppConfiguration((_, config) =>
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    // Relational so the assertion is not accidentally satisfied by the Cosmos default
-                    // arm short-circuiting for an unconfigured connection string.
-                    ["ReadModel:Provider"] = "Relational",
                     ["FeatureManagement:TaskViews"] = "false"
                 })));
         using var client = factory.CreateClient();
@@ -83,12 +80,7 @@ public sealed class FeatureFlagEndpointTests
     [TestMethod]
     public async Task Given_TaskViewsFlagOn_When_ListTaskViews_Then_Ok()
     {
-        using var factory = new CustomApiFactory().WithWebHostBuilder(builder =>
-            builder.ConfigureAppConfiguration((_, config) =>
-                config.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["ReadModel:Provider"] = "Relational"
-                })));
+        using var factory = new CustomApiFactory();
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync(

@@ -1,4 +1,4 @@
-﻿using EF.Data.Contracts;
+using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
@@ -33,7 +33,7 @@ public class GenericRepositoryIntegrationTests
         await db.Database.MigrateAsync(_.CancellationToken);
     }
 
-    /// <summary>Marks the test Inconclusive when the SQL container failed to start (assembly-init safety).</summary>
+    /// <summary>Inconclusive without a container runtime; fails when the SQL container failed to start (assembly-init safety).</summary>
     [TestInitialize]
     public void TestSetup()
     {

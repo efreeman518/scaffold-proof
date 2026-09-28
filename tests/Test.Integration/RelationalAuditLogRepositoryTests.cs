@@ -37,7 +37,7 @@ public class RelationalAuditLogRepositoryTests
     private const int RetentionRowCount = 250;
     private const int RetentionBatchSize = 100;
 
-    /// <summary>Marks the test Inconclusive when the database container failed to start.</summary>
+    /// <summary>Inconclusive without a container runtime; fails when the database container failed to start.</summary>
     [TestInitialize]
     public void TestSetup()
     {

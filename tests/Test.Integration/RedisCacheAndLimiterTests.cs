@@ -25,7 +25,7 @@ namespace Test.Integration;
 [TestCategory("Integration")]
 public class RedisCacheAndLimiterTests
 {
-    /// <summary>Marks the test Inconclusive when the Redis container failed to start.</summary>
+    /// <summary>Inconclusive without a container runtime; fails when the Redis container failed to start.</summary>
     [TestInitialize]
     public void TestSetup() => IntegrationTestSetup.AssertAvailable("Redis", RedisContainerFixture.StartupError);
 

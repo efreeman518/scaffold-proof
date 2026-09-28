@@ -341,18 +341,9 @@ public class TaskItemCrudE2ETests
         Assert.AreEqual(HttpStatusCode.NoContent, delResp.StatusCode);
     }
 
+    /// <summary>Inconclusive without a container runtime; fails when a container failed to start.</summary>
     [TestInitialize]
-    public void TestSetup()
-    {
-        if (DbApiFactory.DockerUnavailableReason is not null)
-        {
-            Assert.Inconclusive(DbApiFactory.DockerUnavailableReason);
-            return;
-        }
-
-        if (DbApiFactory.StartupError is not null)
-            Assert.Fail($"SQL container startup failed after Docker preflight succeeded:{Environment.NewLine}{DbApiFactory.StartupError}");
-    }
+    public void TestSetup() => DbApiFactory.AssertContainersAvailable();
 
     public TestContext TestContext { get; set; } = null!;
 }

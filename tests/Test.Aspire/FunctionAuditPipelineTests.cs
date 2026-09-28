@@ -17,7 +17,8 @@ namespace Test.Aspire;
 /// Storage row, with a polling read-back.
 /// Aspire tier (Aspire.Hosting.Testing) - required because the Functions host has the longest cold-start
 /// of any resource and the test depends on both <c>taskflowfunctions</c> and <c>TableStorage1</c>. Missing
-/// Core Tools fails unless <c>TASKFLOW_RUN_FUNCTIONS_TESTS=false</c> explicitly opts out.
+/// Core Tools or <c>TASKFLOW_RUN_FUNCTIONS_TESTS=false</c> is Inconclusive with the install command; a present
+/// <c>func</c> whose host does not become healthy fails (<see cref="AspireTestHost.RequireFunctionsHostAsync"/>).
 /// </summary>
 [TestClass]
 [TestCategory("Aspire")]
@@ -39,25 +40,10 @@ public class FunctionAuditPipelineTests
     [Timeout(1_200_000, CooperativeCancellation = true)]
     public async Task Given_FunctionCategoryCreate_When_RequestHandled_Then_AuditEntryPersistedToTableStorage()
     {
-        if (string.Equals(
-                Environment.GetEnvironmentVariable(AspireTestHost.RunFunctionsTestsEnvironmentVariable),
-                "false",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            Assert.Inconclusive($"{AspireTestHost.RunFunctionsTestsEnvironmentVariable}=false - Functions full-stack test opted out.");
-            return;
-        }
-
-        if (!AspireTestHost.EnsureFuncToolAvailable())
-        {
-            Assert.Fail("Azure Functions Core Tools ('func') is required. Install it or set TASKFLOW_RUN_FUNCTIONS_TESTS=false to opt out explicitly.");
-            return;
-        }
-
         var ct = CancellationToken.None;
 
         // Functions host has the longest cold-start of any resource - wait for health before issuing requests.
-        await AspireTestHost.WaitForResourceHealthyAsync("taskflowfunctions", ct);
+        await AspireTestHost.RequireFunctionsHostAsync(ct);
         await AspireTestHost.WaitForResourceHealthyAsync("TableStorage1", ct);
 
         try
