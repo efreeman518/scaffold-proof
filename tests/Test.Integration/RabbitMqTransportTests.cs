@@ -1,3 +1,4 @@
+using EF.Messaging;
 using EF.Messaging.RabbitMq;
 using EF.FlowEngine.Clients;
 using Microsoft.Extensions.Configuration;
@@ -78,7 +79,7 @@ public sealed class RabbitMqTransportTests
             Assert.AreEqual(nameof(TaskItemCreatedEvent), Header(delivered, "EventType"));
             Assert.AreEqual(TestConstants.TenantId.ToString(), Header(delivered, "TenantId"));
 
-            Assert.IsTrue(IntegrationEnvelopeReader.TryRead(delivered.Body.Span, out var read, out var failure));
+            Assert.IsTrue(IntegrationEnvelopeReader.TryRead(delivered.Body.Span, ReaderOptions(), out var read, out var failure));
             Assert.IsNull(failure);
             Assert.AreEqual(envelope.Id, read!.Id);
             Assert.AreEqual(envelope.Type, read.Type);
@@ -140,7 +141,7 @@ public sealed class RabbitMqTransportTests
 
         var delivered = await GetAsync(broker, TaskFlowRabbitMqTopology.ProjectionQueue, ct);
         Assert.IsNotNull(delivered);
-        Assert.IsFalse(IntegrationEnvelopeReader.TryRead(delivered.Body.Span, out _, out var failure));
+        Assert.IsFalse(IntegrationEnvelopeReader.TryRead(delivered.Body.Span, ReaderOptions(), out _, out var failure));
         Assert.AreEqual(IntegrationEnvelopeReader.MalformedReason, failure);
     }
 
@@ -220,6 +221,13 @@ public sealed class RabbitMqTransportTests
 
     public TestContext TestContext { get; set; } = null!;
 
+    private static IntegrationEnvelopeReaderOptions ReaderOptions()
+    {
+        var options = new IntegrationEnvelopeReaderOptions();
+        TaskFlowIntegrationEvents.ConfigureReader(options);
+        return options;
+    }
+
     private static ServiceProvider BuildProvider(RabbitMqContainer broker, string clientName)
     {
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
@@ -230,7 +238,7 @@ public sealed class RabbitMqTransportTests
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton<MessagingMetrics>();
+        services.AddSingleton<TaskFlow.Observability.Meters.MessagingMetrics>();
         services.AddTaskFlowRabbitMqMessaging(config);
         return services.BuildServiceProvider();
     }

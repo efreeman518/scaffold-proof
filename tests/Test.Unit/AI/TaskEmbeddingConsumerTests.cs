@@ -6,12 +6,7 @@ using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.MessageHandlers.Consumers;
 using TaskFlow.Domain.Shared.Events;
-using TaskFlow.Observability.Meters;
 using Test.Support;
-using IInboxStore = TaskFlow.Application.Contracts.Messaging.IInboxStore;
-using InboxClaim = TaskFlow.Application.Contracts.Messaging.InboxClaim;
-using InboxClaimStatus = TaskFlow.Application.Contracts.Messaging.InboxClaimStatus;
-using MessagingMetrics = TaskFlow.Observability.Meters.MessagingMetrics;
 
 namespace Test.Unit.AI;
 

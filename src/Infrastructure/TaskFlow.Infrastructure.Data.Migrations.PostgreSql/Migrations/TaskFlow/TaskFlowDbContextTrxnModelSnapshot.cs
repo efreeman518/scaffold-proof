@@ -25,6 +25,35 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.TaskFlow
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "vector");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("EF.Data.Outbox.InboxEntry", b =>
+                {
+                    b.Property<string>("Consumer")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ClaimToken")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("ClaimedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("LeaseExpiresUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Consumer", "MessageId");
+
+                    b.HasIndex("CompletedAtUtc", "LeaseExpiresUtc")
+                        .HasDatabaseName("IX_ConsumerInbox_Retention");
+
+                    b.ToTable("ConsumerInbox", "taskflow");
+                });
+
             modelBuilder.Entity("TaskFlow.Domain.Model.Attachment", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -502,35 +531,6 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.TaskFlow
                         .HasDatabaseName("IX_BlobDeleteWork_Dispatch");
 
                     b.ToTable("BlobDeleteWork", "taskflow");
-                });
-
-            modelBuilder.Entity("TaskFlow.Infrastructure.Data.Operational.ConsumerInbox", b =>
-                {
-                    b.Property<string>("Consumer")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<Guid>("MessageId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ClaimToken")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("ClaimedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset?>("CompletedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset?>("LeaseExpiresUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Consumer", "MessageId");
-
-                    b.HasIndex("CompletedAtUtc", "LeaseExpiresUtc")
-                        .HasDatabaseName("IX_ConsumerInbox_Retention");
-
-                    b.ToTable("ConsumerInbox", "taskflow");
                 });
 
             modelBuilder.Entity("TaskFlow.Infrastructure.Data.Operational.OutboxMessage", b =>

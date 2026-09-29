@@ -29,6 +29,10 @@
     <PackageVersion Include="EF.AI.Testing" Version="2.0.111" />
     <PackageVersion Include="EF.Messaging" Version="2.0.111" />
     <PackageVersion Include="EF.Messaging.RabbitMq" Version="2.0.111" />
+    <!-- M1/M8/M16: transport-neutral messaging contracts, the EF Core outbox/inbox/leased-work tables, and the Functions Service Bus adapter. -->
+    <PackageVersion Include="EF.Messaging.Contracts" Version="2.0.111" />
+    <PackageVersion Include="EF.Data.Outbox" Version="2.0.111" />
+    <PackageVersion Include="EF.Messaging.Functions" Version="2.0.111" />
     <PackageVersion Include="EF.Storage" Version="2.0.111" />
     <!-- Provider-neutral object-storage contract both storage arms implement (D-037, package request 25). -->
     <PackageVersion Include="EF.Storage.Contracts" Version="2.0.111" />

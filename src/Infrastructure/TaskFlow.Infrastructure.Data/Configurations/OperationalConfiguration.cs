@@ -55,16 +55,3 @@ public sealed class BlobDeleteWorkConfiguration : OperationalWorkConfiguration<B
         builder.Property(e => e.BlobName).HasMaxLength(1024).IsRequired();
     }
 }
-
-/// <summary>D-029: one provider-neutral inbox table replaces per-consumer filtered unique indexes.</summary>
-public sealed class ConsumerInboxConfiguration : IEntityTypeConfiguration<ConsumerInbox>
-{
-    public void Configure(EntityTypeBuilder<ConsumerInbox> builder)
-    {
-        builder.ToTable("ConsumerInbox");
-        builder.HasKey(e => new { e.Consumer, e.MessageId });
-        builder.Property(e => e.Consumer).HasMaxLength(64);
-        // Retention sweeps completed claims by completion time and abandoned in-progress claims by lease expiry.
-        builder.HasIndex(e => new { e.CompletedAtUtc, e.LeaseExpiresUtc }).HasDatabaseName("IX_ConsumerInbox_Retention");
-    }
-}

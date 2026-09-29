@@ -43,21 +43,3 @@ public sealed class BlobDeleteWork : OperationalWorkBase
     public string ContainerName { get; set; } = null!;
     public string BlobName { get; set; } = null!;
 }
-
-/// <summary>
-/// Two-state consumer idempotency record (D-029). A claim is in progress while <see cref="CompletedAtUtc"/> is null
-/// and its <see cref="LeaseExpiresUtc"/> is live; the consumer marks it completed only after its effect ran. An
-/// in-progress claim whose lease expired (the consumer crashed or hung) is taken over by the next delivery.
-/// </summary>
-public sealed class ConsumerInbox
-{
-    public string Consumer { get; set; } = null!;
-    public Guid MessageId { get; set; }
-    /// <summary>Token of the delivery that owns the claim; complete and release are guarded by it.</summary>
-    public Guid ClaimToken { get; set; }
-    public DateTimeOffset ClaimedAtUtc { get; set; }
-    /// <summary>End of the in-progress lease; null once completed.</summary>
-    public DateTimeOffset? LeaseExpiresUtc { get; set; }
-    /// <summary>Set when the consumer's effect ran; a completed claim turns every redelivery into a duplicate.</summary>
-    public DateTimeOffset? CompletedAtUtc { get; set; }
-}

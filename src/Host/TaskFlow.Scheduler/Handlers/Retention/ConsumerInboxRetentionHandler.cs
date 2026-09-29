@@ -1,4 +1,4 @@
-using TaskFlow.Application.Contracts.Messaging;
+using EF.Messaging;
 using TaskFlow.Observability.Meters;
 using TaskFlow.Scheduler.Abstractions;
 

@@ -1,7 +1,8 @@
-﻿using EF.BackgroundServices.InternalMessageBus;
+using EF.BackgroundServices.InternalMessageBus;
 using EF.Common.Contracts;
 using EF.Data.Contracts;
 using EF.Data.Encryption;
+using EF.Messaging;
 using EF.Tenancy;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Configuration;
@@ -9,12 +10,12 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Security.Cryptography;
 using TaskFlow.Application.Contracts;
+using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Cqrs.Registration;
 using TaskFlow.Application.MessageHandlers;
 using TaskFlow.Application.MessageHandlers.Consumers;
 using TaskFlow.Application.Services;
-using TaskFlow.Observability.Meters;
 
 namespace TaskFlow.Bootstrapper;
 
@@ -35,7 +36,7 @@ public static partial class RegisterServices
         }
 
         services.AddScoped<ITaskViewProjectionService, TaskViewProjectionService>();
-        services.TryAddSingleton<MessagingMetrics>();
+        services.TryAddSingleton<TaskFlow.Observability.Meters.MessagingMetrics>();
     }
 
     /// <summary>Registers shared application services dependencies in the service container.</summary>
@@ -89,8 +90,11 @@ public static partial class RegisterServices
         // D-029 claim timings (lease, poll, wait margin); defaults suit RabbitMQ and Service Bus alike.
         services.AddOptions<InboxClaimOptions>()
             .Bind(config.GetSection(InboxClaimOptions.ConfigSectionName))
-            .Validate(o => o.IsValid(), "Messaging:Inbox timings must be positive with PollInterval below ClaimLease.")
+            .Validate(o => o.IsValid(), "Messaging:Inbox timings must have a positive ClaimLease, a non-negative WaitMargin and a positive WaitPollInterval below WaitBound.")
             .ValidateOnStart();
+        // D-034/D-048: one envelope reader configuration for the Service Bus triggers and the RabbitMQ handlers.
+        services.Configure<IntegrationEnvelopeReaderOptions>(TaskFlowIntegrationEvents.ConfigureReader);
+        services.TryAddSingleton<EF.Messaging.MessagingMetrics>();
 
         services.AddScoped<IMessageHandler<AuditEntry<string, Guid>>, AuditHandler>();
         services.AddScoped<IMessageHandler<AuditEntry<string, Guid?>>, AuditHandler>();

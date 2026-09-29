@@ -2,6 +2,7 @@
 using EF.Data.Contracts;
 using EF.Data.Encryption;
 using EF.Data.Interceptors;
+using EF.Data.Outbox;
 using EF.BackgroundServices.InternalMessageBus;
 using EF.Common.Contracts;
 using Microsoft.EntityFrameworkCore;
@@ -44,7 +45,7 @@ public static partial class RegisterServices
         services.AddTransient(sp => new AuditInterceptor<string, Guid?>(
             sp.GetRequiredService<IInternalMessageBus>(), []));
         // D-026: stages raised domain events as outbox rows in the same SaveChanges as the domain write.
-        services.AddSingleton<OutboxStagingInterceptor>();
+        services.AddSingleton<TaskFlow.Infrastructure.Data.Interceptors.OutboxStagingInterceptor>();
         // No ConnectionNoLockInterceptor registration: nothing ever added it to a context (D-004 keeps the
         // read isolation default on both providers), and EF.Data 1.1.100 marks it [Obsolete] in favor of
         // EF.Data.SqlServer (package request 3), so the dead line was the only obsolete usage in the tree.
@@ -66,7 +67,7 @@ public static partial class RegisterServices
             options.UseColumnEncryption(sp.GetRequiredService<IColumnEncryptor>());
             options.AddInterceptors(
                 sp.GetRequiredService<AuditInterceptor<string, Guid?>>(),
-                sp.GetRequiredService<OutboxStagingInterceptor>(),
+                sp.GetRequiredService<TaskFlow.Infrastructure.Data.Interceptors.OutboxStagingInterceptor>(),
                 sp.GetRequiredService<BlindIndexInterceptor>());
         });
         services.AddScoped(sp => new DbContextScopedFactory<TaskFlowDbContextTrxn, string, Guid?>(
@@ -110,7 +111,8 @@ public static partial class RegisterServices
         services.AddScoped<ICommentRepositoryQuery, CommentRepositoryQuery>();
         services.AddScoped<IChecklistItemRepositoryQuery, ChecklistItemRepositoryQuery>();
 
-        services.AddScoped<IInboxStore, InboxStore>();
+        // M12: two-state inbox; renewal takes short-lived contexts from the pooled factory registered above.
+        services.AddInbox<TaskFlowDbContextTrxn>();
         services.AddScoped<IOutboxStaging, OutboxStaging>();
         services.AddScoped<IOperationalWorkRepository, OperationalWorkRepository>();
         // Cross-tenant system access for the scheduler jobs (IgnoreQueryFilters), so background work no

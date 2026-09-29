@@ -1,6 +1,7 @@
 using EF.Messaging.RabbitMq;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using TaskFlow.Application.MessageHandlers.Consumers;
 using TaskFlow.Infrastructure.Data.Messaging;
 
 namespace TaskFlow.Infrastructure.Messaging.RabbitMq;
@@ -76,11 +77,13 @@ public static class RabbitMqRegistration
         // time, so a distributed lock around it only added a startup wait without preventing anything.
         services.AddRabbitMqTopology(TaskFlowRabbitMqTopology.Build(includeEmbedding));
 
-        services.AddRabbitMqConsumer<RabbitMqProjectionHandler>(TaskFlowRabbitMqTopology.ProjectionQueue);
-        services.AddRabbitMqConsumer<RabbitMqAiReviewHandler>(TaskFlowRabbitMqTopology.AiReviewQueue);
-        services.AddRabbitMqConsumer<RabbitMqWorkflowHandler>(TaskFlowRabbitMqTopology.WorkflowQueue);
+        // M15: the package adapter maps each delivery onto the same consumer the Service Bus triggers run (D-034):
+        // unreadable body -> dead-letter, consumed/duplicate -> ack, claim still in progress -> retry.
+        services.AddRabbitMqConsumer<RabbitMqIntegrationEventHandler<TaskProjectionConsumer>>(TaskFlowRabbitMqTopology.ProjectionQueue);
+        services.AddRabbitMqConsumer<RabbitMqIntegrationEventHandler<TaskAiReviewConsumer>>(TaskFlowRabbitMqTopology.AiReviewQueue);
+        services.AddRabbitMqConsumer<RabbitMqIntegrationEventHandler<TaskWorkflowConsumer>>(TaskFlowRabbitMqTopology.WorkflowQueue);
         if (includeEmbedding)
-            services.AddRabbitMqConsumer<RabbitMqEmbeddingHandler>(TaskFlowRabbitMqTopology.EmbeddingQueue);
+            services.AddRabbitMqConsumer<RabbitMqIntegrationEventHandler<TaskEmbeddingConsumer>>(TaskFlowRabbitMqTopology.EmbeddingQueue);
         services.AddHealthChecks().AddRabbitMqHealthCheck(tags: "ready");
 
         return services;

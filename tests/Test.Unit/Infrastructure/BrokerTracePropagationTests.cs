@@ -10,12 +10,9 @@ using TaskFlow.Application.MessageHandlers.Consumers;
 using TaskFlow.Infrastructure.Data.Interceptors;
 using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Infrastructure.Messaging.RabbitMq;
-using TaskFlow.Observability.Meters;
+using EF.Messaging.Tracing;
+using Microsoft.Extensions.Options;
 using TaskFlow.Observability.Tracing;
-using IInboxStore = TaskFlow.Application.Contracts.Messaging.IInboxStore;
-using InboxClaim = TaskFlow.Application.Contracts.Messaging.InboxClaim;
-using InboxClaimStatus = TaskFlow.Application.Contracts.Messaging.InboxClaimStatus;
-using MessagingMetrics = TaskFlow.Observability.Meters.MessagingMetrics;
 
 namespace Test.Unit.Infrastructure;
 
@@ -70,13 +67,13 @@ public sealed class BrokerTracePropagationTests
         using var listener = Listen(out var started);
 
         var messageId = Guid.NewGuid();
-        var handler = new ProbeHandler();
+        var handler = ProbeHandler();
         var result = await handler.HandleAsync(
             Delivery($"00-{TraceId}-{SpanId}-01", messageId), TestContext.CancellationToken);
 
         Assert.AreEqual(ConsumeOutcome.Ack, result.Outcome);
         var consumed = ConsumerSpanFor(started, messageId);
-        Assert.AreEqual("TaskItemCreatedEvent process", consumed.OperationName);
+        Assert.AreEqual("process taskflow.projection", consumed.OperationName);
         Assert.AreEqual(TraceId, consumed.TraceId.ToHexString());
         Assert.AreEqual($"00-{TraceId}-{SpanId}-01", consumed.ParentId);
     }
@@ -88,7 +85,7 @@ public sealed class BrokerTracePropagationTests
         using var listener = Listen(out var started);
 
         var messageId = Guid.NewGuid();
-        var handler = new ProbeHandler();
+        var handler = ProbeHandler();
         var result = await handler.HandleAsync(
             Delivery(traceparent: null, messageId), TestContext.CancellationToken);
 
@@ -137,7 +134,7 @@ public sealed class BrokerTracePropagationTests
         // 3. The consumer receives what was published.
         Assert.IsNotNull(headers);
         var traceparent = (string)headers["traceparent"]!;
-        var result = await new ProbeHandler().HandleAsync(
+        var result = await ProbeHandler().HandleAsync(
             Delivery(traceparent, messageId), TestContext.CancellationToken);
 
         Assert.AreEqual(ConsumeOutcome.Ack, result.Outcome);
@@ -160,7 +157,7 @@ public sealed class BrokerTracePropagationTests
 
         var listener = new ActivityListener
         {
-            ShouldListenTo = source => source.Name == TaskFlowActivitySources.MessagingName,
+            ShouldListenTo = source => source.Name is TaskFlowActivitySources.MessagingName or MessagingActivitySource.Name,
             Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
             ActivityStarted = captured.Add
         };
@@ -227,7 +224,7 @@ public sealed class BrokerTracePropagationTests
 
     /// <summary>Consumer that records nothing and touches no database.</summary>
     private sealed class ProbeConsumer()
-        : IntegrationEventConsumer(new ClaimOnceInbox(), new MessagingMetrics(), NullLogger.Instance)
+        : IntegrationEventConsumerBase(new ClaimOnceInbox(), new MessagingMetrics(), NullLogger.Instance)
     {
         public override string ConsumerName => "probe";
 
@@ -237,6 +234,11 @@ public sealed class BrokerTracePropagationTests
             Task.CompletedTask;
     }
 
-    private sealed class ProbeHandler()
-        : RabbitMqConsumerHandler(new ProbeConsumer(), NullLogger<ProbeHandler>.Instance);
+    /// <summary>The package delivery adapter TaskFlow registers per queue, over the probe consumer.</summary>
+    private static RabbitMqIntegrationEventHandler<ProbeConsumer> ProbeHandler()
+    {
+        var reader = new IntegrationEnvelopeReaderOptions();
+        TaskFlowIntegrationEvents.ConfigureReader(reader);
+        return new(new ProbeConsumer(), Options.Create(reader), NullLogger<RabbitMqIntegrationEventHandler<ProbeConsumer>>.Instance);
+    }
 }

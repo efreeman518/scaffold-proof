@@ -1,4 +1,5 @@
 using EF.Common.Contracts;
+using EF.Messaging;
 using EF.Testing.Architecture;
 using System.Text;
 using TaskFlow.Application.Contracts.Messaging;
@@ -125,10 +126,17 @@ public class JsonContextCompletenessTests
             "The payload record must stay PascalCase too - it is serialized through the messaging context.");
 
         Assert.IsTrue(
-            IntegrationEnvelopeReader.TryRead(Encoding.UTF8.GetBytes(row.Payload), out var read, out var failure),
+            IntegrationEnvelopeReader.TryRead(Encoding.UTF8.GetBytes(row.Payload), ReaderOptions(), out var read, out var failure),
             $"The staged payload must parse back through the shared reader; got {failure}.");
         Assert.AreEqual(envelope.Id, read!.Id);
         Assert.AreEqual(nameof(TaskItemCreatedEvent), read.Type);
+    }
+
+    private static IntegrationEnvelopeReaderOptions ReaderOptions()
+    {
+        var options = new IntegrationEnvelopeReaderOptions();
+        TaskFlowIntegrationEvents.ConfigureReader(options);
+        return options;
     }
 
     // Open generic payloads such as DefaultResponse`1 are excluded; the closed-generic test covers their closures.

@@ -39,6 +39,18 @@ public static class TaskFlowIntegrationEvents
     /// <summary>True when the event type is one this deployment knows how to consume.</summary>
     public static bool IsKnownType(string eventType) => Versions.ContainsKey(eventType);
 
+    /// <summary>
+    /// The one reader configuration every transport uses (D-034, D-048): envelopes deserialize through the
+    /// generated messaging context, and a type this build has no consumer for is dead-lettered as unsupported.
+    /// </summary>
+    /// <param name="options">Options bound for <see cref="IntegrationEnvelopeReader"/>.</param>
+    public static void ConfigureReader(IntegrationEnvelopeReaderOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        options.SerializerOptions = TaskFlowMessagingJsonContext.Default.Options;
+        options.IsKnownType = IsKnownType;
+    }
+
     /// <summary>Wraps a raised domain event. <paramref name="id"/> allows a deterministic (replayable) message id.</summary>
     /// <param name="domainEvent">The raised event; its runtime type supplies the envelope type and payload.</param>
     /// <param name="occurredAtUtc">When the domain change happened, not when it was dispatched.</param>

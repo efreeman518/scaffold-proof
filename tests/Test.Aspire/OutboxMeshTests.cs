@@ -1,5 +1,6 @@
 using Aspire.Hosting.Testing;
 using EF.Common.Contracts;
+using EF.Messaging;
 using EF.IntegrationTesting.Aspire;
 using Azure.Messaging.ServiceBus;
 using Microsoft.EntityFrameworkCore;
