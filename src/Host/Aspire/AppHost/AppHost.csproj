@@ -30,6 +30,15 @@
     <InternalsVisibleTo Include="Test.Aspire" />
   </ItemGroup>
 
+  <!-- SkipUnoWasmBuild (passed by a direct test-project build) concerns only the Uno WASM host. Removing it from every
+       other reference, including the transitive references the SDK adds, keeps one configuration per project, shared
+       with the test project's own references, instead of building each a second time into the same obj folders. -->
+  <ItemDefinitionGroup>
+    <ProjectReference>
+      <GlobalPropertiesToRemove>SkipUnoWasmBuild</GlobalPropertiesToRemove>
+    </ProjectReference>
+  </ItemDefinitionGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\..\Shared\TaskFlow.Hosting\TaskFlow.Hosting.csproj" IsAspireProjectResource="false" />
     <ProjectReference Include="..\..\TaskFlow.Api\TaskFlow.Api.csproj" />
@@ -38,7 +47,7 @@
     <ProjectReference Include="..\..\TaskFlow.Gateway\TaskFlow.Gateway.csproj" />
     <ProjectReference Include="..\..\TaskFlow.Functions\TaskFlow.Functions.csproj" />
     <ProjectReference Include="..\..\..\UI\TaskFlow.Blazor\TaskFlow.Blazor.csproj" />
-    <ProjectReference Include="..\..\TaskFlow.Uno.WasmHost\TaskFlow.Uno.WasmHost.csproj" />
+    <ProjectReference Include="..\..\TaskFlow.Uno.WasmHost\TaskFlow.Uno.WasmHost.csproj" GlobalPropertiesToRemove="" />
   </ItemGroup>
 
 </Project>
