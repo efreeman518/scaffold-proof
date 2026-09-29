@@ -78,8 +78,8 @@ public class JsonContextCompletenessTests
     [TestMethod]
     public void Given_DomainEventRecords_When_ResolvedThroughMessagingContext_Then_MatchesKnownEventTypes()
     {
-        var eventTypes = typeof(IDomainEvent).Assembly.GetExportedTypes()
-            .Where(t => t is { IsAbstract: false, IsInterface: false } && typeof(IDomainEvent).IsAssignableFrom(t))
+        var eventTypes = typeof(ITenantDomainEvent).Assembly.GetExportedTypes()
+            .Where(t => t is { IsAbstract: false, IsInterface: false } && typeof(ITenantDomainEvent).IsAssignableFrom(t))
             .ToList();
 
         Assert.IsTrue(eventTypes.Count > 0, "No domain event records found; the scan must be wrong.");

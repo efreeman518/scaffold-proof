@@ -1,3 +1,4 @@
+using EF.Domain.Contracts;
 using EF.Messaging;
 using EF.Messaging.Tracing;
 using Microsoft.EntityFrameworkCore;
@@ -58,8 +59,9 @@ public sealed class OutboxStagingInterceptor(TimeProvider? timeProvider = null, 
         {
             foreach (var domainEvent in raiser.DomainEvents)
             {
-                var envelope = TaskFlowIntegrationEvents.Envelope(domainEvent, now, correlationId);
-                context.Add(ToRow(envelope, domainEvent.TenantId, now));
+                var tenantEvent = (ITenantDomainEvent)domainEvent;
+                var envelope = TaskFlowIntegrationEvents.Envelope(tenantEvent, now, correlationId);
+                context.Add(ToRow(envelope, tenantEvent.TenantId, now));
                 staged++;
             }
 

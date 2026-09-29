@@ -6,9 +6,6 @@ using TaskFlow.Domain.Shared.Constants;
 using TaskFlow.Domain.Shared.Enums;
 using TaskFlow.Domain.Shared.Events;
 using DomainCategoryId = TaskFlow.Domain.Shared.CategoryId;
-// The app-local domain-event contracts carry TenantId; EF.Domain.Contracts' same-named ones do not.
-using IDomainEvent = TaskFlow.Domain.Shared.IDomainEvent;
-using IHasDomainEvents = TaskFlow.Domain.Shared.IHasDomainEvents;
 using DomainTaskItemId = TaskFlow.Domain.Shared.TaskItemId;
 using DomainTenantId = TaskFlow.Domain.Shared.TenantId;
 

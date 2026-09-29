@@ -217,11 +217,11 @@ public abstract class IntegrationEventConsumer
 
     /// <summary>
     /// Owning tenant of the message. The package envelope frame carries no tenant, so it is read from the
-    /// payload, which every <see cref="IDomainEvent"/> carries and which is the value the producer denormalized
+    /// payload, which every <see cref="ITenantDomainEvent"/> carries and which is the value the producer denormalized
     /// onto the outbox row and the broker message property.
     /// </summary>
     protected static Guid PayloadTenant(IntegrationEventEnvelope envelope) =>
-        PayloadGuid(envelope, nameof(IDomainEvent.TenantId));
+        PayloadGuid(envelope, nameof(ITenantDomainEvent.TenantId));
 }
 
 /// <summary>

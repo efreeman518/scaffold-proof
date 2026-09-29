@@ -7,4 +7,4 @@ public record TaskItemStatusChangedEvent(
     Guid TaskItemId,
     Guid TenantId,
     TaskItemStatus OldStatus,
-    TaskItemStatus NewStatus) : IDomainEvent;
+    TaskItemStatus NewStatus) : ITenantDomainEvent;

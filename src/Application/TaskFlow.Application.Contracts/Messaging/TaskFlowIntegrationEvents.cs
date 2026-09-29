@@ -10,7 +10,7 @@ namespace TaskFlow.Application.Contracts.Messaging;
 /// without deserializing the payload.
 /// <para>
 /// The envelope carries no tenant. TaskFlow's tenant travels in the payload (every
-/// <see cref="IDomainEvent"/> has one) and is denormalized onto the outbox row and the broker message
+/// <see cref="ITenantDomainEvent"/> has one) and is denormalized onto the outbox row and the broker message
 /// properties by the writer, which is where a subscription rule and a partition key actually read it.
 /// </para>
 /// </summary>
@@ -48,7 +48,7 @@ public static class TaskFlowIntegrationEvents
     /// The event record is not registered on <see cref="TaskFlowMessagingJsonContext"/>.
     /// </exception>
     public static IntegrationEventEnvelope Envelope(
-        IDomainEvent domainEvent, DateTimeOffset occurredAtUtc, string? correlationId, Guid? id = null)
+        ITenantDomainEvent domainEvent, DateTimeOffset occurredAtUtc, string? correlationId, Guid? id = null)
     {
         ArgumentNullException.ThrowIfNull(domainEvent);
         var eventType = domainEvent.GetType();

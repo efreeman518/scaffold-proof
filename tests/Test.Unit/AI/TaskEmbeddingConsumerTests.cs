@@ -91,7 +91,7 @@ public sealed class TaskEmbeddingConsumerTests
         new(new FakeInboxStore(), repo, generator, new MessagingMetrics(),
             NullLogger<TaskEmbeddingConsumer>.Instance);
 
-    private static IntegrationEventEnvelope Envelope(TaskFlow.Domain.Shared.IDomainEvent domainEvent) =>
+    private static IntegrationEventEnvelope Envelope(TaskFlow.Domain.Shared.ITenantDomainEvent domainEvent) =>
         TaskFlowIntegrationEvents.Envelope(domainEvent, DateTimeOffset.UtcNow, correlationId: null);
 
     private sealed class FakeInboxStore : IInboxStore
