@@ -3,6 +3,7 @@ using System.Text.Json;
 using EF.AspNetCore.ExceptionHandling;
 using EF.Common.Contracts;
 using EF.Common.Exceptions;
+using EF.Data.Contracts;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -10,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using TaskFlow.Api;
+using TaskFlow.Application.Contracts;
 using TaskFlow.Infrastructure.Data.Provider;
 
 namespace Test.Endpoints;
@@ -100,13 +102,17 @@ public sealed class GlobalExceptionHandlerTests
             "A 5xx must not carry exception text outside Development.");
     }
 
-    /// <summary>An ArgumentException the app throws for caller input is a 400 with its message.</summary>
+    /// <summary>
+    /// The app's validation path for caller input - InvalidRequestException, as the task-item search throws for an
+    /// out-of-range page size (end to end in CursorPagingEndpointTests) - is a 400 carrying the app's message.
+    /// </summary>
     [TestMethod]
-    public async Task TryHandleAsync_AppThrownArgumentException_Returns400()
+    public async Task TryHandleAsync_AppValidationOfCallerInput_Returns400WithMessage()
     {
         using var provider = BuildProvider();
         var context = NewContext(provider);
-        var exception = Capture(() => TaskFlowDbProviderSelector.MigrationsAssembly((TaskFlowDbProvider)99));
+        var exception = new InvalidRequestException(
+            string.Format(System.Globalization.CultureInfo.InvariantCulture, ErrorConstants.ERROR_PAGE_SIZE_RANGE, 1, 100));
 
         await Handler(provider).TryHandleAsync(context, exception, CancellationToken.None);
 
@@ -117,9 +123,8 @@ public sealed class GlobalExceptionHandlerTests
 
     /// <summary>
     /// The TaskFlow mappings on the shared classifier: a stale If-Match and a lost update are 412, a conflicting
-    /// idempotent create is 409, and a missing key is 404 (EF.AspNetCore 2.0 default; was 500). Any
-    /// ArgumentException is 400 - the classifier cannot tell an app-thrown one from a framework one, so a BCL
-    /// ArgumentException is now 400 too (was 500).
+    /// idempotent create is 409, a rejected cursor is 400, and a missing key is 404 (EF.AspNetCore 2.0 default;
+    /// was 500).
     /// </summary>
     [TestMethod]
     public async Task TryHandleAsync_MappedExceptions_ReturnTheirStatus()
@@ -129,8 +134,8 @@ public sealed class GlobalExceptionHandlerTests
             (new PreconditionFailedException("TaskItem", Guid.CreateVersion7().ToString(), 1, 2), StatusCodes.Status412PreconditionFailed),
             (new DbUpdateConcurrencyException(), StatusCodes.Status412PreconditionFailed),
             (new ConflictException("TaskItem", Guid.CreateVersion7().ToString()), StatusCodes.Status409Conflict),
-            (Capture(() => _ = new Dictionary<int, int>()[1]), StatusCodes.Status404NotFound),
-            (Capture(() => new Dictionary<int, int> { [1] = 1 }.Add(1, 1)), StatusCodes.Status400BadRequest)
+            (new InvalidCursorException("tampered"), StatusCodes.Status400BadRequest),
+            (Capture(() => _ = new Dictionary<int, int>()[1]), StatusCodes.Status404NotFound)
         ];
 
         using var provider = BuildProvider();
@@ -142,12 +147,19 @@ public sealed class GlobalExceptionHandlerTests
         }
     }
 
-    /// <summary>FormatException and InvalidOperationException are server bugs, not caller mistakes: they stay 500.</summary>
+    /// <summary>
+    /// A framework ArgumentException (a BCL guard, or an internal one such as an unknown database provider),
+    /// FormatException and InvalidOperationException are server bugs, not caller mistakes: they stay 500, with no
+    /// exception text on the wire.
+    /// </summary>
     [TestMethod]
     public async Task TryHandleAsync_FrameworkFaults_Return500()
     {
         Exception[] faults =
         [
+            Capture(() => new Dictionary<int, int> { [1] = 1 }.Add(1, 1)),
+            Capture(() => ArgumentOutOfRangeException.ThrowIfLessThan(0, 1)),
+            Capture(() => TaskFlowDbProviderSelector.MigrationsAssembly((TaskFlowDbProvider)99)),
             Capture(() => int.Parse("x", System.Globalization.CultureInfo.InvariantCulture)),
             Capture(() => Array.Empty<int>().First())
         ];

@@ -2,6 +2,7 @@ using EF.AspNetCore.Concurrency;
 using EF.AspNetCore.Cors;
 using EF.AspNetCore.ExceptionHandling;
 using EF.Common.Exceptions;
+using EF.Data.Contracts;
 using EF.AspNetCore.Versioning;
 using EF.Grpc;
 using Microsoft.AspNetCore.Authentication;
@@ -12,6 +13,7 @@ using System.Threading.RateLimiting;
 using TaskFlow.Api.Auth;
 using TaskFlow.Api.Serialization;
 using TaskFlow.Api.Endpoints;
+using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Models.Serialization;
 using TaskFlow.Infrastructure.Caching;
@@ -114,14 +116,18 @@ public static class RegisterApiServices
     /// UnauthorizedAccess, Timeout and cancellation):
     /// <list type="bullet">
     /// <item>A policy-free save's DbUpdateConcurrencyException is a lost update: 412 / FailedPrecondition.</item>
-    /// <item>TaskFlow throws ArgumentException for caller input it rejects (page size, cursor and continuation
-    /// tokens, non-v7 ids): 400 / InvalidArgument. FormatException and InvalidOperationException stay server
-    /// faults (500 / Internal).</item>
+    /// <item>Caller input TaskFlow rejects: <see cref="InvalidRequestException"/> (page size out of range) and the
+    /// cursor codec's <see cref="InvalidCursorException"/> (tampered, foreign-tenant, other-sort-mode or stale-schema
+    /// cursor and continuation tokens): 400 / InvalidArgument. EF.Common's ValidationException is already
+    /// Validation, and BadHttpRequestException keeps its own status.</item>
     /// </list>
+    /// Framework ArgumentException, FormatException and InvalidOperationException stay unmapped (500 / Internal):
+    /// thrown outside TaskFlow's input checks they are server bugs, and a 4xx would hide them and echo their text.
     /// </summary>
     internal static void MapExceptions(ExceptionClassifierOptions options) => options
         .Map<DbUpdateConcurrencyException>(ExceptionCategory.PreconditionFailed)
-        .Map<ArgumentException>(ExceptionCategory.Validation);
+        .Map<InvalidRequestException>(ExceptionCategory.Validation)
+        .Map<InvalidCursorException>(ExceptionCategory.Validation);
 
     /// <summary>Registers rate limiting dependencies in the service container.</summary>
     private static void AddRateLimiting(IServiceCollection services, IConfiguration config)

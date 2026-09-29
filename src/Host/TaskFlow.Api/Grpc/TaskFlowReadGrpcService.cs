@@ -28,7 +28,7 @@ namespace TaskFlow.Api.Grpc;
 /// <item><term>UnauthorizedAccessException</term><description>403 -> PermissionDenied</description></item>
 /// <item><term>KeyNotFoundException</term><description>404 -> NotFound</description></item>
 /// <item><term>OperationCanceledException</term><description>499 -> Cancelled (DeadlineExceeded when the caller did not cancel)</description></item>
-/// <item><term>ArgumentException</term><description>400 -> InvalidArgument</description></item>
+/// <item><term>InvalidRequestException / InvalidCursorException (caller input)</term><description>400 -> InvalidArgument</description></item>
 /// <item><term>anything else</term><description>500 -> Internal</description></item>
 /// </list>
 /// A missing task is not an exception on either transport: REST answers 404 from the Result's None
