@@ -112,7 +112,9 @@ public sealed class ForwardedClaimsRelayTests
                 ])));
         using var client = factory.CreateClient();
 
-        using var response = await client.GetAsync("/api/v1/task-items", TestContext.CancellationToken);
+        // A real route, not the fallback policy: with RequireHeaderFromTrustedCaller=false the same request runs as the
+        // gateway service principal and is not forbidden (checked while writing this test).
+        using var response = await client.GetAsync($"/api/v1/task-items/{Guid.CreateVersion7()}", TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.Forbidden, response.StatusCode);
     }
