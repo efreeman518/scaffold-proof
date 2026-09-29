@@ -27,6 +27,11 @@ session resumes from this file alone.
 5. Models: opus for every proof slice (build, dependency, cross-file). The scaffold-ai slice is opus too (template
    and instruction correctness across many files).
 
+## Authorization
+
+Owner (2026-09-29): merge every PR in this effort to main once its tests pass: the EF.Packages 2.0.x publish,
+the scaffold-ai PR, and the final integration/ef2-adoption -> main PR (gated on its CI).
+
 ## Next action
 
 All adoption slices merged (#29-#34). a6 (proof docs and full matrix) and sa (scaffold-ai, which reads the proof via git
