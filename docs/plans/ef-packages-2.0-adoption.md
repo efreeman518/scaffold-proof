@@ -32,7 +32,7 @@ session resumes from this file alone.
 a0 (bump and compile) runs first. When it merges: a1, a2, a3 and a5 run in parallel; a4 runs after a3; a6 (docs and
 the full matrix) runs after all of them; then sa (scaffold-ai).
 
-## Active agents: 4
+## Active agents: 3
 
 ## FIFO queue
 
@@ -47,7 +47,7 @@ a4 (after a3), a6, sa
 | a2 | Messaging, outbox, inbox: M items' proof adoption | a0 | opus | running | `refactor/adopt2-f8ca68-a2` | `.tmp/worktrees/adopt2-f8ca68-a2` | a5a367d1 | 6d3bbc4f | `.tmp/orchestrated-refactor/adopt2-f8ca68/a2` |
 | a3 | Hosting, web, UI client: H and U items' proof adoption | a0 | opus | running | `refactor/adopt2-f8ca68-a3` | `.tmp/worktrees/adopt2-f8ca68-a3` | a5993a86 | 5822fc34 | `.tmp/orchestrated-refactor/adopt2-f8ca68/a3` |
 | a4 | Auth, gateway, rate limiting, cache, scheduler, storage, gRPC, AI: S items' proof adoption | a0, a3 | opus | queued | | | | | |
-| a5 | Testing: T items' proof adoption (LoadRunner, fixtures, architecture rules, AI fakes) | a0 | opus | running | `refactor/adopt2-f8ca68-a5` | `.tmp/worktrees/adopt2-f8ca68-a5` | ac9178d3 | 21098610 | `.tmp/orchestrated-refactor/adopt2-f8ca68/a5` |
+| a5 | Testing: T items' proof adoption (LoadRunner, fixtures, architecture rules, AI fakes) | a0 | opus | merged | #30 (43a39d7) | removed | ac9178d3 | released | removed |
 | a6 | Proof docs (DESIGN-DECISIONS, REFERENCE-STATUS, README, tech design where affected) and the full test matrix including Docker integration and the Aspire lanes | a1-a5 | opus | queued | | | | | |
 | sa | scaffold-ai: support/ef-packages-reference.md, skills/package-dependencies.md, templates from "generate" to "reference EF.X", maintenance canaries | a6 | opus | queued | | | | | |
 
@@ -61,6 +61,9 @@ a4 (after a3), a6, sa
   tenant-less, non-admin caller now reads nothing. ProblemDetails now use the 2.0 defaults (a3 reviews the wire
   contract). Baseline after a0: Unit 689, Architecture 80, Endpoints 189, Integration NonAzure 81 passed / 6 skipped,
   Azure 68 passed / 19 skipped.
+
+- a5 (#30): all 19 T items adopted. New architecture rule: one public type per file over src/, with 51 existing
+  offenders ratcheted. For a6: D-062 still names tests/Test.Support/LoadRunner.cs; readiness now requires a 2xx.
 
 ## Kept on disk
 
