@@ -1,8 +1,8 @@
 namespace TaskFlow.Application.Contracts;
 
 /// <summary>
-/// The caller sent input TaskFlow rejects (page size out of range, a tampered, stale or foreign cursor or
-/// continuation token). The Api maps it to 400 and gRPC to InvalidArgument, with the message as the detail.
+/// The caller sent input TaskFlow's own checks reject (a page size out of range; a bad cursor is the codec's
+/// InvalidCursorException). The Api maps it to 400 and gRPC to InvalidArgument, with the message as the detail.
 /// Deliberately not an <see cref="ArgumentException"/>: those stay unmapped (500), because a framework or
 /// library ArgumentException is a server bug, not the caller's mistake.
 /// </summary>
