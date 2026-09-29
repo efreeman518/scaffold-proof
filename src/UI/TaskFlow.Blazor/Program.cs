@@ -1,4 +1,6 @@
+using EF.AspNetCore.Proxy;
 using EF.FlowEngine.Dashboard;
+using EF.Http.Resilience;
 using MudBlazor;
 using MudBlazor.Services;
 using Refit;
@@ -16,12 +18,10 @@ var builder = WebApplication.CreateBuilder(args);
 // Shared Aspire service defaults: OpenTelemetry (incl. Azure Monitor when configured), health
 // checks, service discovery, and HTTP resilience. Keeps this server-hosted UI participating in
 // the same telemetry pipeline as the backend hosts while still running with no Azure config.
-// No header propagation: its handler only works behind UseHeaderPropagation() middleware, which this Blazor
-// Server app does not run, and outbound API calls happen inside the interactive SignalR circuit, outside any
-// HTTP request - the handler would throw on every call and the standard resilience handler would retry that
-// failure until its total timeout. Every other default (service discovery, the D-063 standard resilience
-// handler that retries only safe methods) is kept on every client below.
-builder.AddServiceDefaults(addHeaderPropagation: false);
+// Outbound API calls run inside the interactive SignalR circuit, outside any HTTP request; the correlation
+// handler sends no header there and never throws. Every default (service discovery, the D-063 standard
+// resilience handler that retries only safe methods) is kept on every client below.
+builder.AddServiceDefaults();
 builder.AddProxyForwarding();
 
 // Blazor Server host for CRUD pages and FlowEngine dashboard pages. API calls go through

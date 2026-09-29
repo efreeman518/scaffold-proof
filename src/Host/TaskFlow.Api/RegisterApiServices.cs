@@ -137,12 +137,12 @@ public static class RegisterApiServices
         {
             // Tenant budgets live in Redis so they are one allowance across replicas rather than one per
             // replica; the health partitions stay in process because they exist to protect this instance's
-            // probes and must keep working when Redis does not.
+            // probes and must keep working when Redis does not. The /healthz probes carry DisableRateLimiting
+            // (MapEfHealthEndpoints), which skips this global limiter too.
             options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
             {
                 if (context.Request.Path.StartsWithSegments("/health")
-                    || context.Request.Path.StartsWithSegments("/alive")
-                    || context.Request.Path.StartsWithSegments("/healthz"))
+                    || context.Request.Path.StartsWithSegments("/alive"))
                     return RateLimitPartition.GetNoLimiter("health");
 
                 // The export route counts only against its own Export budget (endpoint policy below); counting

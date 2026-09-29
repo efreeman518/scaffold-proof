@@ -1,4 +1,5 @@
 ﻿using EF.AspNetCore.Correlation;
+using EF.AspNetCore.Proxy;
 using EF.AspNetCore.Security;
 using EF.AspNetCore.Versioning;
 using EF.FlowEngine.AdminApi;

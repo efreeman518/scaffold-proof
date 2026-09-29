@@ -31,23 +31,8 @@ public sealed class OpenTelemetryMetricsRegistrationTests
             .Any(loggerProvider => loggerProvider is OpenTelemetryLoggerProvider));
     }
 
-    [TestMethod]
-    public void ServiceDefaults_MetricsDisabled_KeepsSignalSpecificExporters()
-    {
-        // OpenTelemetry exposes provider presence through DI, but not the configured processor/exporter
-        // pipeline. Keep this source contract beside the provider behavior test so removing any exporter
-        // cannot silently preserve a passing test while dropping deployed logs or traces.
-        var source = File.ReadAllText(RepoRoot.Combine(
-            "src", "Host", "Aspire", "ServiceDefaults", "Extensions.cs"));
-
-        StringAssert.Contains(source, "logging.AddOtlpExporter();");
-        StringAssert.Contains(source, "tracing.AddOtlpExporter();");
-        StringAssert.Contains(source, "logging.AddAzureMonitorLogExporter(options =>");
-        StringAssert.Contains(source, "tracing.AddAzureMonitorTraceExporter(options =>");
-    }
-
     /// <summary>
-    /// Functions sets TASKFLOW_SUPPRESS_ASPNETCORE_INSTRUMENTATION because its host already reports each
+    /// Functions sets OpenTelemetry__SuppressAspNetCoreInstrumentation because its host already reports each
     /// invocation. The Azure Monitor distro always adds ASP.NET Core instrumentation, so it must not run
     /// there; all three signals still export through the per-signal exporters.
     /// </summary>
@@ -55,7 +40,7 @@ public sealed class OpenTelemetryMetricsRegistrationTests
     public void ServiceDefaults_SuppressedAspNetCoreInstrumentation_SkipsTheDistroAndKeepsEverySignal()
     {
         var suppressed = CreateBuilder(metricsEnabled: true);
-        suppressed.Configuration["TASKFLOW_SUPPRESS_ASPNETCORE_INSTRUMENTATION"] = "true";
+        suppressed.Configuration["OpenTelemetry:SuppressAspNetCoreInstrumentation"] = "true";
         suppressed.ConfigureOpenTelemetry();
         var distro = CreateBuilder(metricsEnabled: true);
         distro.ConfigureOpenTelemetry();
@@ -68,8 +53,6 @@ public sealed class OpenTelemetryMetricsRegistrationTests
         Assert.IsNotNull(provider.GetService<TracerProvider>());
         Assert.IsTrue(provider.GetServices<ILoggerProvider>()
             .Any(loggerProvider => loggerProvider is OpenTelemetryLoggerProvider));
-        StringAssert.Contains(File.ReadAllText(RepoRoot.Combine(
-            "src", "Host", "Aspire", "ServiceDefaults", "Extensions.cs")), "metrics.AddAzureMonitorMetricExporter(options =>");
     }
 
     /// <summary>

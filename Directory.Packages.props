@@ -47,6 +47,12 @@
     <!-- Generic containers host SeaweedFS and MongoDB without provider-specific fixture packages. -->
     <PackageVersion Include="Testcontainers" Version="4.15.0" />
   </ItemGroup>
+  <ItemGroup Label="EF.Packages hosting, web and UI client">
+    <PackageVersion Include="EF.AspNetCore.DataProtection" Version="2.0.111" />
+    <PackageVersion Include="EF.Http.Resilience" Version="2.0.111" />
+    <PackageVersion Include="EF.OpenTelemetry" Version="2.0.111" />
+    <PackageVersion Include="EF.UI.Client" Version="2.0.111" />
+  </ItemGroup>
   <ItemGroup Label="EF.Packages.Enterprise (Private Feed)">
     <PackageVersion Include="EF.FilterBuilder" Version="1.0.197" />
     <PackageVersion Include="EF.FlowEngine" Version="1.0.197" />
@@ -149,12 +155,7 @@
     <PackageVersion Include="TickerQ.Dashboard" Version="10.4.0" />
   </ItemGroup>
   <ItemGroup Label="OpenTelemetry">
-    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.18.0" />
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.18.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.18.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.18.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.18.0" />
-    <PackageVersion Include="Azure.Monitor.OpenTelemetry.AspNetCore" Version="1.6.0" />
   </ItemGroup>
   <ItemGroup Label="Caching">
     <!-- Distributed sliding-window limiter over StackExchange.Redis; implements System.Threading.RateLimiting

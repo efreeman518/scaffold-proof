@@ -31,9 +31,9 @@ builder.ConfigureFunctionsWebApplication();
 // request context against their HttpContext (scaffold identity), everything else gets the system identity.
 builder.UseMiddleware<HttpContextAccessorMiddleware>();
 
-// Service Bus triggers execute outside an HTTP request. HeaderPropagationMessageHandler throws in that
-// context and prevents explicit complete/dead-letter settlement through the worker's internal gRPC client.
-builder.AddServiceDefaults(addHeaderPropagation: false);
+// Service Bus triggers execute outside an HTTP request; the correlation handler sends no header there and
+// never throws, so explicit complete/dead-letter settlement through the worker's internal gRPC client is unaffected.
+builder.AddServiceDefaults();
 
 var startupLogger = LoggerFactory
     .Create(logging => logging.AddConsole())

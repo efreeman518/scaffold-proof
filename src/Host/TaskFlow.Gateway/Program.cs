@@ -1,4 +1,5 @@
 using EF.AspNetCore.Correlation;
+using EF.AspNetCore.Proxy;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Gateway;

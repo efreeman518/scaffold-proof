@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "13208387980924068548"
+      "templateHash": "10168832310129617112"
     }
   },
   "parameters": {
@@ -3749,7 +3749,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "7892619355790509469"
+              "templateHash": "6938222912404743864"
             }
           },
           "parameters": {
@@ -4003,7 +4003,7 @@
                       "value": "[parameters('appInsightsConnectionString')]"
                     },
                     {
-                      "name": "TASKFLOW_SUPPRESS_ASPNETCORE_INSTRUMENTATION",
+                      "name": "OpenTelemetry__SuppressAspNetCoreInstrumentation",
                       "value": "true"
                     }
                   ],

@@ -300,27 +300,20 @@ public class HostRuntimeSettingsTests
         }
     }
 
-    [TestMethod]
-    public void Given_FunctionsBackgroundTriggers_When_ServiceDefaultsAdded_Then_HeaderPropagationIsDisabled()
-    {
-        var program = ReadRepoFile("src/Host/TaskFlow.Functions/Program.cs");
-
-        StringAssert.Contains(program, "AddServiceDefaults(addHeaderPropagation: false)",
-            "Functions background triggers have no HTTP request context, so the inherited header propagation "
-            + "handler would break worker gRPC calls used to complete or dead-letter Service Bus messages.");
-    }
-
     /// <summary>
-    /// Blazor's API calls run inside the SignalR circuit, outside any HTTP request, so header propagation must
-    /// be off at the source - not stripped per client with handlers.Clear(), which also removed service
-    /// discovery and the D-063 safe-methods-only resilience handler.
+    /// Functions background triggers and Blazor's SignalR circuit call out with no HTTP request. The EF.AspNetCore
+    /// correlation handler sends no header there and never throws, so both hosts take the full defaults - no opt-out,
+    /// and no per-client handlers.Clear(), which also removed service discovery and the D-063 safe-methods-only
+    /// resilience handler.
     /// </summary>
     [TestMethod]
-    public void Given_BlazorCircuitClients_When_ServiceDefaultsAdded_Then_HeaderPropagationIsOffWithoutClearingHandlers()
+    [DataRow("src/Host/TaskFlow.Functions/Program.cs")]
+    [DataRow("src/UI/TaskFlow.Blazor/Program.cs")]
+    public void Given_HostsCallingOutsideARequest_When_ServiceDefaultsAdded_Then_FullDefaultsWithoutClearingHandlers(string path)
     {
-        var program = ReadRepoFile("src/UI/TaskFlow.Blazor/Program.cs");
+        var program = ReadRepoFile(path);
 
-        StringAssert.Contains(program, "AddServiceDefaults(addHeaderPropagation: false)");
+        StringAssert.Contains(program, "AddServiceDefaults();");
         Assert.IsFalse(program.Contains("handlers.Clear()", StringComparison.Ordinal),
             "clearing the inherited handlers drops service discovery and the standard resilience handler");
     }

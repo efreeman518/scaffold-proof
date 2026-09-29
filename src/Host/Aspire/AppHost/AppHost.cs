@@ -447,7 +447,7 @@ if (!nonAzureLane && (!isTesting || functionsAvailableInTesting || fullLaneAvail
         .WithHostStorage(storage!)
         // The Functions host process emits request telemetry itself; suppress the worker's ASP.NET Core
         // instrumentation so requests are not double-reported when the Azure Monitor distro is active.
-        .WithEnvironment("TASKFLOW_SUPPRESS_ASPNETCORE_INSTRUMENTATION", "true")
+        .WithEnvironment("OpenTelemetry__SuppressAspNetCoreInstrumentation", "true")
         .WithReference(taskflowDb, connectionName: "TaskFlowDbContextTrxn")
         .WithReference(taskflowDb, connectionName: "TaskFlowDbContextQuery")
         .WithReference(taskflowDb, connectionName: "TaskFlowFlowEngineDbContext")
