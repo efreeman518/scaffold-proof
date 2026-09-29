@@ -96,6 +96,44 @@ public sealed class OpenTelemetryMetricsRegistrationTests
             "no TracerProvider listens to the EF.Data.Outbox drain spans");
     }
 
+    /// <summary>
+    /// S10: the EF.RateLimiting meter (<c>ratelimit.rejected</c>, <c>ratelimit.backend_failure</c>) is exported. Probed
+    /// with the package default, so a rename there fails here instead of dropping the fail-open alert signal.
+    /// </summary>
+    [TestMethod]
+    public void ServiceDefaults_ExportsThePackageRateLimitingMeter()
+    {
+        var builder = CreateBuilder(metricsEnabled: true);
+        builder.ConfigureOpenTelemetry();
+        using var provider = builder.Services.BuildServiceProvider();
+        _ = provider.GetRequiredService<MeterProvider>();
+
+        using var meter = new System.Diagnostics.Metrics.Meter(new EF.RateLimiting.RateLimitingTelemetryOptions().MeterName);
+
+        Assert.IsTrue(meter.CreateCounter<long>("taskflow.test.ratelimit.probe").Enabled,
+            "no MeterProvider listens to the EF.RateLimiting meter");
+    }
+
+    /// <summary>
+    /// S8: the cache registration adds the EF.Cache and FusionCache meters, named by the package, to the host's
+    /// exporting MeterProvider.
+    /// </summary>
+    [TestMethod]
+    public void Caching_ExportsThePackageCacheMeters()
+    {
+        var builder = CreateBuilder(metricsEnabled: true);
+        builder.ConfigureOpenTelemetry();
+        builder.Services.AddTaskFlowCaching(builder.Configuration);
+        using var provider = builder.Services.BuildServiceProvider();
+        _ = provider.GetRequiredService<MeterProvider>();
+
+        foreach (var name in EF.Cache.CacheTelemetry.MeterNames())
+        {
+            using var meter = new System.Diagnostics.Metrics.Meter(name);
+            Assert.IsTrue(meter.CreateCounter<long>("taskflow.test.cache.probe").Enabled, $"no MeterProvider listens to {name}");
+        }
+    }
+
     private static bool RegistersAzureMonitorDistro(IServiceCollection services) =>
         services.Any(descriptor => descriptor.ServiceType == typeof(IConfigureOptions<AzureMonitorOptions>));
 

@@ -1,6 +1,7 @@
 using EF.Audit.AzureTable;
 using EF.AspNetCore.HealthChecks;
 using EF.Audit.Contracts;
+using EF.Cache;
 using EF.Host;
 using EF.Messaging.ServiceBus;
 using EF.Storage.Contracts;
@@ -10,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Storage;
+using TaskFlow.Infrastructure.Caching;
 using TaskFlow.Infrastructure.Repositories.MongoDb;
 using TaskFlow.Infrastructure.Storage;
 using TaskFlow.Infrastructure.Storage.CosmosDb;
@@ -235,7 +237,9 @@ public static partial class RegisterServices
         if (ResolveReadModelProvider(config) == ReadModelProvider.MongoDb)
             builder.AddCheck<HealthChecks.MongoDbHealthCheck>("mongodb", tags: ["full", "extservice"]);
 
-        if (!string.IsNullOrWhiteSpace(config.GetConnectionString("Redis1")))
-            builder.AddCheck<HealthChecks.RedisCacheHealthCheck>("redis-cache", tags: ["full", "extservice"]);
+        // S9: a ping over the shared multiplexer, Degraded on failure - the cache falls back to L1 and the rate
+        // limiter fails open, so a dead Redis is a problem to page on, not a reason to leave rotation.
+        if (services.HasSharedRedis())
+            builder.AddRedisHealthCheck("redis-cache", tags: ["full", "extservice"]);
     }
 }

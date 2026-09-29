@@ -61,12 +61,12 @@ public sealed class TenantRateLimitEndpointTests
     private static WebApplicationFactory<Program> CreateFactory(int tenantPermitLimit) =>
         new CustomApiFactory().WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("RateLimiting:DefaultTier", "premium");
-            builder.UseSetting($"RateLimiting:TenantTiers:{ScaffoldPrincipal.TenantId}", "free");
-            builder.UseSetting("RateLimiting:Tiers:free:PermitLimit", tenantPermitLimit.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            builder.UseSetting("RateLimiting:Tiers:free:WindowSeconds", "3600");
-            builder.UseSetting("RateLimiting:Export:PermitLimit", "5");
-            builder.UseSetting("RateLimiting:Export:WindowSeconds", "3600");
+            builder.UseSetting("RateLimiting:Tenants:DefaultTier", "premium");
+            builder.UseSetting($"RateLimiting:Tenants:TenantTiers:{ScaffoldPrincipal.TenantId}", "free");
+            builder.UseSetting("RateLimiting:Tenants:Tiers:free:PermitLimit", tenantPermitLimit.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            builder.UseSetting("RateLimiting:Tenants:Tiers:free:WindowSeconds", "3600");
+            builder.UseSetting("RateLimiting:Tenants:Budgets:export:PermitLimit", "5");
+            builder.UseSetting("RateLimiting:Tenants:Budgets:export:WindowSeconds", "3600");
         });
 
     public TestContext TestContext { get; set; } = null!;

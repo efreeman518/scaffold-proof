@@ -150,7 +150,7 @@ public sealed class AppHostLaneTopologyTests
         StringAssert.Contains(source, "if (!isTesting || reactAvailableInTesting || fullLaneAvailableInTesting)");
         StringAssert.Contains(source, "if (!isTesting || unoWasmAvailableInTesting || fullLaneAvailableInTesting)");
         StringAssert.Contains(source,
-            ".WithEnvironment(\"RateLimiting__Tiers__standard__PermitLimit\", \"10000\")");
+            ".WithEnvironment(\"RateLimiting__Tenants__Tiers__standard__PermitLimit\", \"10000\")");
     }
 
     [TestMethod]

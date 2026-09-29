@@ -34,6 +34,13 @@ public static class Extensions
     /// </summary>
     private const string OutboxActivitySourceName = "EF.Data.Outbox";
 
+    /// <summary>
+    /// <c>EF.RateLimiting.RateLimitingTelemetryOptions.MeterName</c> (<c>ratelimit.rejected</c>,
+    /// <c>ratelimit.backend_failure</c> - the fail-open signal to alert on), spelled out for the same reason as
+    /// <see cref="RabbitMqMeterName"/>; the unit test probes the package default.
+    /// </summary>
+    private const string RateLimitingMeterName = "EF.RateLimiting";
+
     /// <summary>Registers service defaults dependencies in the service container.</summary>
     public static IHostApplicationBuilder AddServiceDefaults(this IHostApplicationBuilder builder)
     {
@@ -68,8 +75,7 @@ public static class Extensions
         {
             o.MeterNames.AddRange([
                 SchedulerJobMeter.MeterName,
-                CacheMeter.MeterName,
-                RateLimitingMeter.MeterName,
+                RateLimitingMeterName,
                 StreamingMeter.MeterName,
                 MessagingName,
                 RabbitMqMeterName]);

@@ -63,7 +63,7 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
         _environment.Set("FlowEngine__TaskFlowApiBaseUrl", "http://localhost");
         // Polling the instance plus the workflow's own self-calls share the per-tenant budget; raise it so
         // the rate limiter never trips during a test (the production default stays 100/min via appsettings).
-        _environment.Set("RateLimiting__PerTenant__PermitLimit", "1000000");
+        _environment.Set("RateLimiting__Tenants__Tiers__standard__PermitLimit", "1000000");
         foreach (var (key, value) in TestColumnEncryption.EnvironmentVariables)
         {
             _environment.Set(key, value);

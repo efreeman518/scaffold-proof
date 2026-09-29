@@ -169,13 +169,6 @@
   <ItemGroup Label="OpenTelemetry">
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.18.0" />
   </ItemGroup>
-  <ItemGroup Label="Caching">
-    <!-- Distributed sliding-window limiter over StackExchange.Redis; implements System.Threading.RateLimiting
-         so only the ASP.NET partition factories change. 1.2.1 ships a net10.0 target group. -->
-    <PackageVersion Include="RedisRateLimiting" Version="1.2.1" />
-    <PackageVersion Include="ZiggyCreatures.FusionCache" Version="2.8.0" />
-    <PackageVersion Include="ZiggyCreatures.FusionCache.OpenTelemetry" Version="2.8.0" />
-  </ItemGroup>
   <ItemGroup Label="Testing">
     <PackageVersion Include="MSTest" Version="4.4.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
