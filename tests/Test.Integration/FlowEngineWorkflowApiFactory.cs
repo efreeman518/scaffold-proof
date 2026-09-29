@@ -1,3 +1,4 @@
+using EF.AI.Testing;
 using EF.FlowEngine.Abstractions;
 using EF.FlowEngine.Clients;
 using EF.FlowEngine.Model;
@@ -9,7 +10,6 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
-using System.Runtime.CompilerServices;
 
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Bootstrapper;
@@ -88,7 +88,7 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
         {
             // Deterministic chat: the agent node gets a fixed JSON reply instead of a real model.
             services.RemoveAll<IChatClient>();
-            services.AddSingleton<IChatClient>(new FixedChatClient(_chatReply));
+            services.AddSingleton<IChatClient>(new FakeChatClient(call => _chatReply(call.PromptText)));
 
             if (TestHostingLane.Current.Lane == TaskFlow.Hosting.HostingLane.Azure)
             {
@@ -166,30 +166,5 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
             if (disposing)
                 _environment.Dispose();
         }
-    }
-
-    // Minimal IChatClient returning a fixed reply (the workflow agent node only needs the text back).
-    private sealed class FixedChatClient(Func<string, string> reply) : IChatClient
-    {
-        public Task<ChatResponse> GetResponseAsync(
-            IEnumerable<ChatMessage> messages,
-            ChatOptions? options = null,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, reply(Prompt(messages)))));
-
-        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
-            IEnumerable<ChatMessage> messages,
-            ChatOptions? options = null,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            yield return new ChatResponseUpdate(ChatRole.Assistant, reply(Prompt(messages)));
-            await Task.CompletedTask;
-        }
-
-        public object? GetService(Type serviceType, object? serviceKey = null) => null;
-        public void Dispose() { }
-
-        private static string Prompt(IEnumerable<ChatMessage> messages) =>
-            string.Join("\n", messages.Select(m => m.Text));
     }
 }

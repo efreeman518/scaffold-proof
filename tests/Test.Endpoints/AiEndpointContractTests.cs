@@ -1,3 +1,4 @@
+using EF.AI.Testing;
 using EF.Common.Contracts;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.AI;
@@ -6,7 +7,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Net;
 using System.Net.Http.Json;
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using TaskFlow.Application.Models;
@@ -182,7 +182,7 @@ public sealed class AiEndpointContractTests
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IChatClient>();
-                services.AddSingleton<IChatClient>(new RoutingChatClient(reply));
+                services.AddSingleton<IChatClient>(new FakeChatClient(call => reply(call.PromptText)));
 
                 if (agent is not null)
                 {
@@ -239,33 +239,6 @@ public sealed class AiEndpointContractTests
             Assert.Fail($"Expected success, got {(int)response.StatusCode} {response.ReasonPhrase}. Body: {body}");
 
         return JsonDocument.Parse(body);
-    }
-
-    private sealed class RoutingChatClient(Func<string, string> reply) : IChatClient
-    {
-        public Task<ChatResponse> GetResponseAsync(
-            IEnumerable<ChatMessage> messages,
-            ChatOptions? options = null,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, reply(GetPrompt(messages)))));
-
-        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
-            IEnumerable<ChatMessage> messages,
-            ChatOptions? options = null,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            yield return new ChatResponseUpdate(ChatRole.Assistant, reply(GetPrompt(messages)));
-            await Task.CompletedTask;
-        }
-
-        public object? GetService(Type serviceType, object? serviceKey = null) => null;
-
-        public void Dispose()
-        {
-        }
-
-        private static string GetPrompt(IEnumerable<ChatMessage> messages) =>
-            string.Join("\n", messages.Select(message => message.Text));
     }
 
     private sealed class FakeTaskAssistantAgent : ITaskAssistantAgent

@@ -1,7 +1,7 @@
+using EF.AI.Testing;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
-using System.Runtime.CompilerServices;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Infrastructure.AI.Agents;
 using TaskFlow.Infrastructure.AI.Agents.Tools;
@@ -16,7 +16,7 @@ public sealed class TaskAssistantAgentServiceTests
     [TestMethod]
     public async Task ChatAsync_WithUseToolsFalse_DisablesToolInvocation()
     {
-        var chatClient = new CapturingChatClient();
+        var chatClient = new FakeChatClient("OK");
         var agent = CreateAgent(chatClient);
 
         var response = await agent.ChatAsync(
@@ -27,7 +27,7 @@ public sealed class TaskAssistantAgentServiceTests
         Assert.AreEqual(ChatToolMode.None, chatClient.LastOptions?.ToolMode);
     }
 
-    private static TaskAssistantAgentService CreateAgent(CapturingChatClient chatClient)
+    private static TaskAssistantAgentService CreateAgent(IChatClient chatClient)
     {
         var tools = new TaskItemTools(
             NullLogger<TaskItemTools>.Instance,
@@ -39,36 +39,6 @@ public sealed class TaskAssistantAgentServiceTests
             NullLogger<TaskAssistantAgentService>.Instance,
             chatClient,
             tools);
-    }
-
-    private sealed class CapturingChatClient : IChatClient
-    {
-        internal ChatOptions? LastOptions { get; private set; }
-
-        public Task<ChatResponse> GetResponseAsync(
-            IEnumerable<ChatMessage> messages,
-            ChatOptions? options = null,
-            CancellationToken cancellationToken = default)
-        {
-            LastOptions = options;
-            return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "OK")));
-        }
-
-        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
-            IEnumerable<ChatMessage> messages,
-            ChatOptions? options = null,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            LastOptions = options;
-            yield return new ChatResponseUpdate(ChatRole.Assistant, "OK");
-            await Task.CompletedTask;
-        }
-
-        public object? GetService(Type serviceType, object? serviceKey = null) => null;
-
-        public void Dispose()
-        {
-        }
     }
 
     public TestContext TestContext { get; set; } = null!;
