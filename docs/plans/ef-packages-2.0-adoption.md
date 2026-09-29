@@ -29,14 +29,15 @@ session resumes from this file alone.
 
 ## Next action
 
-a0 (bump and compile) runs first. When it merges: a1, a2, a3 and a5 run in parallel; a4 runs after a3; a6 (docs and
-the full matrix) runs after all of them; then sa (scaffold-ai).
+All adoption slices merged (#29-#34). a6 (proof docs and full matrix) and sa (scaffold-ai, which reads the proof via git
+only) run in parallel. When a6 merges, open the final PR integration/ef2-adoption -> main. Its CI run is the merge gate.
+Merge sa's scaffold-ai PR to main after its validate workflow passes.
 
-## Active agents: 1
+## Active agents: 2
 
 ## FIFO queue
 
-a6, sa
+Empty
 
 ## Slices
 
@@ -46,10 +47,10 @@ a6, sa
 | a1 | Data, domain, common, tenancy, audit: D items' proof adoption | a0 | opus | merged | #31 (e08dfa0) | removed | a86cdfed | released | removed |
 | a2 | Messaging, outbox, inbox: M items' proof adoption | a0 | opus | merged | #33 (8ab80fd) | removed | a5a367d1 | released | removed |
 | a3 | Hosting, web, UI client: H and U items' proof adoption | a0 | opus | merged | #32 (92d0986) | removed | a5993a86 | released | removed |
-| a4 | Auth, gateway, rate limiting, cache, scheduler, storage, gRPC, AI: S items' proof adoption | a0, a3 | opus | running | `refactor/adopt2-f8ca68-a4` | `.tmp/worktrees/adopt2-f8ca68-a4` | ab37ee30 | cb9af68e | `.tmp/orchestrated-refactor/adopt2-f8ca68/a4` |
+| a4 | Auth, gateway, rate limiting, cache, scheduler, storage, gRPC, AI: S items' proof adoption | a0, a3 | opus | merged | #34 (e292754) | removed | ab37ee30 | released | removed |
 | a5 | Testing: T items' proof adoption (LoadRunner, fixtures, architecture rules, AI fakes) | a0 | opus | merged | #30 (43a39d7) | removed | ac9178d3 | released | removed |
-| a6 | Proof docs (DESIGN-DECISIONS, REFERENCE-STATUS, README, tech design where affected) and the full test matrix including Docker integration and the Aspire lanes | a1-a5 | opus | queued | | | | | |
-| sa | scaffold-ai: support/ef-packages-reference.md, skills/package-dependencies.md, templates from "generate" to "reference EF.X", maintenance canaries | a6 | opus | queued | | | | | |
+| a6 | Proof docs (DESIGN-DECISIONS, REFERENCE-STATUS, README, tech design where affected) and the full test matrix including Docker integration and the Aspire lanes | a1-a5 | opus | running | `refactor/adopt2-f8ca68-a6` | `.tmp/worktrees/adopt2-f8ca68-a6` | ad76e713 | b7f810a1 | `.tmp/orchestrated-refactor/adopt2-f8ca68/a6` |
+| sa | scaffold-ai: support/ef-packages-reference.md, skills/package-dependencies.md, templates from "generate" to "reference EF.X", maintenance canaries | a6 | opus | running | scaffold-ai `docs/ef2-packages-305b93` | scaffold-ai `.tmp/worktrees/ef2-packages-305b93` | ab7a6437 | 2328f836 | scaffold-ai `.tmp/ef2-packages-305b93` |
 
 ## Slice notes
 
@@ -84,6 +85,13 @@ a6, sa
   (nothing in infra referenced the old names). Config key `Messaging:Inbox:PollInterval` renamed to `WaitPollInterval`.
   A live foreign claim now returns `InProgress` (RabbitMQ retries with reason `InboxInProgress`). Integration baseline
   after a2: NonAzure 81 passed / 5 skipped, Azure 68 passed / 18 skipped.
+
+- a4 (#34): fixed identity `AllowedEnvironments` = Development, Testing, Production (TaskFlow is login-free, and
+  Scaffold is its only auth mode; any other environment fails at start). The relay binds one `ForwardedClaims` section
+  on both hosts (header `X-Forwarded-User-Claims`) and trusts no caller by default. TickerQ cron jobs now seed and run.
+  Config renames: `RateLimiting:Tenants:*`, `Cosmos:Client:*`, `Scheduling:Health:StallThreshold`,
+  `Scheduling:Retention:OccurrenceRetention`, `AggregateHealthCheck:TokenScope`. Integration baseline after a4:
+  NonAzure 83 passed / 5 skipped, Azure 70 passed / 18 skipped.
 
 ## Kept on disk
 
