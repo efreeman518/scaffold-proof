@@ -29,6 +29,10 @@
     <PackageReference Include="EF.Storage.Contracts" />
     <!-- D-037: the S3 arm of the object-storage switch (repository, bucket provisioner, DI wiring). -->
     <PackageReference Include="EF.Storage.S3" />
+    <!-- S19/S20: the blob container health check (the Blob arm itself is in Infrastructure.Storage), and the Cosmos
+         health check and client options with cross-region hedging. -->
+    <PackageReference Include="EF.Storage" />
+    <PackageReference Include="EF.CosmosDb" />
     <PackageReference Include="EF.Audit.Contracts" />
     <PackageReference Include="Azure.Messaging.ServiceBus" />
     <!-- M14/M17: Service Bus outbox transport and health check. -->
