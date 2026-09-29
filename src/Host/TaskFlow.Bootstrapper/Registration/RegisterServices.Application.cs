@@ -38,12 +38,18 @@ public static partial class RegisterServices
         services.AddScoped<ITaskViewProjectionService, TaskViewProjectionService>();
     }
 
+    /// <summary>
+    /// D14 / D-067: EF.Tenancy's singleton boundary validator. GlobalAdmin (a real admin token) and System (the
+    /// no-request context of <see cref="AddRequestContext"/>, which no token can claim) pass the boundary, so
+    /// consumers and jobs act for any tenant.
+    /// </summary>
+    internal static void AddTenantBoundary(IServiceCollection services) =>
+        services.AddTenancy(options => options.CrossTenantRoles = [AppConstants.ROLE_GLOBAL_ADMIN, AppConstants.ROLE_SYSTEM]);
+
     /// <summary>Registers shared application services dependencies in the service container.</summary>
     private static void AddSharedApplicationServices(IServiceCollection services)
     {
-        // D14: EF.Tenancy's singleton boundary validator. Only GlobalAdmin passes the boundary; the no-request
-        // system identity carries that role too (AddRequestContext), so consumers and jobs act for any tenant.
-        services.AddTenancy(options => options.GlobalAdminRole = AppConstants.ROLE_GLOBAL_ADMIN);
+        AddTenantBoundary(services);
 
         // Documented exception to the Service/CQRS split: the aggregate read model (summary, metadata,
         // export) is a pure projection with no domain behavior to duplicate, so both styles share it.

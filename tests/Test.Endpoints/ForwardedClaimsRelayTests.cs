@@ -127,7 +127,7 @@ public sealed class ForwardedClaimsRelayTests
         var relay = services.GetRequiredService<IOptions<ForwardedClaimsOptions>>().Value;
         var header = ForwardedClaimsCodec.Encode(RelayedUser(), new ForwardedClaimsOptions
         {
-            ClaimTypes = [.. relay.ClaimTypes, "smuggled"]
+            ClaimTypes = [.. relay.ClaimTypes!, "smuggled"]
         });
 
         var httpContext = new DefaultHttpContext { RequestServices = services };
