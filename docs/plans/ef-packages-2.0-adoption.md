@@ -39,11 +39,11 @@ intermittent SQL Server keyset-resume test failure, which is being fixed as x4 t
 2.0.112, then merge sa's scaffold-ai PR (validate workflow green), then open the final PR integration/ef2-adoption
 -> main. Its CI run, including "Validate against latest scaffold", is the merge gate.
 
-## Active agents: 0 (EF.Packages x4 runs under run ef2x-3cd8b7)
+## Active agents: 1 (a7; EF.Packages x4 runs under run ef2x-3cd8b7)
 
 ## FIFO queue
 
-a7 (after the EF.Packages 2.0.112 publish)
+Empty (a7 phase 2 starts on the orchestrator's message after the 2.0.112 publish)
 
 ## Slices
 
@@ -57,7 +57,7 @@ a7 (after the EF.Packages 2.0.112 publish)
 | a5 | Testing: T items' proof adoption (LoadRunner, fixtures, architecture rules, AI fakes) | a0 | opus | merged | #30 (43a39d7) | removed | ac9178d3 | released | removed |
 | a6 | Proof docs (DESIGN-DECISIONS, REFERENCE-STATUS, README, tech design where affected) and the full test matrix including Docker integration and the Aspire lanes | a1-a5 | opus | merged | #35 (74c9830) | removed | ad76e713 | released | - |
 | a6b | Root-cause Test.Load live-stack readiness (persistent-volume credentials suspected); run the load scenarios; npm ci for the browser tests and run Test.PlaywrightUI on both lanes | a6 | opus | merged | #36 (cf999eb) | removed | ad76e713 | released | removed |
-| a7 | Adopt the EF.Packages 2.0.x follow-up release: bump EF.*; role lists (`SystemRoles=[System]`, `CrossTenantRoles=[GlobalAdmin, System]`, delete the hand-built no-request identity); `StreamKeysetPagesAsync` resume for the stale-task batch (delete the private resume helper); relay `RequireHeaderFromTrustedCaller`; inbox `MaxClaimDuration`; leftovers: process-wide `PLAYWRIGHT_USE_SYSTEM_CHROME`, private context factories in InboxStoreTests/SqlHealthCheckTests, cancellation token on `CreateEmptyDatabaseConnectionStringAsync`, the stale audit entity name in migration snapshots, the credential tenant key (`AzureTenantId`), RabbitMQ quorum queues (M19) | a6, EF.Packages 2.0.x publish | opus | queued | | | | | |
+| a7 | Adopt the EF.Packages 2.0.x follow-up release: bump EF.*; role lists (`SystemRoles=[System]`, `CrossTenantRoles=[GlobalAdmin, System]`, delete the hand-built no-request identity); `StreamKeysetPagesAsync` resume for the stale-task batch (delete the private resume helper); relay `RequireHeaderFromTrustedCaller`; inbox `MaxClaimDuration`; leftovers: process-wide `PLAYWRIGHT_USE_SYSTEM_CHROME`, private context factories in InboxStoreTests/SqlHealthCheckTests, cancellation token on `CreateEmptyDatabaseConnectionStringAsync`, the stale audit entity name in migration snapshots, the credential tenant key (`AzureTenantId`), RabbitMQ quorum queues (M19) | a6, EF.Packages 2.0.x publish | opus | running (phase 1: leftovers; phase 2 after the publish) | `refactor/adopt2-f8ca68-a7` | `.tmp/worktrees/adopt2-f8ca68-a7` | a457c5fa | 5f744454 | `.tmp/orchestrated-refactor/adopt2-f8ca68/a7` |
 | sa | scaffold-ai: support/ef-packages-reference.md, skills/package-dependencies.md, templates from "generate" to "reference EF.X", maintenance canaries | a6 | opus | done, PR after the 2.0.112 publish | scaffold-ai `docs/ef2-packages-305b93` (a39257e) | scaffold-ai `.tmp/worktrees/ef2-packages-305b93` | ab7a6437 | released | scaffold-ai `.tmp/ef2-packages-305b93` |
 
 ## Slice notes
