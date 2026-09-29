@@ -23,6 +23,7 @@ public sealed class WasmHostHttpContractTests
     private const string PackageFolder = "package_abcdef1234567890";
     private const string AppAssemblyRoute = "/_framework/TaskFlow.Uno.abcdefgh.wasm";
     private const string IndexMarker = "taskflow-uno-index";
+    private const string PublishedUnoConfig = "config.dotnet_js_filename = \"dotnet.published.js\";";
 
     private static string _distPath = null!;
     private static WebApplicationFactory<Program> _factory = null!;
@@ -128,6 +129,24 @@ public sealed class WasmHostHttpContractTests
         Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    /// <summary>
+    /// Uno.Wasm.Bootstrap rewrites uno-config.js in the publish output after the SDK wrote the endpoint manifest and
+    /// deletes its compressed siblings; the host must still serve the rewritten file, never an empty response.
+    /// </summary>
+    [TestMethod]
+    [DataRow(null)]
+    [DataRow("br, gzip")]
+    public async Task UnoConfig_RewrittenAfterTheManifest_IsServedFromDisk(string? acceptEncoding)
+    {
+        using var response = await GetAsync($"/{PackageFolder}/uno-config.js", acceptEncoding);
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        Assert.AreEqual("text/javascript", response.Content.Headers.ContentType?.MediaType);
+        Assert.IsEmpty(response.Content.Headers.ContentEncoding);
+        Assert.AreEqual(PublishedUnoConfig, await response.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        AssertRevalidates(response);
+    }
+
     [TestMethod]
     public async Task AppConfig_ReturnsTheGatewayBaseUrlUncached()
     {
@@ -181,6 +200,10 @@ public sealed class WasmHostHttpContractTests
             """);
         File.WriteAllText(Path.Combine(package, "require.js"), "// require");
         File.WriteAllText(Path.Combine(package, "uno-bootstrap.css"), "/* bootstrap */");
+        var unoConfig = Path.Combine(package, "uno-config.js");
+        File.WriteAllText(unoConfig, "config.dotnet_js_filename = \"dotnet.build.js\";");
+        File.WriteAllText(unoConfig + ".br", "stale-br");
+        File.WriteAllText(unoConfig + ".gz", "stale-gzip");
 
         var appAssembly = Path.Combine(framework, Path.GetFileName(AppAssemblyRoute));
         File.WriteAllText(appAssembly, Marker("identity"));
@@ -188,6 +211,11 @@ public sealed class WasmHostHttpContractTests
         File.WriteAllText(appAssembly + ".gz", Marker("gzip"));
 
         WriteEndpointsManifest(dist, wwwroot);
+
+        // What Uno's publish fixup does after the manifest exists: rewrite the file, delete its compressed siblings.
+        File.WriteAllText(unoConfig, PublishedUnoConfig);
+        File.Delete(unoConfig + ".br");
+        File.Delete(unoConfig + ".gz");
         return dist;
     }
 
@@ -205,6 +233,7 @@ public sealed class WasmHostHttpContractTests
         AddRoute("index.html", "text/html", fingerprinted: false, compressed: false);
         AddRoute($"{PackageFolder}/require.js", "text/javascript", fingerprinted: false, compressed: false);
         AddRoute($"{PackageFolder}/uno-bootstrap.css", "text/css", fingerprinted: false, compressed: false);
+        AddRoute($"{PackageFolder}/uno-config.js", "text/javascript", fingerprinted: false, compressed: true);
 
         File.WriteAllText(
             Path.Combine(dist, "TaskFlow.Uno.staticwebassets.endpoints.json"),
