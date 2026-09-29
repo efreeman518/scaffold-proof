@@ -5,6 +5,8 @@
     <PackageReference Include="EF.Storage.Contracts" />
     <PackageReference Include="EF.Table" />
     <PackageReference Include="EF.Audit.Contracts" />
+    <!-- The Azure Table audit arm is the package repository (D19); the app only registers and provisions it. -->
+    <PackageReference Include="EF.Audit.AzureTable" />
     <PackageReference Include="EF.Messaging" />
     <PackageReference Include="Azure.Messaging.ServiceBus" />
     <PackageReference Include="Microsoft.Azure.Cosmos" />

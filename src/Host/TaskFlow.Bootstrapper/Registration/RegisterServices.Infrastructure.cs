@@ -1,3 +1,4 @@
+using EF.Audit.AzureTable;
 using EF.AspNetCore.HealthChecks;
 using EF.Audit.Contracts;
 using EF.Storage.Contracts;
@@ -45,10 +46,14 @@ public static partial class RegisterServices
             }
         });
 
-        services.Configure<AuditLogStorageSettings>(
-            config.GetSection(AuditLogStorageSettings.ConfigSectionName));
-
-        services.AddScoped<IAuditLogRepository, AuditLogRepository>();
+        // D19: the EF.Audit.AzureTable singleton repository. It never creates the table on the request path;
+        // EnsureExternalResources provisions it once through EnsureTableAsync.
+        services.AddAzureTableAuditLog(options =>
+        {
+            options.TableName = "taskflowaudit";
+            options.TableServiceClientName = "TaskFlowTableClient";
+            config.GetSection(AzureTableAuditLogSettings.ConfigSectionName).Bind(options);
+        });
     }
 
     /// <summary>

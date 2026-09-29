@@ -1,3 +1,5 @@
+using System.Globalization;
+using EF.Data.Contracts;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using MongoDB.Driver;
@@ -36,15 +38,19 @@ public sealed class MongoTaskViewRepository : ITaskViewRepository
     private readonly IMongoDatabase database;
     private readonly IMongoCollection<MongoTaskViewDocument> collection;
 
-    public MongoTaskViewRepository(string connectionString, MongoTaskViewSettings settings)
-        : this(new MongoClient(connectionString), settings)
+    private readonly CursorCodec cursorCodec;
+
+    public MongoTaskViewRepository(string connectionString, MongoTaskViewSettings settings, CursorCodec cursorCodec)
+        : this(new MongoClient(connectionString), settings, cursorCodec)
     {
     }
 
-    internal MongoTaskViewRepository(IMongoClient client, MongoTaskViewSettings settings)
+    internal MongoTaskViewRepository(IMongoClient client, MongoTaskViewSettings settings, CursorCodec cursorCodec)
     {
         ArgumentNullException.ThrowIfNull(client);
         ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(cursorCodec);
+        this.cursorCodec = cursorCodec;
         database = client.GetDatabase(settings.DatabaseName);
         collection = database.GetCollection<MongoTaskViewDocument>(settings.CollectionName);
     }
@@ -115,13 +121,15 @@ public sealed class MongoTaskViewRepository : ITaskViewRepository
         var filter = filters.Eq(e => e.TenantId, tenantId);
         if (!string.IsNullOrEmpty(continuationToken))
         {
-            var after = TaskViewKeysetToken.Decode(continuationToken, tenantId);
-            var timestamp = after.LastModifiedUtc.UtcDateTime;
+            // The same signed, tenant-scoped cursor the relational arm mints (D21); the codec rejects a tampered
+            // or foreign-tenant token with InvalidCursorException (400).
+            var after = cursorCodec.Decode(continuationToken, tenantId);
+            var timestamp = new DateTime(ParseTicks(after.SortKey), DateTimeKind.Utc);
             filter &= filters.Or(
                 filters.Lt(e => e.LastModifiedUtc, timestamp),
                 filters.And(
                     filters.Eq(e => e.LastModifiedUtc, timestamp),
-                    filters.Lt(e => e.Id, after.Id)));
+                    filters.Lt(e => e.Id, after.TieBreaker)));
         }
 
         var rows = await collection.Find(filter)
@@ -133,13 +141,19 @@ public sealed class MongoTaskViewRepository : ITaskViewRepository
         var hasMore = rows.Count > pageSize;
         if (hasMore) rows.RemoveAt(rows.Count - 1);
 
+        // Ticks, not "O": the value is echoed back into the filter and must compare bit-identical to the stored one.
         var token = hasMore
-            ? TaskViewKeysetToken.Encode(
-                tenantId, new DateTimeOffset(rows[^1].LastModifiedUtc, TimeSpan.Zero), rows[^1].Id)
+            ? cursorCodec.Encode(tenantId, new CursorPosition(
+                rows[^1].LastModifiedUtc.Ticks.ToString(CultureInfo.InvariantCulture), rows[^1].Id))
             : null;
 
         return new TaskViewPage([.. rows.Select(MapToDto)], token);
     }
+
+    private static long ParseTicks(string? sortKey) =>
+        long.TryParse(sortKey, NumberStyles.None, CultureInfo.InvariantCulture, out var ticks) && ticks <= DateTime.MaxValue.Ticks
+            ? ticks
+            : throw new InvalidCursorException("The continuation token does not carry a TaskView position.");
 
     public Task PatchCountersAsync(string id, string tenantId,
         IReadOnlyDictionary<string, int> increments, DateTimeOffset lastModifiedUtc, CancellationToken ct = default)

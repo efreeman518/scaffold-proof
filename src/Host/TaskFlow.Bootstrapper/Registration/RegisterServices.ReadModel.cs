@@ -1,3 +1,4 @@
+using EF.Data.Contracts;
 using EF.Common;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -87,7 +88,8 @@ public static partial class RegisterServices
             config["Mongo:TaskViews:CollectionName"] ?? MongoTaskViewSettings.DefaultCollectionName);
 
         services.AddSingleton(settings);
-        services.AddSingleton<MongoTaskViewRepository>(_ => new MongoTaskViewRepository(connectionString, settings));
+        services.AddSingleton<MongoTaskViewRepository>(sp =>
+            new MongoTaskViewRepository(connectionString, settings, sp.GetRequiredService<CursorCodec>()));
         services.AddSingleton<ITaskViewRepository>(sp => sp.GetRequiredService<MongoTaskViewRepository>());
     }
 }

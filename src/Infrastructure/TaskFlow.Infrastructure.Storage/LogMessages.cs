@@ -9,10 +9,6 @@ namespace TaskFlow.Infrastructure.Storage;
 /// </summary>
 internal static partial class LogMessages
 {
-    /// <summary>Logs that an audit entry was persisted to the audit store.</summary>
-    [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 1, Level = LogLevel.Information, Message = "Persisted audit entry {AuditEntryId} for tenant {TenantId} entity {EntityType} action {Action}")]
-    public static partial void AuditEntryPersisted(this ILogger logger, Guid auditEntryId, string? tenantId, string entityType, string action);
-
     /// <summary>Logs that a TaskView read model was upserted.</summary>
     [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 2, Level = LogLevel.Debug, Message = "Upserted TaskView {Id} for tenant {TenantId}")]
     public static partial void TaskViewUpserted(this ILogger logger, string id, string tenantId);
@@ -40,10 +36,6 @@ internal static partial class LogMessages
     /// <summary>Logs that one claimed outbox batch was handed to the broker.</summary>
     [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 8, Level = LogLevel.Debug, Message = "Sent {Count} outbox message(s) to {Destination}")]
     public static partial void OutboxBatchSent(this ILogger logger, string destination, int count);
-
-    /// <summary>Logs the audit rows removed by one retention sweep.</summary>
-    [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 10, Level = LogLevel.Information, Message = "Purged {Count} audit entries recorded before {CutoffUtc}")]
-    public static partial void AuditEntriesPurged(this ILogger logger, int count, DateTimeOffset cutoffUtc);
 
     /// <summary>Logs once that no object-storage backend is configured, so IObjectStorageRepository is the no-op.</summary>
     [LoggerMessage(EventId = LogEventIds.InfrastructureStorageBase + 11, Level = LogLevel.Warning, Message = "No object-storage backend configured: attachment upload, download, and URL generation will fail; deferred blob deletes will be treated as already gone.")]

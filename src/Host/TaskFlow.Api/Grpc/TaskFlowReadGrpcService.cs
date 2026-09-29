@@ -1,3 +1,4 @@
+using EF.Data.Contracts;
 using EF.Common.Contracts;
 using EF.Common.Exceptions;
 using EF.CQRS.Abstractions;
@@ -30,7 +31,7 @@ namespace TaskFlow.Api.Grpc;
 /// <item><term>UnauthorizedAccessException</term><description>403 -> PermissionDenied</description></item>
 /// <item><term>KeyNotFoundException</term><description>404 -> NotFound</description></item>
 /// <item><term>OperationCanceledException</term><description>499 -> Cancelled (DeadlineExceeded when the caller did not cancel)</description></item>
-/// <item><term>ArgumentException / FormatException / InvalidOperationException</term><description>400 -> InvalidArgument</description></item>
+/// <item><term>ArgumentException / InvalidCursorException / FormatException / InvalidOperationException</term><description>400 -> InvalidArgument</description></item>
 /// <item><term>anything else</term><description>500 -> Internal</description></item>
 /// </list>
 /// A missing task is not an exception on either transport: REST answers 404 from the Result's None
@@ -84,6 +85,7 @@ internal sealed class TaskFlowReadGrpcService(
     internal static void MapExceptions(ExceptionClassifierOptions options) => options
         .Map<DbUpdateConcurrencyException>(ExceptionCategory.PreconditionFailed)
         .Map<ArgumentException>(ExceptionCategory.Validation)
+        .Map<InvalidCursorException>(ExceptionCategory.Validation)
         .Map<FormatException>(ExceptionCategory.Validation)
         .Map<InvalidOperationException>(ExceptionCategory.Validation);
 

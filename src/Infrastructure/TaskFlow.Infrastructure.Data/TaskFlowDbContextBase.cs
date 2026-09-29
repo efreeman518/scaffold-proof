@@ -1,3 +1,4 @@
+using EF.Audit.Data;
 using EF.Data;
 using EF.Data.Encryption;
 using EF.Domain.Contracts;
@@ -44,6 +45,9 @@ public abstract class TaskFlowDbContextBase(DbContextOptions options) : DbContex
         // TaskItemConfiguration has no parameterless constructor (the assembly scan skips it): it binds the
         // secure-column converters to the process encryptor carried by the options (D-023).
         modelBuilder.ApplyConfiguration(new TaskItemConfiguration(this.GetColumnEncryptor()));
+        // D-039/D18: the relational audit sink is the EF.Audit.Data row, mapped into this context's schema so it
+        // shares the one migration set; the package repository writes it with an idempotent upsert.
+        modelBuilder.ApplyConfiguration(new AuditLogRecordConfiguration());
         ConfigurePostgreSqlModel(modelBuilder);
         // D-022: the named "Tenant" filter on every ITenantEntity<TenantId>; fails closed for a context with no
         // tenant unless the scope is AllTenants (see RegisterServices.AllowsAllTenants).

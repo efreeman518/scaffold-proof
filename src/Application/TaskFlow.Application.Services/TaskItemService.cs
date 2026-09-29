@@ -71,7 +71,7 @@ internal class TaskItemService(
         var tenantId = request.Filter?.TenantId ?? RequestTenantId ?? Guid.Empty;
 
         // The cursor is decoded and the next one minted by the repository, which owns the codec: a
-        // faulted cursor arrives here as ArgumentException (ERROR_CURSOR_INVALID), mapped to 400. A
+        // faulted cursor arrives here as InvalidCursorException (ERROR_CURSOR_INVALID), mapped to 400. A
         // cancellation or request timeout propagates (499/504): an empty page with HasMore = false would
         // tell a pager it had seen every row.
         return await repoQuery.SearchTaskItemsAsync(request, tenantId, ct);
