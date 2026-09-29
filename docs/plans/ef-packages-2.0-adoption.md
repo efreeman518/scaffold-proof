@@ -49,7 +49,8 @@ a7 (after a6 merges and the EF.Packages role-lists release publishes)
 | a3 | Hosting, web, UI client: H and U items' proof adoption | a0 | opus | merged | #32 (92d0986) | removed | a5993a86 | released | removed |
 | a4 | Auth, gateway, rate limiting, cache, scheduler, storage, gRPC, AI: S items' proof adoption | a0, a3 | opus | merged | #34 (e292754) | removed | ab37ee30 | released | removed |
 | a5 | Testing: T items' proof adoption (LoadRunner, fixtures, architecture rules, AI fakes) | a0 | opus | merged | #30 (43a39d7) | removed | ac9178d3 | released | removed |
-| a6 | Proof docs (DESIGN-DECISIONS, REFERENCE-STATUS, README, tech design where affected) and the full test matrix including Docker integration and the Aspire lanes | a1-a5 | opus | running | `refactor/adopt2-f8ca68-a6` | `.tmp/worktrees/adopt2-f8ca68-a6` | ad76e713 | b7f810a1 | `.tmp/orchestrated-refactor/adopt2-f8ca68/a6` |
+| a6 | Proof docs (DESIGN-DECISIONS, REFERENCE-STATUS, README, tech design where affected) and the full test matrix including Docker integration and the Aspire lanes | a1-a5 | opus | merged | #35 (74c9830) | removed | ad76e713 | b7f810a1 (kept for a6b) | - |
+| a6b | Root-cause Test.Load live-stack readiness (persistent-volume credentials suspected); run the load scenarios; npm ci for the browser tests and run Test.PlaywrightUI on both lanes | a6 | opus | running | `refactor/adopt2-f8ca68-a6b` | `.tmp/worktrees/adopt2-f8ca68-a6` | ad76e713 | b7f810a1 | `.tmp/orchestrated-refactor/adopt2-f8ca68/a6` |
 | a7 | Adopt the EF.Packages 2.0.x follow-up release: bump EF.*; role lists (`SystemRoles=[System]`, `CrossTenantRoles=[GlobalAdmin, System]`, delete the hand-built no-request identity); `StreamKeysetPagesAsync` resume for the stale-task batch (delete the private resume helper); relay `RequireHeaderFromTrustedCaller`; inbox `MaxClaimDuration`; leftovers: process-wide `PLAYWRIGHT_USE_SYSTEM_CHROME`, private context factories in InboxStoreTests/SqlHealthCheckTests, cancellation token on `CreateEmptyDatabaseConnectionStringAsync`, the stale audit entity name in migration snapshots, the credential tenant key (`AzureTenantId`), RabbitMQ quorum queues (M19) | a6, EF.Packages 2.0.x publish | opus | queued | | | | | |
 | sa | scaffold-ai: support/ef-packages-reference.md, skills/package-dependencies.md, templates from "generate" to "reference EF.X", maintenance canaries | a6 | opus | running | scaffold-ai `docs/ef2-packages-305b93` | scaffold-ai `.tmp/worktrees/ef2-packages-305b93` | ab7a6437 | 2328f836 | scaffold-ai `.tmp/ef2-packages-305b93` |
 
@@ -93,6 +94,11 @@ a7 (after a6 merges and the EF.Packages role-lists release publishes)
   Config renames: `RateLimiting:Tenants:*`, `Cosmos:Client:*`, `Scheduling:Health:StallThreshold`,
   `Scheduling:Retention:OccurrenceRetention`, `AggregateHealthCheck:TokenScope`. Integration baseline after a4:
   NonAzure 83 passed / 5 skipped, Azure 70 passed / 18 skipped.
+
+- a6 (#35): docs and the full matrix; see REFERENCE-STATUS. Fixed a pre-existing AppHost defect: the Postgres volume
+  mounted at the path PostgreSQL 18 refuses. The first Azure mesh run failed at class setup under 100% host CPU and
+  passed on rerun (both recorded). The proof CI step "Validate against latest scaffold" needs sa's proof-map fix
+  (35 issues, all scaffold-ai paths pointing at deleted app files).
 
 ## Kept on disk
 
