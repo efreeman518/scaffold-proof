@@ -436,8 +436,8 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.TaskFlow
                     b.Property<string>("Metadata")
                         .HasColumnType("text");
 
-                    b.Property<long>("StartTimeTicks")
-                        .HasColumnType("bigint");
+                    b.Property<DateTimeOffset>("StartedAtUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Status")
                         .IsRequired()

@@ -3,9 +3,11 @@ using EF.Data.Contracts;
 using EF.Data.Encryption;
 using EF.Data.Interceptors;
 using EF.BackgroundServices.InternalMessageBus;
+using EF.Common.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Infrastructure.Data;
@@ -19,6 +21,17 @@ namespace TaskFlow.Bootstrapper;
 /// <summary>Configures database services for TaskFlow runtime hosts.</summary>
 public static partial class RegisterServices
 {
+    /// <summary>
+    /// The EF.Data tenant query filter fails closed: a context with no tenant reads no tenant rows unless its
+    /// scope is marked all-tenants. A caller with no tenant reads every tenant only when it is the system
+    /// identity (message consumers, scheduled jobs and other no-request work) or a global admin. A caller that
+    /// carries a tenant stays pinned to it, global admin included; a tenant-less caller with neither role reads
+    /// nothing.
+    /// </summary>
+    internal static bool AllowsAllTenants(IRequestContext<string, Guid?> requestContext) =>
+        requestContext.TenantId is null
+        && (requestContext.RoleExists(AppConstants.ROLE_SYSTEM) || requestContext.RoleExists(AppConstants.ROLE_GLOBAL_ADMIN));
+
     /// <summary>
     /// Registers write DbContext, read DbContext, FlowEngine DbContext, and repositories.
     /// Provider selection (SQL Server / PostgreSQL) happens once in <see cref="TaskFlowDbProviderExtensions.UseTaskFlowProvider"/>.
@@ -58,7 +71,11 @@ public static partial class RegisterServices
                 sp.GetRequiredService<OutboxStagingInterceptor>(),
                 sp.GetRequiredService<BlindIndexInterceptor>());
         });
-        services.AddScoped<DbContextScopedFactory<TaskFlowDbContextTrxn, string, Guid?>>();
+        services.AddScoped(sp => new DbContextScopedFactory<TaskFlowDbContextTrxn, string, Guid?>(
+            sp.GetRequiredService<IDbContextFactory<TaskFlowDbContextTrxn>>(),
+            sp.GetRequiredService<IRequestContext<string, Guid?>>(),
+            sp.GetService<TimeProvider>(),
+            AllowsAllTenants));
         services.AddScoped(sp => sp.GetRequiredService<DbContextScopedFactory<TaskFlowDbContextTrxn, string, Guid?>>()
             .CreateDbContext());
 
@@ -69,7 +86,11 @@ public static partial class RegisterServices
                 TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName);
             options.UseColumnEncryption(sp.GetRequiredService<IColumnEncryptor>());
         });
-        services.AddScoped<DbContextScopedFactory<TaskFlowDbContextQuery, string, Guid?>>();
+        services.AddScoped(sp => new DbContextScopedFactory<TaskFlowDbContextQuery, string, Guid?>(
+            sp.GetRequiredService<IDbContextFactory<TaskFlowDbContextQuery>>(),
+            sp.GetRequiredService<IRequestContext<string, Guid?>>(),
+            sp.GetService<TimeProvider>(),
+            AllowsAllTenants));
         services.AddScoped(sp => sp.GetRequiredService<DbContextScopedFactory<TaskFlowDbContextQuery, string, Guid?>>()
             .CreateDbContext());
 
