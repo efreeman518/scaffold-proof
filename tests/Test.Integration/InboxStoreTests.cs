@@ -1,4 +1,5 @@
 using EF.Data.Outbox;
+using EF.IntegrationTesting.AspNetCore;
 using EF.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -312,13 +313,8 @@ public class InboxStoreTests
     }
 
     private static InboxStore<TaskFlowDbContextTrxn> Store(TaskFlowDbContextTrxn db, string connString, TimeProvider? clock = null) =>
-        new(db, new ContainerContextFactory(connString), clock);
-
-    /// <summary>Fresh contexts for renewal, the way the pooled factory hands them out in the hosts.</summary>
-    private sealed class ContainerContextFactory(string connString) : IDbContextFactory<TaskFlowDbContextTrxn>
-    {
-        public TaskFlowDbContextTrxn CreateDbContext() => DbContainerFixture.CreateTrxnContext(connString);
-    }
+        // Fresh contexts for renewal, the way the pooled factory hands them out in the hosts.
+        new(db, new EfTestDbContextFactory<TaskFlowDbContextTrxn>(() => DbContainerFixture.CreateTrxnContext(connString)), clock);
 
     private sealed class MutableClock(DateTimeOffset start) : TimeProvider
     {
