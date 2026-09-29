@@ -1,6 +1,5 @@
 using TaskFlow.Bootstrapper;
 using TaskFlow.Scheduler;
-using TaskFlow.Scheduler.Infrastructure;
 using TaskFlow.Scheduler.Telemetry;
 using TickerQ.DependencyInjection;
 

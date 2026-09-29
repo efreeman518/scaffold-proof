@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
 using TaskFlow.Observability.Meters;
-using TaskFlow.Observability.Tracing;
 
 namespace Microsoft.Extensions.Hosting;
 
@@ -74,15 +73,13 @@ public static class Extensions
         builder.AddEfOpenTelemetry(o =>
         {
             o.MeterNames.AddRange([
-                SchedulerJobMeter.MeterName,
                 RateLimitingMeterName,
                 StreamingMeter.MeterName,
                 MessagingName,
                 RabbitMqMeterName]);
             o.ActivitySourceNames.AddRange([
                 MessagingName,
-                OutboxActivitySourceName,
-                TaskFlowActivitySources.SchedulerName]);
+                OutboxActivitySourceName]);
         });
 
     /// <summary>Registers the always-healthy <c>self</c> liveness check (tag <c>live</c>).</summary>

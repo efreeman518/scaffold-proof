@@ -1,7 +1,6 @@
 using EF.Audit.Contracts;
 using Microsoft.Extensions.Options;
-using TaskFlow.Observability.Meters;
-using TaskFlow.Scheduler.Abstractions;
+using EF.BackgroundServices.Scheduling;
 
 namespace TaskFlow.Scheduler.Handlers.Retention;
 
@@ -14,7 +13,7 @@ namespace TaskFlow.Scheduler.Handlers.Retention;
 public sealed class AuditRetentionHandler(
     IAuditLogRepository auditLog,
     IOptions<AuditSettings> settings,
-    SchedulerJobMeter meter,
+    ScheduledJobTelemetry telemetry,
     TimeProvider timeProvider) : IScheduledJobHandler
 {
     public const string JobName = "AuditRetention";
@@ -23,6 +22,6 @@ public sealed class AuditRetentionHandler(
     public async Task HandleAsync(CancellationToken ct)
     {
         var cutoffUtc = timeProvider.GetUtcNow().AddDays(-settings.Value.RetentionDays);
-        meter.RecordRetention("audit", await auditLog.PurgeOlderThanAsync(cutoffUtc, ct));
+        telemetry.RecordRetention("audit", await auditLog.PurgeOlderThanAsync(cutoffUtc, ct));
     }
 }
