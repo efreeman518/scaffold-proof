@@ -60,7 +60,8 @@ else
 
 // The Uno output is the web root: MapStaticAssets and MapFallbackToFile both serve from it.
 builder.Environment.WebRootPath = webRootPath;
-builder.Environment.WebRootFileProvider = new PhysicalFileProvider(webRootPath);
+var webRootFileProvider = new PhysicalFileProvider(webRootPath);
+builder.Environment.WebRootFileProvider = webRootFileProvider;
 
 var staticWebAssetsManifestPath = Path.Combine(distPath, "TaskFlow.Uno.staticwebassets.runtime.json");
 if (File.Exists(staticWebAssetsManifestPath))
@@ -90,6 +91,33 @@ var endpointsManifestPath = Path.Combine(distPath, PublishedAssetContract.Endpoi
 if (File.Exists(endpointsManifestPath))
 {
     app.MapStaticAssets(endpointsManifestPath);
+
+    // Uno.Wasm.Bootstrap rewrites uno-config.js in the publish output after the SDK wrote this manifest (it patches
+    // in the published dotnet.js fingerprint) and deletes the file's .br/.gz siblings, so the manifest entry for it
+    // names missing files and a stale length, and a browser asking for br got a failed response. Serve that one file
+    // from disk before the manifest endpoint runs, as a plain file server (the nginx image) does. Middleware, not a
+    // competing endpoint: route selection prefers the manifest's literal route over any parameterized one.
+    app.Use(async (context, next) =>
+    {
+        var segments = context.Request.Path.Value?.Split('/');
+        if (segments is not ["", var package, "uno-config.js"]
+            || !package.StartsWith("package_", StringComparison.Ordinal)
+            || !HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method))
+        {
+            await next(context);
+            return;
+        }
+
+        var file = webRootFileProvider.GetFileInfo($"{package}/uno-config.js");
+        if (!file.Exists)
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        context.Response.Headers[HeaderNames.CacheControl] = "no-cache";
+        await Results.File(file.PhysicalPath!, "text/javascript").ExecuteAsync(context);
+    });
 }
 else
 {

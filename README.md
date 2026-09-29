@@ -70,6 +70,10 @@ networkingMode=mirrored
 
 Apply it with `podman machine stop`, `podman machine set --user-mode-networking=false`, `wsl --shutdown`, then `podman machine start`. With mirrored networking, do not set `TESTCONTAINERS_HOST_OVERRIDE`. Under legacy WSL NAT, the component Testcontainers lanes can instead use a run-scoped `TESTCONTAINERS_HOST_OVERRIDE=<podman machine ip>`, but Aspire and full-stack Playwright remain unavailable because DCP publishes container ports to VM loopback.
 
+Under mirrored networking a connect to `::1` on a port the container runtime published on `127.0.0.1` hangs instead of being refused. The persistent `dotnet run` stack is proxyless, so the AppHost points every persistent container endpoint at `127.0.0.1`; custom tooling against those ports should use `127.0.0.1` rather than `localhost` as well.
+
+For the manual `Test.Load` lane, start the AppHost with `$env:TASKFLOW_ASPIRE_LOAD_PROFILE = "true"` (it raises the scaffold tenant's rate-limit tier) and follow the steps on `tests/Test.Load/TaskItemLoadTests.cs`.
+
 Generated API clients (Blazor Refit, React `openapi-typescript`) regenerate per [`docs/plans/client-generation.md`](docs/plans/client-generation.md).
 
 ### Hosting lanes: Azure vs NonAzure

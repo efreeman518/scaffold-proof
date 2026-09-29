@@ -22,8 +22,9 @@ on. Treat any local figure from this project as a smoke check that the endpoints
 
 Shape checks and regression smoke: that a route still answers under concurrent callers, that cursor paging
 does not degrade with depth, and that a change did not introduce an obvious per-request cost. Run it by hand
-against a local stack (`dotnet run --project src/Host/Aspire/AppHost`) and read the numbers as relative,
-never absolute.
+against a local stack started with the load profile (`$env:TASKFLOW_ASPIRE_LOAD_PROFILE = "true"; dotnet run --project src/Host/Aspire/AppHost`,
+which raises the scaffold tenant's standard tier so the scenarios measure the endpoints rather than the tenant
+limiter), and read the numbers as relative, never absolute. The steps are on `TaskItemLoadTests`.
 
 ## Data
 

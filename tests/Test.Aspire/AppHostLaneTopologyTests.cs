@@ -39,6 +39,7 @@ public sealed class AppHostLaneTopologyTests
         "TASKFLOW_ASPIRE_FUNCTIONS_AVAILABLE",
         "TASKFLOW_ASPIRE_REACT_AVAILABLE",
         "TASKFLOW_ASPIRE_UNO_WASM_AVAILABLE",
+        "TASKFLOW_ASPIRE_LOAD_PROFILE",
         "ConnectionStrings__chat",
         "ConnectionStrings:chat",
         "AiServices__Provider",
@@ -179,6 +180,63 @@ public sealed class AppHostLaneTopologyTests
         Assert.AreEqual("/var/lib/postgresql", volume.Target);
         Assert.IsFalse(mounts.Any(mount => mount.Target == "/var/lib/postgresql/data"));
     }
+
+    /// <summary>
+    /// Persistent containers are proxyless and published on 127.0.0.1 only, so their endpoints must target that
+    /// address: left at "localhost", .NET clients (the hosts and Aspire's health checks) try ::1 first, which hangs
+    /// under Podman with WSL mirrored networking, and the dev stack never turned healthy.
+    /// </summary>
+    [TestMethod]
+    public async Task PersistentNonAzureGraph_ContainerEndpointsTargetTheIpv4Loopback()
+    {
+        using var environment = new EnvironmentVariableScope();
+        foreach (var name in GraphEnvironmentVariables) environment.Set(name, null);
+
+        var builder = await CreatePersistentGraphAsync();
+
+        foreach (var name in new[] { "postgres", "redis", "rabbitmq", "seaweedfs" })
+        {
+            var endpoints = builder.Resources.Single(resource => resource.Name == name)
+                .Annotations.OfType<EndpointAnnotation>().ToList();
+            Assert.IsNotEmpty(endpoints, name);
+            foreach (var endpoint in endpoints)
+                Assert.AreEqual("127.0.0.1", endpoint.TargetHost, $"{name}:{endpoint.Name}");
+        }
+    }
+
+    /// <summary>
+    /// The dev stack keeps the shipped tenant budget; TASKFLOW_ASPIRE_LOAD_PROFILE=true raises it for the manual
+    /// Test.Load run, whose CRUD scenario alone offers 360 requests a minute as the one scaffold tenant.
+    /// </summary>
+    [TestMethod]
+    [DataRow(null, null)]
+    [DataRow("true", "10000")]
+    public async Task PersistentNonAzureGraph_LoadProfileAloneRaisesTheTenantBudget(string? loadProfile, string? expected)
+    {
+        using var environment = new EnvironmentVariableScope();
+        foreach (var name in GraphEnvironmentVariables) environment.Set(name, null);
+        environment.Set("TASKFLOW_ASPIRE_LOAD_PROFILE", loadProfile);
+
+        var builder = await CreatePersistentGraphAsync();
+        var api = builder.Resources.OfType<IResourceWithEnvironment>().Single(resource => resource.Name == "taskflowapi");
+        var configuration = await ExecutionConfigurationBuilder.Create(api)
+            .WithEnvironmentVariablesConfig()
+            .BuildAsync(
+                new DistributedApplicationExecutionContext(DistributedApplicationOperation.Publish),
+                NullLogger.Instance,
+                TestContext.CancellationToken);
+        if (configuration.Exception is not null) throw configuration.Exception;
+
+        var variables = configuration.EnvironmentVariables.ToDictionary(pair => pair.Key, pair => pair.Value);
+        Assert.AreEqual(expected, variables.GetValueOrDefault("RateLimiting__Tenants__Tiers__standard__PermitLimit"));
+    }
+
+    private async Task<IDistributedApplicationTestingBuilder> CreatePersistentGraphAsync() =>
+        await DistributedApplicationTestingBuilder.CreateAsync(
+            Type.GetType("Program, AppHost", throwOnError: true)!,
+            args: [],
+            configureBuilder: (appOptions, _) => appOptions.DisableDashboard = true,
+            cancellationToken: TestContext.CancellationToken);
 
     [TestMethod]
     public void BothLanes_DeclareCommonHostsAndAllUserInterfaces()

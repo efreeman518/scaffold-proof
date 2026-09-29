@@ -1,4 +1,5 @@
 using EF.Common.Contracts;
+using EF.Testing.Http;
 using EF.Testing.Load;
 using System.Net;
 using System.Net.Http.Json;
@@ -20,20 +21,20 @@ namespace Test.Load;
 /// Manual run:
 /// 1. Remove or comment the <c>[Ignore("Run manually - requires API host running")]</c>
 ///    attribute on the load test method to run.
-/// 2. From repo root, start the Aspire host:
-///    <c>dotnet run --project src\Host\Aspire\AppHost\AppHost.csproj</c>.
-/// 3. Use the <c>taskflowapi</c> HTTP endpoint from Aspire. Default is <c>http://localhost:5188</c>.
+/// 2. From repo root, start the Aspire host with the load profile, which raises the scaffold tenant's
+///    standard tier (every request here is that one tenant, and the CRUD scenario alone offers 360 requests
+///    a minute against the shipped 100 per minute):
+///    <c>$env:TASKFLOW_ASPIRE_LOAD_PROFILE="true"; dotnet run --project src\Host\Aspire\AppHost\AppHost.csproj</c>.
+/// 3. Use the <c>taskflowapi</c> HTTP endpoint from Aspire. Default is <c>http://localhost:8080</c>.
 ///    If Aspire assigns another port, set <c>TASKFLOW_LOAD_BASE_URL</c> before running tests.
 /// 4. From the same repo root run:
-///    <c>$env:TASKFLOW_LOAD_BASE_URL="http://localhost:5188"; dotnet test tests\Test.Load\Test.Load.csproj --filter TestCategory=Load</c>.
-/// Default simulations stay below the API's 100 request/minute tenant rate limit. Raise
-/// <c>RateLimiting:Tenants:Tiers:standard:PermitLimit</c> before using higher injection profiles.
+///    <c>dotnet test tests\Test.Load\Test.Load.csproj --filter TestCategory=Load</c>.
 /// </summary>
 [TestClass]
 [TestCategory("Load")]
 public class TaskItemLoadTests
 {
-    private const string DefaultBaseUrl = "http://localhost:5188";
+    private const string DefaultBaseUrl = "http://localhost:8080";
     private static readonly string BaseUrl = Environment.GetEnvironmentVariable("TASKFLOW_LOAD_BASE_URL") ?? DefaultBaseUrl;
     private const string TaskItemsPath = "/api/v1/task-items";
     private const string TaskItemsSearchPath = "/api/v1/task-items/search";
@@ -98,7 +99,11 @@ public class TaskItemLoadTests
         LoadRunner.RunAsync(operation, ratePerSecond: 1, duration: TimeSpan.FromSeconds(10), maxInFlight: 10,
             TestContext.CancellationToken);
 
-    /// <summary>Runs one search-create-get-update-delete-verify cycle; false on any unexpected status code.</summary>
+    /// <summary>
+    /// Runs one search-create-get-update-delete-verify cycle; false on any unexpected status code. The update and
+    /// the delete send If-Match with the ETag of the previous response, as the D-032 concurrency contract requires
+    /// (without it they answer 428).
+    /// </summary>
     private static async Task<bool> RunCrudWorkflowAsync(HttpClient httpClient, CancellationToken ct)
     {
         using var searchResponse = await httpClient.PostAsJsonAsync(
@@ -136,10 +141,13 @@ public class TaskItemLoadTests
                 Status = TaskItemStatus.InProgress
             }
         };
-        using var updateResponse = await httpClient.PutAsJsonAsync($"{TaskItemsPath}/{id}", updateRequest, JsonOptions, ct);
-        if (updateResponse.StatusCode != HttpStatusCode.OK) return false;
+        if (getResponse.GetETagValue() is not { } getTag) return false;
+        using var updateResponse = await httpClient.PutAsJsonWithIfMatchAsync(
+            $"{TaskItemsPath}/{id}", updateRequest, ConcurrencyHttpExtensions.FormatStrongETag(getTag), JsonOptions, ct);
+        if (updateResponse.StatusCode != HttpStatusCode.OK || updateResponse.GetETagValue() is not { } updateTag) return false;
 
-        using var deleteResponse = await httpClient.DeleteAsync($"{TaskItemsPath}/{id}", ct);
+        using var deleteResponse = await httpClient.DeleteWithIfMatchAsync(
+            $"{TaskItemsPath}/{id}", ConcurrencyHttpExtensions.FormatStrongETag(updateTag), ct);
         if (deleteResponse.StatusCode != HttpStatusCode.NoContent) return false;
 
         using var verifyDeletedResponse = await httpClient.GetAsync($"{TaskItemsPath}/{id}", ct);
