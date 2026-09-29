@@ -1,9 +1,9 @@
 using EF.AspNetCore;
+using EF.AspNetCore.Concurrency;
 using EF.Common.Contracts;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using TaskFlow.Api.Endpoints.Shared;
-using TaskFlow.Api.Filters;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models;
 
@@ -16,7 +16,7 @@ public static class ChecklistItemEndpoints
     public static IEndpointRouteBuilder MapChecklistItemEndpoints(this IEndpointRouteBuilder group)
     {
         var g = group.MapGroup("/checklist-items").WithTags("ChecklistItems")
-            .AddEndpointFilter<ETagEndpointFilter>();
+            .WithETag();
 
         g.MapPost("/search", Search)
             .Produces<PagedResponse<ChecklistItemDto>>(StatusCodes.Status200OK)

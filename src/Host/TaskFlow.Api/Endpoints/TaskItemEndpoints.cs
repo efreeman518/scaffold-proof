@@ -1,9 +1,9 @@
 using EF.AspNetCore;
+using EF.AspNetCore.Concurrency;
 using EF.Common.Contracts;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using TaskFlow.Api.Endpoints.Shared;
-using TaskFlow.Api.Filters;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models;
@@ -20,7 +20,7 @@ public static class TaskItemEndpoints
         // The ETag filter is attached to the group, not to individual routes, so reads carry the token
         // that writes are required to send back.
         var g = group.MapGroup("/task-items").WithTags("TaskItems")
-            .AddEndpointFilter<ETagEndpointFilter>();
+            .WithETag();
 
         g.MapPost("/search", Search)
             .WithName("SearchTaskItems")

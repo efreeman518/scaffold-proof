@@ -31,12 +31,9 @@ if (GatewayAppConfiguration.IsAppConfigurationConfigured(app.Configuration))
 // Adopt the edge proxy's public scheme/host before auth and before YARP re-stamps
 // X-Forwarded-* for the downstream app.
 app.UseProxyForwarding();
-app.UseExceptionHandler(appBuilder =>
-    appBuilder.Run(async ctx =>
-    {
-        ctx.Response.StatusCode = 500;
-        await ctx.Response.WriteAsJsonAsync(new { error = "An unexpected error occurred." });
-    }));
+// EF.AspNetCore problem details (AddEfProblemDetails in AddGatewayServices): no exception text on a 5xx outside
+// Development, requestId/traceId on every problem.
+app.UseExceptionHandler();
 
 app.UseCors("UnoUI");
 app.UseCorrelationId();

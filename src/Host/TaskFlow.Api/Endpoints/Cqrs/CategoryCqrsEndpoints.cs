@@ -1,10 +1,10 @@
 using EF.AspNetCore;
+using EF.AspNetCore.Concurrency;
 using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using TaskFlow.Api.Endpoints.Shared;
-using TaskFlow.Api.Filters;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Cqrs.Features.Categories;
 using TaskFlow.Application.Models;
@@ -18,7 +18,7 @@ public static class CategoryCqrsEndpoints
     public static IEndpointRouteBuilder MapCategoryCqrsEndpoints(this IEndpointRouteBuilder group)
     {
         var g = group.MapGroup("/categories").WithTags("Categories")
-            .AddEndpointFilter<ETagEndpointFilter>();
+            .WithETag();
 
         g.MapPost("/search", Search)
             .WithName("SearchCategories")

@@ -1,16 +1,17 @@
+using EF.AspNetCore.Concurrency;
+using EF.AspNetCore.Cors;
+using EF.AspNetCore.ExceptionHandling;
 using EF.Common.Exceptions;
 using EF.AspNetCore.Versioning;
 using EF.Grpc;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http.Timeouts;
+using Microsoft.EntityFrameworkCore;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using TaskFlow.Api.Auth;
-using TaskFlow.Api.Grpc;
 using TaskFlow.Api.Serialization;
-using TaskFlow.Api.Middleware;
 using TaskFlow.Api.Endpoints;
-using TaskFlow.Api.OpenApi;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Models.Serialization;
 using TaskFlow.Infrastructure.Caching;
@@ -37,7 +38,8 @@ public static class RegisterApiServices
         // endpoint records its own row count and elapsed time.
         services.AddSingleton<StreamingMeter>();
         AddJsonOptions(services);
-        AddCors(services, config);
+        // Origins validated at registration: none, a trailing '/', a path, or '*' with credentials fails startup.
+        services.AddCorsPolicyFromConfiguration("TaskFlowUi", config.GetSection("Cors"));
         AddAuthentication(services, config, startupLogger);
         AddAuthorization(services);
         AddExceptionHandling(services);
@@ -46,12 +48,11 @@ public static class RegisterApiServices
         AddVersionedOpenApi(services, config);
 
         // D-054: the internal gRPC read service. Nothing else changes here - it shares this host's
-        // authentication, authorization, and request context; only the transport is different.
-        // EF.Grpc's ServiceErrorInterceptor does the exception-to-status translation (package request 29)
-        // through ExceptionClassifier, with TaskFlow's own mappings added. The Status detail it sends is the
-        // category name - exception text stays in the server log instead of the wire, which is why
-        // IncludeExceptionMessageInResponse is left at its (false) default.
-        services.AddExceptionClassifier(TaskFlowReadGrpcService.MapExceptions);
+        // authentication, authorization, request context and exception taxonomy; only the transport is
+        // different. EF.Grpc's ServiceErrorInterceptor translates through the same ExceptionClassifier the
+        // HTTP handler uses. The Status detail it sends is the category name - exception text stays in the
+        // server log instead of the wire, which is why IncludeExceptionMessageInResponse is left at its
+        // (false) default.
         services.AddGrpc(options => options.Interceptors.Add<ServiceErrorInterceptor>());
 
         // Workflow JSON seeding is now configured in the bootstrapper via
@@ -80,24 +81,6 @@ public static class RegisterApiServices
         });
     }
 
-    /// <summary>Registers cors dependencies in the service container.</summary>
-    private static void AddCors(IServiceCollection services, IConfiguration config)
-    {
-        var allowedOrigins = config.GetSection("Cors:AllowedOrigins").Get<string[]>();
-        if (allowedOrigins is null || allowedOrigins.Length == 0)
-        {
-            throw new InvalidOperationException("CORS is not configured. Set Cors:AllowedOrigins in configuration.");
-        }
-
-        services.AddCors(options =>
-        {
-            options.AddPolicy("TaskFlowUi", policy =>
-                policy.WithOrigins(allowedOrigins)
-                    .AllowAnyHeader()
-                    .AllowAnyMethod());
-        });
-    }
-
     /// <summary>Registers authentication dependencies in the service container.</summary>
     private static void AddAuthentication(IServiceCollection services, IConfiguration config, ILogger logger)
     {
@@ -113,16 +96,32 @@ public static class RegisterApiServices
         services.AddTaskFlowAuthorization();
     }
 
-    /// <summary>Registers exception handling dependencies in the service container.</summary>
+    /// <summary>
+    /// Registers the EF.AspNetCore problem-details contract (status from <see cref="ExceptionClassifier"/>,
+    /// requestId/traceId/spanId on every problem, no exception text on a 5xx outside Development) with
+    /// TaskFlow's mappings added.
+    /// </summary>
     private static void AddExceptionHandling(IServiceCollection services)
     {
-        services.AddExceptionHandler<DefaultExceptionHandler>();
-        services.AddProblemDetails(options =>
-        {
-            options.CustomizeProblemDetails = context =>
-                ProblemDetailsCorrelation.Apply(context.ProblemDetails, context.HttpContext);
-        });
+        services.AddEfProblemDetails();
+        services.AddExceptionClassifier(MapExceptions);
     }
+
+    /// <summary>
+    /// TaskFlow's additions to the one exception taxonomy the HTTP handler and the gRPC interceptor share
+    /// (the classifier already maps the EF.Common.Contracts exceptions - PreconditionFailedException for a stale
+    /// If-Match, ConflictException for a conflicting idempotent create (D-033) - plus KeyNotFound,
+    /// UnauthorizedAccess, Timeout and cancellation):
+    /// <list type="bullet">
+    /// <item>A policy-free save's DbUpdateConcurrencyException is a lost update: 412 / FailedPrecondition.</item>
+    /// <item>TaskFlow throws ArgumentException for caller input it rejects (page size, cursor and continuation
+    /// tokens, non-v7 ids): 400 / InvalidArgument. FormatException and InvalidOperationException stay server
+    /// faults (500 / Internal).</item>
+    /// </list>
+    /// </summary>
+    internal static void MapExceptions(ExceptionClassifierOptions options) => options
+        .Map<DbUpdateConcurrencyException>(ExceptionCategory.PreconditionFailed)
+        .Map<ArgumentException>(ExceptionCategory.Validation);
 
     /// <summary>Registers rate limiting dependencies in the service container.</summary>
     private static void AddRateLimiting(IServiceCollection services, IConfiguration config)
@@ -248,12 +247,7 @@ public static class RegisterApiServices
             }
         });
 
-        // The versioned OpenAPI helper owns AddOpenApi per document, so the concurrency transformer is
-        // attached to the same named options rather than by re-registering the document.
-        foreach (var apiDocument in ApiContract.SupportedDocuments)
-        {
-            services.Configure<Microsoft.AspNetCore.OpenApi.OpenApiOptions>(
-                apiDocument.GroupName, options => options.AddOperationTransformer<ConcurrencyOperationTransformer>());
-        }
+        // Configures every named document AddEfVersionedOpenApi created.
+        services.AddConcurrencyOpenApiContract();
     }
 }
