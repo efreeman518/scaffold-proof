@@ -32,7 +32,7 @@ session resumes from this file alone.
 a0 (bump and compile) runs first. When it merges: a1, a2, a3 and a5 run in parallel; a4 runs after a3; a6 (docs and
 the full matrix) runs after all of them; then sa (scaffold-ai).
 
-## Active agents: 3
+## Active agents: 2
 
 ## FIFO queue
 
@@ -43,7 +43,7 @@ a4 (after a3), a6, sa
 | Id | Scope | Depends | Model | Status | Branch / PR | Worktree | Agent id | Lease | State folder |
 |---|---|---|---|---|---|---|---|---|---|
 | a0 | Bump every EF.* to 2.0.111; fix every compile break and removed API (moved namespaces, deleted overloads, renamed packages such as EF.UI.Refit, fail-closed tenant filter wiring, AuditLog column migration); solution builds; tests green | - | opus | merged | #29 (248c897) | removed | ada9b31b | released | removed |
-| a1 | Data, domain, common, tenancy, audit: D items' proof adoption | a0 | opus | rebasing onto a5 | `refactor/adopt2-f8ca68-a1` | `.tmp/worktrees/adopt2-f8ca68-a1` | a86cdfed | d50054bb | `.tmp/orchestrated-refactor/adopt2-f8ca68/a1` |
+| a1 | Data, domain, common, tenancy, audit: D items' proof adoption | a0 | opus | merged | #31 (e08dfa0) | removed | a86cdfed | released | removed |
 | a2 | Messaging, outbox, inbox: M items' proof adoption | a0 | opus | running | `refactor/adopt2-f8ca68-a2` | `.tmp/worktrees/adopt2-f8ca68-a2` | a5a367d1 | 6d3bbc4f | `.tmp/orchestrated-refactor/adopt2-f8ca68/a2` |
 | a3 | Hosting, web, UI client: H and U items' proof adoption | a0 | opus | rebasing onto a5 + narrowing ArgumentException mapping | `refactor/adopt2-f8ca68-a3` | `.tmp/worktrees/adopt2-f8ca68-a3` | a5993a86 | 5822fc34 | `.tmp/orchestrated-refactor/adopt2-f8ca68/a3` |
 | a4 | Auth, gateway, rate limiting, cache, scheduler, storage, gRPC, AI: S items' proof adoption | a0, a3 | opus | queued | | | | | |
