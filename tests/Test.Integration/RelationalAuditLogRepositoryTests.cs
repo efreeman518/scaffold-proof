@@ -53,7 +53,7 @@ public class RelationalAuditLogRepositoryTests
         IntegrationTestSetup.AssertAvailable("RabbitMQ", RabbitMqBrokerFixture.StartupError);
 
         var ct = TestContext.CancellationToken;
-        var connectionString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("auditpipeline");
+        var connectionString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("auditpipeline", ct);
         await MigrateAsync(connectionString, ct);
 
         var values = new Dictionary<string, string?>
@@ -127,7 +127,7 @@ public class RelationalAuditLogRepositoryTests
     public async Task Append_PersistsEveryAuditField_AndRetentionRespectsTheCutoff()
     {
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("auditrel");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("auditrel", ct);
         await MigrateAsync(connString, ct);
 
         var tenantId = Guid.NewGuid();

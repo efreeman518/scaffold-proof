@@ -30,8 +30,8 @@ internal static class DbContainerFixture
     internal static Task StopAsync() => Container.DisposeAsync().AsTask();
 
     /// <summary>Creates an empty isolated database and returns a connection string pointing to it.</summary>
-    internal static Task<string> CreateEmptyDatabaseConnectionStringAsync(string prefix) =>
-        Container.CreateEmptyDatabaseAsync(prefix);
+    internal static Task<string> CreateEmptyDatabaseConnectionStringAsync(string prefix, CancellationToken cancellationToken) =>
+        Container.CreateEmptyDatabaseAsync(prefix, cancellationToken);
 
     // The component contexts carry no tenant, and EF.Data's tenant query filter reads nothing for a tenant-less
     // context unless it is marked all-tenants; a test that pins a tenant sets TenantId and clears AllTenants.

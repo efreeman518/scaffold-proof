@@ -41,7 +41,7 @@ public class RelationalTaskViewRepositoryTests
             Assert.Inconclusive("PostgreSql lane.");
 
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("taskviewjsonb");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("taskviewjsonb", ct);
         await using var db = DbContainerFixture.CreateTrxnContext(connString);
         var migrator = db.GetService<IMigrator>();
         await migrator.MigrateAsync("20260908232538_AddTaskItemEmbedding", ct);
@@ -84,7 +84,7 @@ public class RelationalTaskViewRepositoryTests
     public async Task UpsertThenGet_RoundTripsEveryProjectedField_AndReplacesOnSecondUpsert()
     {
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("taskview");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("taskview", ct);
         await MigrateAsync(connString, ct);
 
         var tenantId = Guid.NewGuid().ToString();
@@ -158,7 +158,7 @@ public class RelationalTaskViewRepositoryTests
     public async Task ConcurrentPatchCounters_LoseNoDeltas_AndAMissingRowIsANoOp()
     {
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("taskviewpatch");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("taskviewpatch", ct);
         await MigrateAsync(connString, ct);
 
         var tenantId = Guid.NewGuid().ToString();
@@ -235,7 +235,7 @@ public class RelationalTaskViewRepositoryTests
         const int pageSize = 10;
 
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("taskviewpage");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("taskviewpage", ct);
         await MigrateAsync(connString, ct);
 
         var tenantId = Guid.NewGuid().ToString();

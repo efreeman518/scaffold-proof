@@ -180,7 +180,7 @@ public class InboxStoreTests
     public async Task Migration_BackfillsPreExistingClaimsAsCompleted()
     {
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("inboxbackfill");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("inboxbackfill", ct);
         await using var db = DbContainerFixture.CreateTrxnContext(connString);
         var migrations = db.Database.GetMigrations().ToList();
         var twoState = migrations.FindIndex(m => m.EndsWith("_TwoStateInboxAndOutboxTraceContext", StringComparison.Ordinal));
@@ -306,7 +306,7 @@ public class InboxStoreTests
 
     private static async Task<string> MigratedDatabaseAsync(string prefix, CancellationToken ct)
     {
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync(prefix);
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync(prefix, ct);
         await using var db = DbContainerFixture.CreateTrxnContext(connString);
         await db.Database.MigrateAsync(ct);
         return connString;
