@@ -3,6 +3,7 @@ using Azure.Messaging.ServiceBus;
 using Azure.Storage.Blobs;
 using EF.FlowEngine.Abstractions;
 using EF.FlowEngine.Clients.ServiceBus;
+using EF.Messaging.ServiceBus;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
@@ -13,7 +14,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using TaskFlow.Bootstrapper;
-using TaskFlow.Bootstrapper.HealthChecks;
 using Test.Support;
 
 namespace Test.Unit.Infrastructure;
@@ -166,10 +166,16 @@ public sealed class AzureIdentityEndpointRegistrationTests
         client.Setup(value => value.CreateSender("DomainEvents")).Returns(sender.Object);
         var factory = new Mock<IAzureClientFactory<ServiceBusClient>>();
         factory.Setup(value => value.CreateClient("TaskFlowSBClient")).Returns(client.Object);
-        var healthCheck = new ServiceBusHealthCheck(factory.Object, new ConfigurationBuilder().Build());
+        // M17: the package check, registered with TaskFlow's client and topic names.
+        var services = new ServiceCollection();
+        services.AddSingleton(factory.Object);
+        services.AddHealthChecks().AddServiceBusHealthCheck("TaskFlowSBClient", "DomainEvents", "service-bus");
+        using var provider = services.BuildServiceProvider();
+        var registration = provider.GetRequiredService<IOptions<HealthCheckServiceOptions>>().Value.Registrations.Single();
+        var healthCheck = registration.Factory(provider);
 
         var result = await healthCheck.CheckHealthAsync(
-            new HealthCheckContext(),
+            new HealthCheckContext { Registration = registration },
             TestContext.CancellationToken);
 
         Assert.AreEqual(HealthStatus.Healthy, result.Status);

@@ -5,7 +5,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Hosting;
-using TaskFlow.Infrastructure.Data.Messaging;
 using TaskFlow.Infrastructure.Storage;
 using TaskFlow.Infrastructure.Storage.CosmosDb;
 
@@ -59,8 +58,6 @@ public static class InertNonAzureLane
         services.AddSingleton<IObjectStorageRepository, NoOpBlobStorageRepository>();
         services.RemoveAll<IAuditLogRepository>();
         services.AddSingleton<IAuditLogRepository, NoOpAuditLogRepository>();
-        services.RemoveAll<IIntegrationEventTransport>();
-        services.AddSingleton<IIntegrationEventTransport, NoOpEventTransport>();
         services.RemoveAll<ITaskViewRepository>();
         services.AddSingleton<ITaskViewRepository, NoOpTaskViewRepository>();
     }

@@ -1,4 +1,5 @@
 using EF.Messaging;
+using EF.Messaging.Outbox;
 using TaskFlow.Domain.Shared;
 
 namespace TaskFlow.Application.Contracts.Messaging;
@@ -10,12 +11,17 @@ namespace TaskFlow.Application.Contracts.Messaging;
 /// without deserializing the payload.
 /// <para>
 /// The envelope carries no tenant. TaskFlow's tenant travels in the payload (every
-/// <see cref="IDomainEvent"/> has one) and is denormalized onto the outbox row and the broker message
-/// properties by the writer, which is where a subscription rule and a partition key actually read it.
+/// <see cref="ITenantDomainEvent"/> has one) and as the <see cref="TenantIdHeader"/> outbox header, which the
+/// transport copies onto the broker message, where a subscription rule and a partition key actually read it.
 /// </para>
 /// </summary>
 public static class TaskFlowIntegrationEvents
 {
+    /// <summary>Logical channel every TaskFlow integration event goes to; the transport maps it to a topic or exchange.</summary>
+    public const string Destination = "DomainEvents";
+
+    /// <summary>Outbox header, and broker message property, carrying the owning tenant.</summary>
+    public const string TenantIdHeader = "TenantId";
     /// <summary>
     /// Per-type payload schema version. A record whose shape changes gets a bumped entry here and a consumer
     /// that switches on EventVersion; unlisted types are version 1.
@@ -39,6 +45,18 @@ public static class TaskFlowIntegrationEvents
     /// <summary>True when the event type is one this deployment knows how to consume.</summary>
     public static bool IsKnownType(string eventType) => Versions.ContainsKey(eventType);
 
+    /// <summary>
+    /// The one reader configuration every transport uses (D-034, D-048): envelopes deserialize through the
+    /// generated messaging context, and a type this build has no consumer for is dead-lettered as unsupported.
+    /// </summary>
+    /// <param name="options">Options bound for <see cref="IntegrationEnvelopeReader"/>.</param>
+    public static void ConfigureReader(IntegrationEnvelopeReaderOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        options.SerializerOptions = TaskFlowMessagingJsonContext.Default.Options;
+        options.IsKnownType = IsKnownType;
+    }
+
     /// <summary>Wraps a raised domain event. <paramref name="id"/> allows a deterministic (replayable) message id.</summary>
     /// <param name="domainEvent">The raised event; its runtime type supplies the envelope type and payload.</param>
     /// <param name="occurredAtUtc">When the domain change happened, not when it was dispatched.</param>
@@ -48,7 +66,7 @@ public static class TaskFlowIntegrationEvents
     /// The event record is not registered on <see cref="TaskFlowMessagingJsonContext"/>.
     /// </exception>
     public static IntegrationEventEnvelope Envelope(
-        IDomainEvent domainEvent, DateTimeOffset occurredAtUtc, string? correlationId, Guid? id = null)
+        ITenantDomainEvent domainEvent, DateTimeOffset occurredAtUtc, string? correlationId, Guid? id = null)
     {
         ArgumentNullException.ThrowIfNull(domainEvent);
         var eventType = domainEvent.GetType();
@@ -71,4 +89,14 @@ public static class TaskFlowIntegrationEvents
             id,
             TaskFlowMessagingJsonContext.Default.Options);
     }
+
+    /// <summary>
+    /// The outbox entry for an envelope: sent to <see cref="Destination"/> with the tenant as the
+    /// <see cref="TenantIdHeader"/> header. A job that re-runs sets a deterministic envelope id first, so the
+    /// consumer inbox rejects the replay as a duplicate.
+    /// </summary>
+    /// <param name="envelope">Envelope to stage; its id becomes the outbox row id and the broker message id.</param>
+    /// <param name="tenantId">Owning tenant.</param>
+    public static OutboxEntry Entry(IntegrationEventEnvelope envelope, Guid tenantId) =>
+        new(envelope, Destination, new Dictionary<string, string>(StringComparer.Ordinal) { [TenantIdHeader] = tenantId.ToString() });
 }

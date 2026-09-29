@@ -1,6 +1,7 @@
 extern alias SchedulerHost;
 
 using EF.Data.Contracts;
+using EF.Data.Outbox;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.EntityFrameworkCore;
@@ -14,6 +15,7 @@ using TaskFlow.Infrastructure.Repositories;
 using TaskFlow.Observability.Meters;
 using SchedulerHost::TaskFlow.Scheduler.Handlers;
 using Test.Integration.Infrastructure;
+using Test.Support;
 
 namespace Test.Integration;
 
@@ -155,7 +157,7 @@ public class SchedulerJobIntegrationTests
         {
             var handler = new OverdueTaskCheckHandler(
                 new TaskItemSystemRepository(db),
-                new OutboxStaging(db),
+                new OutboxStaging<TaskFlowDbContextTrxn>(db, TestOutbox.Options),
                 new SchedulerJobMeter(),
                 TimeProvider.System,
                 NullLogger<OverdueTaskCheckHandler>.Instance);
@@ -169,7 +171,7 @@ public class SchedulerJobIntegrationTests
         // Only the announcements this job stages: seeding a task raises its own created event through the
         // staging interceptor, and counting those would measure the fixture rather than the job.
         var outboxRows = await verify.OutboxMessages.CountAsync(
-            m => m.TenantId == tenantId && m.EventType == nameof(TaskItemOverdueSuspectedEvent),
+            m => m.Headers!.Contains(tenantId.ToString()) && m.EventType == nameof(TaskItemOverdueSuspectedEvent),
             TestContext.CancellationToken);
 
         return (notified, outboxRows);
@@ -182,7 +184,7 @@ public class SchedulerJobIntegrationTests
         {
             var handler = new RecurringTaskGenerationHandler(
                 new TaskItemSystemRepository(db),
-                new OutboxStaging(db),
+                new OutboxStaging<TaskFlowDbContextTrxn>(db, TestOutbox.Options),
                 new SchedulerJobMeter(),
                 new FixedTimeProvider(Now),
                 NullLogger<RecurringTaskGenerationHandler>.Instance);
@@ -200,7 +202,7 @@ public class SchedulerJobIntegrationTests
             .Select(t => t.Id.Value)
             .ToListAsync(TestContext.CancellationToken);
         var outboxRows = await verify.OutboxMessages.CountAsync(
-            m => m.TenantId == tenantId && occurrenceIds.Contains(m.Id), TestContext.CancellationToken);
+            m => m.Headers!.Contains(tenantId.ToString()) && occurrenceIds.Contains(m.Id), TestContext.CancellationToken);
 
         return (occurrences, outboxRows);
     }

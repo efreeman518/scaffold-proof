@@ -25,10 +25,6 @@ internal static partial class LogMessages
     [LoggerMessage(EventId = LogEventIds.FunctionsBase + 4, Level = LogLevel.Information, Message = "TaskApiProxy invoked at {UtcNow}")]
     public static partial void TaskApiProxyInvoked(this ILogger logger, DateTime utcNow);
 
-    /// <summary>Logs a delivery that was dead-lettered because it could not be understood.</summary>
-    [LoggerMessage(EventId = LogEventIds.FunctionsBase + 5, Level = LogLevel.Warning, Message = "Consumer {Consumer} dead-lettered message {MessageId}: {Reason}")]
-    public static partial void EnvelopeRejected(this ILogger logger, string consumer, string? messageId, string reason);
-
     /// <summary>Logs that a CreateCategory function invocation failed application validation.</summary>
     [LoggerMessage(EventId = LogEventIds.FunctionsBase + 6, Level = LogLevel.Warning, Message = "CreateCategory failed for request {Name}")]
     public static partial void CreateCategoryFailed(this ILogger logger, string name);

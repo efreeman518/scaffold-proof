@@ -6,12 +6,7 @@ using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.MessageHandlers.Consumers;
 using TaskFlow.Domain.Shared.Events;
-using TaskFlow.Observability.Meters;
 using Test.Support;
-using IInboxStore = TaskFlow.Application.Contracts.Messaging.IInboxStore;
-using InboxClaim = TaskFlow.Application.Contracts.Messaging.InboxClaim;
-using InboxClaimStatus = TaskFlow.Application.Contracts.Messaging.InboxClaimStatus;
-using MessagingMetrics = TaskFlow.Observability.Meters.MessagingMetrics;
 
 namespace Test.Unit.AI;
 
@@ -91,7 +86,7 @@ public sealed class TaskEmbeddingConsumerTests
         new(new FakeInboxStore(), repo, generator, new MessagingMetrics(),
             NullLogger<TaskEmbeddingConsumer>.Instance);
 
-    private static IntegrationEventEnvelope Envelope(TaskFlow.Domain.Shared.IDomainEvent domainEvent) =>
+    private static IntegrationEventEnvelope Envelope(TaskFlow.Domain.Shared.ITenantDomainEvent domainEvent) =>
         TaskFlowIntegrationEvents.Envelope(domainEvent, DateTimeOffset.UtcNow, correlationId: null);
 
     private sealed class FakeInboxStore : IInboxStore

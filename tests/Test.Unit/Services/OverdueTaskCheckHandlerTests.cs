@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Domain.Shared.Events;
 using TaskFlow.Observability.Meters;
@@ -110,8 +111,8 @@ public class OverdueTaskCheckHandlerTests
         await _handler.HandleAsync(TestContext.CancellationToken);
 
         Assert.AreEqual(2, _outbox.Staged.Count);
-        Assert.AreEqual(_outbox.Staged[0].DeterministicId, _outbox.Staged[1].DeterministicId);
-        Assert.AreEqual(_outbox.Staged[0].Envelope.Id, _outbox.Staged[0].DeterministicId);
+        Assert.AreEqual(_outbox.Staged[0].Envelope.Id, _outbox.Staged[1].Envelope.Id);
+        Assert.AreEqual(TenantA.ToString(), _outbox.Staged[0].Headers![TaskFlowIntegrationEvents.TenantIdHeader]);
 
         var rescheduled = new FakeTaskItemSystemRepository();
         var otherOutbox = new FakeOutboxStaging();
@@ -122,7 +123,7 @@ public class OverdueTaskCheckHandlerTests
 
         await handler.HandleAsync(TestContext.CancellationToken);
 
-        Assert.AreNotEqual(_outbox.Staged[0].DeterministicId, otherOutbox.Staged[0].DeterministicId);
+        Assert.AreNotEqual(_outbox.Staged[0].Envelope.Id, otherOutbox.Staged[0].Envelope.Id);
     }
 
     public TestContext TestContext { get; set; } = null!;

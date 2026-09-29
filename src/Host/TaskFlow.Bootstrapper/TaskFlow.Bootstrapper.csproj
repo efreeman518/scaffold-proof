@@ -31,6 +31,8 @@
     <PackageReference Include="EF.Storage.S3" />
     <PackageReference Include="EF.Audit.Contracts" />
     <PackageReference Include="Azure.Messaging.ServiceBus" />
+    <!-- M14/M17: Service Bus outbox transport and health check. -->
+    <PackageReference Include="EF.Messaging" />
     <PackageReference Include="EF.FlowEngine" />
     <PackageReference Include="EF.FlowEngine.StateStore.Sql" />
     <PackageReference Include="EF.FlowEngine.Locks.Sql" />

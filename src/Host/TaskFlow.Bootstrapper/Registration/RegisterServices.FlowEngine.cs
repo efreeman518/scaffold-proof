@@ -7,15 +7,15 @@ using EF.FlowEngine.Clients.ServiceBus;
 using EF.FlowEngine.Model;
 using EF.Host;
 using EF.Messaging.RabbitMq;
+using EF.Messaging.Tracing;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TaskFlow.Infrastructure.Data;
-using TaskFlow.Infrastructure.Data.Interceptors;
+using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Infrastructure.Messaging.RabbitMq;
-using TaskFlow.Observability.Tracing;
 
 namespace TaskFlow.Bootstrapper;
 
@@ -132,7 +132,7 @@ public static partial class RegisterServices
     internal static string ResolveFlowEngineServiceBusTopic(IConfiguration config) =>
         config["FlowEngine:ServiceBusTopic"]
         ?? config["DomainEventsTopic"]
-        ?? OutboxStagingInterceptor.DefaultDestination;
+        ?? TaskFlowIntegrationEvents.Destination;
 
     /// <summary>
     /// FlowEngine "integration-events" client over the package publisher. A timeout or broker refusal surfaces as
@@ -191,12 +191,10 @@ public static partial class RegisterServices
                 StringComparer.Ordinal)
             ?? new Dictionary<string, object?>(StringComparer.Ordinal);
 
-        publishActivity = MessagingTrace.StartPublish(
-            MessagingTrace.RabbitMqSystem,
-            TaskFlowRabbitMqTopology.Exchange,
-            request.Subject,
-            messageId,
-            (key, value) => headers[key] = value);
+        publishActivity = MessagingActivitySource.StartSend(
+            MessagingActivitySource.RabbitMqSystem, TaskFlowRabbitMqTopology.Exchange, messageId);
+        // A null span (nothing listening) injects the ambient context, so the consumer still joins the trace.
+        MessagingTraceContext.Inject(publishActivity, (key, value) => headers[key] = value);
 
         return new RabbitMqMessage(
             body,

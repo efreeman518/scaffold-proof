@@ -1,18 +1,20 @@
 using EF.Data.Contracts;
+using EF.Data.Outbox;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
+using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
-
-using TaskFlow.Infrastructure.Data.Interceptors;
-using TaskFlow.Infrastructure.Data.Operational;
-using TaskFlow.Infrastructure.Repositories;
+using TaskFlow.Infrastructure.Data;
 using Test.Integration.Infrastructure;
 using Test.Support;
 
 namespace Test.Integration;
 
 /// <summary>
-/// D-026 claim semantics against a real database, on whichever provider the lane selected. The claim is the
+/// D-026 claim semantics (EF.Data.Outbox LeasedWorkStore over TaskFlow's context and migrations) against a real
+/// database, on whichever provider the lane selected. The claim is the
 /// only thing stopping two Scheduler replicas from dispatching the same event twice, and it is expressed in
 /// provider-neutral EF Core, so it has to be proven on both providers rather than reasoned about.
 /// Component tier: contexts directly against the standalone database Testcontainer.
@@ -66,17 +68,17 @@ public class OutboxClaimTests
 
         await using var db = DbContainerFixture.CreateTrxnContext(connString);
         var clock = new MutableClock(DateTimeOffset.UtcNow);
-        var work = new OperationalWorkRepository(db, clock);
+        var work = Store(db, clock);
 
         // A replica claims and then dies without releasing: the lease must expire, not park the row forever.
-        var abandoned = await work.ClaimAsync<OutboxMessage>(10, Lease, MaxAttempts, "dead-replica", ct);
+        var abandoned = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, MaxAttempts, "dead-replica"), ct);
         Assert.AreEqual(1, abandoned.Items.Count);
         Assert.AreEqual(1, abandoned.Items[0].AttemptCount);
-        Assert.AreEqual(0, (await work.ClaimAsync<OutboxMessage>(10, Lease, MaxAttempts, "live-replica", ct)).Items.Count,
+        Assert.AreEqual(0, (await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, MaxAttempts, "live-replica"), ct)).Items.Count,
             "a live lease is not claimable");
 
         clock.Advance(Lease + TimeSpan.FromSeconds(1));
-        var reclaimed = await work.ClaimAsync<OutboxMessage>(10, Lease, MaxAttempts, "live-replica", ct);
+        var reclaimed = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, MaxAttempts, "live-replica"), ct);
         Assert.AreEqual(1, reclaimed.Items.Count);
         Assert.AreNotEqual(abandoned.LeaseToken, reclaimed.LeaseToken);
         Assert.AreEqual(2, reclaimed.Items[0].AttemptCount, "each claim counts as an attempt");
@@ -91,12 +93,12 @@ public class OutboxClaimTests
         Assert.AreEqual("poison", parked.LastError);
         Assert.IsNull(parked.LeaseToken);
 
-        var afterDeadLetter = await work.ClaimAsync<OutboxMessage>(10, Lease, MaxAttempts, "live-replica", ct);
+        var afterDeadLetter = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, MaxAttempts, "live-replica"), ct);
         Assert.AreEqual(0, afterDeadLetter.Items.Count, "a dead-lettered row is never claimed again");
 
         // The admin retry endpoint puts it back in play.
         Assert.IsTrue(await work.RetryDeadLetteredAsync<OutboxMessage>(row.Id, ct));
-        var afterRetry = await work.ClaimAsync<OutboxMessage>(10, Lease, MaxAttempts, "live-replica", ct);
+        var afterRetry = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, MaxAttempts, "live-replica"), ct);
         Assert.AreEqual(1, afterRetry.Items.Count);
     }
 
@@ -115,24 +117,24 @@ public class OutboxClaimTests
 
         await using var db = DbContainerFixture.CreateTrxnContext(connString);
         var clock = new MutableClock(DateTimeOffset.UtcNow);
-        var work = new OperationalWorkRepository(db, clock);
+        var work = Store(db, clock);
         const int maxAttempts = 3;
 
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            var claim = await work.ClaimAsync<OutboxMessage>(10, Lease, maxAttempts, "crashing-replica", ct);
+            var claim = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, maxAttempts, "crashing-replica"), ct);
             Assert.AreEqual(1, claim.Items.Count, $"attempt {attempt} should still claim the row");
             Assert.AreEqual(attempt, claim.Items[0].AttemptCount);
             clock.Advance(Lease + TimeSpan.FromSeconds(1)); // the replica dies holding the lease
         }
 
-        var afterLast = await work.ClaimAsync<OutboxMessage>(10, Lease, maxAttempts, "live-replica", ct);
+        var afterLast = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, maxAttempts, "live-replica"), ct);
         Assert.AreEqual(0, afterLast.Items.Count, "an exhausted row must not be leased a fourth time");
 
         await using var verify = DbContainerFixture.CreateTrxnContext(connString);
         var parked = await verify.OutboxMessages.AsNoTracking().SingleAsync(ct);
         Assert.IsNotNull(parked.DeadLetteredAtUtc, "the exhausted row is parked, and kept");
-        Assert.AreEqual(OperationalWorkRepository.LeaseExpiredOnFinalAttempt, parked.LastError);
+        Assert.AreEqual("Lease expired on final attempt", parked.LastError);
         Assert.IsNull(parked.LeaseToken);
         Assert.AreEqual(maxAttempts, parked.AttemptCount);
     }
@@ -152,14 +154,14 @@ public class OutboxClaimTests
 
         await using var db = DbContainerFixture.CreateTrxnContext(connString);
         await db.OutboxMessages.ExecuteUpdateAsync(s => s.SetProperty(m => m.AttemptCount, 2), ct);
-        var work = new OperationalWorkRepository(db);
+        var work = Store(db);
 
-        var underThree = await work.ClaimAsync<OutboxMessage>(10, Lease, 3, "replica", ct);
+        var underThree = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, 3, "replica"), ct);
         Assert.AreEqual(1, underThree.Items.Count, "attempt 3 of 3 is still allowed");
         Assert.AreEqual(3, underThree.Items[0].AttemptCount);
         Assert.AreEqual(1, await work.AbandonAsync<OutboxMessage>(underThree.LeaseToken, [underThree.Items[0].Id], ct));
 
-        var underTwo = await work.ClaimAsync<OutboxMessage>(10, Lease, 2, "replica", ct);
+        var underTwo = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, 2, "replica"), ct);
         Assert.AreEqual(0, underTwo.Items.Count, "two attempts are spent under a ceiling of 2");
 
         await using var verify = DbContainerFixture.CreateTrxnContext(connString);
@@ -181,18 +183,18 @@ public class OutboxClaimTests
         await SeedOutboxAsync(connString, 1, ct);
 
         await using var db = DbContainerFixture.CreateTrxnContext(connString);
-        var work = new OperationalWorkRepository(db);
-        var claim = await work.ClaimAsync<OutboxMessage>(10, Lease, MaxAttempts, "stopping-replica", ct);
+        var work = Store(db);
+        var claim = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, MaxAttempts, "stopping-replica"), ct);
         var id = claim.Items[0].Id;
         var foreign = Guid.CreateVersion7();
 
         Assert.AreEqual(0, await work.CompleteAsync<OutboxMessage>(foreign, [id], ct));
-        Assert.IsFalse(await work.ReleaseAsync<OutboxMessage>(foreign, id, 1, "x", ct));
+        Assert.IsFalse(await work.ReleaseAsync<OutboxMessage>(foreign, id, TimeSpan.FromSeconds(2), "x", ct));
         Assert.IsFalse(await work.DeadLetterAsync<OutboxMessage>(foreign, id, "x", ct));
         Assert.AreEqual(0, await work.AbandonAsync<OutboxMessage>(foreign, [id], ct));
 
         Assert.AreEqual(1, await work.AbandonAsync<OutboxMessage>(claim.LeaseToken, [id], ct));
-        var reclaimed = await work.ClaimAsync<OutboxMessage>(10, Lease, MaxAttempts, "next-replica", ct);
+        var reclaimed = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, MaxAttempts, "next-replica"), ct);
         Assert.AreEqual(1, reclaimed.Items.Count, "an abandoned row is claimable at once, without waiting out the lease");
         Assert.AreEqual(1, reclaimed.Items[0].AttemptCount, "the abandoned claim did not consume an attempt");
     }
@@ -227,6 +229,40 @@ public class OutboxClaimTests
         Assert.AreEqual(0, await verify.TaskItems.IgnoreQueryFilters().CountAsync(ct));
     }
 
+    /// <summary>
+    /// The migration to the package outbox shape carries every row's tenant into the TenantId header before it
+    /// drops the column, so a row staged before the upgrade is still published with its tenant.
+    /// </summary>
+    [TestMethod]
+    [Timeout(300000, CooperativeCancellation = true)]
+    public async Task Migration_CarriesThePreExistingTenantIntoTheHeaders()
+    {
+        var ct = TestContext.CancellationToken;
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("outboxheaders");
+        await using var db = DbContainerFixture.CreateTrxnContext(connString);
+        var migrations = db.Database.GetMigrations().ToList();
+        var packageShape = migrations.FindIndex(m => m.EndsWith("_PackageOutboxMessage", StringComparison.Ordinal));
+        Assert.IsGreaterThan(0, packageShape, "the package outbox migration must exist and not be the first");
+
+        var migrator = db.GetService<IMigrator>();
+        await migrator.MigrateAsync(migrations[packageShape - 1], cancellationToken: ct);
+        var id = Guid.CreateVersion7();
+        var tenantId = Guid.CreateVersion7();
+        var now = DateTimeOffset.UtcNow;
+        await db.Database.ExecuteSqlAsync(
+            $"""
+            INSERT INTO taskflow."OutboxMessage" ("Id", "TenantId", "AvailableAtUtc", "AttemptCount", "Destination", "EventType", "EventVersion", "Payload", "OccurredAtUtc")
+            VALUES ({id}, {tenantId}, {now}, 0, {TaskFlowIntegrationEvents.Destination}, {"TaskItemCreatedEvent"}, 1, {"{}"}, {now})
+            """, ct);
+
+        await migrator.MigrateAsync(cancellationToken: ct);
+
+        var row = await db.OutboxMessages.AsNoTracking().SingleAsync(m => m.Id == id, ct);
+        var headers = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(row.Headers!);
+        Assert.AreEqual(tenantId.ToString(), headers![TaskFlowIntegrationEvents.TenantIdHeader],
+            "the header must hold the tenant in the lowercase form Guid.ToString() writes for new rows");
+    }
+
     public TestContext TestContext { get; set; } = null!;
 
     private static async Task MigrateAsync(string connString, CancellationToken ct)
@@ -244,9 +280,8 @@ public class OutboxClaimTests
             db.OutboxMessages.Add(new OutboxMessage
             {
                 Id = Guid.CreateVersion7(),
-                TenantId = TestConstants.TenantId,
                 AvailableAtUtc = now,
-                Destination = OutboxStagingInterceptor.DefaultDestination,
+                Destination = TaskFlowIntegrationEvents.Destination,
                 EventType = "TaskItemCreatedEvent",
                 EventVersion = 1,
                 Payload = "{}",
@@ -265,8 +300,8 @@ public class OutboxClaimTests
         while (true)
         {
             await using var db = DbContainerFixture.CreateTrxnContext(connString);
-            var work = new OperationalWorkRepository(db);
-            var batch = await work.ClaimAsync<OutboxMessage>(25, Lease, MaxAttempts, owner, ct);
+            var work = Store(db);
+            var batch = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(25, Lease, MaxAttempts, owner), ct);
             if (batch.Items.Count == 0) break;
 
             foreach (var item in batch.Items)
@@ -283,6 +318,9 @@ public class OutboxClaimTests
 
         return claimed;
     }
+
+    private static LeasedWorkStore<TaskFlowDbContextTrxn> Store(TaskFlowDbContextTrxn db, TimeProvider? clock = null) =>
+        new(db, clock);
 
     /// <summary>Clock a test moves forward to expire leases, instead of claiming with a negative lease.</summary>
     private sealed class MutableClock(DateTimeOffset start) : TimeProvider

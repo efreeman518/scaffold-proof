@@ -1,5 +1,6 @@
 using EF.Audit.Data;
 using EF.Data;
+using EF.Data.Outbox;
 using EF.Data.Encryption;
 using EF.Domain.Contracts;
 using Microsoft.EntityFrameworkCore;
@@ -42,6 +43,9 @@ public abstract class TaskFlowDbContextBase(DbContextOptions options) : DbContex
         base.OnModelCreating(modelBuilder);
         modelBuilder.HasDefaultSchema(SchemaName);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(TaskFlowDbContextBase).Assembly);
+        // M10/M12: the package owns the outbox and two-state consumer inbox mappings (tables OutboxMessage, ConsumerInbox).
+        modelBuilder.ApplyOutboxModel(SchemaName);
+        modelBuilder.ApplyInboxModel(SchemaName);
         // TaskItemConfiguration has no parameterless constructor (the assembly scan skips it): it binds the
         // secure-column converters to the process encryptor carried by the options (D-023).
         modelBuilder.ApplyConfiguration(new TaskItemConfiguration(this.GetColumnEncryptor()));
@@ -96,7 +100,7 @@ public abstract class TaskFlowDbContextBase(DbContextOptions options) : DbContex
     // Operational work tables (D-026, D-029): not tenant entities, no query filter, no Version.
     public DbSet<OutboxMessage> OutboxMessages { get; set; } = null!;
     public DbSet<BlobDeleteWork> BlobDeleteWork { get; set; } = null!;
-    public DbSet<ConsumerInbox> ConsumerInbox { get; set; } = null!;
+    public DbSet<InboxEntry> ConsumerInbox { get; set; } = null!;
 
     // NonAzure PostgreSQL JSONB read model and relational audit sink (D-038, D-039):
     // same rules as the operational tables - not tenant entities, no query filter, no Version. Declared on the

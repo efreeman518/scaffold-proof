@@ -1,3 +1,4 @@
+using EF.Messaging;
 using OpenTelemetry.Metrics;
 using TaskFlow.Observability.Meters;
 

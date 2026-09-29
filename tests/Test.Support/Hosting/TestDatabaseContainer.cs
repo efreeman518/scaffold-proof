@@ -6,7 +6,6 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using System.ComponentModel;
 using TaskFlow.Hosting;
-using TaskFlow.Infrastructure.Data.Interceptors;
 using TaskFlow.Infrastructure.Data.Provider;
 
 namespace Test.Support.Hosting;
@@ -134,7 +133,7 @@ public sealed class TestDatabaseContainer(TaskFlowDbProvider provider) : IAsyncD
             .AddInterceptors(
                 // D-026: the same interceptor the hosts register, so integration tests exercise the real
                 // staging path rather than a hand-inserted outbox row.
-                new OutboxStagingInterceptor(),
+                TestOutbox.Interceptor(),
                 new BlindIndexInterceptor(TestColumnEncryption.Keys.BlindIndexKey))
             .AddInterceptors(extraInterceptors)
             .Options;

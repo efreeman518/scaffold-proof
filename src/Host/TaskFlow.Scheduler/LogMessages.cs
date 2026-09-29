@@ -33,14 +33,6 @@ internal static partial class LogMessages
     // EventId SchedulerBase + 6 was LeasedWorkerPollFailed; EF.BackgroundServices.LeasedWorkerBase logs the
     // failed batch itself (package request 11). Not reused - a shipped EventId is retired, never renumbered.
 
-    /// <summary>Logs that the outbox dispatcher did not start because no broker is configured.</summary>
-    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 7, Level = LogLevel.Warning, Message = "No messaging transport configured: outbox dispatcher not started, staged rows remain pending")]
-    public static partial void OutboxDispatcherDisabled(this ILogger logger);
-
-    /// <summary>Logs that one destination batch failed and its rows were released.</summary>
-    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 8, Level = LogLevel.Warning, Message = "Outbox dispatch to {Destination} failed for {Count} message(s); rows released for retry")]
-    public static partial void OutboxDispatchFailed(this ILogger logger, string destination, int count, Exception exception);
-
     /// <summary>Logs a blob delete that failed and will be retried.</summary>
     [LoggerMessage(EventId = LogEventIds.SchedulerBase + 10, Level = LogLevel.Warning, Message = "Deferred delete of {Container}/{BlobName} failed; row released for retry")]
     public static partial void BlobDeleteFailed(this ILogger logger, string container, string blobName, Exception exception);
@@ -75,16 +67,4 @@ internal static partial class LogMessages
 
     // EventIds SchedulerBase + 18 and + 19 were TickerQCronManagerUnavailable / TickerQCronJobsSeeded. The cron
     // expressions now live on [TickerFunction] and TickerQ seeds them itself; retired, never reused.
-
-    /// <summary>Logs a work-table handler that threw; the rows it did not report are released for retry.</summary>
-    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 20, Level = LogLevel.Error, Message = "{WorkType} handler failed on a batch of {Count}; unreported rows are released for retry")]
-    public static partial void WorkBatchHandlerFailed(this ILogger logger, string workType, int count, Exception exception);
-
-    /// <summary>Logs a work row parked after a permanent failure or its last attempt.</summary>
-    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 21, Level = LogLevel.Warning, Message = "{WorkType} row {Id} dead-lettered after {Attempts} attempt(s): {Error}")]
-    public static partial void WorkItemDeadLettered(this ILogger logger, string workType, Guid id, int attempts, string error);
-
-    /// <summary>Logs settlement statements that changed no row because another replica took the lease over.</summary>
-    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 22, Level = LogLevel.Warning, Message = "{WorkType}: lease {LeaseToken} was lost for {Count} row(s) before settlement; another replica owns them")]
-    public static partial void WorkLeaseLost(this ILogger logger, string workType, int count, Guid leaseToken);
 }

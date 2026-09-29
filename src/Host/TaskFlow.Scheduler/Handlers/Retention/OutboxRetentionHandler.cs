@@ -1,3 +1,4 @@
+using EF.Data.Outbox;
 using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Observability.Meters;
 using TaskFlow.Scheduler.Abstractions;
@@ -10,7 +11,7 @@ namespace TaskFlow.Scheduler.Handlers.Retention;
 /// deleting it would drop the only surviving copy of the event.
 /// </summary>
 public sealed class OutboxRetentionHandler(
-    IOperationalWorkRepository workRepository,
+    ILeasedWorkStore workRepository,
     SchedulerJobMeter meter,
     TimeProvider timeProvider,
     IConfiguration config) : IScheduledJobHandler

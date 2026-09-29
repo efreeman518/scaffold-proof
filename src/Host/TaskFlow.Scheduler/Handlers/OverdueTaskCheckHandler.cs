@@ -1,4 +1,5 @@
 using EF.Common;
+using EF.Messaging.Outbox;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Domain.Shared;
@@ -96,6 +97,6 @@ public sealed class OverdueTaskCheckHandler(
             correlationId: null,
             id: messageId);
 
-        outbox.Stage(envelope, row.TenantId, messageId);
+        outbox.Stage(TaskFlowIntegrationEvents.Entry(envelope, row.TenantId));
     }
 }

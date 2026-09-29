@@ -5,4 +5,4 @@ public record TaskItemRescheduledEvent(
     Guid TaskItemId,
     Guid TenantId,
     DateTimeOffset? NewStartDate,
-    DateTimeOffset? NewDueDate) : IDomainEvent;
+    DateTimeOffset? NewDueDate) : ITenantDomainEvent;

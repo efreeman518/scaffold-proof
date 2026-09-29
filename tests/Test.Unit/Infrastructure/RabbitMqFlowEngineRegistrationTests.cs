@@ -1,14 +1,15 @@
 using EF.FlowEngine.Clients;
 using EF.FlowEngine.Model;
 using EF.Messaging.RabbitMq;
+using EF.Messaging.Tracing;
 using Moq;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json;
 using TaskFlow.Bootstrapper;
 using TaskFlow.Infrastructure.Messaging.RabbitMq;
-using TaskFlow.Observability.Tracing;
 
 namespace Test.Unit.Infrastructure;
 
@@ -73,8 +74,8 @@ public sealed class RabbitMqFlowEngineRegistrationTests
         var published = started.Single(activity =>
             activity.Kind == ActivityKind.Producer
             && (string?)activity.GetTagItem("messaging.message.id") == request.IdempotencyKey);
-        Assert.AreEqual("taskitem.triaged publish", published.OperationName);
-        Assert.AreEqual(MessagingTrace.RabbitMqSystem, published.GetTagItem("messaging.system"));
+        Assert.AreEqual($"send {TaskFlowRabbitMqTopology.Exchange}", published.OperationName);
+        Assert.AreEqual(MessagingActivitySource.RabbitMqSystem, published.GetTagItem("messaging.system"));
         Assert.AreEqual(TaskFlowRabbitMqTopology.Exchange, published.GetTagItem("messaging.destination.name"));
     }
 
@@ -156,15 +157,16 @@ public sealed class RabbitMqFlowEngineRegistrationTests
         Assert.AreSame(primary, observed.InnerException);
     }
 
-    private static ActivityListener Listen(out List<Activity> started)
+    private static ActivityListener Listen(out ConcurrentQueue<Activity> started)
     {
-        var captured = new List<Activity>();
+        // Thread safe: tests run in parallel and every live listener sees every activity of the source.
+        var captured = new ConcurrentQueue<Activity>();
         started = captured;
         var listener = new ActivityListener
         {
-            ShouldListenTo = source => source.Name == TaskFlowActivitySources.MessagingName,
+            ShouldListenTo = source => source.Name == MessagingActivitySource.Name,
             Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
-            ActivityStarted = captured.Add
+            ActivityStarted = captured.Enqueue
         };
         ActivitySource.AddActivityListener(listener);
         return listener;

@@ -6,6 +6,8 @@
     <PackageReference Include="EF.Data.Encryption" />
     <PackageReference Include="EF.Common.Contracts" />
     <PackageReference Include="EF.Domain.Contracts" />
+    <!-- M8-M12: the outbox, consumer inbox and leased work tables, their stores and the dispatcher. -->
+    <PackageReference Include="EF.Data.Outbox" />
     <PackageReference Include="EF.FlowEngine.StateStore.Sql" />
     <PackageReference Include="EF.FlowEngine.Outbox.Sql" />
     <PackageReference Include="EF.FlowEngine.WorkflowRegistry.Sql" />

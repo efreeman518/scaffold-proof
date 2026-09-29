@@ -13,7 +13,6 @@ using Microsoft.Extensions.Logging;
 
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Bootstrapper;
-using TaskFlow.Infrastructure.Data.Messaging;
 using TaskFlow.Infrastructure.Storage;
 using TaskFlow.Infrastructure.Storage.CosmosDb;
 using Test.Integration.Infrastructure;
@@ -97,8 +96,6 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
                 services.RemoveAll<CosmosClient>();
                 services.RemoveAll<ITaskViewRepository>();
                 services.AddSingleton<ITaskViewRepository, NoOpTaskViewRepository>();
-                services.RemoveAll<IIntegrationEventTransport>();
-                services.AddSingleton<IIntegrationEventTransport, NoOpEventTransport>();
             }
 
             // These workflow tests cover engine state and real API/database self-calls. Dedicated transport

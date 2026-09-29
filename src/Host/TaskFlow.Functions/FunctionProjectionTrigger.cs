@@ -1,6 +1,9 @@
 using Azure.Messaging.ServiceBus;
+using EF.Messaging;
+using EF.Messaging.Functions;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using TaskFlow.Application.MessageHandlers.Consumers;
 
 namespace TaskFlow.Functions;
@@ -11,7 +14,8 @@ namespace TaskFlow.Functions;
 /// </summary>
 public class FunctionProjectionTrigger(
     ILogger<FunctionProjectionTrigger> logger,
-    TaskProjectionConsumer consumer)
+    TaskProjectionConsumer consumer,
+    IOptions<IntegrationEnvelopeReaderOptions> readerOptions)
 {
     /// <summary>Projects task lifecycle events into the TaskView read model.</summary>
     [Function(nameof(ProcessTaskProjection))]
@@ -20,5 +24,5 @@ public class FunctionProjectionTrigger(
         ServiceBusReceivedMessage message,
         ServiceBusMessageActions actions,
         CancellationToken ct)
-        => ServiceBusEnvelopeReader.DispatchAsync(message, actions, consumer, logger, ct);
+        => ServiceBusIntegrationEventDispatcher.DispatchAsync(message, actions, consumer, readerOptions.Value, logger, ct);
 }
