@@ -108,11 +108,14 @@ public sealed class GatewayAuthModeTests
     }
 
     /// <summary>
-    /// Through the transforms the gateway builds for its real api route: a forged inbound relay header never reaches
-    /// the Api, and the header it does send decodes, with the Api's own options, to the authenticated user's claims.
+    /// Through the transforms the gateway builds for every one of its real routes: each route's cluster relays user
+    /// claims (the Api requires the header from a trusted caller, so a route without it would reach the Api
+    /// unauthenticated), a forged inbound relay header never reaches the Api, and the header it does send decodes,
+    /// with the Api's own options, to the authenticated user's claims. The gateway maps its proxy with
+    /// RequireAuthorization, so every proxied request has the authenticated user the relay encodes.
     /// </summary>
     [TestMethod]
-    public async Task ClaimRelay_ReplacesForgedInboundHeaderWithTheAuthenticatedUser()
+    public async Task ClaimRelay_EveryRouteReplacesForgedInboundHeaderWithTheAuthenticatedUser()
     {
         var builder = CreateGatewayBuilder();
         builder.Configuration.AddJsonFile(GatewayAppSettings, optional: false);
@@ -121,24 +124,30 @@ public sealed class GatewayAuthModeTests
 
         var relay = provider.GetRequiredService<IOptions<ForwardedClaimsOptions>>().Value;
         var proxyConfig = provider.GetRequiredService<IProxyConfigProvider>().GetConfig();
-        var transformer = provider.GetRequiredService<ITransformBuilder>().Build(
-            proxyConfig.Routes.Single(r => r.RouteId == "api-route"),
-            proxyConfig.Clusters.Single(c => c.ClusterId == "api-cluster"));
+        Assert.IsNotEmpty(proxyConfig.Routes);
 
-        var context = new DefaultHttpContext { RequestServices = provider, User = ScaffoldUser() };
-        context.Request.Headers[relay.HeaderName] = "forged";
-        using var proxyRequest = new HttpRequestMessage(HttpMethod.Get, "https://api.internal/api/v1/task-items");
+        foreach (var route in proxyConfig.Routes)
+        {
+            var cluster = proxyConfig.Clusters.Single(c => c.ClusterId == route.ClusterId);
+            Assert.AreEqual("true", cluster.Metadata?.GetValueOrDefault("RelayUserClaims"),
+                $"{route.RouteId}: its cluster must relay user claims");
+            var transformer = provider.GetRequiredService<ITransformBuilder>().Build(route, cluster);
 
-        await transformer.TransformRequestAsync(context, proxyRequest, "https://api.internal", TestContext.CancellationToken);
+            var context = new DefaultHttpContext { RequestServices = provider, User = ScaffoldUser() };
+            context.Request.Headers[relay.HeaderName] = "forged";
+            using var proxyRequest = new HttpRequestMessage(HttpMethod.Get, "https://api.internal/api/v1/task-items");
 
-        var values = proxyRequest.Headers.GetValues(relay.HeaderName).ToArray();
-        Assert.HasCount(1, values);
-        Assert.AreNotEqual("forged", values[0]);
+            await transformer.TransformRequestAsync(context, proxyRequest, "https://api.internal", TestContext.CancellationToken);
 
-        Assert.IsTrue(ForwardedClaimsCodec.TryDecode(values[0], ApiRelayOptions(), out var claims));
-        Assert.AreEqual(ScaffoldPrincipal.UserId, claims.Single(c => c.Type == "oid").Value);
-        Assert.AreEqual(ScaffoldPrincipal.TenantId, claims.Single(c => c.Type == "tenant_id").Value);
-        Assert.IsTrue(claims.Any(c => c.Type == ClaimTypes.Role && c.Value == AppConstants.ROLE_GLOBAL_ADMIN));
+            var values = proxyRequest.Headers.GetValues(relay.HeaderName).ToArray();
+            Assert.HasCount(1, values, route.RouteId);
+            Assert.AreNotEqual("forged", values[0], route.RouteId);
+
+            Assert.IsTrue(ForwardedClaimsCodec.TryDecode(values[0], ApiRelayOptions(), out var claims), route.RouteId);
+            Assert.AreEqual(ScaffoldPrincipal.UserId, claims.Single(c => c.Type == "oid").Value);
+            Assert.AreEqual(ScaffoldPrincipal.TenantId, claims.Single(c => c.Type == "tenant_id").Value);
+            Assert.IsTrue(claims.Any(c => c.Type == ClaimTypes.Role && c.Value == AppConstants.ROLE_GLOBAL_ADMIN));
+        }
     }
 
     /// <summary>

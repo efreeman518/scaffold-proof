@@ -1,3 +1,4 @@
+using System.Net;
 using System.Security.Claims;
 using EF.Auth.Fixed;
 using EF.Auth.Relay;
@@ -5,6 +6,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -21,6 +23,8 @@ namespace Test.Endpoints;
 /// <item>the claims relay honors the forwarded header only for an app-only token from a configured trusted gateway,
 /// and the result is the relayed user alone - never the gateway service identity with the user's claims merged in
 /// (which would attribute the request to the gateway and hand the user the gateway's app roles);</item>
+/// <item>a trusted app-only caller without a relay header is unauthenticated (<c>RequireHeaderFromTrustedCaller</c>, the
+/// package default), so an endpoint requiring an authenticated user answers 403 instead of running as the gateway;</item>
 /// <item>the Scaffold fixed principal cannot authenticate outside <see cref="ScaffoldPrincipal.AllowedEnvironments"/>.</item>
 /// </list>
 /// </summary>
@@ -89,6 +93,31 @@ public sealed class ForwardedClaimsRelayTests
 
         Assert.AreSame(relayed, await Transform(factory, relayed));
     }
+
+    /// <summary>
+    /// The request reaches the real pipeline authenticated as the trusted gateway's app-only identity but carries no
+    /// relay header: the transformation leaves an unauthenticated principal, and the authenticated-user fallback
+    /// policy forbids it rather than running it as the gateway service principal with its app roles.
+    /// </summary>
+    [TestMethod]
+    public async Task TrustedAppOnlyCaller_WithoutRelayHeader_Gets403()
+    {
+        using var factory = CreateFactory(GatewayAppId).WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services =>
+                services.PostConfigure<FixedPrincipalOptions>(ScaffoldPrincipal.SchemeName, options => options.Claims =
+                [
+                    new FixedClaim("oid", "gateway-service-principal"),
+                    new FixedClaim("azp", GatewayAppId),
+                    new FixedClaim(ClaimTypes.Role, "GatewayServiceRole")
+                ])));
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/api/v1/task-items", TestContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    public TestContext TestContext { get; set; } = null!;
 
     /// <summary>The Api's fixed principal authenticates in an allowed environment and nowhere else.</summary>
     [TestMethod]
