@@ -17,27 +17,17 @@ internal static class DbContainerFixture
     /// <summary>The provider this lane runs against.</summary>
     internal static TaskFlowDbProvider Provider => Container.Provider;
 
-    /// <summary>Startup failure captured by <see cref="StartAsync"/>; null when the container started cleanly.</summary>
-    internal static Exception? StartupError { get; private set; }
+    /// <summary>Startup failure recorded by the fixture; null when the container started cleanly.</summary>
+    internal static Exception? StartupError => Container.StartupError;
 
     /// <summary>Connection string for the running container. Only valid once startup succeeded.</summary>
     internal static string ConnectionString => Container.ConnectionString;
 
-    /// <summary>Starts the container, capturing any post-preflight failure for dependent tests.</summary>
-    internal static async Task StartAsync()
-    {
-        try
-        {
-            await Container.StartAsync();
-        }
-        catch (Exception ex)
-        {
-            StartupError = ex;
-        }
-    }
+    /// <summary>Starts the container; a post-preflight failure is kept in <see cref="StartupError"/> for dependent tests.</summary>
+    internal static Task StartAsync(CancellationToken cancellationToken = default) => Container.StartAsync(cancellationToken);
 
     /// <summary>Disposes the container.</summary>
-    internal static async Task StopAsync() => await Container.DisposeAsync();
+    internal static Task StopAsync() => Container.DisposeAsync().AsTask();
 
     /// <summary>Creates an empty isolated database and returns a connection string pointing to it.</summary>
     internal static Task<string> CreateEmptyDatabaseConnectionStringAsync(string prefix) =>

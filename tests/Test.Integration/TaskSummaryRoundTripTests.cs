@@ -1,7 +1,6 @@
 using EF.Data.Contracts;
+using EF.IntegrationTesting.EntityFramework;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Diagnostics;
-using System.Data.Common;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
 using TaskFlow.Domain.Shared.Enums;
@@ -60,39 +59,16 @@ public class TaskSummaryRoundTripTests
             await seed.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
         }
 
-        var counter = new CommandCountingInterceptor();
+        var counter = new RecordingCommandInterceptor();
         await using var query = DbContainerFixture.CreateQueryContext(null, counter);
 
         var summary = await new TaskItemRepositoryQuery(query, TestColumnEncryption.Keys, TestCursorCodec.Instance)
             .GetSummaryAsync(tenantId, TestContext.CancellationToken);
 
-        Assert.AreEqual(1, counter.Commands, "the summary must be one round trip, not one query per status");
+        Assert.AreEqual(1, counter.Count, "the summary must be one round trip, not one query per status");
         Assert.AreEqual(6, summary.Total);
         Assert.AreEqual(3, summary.Overdue);
         Assert.AreEqual(1, summary.ByStatus.First(s => s.Status == TaskItemStatus.Completed).Count);
-    }
-
-    /// <summary>Counts executed commands on the context it is attached to.</summary>
-    private sealed class CommandCountingInterceptor : DbCommandInterceptor
-    {
-        private int _commands;
-
-        public int Commands => _commands;
-
-        public override InterceptionResult<DbDataReader> ReaderExecuting(
-            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
-        {
-            Interlocked.Increment(ref _commands);
-            return base.ReaderExecuting(command, eventData, result);
-        }
-
-        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
-            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result,
-            CancellationToken cancellationToken = default)
-        {
-            Interlocked.Increment(ref _commands);
-            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
-        }
     }
 
     public TestContext TestContext { get; set; } = null!;

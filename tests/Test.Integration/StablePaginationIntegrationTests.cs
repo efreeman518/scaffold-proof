@@ -1,7 +1,6 @@
 using EF.Data.Contracts;
+using EF.IntegrationTesting.EntityFramework;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Diagnostics;
-using System.Data.Common;
 using TaskFlow.Application.Models;
 using TaskFlow.Application.Models.Paging;
 using TaskFlow.Infrastructure.Repositories;
@@ -178,7 +177,7 @@ public sealed class StablePaginationIntegrationTests
 
         try
         {
-            var recorder = new CommandRecordingInterceptor();
+            var recorder = new RecordingCommandInterceptor();
             await using var queryDb = DbContainerFixture.CreateQueryContext(null, recorder);
             var repository = new TaskItemRepositoryQuery(queryDb, TestColumnEncryption.Keys, TestCursorCodec.Instance);
 
@@ -196,7 +195,7 @@ public sealed class StablePaginationIntegrationTests
             Assert.IsTrue(page.HasMore);
             Assert.HasCount(1, recorder.Commands, "One page must be one command, not a page query plus a count or a second read.");
 
-            var sql = recorder.Commands[0];
+            var sql = recorder.Commands[0].CommandText;
             var selectList = sql[..sql.IndexOf("FROM", StringComparison.OrdinalIgnoreCase)];
 
             // Projected: on the DTO. Not projected: written by the entity but absent from TaskItemDto.
@@ -216,37 +215,6 @@ public sealed class StablePaginationIntegrationTests
             await writeDb.SaveChangesAsync(
                 OptimisticConcurrencyWinner.ClientWins,
                 cancellationToken: CancellationToken.None);
-        }
-    }
-
-    /// <summary>Records the SQL of every reader command executed on the context it is attached to.</summary>
-    private sealed class CommandRecordingInterceptor : DbCommandInterceptor
-    {
-        private readonly List<string> _commands = [];
-
-        public IReadOnlyList<string> Commands
-        {
-            get { lock (_commands) return [.. _commands]; }
-        }
-
-        public override InterceptionResult<DbDataReader> ReaderExecuting(
-            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
-        {
-            Record(command);
-            return base.ReaderExecuting(command, eventData, result);
-        }
-
-        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
-            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result,
-            CancellationToken cancellationToken = default)
-        {
-            Record(command);
-            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
-        }
-
-        private void Record(DbCommand command)
-        {
-            lock (_commands) _commands.Add(command.CommandText);
         }
     }
 

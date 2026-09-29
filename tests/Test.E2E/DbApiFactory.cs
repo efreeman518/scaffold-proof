@@ -1,4 +1,5 @@
 using EF.Audit.Contracts;
+using EF.IntegrationTesting.Testcontainers;
 using EF.Storage.Contracts;
 using EF.Testing.Processes;
 using Microsoft.AspNetCore.Hosting;
@@ -16,6 +17,7 @@ using TaskFlow.Infrastructure.Storage.CosmosDb;
 using TaskFlow.Hosting;
 using Test.Support;
 using Test.Support.Hosting;
+using Testcontainers.Redis;
 
 namespace Test.E2E;
 
@@ -36,13 +38,14 @@ public sealed class DbApiFactory : WebApplicationFactoryBase<Program, TaskFlowDb
 
     private static readonly HostingLaneSettings Lane = TestHostingLane.Current;
     private static readonly TestDatabaseContainer Db = new(TestHostingLane.DatabaseProvider);
-    private static readonly RedisTestContainer? Redis = Lane.IsNonAzure ? new RedisTestContainer() : null;
+    private static readonly ContainerFixture<RedisContainer>? Redis = Lane.IsNonAzure
+        ? new(() => new RedisBuilder(ContainerImages.Redis).Build())
+        : null;
 
     // The container is shared by every test class in this assembly and cannot be restarted once
     // disposed, so it is started on first use and torn down once from [AssemblyCleanup]. Disposing it
     // from a class cleanup pulled it out from under the classes that ran afterwards.
     private static readonly SemaphoreSlim Gate = new(1, 1);
-    private static bool _databaseStarted;
 
     private readonly string _applicationStyle;
 
@@ -80,7 +83,7 @@ public sealed class DbApiFactory : WebApplicationFactoryBase<Program, TaskFlowDb
         await Gate.WaitAsync(cancellationToken);
         try
         {
-            if (_databaseStarted || DockerUnavailableReason is not null || StartupError is not null)
+            if (Db.IsStarted || DockerUnavailableReason is not null || StartupError is not null)
                 return;
 
             DockerUnavailableReason = await DockerRuntimePreflight.GetUnavailableReasonAsync(
@@ -89,17 +92,11 @@ public sealed class DbApiFactory : WebApplicationFactoryBase<Program, TaskFlowDb
             if (DockerUnavailableReason is not null)
                 return;
 
-            try
-            {
-                await Db.StartAsync();
-                _databaseStarted = true;
-                if (Redis is not null)
-                    await Redis.StartAsync();
-            }
-            catch (Exception ex)
-            {
-                StartupError = ex;
-            }
+            // The fixtures record a failed start instead of throwing it; the first failure fails dependent tests.
+            await Db.StartAsync(cancellationToken);
+            if (Redis is not null)
+                await Redis.StartAsync(cancellationToken);
+            StartupError = Db.StartupError ?? Redis?.StartupError;
         }
         finally
         {
@@ -113,8 +110,7 @@ public sealed class DbApiFactory : WebApplicationFactoryBase<Program, TaskFlowDb
         await Gate.WaitAsync();
         try
         {
-            if (!_databaseStarted && Redis?.IsStarted != true) return;
-
+            // Both fixtures dispose only a container they started, and a second dispose is a no-op.
             try
             {
                 if (Redis is not null)
@@ -122,9 +118,7 @@ public sealed class DbApiFactory : WebApplicationFactoryBase<Program, TaskFlowDb
             }
             finally
             {
-                if (_databaseStarted)
-                    await Db.DisposeAsync();
-                _databaseStarted = false;
+                await Db.DisposeAsync();
             }
         }
         finally
@@ -133,15 +127,15 @@ public sealed class DbApiFactory : WebApplicationFactoryBase<Program, TaskFlowDb
         }
     }
 
+    /// <summary>Strict lane providers are configured before Program registers them, and stay in the final configuration.</summary>
+    protected override IReadOnlyDictionary<string, string?> HostSettings => StrictLaneConfiguration();
+
     /// <summary>
-    /// Strict lane providers are configured before Program registers them. Database operations remain on the
-    /// real Testcontainer; unrelated external data planes are replaced after their configuration is validated.
+    /// Database operations remain on the real Testcontainer; unrelated external data planes are replaced after
+    /// their configuration is validated.
     /// </summary>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        foreach (var (key, value) in StrictLaneConfiguration())
-            builder.UseSetting(key, value);
-
         base.ConfigureWebHost(builder);
         builder.ConfigureServices(services =>
         {
@@ -172,7 +166,6 @@ public sealed class DbApiFactory : WebApplicationFactoryBase<Program, TaskFlowDb
             [ApplicationStyleResolver.ConfigKey] = _applicationStyle,
             [TaskFlowDbProviderSelector.ConfigurationKey] = Db.Provider.ToString()
         });
-        config.AddInMemoryCollection(StrictLaneConfiguration());
         config.AddInMemoryCollection(TestColumnEncryption.Configuration);
     }
 
@@ -193,7 +186,7 @@ public sealed class DbApiFactory : WebApplicationFactoryBase<Program, TaskFlowDb
             return settings;
         }
 
-        settings["ConnectionStrings:Redis1"] = Redis?.ConnectionString
+        settings["ConnectionStrings:Redis1"] = Redis?.Container.GetConnectionString()
             ?? throw new InvalidOperationException("The NonAzure E2E lane requires its Redis Testcontainer.");
         settings["Storage:S3:ServiceUrl"] = InertS3Endpoint;
         settings["Storage:S3:PublicServiceUrl"] = InertS3Endpoint;

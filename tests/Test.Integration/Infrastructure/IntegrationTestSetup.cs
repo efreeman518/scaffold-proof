@@ -36,19 +36,19 @@ public static class IntegrationTestSetup
 
         var starts = new List<Task>
         {
-            DbContainerFixture.StartAsync(),
-            RedisContainerFixture.StartAsync()
+            DbContainerFixture.StartAsync(context.CancellationToken),
+            RedisContainerFixture.StartAsync(context.CancellationToken)
         };
 
         if (_lane == HostingLane.Azure)
         {
-            starts.Add(AzuriteContainerFixture.StartAsync());
+            starts.Add(AzuriteContainerFixture.StartAsync(context.CancellationToken));
         }
         else
         {
-            starts.Add(SeaweedFsContainerFixture.StartAsync());
+            starts.Add(SeaweedFsContainerFixture.StartAsync(context.CancellationToken));
             starts.Add(RabbitMqBrokerFixture.StartAsync(context.CancellationToken));
-            if (_usesMongoDb) starts.Add(MongoDbContainerFixture.StartAsync());
+            if (_usesMongoDb) starts.Add(MongoDbContainerFixture.StartAsync(context.CancellationToken));
         }
 
         await Task.WhenAll(starts);
