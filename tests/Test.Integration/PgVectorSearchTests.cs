@@ -177,6 +177,7 @@ public class PgVectorSearchTests
     private static async Task<Guid> SeedTaskAsync(string connString, string title, CancellationToken ct)
     {
         await using var db = DbContainerFixture.CreateTrxnContext(connString);
+        db.AllTenants = false;
         db.TenantId = TenantId;
         var task = TaskItem.Create(TaskFlow.Domain.Shared.TenantId.From(TenantId), title).Value!;
         db.Add(task);

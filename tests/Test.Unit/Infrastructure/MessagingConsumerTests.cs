@@ -10,6 +10,12 @@ using TaskFlow.Domain.Shared.Events;
 using TaskFlow.Infrastructure.Repositories;
 using TaskFlow.Observability.Meters;
 using Test.Support;
+using IInboxStore = TaskFlow.Application.Contracts.Messaging.IInboxStore;
+using InboxClaim = TaskFlow.Application.Contracts.Messaging.InboxClaim;
+using InboxClaimOptions = TaskFlow.Application.MessageHandlers.Consumers.InboxClaimOptions;
+using InboxClaimStatus = TaskFlow.Application.Contracts.Messaging.InboxClaimStatus;
+using IntegrationEnvelopeReader = TaskFlow.Application.MessageHandlers.Consumers.IntegrationEnvelopeReader;
+using MessagingMetrics = TaskFlow.Observability.Meters.MessagingMetrics;
 
 namespace Test.Unit.Infrastructure;
 

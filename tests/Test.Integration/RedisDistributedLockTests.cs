@@ -1,4 +1,5 @@
 using EF.Cache;
+using StackExchange.Redis;
 using Test.Integration.Infrastructure;
 
 namespace Test.Integration;
@@ -26,8 +27,10 @@ public class RedisDistributedLockTests
     public async Task TryAcquireAsync_TwoReplicas_SecondWinsAfterRelease()
     {
         var key = $"taskflow:test:lock:{Guid.NewGuid():N}";
-        using var replicaA = NewLock();
-        using var replicaB = NewLock();
+        await using var replicaAConnection = await ConnectAsync();
+        var replicaA = new RedisDistributedLock(replicaAConnection);
+        await using var replicaBConnection = await ConnectAsync();
+        var replicaB = new RedisDistributedLock(replicaBConnection);
 
         var held = await replicaA.TryAcquireAsync(key, TimeSpan.FromMinutes(1), TestContext.CancellationToken);
         Assert.IsNotNull(held);
@@ -48,8 +51,10 @@ public class RedisDistributedLockTests
     public async Task TryAcquireAsync_UnreleasedLock_ExpiresOnItsTtl()
     {
         var key = $"taskflow:test:lock:{Guid.NewGuid():N}";
-        using var crashedReplica = NewLock();
-        using var nextReplica = NewLock();
+        await using var crashedReplicaConnection = await ConnectAsync();
+        var crashedReplica = new RedisDistributedLock(crashedReplicaConnection);
+        await using var nextReplicaConnection = await ConnectAsync();
+        var nextReplica = new RedisDistributedLock(nextReplicaConnection);
 
         // Never disposed on purpose: this is the crashed-holder case.
         var abandoned = await crashedReplica.TryAcquireAsync(
@@ -75,8 +80,10 @@ public class RedisDistributedLockTests
     public async Task DisposeAsync_ByAnExpiredHolder_DoesNotFreeTheNewOwnersLock()
     {
         var key = $"taskflow:test:lock:{Guid.NewGuid():N}";
-        using var expiredHolder = NewLock();
-        using var newOwner = NewLock();
+        await using var expiredHolderConnection = await ConnectAsync();
+        var expiredHolder = new RedisDistributedLock(expiredHolderConnection);
+        await using var newOwnerConnection = await ConnectAsync();
+        var newOwner = new RedisDistributedLock(newOwnerConnection);
 
         var stale = await expiredHolder.TryAcquireAsync(key, TimeSpan.FromSeconds(1), TestContext.CancellationToken);
         Assert.IsNotNull(stale);
@@ -101,5 +108,7 @@ public class RedisDistributedLockTests
         await owned.DisposeAsync();
     }
 
-    private static RedisDistributedLock NewLock() => new(RedisContainerFixture.ConnectionString);
+    // One connection per lock: each stands in for a separate replica process.
+    private static Task<ConnectionMultiplexer> ConnectAsync() =>
+        ConnectionMultiplexer.ConnectAsync(RedisContainerFixture.ConnectionString);
 }

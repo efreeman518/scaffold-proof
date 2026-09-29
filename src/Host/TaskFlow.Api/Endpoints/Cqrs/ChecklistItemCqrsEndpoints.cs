@@ -13,13 +13,9 @@ namespace TaskFlow.Api.Endpoints.Cqrs;
 /// <summary>Maps checklist item CQRS HTTP routes to CQRS handlers and API contract metadata.</summary>
 public static class ChecklistItemCqrsEndpoints
 {
-    private static bool _problemDetailsIncludeStackTrace;
-
     /// <summary>Registers checklist item CQRS routes, handlers, and response metadata.</summary>
-    public static IEndpointRouteBuilder MapChecklistItemCqrsEndpoints(this IEndpointRouteBuilder group, bool problemDetailsIncludeStackTrace)
+    public static IEndpointRouteBuilder MapChecklistItemCqrsEndpoints(this IEndpointRouteBuilder group)
     {
-        _problemDetailsIncludeStackTrace = problemDetailsIncludeStackTrace;
-
         var g = group.MapGroup("/checklist-items").WithTags("ChecklistItems")
             .AddEndpointFilter<ETagEndpointFilter>();
 
@@ -59,8 +55,7 @@ public static class ChecklistItemCqrsEndpoints
         var result = await handler.HandleAsync(new GetChecklistItemByIdQuery(id), ct);
         return result.Match<IResult>(
             response => TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest)),
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)),
             () => TypedResults.NotFound(id));
     }
 }

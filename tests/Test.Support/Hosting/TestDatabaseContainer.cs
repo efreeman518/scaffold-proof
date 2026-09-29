@@ -1,11 +1,13 @@
 using EF.Data.Encryption;
-using EF.IntegrationTesting.Testcontainers;
+using EF.IntegrationTesting.PostgreSql;
+using EF.IntegrationTesting.SqlServer;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 using System.ComponentModel;
+using System.Runtime.ExceptionServices;
 using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Data.Interceptors;
 using TaskFlow.Infrastructure.Data.Provider;
@@ -99,7 +101,16 @@ public sealed class TestDatabaseContainer(TaskFlowDbProvider provider) : IAsyncD
 
     public string ConnectionString => _sql?.ConnectionString ?? _postgres!.ConnectionString;
 
-    public Task StartAsync() => _sql?.StartAsync() ?? _postgres!.StartAsync();
+    /// <summary>
+    /// Starts the container and throws its start failure. The package fixtures record a failed start in
+    /// <c>StartupError</c> instead of throwing; callers here capture the thrown error for dependent tests.
+    /// </summary>
+    public async Task StartAsync()
+    {
+        await (_sql?.StartAsync() ?? _postgres!.StartAsync());
+        if ((_sql is not null ? _sql.StartupError : _postgres!.StartupError) is { } error)
+            ExceptionDispatchInfo.Throw(error);
+    }
 
     public ValueTask DisposeAsync() => _sql?.DisposeAsync() ?? _postgres!.DisposeAsync();
 

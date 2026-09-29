@@ -1,6 +1,6 @@
 using Aspire.Hosting;
 using Aspire.Hosting.Testing;
-using EF.IntegrationTesting.Environment;
+using EF.Testing.Environment;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;

@@ -1,3 +1,4 @@
+using EF.Common.Contracts;
 using EF.Data.Contracts;
 
 namespace TaskFlow.Application.Contracts.Concurrency;
@@ -6,8 +7,8 @@ namespace TaskFlow.Application.Contracts.Concurrency;
 /// The single optimistic-concurrency policy for the application layer (D-032). Every write path
 /// checks the caller's expected version through <see cref="Require"/> after loading the aggregate and
 /// before mutating it, then saves through <see cref="SaveAsync"/> so a lost update between load and
-/// save still surfaces as <see cref="Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException"/>
-/// (also mapped to 412) instead of being silently overwritten.
+/// save still surfaces as <see cref="PreconditionFailedException"/> (also mapped to 412) instead of being
+/// silently overwritten.
 /// </summary>
 public static class ConcurrencyGuard
 {
@@ -35,12 +36,14 @@ public static class ConcurrencyGuard
     /// 412. Every catch-all around a save filters on this; without the filter a stale write would be
     /// converted into a generic 400 and the ETag contract would silently stop working.
     ///
-    /// Matched by type name rather than by type: the Application layer must not reference
-    /// Microsoft.EntityFrameworkCore (Test.Architecture enforces that boundary), and introducing the
-    /// reference only to name one exception would trade a real architectural rule for a keystroke.
+    /// A throwing-policy save raises <see cref="PreconditionFailedException"/>; a policy-free save still raises
+    /// the raw DbUpdateConcurrencyException, matched by type name rather than by type: the Application layer
+    /// must not reference Microsoft.EntityFrameworkCore (Test.Architecture enforces that boundary), and
+    /// introducing the reference only to name one exception would trade a real architectural rule for a keystroke.
     /// </summary>
     public static bool IsConcurrencyFailure(Exception ex) =>
-        ex.GetType().FullName == "Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException";
+        ex is PreconditionFailedException
+        || ex.GetType().FullName == "Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException";
 
     /// <summary>
     /// The filter for every catch that turns a failed write into a failure Result. A cancellation (client

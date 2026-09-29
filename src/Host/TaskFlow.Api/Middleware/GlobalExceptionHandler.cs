@@ -1,3 +1,4 @@
+using EF.Common.Contracts;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -42,7 +43,9 @@ internal sealed class DefaultExceptionHandler(
             // the caller - 412, not the 409 this used to answer (which no client could act on).
             ConcurrencyMismatchException
                 => (StatusCodes.Status412PreconditionFailed, "Precondition failed"),
-            DbUpdateConcurrencyException
+            // A throwing-policy save (ConcurrencyGuard.SaveAsync) raises PreconditionFailedException; a
+            // policy-free save still raises the raw DbUpdateConcurrencyException.
+            PreconditionFailedException or DbUpdateConcurrencyException
                 => (StatusCodes.Status412PreconditionFailed, "Precondition failed"),
             IdempotentCreateConflictException
                 => (StatusCodes.Status409Conflict, "Conflict"),

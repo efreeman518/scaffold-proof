@@ -141,7 +141,7 @@ public class RelationalAuditLogRepositoryTests
             EntityKey = Guid.NewGuid().ToString(),
             Status = AuditStatus.Success,
             Action = "Create",
-            StartTime = TimeSpan.FromMilliseconds(25),
+            StartedAtUtc = new DateTimeOffset(2026, 9, 29, 12, 0, 0, 25, TimeSpan.Zero),
             ElapsedTime = TimeSpan.FromMilliseconds(7),
             Metadata = "{\"source\":\"relational-test\"}"
         };
@@ -162,7 +162,7 @@ public class RelationalAuditLogRepositoryTests
             Assert.AreEqual(entry.EntityKey, persisted.EntityKey);
             Assert.AreEqual(entry.Action, persisted.Action);
             Assert.AreEqual(entry.Status.ToString(), persisted.Status);
-            Assert.AreEqual(entry.StartTime.Ticks, persisted.StartTimeTicks);
+            Assert.AreEqual(entry.StartedAtUtc, persisted.StartedAtUtc);
             Assert.AreEqual(entry.ElapsedTime.Ticks, persisted.ElapsedTimeTicks);
             Assert.AreEqual(entry.Metadata, persisted.Metadata);
             Assert.IsNull(persisted.Error);

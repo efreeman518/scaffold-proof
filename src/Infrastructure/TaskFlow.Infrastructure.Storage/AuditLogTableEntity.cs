@@ -18,7 +18,7 @@ public class AuditLogTableEntity : ITableEntity
     public string EntityKey { get; set; } = null!;
     public string Action { get; set; } = null!;
     public string Status { get; set; } = null!;
-    public long StartTimeTicks { get; set; }
+    public DateTimeOffset StartedAtUtc { get; set; }
     public long ElapsedTimeTicks { get; set; }
     public DateTimeOffset RecordedUtc { get; set; }
     public string? Metadata { get; set; }

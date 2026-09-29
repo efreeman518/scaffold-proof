@@ -1,3 +1,4 @@
+using EF.Common.Contracts;
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Infrastructure.Data;
@@ -48,7 +49,7 @@ public sealed class ConcurrencyTokenTests
     }
 
     [TestMethod]
-    public async Task Save_WithStaleVersion_ThrowsDbUpdateConcurrencyException()
+    public async Task Save_WithStaleVersion_ThrowsPreconditionFailedException()
     {
         var ct = TestContext.CancellationToken;
         var dbName = Guid.NewGuid().ToString();
@@ -72,8 +73,9 @@ public sealed class ConcurrencyTokenTests
         // The stale copy still carries original Version 1; EF's WHERE Version = 1 matches nothing.
         // Throw (not the package ClientWins retry) so the conflict surfaces to the caller.
         secondCopy.Update(name: "second loses");
-        await Assert.ThrowsExactlyAsync<DbUpdateConcurrencyException>(
+        var failure = await Assert.ThrowsExactlyAsync<PreconditionFailedException>(
             () => second.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct));
+        Assert.IsInstanceOfType<DbUpdateConcurrencyException>(failure.InnerException);
     }
 
     public TestContext TestContext { get; set; } = null!;

@@ -2,7 +2,7 @@ using AppHost;
 using Aspire.Hosting;
 using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Testing;
-using EF.IntegrationTesting.Environment;
+using EF.Testing.Environment;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using TaskFlow.Hosting;

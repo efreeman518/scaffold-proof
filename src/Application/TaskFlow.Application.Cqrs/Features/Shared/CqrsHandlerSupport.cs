@@ -4,6 +4,7 @@ using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Concurrency;
+using ConcurrencyGuard = TaskFlow.Application.Contracts.Concurrency.ConcurrencyGuard;
 
 namespace TaskFlow.Application.Cqrs.Shared;
 

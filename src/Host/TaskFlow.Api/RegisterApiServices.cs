@@ -1,4 +1,4 @@
-using EF.AspNetCore.Correlation;
+using EF.Common.Exceptions;
 using EF.AspNetCore.Versioning;
 using EF.Grpc;
 using Microsoft.AspNetCore.Authentication;
@@ -41,19 +41,17 @@ public static class RegisterApiServices
         AddAuthentication(services, config, startupLogger);
         AddAuthorization(services);
         AddExceptionHandling(services);
-        services.AddCorrelationHeaderPropagation();
         AddRateLimiting(services, config);
         AddRequestTimeouts(services, config);
         AddVersionedOpenApi(services, config);
 
         // D-054: the internal gRPC read service. Nothing else changes here - it shares this host's
         // authentication, authorization, and request context; only the transport is different.
-        // EF.Grpc's ServiceErrorInterceptor does the exception-to-status translation (package request 29):
-        // StatusCodeMapper is TaskFlow's own mapping, and the Status detail it sends is a generic
-        // "Internal error" - exception text stays in the server log instead of the wire-visible trailer,
-        // which is why IncludeLogDataInResponse is left at its (false) default.
-        services.Configure<ErrorInterceptorSettings>(settings =>
-            settings.StatusCodeMapper = TaskFlowReadGrpcService.StatusFor);
+        // EF.Grpc's ServiceErrorInterceptor does the exception-to-status translation (package request 29)
+        // through ExceptionClassifier, with TaskFlow's own mappings added. The Status detail it sends is the
+        // category name - exception text stays in the server log instead of the wire, which is why
+        // IncludeExceptionMessageInResponse is left at its (false) default.
+        services.AddExceptionClassifier(TaskFlowReadGrpcService.MapExceptions);
         services.AddGrpc(options => options.Interceptors.Add<ServiceErrorInterceptor>());
 
         // Workflow JSON seeding is now configured in the bootstrapper via

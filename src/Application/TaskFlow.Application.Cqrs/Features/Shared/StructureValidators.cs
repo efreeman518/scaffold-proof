@@ -1,6 +1,8 @@
 using EF.Common.Contracts;
 using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Models.Shared;
+using ITenantEntityDto = TaskFlow.Application.Models.Shared.ITenantEntityDto;
+using UuidV7 = TaskFlow.Application.Contracts.Concurrency.UuidV7;
 
 namespace TaskFlow.Application.Cqrs.Shared;
 

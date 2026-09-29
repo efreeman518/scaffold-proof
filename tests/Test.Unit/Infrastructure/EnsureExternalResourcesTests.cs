@@ -79,7 +79,7 @@ public sealed class EnsureExternalResourcesTests
             return Task.CompletedTask;
         }
 
-        public Task CheckConnectivityAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task CheckBucketAsync(string bucketName, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class ProductionEnvironment : IHostEnvironment

@@ -12,6 +12,7 @@
     <PackageReference Include="Azure.Messaging.ServiceBus" />
     <PackageReference Include="OpenAI" PrivateAssets="all" />
     <PackageReference Include="EF.IntegrationTesting" />
+    <PackageReference Include="EF.IntegrationTesting.Aspire" />
   </ItemGroup>
 
   <ItemGroup>

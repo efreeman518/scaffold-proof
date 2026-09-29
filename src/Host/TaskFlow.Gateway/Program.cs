@@ -1,3 +1,4 @@
+using EF.AspNetCore.Correlation;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Gateway;
@@ -37,7 +38,7 @@ app.UseExceptionHandler(appBuilder =>
     }));
 
 app.UseCors("UnoUI");
-app.UseHeaderPropagation();
+app.UseCorrelationId();
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();

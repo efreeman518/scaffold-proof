@@ -10,6 +10,7 @@ using TaskFlow.Application.Mappers;
 using TaskFlow.Application.Models;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
+using UuidV7 = TaskFlow.Application.Contracts.Concurrency.UuidV7;
 
 namespace TaskFlow.Application.Cqrs.Features.TaskItems;
 

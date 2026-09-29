@@ -1,4 +1,4 @@
-using EF.IntegrationTesting.Environment;
+using EF.Testing.Environment;
 using System.ComponentModel;
 using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Data.Provider;

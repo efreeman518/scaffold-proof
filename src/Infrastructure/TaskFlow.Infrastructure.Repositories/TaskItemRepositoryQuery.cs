@@ -76,7 +76,7 @@ public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryption
         // stale-schema or foreign-scope token; DecodePosition would throw its own ArgumentException, which
         // the global handler also answers 400, but the tamper / cross-tenant / sort-mode-mismatch contract
         // is asserted on this constant.
-        if (!string.IsNullOrEmpty(request.Cursor) && !cursorCodec.TryDecode(request.Cursor, cursor.TenantKey, out _))
+        if (!string.IsNullOrEmpty(request.Cursor) && !cursorCodec.TryDecode(request.Cursor, cursor.Scope, out _))
             throw new ArgumentException(ErrorConstants.ERROR_CURSOR_INVALID, nameof(request));
 
         var q = ApplyFilters(DB.Set<TaskItem>().AsNoTracking(), request.Filter);

@@ -11,6 +11,10 @@ using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Repositories;
 using TaskFlow.Observability.Meters;
 using Test.Integration.Infrastructure;
+using IInboxStore = TaskFlow.Application.Contracts.Messaging.IInboxStore;
+using InboxClaimOptions = TaskFlow.Application.MessageHandlers.Consumers.InboxClaimOptions;
+using InboxClaimStatus = TaskFlow.Application.Contracts.Messaging.InboxClaimStatus;
+using MessagingMetrics = TaskFlow.Observability.Meters.MessagingMetrics;
 
 namespace Test.Integration;
 

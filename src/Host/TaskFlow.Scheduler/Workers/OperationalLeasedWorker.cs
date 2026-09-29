@@ -49,11 +49,11 @@ public abstract class OperationalLeasedWorker<TWork, TOptions>(
 
     /// <inheritdoc />
     /// <remarks>
-    /// The package's <paramref name="leaseToken"/> is not used: the claim is a conditional UPDATE that mints
-    /// its own token per batch (<see cref="LeasedBatch{TWork}.LeaseToken"/>), and the row's owner column is
-    /// the replica identity so a stuck lease is diagnosable from the row alone.
+    /// The claim is a conditional UPDATE that mints its own token per batch
+    /// (<see cref="LeasedBatch{TWork}.LeaseToken"/>), and the row's owner column is the replica identity so a
+    /// stuck lease is diagnosable from the row alone.
     /// </remarks>
-    protected override async Task<int> ProcessBatchAsync(string leaseToken, CancellationToken ct)
+    protected override async Task<int> ProcessBatchAsync(CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var work = scope.ServiceProvider.GetRequiredService<IOperationalWorkRepository>();

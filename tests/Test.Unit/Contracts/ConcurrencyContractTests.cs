@@ -139,8 +139,10 @@ public class ConcurrencyContractTests
 
     /// <summary>Verifies a non-concurrency exception is not mistaken for a lost update by the catch filters.</summary>
     [TestMethod]
-    public void Given_Exceptions_When_Classified_Then_OnlyDbUpdateConcurrencyIsAConcurrencyFailure()
+    public void Given_Exceptions_When_Classified_Then_OnlyLostUpdatesAreConcurrencyFailures()
     {
+        Assert.IsTrue(ConcurrencyGuard.IsConcurrencyFailure(
+            new EF.Common.Contracts.PreconditionFailedException("TaskItem", "id", 1, 2, null)));
         Assert.IsFalse(ConcurrencyGuard.IsConcurrencyFailure(new InvalidOperationException()));
         Assert.IsFalse(ConcurrencyGuard.IsConcurrencyFailure(
             new ConcurrencyMismatchException("TaskItem", Guid.CreateVersion7(), 1, 2)));

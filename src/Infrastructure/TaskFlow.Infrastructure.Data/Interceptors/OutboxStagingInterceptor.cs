@@ -7,6 +7,7 @@ using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Domain.Shared;
 using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Observability.Meters;
+using MessagingMetrics = TaskFlow.Observability.Meters.MessagingMetrics;
 
 namespace TaskFlow.Infrastructure.Data.Interceptors;
 

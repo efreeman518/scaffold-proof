@@ -12,6 +12,7 @@ using TaskFlow.Application.Mappers;
 using TaskFlow.Application.Models;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
+using ConcurrencyGuard = TaskFlow.Application.Contracts.Concurrency.ConcurrencyGuard;
 
 namespace TaskFlow.Application.Cqrs.Features.Tags;
 
