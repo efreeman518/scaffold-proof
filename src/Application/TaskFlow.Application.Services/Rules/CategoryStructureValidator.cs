@@ -11,8 +11,8 @@ internal static class CategoryStructureValidator
     /// <summary>Validates validate create rules and returns failures before work continues.</summary>
     public static Result<CategoryDto> ValidateCreate(CategoryDto dto)
     {
-        var common = StructureValidators.ValidateCreate(dto);
-        if (common.IsFailure) return Result<CategoryDto>.Failure(common.ErrorMessage!);
+        var common = EntityDtoRules.ValidateCreate(dto);
+        if (common.IsFailure) return Result<CategoryDto>.Failure(common.Errors);
 
         var errors = new List<DomainError>();
         if (string.IsNullOrWhiteSpace(dto.Name)) errors.Add(DomainError.Create("Category name is required."));
@@ -24,8 +24,8 @@ internal static class CategoryStructureValidator
     /// <summary>Validates validate update rules and returns failures before work continues.</summary>
     public static Result<CategoryDto> ValidateUpdate(CategoryDto dto)
     {
-        var common = StructureValidators.ValidateUpdate(dto);
-        if (common.IsFailure) return Result<CategoryDto>.Failure(common.ErrorMessage!);
+        var common = EntityDtoRules.ValidateUpdate(dto);
+        if (common.IsFailure) return Result<CategoryDto>.Failure(common.Errors);
 
         var errors = new List<DomainError>();
         if (string.IsNullOrWhiteSpace(dto.Name)) errors.Add(DomainError.Create("Category name is required."));

@@ -6,8 +6,6 @@ using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Globalization;
-using TaskFlow.Application.Contracts.Concurrency;
-using UuidV7 = TaskFlow.Application.Contracts.Concurrency.UuidV7;
 
 namespace TaskFlow.Infrastructure.Storage;
 

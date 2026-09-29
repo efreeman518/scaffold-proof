@@ -45,5 +45,5 @@ internal static partial class LogMessages
 
     /// <summary>Logs an If-Match precondition failure (412).</summary>
     [LoggerMessage(EventId = LogEventIds.ApiBase + 10, Level = LogLevel.Warning, Message = "Precondition failed on {Method} {Path}: expected version {Expected}, current {Current}")]
-    public static partial void IfMatchPreconditionFailed(this ILogger logger, string method, PathString path, long? expected, long current);
+    public static partial void IfMatchPreconditionFailed(this ILogger logger, string method, PathString path, long? expected, long? current);
 }

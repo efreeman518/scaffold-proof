@@ -1,7 +1,9 @@
+using EF.Common;
+using EF.Data.Contracts;
+using EF.Data.PostgreSql;
+using EF.Data.SqlServer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
-using Npgsql;
-using TaskFlow.Application.Contracts;
 using TaskFlow.Hosting;
 
 namespace TaskFlow.Infrastructure.Data.Provider;
@@ -26,7 +28,7 @@ public sealed record TaskFlowProviderOptions(
     int MaxRetryDelaySeconds = 30,
     int? CommandTimeoutSeconds = null,
     int CompatibilityLevel = TaskFlowProviderOptions.DefaultCompatibilityLevel,
-    PoolerMode PoolerMode = PoolerMode.None)
+    PgBouncerMode PoolerMode = PgBouncerMode.None)
 {
     public const int DefaultCompatibilityLevel = 170;
 
@@ -52,29 +54,16 @@ public sealed record TaskFlowProviderOptions(
             PoolerModeSelector.Resolve(configuration));
 }
 
-/// <summary>PgBouncer pooling mode the PostgreSQL connection string must cooperate with (D-045).</summary>
-public enum PoolerMode
-{
-    /// <summary>No pooler in front of PostgreSQL (NonAzure default; the Compose pooler profile opts in explicitly).</summary>
-    None,
-
-    /// <summary>PgBouncer transaction-mode pooling: connections are multiplexed across backend sessions.</summary>
-    Transaction
-}
-
-/// <summary>Resolves <see cref="Provider.PoolerMode"/> from <c>Database:PostgreSql:PoolerMode</c>; no env override (D-045).</summary>
+/// <summary>
+/// Resolves the PgBouncer pooling mode the PostgreSQL connection string must cooperate with from
+/// <c>Database:PostgreSql:PoolerMode</c> (default <see cref="PgBouncerMode.None"/>); no env override (D-045).
+/// </summary>
 public static class PoolerModeSelector
 {
     public const string ConfigurationKey = "Database:PostgreSql:PoolerMode";
 
-    public static PoolerMode Resolve(IConfiguration configuration)
-    {
-        ArgumentNullException.ThrowIfNull(configuration);
-        var value = configuration[ConfigurationKey];
-        return string.IsNullOrWhiteSpace(value)
-            ? PoolerMode.None
-            : StrictEnum.Parse<PoolerMode>(value, "pooler mode");
-    }
+    public static PgBouncerMode Resolve(IConfiguration configuration) =>
+        configuration.GetEnum(ConfigurationKey, PgBouncerMode.None);
 }
 
 /// <summary>Resolves the strict lane's relational provider through the shared D-060 contract.</summary>
@@ -123,69 +112,29 @@ public static class TaskFlowDbProviderExtensions
         this DbContextOptionsBuilder options,
         TaskFlowProviderOptions providerOptions)
     {
-        var retryDelay = TimeSpan.FromSeconds(providerOptions.MaxRetryDelaySeconds);
-        var migrationsAssembly = TaskFlowDbProviderSelector.MigrationsAssembly(providerOptions.Provider);
-
-        switch (providerOptions.Provider)
+        ArgumentNullException.ThrowIfNull(providerOptions);
+        var settings = new RelationalProviderSettings
         {
-            case TaskFlowDbProvider.SqlServer:
-                // Azure SQL gets the Azure-tuned execution strategy; everything else (container, on-prem)
-                // uses the generic SQL Server provider. Both share the same compatibility level and history table.
-                if (providerOptions.ConnectionString.Contains("database.windows.net", StringComparison.OrdinalIgnoreCase))
-                {
-                    options.UseAzureSql(providerOptions.ConnectionString, sql =>
-                    {
-                        sql.UseCompatibilityLevel(providerOptions.CompatibilityLevel);
-                        sql.EnableRetryOnFailure(providerOptions.MaxRetryCount, retryDelay, errorNumbersToAdd: null);
-                        sql.MigrationsHistoryTable(providerOptions.MigrationsHistoryTable, providerOptions.MigrationsHistorySchema);
-                        sql.MigrationsAssembly(migrationsAssembly);
-                        if (providerOptions.CommandTimeoutSeconds is int timeout) sql.CommandTimeout(timeout);
-                    });
-                }
-                else
-                {
-                    options.UseSqlServer(providerOptions.ConnectionString, sql =>
-                    {
-                        sql.UseCompatibilityLevel(providerOptions.CompatibilityLevel);
-                        sql.EnableRetryOnFailure(providerOptions.MaxRetryCount, retryDelay, errorNumbersToAdd: null);
-                        sql.MigrationsHistoryTable(providerOptions.MigrationsHistoryTable, providerOptions.MigrationsHistorySchema);
-                        sql.MigrationsAssembly(migrationsAssembly);
-                        if (providerOptions.CommandTimeoutSeconds is int timeout) sql.CommandTimeout(timeout);
-                    });
-                }
-                break;
+            ConnectionString = providerOptions.ConnectionString,
+            MigrationsAssembly = TaskFlowDbProviderSelector.MigrationsAssembly(providerOptions.Provider),
+            MigrationsHistoryTable = providerOptions.MigrationsHistoryTable,
+            MigrationsHistorySchema = providerOptions.MigrationsHistorySchema,
+            MaxRetryCount = providerOptions.MaxRetryCount,
+            MaxRetryDelay = TimeSpan.FromSeconds(providerOptions.MaxRetryDelaySeconds),
+            CommandTimeoutSeconds = providerOptions.CommandTimeoutSeconds
+        };
 
-            case TaskFlowDbProvider.PostgreSql:
-                var npgsqlConnectionString = providerOptions.PoolerMode == PoolerMode.Transaction
-                    ? AppendTransactionPoolerFlags(providerOptions.ConnectionString)
-                    : providerOptions.ConnectionString;
-                options.UseNpgsql(npgsqlConnectionString, npgsql =>
-                {
-                    // D-040: registers the pgvector type handler. Unconditional on this arm because the model
-                    // branch in OnModelCreating is unconditional on Npgsql too; without it a context that maps
-                    // TaskItemEmbedding cannot read or write the column at all.
-                    npgsql.UseVector();
-                    npgsql.EnableRetryOnFailure(providerOptions.MaxRetryCount, retryDelay, errorCodesToAdd: null);
-                    npgsql.MigrationsHistoryTable(providerOptions.MigrationsHistoryTable, providerOptions.MigrationsHistorySchema);
-                    npgsql.MigrationsAssembly(migrationsAssembly);
-                    if (providerOptions.CommandTimeoutSeconds is int timeout) npgsql.CommandTimeout(timeout);
-                });
-                break;
-
-            default:
-                throw new ArgumentOutOfRangeException(nameof(providerOptions), providerOptions.Provider, null);
-        }
-
-        return options;
+        return providerOptions.Provider switch
+        {
+            // The Azure SQL flavor (Azure-tuned execution strategy) is chosen by the data-source host suffix,
+            // including the sovereign clouds; container and on-prem servers get the generic SQL Server provider.
+            TaskFlowDbProvider.SqlServer => options.UseSqlServerProvider(settings, providerOptions.CompatibilityLevel),
+            // D-040: registers the pgvector type handler. Unconditional on this arm because the model branch in
+            // OnModelCreating is unconditional on Npgsql too; without it a context that maps TaskItemEmbedding
+            // cannot read or write the column at all. D-045: transaction pooling sets the PgBouncer flags.
+            TaskFlowDbProvider.PostgreSql => options.UsePostgreSqlProvider(
+                settings, providerOptions.PoolerMode, npgsql => npgsql.UseVector()),
+            _ => throw new ArgumentOutOfRangeException(nameof(providerOptions), providerOptions.Provider, null)
+        };
     }
-
-    // D-045: transaction-mode PgBouncer multiplexes one backend connection across many client sessions, so
-    // Npgsql must not reset session state on return to the pool or rely on server-side prepared statements
-    // surviving between calls - both assume a stable backend connection that transaction pooling breaks.
-    private static string AppendTransactionPoolerFlags(string connectionString) =>
-        new NpgsqlConnectionStringBuilder(connectionString)
-        {
-            NoResetOnClose = true,
-            MaxAutoPrepare = 0
-        }.ConnectionString;
 }

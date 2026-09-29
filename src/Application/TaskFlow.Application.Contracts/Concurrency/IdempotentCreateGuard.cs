@@ -1,3 +1,4 @@
+using EF.Common.Contracts;
 using TaskFlow.Application.Models;
 
 namespace TaskFlow.Application.Contracts.Concurrency;
@@ -24,7 +25,7 @@ public static class IdempotentCreateGuard
         ArgumentNullException.ThrowIfNull(isEquivalent);
         return isEquivalent(existing, incoming)
             ? new DefaultResponse<TDto> { Item = existing, IsReplay = true }
-            : throw new IdempotentCreateConflictException(entityType, entityId);
+            : throw new ConflictException(entityType, entityId.ToString());
     }
 
     /// <summary>True when a repeated TaskItem create carries the same scalar payload.</summary>

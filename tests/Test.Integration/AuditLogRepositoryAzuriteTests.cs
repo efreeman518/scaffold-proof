@@ -4,11 +4,9 @@ using EF.Common.Contracts;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Storage;
 using Test.Integration.Infrastructure;
-using UuidV7 = TaskFlow.Application.Contracts.Concurrency.UuidV7;
 
 namespace Test.Integration;
 

@@ -1,3 +1,6 @@
+using EF.Tenancy;
+using EF.Domain.Contracts;
+using EF.Data.Contracts;
 using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using Microsoft.Extensions.Logging;
@@ -10,7 +13,6 @@ using TaskFlow.Application.Mappers;
 using TaskFlow.Application.Models;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
-using UuidV7 = TaskFlow.Application.Contracts.Concurrency.UuidV7;
 
 namespace TaskFlow.Application.Cqrs.Features.TaskItems;
 
@@ -49,7 +51,7 @@ internal sealed class AddTaskItemCommentHandler(
             {
                 var existingDto = existing.ToDto();
                 if (!IdempotentCreateGuard.IsEquivalent(existingDto, command.Comment))
-                    throw new IdempotentCreateConflictException(nameof(Comment), callerId);
+                    throw new ConflictException(nameof(Comment), callerId.ToString());
 
                 return Result<DefaultResponse<CommentDto>>.Success(
                     new DefaultResponse<CommentDto> { Item = existingDto, IsReplay = true, AggregateVersion = entity.Version });
@@ -158,7 +160,7 @@ internal sealed class AddTaskItemChecklistItemHandler(
             {
                 var existingDto = existing.ToDto();
                 if (!IdempotentCreateGuard.IsEquivalent(existingDto, command.ChecklistItem))
-                    throw new IdempotentCreateConflictException(nameof(ChecklistItem), callerId);
+                    throw new ConflictException(nameof(ChecklistItem), callerId.ToString());
 
                 return Result<DefaultResponse<ChecklistItemDto>>.Success(
                     new DefaultResponse<ChecklistItemDto> { Item = existingDto, IsReplay = true, AggregateVersion = entity.Version });

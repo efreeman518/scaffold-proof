@@ -1,4 +1,6 @@
 ﻿using EF.Cache;
+using EF.Tenancy;
+using EF.Domain.Contracts;
 using EF.Common.Contracts;
 using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
@@ -16,8 +18,6 @@ using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Model.ValueObjects;
 using TaskFlow.Domain.Shared;
 using TaskFlow.Domain.Shared.Enums;
-using ConcurrencyGuard = TaskFlow.Application.Contracts.Concurrency.ConcurrencyGuard;
-using UuidV7 = TaskFlow.Application.Contracts.Concurrency.UuidV7;
 
 namespace TaskFlow.Application.Services;
 
@@ -36,7 +36,6 @@ internal class TaskItemService(
 {
     private Guid? RequestTenantId => requestContext.TenantId;
     private IReadOnlyCollection<string> RequestRoles => requestContext.Roles;
-    private bool IsGlobalAdmin => RequestRoles.Contains(AppConstants.ROLE_GLOBAL_ADMIN);
 
     #region Helpers
 
@@ -67,15 +66,7 @@ internal class TaskItemService(
             throw new ArgumentException(
                 string.Format(ErrorConstants.ERROR_PAGE_SIZE_RANGE, PageSizeLimits.Min, PageSizeLimits.Max), nameof(request));
 
-        if (!IsGlobalAdmin)
-        {
-            request.Filter ??= new();
-            if (request.Filter.TenantId is Guid supplied && supplied != RequestTenantId)
-            {
-                logger.LogTenantFilterManipulation("TaskItemSearch", RequestTenantId, supplied);
-            }
-            request.Filter.TenantId = RequestTenantId;
-        }
+        request.Filter = tenantBoundaryValidator.EnforceTenantFilter(request.Filter, RequestTenantId, RequestRoles, "TaskItemSearch");
 
         var tenantId = request.Filter?.TenantId ?? RequestTenantId ?? Guid.Empty;
 
@@ -93,7 +84,7 @@ internal class TaskItemService(
         if (entity == null) return Result<DefaultResponse<TaskItemDto>>.None();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, RequestTenantId, RequestRoles, entity.TenantId.Value,
+            RequestTenantId, RequestRoles, entity.TenantId.Value,
             "TaskItem:Get", nameof(TaskItem), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(boundary.ErrorMessage!);
 
@@ -118,7 +109,7 @@ internal class TaskItemService(
         if (validation.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(validation.Errors);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, RequestTenantId, RequestRoles, dto.TenantId,
+            RequestTenantId, RequestRoles, dto.TenantId,
             "TaskItem:Create", nameof(TaskItem));
         if (boundary.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(boundary.ErrorMessage!);
 
@@ -141,9 +132,9 @@ internal class TaskItemService(
 
         try
         {
-            await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
+            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
         }
-        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
+        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.TaskItemCreateFailed(ex);
 
@@ -184,7 +175,7 @@ internal class TaskItemService(
             return Result<DefaultResponse<TaskItemDto>>.Success(new DefaultResponse<TaskItemDto> { Item = null });
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, RequestTenantId, RequestRoles, entity.TenantId.Value,
+            RequestTenantId, RequestRoles, entity.TenantId.Value,
             "TaskItem:Update", nameof(TaskItem), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(boundary.ErrorMessage!);
 
@@ -192,7 +183,7 @@ internal class TaskItemService(
         ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
 
         var tenantChangeCheck = tenantBoundaryValidator.PreventTenantChange(
-            logger, entity.TenantId.Value, dto.TenantId, nameof(TaskItem), entity.Id.Value);
+            entity.TenantId.Value, dto.TenantId, nameof(TaskItem), entity.Id.Value);
         if (tenantChangeCheck.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(tenantChangeCheck.ErrorMessage!);
 
         // Handle status transition if changed. The aggregate raises the status/completed events (D-026).
@@ -234,9 +225,9 @@ internal class TaskItemService(
 
         try
         {
-            await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
+            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
         }
-        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
+        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.TaskItemUpdateFailed(ex, dto.Id);
             return Result<DefaultResponse<TaskItemDto>>.Failure(ErrorConstants.ERROR_SAVE_FAILED);
@@ -262,7 +253,7 @@ internal class TaskItemService(
             return Result<DefaultResponse<TaskItemDto>>.Success(new DefaultResponse<TaskItemDto> { Item = null });
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, RequestTenantId, RequestRoles, entity.TenantId.Value,
+            RequestTenantId, RequestRoles, entity.TenantId.Value,
             "TaskItem:Patch", nameof(TaskItem), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(boundary.ErrorMessage!);
 
@@ -279,9 +270,9 @@ internal class TaskItemService(
 
         try
         {
-            await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
+            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
         }
-        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
+        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.TaskItemPatchFailed(ex, id);
             return Result<DefaultResponse<TaskItemDto>>.Failure(ErrorConstants.ERROR_SAVE_FAILED);
@@ -300,7 +291,7 @@ internal class TaskItemService(
         if (entity == null) return Result.Success();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, RequestTenantId, RequestRoles, entity.TenantId.Value,
+            RequestTenantId, RequestRoles, entity.TenantId.Value,
             "TaskItem:Delete", nameof(TaskItem), entity.Id.Value);
         if (boundary.IsFailure) return Result.Failure(boundary.ErrorMessage!);
 
@@ -310,9 +301,9 @@ internal class TaskItemService(
 
         try
         {
-            await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
+            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
         }
-        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
+        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.TaskItemDeleteFailed(ex, id);
             return Result.Failure(ErrorConstants.ERROR_SAVE_FAILED);
@@ -329,10 +320,10 @@ internal class TaskItemService(
     {
         try
         {
-            await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
+            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
             return Result.Success();
         }
-        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
+        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.AggregateSaveFailed(ex, errorMessage, args);
             return Result.Failure(ErrorConstants.ERROR_SAVE_FAILED);
@@ -361,7 +352,7 @@ internal class TaskItemService(
             {
                 var existingDto = existing.ToDto();
                 if (!IdempotentCreateGuard.IsEquivalent(existingDto, comment))
-                    throw new IdempotentCreateConflictException(nameof(Comment), callerId);
+                    throw new ConflictException(nameof(Comment), callerId.ToString());
 
                 return Result<DefaultResponse<CommentDto>>.Success(
                     new DefaultResponse<CommentDto> { Item = existingDto, IsReplay = true, AggregateVersion = entity.Version });
@@ -440,7 +431,7 @@ internal class TaskItemService(
             {
                 var existingDto = existing.ToDto();
                 if (!IdempotentCreateGuard.IsEquivalent(existingDto, checklistItem))
-                    throw new IdempotentCreateConflictException(nameof(ChecklistItem), callerId);
+                    throw new ConflictException(nameof(ChecklistItem), callerId.ToString());
 
                 return Result<DefaultResponse<ChecklistItemDto>>.Success(
                     new DefaultResponse<ChecklistItemDto> { Item = existingDto, IsReplay = true, AggregateVersion = entity.Version });

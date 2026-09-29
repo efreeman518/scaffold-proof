@@ -1,4 +1,6 @@
 ﻿using EF.Cache;
+using EF.Tenancy;
+using EF.Domain.Contracts;
 using EF.Common.Contracts;
 using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
@@ -12,7 +14,6 @@ using TaskFlow.Application.Models;
 using TaskFlow.Application.Services.Rules;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
-using ConcurrencyGuard = TaskFlow.Application.Contracts.Concurrency.ConcurrencyGuard;
 
 namespace TaskFlow.Application.Services;
 
@@ -27,7 +28,6 @@ internal class CategoryService(
 {
     private Guid? RequestTenantId => requestContext.TenantId;
     private IReadOnlyCollection<string> RequestRoles => requestContext.Roles;
-    private bool IsGlobalAdmin => RequestRoles.Contains(AppConstants.ROLE_GLOBAL_ADMIN);
 
     #region Helpers
 
@@ -48,15 +48,7 @@ internal class CategoryService(
     public async Task<PagedResponse<CategoryDto>> SearchAsync(
         SearchRequest<CategorySearchFilter> request, bool includeTotal = false, CancellationToken ct = default)
     {
-        if (!IsGlobalAdmin)
-        {
-            request.Filter ??= new();
-            if (request.Filter.TenantId is Guid supplied && supplied != RequestTenantId)
-            {
-                logger.LogTenantFilterManipulation("CategorySearch", RequestTenantId, supplied);
-            }
-            request.Filter.TenantId = RequestTenantId;
-        }
+        request.Filter = tenantBoundaryValidator.EnforceTenantFilter(request.Filter, RequestTenantId, RequestRoles, "CategorySearch");
         return await repoQuery.SearchCategoriesAsync(request, includeTotal, ct);
     }
 
@@ -67,7 +59,7 @@ internal class CategoryService(
         if (entity == null) return Result<DefaultResponse<CategoryDto>>.None();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, RequestTenantId, RequestRoles, entity.TenantId.Value,
+            RequestTenantId, RequestRoles, entity.TenantId.Value,
             "Category:Get", nameof(Category), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(boundary.ErrorMessage!);
 
@@ -85,7 +77,7 @@ internal class CategoryService(
         if (validation.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(validation.Errors);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, RequestTenantId, RequestRoles, dto.TenantId,
+            RequestTenantId, RequestRoles, dto.TenantId,
             "Category:Create", nameof(Category));
         if (boundary.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(boundary.ErrorMessage!);
 
@@ -108,9 +100,9 @@ internal class CategoryService(
 
         try
         {
-            await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
+            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
         }
-        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
+        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.CategoryCreateFailed(ex);
 
@@ -146,14 +138,14 @@ internal class CategoryService(
             return Result<DefaultResponse<CategoryDto>>.Success(new DefaultResponse<CategoryDto> { Item = null });
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, RequestTenantId, RequestRoles, entity.TenantId.Value,
+            RequestTenantId, RequestRoles, entity.TenantId.Value,
             "Category:Update", nameof(Category), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(boundary.ErrorMessage!);
 
         ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(Category), entity.Id.Value);
 
         var tenantChangeCheck = tenantBoundaryValidator.PreventTenantChange(
-            logger, entity.TenantId.Value, dto.TenantId, nameof(Category), entity.Id.Value);
+            entity.TenantId.Value, dto.TenantId, nameof(Category), entity.Id.Value);
         if (tenantChangeCheck.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(tenantChangeCheck.ErrorMessage!);
 
         var updateResult = entity.Update(
@@ -163,9 +155,9 @@ internal class CategoryService(
 
         try
         {
-            await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
+            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
         }
-        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
+        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.CategoryUpdateFailed(ex, dto.Id);
             return Result<DefaultResponse<CategoryDto>>.Failure(ErrorConstants.ERROR_SAVE_FAILED);
@@ -182,7 +174,7 @@ internal class CategoryService(
         if (entity == null) return Result.Success();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, RequestTenantId, RequestRoles, entity.TenantId.Value,
+            RequestTenantId, RequestRoles, entity.TenantId.Value,
             "Category:Delete", nameof(Category), entity.Id.Value);
         if (boundary.IsFailure) return Result.Failure(boundary.ErrorMessage!);
 
@@ -193,9 +185,9 @@ internal class CategoryService(
             // Composite FK (TenantId, CategoryId) cannot cascade to SetNull; detach the tenant's tasks first (D-022).
             await repoTrxn.ClearCategoryFromTaskItemsAsync(entity.Id, ct);
             repoTrxn.Delete(entity);
-            await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
+            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
         }
-        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
+        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.CategoryDeleteFailed(ex, id);
             return Result.Failure(ErrorConstants.ERROR_SAVE_FAILED);

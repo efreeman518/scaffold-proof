@@ -1,6 +1,5 @@
 using EF.Common.Contracts;
 using Microsoft.Extensions.Logging;
-using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models;
 using TaskFlow.Application.Models.Paging;
@@ -114,7 +113,7 @@ public class TaskItemTools(
         dto.Status = status;
 
         // The loaded version is the If-Match currency. The tool retries nothing itself - a
-        // ConcurrencyMismatchException means the task changed between the read above and this write,
+        // PreconditionFailedException means the task changed between the read above and this write,
         // which the caller (agent or user) resolves by asking again rather than the tool silently
         // overwriting someone else's change.
         try
@@ -122,7 +121,7 @@ public class TaskItemTools(
             var updateResult = await taskItemService.UpdateAsync(new DefaultRequest<TaskItemDto> { Item = dto }, dto.Version);
             if (updateResult.IsFailure) return $"Failed to update status: {updateResult.ErrorMessage}";
         }
-        catch (ConcurrencyMismatchException)
+        catch (PreconditionFailedException)
         {
             return "Task changed while updating; retry.";
         }

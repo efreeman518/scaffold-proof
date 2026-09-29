@@ -4,8 +4,6 @@ using EF.Data;
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
-using TaskFlow.Application.Contracts.Concurrency;
-using UuidV7 = TaskFlow.Application.Contracts.Concurrency.UuidV7;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Operational;
 

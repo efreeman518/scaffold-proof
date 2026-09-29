@@ -17,10 +17,12 @@ public static partial class RegisterServices
     /// <item>An HTTP request with no authenticated user in scaffold auth mode: the scaffold fixed identity,
     /// the same one <c>ScaffoldAuthHandler</c> issues.</item>
     /// <item>No HTTP request (message consumers, scheduled jobs, the AI reviewer, Functions queue triggers):
-    /// the explicit system identity - no tenant, <see cref="AppConstants.SYSTEM_USER_ID"/>, and only
-    /// <see cref="AppConstants.ROLE_SYSTEM"/>. It must not borrow the scaffold admin: that would pin background
-    /// reads to the scaffold tenant through the tenant query filter, target tenant flags at it, and attribute
-    /// background writes to a global admin.</item>
+    /// the explicit system identity - no tenant, <see cref="AppConstants.SYSTEM_USER_ID"/>, and the roles
+    /// <see cref="AppConstants.ROLE_SYSTEM"/> plus <see cref="AppConstants.ROLE_GLOBAL_ADMIN"/>. It acts for the tenant
+    /// the data names, and EF.Tenancy lets only the global-admin role past the tenant boundary (D14), so it carries
+    /// that role. It must not borrow the scaffold admin identity: that would pin background reads to the scaffold
+    /// tenant through the tenant query filter, target tenant flags at it, and attribute background writes to the
+    /// scaffold user.</item>
     /// </list>
     /// </summary>
     internal static void AddRequestContext(IServiceCollection services)
@@ -36,7 +38,7 @@ public static partial class RegisterServices
                     Guid.NewGuid().ToString(),
                     AppConstants.SYSTEM_USER_ID,
                     null,
-                    [AppConstants.ROLE_SYSTEM]);
+                    [AppConstants.ROLE_SYSTEM, AppConstants.ROLE_GLOBAL_ADMIN]);
             }
 
             var correlationId = httpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault()

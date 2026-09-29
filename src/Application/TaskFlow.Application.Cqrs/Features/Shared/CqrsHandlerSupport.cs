@@ -4,7 +4,6 @@ using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Concurrency;
-using ConcurrencyGuard = TaskFlow.Application.Contracts.Concurrency.ConcurrencyGuard;
 
 namespace TaskFlow.Application.Cqrs.Shared;
 
@@ -31,10 +30,10 @@ internal static class CqrsHandlerSupport
     {
         try
         {
-            await ConcurrencyGuard.SaveAsync(repository, ct);
+            await repository.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
             return Result.Success();
         }
-        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
+        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.SaveFailed(ex, errorMessage, args);
             return Result.Failure(ErrorConstants.ERROR_SAVE_FAILED);

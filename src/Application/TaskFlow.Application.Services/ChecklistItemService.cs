@@ -1,5 +1,5 @@
+using EF.Tenancy;
 using EF.Common.Contracts;
-using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Contracts.Services;
@@ -13,14 +13,12 @@ namespace TaskFlow.Application.Services;
 
 /// <summary>Coordinates checklist item application use cases with validation, tenant checks, repositories, and response shaping.</summary>
 internal class ChecklistItemService(
-    ILogger<ChecklistItemService> logger,
     IRequestContext<string, Guid?> requestContext,
     IChecklistItemRepositoryQuery repoQuery,
     ITenantBoundaryValidator tenantBoundaryValidator) : IChecklistItemService
 {
     private Guid? RequestTenantId => requestContext.TenantId;
     private IReadOnlyCollection<string> RequestRoles => requestContext.Roles;
-    private bool IsGlobalAdmin => RequestRoles.Contains(AppConstants.ROLE_GLOBAL_ADMIN);
 
     #region Helpers
 
@@ -34,15 +32,7 @@ internal class ChecklistItemService(
     public async Task<PagedResponse<ChecklistItemDto>> SearchAsync(
         SearchRequest<ChecklistItemSearchFilter> request, bool includeTotal = false, CancellationToken ct = default)
     {
-        if (!IsGlobalAdmin)
-        {
-            request.Filter ??= new();
-            if (request.Filter.TenantId is Guid supplied && supplied != RequestTenantId)
-            {
-                logger.LogTenantFilterManipulation("ChecklistItemSearch", RequestTenantId, supplied);
-            }
-            request.Filter.TenantId = RequestTenantId;
-        }
+        request.Filter = tenantBoundaryValidator.EnforceTenantFilter(request.Filter, RequestTenantId, RequestRoles, "ChecklistItemSearch");
         return await repoQuery.SearchChecklistItemsAsync(request, includeTotal, ct);
     }
 
@@ -53,7 +43,7 @@ internal class ChecklistItemService(
         if (entity == null) return Result<DefaultResponse<ChecklistItemDto>>.None();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, RequestTenantId, RequestRoles, entity.TenantId.Value,
+            RequestTenantId, RequestRoles, entity.TenantId.Value,
             "ChecklistItem:Get", nameof(ChecklistItem), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<ChecklistItemDto>>.Failure(boundary.ErrorMessage!);
 

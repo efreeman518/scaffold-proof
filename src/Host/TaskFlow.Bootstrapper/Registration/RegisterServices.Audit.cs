@@ -1,3 +1,4 @@
+using EF.Common;
 using EF.Audit.Contracts;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

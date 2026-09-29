@@ -2,7 +2,6 @@ using EF.Common.Contracts;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using TaskFlow.Application.Contracts.Concurrency;
 
 namespace TaskFlow.Api.Middleware;
 
@@ -41,13 +40,11 @@ internal sealed class DefaultExceptionHandler(
         {
             // D-032: a stale If-Match and a lost update between load and save are the same failure to
             // the caller - 412, not the 409 this used to answer (which no client could act on).
-            ConcurrencyMismatchException
-                => (StatusCodes.Status412PreconditionFailed, "Precondition failed"),
-            // A throwing-policy save (ConcurrencyGuard.SaveAsync) raises PreconditionFailedException; a
+            // ConcurrencyGuard.Require and a throwing-policy save raise PreconditionFailedException; a
             // policy-free save still raises the raw DbUpdateConcurrencyException.
             PreconditionFailedException or DbUpdateConcurrencyException
                 => (StatusCodes.Status412PreconditionFailed, "Precondition failed"),
-            IdempotentCreateConflictException
+            ConflictException
                 => (StatusCodes.Status409Conflict, "Conflict"),
             UnauthorizedAccessException
                 => (StatusCodes.Status403Forbidden, "Forbidden"),

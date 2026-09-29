@@ -1,3 +1,4 @@
+using EF.Common.Contracts;
 using TaskFlow.Application.Models.Shared;
 
 namespace TaskFlow.Application.Models;

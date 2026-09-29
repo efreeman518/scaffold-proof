@@ -11,8 +11,11 @@
     <PackageVersion Include="EF.Data.Contracts" Version="2.0.111" />
     <!-- D-023 column encryption: provider-neutral AES-GCM converter, blind index, Key Vault DEK unwrap (package request 5). -->
     <PackageVersion Include="EF.Data.Encryption" Version="2.0.111" />
+    <PackageVersion Include="EF.Data.PostgreSql" Version="2.0.111" />
+    <PackageVersion Include="EF.Data.SqlServer" Version="2.0.111" />
     <PackageVersion Include="EF.Common" Version="2.0.111" />
     <PackageVersion Include="EF.Common.Contracts" Version="2.0.111" />
+    <PackageVersion Include="EF.Tenancy" Version="2.0.111" />
     <PackageVersion Include="EF.Host" Version="2.0.111" />
     <PackageVersion Include="EF.AspNetCore" Version="2.0.111" />
     <PackageVersion Include="EF.BackgroundServices" Version="2.0.111" />
@@ -34,6 +37,8 @@
     <PackageVersion Include="EF.Table" Version="2.0.111" />
     <!-- Backend-neutral audit sink contract both audit arms implement (D-039, package request 26). -->
     <PackageVersion Include="EF.Audit.Contracts" Version="2.0.111" />
+    <PackageVersion Include="EF.Audit.AzureTable" Version="2.0.111" />
+    <PackageVersion Include="EF.Audit.Data" Version="2.0.111" />
     <PackageVersion Include="EF.Grpc" Version="2.0.111" />
     <PackageVersion Include="EF.AI" Version="2.0.111" />
     <PackageVersion Include="Testcontainers.MsSql" Version="4.15.0" />

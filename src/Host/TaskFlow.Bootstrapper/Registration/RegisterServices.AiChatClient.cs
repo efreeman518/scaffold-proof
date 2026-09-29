@@ -1,3 +1,4 @@
+using EF.Common;
 using EF.AI.Chat;
 using EF.AI.Embeddings;
 using Microsoft.Extensions.AI;
