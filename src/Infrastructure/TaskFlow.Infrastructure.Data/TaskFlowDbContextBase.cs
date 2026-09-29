@@ -43,7 +43,8 @@ public abstract class TaskFlowDbContextBase(DbContextOptions options) : DbContex
         base.OnModelCreating(modelBuilder);
         modelBuilder.HasDefaultSchema(SchemaName);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(TaskFlowDbContextBase).Assembly);
-        // M12: the package owns the two-state consumer inbox mapping (table ConsumerInbox).
+        // M10/M12: the package owns the outbox and two-state consumer inbox mappings (tables OutboxMessage, ConsumerInbox).
+        modelBuilder.ApplyOutboxModel(SchemaName);
         modelBuilder.ApplyInboxModel(SchemaName);
         // TaskItemConfiguration has no parameterless constructor (the assembly scan skips it): it binds the
         // secure-column converters to the process encryptor carried by the options (D-023).
@@ -97,7 +98,7 @@ public abstract class TaskFlowDbContextBase(DbContextOptions options) : DbContex
     public DbSet<TaskItemTag> TaskItemTags { get; set; } = null!;
 
     // Operational work tables (D-026, D-029): not tenant entities, no query filter, no Version.
-    public DbSet<Operational.OutboxMessage> OutboxMessages { get; set; } = null!;
+    public DbSet<OutboxMessage> OutboxMessages { get; set; } = null!;
     public DbSet<BlobDeleteWork> BlobDeleteWork { get; set; } = null!;
     public DbSet<InboxEntry> ConsumerInbox { get; set; } = null!;
 

@@ -21,6 +21,19 @@ public static class Extensions
     /// </summary>
     private const string RabbitMqMeterName = "EF.Messaging.RabbitMq";
 
+    /// <summary>
+    /// <c>EF.Messaging.MessagingMetrics.MeterName</c> (outbox, work-table, inbox and consumer instruments) and
+    /// <c>EF.Messaging.Tracing.MessagingActivitySource.Name</c> (broker send and process spans) - the same string,
+    /// spelled out for the same reason as <see cref="RabbitMqMeterName"/>; the unit test probes both constants.
+    /// </summary>
+    private const string MessagingName = "EF.Messaging";
+
+    /// <summary>
+    /// <c>EF.Data.Outbox.OutboxActivitySource.Name</c> (one drain span per non-empty work-table claim), spelled out
+    /// so ServiceDefaults does not take an EF Core dependency for one string; the unit test probes the constant.
+    /// </summary>
+    private const string OutboxActivitySourceName = "EF.Data.Outbox";
+
     /// <summary>Registers service defaults dependencies in the service container.</summary>
     public static IHostApplicationBuilder AddServiceDefaults(this IHostApplicationBuilder builder)
     {
@@ -58,10 +71,11 @@ public static class Extensions
                 CacheMeter.MeterName,
                 RateLimitingMeter.MeterName,
                 StreamingMeter.MeterName,
-                MessagingMetrics.MeterName,
+                MessagingName,
                 RabbitMqMeterName]);
             o.ActivitySourceNames.AddRange([
-                TaskFlowActivitySources.MessagingName,
+                MessagingName,
+                OutboxActivitySourceName,
                 TaskFlowActivitySources.SchedulerName]);
         });
 

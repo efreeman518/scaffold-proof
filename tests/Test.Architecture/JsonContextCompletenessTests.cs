@@ -9,7 +9,6 @@ using TaskFlow.Application.Models.Paging;
 using TaskFlow.Application.Models.Serialization;
 using TaskFlow.Domain.Shared;
 using TaskFlow.Domain.Shared.Events;
-using TaskFlow.Infrastructure.Data.Interceptors;
 
 namespace Test.Architecture;
 
@@ -106,8 +105,9 @@ public class JsonContextCompletenessTests
             + "every delivery; it is the one shape that must never fall back to reflection.");
 
     /// <summary>
-    /// Verifies the outbox row payload keeps the PascalCase wire format the reflection serializer produced,
-    /// and still parses through the shared reader. This is the one D-048 decision with a blast radius
+    /// Verifies the outbox row payload - TaskFlow's mapper output serialized with the options the hosts give
+    /// EF.Data.Outbox - keeps the PascalCase wire format the reflection serializer produced, and still parses
+    /// through the shared reader. This is the one D-048 decision with a blast radius
     /// outside the process: the row is read by the Service Bus triggers and the RabbitMQ handlers, and a
     /// naming change would turn every message already in a queue during a rolling deploy into poison.
     /// </summary>
@@ -116,17 +116,19 @@ public class JsonContextCompletenessTests
     {
         var tenantId = Guid.CreateVersion7();
         var raised = new TaskItemCreatedEvent(Guid.CreateVersion7(), tenantId, "guarded");
-        var envelope = TaskFlowIntegrationEvents.Envelope(raised, DateTimeOffset.UtcNow, correlationId: null);
-        var row = OutboxStagingInterceptor.ToRow(envelope, tenantId, DateTimeOffset.UtcNow);
+        var entry = new TaskFlowOutboxEventMapper().Map(raised, DateTimeOffset.UtcNow, correlationId: null);
+        var envelope = entry.Envelope;
+        var payload = EnvelopeSerializer.Serialize(envelope, TaskFlowMessagingJsonContext.Default.Options);
+        Assert.AreEqual(tenantId.ToString(), entry.Headers![TaskFlowIntegrationEvents.TenantIdHeader]);
 
-        StringAssert.Contains(row.Payload, "\"Type\":",
+        StringAssert.Contains(payload, "\"Type\":",
             "The envelope must stay PascalCase on the wire; a camelCase context here would break every "
             + "in-flight message across a rolling deploy.");
-        StringAssert.Contains(row.Payload, "\"Title\":",
+        StringAssert.Contains(payload, "\"Title\":",
             "The payload record must stay PascalCase too - it is serialized through the messaging context.");
 
         Assert.IsTrue(
-            IntegrationEnvelopeReader.TryRead(Encoding.UTF8.GetBytes(row.Payload), ReaderOptions(), out var read, out var failure),
+            IntegrationEnvelopeReader.TryRead(Encoding.UTF8.GetBytes(payload), ReaderOptions(), out var read, out var failure),
             $"The staged payload must parse back through the shared reader; got {failure}.");
         Assert.AreEqual(envelope.Id, read!.Id);
         Assert.AreEqual(nameof(TaskItemCreatedEvent), read.Type);

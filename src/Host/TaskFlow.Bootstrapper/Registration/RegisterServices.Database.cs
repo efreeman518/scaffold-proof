@@ -5,6 +5,7 @@ using EF.Data.Interceptors;
 using EF.Data.Outbox;
 using EF.BackgroundServices.InternalMessageBus;
 using EF.Common.Contracts;
+using EF.Messaging.Outbox;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,8 +13,6 @@ using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Infrastructure.Data;
-using TaskFlow.Infrastructure.Data.Interceptors;
-using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Infrastructure.Data.Provider;
 using TaskFlow.Infrastructure.Repositories;
 
@@ -44,8 +43,15 @@ public static partial class RegisterServices
         // context and would recurse while the pooled factory builds its options.
         services.AddTransient(sp => new AuditInterceptor<string, Guid?>(
             sp.GetRequiredService<IInternalMessageBus>(), []));
-        // D-026: stages raised domain events as outbox rows in the same SaveChanges as the domain write.
-        services.AddSingleton<TaskFlow.Infrastructure.Data.Interceptors.OutboxStagingInterceptor>();
+        // D-026/M10: EF.Data.Outbox stages raised domain events as outbox rows in the same SaveChanges as the domain
+        // write (its singleton OutboxStagingInterceptor), through TaskFlow's mapper (envelope + TenantId header);
+        // IOutboxStaging covers the jobs that have no tracked aggregate, and the leased work store claims both tables.
+        services.AddSingleton<IOutboxEventMapper, TaskFlowOutboxEventMapper>();
+        services.AddOutbox<TaskFlowDbContextTrxn>(o =>
+        {
+            o.DefaultDestination = TaskFlowIntegrationEvents.Destination;
+            o.SerializerOptions = TaskFlowMessagingJsonContext.Default.Options;
+        });
         // No ConnectionNoLockInterceptor registration: nothing ever added it to a context (D-004 keeps the
         // read isolation default on both providers), and EF.Data 1.1.100 marks it [Obsolete] in favor of
         // EF.Data.SqlServer (package request 3), so the dead line was the only obsolete usage in the tree.
@@ -67,7 +73,7 @@ public static partial class RegisterServices
             options.UseColumnEncryption(sp.GetRequiredService<IColumnEncryptor>());
             options.AddInterceptors(
                 sp.GetRequiredService<AuditInterceptor<string, Guid?>>(),
-                sp.GetRequiredService<TaskFlow.Infrastructure.Data.Interceptors.OutboxStagingInterceptor>(),
+                sp.GetRequiredService<OutboxStagingInterceptor>(),
                 sp.GetRequiredService<BlindIndexInterceptor>());
         });
         services.AddScoped(sp => new DbContextScopedFactory<TaskFlowDbContextTrxn, string, Guid?>(
@@ -113,8 +119,6 @@ public static partial class RegisterServices
 
         // M12: two-state inbox; renewal takes short-lived contexts from the pooled factory registered above.
         services.AddInbox<TaskFlowDbContextTrxn>();
-        services.AddScoped<IOutboxStaging, OutboxStaging>();
-        services.AddScoped<IOperationalWorkRepository, OperationalWorkRepository>();
         // Cross-tenant system access for the scheduler jobs (IgnoreQueryFilters), so background work no
         // longer leans on the request context defaulting to global admin.
         services.AddScoped<ITaskItemSystemRepository, TaskItemSystemRepository>();

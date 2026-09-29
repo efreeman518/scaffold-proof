@@ -1,4 +1,4 @@
-using EF.BackgroundServices.InternalMessageBus;
+﻿using EF.BackgroundServices.InternalMessageBus;
 using EF.Common.Contracts;
 using EF.Data.Contracts;
 using EF.Data.Encryption;
@@ -36,7 +36,6 @@ public static partial class RegisterServices
         }
 
         services.AddScoped<ITaskViewProjectionService, TaskViewProjectionService>();
-        services.TryAddSingleton<TaskFlow.Observability.Meters.MessagingMetrics>();
     }
 
     /// <summary>Registers shared application services dependencies in the service container.</summary>
@@ -94,7 +93,7 @@ public static partial class RegisterServices
             .ValidateOnStart();
         // D-034/D-048: one envelope reader configuration for the Service Bus triggers and the RabbitMQ handlers.
         services.Configure<IntegrationEnvelopeReaderOptions>(TaskFlowIntegrationEvents.ConfigureReader);
-        services.TryAddSingleton<EF.Messaging.MessagingMetrics>();
+        services.TryAddSingleton<MessagingMetrics>();
 
         services.AddScoped<IMessageHandler<AuditEntry<string, Guid>>, AuditHandler>();
         services.AddScoped<IMessageHandler<AuditEntry<string, Guid?>>, AuditHandler>();

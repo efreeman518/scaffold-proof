@@ -1,5 +1,6 @@
 using EF.Common;
 using System.Globalization;
+using EF.Messaging.Outbox;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Domain.Model;
@@ -122,7 +123,7 @@ public sealed class RecurringTaskGenerationHandler(
             correlationId: null,
             id: messageId);
 
-        outbox.Stage(envelope, occurrence.TenantId.Value, messageId);
+        outbox.Stage(TaskFlowIntegrationEvents.Entry(envelope, occurrence.TenantId.Value));
     }
 
     /// <summary>UUIDv5 over (tenant, template, occurrence): the same occurrence always gets the same id.</summary>

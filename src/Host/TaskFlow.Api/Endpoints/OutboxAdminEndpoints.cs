@@ -1,7 +1,7 @@
 using EF.Common.Contracts;
+using EF.Data.Outbox;
 using Microsoft.AspNetCore.Mvc;
 using TaskFlow.Application.Contracts;
-using TaskFlow.Infrastructure.Data.Operational;
 
 namespace TaskFlow.Api.Endpoints;
 
@@ -16,7 +16,7 @@ public static class OutboxAdminEndpoints
         group.MapPost("/{id:guid}/retry", async (
             Guid id,
             [FromServices] IRequestContext<string, Guid?> requestContext,
-            [FromServices] IOperationalWorkRepository work,
+            [FromServices] ILeasedWorkStore work,
             CancellationToken ct) =>
         {
             // A dead-lettered row can belong to any tenant, so this is deliberately not tenant-scoped.

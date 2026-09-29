@@ -2,13 +2,14 @@ using EF.Audit.AzureTable;
 using EF.AspNetCore.HealthChecks;
 using EF.Audit.Contracts;
 using EF.Host;
+using EF.Messaging.ServiceBus;
 using EF.Storage.Contracts;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Storage;
-using TaskFlow.Infrastructure.Data.Messaging;
 using TaskFlow.Infrastructure.Repositories.MongoDb;
 using TaskFlow.Infrastructure.Storage;
 using TaskFlow.Infrastructure.Storage.CosmosDb;
@@ -123,7 +124,12 @@ public static partial class RegisterServices
             }
         });
 
-        services.AddSingleton<IIntegrationEventTransport, ServiceBusEventTransport>();
+        // M14: the package transport packs per destination; an oversize message fails alone as permanent.
+        services.AddServiceBusOutboxTransport(o =>
+        {
+            o.ClientName = "TaskFlowSBClient";
+            o.Entities[TaskFlowIntegrationEvents.Destination] = config["DomainEventsTopic"] ?? TaskFlowIntegrationEvents.Destination;
+        });
     }
 
     /// <summary>
@@ -220,7 +226,8 @@ public static partial class RegisterServices
 
         if (!string.IsNullOrWhiteSpace(config.ResolveConnection("ServiceBus1", "ServiceBus1", "Values:ServiceBus1"))
             || !string.IsNullOrWhiteSpace(ResolveServiceBusFullyQualifiedNamespace(config)))
-            builder.AddCheck<HealthChecks.ServiceBusHealthCheck>("service-bus", tags: ["full", "extservice"]);
+            builder.AddServiceBusHealthCheck(
+                "TaskFlowSBClient", config["DomainEventsTopic"] ?? TaskFlowIntegrationEvents.Destination, "service-bus", "full", "extservice");
 
         if (!string.IsNullOrWhiteSpace(config.GetConnectionString("CosmosDb1")))
             builder.AddCheck<HealthChecks.CosmosDbHealthCheck>("cosmos-db", tags: ["full", "extservice"]);

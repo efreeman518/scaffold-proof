@@ -2,7 +2,6 @@ using EF.Messaging.RabbitMq;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TaskFlow.Application.MessageHandlers.Consumers;
-using TaskFlow.Infrastructure.Data.Messaging;
 
 namespace TaskFlow.Infrastructure.Messaging.RabbitMq;
 
@@ -35,7 +34,9 @@ public static class RabbitMqRegistration
         ArgumentNullException.ThrowIfNull(config);
 
         services.AddRabbitMqMessaging(config, OptionsSection);
-        services.AddSingleton<IIntegrationEventTransport, RabbitMqEventTransport>();
+        // M15: the package outbox transport publishes to the TaskFlow exchange with the event type as routing key and
+        // reports only unconfirmed messages as failed, so confirmed ones are never re-published.
+        services.AddRabbitMqOutboxTransport(o => o.DefaultExchange = TaskFlowRabbitMqTopology.Exchange);
         return services;
     }
 

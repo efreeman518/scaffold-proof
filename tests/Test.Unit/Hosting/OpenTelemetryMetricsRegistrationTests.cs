@@ -73,6 +73,29 @@ public sealed class OpenTelemetryMetricsRegistrationTests
         Assert.IsTrue(probe.Enabled, "no MeterProvider listens to the RabbitMQ transport meter");
     }
 
+    /// <summary>
+    /// M2/M3: the package outbox, work-table, inbox and consumer meter is exported, and the broker and drain spans
+    /// are traced. Probed with the package constants, so a rename there fails here instead of dropping the signal.
+    /// </summary>
+    [TestMethod]
+    public void ServiceDefaults_ExportsThePackageMessagingMeterAndSources()
+    {
+        var builder = CreateBuilder(metricsEnabled: true);
+        builder.ConfigureOpenTelemetry();
+        using var provider = builder.Services.BuildServiceProvider();
+        _ = provider.GetRequiredService<MeterProvider>();
+        _ = provider.GetRequiredService<TracerProvider>();
+
+        using var meter = new System.Diagnostics.Metrics.Meter(EF.Messaging.MessagingMetrics.MeterName);
+        Assert.IsTrue(meter.CreateCounter<long>("taskflow.test.messaging.probe").Enabled,
+            "no MeterProvider listens to the EF.Messaging meter");
+
+        Assert.IsTrue(EF.Messaging.Tracing.MessagingActivitySource.Instance.HasListeners(),
+            "no TracerProvider listens to the EF.Messaging broker spans");
+        Assert.IsTrue(EF.Data.Outbox.OutboxActivitySource.Instance.HasListeners(),
+            "no TracerProvider listens to the EF.Data.Outbox drain spans");
+    }
+
     private static bool RegistersAzureMonitorDistro(IServiceCollection services) =>
         services.Any(descriptor => descriptor.ServiceType == typeof(IConfigureOptions<AzureMonitorOptions>));
 

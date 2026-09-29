@@ -10,7 +10,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Infrastructure.Data;
-using TaskFlow.Infrastructure.Data.Messaging;
 using TaskFlow.Infrastructure.Data.Provider;
 using TaskFlow.Infrastructure.Storage;
 using TaskFlow.Infrastructure.Storage.CosmosDb;
@@ -141,8 +140,6 @@ public sealed class DbApiFactory : WebApplicationFactoryBase<Program, TaskFlowDb
         {
             services.RemoveAll<IObjectStorageRepository>();
             services.AddSingleton<IObjectStorageRepository, NoOpBlobStorageRepository>();
-            services.RemoveAll<IIntegrationEventTransport>();
-            services.AddSingleton<IIntegrationEventTransport, NoOpEventTransport>();
 
             if (Lane.Lane == HostingLane.Azure)
             {

@@ -1,5 +1,7 @@
 ﻿using EF.Data.Migrations;
 using EF.BackgroundServices;
+using EF.Data.Outbox;
+using EF.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using TaskFlow.Infrastructure.AI;
@@ -11,6 +13,7 @@ using TaskFlow.Scheduler.Handlers.Retention;
 using TaskFlow.Scheduler.Infrastructure;
 using TaskFlow.Scheduler.Jobs;
 using TaskFlow.Bootstrapper;
+using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Observability.Meters;
 using TaskFlow.Scheduler.Telemetry;
 using TaskFlow.Scheduler.Workers;
@@ -26,6 +29,9 @@ namespace TaskFlow.Scheduler;
 /// </summary>
 public static class RegisterSchedulerServices
 {
+    /// <summary>Configuration section the outbox dispatcher options bind from.</summary>
+    public const string OutboxDispatcherConfigSection = "OutboxDispatcher";
+
     public static IServiceCollection AddSchedulerServices(
         this IServiceCollection services,
         IConfiguration config)
@@ -44,11 +50,12 @@ public static class RegisterSchedulerServices
         services.TryAddSingleton<MessagingMetrics>();
 
         // D-026: both drains run on every replica; the lease, not a leader election, keeps them apart.
-        // EF.BackgroundServices owns the loop; the sections retune poll, lease, batch and (D-055) the
-        // blob-delete in-flight bound per environment.
-        services.AddOptions<OutboxDispatcherSettings>()
-            .Bind(config.GetSection(OutboxDispatcherSettings.ConfigSectionName));
-        services.AddLeasedWorkerService<OutboxDispatcherService, OutboxDispatcherSettings>();
+        // EF.Data.Outbox owns the dispatcher, the claim and the settlement; the sections retune poll, lease, batch,
+        // attempts (appsettings keeps MaxAttempts at 10; the package default is 5) and (D-055) the blob-delete
+        // in-flight bound per environment. The host fails to start unless LeaseDuration > SendTimeout + SettlementTimeout.
+        services.AddOptions<OutboxDispatcherOptions>()
+            .Bind(config.GetSection(OutboxDispatcherConfigSection));
+        services.AddOutboxDispatcher();
 
         services.AddOptions<BlobDeleteSettings>()
             .Bind(config.GetSection(BlobDeleteSettings.ConfigSectionName));
@@ -70,7 +77,14 @@ public static class RegisterSchedulerServices
 
         services.AddHealthChecks()
             .AddCheck<SchedulerHealthCheck>("scheduler", tags: ["ready", "memory"])
-            .AddCheck<OutboxHealthCheck>("outbox", tags: ["ready", "full"]);
+            // M13: Degraded past 60 s lag or 10k pending, Unhealthy past 300 s or 50k.
+            .AddLeasedWorkBacklogCheck<OutboxMessage>("outbox", tags: ["ready", "full"])
+            // Report-only: the blob-delete backlog is visible (and gauged) but never degrades readiness.
+            .AddLeasedWorkBacklogCheck<BlobDeleteWork>("blobdelete", o =>
+            {
+                o.DegradedPending = o.UnhealthyPending = int.MaxValue;
+                o.DegradedLag = o.UnhealthyLag = TimeSpan.MaxValue;
+            }, "full");
 
         return services;
     }

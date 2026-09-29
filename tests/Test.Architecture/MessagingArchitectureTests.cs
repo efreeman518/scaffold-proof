@@ -1,3 +1,4 @@
+using EF.Messaging.Outbox;
 using EF.Testing.Architecture;
 using System.Reflection;
 using TaskFlow.Application.MessageHandlers;
@@ -25,8 +26,8 @@ public class MessagingArchitectureTests : BaseTest
     {
         var result = ConstructorRules.MustNotInject(
             [ApplicationContractsAssembly, ApplicationServicesAssembly, ApplicationCqrsAssembly, MessageHandlersAssembly],
-            ["IIntegrationEventTransport"]);
+            type => type == typeof(IOutboxTransport));
 
-        Assert.IsTrue(result.IsSuccessful, $"application types injecting IIntegrationEventTransport: {result}");
+        Assert.IsTrue(result.IsSuccessful, $"application types injecting IOutboxTransport: {result}");
     }
 }

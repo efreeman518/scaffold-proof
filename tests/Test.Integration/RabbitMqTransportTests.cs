@@ -1,4 +1,5 @@
 using EF.Messaging;
+using EF.Messaging.Outbox;
 using EF.Messaging.RabbitMq;
 using EF.FlowEngine.Clients;
 using Microsoft.Extensions.Configuration;
@@ -11,12 +12,8 @@ using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.MessageHandlers.Consumers;
 using TaskFlow.Bootstrapper;
 using TaskFlow.Domain.Shared.Events;
-using TaskFlow.Infrastructure.Data.Interceptors;
-using TaskFlow.Infrastructure.Data.Messaging;
-using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Infrastructure.Messaging.RabbitMq;
 using TaskFlow.Hosting;
-using TaskFlow.Observability.Meters;
 using Test.Integration.Infrastructure;
 using Test.Support;
 using Testcontainers.RabbitMq;
@@ -55,12 +52,11 @@ public sealed class RabbitMqTransportTests
             new TaskItemCreatedEvent(Guid.CreateVersion7(), TestConstants.TenantId, "over rabbit"),
             DateTimeOffset.UtcNow,
             correlationId: "corr-1");
-        var row = OutboxStagingInterceptor.ToRow(envelope, TestConstants.TenantId, DateTimeOffset.UtcNow);
+        var entry = TaskFlowIntegrationEvents.Entry(envelope, TestConstants.TenantId);
 
-        var transport = provider.GetRequiredService<IIntegrationEventTransport>();
-        Assert.IsTrue(transport.CanDispatch);
-        var failures = await transport.SendBatchAsync(row.Destination, [row], ct);
-        Assert.IsEmpty(failures, "a confirmed publish reports no failed message");
+        var transport = provider.GetRequiredService<IOutboxTransport>();
+        var sent = await transport.SendAsync(entry.Destination, [Item(entry)], ct);
+        Assert.IsEmpty(sent.Failures, "a confirmed publish reports no failed message");
 
         // TaskItemCreatedEvent is bound to all three queues, so one publish fans out to three deliveries.
         foreach (var queue in new[]
@@ -72,7 +68,7 @@ public sealed class RabbitMqTransportTests
         {
             var delivered = await GetAsync(broker, queue, ct);
             Assert.IsNotNull(delivered, $"nothing arrived on {queue}");
-            Assert.AreEqual(row.Id.ToString(), delivered.BasicProperties.MessageId);
+            Assert.AreEqual(envelope.Id.ToString(), delivered.BasicProperties.MessageId);
             Assert.AreEqual("corr-1", delivered.BasicProperties.CorrelationId);
             Assert.AreEqual("application/json", delivered.BasicProperties.ContentType);
             Assert.AreEqual(nameof(TaskItemCreatedEvent), delivered.RoutingKey);
@@ -109,10 +105,10 @@ public sealed class RabbitMqTransportTests
                 TaskFlow.Domain.Shared.Enums.TaskItemStatus.InProgress),
             DateTimeOffset.UtcNow,
             correlationId: null);
-        var row = OutboxStagingInterceptor.ToRow(envelope, TestConstants.TenantId, DateTimeOffset.UtcNow);
+        var entry = TaskFlowIntegrationEvents.Entry(envelope, TestConstants.TenantId);
 
-        await provider.GetRequiredService<IIntegrationEventTransport>()
-            .SendBatchAsync(row.Destination, [row], ct);
+        await provider.GetRequiredService<IOutboxTransport>()
+            .SendAsync(entry.Destination, [Item(entry)], ct);
 
         Assert.IsNotNull(await GetAsync(broker, TaskFlowRabbitMqTopology.ProjectionQueue, ct));
         Assert.IsNull(await GetAsync(broker, TaskFlowRabbitMqTopology.AiReviewQueue, ct),
@@ -221,6 +217,17 @@ public sealed class RabbitMqTransportTests
 
     public TestContext TestContext { get; set; } = null!;
 
+    /// <summary>The broker-neutral item the dispatcher hands the transport for a staged entry.</summary>
+    private static OutboxItem Item(OutboxEntry entry) => new(
+        entry.Envelope.Id,
+        entry.Envelope.Type,
+        entry.Envelope.Version,
+        EnvelopeSerializer.Serialize(entry.Envelope, TaskFlowMessagingJsonContext.Default.Options),
+        entry.Envelope.CorrelationId,
+        TraceParent: null,
+        TraceState: null,
+        entry.Headers);
+
     private static IntegrationEnvelopeReaderOptions ReaderOptions()
     {
         var options = new IntegrationEnvelopeReaderOptions();
@@ -238,7 +245,6 @@ public sealed class RabbitMqTransportTests
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton<TaskFlow.Observability.Meters.MessagingMetrics>();
         services.AddTaskFlowRabbitMqMessaging(config);
         return services.BuildServiceProvider();
     }

@@ -1,4 +1,5 @@
 using EF.Messaging;
+using EF.Messaging.Outbox;
 using TaskFlow.Domain.Shared;
 
 namespace TaskFlow.Application.Contracts.Messaging;
@@ -10,12 +11,17 @@ namespace TaskFlow.Application.Contracts.Messaging;
 /// without deserializing the payload.
 /// <para>
 /// The envelope carries no tenant. TaskFlow's tenant travels in the payload (every
-/// <see cref="ITenantDomainEvent"/> has one) and is denormalized onto the outbox row and the broker message
-/// properties by the writer, which is where a subscription rule and a partition key actually read it.
+/// <see cref="ITenantDomainEvent"/> has one) and as the <see cref="TenantIdHeader"/> outbox header, which the
+/// transport copies onto the broker message, where a subscription rule and a partition key actually read it.
 /// </para>
 /// </summary>
 public static class TaskFlowIntegrationEvents
 {
+    /// <summary>Logical channel every TaskFlow integration event goes to; the transport maps it to a topic or exchange.</summary>
+    public const string Destination = "DomainEvents";
+
+    /// <summary>Outbox header, and broker message property, carrying the owning tenant.</summary>
+    public const string TenantIdHeader = "TenantId";
     /// <summary>
     /// Per-type payload schema version. A record whose shape changes gets a bumped entry here and a consumer
     /// that switches on EventVersion; unlisted types are version 1.
@@ -83,4 +89,14 @@ public static class TaskFlowIntegrationEvents
             id,
             TaskFlowMessagingJsonContext.Default.Options);
     }
+
+    /// <summary>
+    /// The outbox entry for an envelope: sent to <see cref="Destination"/> with the tenant as the
+    /// <see cref="TenantIdHeader"/> header. A job that re-runs sets a deterministic envelope id first, so the
+    /// consumer inbox rejects the replay as a duplicate.
+    /// </summary>
+    /// <param name="envelope">Envelope to stage; its id becomes the outbox row id and the broker message id.</param>
+    /// <param name="tenantId">Owning tenant.</param>
+    public static OutboxEntry Entry(IntegrationEventEnvelope envelope, Guid tenantId) =>
+        new(envelope, Destination, new Dictionary<string, string>(StringComparer.Ordinal) { [TenantIdHeader] = tenantId.ToString() });
 }

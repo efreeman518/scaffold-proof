@@ -8,14 +8,14 @@ using TaskFlow.Domain.Shared;
 using TaskFlow.Domain.Shared.Enums;
 using TaskFlow.Domain.Shared.Events;
 using TaskFlow.Infrastructure.Data;
-using TaskFlow.Infrastructure.Data.Interceptors;
 using Test.Support;
 
 namespace Test.Unit.Infrastructure;
 
 /// <summary>
-/// D-026: the staging interceptor turns raised domain events into outbox rows inside the same SaveChanges as
-/// the domain write. If that ever became a second SaveChanges, an event could be published for a write that
+/// D-026: EF.Data.Outbox's staging interceptor, configured as the hosts configure it (TaskFlow's mapper and
+/// serializer options), turns raised domain events into outbox rows inside the same SaveChanges as the domain
+/// write. If that ever became a second SaveChanges, an event could be published for a write that
 /// rolled back - these tests are what fails when it does.
 /// </summary>
 [TestClass]
@@ -43,8 +43,9 @@ public sealed class OutboxStagingTests
         Assert.AreEqual(1, rows.Count);
         Assert.AreEqual(nameof(TaskItemCreatedEvent), rows[0].EventType);
         Assert.AreEqual(1, rows[0].EventVersion);
-        Assert.AreEqual(TestConstants.TenantId, rows[0].TenantId);
-        Assert.AreEqual(OutboxStagingInterceptor.DefaultDestination, rows[0].Destination);
+        var headers = JsonSerializer.Deserialize<Dictionary<string, string>>(rows[0].Headers!);
+        Assert.AreEqual(TestConstants.TenantId.ToString(), headers![TaskFlowIntegrationEvents.TenantIdHeader]);
+        Assert.AreEqual(TaskFlowIntegrationEvents.Destination, rows[0].Destination);
         Assert.AreEqual(Now, rows[0].OccurredAtUtc);
         Assert.AreEqual(0, rows[0].AttemptCount);
         Assert.IsNull(rows[0].LeaseToken);
@@ -162,29 +163,6 @@ public sealed class OutboxStagingTests
         }
     }
 
-    /// <summary>A row staged outside any trace carries no trace context rather than an invalid one.</summary>
-    [TestMethod]
-    [TestCategory("Unit")]
-    public void ToRow_WithoutAnActivity_LeavesTraceContextNull()
-    {
-        var previous = System.Diagnostics.Activity.Current;
-        System.Diagnostics.Activity.Current = null;
-        try
-        {
-            var envelope = TaskFlowIntegrationEvents.Envelope(
-                new TaskItemCreatedEvent(Guid.CreateVersion7(), TestConstants.TenantId, "untraced"), Now, correlationId: null);
-
-            var row = OutboxStagingInterceptor.ToRow(envelope, TestConstants.TenantId, Now);
-
-            Assert.IsNull(row.TraceParent);
-            Assert.IsNull(row.TraceState);
-        }
-        finally
-        {
-            System.Diagnostics.Activity.Current = previous;
-        }
-    }
-
     [TestMethod]
     [TestCategory("Unit")]
     public void UnknownEventType_IsRejectedBeforeAConsumerSeesIt()
@@ -199,7 +177,7 @@ public sealed class OutboxStagingTests
     private static TaskFlowDbContextTrxn Create(string dbName) =>
         new(new DbContextOptionsBuilder<TaskFlowDbContextTrxn>()
             .UseInMemoryDatabase(dbName)
-            .AddInterceptors(new OutboxStagingInterceptor(new FixedClock(Now)))
+            .AddInterceptors(TestOutbox.Interceptor(new FixedClock(Now)))
             .Options)
         {
             Clock = new FixedClock(Now),
