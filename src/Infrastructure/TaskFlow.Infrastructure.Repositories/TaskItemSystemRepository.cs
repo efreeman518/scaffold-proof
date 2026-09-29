@@ -18,7 +18,7 @@ namespace TaskFlow.Infrastructure.Repositories;
 /// Cross-tenant system access for the scheduler jobs, over the write context with
 /// <c>IgnoreQueryFilters()</c>. Every scan is keyset-paged by the clustered <c>(TenantId, Id)</c> key so a
 /// job's cost is bounded by the rows it actually touches, not by how far into the table it has walked. Whole walks
-/// use the package <c>StreamKeysetPagesAsync</c>; the stale batch resumes from a caller-held position.
+/// use the package <c>StreamKeysetPagesAsync</c>; the stale batch resumes it from a caller-held <c>KeysetPosition</c>.
 /// </summary>
 public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvider? timeProvider = null)
     : RepositoryBase<TaskFlowDbContextTrxn, string, Guid?>(db), ITaskItemSystemRepository
@@ -95,12 +95,20 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
     public async Task<IReadOnlyList<StaleTaskRow>> GetStaleBatchAsync(
         DateTimeOffset cutoffUtc, StaleTaskRow? after, int pageSize, CancellationToken ct = default)
     {
-        var cursor = after is { } position ? (position.TenantId, position.Id) : ((Guid, Guid)?)null;
-        return await Keyset(StaleCandidates(cutoffUtc), cursor)
-            .Take(pageSize)
-            .Select(e => new StaleTaskRow(e.TenantId.Value, e.Id.Value))
-            .ToListAsync(ct)
-            .ConfigureAwait(ConfigureAwaitOptions.None);
+        // The caller holds the position across its delete batches, so each call is the first page of a walk
+        // resumed after the last row it processed; the deletes behind the position do not shift it.
+        var resume = after is { } position
+            ? new KeysetPosition<TenantId, TaskItemId>(TenantId.From(position.TenantId), TaskItemId.From(position.Id))
+            : (KeysetPosition<TenantId, TaskItemId>?)null;
+        var pages = StaleCandidates(cutoffUtc).AsNoTracking().StreamKeysetPagesAsync(
+            e => new StaleTaskRow(e.TenantId.Value, e.Id.Value),
+            e => e.TenantId, e => e.Id, resume, pageSize, ct);
+        await foreach (var page in pages.ConfigureAwait(false))
+        {
+            return page;
+        }
+
+        return [];
     }
 
     /// <inheritdoc />
@@ -214,20 +222,4 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
                 // The subtask FK is Restrict: a parent with children still present cannot be deleted, and
                 // becomes deletable on a later run once they are gone.
                 && !e.SubTasks.Any());
-
-    /// <summary>
-    /// Orders by the clustered key and resumes after the caller's last row. The stale cleanup keeps its position
-    /// across delete batches in the caller, which the in-process <c>StreamKeysetPagesAsync</c> walk cannot hold.
-    /// </summary>
-    private static IQueryable<TaskItem> Keyset(IQueryable<TaskItem> source, (Guid TenantId, Guid Id)? after)
-    {
-        if (after is { } position)
-        {
-            var tenantId = TenantId.From(position.TenantId);
-            var id = TaskItemId.From(position.Id);
-            source = source.Where(e => e.TenantId > tenantId || (e.TenantId == tenantId && e.Id > id));
-        }
-
-        return source.AsNoTracking().OrderBy(e => e.TenantId).ThenBy(e => e.Id);
-    }
 }
