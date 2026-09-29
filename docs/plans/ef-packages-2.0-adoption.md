@@ -43,9 +43,9 @@ a4 (after a3), a6, sa
 | Id | Scope | Depends | Model | Status | Branch / PR | Worktree | Agent id | Lease | State folder |
 |---|---|---|---|---|---|---|---|---|---|
 | a0 | Bump every EF.* to 2.0.111; fix every compile break and removed API (moved namespaces, deleted overloads, renamed packages such as EF.UI.Refit, fail-closed tenant filter wiring, AuditLog column migration); solution builds; tests green | - | opus | merged | #29 (248c897) | removed | ada9b31b | released | removed |
-| a1 | Data, domain, common, tenancy, audit: D items' proof adoption | a0 | opus | running | `refactor/adopt2-f8ca68-a1` | `.tmp/worktrees/adopt2-f8ca68-a1` | a86cdfed | d50054bb | `.tmp/orchestrated-refactor/adopt2-f8ca68/a1` |
+| a1 | Data, domain, common, tenancy, audit: D items' proof adoption | a0 | opus | rebasing onto a5 | `refactor/adopt2-f8ca68-a1` | `.tmp/worktrees/adopt2-f8ca68-a1` | a86cdfed | d50054bb | `.tmp/orchestrated-refactor/adopt2-f8ca68/a1` |
 | a2 | Messaging, outbox, inbox: M items' proof adoption | a0 | opus | running | `refactor/adopt2-f8ca68-a2` | `.tmp/worktrees/adopt2-f8ca68-a2` | a5a367d1 | 6d3bbc4f | `.tmp/orchestrated-refactor/adopt2-f8ca68/a2` |
-| a3 | Hosting, web, UI client: H and U items' proof adoption | a0 | opus | running | `refactor/adopt2-f8ca68-a3` | `.tmp/worktrees/adopt2-f8ca68-a3` | a5993a86 | 5822fc34 | `.tmp/orchestrated-refactor/adopt2-f8ca68/a3` |
+| a3 | Hosting, web, UI client: H and U items' proof adoption | a0 | opus | rebasing onto a5 + narrowing ArgumentException mapping | `refactor/adopt2-f8ca68-a3` | `.tmp/worktrees/adopt2-f8ca68-a3` | a5993a86 | 5822fc34 | `.tmp/orchestrated-refactor/adopt2-f8ca68/a3` |
 | a4 | Auth, gateway, rate limiting, cache, scheduler, storage, gRPC, AI: S items' proof adoption | a0, a3 | opus | queued | | | | | |
 | a5 | Testing: T items' proof adoption (LoadRunner, fixtures, architecture rules, AI fakes) | a0 | opus | merged | #30 (43a39d7) | removed | ac9178d3 | released | removed |
 | a6 | Proof docs (DESIGN-DECISIONS, REFERENCE-STATUS, README, tech design where affected) and the full test matrix including Docker integration and the Aspire lanes | a1-a5 | opus | queued | | | | | |
@@ -64,6 +64,14 @@ a4 (after a3), a6, sa
 
 - a5 (#30): all 19 T items adopted. New architecture rule: one public type per file over src/, with 51 existing
   offenders ratcheted. For a6: D-062 still names tests/Test.Support/LoadRunner.cs; readiness now requires a 2xx.
+
+- a1: EF.Tenancy has one cross-tenant role (`TenancyOptions.GlobalAdminRole`), so the no-request system identity
+  carries `[System, GlobalAdmin]`. a3's H14 `AddHttpRequestContext` gives the system context a single `SystemRole`;
+  whichever merges second must keep GlobalAdmin on the system identity, or background jobs fail the tenant boundary.
+  **EF.Packages follow-up (2.0.x):** EF.Tenancy should accept a list of cross-tenant roles, and H14 should accept a
+  list of system roles.
+- a3: sent back because mapping every framework `ArgumentException` to 400 hides server bugs (R14); map only
+  app client-input types.
 
 ## Kept on disk
 
