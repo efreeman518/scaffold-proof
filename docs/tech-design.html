@@ -104,7 +104,7 @@
 </tr>
 <tr>
 <td><strong>Testing</strong></td>
-<td>MSTest, Moq, NetArchTest, WebApplicationFactory, Testcontainers.MsSql/PostgreSql/RabbitMq, Aspire.Hosting.Testing, Stryker.NET, BenchmarkDotNet, in-house LoadRunner, Playwright</td>
+<td>MSTest, Moq, EF.Testing (LoadRunner, HTTP and environment helpers), EF.Testing.Architecture, EF.IntegrationTesting (WebApplicationFactory base, container fixtures, Aspire host context), Testcontainers.MsSql/PostgreSql/RabbitMq, Aspire.Hosting.Testing, Stryker.NET, BenchmarkDotNet, Playwright</td>
 </tr>
 </tbody></table>
 <h3 id="design-principles">Design Principles</h3>
@@ -205,8 +205,8 @@
 </tr>
 <tr>
 <td><strong>Infrastructure</strong></td>
-<td>Repositories, Data, Storage, AI, EF.CQRS, EF.AspNetCore.Reference, EF.Test.Integration</td>
-<td>EF Core, Azure SDK implementations of Application.Contracts interfaces. <code>EF.CQRS</code>, <code>EF.AspNetCore.Reference</code>, and <code>EF.Test.Integration</code> are separately packaged helper candidates under Infrastructure for now. <code>Data</code> also owns the FlowEngine state DbContext (<code>TaskFlowFlowEngineDbContext</code>) and its migrations.</td>
+<td>Repositories, Data, Data.Migrations.SqlServer/PostgreSql, Storage, AI, Caching, Messaging.RabbitMq</td>
+<td>EF Core, Azure SDK and S3/RabbitMQ implementations of Application.Contracts interfaces, composed over the EF.* packages (<code>EF.Data</code>, <code>EF.Data.Outbox</code>, <code>EF.Audit.*</code>, <code>EF.Storage.*</code>, <code>EF.Cache</code>, <code>EF.Messaging.*</code>, <code>EF.AI</code>). <code>Data</code> also owns the FlowEngine state DbContext (<code>TaskFlowFlowEngineDbContext</code>) and its migrations.</td>
 <td>Application.Contracts, Domain</td>
 </tr>
 </tbody></table>
@@ -241,8 +241,8 @@
 </tr>
 </tbody></table>
 <p><code>TaskFlow.Api</code> contains two endpoint sets. Service endpoints inject <code>I*Service</code>. CQRS endpoints inject the exact <code>IRequestHandler&lt;TRequest,TResponse&gt;</code> needed by that route, construct a command/query record, and call <code>HandleAsync</code> directly. The avoided patterns are central request dispatchers, request buses, and generic <code>Send()</code> entrypoints. The reason is traceability: each route exposes the exact request and handler registration it uses, so tests and code review can follow the use case without hidden runtime routing.</p>
-<p><code>src/Infrastructure/EF.CQRS</code> is intentionally isolated as the package candidate. It provides <code>ICommand</code>, <code>IQuery</code>, <code>IRequestHandler</code>, request validators, validation/logging decorators, and <code>AddDecoratedRequestHandler(...)</code> DI helpers. The project has no TaskFlow business logic.</p>
-<p><code>src/Infrastructure/EF.AspNetCore.Reference</code> is temporarily renamed so the reference app can still consume the existing <code>EF.AspNetCore</code> feed package. It hosts reusable ASP.NET Core conventions: versioned API/OpenAPI registration, versioned route-group helpers, correlation ID middleware, security headers, and ProblemDetails metadata. <code>src/Infrastructure/EF.Test.Integration</code> hosts reusable integration-test conventions: WebApplicationFactory EF rewiring, SQL Testcontainers fixtures, Aspire health/connection-string helpers, and scoped environment-variable handling.</p>
+<p>The <code>EF.CQRS</code> package provides <code>ICommand</code>, <code>IQuery</code>, <code>IRequestHandler</code>, request validators, validation/logging decorators, and <code>AddDecoratedRequestHandler(...)</code> DI helpers. The project has no TaskFlow business logic.</p>
+<p>The <code>EF.AspNetCore</code> package hosts the reusable ASP.NET Core conventions: versioned API/OpenAPI registration, versioned route-group helpers, correlation id middleware, security headers, proxy forwarding, the <code>/healthz</code> endpoints, the If-Match/ETag concurrency contract, CORS from configuration, and ProblemDetails. <code>EF.IntegrationTesting</code> (with <code>.SqlServer</code>, <code>.PostgreSql</code> and <code>.Aspire</code>) and <code>EF.Testing</code> host the reusable test conventions: WebApplicationFactory EF rewiring, container fixtures, the Aspire test host context, and scoped environment-variable handling.</p>
 <h3 id="service-vs-cqrs-tradeoffs">Service vs CQRS Tradeoffs</h3>
 <table>
 <thead>
@@ -376,14 +376,14 @@
 <tr>
 <td><code>CreatedAtUtc</code> / <code>ModifiedAtUtc</code></td>
 <td><code>DateTimeOffset</code></td>
-<td>Written by <code>VersionTimestampInterceptor</code> on Added/Modified, private setters</td>
+<td>Stamped by <code>EF.Data.DbContextBase</code> from its <code>Clock</code> on Added/Modified (<code>EF.Domain.Contracts.ITimestampedEntity</code>), private setters</td>
 </tr>
 </tbody></table>
 <div class="callout">
-<p><strong>Concurrency token change:</strong> the former <code>RowVersion</code> (SQL <code>rowversion</code> / Postgres <code>xmin</code>) is replaced by the app-managed <code>Version</code> because a database-native token differs in type per provider, is opaque as a wire ETag, and cannot be exercised against the EF Core InMemory provider (needed for <code>Test.Unit</code> 412 coverage). Package requests 1-2 landed in EF.* 1.1.100: <code>EF.Domain.EntityBase&lt;TId&gt;.Version</code> is the token and <code>EF.Data.DbContextBase.SaveChangesAsync</code> increments it for every <code>Modified</code> entry, setting the pre-increment value as the property's original so EF emits <code>WHERE Version = @original</code>. <code>VersionTimestampInterceptor</code> (<code>Infrastructure.Data/Interceptors/</code>) keeps what the package does not do: both timestamps, and the <code>Version = 1</code> baseline on <code>Added</code>.</p>
+<p><strong>Concurrency token:</strong> the app-managed <code>Version</code> is the token rather than a database-native one (SQL <code>rowversion</code> / Postgres <code>xmin</code>), because a native token differs in type per provider, is opaque as a wire ETag, and cannot be exercised against the EF Core InMemory provider (needed for <code>Test.Unit</code> 412 coverage). <code>EF.Domain.EntityBase&lt;TId&gt;.Version</code> is the token; <code>EF.Data.DbContextBase</code> sets <code>Version = 1</code> on insert, increments it for every <code>Modified</code> entry (setting the pre-increment value as the property's original so EF emits <code>WHERE Version = @original</code>), and stamps both timestamps.</p>
 <p><strong>Note:</strong> <code>EntityBase&lt;TId&gt;</code> still does not define audit-log properties (<code>CreatedBy</code>, <code>UpdatedAt</code>, <code>UpdatedBy</code>) - those remain separate, driven by the compliance-focused <code>AuditInterceptor</code> (see <a href="#11-audit-strategy">Section 11: Audit Strategy</a>), distinct from the concurrency-focused <code>CreatedAtUtc</code>/<code>ModifiedAtUtc</code> above. Soft-delete (<code>IsDeleted</code>) is defined on individual domain entities that support it, not on <code>EntityBase&lt;TId&gt;</code>.</p>
 </div>
-<p>All tenant entities also implement <code>ITenantEntity&lt;TenantId&gt;</code> and use a <strong>composite tenant-first primary key</strong> <code>(TenantId, Id)</code> (D-022, <code>EntityBaseConfiguration.HasKey</code>) rather than a single-column <code>Id</code> PK - this is the SQL Server clustered index by default, and on PostgreSQL it makes every table distributable by <code>TenantId</code> without a future rewrite (Citus/elastic clusters require the distribution column inside the primary key). Child entities carry matching composite foreign keys <code>(TenantId, ParentId)</code>. DTOs, HTTP contracts, events, and request-context inputs remain Guid-based and wrap/unwrap at the application boundary. This split is deliberate: domain and repository code get compile-time protection against mixing entity IDs, while public contracts stay simple for JSON serialization, OpenAPI/client generation, UI code, workflow payloads, and long-term wire compatibility.</p>
+<p>All tenant entities also implement <code>ITenantEntity&lt;TenantId&gt;</code> and use a <strong>composite tenant-first primary key</strong> <code>(TenantId, Id)</code> (D-022, <code>EF.Data.TenantEntityTypeConfiguration&lt;TEntity, TId, TenantId&gt;</code>; <code>ApplyTenantQueryFilters&lt;TenantId&gt;</code> adds the named <code>Tenant</code> query filter) rather than a single-column <code>Id</code> PK - this is the SQL Server clustered index by default, and on PostgreSQL it makes every table distributable by <code>TenantId</code> without a future rewrite (Citus/elastic clusters require the distribution column inside the primary key). Child entities carry matching composite foreign keys <code>(TenantId, ParentId)</code>. DTOs, HTTP contracts, events, and request-context inputs remain Guid-based and wrap/unwrap at the application boundary. This split is deliberate: domain and repository code get compile-time protection against mixing entity IDs, while public contracts stay simple for JSON serialization, OpenAPI/client generation, UI code, workflow payloads, and long-term wire compatibility.</p>
 <h3 id="53-value-objects">5.3 Value Objects</h3>
 <table>
 <thead>
@@ -405,7 +405,7 @@
 </tr>
 </tbody></table>
 <h3 id="54-integration-events">5.4 Integration Events</h3>
-<p>Events are defined in <code>TaskFlow.Domain.Shared.Events</code>. The aggregate raises them (<code>IHasDomainEvents</code>); they never publish directly - <code>OutboxStagingInterceptor</code> stages them as <code>OutboxMessage</code> rows in the same save, and the Scheduler&#39;s dispatcher sends them through <code>IIntegrationEventTransport</code> (Service Bus or RabbitMQ, per <code>Messaging:Provider</code>) - see <a href="#62-event-processing-flow---cosmos-projection">Section 6.2</a>.</p>
+<p>Events are defined in <code>TaskFlow.Domain.Shared.Events</code>. The aggregate raises them (<code>EF.Domain.Contracts.IHasDomainEvents</code>); they never publish directly - the <code>EF.Data.Outbox</code> staging interceptor stages them as <code>OutboxMessage</code> rows in the same save, and the Scheduler&#39;s package dispatcher sends them through the lane&#39;s <code>IOutboxTransport</code> (Service Bus on Azure, RabbitMQ on NonAzure) - see <a href="#62-event-processing-flow---cosmos-projection">Section 6.2</a>.</p>
 <table>
 <thead>
 <tr>
@@ -466,7 +466,7 @@
 }
 </code></pre>
 <p>All four contexts (Trxn, Query, FlowEngine, TickerQ) and the four <code>DatabaseMigrator</code> design-time factories call this same extension; no other file checks the provider. <code>TaskFlowDbContextQuery</code> keeps its own connection string on both providers (D-027): SQL Server appends <code>ApplicationIntent=ReadOnly</code> for the Hyperscale HA secondary, PostgreSQL points it at the Flexible Server read replica.</p>
-<p><strong>UTC normalization</strong> (D-024): <code>UtcDateTimeOffsetConverter</code>/<code>UtcDateTimeConverter</code> (<code>Infrastructure.Data/Conventions/</code>) are registered once in <code>TaskFlowDbContextBase.ConfigureConventions</code> for every <code>DateTimeOffset</code>/<code>DateTime</code> property - required because Npgsql&#39;s <code>timestamptz</code> rejects a non-zero offset on write.</p>
+<p><strong>UTC normalization</strong> (D-024): <code>EF.Data</code> <code>RegisterUtcTemporalConversions()</code> is called once in <code>TaskFlowDbContextBase.ConfigureConventions</code> and registers <code>UtcDateTimeOffsetConverter</code>/<code>UtcDateTimeConverter</code> for every <code>DateTimeOffset</code>/<code>DateTime</code> property (an <code>Unspecified</code> <code>DateTime</code> is taken as UTC) - required because Npgsql&#39;s <code>timestamptz</code> rejects a non-zero offset on write.</p>
 <p><strong>Column encryption and blind index</strong> (D-023, supersedes D-019 Always Encrypted): <code>Infrastructure.Data/Encryption/</code> holds a provider-neutral <code>IColumnEncryptor</code> (<code>AesGcmColumnEncryptor</code>: AES-256-GCM, <code>nonce(12) || ciphertext || tag(16)</code>) plus <code>BlindIndex</code> (HMAC-SHA256 into a shadow column, indexed, for equality search on an otherwise-randomized encrypted column) and a <code>ColumnEncryptionOptionsExtension</code> wired through <code>UseColumnEncryption</code>/<code>AddColumnEncryption(config, "Database:Encryption")</code>. Config keys: <code>Database:Encryption:{Enabled, LocalKeyBase64, BlindIndexKeyBase64, KeyVaultKeyUrl, WrappedDekBase64}</code>. SQL Server Always Encrypted (D-019) is kept only as a documented alternative in a code comment at the converter registration (<code>Configurations/TaskItemConfiguration.cs</code>) - it is not implemented, because it has no PostgreSQL equivalent.</p>
 <p><strong>Migrations</strong> (D-025): one fresh baseline migration set per (context x provider) - six sets total - lives in two migration assemblies, <code>TaskFlow.Infrastructure.Data.Migrations.SqlServer</code> and <code>...Migrations.PostgreSql</code>, each with <code>Migrations/{TaskFlow,FlowEngine,TickerQ}/</code>. <code>TaskFlow.DatabaseMigrator</code>&#39;s design-time factories resolve the provider the same way as runtime and apply targets in order Trxn -&gt; FlowEngine -&gt; TickerQ, each keeping its own migration history table even when local Aspire maps all three onto one database.</p>
 <p><strong>Provider-matrixed tests</strong>: <code>TASKFLOW_LANE=Azure|NonAzure</code> selects the container-backed test topology; <code>TASKFLOW_TEST_DB_PROVIDER</code> remains a deprecated test-only alias for one release. <code>Test.Support/Hosting/TestDatabaseContainer.cs</code> wraps either SQL Server 2025 or PostgreSQL (<code>pgvector/pgvector:0.8.6-pg18@sha256:2ba9ca5f2e7daa0f0e7723cba1ee9167bab54efd3640516a44ac1a928dd67e7a</code>) behind one facade, consumed by <code>Test.Integration/Infrastructure/DbContainerFixture.cs</code> and <code>Test.E2E/DbApiFactory.cs</code>. Manual CI and local acceptance run the same assemblies against each selected lane rather than parameterizing individual test cases.</p>
@@ -482,13 +482,13 @@
 
 
 <p>The CQRS path is direct endpoint-to-handler invocation. Decorators are assembled by DI around the exact handler type; there is no central dispatch step.</p>
-<p>The diagram shows <code>POST</code> (create); <code>PUT</code>/<code>PATCH</code>/<code>DELETE</code> add two endpoint filters around the same pipeline (D-021, D-031, D-032): <code>IfMatchEndpointFilter</code> runs first and requires an <code>If-Match</code> header - missing or blank returns <strong>428 Precondition Required</strong> before the handler runs, unparseable returns 400, and <code>If-Match: *</code> passes as an explicit wildcard override (used by the FlowEngine connector, see <a href="#145-connector-wiring">Section 14.5</a>). The handler loads the aggregate and calls <code>ConcurrencyGuard.Require(expectedVersion, current, ...)</code> before mutating; a mismatch throws <code>ConcurrencyMismatchException</code>, mapped to <strong>412 Precondition Failed</strong> with the current <code>ETag</code> so the caller can retry with a fresh version. All saves go through <code>ConcurrencyGuard.SaveAsync</code> (<code>OptimisticConcurrencyWinner.Throw</code>), so a stale-write race that slips past the pre-check still surfaces as 412 via <code>DbUpdateConcurrencyException</code>. <code>ETagEndpointFilter</code> runs after the handler on every route (including GET) and sets the response <code>ETag</code> header from any result implementing <code>IETagCarrier</code>.</p>
+<p>The diagram shows <code>POST</code> (create); <code>PUT</code>/<code>PATCH</code>/<code>DELETE</code> add two endpoint filters around the same pipeline (D-021, D-031, D-032): <code>RequireIfMatch()</code> (<code>EF.AspNetCore.Concurrency</code>) runs first and requires an <code>If-Match</code> header - missing or blank returns <strong>428 Precondition Required</strong> before the handler runs, unparseable returns 400, and <code>If-Match: *</code> passes as an explicit wildcard override (used by the FlowEngine connector, see <a href="#145-connector-wiring">Section 14.5</a>). The handler loads the aggregate and calls <code>EF.Data.Contracts.ConcurrencyGuard.Require(expectedVersion, current, ...)</code> before mutating; a mismatch throws <code>PreconditionFailedException</code>, answered with <strong>412 Precondition Failed</strong> and the current <code>ETag</code> so the caller can retry with a fresh version. Every save passes <code>OptimisticConcurrencyWinner.Throw</code>, so a stale-write race that slips past the pre-check still surfaces as 412 (<code>PreconditionFailedException</code> from the save, or a policy-free save&#39;s <code>DbUpdateConcurrencyException</code>). <code>WithETag()</code> runs after the handler and sets the strong response <code>ETag</code> header from any result implementing <code>IETagVersioned</code> (TaskFlow&#39;s <code>IETagCarrier</code> extends it).</p>
 <h3 id="62-event-processing-flow---cosmos-projection">6.2 Event Processing Flow - Outbox to Consumers</h3>
 <figure class="diagram-container">
 <img src="diagrams/diagram-09.svg" alt="6.2 Event Processing Flow - Outbox to Consumers">
 </figure>
-<p>Domain events never publish directly (D-026). <code>TaskItem.Create</code>/<code>TransitionStatus</code> raise events into an in-memory buffer (<code>IHasDomainEvents</code>); <code>OutboxStagingInterceptor</code> converts pending events into <code>OutboxMessage</code> rows in the same <code>SaveChangesAsync</code> that persisted the aggregate - so a rolled-back save stages nothing. Scheduler jobs that mutate outside a tracked aggregate (overdue, recurrence) stage directly via <code>IOutboxStaging.Stage(envelope, deterministicId)</code>. The Scheduler&#39;s <code>OutboxDispatcherService</code> (every replica, lease-based, poll 1s backing off to 5s idle) claims a batch with an <code>ExecuteUpdateAsync</code> lease that skips rows already at the configured <code>MaxAttempts</code> (<code>OutboxDispatcher:MaxAttempts</code>, 10 in the Scheduler&#39;s appsettings), groups by destination, and sends through <code>IIntegrationEventTransport</code> - <code>Messaging:Provider</code> selects <code>ServiceBusEventTransport</code> or <code>RabbitMqEventTransport</code> (D-034). A row whose final attempt never settled (the worker crashed or the send outlived the lease) is dead-lettered by the next claim once its lease has expired, instead of being re-sent on every expiry. Settlement is per message and runs after the send on its own bounded token (<code>OperationalLeasedWorker.SettlementTimeout</code>, 30 s), never the stopping token, so a shutdown right after the broker accepted a batch still deletes the sent rows: a sent message is deleted, a permanent failure (an oversize message) is dead-lettered at once, a transient failure is released with backoff, and a failure on the last attempt is dead-lettered in place (row kept, admin retry endpoint) rather than lost. Each producer span is parented on the W3C trace context stored on the row at staging (<code>TraceParent</code>, <code>TraceState</code>), so the published message continues the trace of the request that staged it. Three subscriptions/queues (<code>projection</code>, <code>ai-review</code>, <code>workflow</code>) fan out by <code>EventType</code>, each with its own broker dead-letter path for malformed envelopes or exhausted delivery attempts.</p>
-<p>Every consumer holds a two-state <code>ConsumerInbox</code> claim keyed by (<code>Consumer</code>, <code>MessageId</code>) (D-029). The claim inserts <code>ClaimToken</code>, <code>ClaimedAtUtc</code>, and a 60 s <code>LeaseExpiresUtc</code>; the owning delivery renews the lease every 20 s while its work runs, and sets <code>CompletedAtUtc</code> only after the work succeeded. A failed consume releases the claim so the redelivery runs at once; complete and release are guarded by the claim token. A redelivery that finds a completed claim acknowledges without running. One that finds a live claim waits for it, polling every 1 s for up to the lease plus 5 s, because RabbitMQ requeues a thrown delivery immediately and throwing at once would spend the message&#39;s delivery budget in milliseconds; it takes the claim over if the lease expires, acknowledges if the claim completes, and throws <code>InboxClaimInProgressException</code> for a transport retry only if the claim is still live at the end of the wait. Broker at-least-once redelivery therefore cannot double-project, double-comment, or double-start a workflow, and a consumer that crashes mid-work loses its claim within one lease. Timings bind from <code>Messaging:Inbox</code> (<code>InboxClaimOptions</code>).</p>
+<p>Domain events never publish directly (D-026). <code>TaskItem.Create</code>/<code>TransitionStatus</code> raise events into an in-memory buffer (<code>EF.Domain.Contracts.IHasDomainEvents</code> over <code>EF.Domain.DomainEventContainer</code>); the <code>EF.Data.Outbox</code> <code>OutboxStagingInterceptor</code> maps pending events through <code>TaskFlowOutboxEventMapper</code> (the integration envelope plus a <code>TenantId</code> header) into <code>OutboxMessage</code> rows in the same <code>SaveChangesAsync</code> that persisted the aggregate - so a rolled-back save stages nothing. Scheduler jobs that mutate outside a tracked aggregate (overdue, recurrence) stage directly via <code>IOutboxStaging.Stage(TaskFlowIntegrationEvents.Entry(envelope, tenantId))</code>. The Scheduler runs the package <code>OutboxDispatcherService</code> (<code>AddOutboxDispatcher</code>, section <code>OutboxDispatcher</code>; every replica, lease-based) which claims a batch with a conditional lease update that skips rows already at the configured <code>MaxAttempts</code> (10 in the Scheduler&#39;s appsettings), groups by destination, and sends through the lane&#39;s <code>IOutboxTransport</code> - <code>AddServiceBusOutboxTransport</code> on Azure, <code>AddRabbitMqOutboxTransport</code> on NonAzure (D-060). A row whose final attempt never settled (the worker crashed or the send outlived the lease) is dead-lettered by the next claim once its lease has expired, instead of being re-sent on every expiry. Settlement is per message and runs after the send on its own bounded token (<code>LeasedWorkerOptions.SettlementTimeout</code>), never the stopping token, and the host fails to start unless the lease outlasts the send and settlement timeouts together, so a shutdown right after the broker accepted a batch still deletes the sent rows: a sent message is deleted, a permanent failure (an oversize message) is dead-lettered at once, a transient failure is released with backoff, and a failure on the last attempt is dead-lettered in place (row kept, admin retry endpoint) rather than lost. Each producer span is parented on the W3C trace context stored on the row at staging (<code>TraceParent</code>, <code>TraceState</code>), so the published message continues the trace of the request that staged it. Three subscriptions/queues (<code>projection</code>, <code>ai-review</code>, <code>workflow</code>) fan out by <code>EventType</code>, each with its own broker dead-letter path for malformed envelopes or exhausted delivery attempts.</p>
+<p>Every consumer holds a two-state <code>ConsumerInbox</code> claim keyed by (<code>Consumer</code>, <code>MessageId</code>) (D-029). The claim inserts <code>ClaimToken</code>, <code>ClaimedAtUtc</code>, and a 60 s <code>LeaseExpiresUtc</code>; the owning delivery renews the lease every 20 s while its work runs, and sets <code>CompletedAtUtc</code> only after the work succeeded. A failed consume releases the claim so the redelivery runs at once; complete and release are guarded by the claim token. A redelivery that finds a completed claim acknowledges without running. One that finds a live claim waits for it, polling every 1 s for up to the lease plus 5 s, because RabbitMQ requeues a thrown delivery immediately and throwing at once would spend the message&#39;s delivery budget in milliseconds; it takes the claim over if the lease expires, acknowledges if the claim completes, and returns <code>ConsumeDisposition.InProgress</code> for a transport retry only if the claim is still live at the end of the wait (RabbitMQ requeues it with reason <code>InboxInProgress</code>; the Functions dispatcher abandons it). Broker at-least-once redelivery therefore cannot double-project, double-comment, or double-start a workflow, and a consumer that crashes mid-work loses its claim within one lease. The consumers derive from <code>EF.Messaging</code> <code>IntegrationEventConsumerBase</code> over the <code>EF.Data.Outbox</code> <code>InboxStore&lt;TaskFlowDbContextTrxn&gt;</code> (<code>InboxEntry</code> on the <code>ConsumerInbox</code> table); timings bind from <code>Messaging:Inbox</code> (<code>InboxClaimOptions</code>: lease, renewal, <code>WaitPollInterval</code>).</p>
 <h3 id="63-attachment-upload-flow">6.3 Attachment Upload Flow</h3>
 <figure class="diagram-container">
 <img src="diagrams/diagram-10.svg" alt="6.3 Attachment Upload Flow">
@@ -500,7 +500,7 @@
 <figure class="diagram-container">
 <img src="diagrams/diagram-11.svg" alt="6.4 Caching Flow - FusionCache L1/L2">
 </figure>
-<p>FusionCache is active behind one interface, <code>ITaskFlowCache</code> (<code>TaskFlow.Infrastructure.Caching</code>, <code>FusionTaskFlowCache</code>) - the earlier no-op <code>IEntityCacheProvider</code> is deleted. <code>GetOrSetAsync&lt;T&gt;(key, factory, profile)</code> takes a <code>CacheProfile</code> (<code>Metadata</code>: L1 5m / L2 30m / fail-safe 2h; <code>Summary</code>: L1 5s / L2 15s / fail-safe 1m, 500ms soft factory timeout) and only caches immutable snapshots - <code>/task-items/summary</code> and <code>/task-metadata</code>. Keys render as <code>{env}:{schemaVersion}:{tenantId:N}:{kind}[:{discriminator}]</code>; invalidation is tag-based (<code>RemoveByTagAsync</code>) with per-tenant and per-entity tags (<code>t:{tenant}</code>, <code>t:{tenant}:taskitem|category|tag</code>) set by every create/update/delete call site. The Redis backplane keeps L2 and invalidation consistent across API/Scheduler replicas; a degraded backplane fails safe (stale-but-served, not down) and is observed via <code>taskflow.cache.degraded</code>.</p>
+<p>FusionCache is active behind <code>EF.Cache.ITypedCache</code>, registered by <code>AddTaskFlowCaching</code> (<code>TaskFlow.Infrastructure.Caching</code>) through EF.Cache <code>AddTypedCache</code>, which sets <code>SchemaVersion</code> 2 and the two profiles. With Redis configured the package registers one shared <code>IConnectionMultiplexer</code> that L2, the backplane, the distributed lock, the <code>redis-cache</code> health check, the Data Protection key ring and the tenant rate limiter all use. <code>GetOrSetAsync&lt;T&gt;(key, factory, profile)</code> takes a profile (<code>Metadata</code>: L1 5m / L2 30m / fail-safe 2h; <code>Summary</code>: L1 5s / L2 15s / fail-safe 1m, 500ms soft factory timeout) and only caches immutable snapshots - <code>/task-items/summary</code> and <code>/task-metadata</code>. Keys render as <code>{env}:{schemaVersion}:{tenantId:N}:{kind}[:{discriminator}]</code>; invalidation is tag-based (<code>RemoveByTagAsync</code>) with per-tenant and per-entity tags (<code>t:{tenant}</code>, <code>t:{tenant}:taskitem|category|tag</code>) set by every create/update/delete call site. The Redis backplane keeps L2 and invalidation consistent across API/Scheduler replicas; a degraded backplane fails safe (stale-but-served, not down) and is observed via the package meter <code>EF.Cache</code> (<code>ef.cache.degraded</code>, <code>ef.cache.invalidations</code>).</p>
 <hr>
 <h2 id="7-api-contract-summary">7. API Contract Summary</h2>
 <p><strong>Route versioning boundary:</strong> business/domain HTTP contracts are versioned under <code>/api/v1/*</code>. Operational, health, gateway, and workflow-admin surfaces are intentionally unversioned: <code>/health/*</code>, <code>/alive</code>, <code>/healthz</code>, <code>/api/flowengine/*</code>, and the Azure Functions host health route <code>/api/health</code>. Versioning applies to the API contract consumed by clients, not to host-management probes or third-party/admin surfaces with their own lifecycle.</p>
@@ -662,17 +662,22 @@ Result&lt;T&gt;                                  -&gt; Success | Failure(errors)
 </code></pre>
 <p>Every DTO derives from <code>EntityBaseDto</code> and now carries <code>Version</code>; all mappers project it. Mutating <code>PUT</code>/<code>PATCH</code>/<code>DELETE</code> requests carry an <code>If-Match</code> header rather than a body field - see <a href="#61-request-flow---crud-operation">Section 6.1</a> for the 412/428 pipeline.</p>
 <h3 id="75-middleware-pipeline-order-of-execution">7.5 Middleware Pipeline (Order of Execution)</h3>
-<pre><code>1. SecurityHeadersMiddleware       - Adds security response headers
-2. CorrelationIdMiddleware         - Generates/propagates X-Correlation-Id
-3. HeaderPropagation               - Captures X-Correlation-Id for outgoing HttpClient calls
-4. ExceptionHandler                - Catches exceptions -&gt; ProblemDetails with trace/activity metadata
-5. RateLimiter                     - Redis-backed per-tenant sliding window (fail-open) plus tiered health limits
-6. CORS                            - Policy TaskFlowUi for allowed origins
-7. Authentication                  - Scaffold (dev) or JWT Bearer (Entra ID)
-8. Authorization                   - Authenticated fallback/default policy plus named policies
-9. GatewayClaimsTransformer        - Rehydrates X-Orig-Request only from configured trusted gateway app id
+<pre><code>1. UseProxyForwarding              - EF.AspNetCore forwarded headers and path base (Proxy:*)
+2. UseBasicSecurityHeaders         - Adds security response headers
+3. UseCorrelationId                - Accepts/generates the correlation id; outgoing HttpClient calls carry it
+                                     (AddCorrelationIdPropagation in ServiceDefaults)
+4. UseExceptionHandler             - EF.AspNetCore problem details; status from ExceptionClassifier,
+                                     requestId/traceId/spanId on every problem
+5. CORS                            - Policy TaskFlowUi (AddCorsPolicyFromConfiguration)
+6. Authentication                  - Scaffold fixed principal (EF.Auth) or JWT Bearer (Entra ID), then the
+                                     EF.Auth forwarded-claims transformation (trusted callers only)
+7. Authorization                   - Authenticated fallback/default policy plus named policies
+8. RateLimiter                     - EF.RateLimiting per-tenant budgets (Redis-backed, fail-open) plus
+                                     per-client-IP health policies; after auth so partitions see tenant_id
+9. RequestTimeouts                 - Default policy from RequestTimeouts:DefaultSeconds (D-064)
 10. OpenAPI / Scalar UI            - API documentation (if enabled)
-11. Health + Alive endpoints       - /health/memory, /health/db, /health/full, /alive
+11. Health endpoints               - /healthz, /healthz/live, /healthz/ready (MapEfHealthEndpoints);
+                                     /health/memory, /health/db, /health/full, /alive
 12. Versioned Entity Endpoints     - /api/v1/*
 </code></pre>
 <hr>
@@ -688,8 +693,8 @@ Result&lt;T&gt;                                  -&gt; Success | Failure(errors)
 </thead>
 <tbody><tr>
 <td><strong>Scaffold</strong></td>
-<td>Development</td>
-<td>Predictable test identity; all requests succeed; no real token validation</td>
+<td>Development, Testing, Production (fixed in code: <code>ScaffoldPrincipal.AllowedEnvironments</code>)</td>
+<td>EF.Auth <code>AddFixedPrincipal("Scaffold")</code> on the Api and the Gateway: every request authenticates as the <code>ScaffoldPrincipal</code> claims; no real token validation. Any other environment fails host start. TaskFlow is a login-free demo that deploys as <code>Production</code>, so Production is on the list (D-072)</td>
 </tr>
 <tr>
 <td><strong>Entra ID</strong></td>
@@ -707,8 +712,8 @@ Result&lt;T&gt;                                  -&gt; Success | Failure(errors)
 
 
 <ul>
-<li><strong>Query Filters</strong>: Every <code>ITenantEntity&lt;TenantId&gt;</code> has an automatic EF Core query filter scoped to the current tenant. Cross-tenant data is invisible at the SQL level.</li>
-<li><strong>Service Validation</strong>: <code>TenantBoundaryValidator</code> checks every service call to prevent tenant leakage, even for operations that bypass query filters.</li>
+<li><strong>Query Filters</strong>: Every <code>ITenantEntity&lt;TenantId&gt;</code> has the named EF Core <code>Tenant</code> query filter scoped to the current tenant. Cross-tenant data is invisible at the SQL level. The filter fails closed: a context with no tenant reads nothing unless its scope is all-tenants, which only the no-request system identity and a tenant-less global admin get (<code>RegisterServices.AllowsAllTenants</code>).</li>
+<li><strong>Service Validation</strong>: the <code>EF.Tenancy</code> <code>ITenantBoundaryValidator</code> checks every service call to prevent tenant leakage, even for operations that bypass query filters; only the configured cross-tenant role (<code>GlobalAdmin</code>) passes the boundary for another tenant.</li>
 <li><strong>Authorization Policies</strong>: Middleware-level enforcement before requests reach services.</li>
 </ul>
 <h3 id="83-authorization-policies">8.3 Authorization Policies</h3>
@@ -740,21 +745,25 @@ Result&lt;T&gt;                                  -&gt; Success | Failure(errors)
 <h3 id="84-gateway-claims-flow">8.4 Gateway Claims Flow</h3>
 <pre><code>User -&gt; Gateway: Bearer {user-token}
 Gateway: Validate token (Entra or scaffold)
-Gateway: Acquire service-to-service token
+Gateway: Strip any inbound X-Forwarded-User-Claims header (every route)
+Gateway: Acquire service-to-service token (AccessTokenCache, cluster Metadata TokenScope)
 Gateway -&gt; API: Authorization: Bearer {service-token}
-              + X-Orig-Request: Base64({ oid, tenant_id, name, roles })
-API: GatewayClaimsTransformer verifies azp/appid == GatewayClaimsTransform:GatewayAppId
-API: GatewayClaimsTransformer extracts X-Orig-Request
+              + X-Forwarded-User-Claims: {allowlisted user claims, incl. tenant_id}
+                (cluster Metadata RelayUserClaims=true; AddDownstreamAuthTransforms)
+API: ForwardedClaimsTransformation honors the header only for an app-only token
+     from a caller in ForwardedClaims:TrustedCallerIds (empty = trusts nobody)
+API: Replaces the principal with the relayed user claims plus ef_relayed_by
 API: Sets IRequestContext (tenant, user, roles)
 </code></pre>
+<p>Both hosts bind one <code>ForwardedClaims</code> section (header name, claim allowlist, trusted caller ids), so the Gateway writes and the Api reads the same header and allowlist (D-068). TaskFlow ships <code>TrustedCallerIds</code> empty and <code>TokenScope</code> empty: in Scaffold mode each host authenticates the fixed principal itself and the relay is inert.</p>
 <h3 id="85-rate-limiting">8.5 Rate Limiting</h3>
-<p>Per-tenant Redis sliding window (<code>RedisRateLimiting</code>) replaces the earlier in-process fixed window so the budget is shared across API replicas, not per-instance. Tiers come from <code>RateLimiting:Tiers:{free|standard|premium}</code> plus a per-tenant override map <code>RateLimiting:TenantTiers:{tenantId}</code>; default tier <code>standard</code> is 100 requests/60s. The streaming export route (<a href="#72-special-endpoints">Section 7.2</a>) has its own named policy, <code>Export</code>, so a slow NDJSON download does not starve interactive calls. A <code>FailOpenRateLimiter</code> wraps the Redis limiter: if the Redis backend throws, requests are admitted rather than rejected (an outage must not become an outage-shaped self-inflicted 429), and every fail-open admission increments <code>taskflow.ratelimit.backend_failure</code> for alerting. Health endpoints keep separate in-process, IP-based policies: memory/alive is generous, db is tighter, and full is strict because it can include expensive dependency probes. Limited requests return <code>429 Too Many Requests</code>.</p>
+<p>Per-tenant sliding-window budgets come from <code>EF.RateLimiting</code> (<code>AddTenantRateLimiting</code>, section <code>RateLimiting:Tenants</code>, partitioned on the <code>tenant_id</code> claim). With the cache&#39;s shared Redis multiplexer, <code>EF.RateLimiting.Redis</code> (<code>AddRedisRateLimiting</code>) keeps the budgets in Redis so they are shared across API replicas, not per-instance; without Redis they stay in process, which is correct on one replica only. Tiers come from <code>RateLimiting:Tenants:Tiers:{free|standard|premium}</code> plus a per-tenant override map <code>RateLimiting:Tenants:TenantTiers:{tenantId}</code>; default tier <code>standard</code> is 100 requests/60s. The streaming export route (<a href="#72-special-endpoints">Section 7.2</a>) spends only its named budget (<code>RequireTenantBudget("export")</code>, <code>RateLimiting:Tenants:Budgets:export</code>), so a slow NDJSON download does not starve interactive calls. The package <code>FailOpenRateLimiter</code> wraps each Redis partition: if the Redis backend throws, requests are admitted rather than rejected (an outage must not become an outage-shaped self-inflicted 429), and every fail-open admission increments <code>ratelimit.backend_failure</code> (meter <code>EF.RateLimiting</code>) for alerting. Health endpoints keep separate in-process, IP-based policies: memory/alive is generous, db is tighter, and full is strict because it can include expensive dependency probes. Limited requests return <code>429 Too Many Requests</code>.</p>
 <h3 id="86-edge-protection-and-hedging">8.6 Edge Protection and Hedging</h3>
-<p><strong>Gateway edge limiter (D-050):</strong> the tenant limiter above runs at the API, after authentication; the Gateway adds a second, independent budget in front of it for traffic that has not authenticated yet. <code>RateLimiting:Edge</code> (<code>EdgeRateLimitSettings</code>) is a per-client-IP token bucket (<code>TokensPerPeriod=200</code>, refilled every <code>ReplenishmentSeconds=1</code>, <code>QueueLimit=0</code> - shedding immediately with a 429 beats holding a connection open to serve it late) chained with a global concurrency limiter (<code>MaxConcurrentRequests=1000</code>) as the backstop against a slow downstream. It is in-process per replica by design: the real allowance is the configured budget times the replica count, a documented ceiling until replica count makes cross-replica accounting matter, at which point the partition factory swaps for the same Redis-backed sliding window <code>TenantRateLimiterFactory</code> already uses.</p>
+<p><strong>Gateway edge limiter (D-050):</strong> the tenant limiter above runs at the API, after authentication; the Gateway adds a second, independent budget in front of it for traffic that has not authenticated yet. <code>RateLimiting:Edge</code> (EF.RateLimiting <code>UseEdgeLimiter</code>, <code>EdgeRateLimitSettings</code>, validated when the limiter options are built) is a per-client-IP token bucket (IPv6 clients grouped by <code>/64</code>) (<code>TokensPerPeriod=200</code>, refilled every <code>ReplenishmentSeconds=1</code>, <code>QueueLimit=0</code> - shedding immediately with a 429 beats holding a connection open to serve it late) chained with a global concurrency limiter (<code>MaxConcurrentRequests=1000</code>) as the backstop against a slow downstream. It is in-process per replica by design: the real allowance is the configured budget times the replica count, a documented ceiling until replica count makes cross-replica accounting matter, at which point the partition factory swaps for the same Redis-backed sliding window the Api tenant limiter already uses. Probe paths skip the token bucket but stay inside the concurrency backstop.</p>
 <p><strong>YARP cluster hardening (D-050):</strong> the <code>api-cluster</code> in <code>TaskFlow.Gateway/appsettings.json</code> now carries active health (<code>/healthz/ready</code>, every 10s, 5s timeout, <code>ConsecutiveFailures</code> policy at a threshold of 3), passive health (<code>TransportFailureRate</code>, 30s reactivation), <code>PowerOfTwoChoices</code> load balancing, and an HTTP/2 activity timeout (<code>ActivityTimeout=00:00:30</code>, <code>VersionPolicy=RequestVersionOrLower</code>). Before this refactor the cluster had none of these - a failing destination stayed in rotation until its connection actually broke.</p>
-<p><strong>GET-only hedging (D-051):</strong> <code>ReadHedgingExtensions.AddReadHedging</code>, added to the Blazor read HTTP client after the standard resilience handler (so hedging wraps one attempt inside the standard pipeline&#39;s retry, not the other way around), issues one parallel attempt when the first is slow or transiently fails (<code>Resilience:Hedging:{Enabled, DelayMs=250, MaxHedgedAttempts=1}</code>). Both the outcome predicate (<code>ShouldHandle</code>) and the delay generator are restricted to GET - Polly can trigger a hedge from either signal, and gating only one would still let a slow POST get duplicated, which for a non-idempotent write means a duplicated side effect. Cosmos cross-region hedging (<code>AvailabilityStrategy.CrossRegionHedgingStrategy</code>) is config-gated behind <code>Cosmos:Hedging:Enabled</code> and is deployment-only (it needs a live multi-region Cosmos account).</p>
+<p><strong>GET-only hedging (D-051):</strong> <code>EF.Http.Resilience</code> <code>AddReadHedging</code> on the Blazor read HTTP client (section <code>Resilience:Hedging:{Enabled, DelayMs=250, MaxHedgedAttempts=1}</code>) issues one parallel attempt when the first is slow or transiently fails, and every hedged attempt sends its own request snapshot. Hedging is restricted to GET/HEAD on both the outcome predicate and the delay generator - Polly can trigger a hedge from either signal, and gating only one would still let a slow POST get duplicated, which for a non-idempotent write means a duplicated side effect. Cosmos cross-region hedging is config-gated behind <code>Cosmos:Client:HedgingEnabled</code> (EF.CosmosDb <code>CosmosClientSettings</code> and <code>CosmosClientOptionsFactory</code>, with <code>PreferredRegions</code>, <code>HedgingThresholdMs</code> and <code>HedgingThresholdStepMs</code>) and is deployment-only (it needs a live multi-region Cosmos account).</p>
 <h3 id="87-feature-flags">8.7 Feature Flags</h3>
-<p>Azure App Configuration plus <code>Microsoft.FeatureManagement</code> replace the old ad hoc <code>AiServices:Use*</code> kill switches with dynamic, runtime-toggleable flags (D-042). <code>RegisterServices.AppConfiguration.cs</code> is a no-op unless <code>AppConfig:Endpoint</code> (or <code>ConnectionStrings:AppConfig</code>) is set, so every host still boots without it; when present it registers a sentinel-key refresh (<code>TaskFlow:Sentinel</code>, <code>refreshAll: true</code>), resolves Key Vault references for secrets, and wires <code>UseFeatureFlags</code>. <code>AddFeatureManagement().WithTargeting&lt;TenantTargetingContextAccessor&gt;()</code> makes the caller&#39;s tenant id the targeting context, so a flag can be rolled out to specific tenants rather than only globally on/off. Locally, and whenever <code>AppConfig:Endpoint</code> is absent, the <code>FeatureManagement</code> section in each host&#39;s appsettings is the fallback source (every flag on by default).</p>
+<p>Azure App Configuration plus <code>Microsoft.FeatureManagement</code> replace the old ad hoc <code>AiServices:Use*</code> kill switches with dynamic, runtime-toggleable flags (D-042). <code>RegisterServices.AppConfiguration.cs</code> resolves the lane (NonAzure rejects App Configuration settings) and calls EF.Host <code>AddEfAzureAppConfiguration</code>, which is a no-op unless <code>AppConfig:Endpoint</code> (or <code>ConnectionStrings:AppConfig</code>) is set, so every host still boots without it; when present it layers <code>AppConfig:Label</code> over the null label, registers the sentinel key (<code>TaskFlow:Sentinel</code>) and the background <code>AzureAppConfigurationRefreshService</code> (interval poll, no request middleware), resolves Key Vault references for secrets, and loads feature flags. <code>AddFeatureManagement().WithTargeting&lt;TenantTargetingContextAccessor&gt;()</code> makes the caller&#39;s tenant id the targeting context, so a flag can be rolled out to specific tenants rather than only globally on/off. Locally, and whenever <code>AppConfig:Endpoint</code> is absent, the <code>FeatureManagement</code> section in each host&#39;s appsettings is the fallback source (every flag on by default).</p>
 <p><code>TaskFlowFeatures</code> (<code>Application.Contracts</code>) names the four flags shipped: <code>TaskViews</code> and <code>Export</code> gate their HTTP surfaces, <code>SemanticSearch</code> gates only <code>mode=Semantic</code> on the search route (keyword search keeps answering while it is off, GR-19), and <code>AiReview</code> gates the consumer-side <code>AiTaskReviewer</code> path. HTTP flags use <code>FeatureGateEndpointFilter</code>/<code>RequireFeature</code>, which answers <strong>404, not 403</strong>, when a flag is off - a disabled surface should look absent rather than merely forbidden, so its existence does not leak to a caller probing the API. The consumer-side flag (<code>AiReview</code>) is checked directly against <code>IVariantFeatureManager.IsEnabledAsync</code> inside <code>AiTaskReviewer</code>, since there is no HTTP route to gate. It is not yet wired into the Azure-only Functions host.</p>
 <hr>
 <h2 id="9-deployment-topology">9. Deployment Topology</h2>
@@ -781,7 +790,7 @@ TASKFLOW_LANE=Azure dotnet run --project src/Host/Aspire/AppHost/AppHost.csproj
 <li><code>TaskFlowTickerQDbContext</code> - the Scheduler/TickerQ schema.</li>
 </ol>
 <p>The migrator selects its provider the same way as the runtime hosts (<code>TASKFLOW_DB_PROVIDER</code>/<code>Database:Provider</code>) and applies the matching migration assembly - <code>TaskFlow.Infrastructure.Data.Migrations.SqlServer</code> or <code>...Migrations.PostgreSql</code> (D-025, <a href="#55-dual-provider-data-layer">Section 5.5</a>). Column encryption keys (<code>Database:Encryption:*</code>) are config, not a migrator step: Always Encrypted&#39;s CMK/CEK provisioning (D-019) is superseded and documented-only (D-023). The same migration project runs in the deployment pipeline for cloud environments.</p>
-<p><strong>Startup task</strong>: on boot the API runs a single <code>IStartupTask</code> from <code>TaskFlow.Bootstrapper</code>, <code>WarmupDependencies</code>, which opens the transactional and query <code>DbContext</code> instances and calls <code>CanConnectAsync</code> to warm connection pools. It logs-and-continues on failure so a slow or missing local DB does not block boot; it does not apply migrations.</p>
+<p><strong>Startup tasks</strong>: the API, Scheduler and Functions hosts call <code>RunStartupTasks()</code>, which runs the <code>EF.Host</code> <code>IStartupTask</code>s <code>TaskFlow.Bootstrapper</code> registers with <code>AddStartupTask</code>, in registration order and one DI scope each. <code>WarmupDependencies</code> opens the transactional and query <code>DbContext</code> instances and calls <code>CanConnectAsync</code> to warm connection pools; it logs-and-continues on failure so a slow or missing local DB does not block boot. <code>EnsureExternalResources</code> then provisions the containers and tables the app writes to, once, under the D-052 distributed lock; a provisioning failure is fatal. Neither applies migrations.</p>
 <p>After migrations apply, the FlowEngine workflow-seeding hosted service (<code>AddWorkflowJsonSeeding</code>) walks <code>TaskFlow.Api/Workflows/*.json</code> and upserts each definition into the registry (idempotent - skips existing versions). See <a href="#143-shipped-workflows">Section 14.3</a> for the three workflows shipped.</p>
 <h3 id="92-cloud-deployment-azure">9.2 Cloud Deployment (Azure)</h3>
 <figure class="diagram-container">
@@ -848,7 +857,7 @@ TASKFLOW_LANE=Azure dotnet run --project src/Host/Aspire/AppHost/AppHost.csproj
 </tr>
 </tbody></table>
 <p><strong>Deployment baseline (D-061):</strong> applications export directly through the OpenTelemetry SDK. The deployed NonAzure lane does not require an OpenTelemetry Collector; add one only when a concrete need for tail sampling justifies the extra stateful component. OpenObserve retention is intentionally short and operator-configurable to bound disk use. OpenObserve Open Source Edition is AGPL-3.0; hosted and enterprise offerings have separate licensing and cost. The selected single-node container is a low-cost baseline, not an HA topology.</p>
-<p><strong>Broker trace propagation (D-053):</strong> a trace continues across every async hop (outbox dispatch, a consumed message). <code>TaskFlow.Observability/Tracing/TaskFlowActivitySources.cs</code> declares two additional <code>ActivitySource</code>s, <code>TaskFlow.Messaging</code> and <code>TaskFlow.Scheduler</code>, registered into the OTel pipeline alongside the framework sources. <code>OutboxStagingInterceptor</code> stores the staging operation&#39;s W3C <code>traceparent</code>/<code>tracestate</code> on the <code>OutboxMessage</code> row; at dispatch <code>MessagingTrace.StartOutboxPublish</code> starts the producer span (<code>ActivityKind.Producer</code>) parented on that stored context and linked to the dispatcher&#39;s drain span, and injects the headers into the outgoing message for both the RabbitMQ and Service Bus transports (with no listener it forwards the stored context verbatim), and extracts the producer context as the consumer span&#39;s parent (<code>ActivityKind.Consumer</code>) in the Scheduler&#39;s RabbitMQ handler wrappers and the Service Bus envelope reader. Every Scheduler job execution and TickerQ job wrapper (<code>BaseTickerQJob</code>) also gets its own root activity, since a scheduled run has no incoming request to inherit a trace from.</p>
+<p><strong>Broker trace propagation (D-053):</strong> a trace continues across every async hop (outbox dispatch, a consumed message). The spans come from the packages, and ServiceDefaults registers their sources once for every host: <code>EF.Messaging</code> (<code>MessagingActivitySource</code>: <code>send {destination}</code> and <code>process {destination}</code> spans) and <code>EF.Data.Outbox</code> (one drain span per non-empty work-table claim); the Scheduler adds <code>EF.Scheduler</code>. The <code>EF.Data.Outbox</code> staging interceptor stores the staging operation&#39;s W3C <code>traceparent</code>/<code>tracestate</code> on the <code>OutboxMessage</code> row; at dispatch the Service Bus and RabbitMQ outbox transports start the producer span (<code>ActivityKind.Producer</code>) parented on that stored context and linked to the drain span, and inject the headers into the outgoing message (with no listener the stored context is forwarded verbatim). The consumer side - <code>RabbitMqIntegrationEventHandler&lt;TConsumer&gt;</code> in the Scheduler and <code>ServiceBusIntegrationEventDispatcher</code> in Functions - extracts the producer context as the consumer span&#39;s parent (<code>ActivityKind.Consumer</code>). Every scheduled job run through <code>ScheduledJobRunner</code> gets its own root activity on <code>EF.Scheduler</code>, since a scheduled run has no incoming request to inherit a trace from.</p>
 <p><strong>Source-generated logging (D-053 enforcement):</strong> every <code>ILogger</code> call site under <code>src/</code> goes through a <code>[LoggerMessage]</code>-generated delegate rather than a runtime-formatted <code>ILogger.Log*()</code> call (see the README <a href="../README.md#logging-and-code-quality">Logging and Code Quality</a> section for the EventId ranges); <code>src/.editorconfig</code> sets <code>dotnet_diagnostic.CA1848.severity=error</code> so a raw call fails the build for anything under <code>src/</code> (tests stay advisory).</p>
 <h3 id="102-health-checks">10.2 Health Checks</h3>
 <table>
@@ -959,7 +968,7 @@ TASKFLOW_LANE=Azure dotnet run --project src/Host/Aspire/AppHost/AppHost.csproj
 <hr>
 <h2 id="11-audit-strategy">11. Audit Strategy</h2>
 <h3 id="111-overview">11.1 Overview</h3>
-<p>TaskFlow uses an <strong>EF Core SaveChanges interceptor</strong> pattern for entity-level auditing. The <code>AuditInterceptor&lt;string, Guid?&gt;</code> (from NuGet package <code>EF.Data.Interceptors</code>) intercepts the transactional DbContext and publishes audit records via the internal message bus.</p>
+<p>TaskFlow uses an <strong>EF Core SaveChanges interceptor</strong> pattern for entity-level auditing. The <code>EF.Data</code> <code>AuditInterceptor&lt;string, Guid?&gt;</code> intercepts the transactional DbContext and publishes audit records via the internal message bus; <code>AuditHandler</code> writes them to the lane&#39;s <code>EF.Audit.Contracts.IAuditLogRepository</code>: <code>EF.Audit.AzureTable</code> on Azure, <code>EF.Audit.Data</code> <code>RelationalAuditLogRepository&lt;TaskFlowDbContextTrxn&gt;</code> on NonAzure (D-039, D-058). <code>[Mask]</code> and <code>IsSensitive()</code> properties are masked on both the insert and update payloads (D-023).</p>
 <div class="callout">
 <p><strong>Important:</strong> <code>EntityBase&lt;TId&gt;</code> does <strong>not</strong> define audit properties (<code>CreatedAt</code>, <code>CreatedBy</code>, <code>UpdatedAt</code>, <code>UpdatedBy</code>). All audit persistence flows through the interceptor -&gt; message bus -&gt; repository pipeline described below.</p>
 </div>
@@ -973,7 +982,7 @@ TASKFLOW_LANE=Azure dotnet run --project src/Host/Aspire/AppHost/AppHost.csproj
 <div class="callout">
 <p>The <code>IInternalMessageBus</code> uses a <code>System.Threading.Channels</code> background task. The interceptor enqueues the audit message and <strong>returns immediately</strong>, so <code>SaveChangesAsync()</code> is not blocked by audit persistence.</p>
 </div>
-<h3 id="113-auditlogtableentity-schema">11.3 AuditLogTableEntity Schema</h3>
+<h3 id="113-auditlogtableentity-schema">11.3 Audit Row Schema (<code>EF.Audit.AzureTable</code> <code>AuditLogTableEntity</code>)</h3>
 <table>
 <thead>
 <tr>
@@ -1018,9 +1027,9 @@ TASKFLOW_LANE=Azure dotnet run --project src/Host/Aspire/AppHost/AppHost.csproj
 <td>Outcome status</td>
 </tr>
 <tr>
-<td><code>StartTimeTicks</code></td>
-<td><code>long</code></td>
-<td>Operation start (ticks)</td>
+<td><code>StartedAtUtc</code></td>
+<td><code>DateTimeOffset</code></td>
+<td>UTC time the audited operation started</td>
 </tr>
 <tr>
 <td><code>ElapsedTimeTicks</code></td>
@@ -1030,7 +1039,7 @@ TASKFLOW_LANE=Azure dotnet run --project src/Host/Aspire/AppHost/AppHost.csproj
 <tr>
 <td><code>RecordedUtc</code></td>
 <td><code>DateTimeOffset</code></td>
-<td>When the audit was recorded</td>
+<td>Derived from the UUIDv7 timestamp of <code>Id</code>, so every key is reproducible from the entry; retention compares against it</td>
 </tr>
 <tr>
 <td><code>Metadata</code></td>
@@ -1043,7 +1052,7 @@ TASKFLOW_LANE=Azure dotnet run --project src/Host/Aspire/AppHost/AppHost.csproj
 <td>Error details (if failed)</td>
 </tr>
 </tbody></table>
-<p><strong>Partition/Row key strategy:</strong> <code>PartitionKey</code> = tenant ID (or <code>&quot;_system&quot;</code> for non-tenant operations); <code>RowKey</code> = reverse-ticks for newest-first queries.</p>
+<p><strong>Partition/Row key strategy (D-058):</strong> <code>PartitionKey</code> = <code>{tenantId}|{yyyyMMdd}</code> (tenant <code>&quot;_system&quot;</code> for non-tenant operations, <code>AuditLogStorageSettings:Audit:SystemTenantId</code>); <code>RowKey</code> = reverse ticks then the entry id, for newest-first queries. The relational arm stores the same fields in the <code>AuditLog</code> table (<code>AuditLogRecord</code>), keyed <code>(TenantId, RecordedUtc, Id)</code> with an idempotent upsert. Appends never create the table: <code>EnsureExternalResources</code> provisions it at startup.</p>
 <h3 id="114-fallback">11.4 Fallback</h3>
 <p>When Azure Table Storage is unavailable (e.g., local dev without emulator), the DI container registers <code>NoOpAuditLogRepository</code>, which silently discards audit entries.</p>
 <div class="callout">
@@ -1066,16 +1075,8 @@ TASKFLOW_LANE=Azure dotnet run --project src/Host/Aspire/AppHost/AppHost.csproj
 <td>Handles audit messages from internal bus</td>
 </tr>
 <tr>
-<td><code>TaskFlow.Application.Contracts/Storage/IAuditLogRepository.cs</code></td>
-<td>Repository contract</td>
-</tr>
-<tr>
-<td><code>TaskFlow.Infrastructure.Storage/AuditLogRepository.cs</code></td>
-<td>Azure Table Storage implementation</td>
-</tr>
-<tr>
-<td><code>TaskFlow.Infrastructure.Storage/AuditLogTableEntity.cs</code></td>
-<td>Table entity mapping</td>
+<td><code>TaskFlow.Bootstrapper/Registration/RegisterServices.Audit.cs</code></td>
+<td>Selects the lane&#39;s audit sink (<code>AddAzureTableAuditLog</code> or <code>AddRelationalAuditLog&lt;TaskFlowDbContextTrxn&gt;</code>)</td>
 </tr>
 <tr>
 <td><code>TaskFlow.Infrastructure.Storage/NoOpAuditLogRepository.cs</code></td>
@@ -1129,11 +1130,11 @@ TASKFLOW_LANE=Azure dotnet run --project src/Host/Aspire/AppHost/AppHost.csproj
 <td><strong>Test.Architecture</strong></td>
 <td>Asserts compile-time layering and naming rules: Domain has zero outward references; <code>Application.Services</code> cannot reference Infrastructure or Hosts; <code>Application.Cqrs</code> has no Host or Infrastructure implementation dependency; CQRS avoids central request dispatchers, request buses, and generic <code>Send()</code> entrypoints; every tenant entity implements <code>ITenantEntity&lt;TenantId&gt;</code>; services have matching <code>I*</code> interfaces; entity setters are private.</td>
 <td>Architectural drift is caught by CI rather than by a future code review. Rules are expressed in fluent C#, run with <code>dotnet test</code>, and travel with the code instead of living in a wiki.</td>
-<td>MSTest, <strong>NetArchTest.Rules</strong></td>
+<td>MSTest, <strong>EF.Testing.Architecture</strong> (<code>DependencyRules</code>, <code>ConstructorRules</code>, <code>MethodCallRules</code>, <code>SourceRules</code>, <code>JsonContextRules</code>, <code>ConventionRules</code>)</td>
 </tr>
 <tr>
 <td><strong>Test.Integration</strong></td>
-<td>Component-tier verification of one class against one real store via standalone Testcontainers (SQL Server + Azurite) started in parallel by <code>IntegrationTestSetup</code> - no Aspire graph. Covers EF migrations, repository CRUD with paging, the tenant query filter, M:N navigation, the domain-event projection pipeline (SQL -&gt; projection service -&gt; in-memory view), and the audit-repository round-trip to Azurite Table Storage. Also boots the real <code>TaskFlow.Api</code> host in-process against the SQL container (<code>FlowEngineWorkflowApiFactory</code>, isolated catalog) and drives the two shipped FlowEngine workflows end-to-end through the background engine + public API, asserting the real DB side effects of their <code>taskflow-api</code> self-calls (priority patched / child tasks created).</td>
+<td>Component-tier verification of one class against one real store via standalone Testcontainers (SQL Server + Azurite) started in parallel by <code>IntegrationTestSetup</code> - no Aspire graph. Covers EF migrations, repository CRUD with paging, the tenant query filter, M:N navigation, the domain-event projection pipeline (SQL -&gt; projection service -&gt; in-memory view), and the relational audit sink (<code>RelationalAuditLogRepositoryTests</code>); the Azure Table audit arm is the <code>EF.Audit.AzureTable</code> package, proven by its own suite and by the Aspire audit pipelines. Also boots the real <code>TaskFlow.Api</code> host in-process against the SQL container (<code>FlowEngineWorkflowApiFactory</code>, isolated catalog) and drives the two shipped FlowEngine workflows end-to-end through the background engine + public API, asserting the real DB side effects of their <code>taskflow-api</code> self-calls (priority patched / child tasks created).</td>
 <td>Fast store-fidelity tests that run without the full mesh; SQL and Azurite come up independently so a SQL-only test never pays an Azurite/Functions startup.</td>
 <td>MSTest, <strong>Testcontainers.MsSql</strong>, <strong>Testcontainers.Azurite</strong>, <code>Microsoft.AspNetCore.Mvc.Testing</code>, <code>EF.IntegrationTesting</code>, <code>Azure.Data.Tables</code></td>
 </tr>
@@ -1146,14 +1147,14 @@ TASKFLOW_LANE=Azure dotnet run --project src/Host/Aspire/AppHost/AppHost.csproj
 <tr>
 <td><strong>Test.E2E</strong></td>
 <td>Multi-endpoint workflow tests (create -&gt; search -&gt; update -&gt; delete) against a real SQL Server container in both application styles. These cover cases where the InMemory provider&#39;s missing semantics (FK constraints, projection plans, concurrency tokens) would hide bugs.</td>
-<td>Bridges Test.Endpoints (fast, in-memory) and Test.Integration (full AppHost). The SQL container fixture and options factory come from <code>EF.Test.Integration</code>, so E2E tests only choose the application style and database backend.</td>
-<td>MSTest, WebApplicationFactory, <code>EF.Test.Integration</code></td>
+<td>Bridges Test.Endpoints (fast, in-memory) and Test.Integration (full AppHost). The database container fixtures and options come from <code>EF.IntegrationTesting.SqlServer</code> / <code>EF.IntegrationTesting.PostgreSql</code>, so E2E tests only choose the application style and the lane.</td>
+<td>MSTest, WebApplicationFactory, <code>EF.IntegrationTesting</code>, <code>EF.IntegrationTesting.SqlServer</code>, <code>EF.IntegrationTesting.PostgreSql</code></td>
 </tr>
 <tr>
 <td><strong>Test.Load</strong></td>
-<td>In-house <code>LoadRunner</code> HTTP scenarios - task-search throughput and CRUD generation - with assertions on error rate (&lt;= 5 %) and P95/P99 latency (&lt; 2 s). Manual reports write under <code>tests/Test.Load/load-reports</code>.</td>
+<td><code>EF.Testing.Load.LoadRunner</code> HTTP scenarios - task-search throughput and CRUD generation - with assertions on error rate (&lt;= 5 %) and P95/P99 latency (&lt; 2 s). Manual reports write under <code>tests/Test.Load/load-reports</code>.</td>
 <td>Catches pre-prod throughput regressions and gives a reproducible perf baseline. Tests are <code>[Ignore]</code>&#39;d by default (manual run) so they never gate CI on infra availability.</td>
-<td>MSTest, in-house <code>LoadRunner</code> (<code>Test.Support</code>)</td>
+<td>MSTest, <code>EF.Testing</code> (<code>LoadRunner</code>, <code>LoadResult</code>)</td>
 </tr>
 <tr>
 <td><strong>Test.Benchmarks</strong></td>
@@ -1163,9 +1164,9 @@ TASKFLOW_LANE=Azure dotnet run --project src/Host/Aspire/AppHost/AppHost.csproj
 </tr>
 <tr>
 <td><strong>Test.Support</strong></td>
-<td>TaskFlow-specific test infrastructure: a thin <code>WebApplicationFactoryBase&lt;TProgram, TTrxn, TQuery&gt;</code> adapter over <code>EF.Test.Integration</code>, fluent entity builders (<code>CategoryBuilder</code>, <code>TaskItemBuilder</code>, <code>CommentBuilder</code>, <code>TagBuilder</code>), shared constants.</td>
-<td>Shared DI-rewiring boilerplate lives in the package candidate; Test.Support keeps only TaskFlow-specific startup-task removal and fixture data.</td>
-<td><code>EF.Test.Integration</code>, EF Core InMemory</td>
+<td>TaskFlow-specific test infrastructure: a thin <code>WebApplicationFactoryBase&lt;TProgram, TTrxn, TQuery&gt;</code> adapter over the <code>EF.IntegrationTesting</code> <code>EfWebApplicationFactoryBase</code>, the container-free NonAzure lane settings (<code>InertNonAzureLane</code>), fluent entity builders (<code>CategoryBuilder</code>, <code>TaskItemBuilder</code>, <code>CommentBuilder</code>, <code>TagBuilder</code>), shared constants.</td>
+<td>Shared DI-rewiring boilerplate lives in the package; Test.Support keeps only TaskFlow-specific startup-task removal, all-tenant harness contexts, and fixture data.</td>
+<td><code>EF.IntegrationTesting</code>, <code>EF.Testing</code>, EF Core InMemory</td>
 </tr>
 <tr>
 <td><strong>Test.PlaywrightUI</strong></td>
@@ -1219,9 +1220,9 @@ dotnet test tests/Test.Mutation/Test.Mutation.csproj
 <td>Lambda-based fakes for service interfaces (<code>Mock&lt;IFoo&gt;</code>); used in <code>Test.Unit</code> to isolate services from repositories and external clients.</td>
 </tr>
 <tr>
-<td><strong>NetArchTest.Rules</strong></td>
-<td>Architecture assertion DSL</td>
-<td>Fluent rules over reflected assemblies - <code>Types.InAssembly(asm).ShouldNot().HaveDependencyOnAny(...).GetResult()</code>. Failure surfaces the offending types. Run as ordinary MSTest cases.</td>
+<td><strong>EF.Testing.Architecture</strong></td>
+<td>Architecture rules</td>
+<td>Package rules over reflected assemblies and source files - dependency, constructor-injection and method-call bans, one public type per file, no blocking waits, JSON source-generation completeness - each returning an <code>ArchitectureRuleResult</code> that names the offending types. Asserted as ordinary MSTest cases.</td>
 </tr>
 <tr>
 <td><strong>Stryker.NET</strong></td>
@@ -1234,9 +1235,9 @@ dotnet test tests/Test.Mutation/Test.Mutation.csproj
 <td>Warmup / iteration control, statistical noise rejection, <code>[MemoryDiagnoser]</code> for GC allocations, console summary tables. Run as <code>dotnet run -c Release --project tests/Test.Benchmarks</code>.</td>
 </tr>
 <tr>
-<td><strong>LoadRunner (in-house)</strong></td>
-<td>No load-test package</td>
-<td>Open-model fixed-schedule runner in <code>Test.Support</code>: <code>LoadRunner.RunAsync(operation, ratePerSecond, duration, maxInFlight, ct)</code> schedules requests on a fixed clock so a slow server cannot throttle offered load, drops requests past <code>maxInFlight</code>, and returns a <code>LoadResult</code> with offered/failed/dropped counts and P50/P95/P99 latency.</td>
+<td><strong>LoadRunner</strong> (<code>EF.Testing.Load</code>)</td>
+<td>Open-model load runner</td>
+<td>Open-model fixed-schedule runner: <code>LoadRunner.RunAsync(operation, ratePerSecond, duration, maxInFlight, ct)</code> schedules requests on a fixed clock so a slow server cannot throttle offered load, drops requests past <code>maxInFlight</code>, and returns a <code>LoadResult</code> with offered/failed/dropped counts, failure reasons and success-only P50/P95/P99 latency.</td>
 </tr>
 <tr>
 <td><strong><code>Microsoft.AspNetCore.Mvc.Testing</code></strong></td>
@@ -1259,15 +1260,16 @@ dotnet test tests/Test.Mutation/Test.Mutation.csproj
 <td>Headless Chrome/Firefox/WebKit, auto-waiting locators, <code>screenshot: &quot;only-on-failure&quot;</code>, <code>trace: &quot;on-first-retry&quot;</code>. Driven from a TypeScript <code>playwright.config.ts</code>.</td>
 </tr>
 </tbody></table>
-<h3 id="124-testsupport-and-eftestintegration">12.4 Test.Support and <code>EF.Test.Integration</code></h3>
-<p><code>EF.Test.Integration</code> centralizes the reusable WebApplicationFactory plumbing that would otherwise be re-implemented in every HTTP test project. <code>Test.Support</code> keeps a TaskFlow-specific adapter so tests do not need to know the package project&#39;s startup-task convention:</p>
+<h3 id="124-testsupport-and-eftestintegration">12.4 Test.Support and <code>EF.IntegrationTesting</code></h3>
+<p><code>EF.IntegrationTesting</code> centralizes the reusable WebApplicationFactory plumbing that would otherwise be re-implemented in every HTTP test project. <code>Test.Support</code> keeps a TaskFlow-specific adapter so tests do not need to know the package&#39;s startup-task convention:</p>
 <pre><code class="language-csharp">public abstract class WebApplicationFactoryBase&lt;TProgram, TTrxnContext, TQueryContext&gt;
     : EfWebApplicationFactoryBase&lt;TProgram, TTrxnContext, TQueryContext&gt;
     where TProgram : class
     where TTrxnContext : DbContextBase&lt;string, Guid?&gt;
     where TQueryContext : DbContextBase&lt;string, Guid?&gt;
 {
-    protected override string? StartupTaskServiceTypeFullName =&gt; &quot;TaskFlow.Bootstrapper.IStartupTask&quot;;
+    // EF.Host keeps the registered startup task types in one registry; removing it makes RunStartupTasksAsync a no-op.
+    protected override string? StartupTaskServiceTypeFullName =&gt; &quot;EF.Host.StartupTaskRegistry&quot;;
 }
 </code></pre>
 <table>
@@ -1279,15 +1281,19 @@ dotnet test tests/Test.Mutation/Test.Mutation.csproj
 </thead>
 <tbody><tr>
 <td><strong>Hosted services</strong></td>
-<td><code>EF.Test.Integration</code> strips <code>IHostedService</code> registrations so tests never start TickerQ jobs, Service Bus listeners, or background workers by accident.</td>
+<td><code>EF.IntegrationTesting</code> strips <code>IHostedService</code> registrations so tests never start TickerQ jobs, Service Bus listeners, or background workers by accident.</td>
 </tr>
 <tr>
 <td><strong>Startup tasks</strong></td>
-<td><code>Test.Support</code> sets the TaskFlow startup-task service type (<code>TaskFlow.Bootstrapper.IStartupTask</code>) so the base factory removes the <code>WarmupDependencies</code> startup task from WebApplicationFactory hosts.</td>
+<td><code>Test.Support</code> names the EF.Host startup-task registry (<code>EF.Host.StartupTaskRegistry</code>) so the base factory removes it and WebApplicationFactory hosts run no startup task.</td>
+</tr>
+<tr>
+<td><strong>Tenant filter</strong></td>
+<td>The harness contexts carry no tenant, so <code>Test.Support</code> marks them <code>AllTenants</code>; the fail-closed tenant filter would otherwise read nothing. Tenant isolation is proven by the container-backed tests.</td>
 </tr>
 <tr>
 <td><strong>Pooled DbContext</strong></td>
-<td><code>EF.Test.Integration</code> removes pooled context descriptors, scoped factories, <code>IDbContextFactory</code>, audit interceptors, and connection no-lock interceptors.</td>
+<td><code>EF.IntegrationTesting</code> removes pooled context descriptors, scoped factories, <code>IDbContextFactory</code>, audit interceptors, and connection no-lock interceptors.</td>
 </tr>
 <tr>
 <td><strong>DbContext construction</strong></td>
@@ -1310,7 +1316,7 @@ public sealed class CustomApiFactory
         new DbContextOptionsBuilder&lt;TaskFlowDbContextQuery&gt;().UseInMemoryDatabase(_dbName).Options;
 }
 
-// Test.E2E - real SQL via EF.Test.Integration
+// Test.E2E - real SQL via EF.IntegrationTesting.SqlServer
 public sealed class SqlApiFactory
     : WebApplicationFactoryBase&lt;Program, TaskFlowDbContextTrxn, TaskFlowDbContextQuery&gt;
 {
@@ -1325,7 +1331,7 @@ public sealed class SqlApiFactory
         DbContextOptionsFactory.BuildSqlServerOptions&lt;TaskFlowDbContextQuery&gt;(Sql.ConnectionString);
 }
 </code></pre>
-<p><strong>Why a package candidate:</strong> every HTTP test project (Endpoints, E2E) needs the same surgical DI rewiring. Centralising it in <code>EF.Test.Integration</code> means a fix for an interceptor or pooled-context bug applies to all suites and can be reused by other solutions.</p>
+<p><strong>Why a package candidate:</strong> every HTTP test project (Endpoints, E2E) needs the same surgical DI rewiring. Centralising it in <code>EF.IntegrationTesting</code> means a fix for an interceptor or pooled-context bug applies to all suites and can be reused by other solutions.</p>
 <h4 id="webapplicationfactory-itself"><code>WebApplicationFactory</code> itself</h4>
 <p><code>Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory&lt;TProgram&gt;</code> boots the application&#39;s <code>Program.cs</code> against an in-memory <code>TestServer</code>. The full ASP.NET Core pipeline runs (auth, middleware, routing, endpoint binding, exception handling, ProblemDetails) but no socket is opened - calls go through <code>factory.CreateClient()</code>, an <code>HttpClient</code> wired to the <code>TestServer</code>. The factory exposes <code>ConfigureWebHost(...)</code> so tests can replace services in the same DI container the host uses, which is how this codebase swaps SQL Server for InMemory or container-backed SQL.</p>
 <h3 id="125-choosing-the-right-host-webapplicationfactory-vs-testcontainers-vs-aspirehostingtesting">12.5 Choosing the Right Host: WebApplicationFactory vs Testcontainers vs Aspire.Hosting.Testing</h3>
@@ -1400,7 +1406,7 @@ public sealed class SqlApiFactory
 <li>Set <code>appOptions.DisableDashboard = true</code> (default in the testing builder, but explicit beats implicit).</li>
 <li>Quiet framework chatter with <code>builder.Services.AddLogging(l =&gt; { l.SetMinimumLevel(Information); l.AddFilter(&quot;Microsoft.AspNetCore&quot;, Warning); l.AddFilter(&quot;Aspire.&quot;, Warning); })</code>.</li>
 </ul>
-<p><strong>Component vs mesh split</strong> - the three single-store classes (<code>MigrationAndRepositoryTests</code>, <code>DomainEventPipelineTests</code>, <code>AuditLogRepositoryAzuriteTests</code>) live in <code>Test.Integration</code> and run on standalone Testcontainers (SQL + Azurite) via <code>IntegrationTestSetup</code>, never booting the Aspire graph. Multi-resource HTTP pipelines, app-surface checks, and Aspire-backed AI smoke tests live in <code>Test.Aspire</code> and boot the full <code>AppHost</code> graph lazily via <code>AspireTestHost.EnsureStartedAsync</code>. Keeping them in separate assemblies means the fast component tier never pays the mesh startup, and the mesh tier boots once per run only when a mesh test executes.</p>
+<p><strong>Component vs mesh split</strong> - the single-store classes (<code>MigrationAndRepositoryTests</code>, <code>DomainEventPipelineTests</code>, <code>RelationalAuditLogRepositoryTests</code> and the other component classes) live in <code>Test.Integration</code> and run on standalone Testcontainers (the lane database, Azurite, Redis, RabbitMQ, SeaweedFS, MongoDB) via <code>IntegrationTestSetup</code> and the <code>EF.IntegrationTesting</code> <code>ContainerFixture&lt;T&gt;</code> fixtures, never booting the Aspire graph. Multi-resource HTTP pipelines, app-surface checks, and Aspire-backed AI smoke tests live in <code>Test.Aspire</code> and boot the full <code>AppHost</code> graph lazily via <code>AspireTestHost.EnsureStartedAsync</code>. Keeping them in separate assemblies means the fast component tier never pays the mesh startup, and the mesh tier boots once per run only when a mesh test executes.</p>
 <h3 id="126-testplaywrightui">12.6 Test.PlaywrightUI</h3>
 <p>A solution-included Playwright test project that drives the <strong>running</strong> UI and Gateway in a real browser. <code>dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj</code> starts the Aspire AppHost in test mode, exposes endpoint URLs through environment variables, runs the stable C# Gateway/Blazor smoke path, and then invokes the TypeScript Playwright projects for Blazor, React, and Uno when <code>npm install</code> has been run.</p>
 <p>Keep C# page objects focused on the stable smoke path:</p>
@@ -1567,7 +1573,7 @@ cd tests/Test.PlaywrightUI &amp;&amp; npm run test
 </tr>
 <tr>
 <td><strong>412 UX</strong></td>
-<td><code>ProblemDetailsDelegatingHandler</code> parses <code>application/problem+json</code> centrally and shows a notification for every failing call (skipping client-cancel 499); <code>TaskListModel</code> then reloads the affected row rather than the whole list</td>
+<td>The <code>EF.UI.Client</code> HTTP pipeline (<code>AddBusyTracking()</code>, <code>AddProblemDetailsNotifications()</code>, notifications from <code>AddUiClient()</code>) parses <code>application/problem+json</code> centrally and shows a notification for every failing call (skipping client-cancel 499); <code>TaskListModel</code> then reloads the affected row rather than the whole list</td>
 </tr>
 </tbody></table>
 <h3 id="132-blazor-wasmserver-ui">13.2 Blazor WASM/Server UI</h3>
@@ -1666,8 +1672,8 @@ cd tests/Test.PlaywrightUI &amp;&amp; npm run test
 <p>The YARP Gateway acts as a <strong>Backend-for-Frontend (BFF)</strong>:</p>
 <ul>
 <li>Handles user authentication (Entra ID or scaffold)</li>
-<li>Acquires service-to-service tokens for downstream API calls</li>
-<li>Injects <code>X-Orig-Request</code> with user claims for the API</li>
+<li>Acquires service-to-service tokens for downstream API calls (EF.Auth <code>AccessTokenCache</code>, per cluster <code>Metadata:TokenScope</code>)</li>
+<li>Strips any inbound relay header on every route and relays the allowlisted user claims in <code>X-Forwarded-User-Claims</code> on clusters with <code>Metadata:RelayUserClaims</code> (EF.Gateway <code>AddDownstreamAuthTransforms</code>, see <a href="#84-gateway-claims-flow">Section 8.4</a>)</li>
 <li>CORS configured for UI origins</li>
 </ul>
 <p><strong>Exception - internal gRPC read service (D-054):</strong> the Api exposes <code>GetTaskItemSummary</code>, <code>GetTaskMetadata</code>, and <code>GetTaskItem</code> on a dedicated cleartext HTTP/2 Kestrel endpoint (<code>Kestrel:Endpoints:Grpc</code>, port <code>8081</code>, alongside the public REST endpoint on <code>8080</code> - Kestrel cannot serve h2c and HTTP/1.1 on the same port). Blazor Server is the one in-cluster consumer: <code>Clients:UseGrpcReads</code> (default on when <code>Grpc:TaskFlowRead:Address</code> resolves via service discovery) routes its Dashboard summary/metadata reads straight to the Api over gRPC, bypassing the Gateway for that one read path; REST through the Gateway remains the fallback and the only path for every other client. The Gateway itself keeps REST for all public clients - gRPC-Web is out of scope.</p>
@@ -1918,7 +1924,7 @@ cd tests/Test.PlaywrightUI &amp;&amp; npm run test
 <tr>
 <td><strong>Disabled</strong></td>
 <td><code>TASKFLOW_AI_PROVIDER=None</code>, the default in both hosting lanes</td>
-<td>No provider is active. <code>TaskFlow.Infrastructure.AI</code> registers <code>AiProviderInfo(&quot;none&quot;)</code> and <code>NoOpChatClient</code>, so the app starts without model credentials.</td>
+<td>No provider is active. <code>TaskFlow.Infrastructure.AI</code> registers <code>AiProviderInfo(&quot;none&quot;)</code> and the EF.AI disabled chat client (<code>AddEFChatClient</code> with the provider forced to <code>Disabled</code>, so an <code>EF:AI:ChatClient</code> section cannot turn the lane live), so the app starts without model credentials. The demo services and AI routes check <code>IsDisabled()</code> and answer &quot;not configured&quot; themselves; any other call on the disabled client throws <code>EFAIDisabledException</code>, which the Api maps to 503.</td>
 </tr>
 </tbody></table>
 <p>Provision the Azure AI Foundry account and deployment through platform IaC or Azure tooling before configuring a local run:</p>
@@ -2069,7 +2075,7 @@ curl -sk &quot;$GW/api/flowengine/instances/$INSTANCE_ID&quot; | jq &#39;{ statu
 <td>Validates files, extracts metadata, updates Attachment record</td>
 </tr>
 </tbody></table>
-<p>All three Service Bus triggers share <code>ServiceBusEnvelopeReader</code>: malformed or unknown envelopes dead-letter with a reason, transient failures rethrow (Functions retries then dead-letters after <code>maxDeliveryCount</code>), success completes the message. Stale cleanup is a Scheduler job (below), not a Functions timer trigger. When <code>Messaging:Provider=RabbitMq</code>, these three triggers are individually disabled (<code>AzureWebJobs.&lt;FunctionName&gt;.Disabled=true</code>) and the same handler classes run instead as RabbitMQ consumer hosted services inside <code>TaskFlow.Scheduler</code> - see <a href="#62-event-processing-flow---cosmos-projection">Section 6.2</a>.</p>
+<p>Every Service Bus trigger settles through the <code>EF.Messaging.Functions</code> <code>ServiceBusIntegrationEventDispatcher</code> from its consumer&#39;s verdict: malformed or unknown envelopes dead-letter with a reason, a claim still in progress is abandoned for a later redelivery, transient failures rethrow (Functions retries then dead-letters after <code>maxDeliveryCount</code>), success completes the message. Stale cleanup is a Scheduler job (below), not a Functions timer trigger. When <code>Messaging:Provider=RabbitMq</code>, these three triggers are individually disabled (<code>AzureWebJobs.&lt;FunctionName&gt;.Disabled=true</code>) and the same handler classes run instead as RabbitMQ consumer hosted services inside <code>TaskFlow.Scheduler</code> - see <a href="#62-event-processing-flow---cosmos-projection">Section 6.2</a>.</p>
 <h3 id="scheduler-jobs-tickerq">Scheduler Jobs (TickerQ)</h3>
 <table>
 <thead>
@@ -2107,7 +2113,7 @@ curl -sk &quot;$GW/api/flowengine/instances/$INSTANCE_ID&quot; | jq &#39;{ statu
 <tr>
 <td><code>TickerQOccurrenceRetention</code></td>
 <td>Daily 4:30 AM UTC</td>
-<td>Deletes executed TickerQ cron occurrence rows older than <code>Scheduling:Retention:TickerQOccurrenceHours</code> (default 24)</td>
+<td>Deletes executed TickerQ cron occurrence rows older than <code>Scheduling:Retention:OccurrenceRetention</code> (<code>1.00:00:00</code> in the Scheduler&#39;s appsettings), through the package <code>TickerQOccurrenceRetentionHandler&lt;TaskFlowTickerQDbContext&gt;</code></td>
 </tr>
 <tr>
 <td><code>AuditRetention</code></td>
@@ -2115,8 +2121,8 @@ curl -sk &quot;$GW/api/flowengine/instances/$INSTANCE_ID&quot; | jq &#39;{ statu
 <td>Purges Table Storage audit rows older than <code>AuditLogStorageSettings:RetentionDays</code> (default 30), batched by the <code>tenantId|yyyyMMdd</code> partition key</td>
 </tr>
 </tbody></table>
-<p>Each schedule is a cron expression declared on the job method&#39;s <code>[TickerFunction]</code> attribute in <code>TaskMaintenanceJobs</code>; all times are UTC. TickerQ&#39;s initializer seeds those expressions into the operational store at host start, keyed by function, so a changed expression is updated in place and a restart or a second replica never inserts a duplicate ticker; no code seeds cron tickers by hand. Retention sweeps are staggered off the hour and off each other because they all delete. Outbox and blob-delete dispatch are separate lease-based <code>BackgroundService</code> workers (<code>OutboxDispatcherService</code>, <code>BlobDeleteWorkerService</code>, both deriving from <code>LeasedWorkerBase&lt;TWork&gt;</code>: adaptive poll 1s backing off to 5s idle, lease owner <code>{MachineName}:{ProcessId}</code>), not TickerQ cron jobs, so they run continuously on every Scheduler replica. FlowEngine&#39;s own <code>UseRetentionPolicy</code> (7 day max age, 6h run interval) is enabled only when <code>Scheduling:OwnsRetention=true</code>, so exactly one deployed host owns it.</p>
-<p>TickerQ uses an EF Core operational store (<code>TickerQDbContext</code>, schema <code>&quot;scheduler&quot;</code>, lowercase) for job persistence when <code>Scheduling:UsePersistence=true</code>. Startup validates the schema, can create it for local development (<code>Scheduling:AutoCreateSchema=true</code>), and can emit a deployment script (<code>Scheduling:GenerateDeploymentScript=true</code>). <code>NodeIdentifier</code> is set to <code>{MachineName}:{ProcessId}</code> (not machine name alone) because Aspire runs the Scheduler with two replicas locally. Job execution records OpenTelemetry metrics through <code>TaskFlow.Scheduler</code>, and global TickerQ failures flow through <code>TaskFlowSchedulerExceptionHandler</code>.</p>
+<p>Each schedule is a cron expression declared on the job method&#39;s <code>[TickerFunction]</code> attribute in <code>TaskMaintenanceJobs</code>; all times are UTC. TickerQ&#39;s initializer seeds those expressions into the operational store at host start, keyed by function, so a changed expression is updated in place and a restart or a second replica never inserts a duplicate ticker; <code>EF.BackgroundServices.TickerQ</code> runs that seeding inside a distributed lock (EF.Cache <code>IDistributedLock</code>), and no code seeds cron tickers by hand. Each job method runs its handler through the package <code>ScheduledJobRunner</code> (<code>runner.RunAsync&lt;T&gt;</code>), which records <code>ScheduledJobTelemetry</code>. Retention sweeps are staggered off the hour and off each other because they all delete. Outbox and blob-delete dispatch are separate lease-based workers from <code>EF.Data.Outbox</code> (the package <code>OutboxDispatcherService</code>, and <code>BlobDeleteWorkerService</code> deriving from <code>LeasedWorkTableWorker</code>; lease owner <code>{MachineName}:{ProcessId}</code>), not TickerQ cron jobs, so they run continuously on every Scheduler replica. FlowEngine&#39;s own <code>UseRetentionPolicy</code> (7 day max age, 6h run interval) is enabled only when <code>Scheduling:OwnsRetention=true</code>, so exactly one deployed host owns it.</p>
+<p>TickerQ uses an EF Core operational store (<code>TickerQDbContext</code>, schema <code>&quot;scheduler&quot;</code>, lowercase) for job persistence when <code>Scheduling:UsePersistence=true</code>. Startup validates the schema, can create it for local development (<code>Scheduling:AutoCreateSchema=true</code>), and can emit a deployment script (<code>Scheduling:GenerateDeploymentScript=true</code>). <code>NodeIdentifier</code> is set to <code>{MachineName}:{ProcessId}</code> (not machine name alone) because Aspire runs the Scheduler with two replicas locally. The host registers TickerQ through <code>AddEFTickerQ&lt;TaskFlowTickerQDbContext&gt;</code> (in-memory <code>AddEFTickerQ</code> without persistence); startup validates the schema with <code>TickerQSchemaValidator</code>. Job execution records OpenTelemetry metrics and spans through the <code>EF.Scheduler</code> meter and source. <code>AddSchedulerHealthCheck&lt;TaskFlowTickerQDbContext&gt;</code> (tags <code>ready</code>, <code>memory</code>) reports Degraded when no job has run within <code>Scheduling:Health:StallThreshold</code> (12 h).</p>
 
 </div>
 <script src="tech-design.js"></script>

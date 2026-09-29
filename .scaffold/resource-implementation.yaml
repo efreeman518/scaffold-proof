@@ -14,7 +14,14 @@ testingProfile: comprehensive
 functionProfile: full
 unoProfile: full
 
-# Package strategy: TaskFlow consumes the EF.* layers from the private feed.
+# Package strategy: TaskFlow consumes the EF.* layers from the private feed. Cross-cutting capabilities come from
+# those packages rather than app code: outbox, inbox and leased work (EF.Data.Outbox), broker transports and consumer
+# base (EF.Messaging, EF.Messaging.RabbitMq, EF.Messaging.Functions), tenancy boundary (EF.Tenancy), audit sinks
+# (EF.Audit.AzureTable, EF.Audit.Data), cache and shared Redis (EF.Cache), rate limiting (EF.RateLimiting(.Redis)),
+# scaffold principal, token cache and claims relay (EF.Auth, EF.Gateway), scheduler runtime (EF.BackgroundServices.TickerQ),
+# hosting, problem details, concurrency and health endpoints (EF.Host, EF.AspNetCore, EF.OpenTelemetry,
+# EF.Http.Resilience), storage and Cosmos health (EF.Storage(.S3), EF.CosmosDb), the disabled AI client (EF.AI),
+# the Uno client pipeline (EF.UI.Client) and test support (EF.Testing, EF.Testing.Architecture, EF.IntegrationTesting.*).
 packageStrategy: feed
 packagePrefix: "EF"
 applicationStyle: switch
@@ -145,7 +152,9 @@ gatewayAuth: EntraExternal
 apiAuth: EntraID
 tokenRelay: true
 tenantIdType: Guid
-gatewayEdgeRateLimiting: token-bucket-per-client-ip   # Gateway edge limiter, in addition to the Api's Redis tenant limiter, see D-050
+gatewayEdgeRateLimiting: token-bucket-per-client-ip   # EF.RateLimiting UseEdgeLimiter at the Gateway, in addition to the Api's EF.RateLimiting tenant limiter, see D-050
+# Scaffold auth (EF.Auth fixed principal) is the only runtime mode; gatewayAuth/apiAuth name the deployment-only providers (D-002, D-072).
+# tokenRelay: EF.Gateway AddDownstreamAuthTransforms + EF.Auth AddForwardedClaimsTransformation over one ForwardedClaims section (D-068).
 
 # ---------------------------------------------------------------------------
 # IaC / Pipeline
@@ -378,20 +387,20 @@ scheduledJobs:
   - name: OutboxRetention
     schedule: "0 15 * * * *"
     description: "Hard-delete dead-lettered OutboxMessage and BlobDeleteWork rows older than 7 days"
-    targetService: IOperationalWorkRepository
+    targetService: EF.Data.Outbox.ILeasedWorkStore
     method: PurgeDeadLetteredAsync
 
   - name: ConsumerInboxRetention
     schedule: "0 20 * * * *"
     description: "Hard-delete ConsumerInbox rows older than 7 days"
-    targetService: IInboxStore
-    method: PurgeProcessedAsync
+    targetService: EF.Messaging.IInboxStore
+    method: PurgeAsync
 
   - name: TickerQOccurrenceRetention
     schedule: "0 30 4 * * *"
-    description: "Purge TickerQ cron occurrence rows executed more than 24 hours ago"
-    targetService: TaskFlowTickerQDbContext
-    method: ExecuteDeleteBatchedAsync
+    description: "Purge TickerQ cron occurrence rows older than Scheduling:Retention:OccurrenceRetention (1 day)"
+    targetService: EF.BackgroundServices.TickerQ.TickerQOccurrenceRetentionHandler<TaskFlowTickerQDbContext>
+    method: HandleAsync
 
   - name: AuditRetention
     schedule: "0 40 4 * * *"
