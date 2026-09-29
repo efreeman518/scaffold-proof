@@ -95,8 +95,9 @@ public sealed class ColumnEncryptionIntegrationTests
 
         // Throw (not the package ClientWins retry) so the conflict surfaces to the caller.
         staleCopy.Update(title: "stale writer");
-        await Assert.ThrowsExactlyAsync<DbUpdateConcurrencyException>(
+        var failure = await Assert.ThrowsExactlyAsync<EF.Common.Contracts.PreconditionFailedException>(
             () => stale.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: TestContext.CancellationToken));
+        Assert.IsInstanceOfType<DbUpdateConcurrencyException>(failure.InnerException);
     }
 
     public TestContext TestContext { get; set; } = null!;
