@@ -1,3 +1,4 @@
+using EF.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
@@ -41,7 +42,7 @@ public sealed class TaskTriageService(
 
         var task = getResult.Value!.Item!;
 
-        if (chatClient is NoOpChatClient)
+        if (chatClient.IsDisabled())
             return new TaskTriageResponse(taskId, null, false, false, "AI model not configured.");
 
         var prompt = $$"""

@@ -1,3 +1,4 @@
+using EF.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
@@ -33,7 +34,7 @@ public sealed class TaskDraftService(
         if (string.IsNullOrWhiteSpace(title))
             return new DraftTaskResponse(null, title, null, null, false, true, "Title is required.");
 
-        if (chatClient is NoOpChatClient)
+        if (chatClient.IsDisabled())
             return new DraftTaskResponse(null, title, null, null, false, false, "AI model not configured.");
 
         var prompt = $$"""

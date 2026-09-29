@@ -1,3 +1,4 @@
+using EF.AI;
 using EF.AspNetCore.Concurrency;
 using EF.AspNetCore.Cors;
 using EF.AspNetCore.ExceptionHandling;
@@ -129,7 +130,9 @@ public static class RegisterApiServices
     internal static void MapExceptions(ExceptionClassifierOptions options) => options
         .Map<DbUpdateConcurrencyException>(ExceptionCategory.PreconditionFailed)
         .Map<InvalidRequestException>(ExceptionCategory.Validation)
-        .Map<InvalidCursorException>(ExceptionCategory.Validation);
+        .Map<InvalidCursorException>(ExceptionCategory.Validation)
+        // S21: a call on the EF.AI disabled client (no model wired) is 503 / Unavailable, not a 500.
+        .Map<EFAIDisabledException>(ExceptionCategory.Unavailable);
 
     /// <summary>
     /// Tenant rate limiting (EF.RateLimiting, section <c>RateLimiting:Tenants</c>): the global limiter partitions on

@@ -44,6 +44,34 @@ public sealed class AiEndpointContractTests
         Assert.AreEqual("Fake Foundry response.", payload.RootElement.GetProperty("message").GetString());
     }
 
+    /// <summary>
+    /// S21: with no model wired the host registers the EF.AI disabled client, which throws on every call; the demo
+    /// routes detect it with IsDisabled() and answer "not configured" (200, not a 500 or a 503) without calling it.
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Endpoint")]
+    public async Task Given_NoModelWired_When_ChatOrStatusCalled_Then_NotConfiguredWithoutCallingTheClient()
+    {
+        using var factory = new CustomApiFactory();
+        using var client = factory.CreateClient();
+
+        using var chat = await client.PostAsJsonAsync("/api/v1/ai/chat", new { message = "hello" }, cancellationToken: TestContext.CancellationToken);
+        using var chatPayload = await ReadJsonAsync(chat);
+        using var status = await client.GetAsync("/api/v1/ai/status", TestContext.CancellationToken);
+        using var statusPayload = await ReadJsonAsync(status);
+        using var stream = await client.PostAsJsonAsync("/api/v1/ai/chat/stream", new { message = "stream" }, cancellationToken: TestContext.CancellationToken);
+        var streamBody = await stream.Content.ReadAsStringAsync(TestContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.OK, chat.StatusCode);
+        Assert.IsFalse(chatPayload.RootElement.GetProperty("isConfigured").GetBoolean());
+        Assert.Contains("not configured", chatPayload.RootElement.GetProperty("message").GetString()!);
+        Assert.AreEqual(HttpStatusCode.OK, status.StatusCode);
+        Assert.AreEqual("none", statusPayload.RootElement.GetProperty("provider").GetString());
+        Assert.IsFalse(statusPayload.RootElement.GetProperty("isConfigured").GetBoolean());
+        Assert.AreEqual(HttpStatusCode.OK, stream.StatusCode);
+        Assert.Contains("not configured", streamBody);
+    }
+
     [TestMethod]
     [TestCategory("Endpoint")]
     public async Task Given_FakeChatClient_When_StreamingChatCalled_Then_EventStreamReturned()
