@@ -1,4 +1,4 @@
-using EF.IntegrationTesting.Environment;
+using EF.Testing.Environment;
 using Test.Integration.Infrastructure;
 
 namespace Test.Integration;

@@ -31,7 +31,6 @@ public static class RegisterGatewayServices
     {
         services.AddSingleton<TokenCredential>(_ => new DefaultAzureCredential());
         services.AddSingleton<TokenService>();
-        services.AddHeaderPropagation(options => options.Headers.Add("X-Correlation-Id"));
         AddAuthentication(services, config);
         AddReverseProxy(services, config);
         AddCors(services, config);

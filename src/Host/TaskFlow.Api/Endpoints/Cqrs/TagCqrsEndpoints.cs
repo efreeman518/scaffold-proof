@@ -14,13 +14,9 @@ namespace TaskFlow.Api.Endpoints.Cqrs;
 /// <summary>Maps tag CQRS HTTP routes to CQRS handlers and API contract metadata.</summary>
 public static class TagCqrsEndpoints
 {
-    private static bool _problemDetailsIncludeStackTrace;
-
     /// <summary>Registers tag CQRS routes, handlers, and response metadata.</summary>
-    public static IEndpointRouteBuilder MapTagCqrsEndpoints(this IEndpointRouteBuilder group, bool problemDetailsIncludeStackTrace)
+    public static IEndpointRouteBuilder MapTagCqrsEndpoints(this IEndpointRouteBuilder group)
     {
-        _problemDetailsIncludeStackTrace = problemDetailsIncludeStackTrace;
-
         var g = group.MapGroup("/tags").WithTags("Tags")
             .AddEndpointFilter<ETagEndpointFilter>();
 
@@ -85,8 +81,7 @@ public static class TagCqrsEndpoints
         var result = await handler.HandleAsync(new GetTagByIdQuery(id), ct);
         return result.Match<IResult>(
             response => TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest)),
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)),
             () => TypedResults.NotFound(id));
     }
 
@@ -102,12 +97,7 @@ public static class TagCqrsEndpoints
             response => response.IsReplay
                 ? TypedResults.Ok(response)
                 : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response),
-            // Create rejections are caller-input failures (a bad payload, a non-v7 id): 400, not the
-            // 500 the untyped helper defaults to.
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
-                traceId: httpContext.TraceIdentifier,
-                includeStackTrace: _problemDetailsIncludeStackTrace)));
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
     }
 
     /// <summary>Updates existing data after validation and preserves domain invariants.</summary>
@@ -120,17 +110,14 @@ public static class TagCqrsEndpoints
         CancellationToken ct)
     {
         if (request.Item.Id != null && request.Item.Id != id)
-            return TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponse(
-                statusCodeOverride: StatusCodes.Status400BadRequest,
-                message: $"{ErrorConstants.ERROR_URL_BODY_ID_MISMATCH}: {id} <> {request.Item.Id}"));
+            return TypedResults.Problem(ProblemDetailsHelper.Create(
+                StatusCodes.Status400BadRequest,
+                $"{ErrorConstants.ERROR_URL_BODY_ID_MISMATCH}: {id} <> {request.Item.Id}"));
 
         var result = await handler.HandleAsync(new UpdateTagCommand(request, ifMatch.ExpectedVersion), ct);
         return result.Match(
             response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
-                traceId: httpContext.TraceIdentifier,
-                includeStackTrace: _problemDetailsIncludeStackTrace)));
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
     }
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
@@ -144,9 +131,6 @@ public static class TagCqrsEndpoints
         var result = await handler.HandleAsync(new DeleteTagCommand(id, ifMatch.ExpectedVersion), ct);
         return result.Match<IResult>(
             () => TypedResults.NoContent(),
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
-                traceId: httpContext.TraceIdentifier,
-                includeStackTrace: _problemDetailsIncludeStackTrace)));
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
     }
 }

@@ -13,13 +13,9 @@ namespace TaskFlow.Api.Endpoints.Cqrs;
 /// <summary>Maps comment CQRS HTTP routes to CQRS handlers and API contract metadata.</summary>
 public static class CommentCqrsEndpoints
 {
-    private static bool _problemDetailsIncludeStackTrace;
-
     /// <summary>Registers comment CQRS routes, handlers, and response metadata.</summary>
-    public static IEndpointRouteBuilder MapCommentCqrsEndpoints(this IEndpointRouteBuilder group, bool problemDetailsIncludeStackTrace)
+    public static IEndpointRouteBuilder MapCommentCqrsEndpoints(this IEndpointRouteBuilder group)
     {
-        _problemDetailsIncludeStackTrace = problemDetailsIncludeStackTrace;
-
         var g = group.MapGroup("/comments").WithTags("Comments")
             .AddEndpointFilter<ETagEndpointFilter>();
 
@@ -59,8 +55,7 @@ public static class CommentCqrsEndpoints
         var result = await handler.HandleAsync(new GetCommentByIdQuery(id), ct);
         return result.Match<IResult>(
             response => TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest)),
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)),
             () => TypedResults.NotFound(id));
     }
 }

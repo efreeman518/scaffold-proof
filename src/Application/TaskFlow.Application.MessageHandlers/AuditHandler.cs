@@ -1,5 +1,4 @@
 using EF.Audit.Contracts;
-using EF.BackgroundServices.Attributes;
 using EF.BackgroundServices.InternalMessageBus;
 using EF.Common.Contracts;
 using Microsoft.Extensions.Logging;
@@ -10,7 +9,6 @@ namespace TaskFlow.Application.MessageHandlers;
 /// Internal message-bus handler that persists EF audit entries to the configured audit store.
 /// It supports both required and nullable tenant-id audit shapes emitted by the shared interceptor.
 /// </summary>
-[ScopedMessageHandler]
 public class AuditHandler(
     ILogger<AuditHandler> logger,
     IAuditLogRepository auditLogRepository) :

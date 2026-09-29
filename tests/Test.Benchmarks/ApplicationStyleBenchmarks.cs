@@ -1,7 +1,7 @@
 using BenchmarkDotNet.Attributes;
 using EF.Common.Contracts;
 using EF.IntegrationTesting.EntityFramework;
-using EF.IntegrationTesting.Environment;
+using EF.Testing.Environment;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;

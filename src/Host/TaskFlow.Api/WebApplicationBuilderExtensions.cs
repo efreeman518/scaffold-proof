@@ -18,16 +18,12 @@ namespace TaskFlow.Api;
 /// </summary>
 public static class WebApplicationBuilderExtensions
 {
-    private static bool _problemDetailsIncludeStackTrace;
-
     /// <summary>
     /// Builds the middleware pipeline in dependency order: security, correlation, exception
     /// handling, CORS, auth, rate limiting, docs, health, domain endpoints, then FlowEngine admin.
     /// </summary>
     public static WebApplication ConfigurePipeline(this WebApplication app)
     {
-        _problemDetailsIncludeStackTrace = app.Environment.IsDevelopment() || app.Environment.IsStaging();
-
         // 0. Azure App Configuration sentinel-key refresh middleware (D-042). Guarded by the same
         // condition AddTaskFlowAppConfiguration used: registering the middleware without the provider
         // having been added throws, so this only runs when the provider is actually configured.
@@ -45,7 +41,6 @@ public static class WebApplicationBuilderExtensions
 
         // 3. Correlation tracking
         app.UseCorrelationId();
-        app.UseHeaderPropagation();
 
         // 4. Exception handler (before routing)
         app.UseExceptionHandler();
@@ -138,8 +133,6 @@ public static class WebApplicationBuilderExtensions
         return app;
     }
 
-    public static bool ProblemDetailsIncludeStackTrace => _problemDetailsIncludeStackTrace;
-
     /// <summary>
     /// Maps the public API contract once, then routes entity CRUD to either application services
     /// or CQRS handlers based on Application:Style / TASKFLOW_APPLICATION_STYLE.
@@ -162,21 +155,21 @@ public static class WebApplicationBuilderExtensions
         var style = ApplicationStyleResolver.Resolve(app.Configuration[ApplicationStyleResolver.ConfigKey]);
         if (style == ApplicationStyle.Cqrs)
         {
-            api.MapCategoryCqrsEndpoints(ProblemDetailsIncludeStackTrace);
-            api.MapTagCqrsEndpoints(ProblemDetailsIncludeStackTrace);
-            api.MapTaskItemCqrsEndpoints(ProblemDetailsIncludeStackTrace);
-            api.MapCommentCqrsEndpoints(ProblemDetailsIncludeStackTrace);
-            api.MapChecklistItemCqrsEndpoints(ProblemDetailsIncludeStackTrace);
-            api.MapAttachmentCqrsEndpoints(ProblemDetailsIncludeStackTrace);
+            api.MapCategoryCqrsEndpoints();
+            api.MapTagCqrsEndpoints();
+            api.MapTaskItemCqrsEndpoints();
+            api.MapCommentCqrsEndpoints();
+            api.MapChecklistItemCqrsEndpoints();
+            api.MapAttachmentCqrsEndpoints();
         }
         else
         {
-            api.MapCategoryEndpoints(ProblemDetailsIncludeStackTrace);
-            api.MapTagEndpoints(ProblemDetailsIncludeStackTrace);
-            api.MapTaskItemEndpoints(ProblemDetailsIncludeStackTrace);
-            api.MapCommentEndpoints(ProblemDetailsIncludeStackTrace);
-            api.MapChecklistItemEndpoints(ProblemDetailsIncludeStackTrace);
-            api.MapAttachmentEndpoints(ProblemDetailsIncludeStackTrace);
+            api.MapCategoryEndpoints();
+            api.MapTagEndpoints();
+            api.MapTaskItemEndpoints();
+            api.MapCommentEndpoints();
+            api.MapChecklistItemEndpoints();
+            api.MapAttachmentEndpoints();
         }
 
         // Style-agnostic reads (summary, metadata, export) - one registration for both styles.

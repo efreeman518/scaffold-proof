@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Globalization;
 using TaskFlow.Application.Contracts.Concurrency;
+using UuidV7 = TaskFlow.Application.Contracts.Concurrency.UuidV7;
 
 namespace TaskFlow.Infrastructure.Storage;
 
@@ -67,7 +68,7 @@ public class AuditLogRepository(
             EntityKey = entry.EntityKey,
             Action = entry.Action,
             Status = entry.Status.ToString(),
-            StartTimeTicks = entry.StartTime.Ticks,
+            StartedAtUtc = entry.StartedAtUtc,
             ElapsedTimeTicks = entry.ElapsedTime.Ticks,
             RecordedUtc = recordedUtc,
             Metadata = entry.Metadata,
@@ -168,7 +169,7 @@ public class AuditLogRepository(
         EntityKey = entity.EntityKey,
         Action = entity.Action,
         Status = Enum.Parse<AuditStatus>(entity.Status),
-        StartTime = TimeSpan.FromTicks(entity.StartTimeTicks),
+        StartedAtUtc = entity.StartedAtUtc,
         ElapsedTime = TimeSpan.FromTicks(entity.ElapsedTimeTicks),
         Metadata = entity.Metadata,
         Error = entity.Error

@@ -12,13 +12,9 @@ namespace TaskFlow.Api.Endpoints;
 /// <summary>Maps comment HTTP routes to the selected application implementation and API contract metadata.</summary>
 public static class CommentEndpoints
 {
-    private static bool _problemDetailsIncludeStackTrace;
-
     /// <summary>Registers comment routes, handlers, and response metadata.</summary>
-    public static IEndpointRouteBuilder MapCommentEndpoints(this IEndpointRouteBuilder group, bool problemDetailsIncludeStackTrace)
+    public static IEndpointRouteBuilder MapCommentEndpoints(this IEndpointRouteBuilder group)
     {
-        _problemDetailsIncludeStackTrace = problemDetailsIncludeStackTrace;
-
         var g = group.MapGroup("/comments").WithTags("Comments")
             .AddEndpointFilter<ETagEndpointFilter>();
 
@@ -56,8 +52,7 @@ public static class CommentEndpoints
         var result = await service.GetAsync(id, ct);
         return result.Match<IResult>(
             response => TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest)),
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)),
             () => TypedResults.NotFound(id));
     }
 }

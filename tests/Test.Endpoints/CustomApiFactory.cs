@@ -39,7 +39,7 @@ public sealed class CustomApiFactory : WebApplicationFactoryBase<Program, TaskFl
     {
         // D-060: the endpoint contract runs on the default NonAzure lane, pinned here, with every data plane
         // replaced in process so requests stay deterministic, network-free, and container-free.
-        foreach (var (key, value) in HostSettings())
+        foreach (var (key, value) in ApiHostSettings())
             builder.UseSetting(key, value);
         base.ConfigureWebHost(builder);
         builder.ConfigureServices(InertNonAzureLane.ReplaceDataPlanes);
@@ -48,11 +48,11 @@ public sealed class CustomApiFactory : WebApplicationFactoryBase<Program, TaskFl
     /// <summary>Verifies configure test configuration behavior and protects the expected test contract.</summary>
     protected override void ConfigureTestConfiguration(IConfigurationBuilder config)
     {
-        config.AddInMemoryCollection(HostSettings());
+        config.AddInMemoryCollection(ApiHostSettings());
         config.AddInMemoryCollection(TestColumnEncryption.Configuration);
     }
 
-    private Dictionary<string, string?> HostSettings() => new(InertNonAzureLane.Settings)
+    private Dictionary<string, string?> ApiHostSettings() => new(InertNonAzureLane.Settings)
     {
         [ApplicationStyleResolver.ConfigKey] = _applicationStyle
     };

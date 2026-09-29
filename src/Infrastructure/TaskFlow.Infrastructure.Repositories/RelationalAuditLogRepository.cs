@@ -5,6 +5,7 @@ using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
 using TaskFlow.Application.Contracts.Concurrency;
+using UuidV7 = TaskFlow.Application.Contracts.Concurrency.UuidV7;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Operational;
 
@@ -45,7 +46,7 @@ public sealed class RelationalAuditLogRepository(
             EntityKey = entry.EntityKey,
             Action = entry.Action,
             Status = entry.Status.ToString(),
-            StartTimeTicks = entry.StartTime.Ticks,
+            StartedAtUtc = entry.StartedAtUtc,
             ElapsedTimeTicks = entry.ElapsedTime.Ticks,
             Metadata = entry.Metadata,
             Error = entry.Error
@@ -113,7 +114,7 @@ public sealed class RelationalAuditLogRepository(
         EntityKey = record.EntityKey,
         Action = record.Action,
         Status = Enum.Parse<AuditStatus>(record.Status),
-        StartTime = TimeSpan.FromTicks(record.StartTimeTicks),
+        StartedAtUtc = record.StartedAtUtc,
         ElapsedTime = TimeSpan.FromTicks(record.ElapsedTimeTicks),
         Metadata = record.Metadata,
         Error = record.Error

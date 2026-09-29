@@ -48,7 +48,7 @@ public class CursorPagingContractTests
     [TestMethod]
     public void Given_Position_When_EncodedAndDecoded_Then_RoundTrips()
     {
-        var position = new CursorPosition("2026-06-01T12:00:00", Guid.CreateVersion7());
+        var position = new CursorPosition("2026-06-01T12:00:00", Guid.CreateVersion7().ToString());
 
         var cursor = Codec.Encode(Scope(TaskItemSortMode.DueDateAsc), position);
 
@@ -59,7 +59,7 @@ public class CursorPagingContractTests
     [TestMethod]
     public void Given_NullSortKey_When_EncodedAndDecoded_Then_StaysNull()
     {
-        var cursor = Codec.Encode(Scope(TaskItemSortMode.DueDateAsc), new CursorPosition(null, Guid.CreateVersion7()));
+        var cursor = Codec.Encode(Scope(TaskItemSortMode.DueDateAsc), new CursorPosition(null, Guid.CreateVersion7().ToString()));
 
         Assert.IsNull(Codec.Decode(cursor, Scope(TaskItemSortMode.DueDateAsc)).SortKey);
     }
@@ -70,7 +70,7 @@ public class CursorPagingContractTests
     {
         var cursor = Codec.Encode(
             TaskItemRepositoryQuery.CursorScope(Guid.NewGuid(), TaskItemSortMode.IdAsc),
-            new CursorPosition(null, Guid.CreateVersion7()));
+            new CursorPosition(null, Guid.CreateVersion7().ToString()));
 
         Assert.IsFalse(Codec.TryDecode(cursor, Scope(TaskItemSortMode.IdAsc), out _));
     }
@@ -79,7 +79,7 @@ public class CursorPagingContractTests
     [TestMethod]
     public void Given_DifferentSortMode_When_Decoded_Then_Fails()
     {
-        var cursor = Codec.Encode(Scope(TaskItemSortMode.IdAsc), new CursorPosition(null, Guid.CreateVersion7()));
+        var cursor = Codec.Encode(Scope(TaskItemSortMode.IdAsc), new CursorPosition(null, Guid.CreateVersion7().ToString()));
 
         Assert.IsFalse(Codec.TryDecode(cursor, Scope(TaskItemSortMode.ModifiedDesc), out _));
     }
@@ -89,35 +89,29 @@ public class CursorPagingContractTests
     public void Given_TamperedCursor_When_Decoded_Then_Fails()
     {
         var scope = Scope(TaskItemSortMode.IdAsc);
-        var cursor = Codec.Encode(scope, new CursorPosition(null, Guid.CreateVersion7()));
+        var cursor = Codec.Encode(scope, new CursorPosition(null, Guid.CreateVersion7().ToString()));
         var tampered = cursor[..^2] + (cursor[^2] == 'A' ? 'B' : 'A') + cursor[^1];
 
         Assert.IsFalse(Codec.TryDecode(tampered, scope, out _));
         Assert.IsFalse(Codec.TryDecode("not-base64-url!!", scope, out _));
         Assert.IsFalse(Codec.TryDecode(string.Empty, scope, out _));
-        Assert.ThrowsExactly<ArgumentException>(() => Codec.Decode(tampered, scope));
+        Assert.ThrowsExactly<InvalidCursorException>(() => Codec.Decode(tampered, scope));
     }
 
     /// <summary>
-    /// Verifies a cursor minted by the previous package release still resumes. The literal below was
-    /// produced by <c>EF.Data.Contracts 1.1.101</c>'s codec with this suite's signing key, for the IdAsc
-    /// scope, at a point where the sort key was a raw <see cref="Guid"/>; 1.1.102 mints the same sort key
-    /// from a <c>TaskItemId</c> instead, so this pins that the wire format and the sort-key text did not
-    /// move underneath outstanding tokens. A failure here means live cursors break on deploy.
+    /// Verifies a cursor minted before EF.Data.Contracts 2.0 (codec schema 1) is refused rather than resumed.
+    /// The literal below was produced by <c>EF.Data.Contracts 1.1.101</c>'s codec with this suite's signing
+    /// key, for the IdAsc scope. 2.0 is a clean break (schema 2): an outstanding pre-2.0 token fails closed
+    /// and the client restarts from the first page.
     /// </summary>
     [TestMethod]
-    public void Given_TokenMintedByThePreviousPackageRelease_When_Decoded_Then_StillResumes()
+    public void Given_TokenMintedBeforeCodecSchema2_When_Decoded_Then_Fails()
     {
         const string mintedOn1_1_101 =
             "ASIxMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMXwwASQwMTk5YTBkMC0xMTExLTcwMDAtODAwMC0wMDAwMDAwMDBhYmPQoJkBEREAcIAAAAAAAAq8SLhEN41CfsuSzjO9nGeFvJtN_bmoGkn86QrJBS-93p8";
-        var expectedId = Guid.Parse("0199a0d0-1111-7000-8000-000000000abc");
 
-        var position = Codec.Decode(mintedOn1_1_101, Scope(TaskItemSortMode.IdAsc));
-
-        // The id sort key is the underlying Guid in "D" form: what 1.1.101 wrote for a Guid key and what
-        // 1.1.102 writes for the TaskItemId key, which is why the two are interchangeable.
-        Assert.AreEqual(expectedId.ToString("D"), position.SortKey);
-        Assert.AreEqual(expectedId, position.TieBreaker);
+        Assert.IsFalse(Codec.TryDecode(mintedOn1_1_101, Scope(TaskItemSortMode.IdAsc), out _));
+        Assert.ThrowsExactly<InvalidCursorException>(() => Codec.Decode(mintedOn1_1_101, Scope(TaskItemSortMode.IdAsc)));
     }
 
     /// <summary>
@@ -129,7 +123,7 @@ public class CursorPagingContractTests
     public void Given_DifferentSigningKey_When_Decoded_Then_Fails()
     {
         var scope = Scope(TaskItemSortMode.IdAsc);
-        var minted = Codec.Encode(scope, new CursorPosition(null, Guid.CreateVersion7()));
+        var minted = Codec.Encode(scope, new CursorPosition(null, Guid.CreateVersion7().ToString()));
 
         var otherKey = new CursorCodec(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
 

@@ -12,6 +12,10 @@ using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Infrastructure.Messaging.RabbitMq;
 using TaskFlow.Observability.Meters;
 using TaskFlow.Observability.Tracing;
+using IInboxStore = TaskFlow.Application.Contracts.Messaging.IInboxStore;
+using InboxClaim = TaskFlow.Application.Contracts.Messaging.InboxClaim;
+using InboxClaimStatus = TaskFlow.Application.Contracts.Messaging.InboxClaimStatus;
+using MessagingMetrics = TaskFlow.Observability.Meters.MessagingMetrics;
 
 namespace Test.Unit.Infrastructure;
 

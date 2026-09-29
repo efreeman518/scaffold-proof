@@ -8,6 +8,7 @@ using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Storage;
 using Test.Integration.Infrastructure;
+using UuidV7 = TaskFlow.Application.Contracts.Concurrency.UuidV7;
 
 namespace Test.Integration;
 
@@ -63,7 +64,7 @@ public class AuditLogRepositoryAzuriteTests
             EntityKey = Guid.NewGuid().ToString(),
             Status = AuditStatus.Success,
             Action = "Create",
-            StartTime = TimeSpan.FromMilliseconds(25),
+            StartedAtUtc = new DateTimeOffset(2026, 9, 29, 12, 0, 0, 25, TimeSpan.Zero),
             ElapsedTime = TimeSpan.FromMilliseconds(7),
             Metadata = "{\"source\":\"azurite-test\"}"
         };

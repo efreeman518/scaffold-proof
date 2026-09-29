@@ -16,6 +16,7 @@ using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Model.ValueObjects;
 using TaskFlow.Domain.Shared;
 using TaskFlow.Domain.Shared.Enums;
+using ConcurrencyGuard = TaskFlow.Application.Contracts.Concurrency.ConcurrencyGuard;
 
 namespace TaskFlow.Application.Cqrs.Features.TaskItems;
 

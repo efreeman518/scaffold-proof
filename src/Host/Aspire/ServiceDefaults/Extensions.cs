@@ -6,6 +6,7 @@ using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using Azure.Monitor.OpenTelemetry.AspNetCore;
+using EF.AspNetCore.Correlation;
 using Azure.Monitor.OpenTelemetry.Exporter;
 using OpenTelemetry;
 using OpenTelemetry.Logs;
@@ -37,10 +38,14 @@ public static class Extensions
         builder.AddHostLifecycle();
 
         builder.Services.AddServiceDiscovery();
+        // Outbound calls carry the inbound correlation id (HttpContext.TraceIdentifier, set by UseCorrelationId);
+        // outside a request the handler sends nothing.
+        if (addHeaderPropagation)
+            builder.Services.AddCorrelationId();
         builder.Services.ConfigureHttpClientDefaults(http =>
         {
             if (addHeaderPropagation)
-                http.AddHeaderPropagation();
+                http.AddCorrelationIdPropagation();
             // D-063: the standard handler retries every method by default, so a 5xx or timeout on a POST would
             // repeat a non-idempotent write. Safe methods keep their retries.
             http.AddStandardResilienceHandler(o => o.Retry.DisableForUnsafeHttpMethods());

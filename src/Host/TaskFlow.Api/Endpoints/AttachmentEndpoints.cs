@@ -14,13 +14,9 @@ namespace TaskFlow.Api.Endpoints;
 /// <summary>Maps attachment HTTP routes to the selected application implementation and API contract metadata.</summary>
 public static class AttachmentEndpoints
 {
-    private static bool _problemDetailsIncludeStackTrace;
-
     /// <summary>Registers attachment routes, handlers, and response metadata.</summary>
-    public static IEndpointRouteBuilder MapAttachmentEndpoints(this IEndpointRouteBuilder group, bool problemDetailsIncludeStackTrace)
+    public static IEndpointRouteBuilder MapAttachmentEndpoints(this IEndpointRouteBuilder group)
     {
-        _problemDetailsIncludeStackTrace = problemDetailsIncludeStackTrace;
-
         var g = group.MapGroup("/attachments").WithTags("Attachments")
             .AddEndpointFilter<ETagEndpointFilter>();
 
@@ -92,8 +88,7 @@ public static class AttachmentEndpoints
         var result = await service.GetAsync(id, ct);
         return result.Match<IResult>(
             response => TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest)),
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)),
             () => TypedResults.NotFound(id));
     }
 
@@ -109,12 +104,7 @@ public static class AttachmentEndpoints
             response => response.IsReplay
                 ? TypedResults.Ok(response)
                 : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response),
-            // Create rejections are caller-input failures (a bad payload, a non-v7 id): 400, not the
-            // 500 the untyped helper defaults to.
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
-                traceId: httpContext.TraceIdentifier,
-                includeStackTrace: _problemDetailsIncludeStackTrace)));
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
     }
 
     /// <summary>Uploads upload to the configured storage backend and returns metadata.</summary>
@@ -135,12 +125,7 @@ public static class AttachmentEndpoints
             response => response.IsReplay
                 ? TypedResults.Ok(response)
                 : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response),
-            // Create rejections are caller-input failures (a bad payload, a non-v7 id): 400, not the
-            // 500 the untyped helper defaults to.
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
-                traceId: httpContext.TraceIdentifier,
-                includeStackTrace: _problemDetailsIncludeStackTrace)));
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
     }
 
     /// <summary>Updates existing data after validation and preserves domain invariants.</summary>
@@ -153,17 +138,14 @@ public static class AttachmentEndpoints
         CancellationToken ct)
     {
         if (request.Item.Id != null && request.Item.Id != id)
-            return TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponse(
-                statusCodeOverride: StatusCodes.Status400BadRequest,
-                message: $"{ErrorConstants.ERROR_URL_BODY_ID_MISMATCH}: {id} <> {request.Item.Id}"));
+            return TypedResults.Problem(ProblemDetailsHelper.Create(
+                StatusCodes.Status400BadRequest,
+                $"{ErrorConstants.ERROR_URL_BODY_ID_MISMATCH}: {id} <> {request.Item.Id}"));
 
         var result = await service.UpdateAsync(request, ifMatch.ExpectedVersion, ct);
         return result.Match(
             response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
-                traceId: httpContext.TraceIdentifier,
-                includeStackTrace: _problemDetailsIncludeStackTrace)));
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
     }
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
@@ -175,9 +157,6 @@ public static class AttachmentEndpoints
         return result.Match<IResult>(
             () => TypedResults.NoContent(),
             errors => TypedResults.Problem(
-                ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                    errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
-                    traceId: httpContext.TraceIdentifier,
-                    includeStackTrace: _problemDetailsIncludeStackTrace)));
+                ProblemDetailsHelper.FromErrors(errors)));
     }
 }

@@ -10,6 +10,10 @@ using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Domain.Shared;
 using TaskFlow.Domain.Shared.Events;
 using TaskFlow.Observability.Meters;
+using IInboxStore = TaskFlow.Application.Contracts.Messaging.IInboxStore;
+using InboxClaim = TaskFlow.Application.Contracts.Messaging.InboxClaim;
+using InboxClaimStatus = TaskFlow.Application.Contracts.Messaging.InboxClaimStatus;
+using MessagingMetrics = TaskFlow.Observability.Meters.MessagingMetrics;
 
 namespace TaskFlow.Application.MessageHandlers.Consumers;
 

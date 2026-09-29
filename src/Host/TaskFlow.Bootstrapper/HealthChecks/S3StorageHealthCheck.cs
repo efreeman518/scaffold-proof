@@ -1,5 +1,6 @@
 using EF.Storage.S3;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using TaskFlow.Application.Contracts.Storage;
 
 namespace TaskFlow.Bootstrapper.HealthChecks;
 
@@ -13,7 +14,8 @@ public sealed class S3StorageHealthCheck(IS3BucketProvisioner provisioner) : IHe
     {
         try
         {
-            await provisioner.CheckConnectivityAsync(cancellationToken);
+            // A scoped HeadBucket on the attachment bucket EnsureExternalResources provisions at startup.
+            await provisioner.CheckBucketAsync(AttachmentBlobs.ContainerName, cancellationToken);
             return HealthCheckResult.Healthy();
         }
         catch (Exception ex)

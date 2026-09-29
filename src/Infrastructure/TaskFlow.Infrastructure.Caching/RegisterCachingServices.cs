@@ -56,7 +56,7 @@ public static class RegisterCachingServices
                 sp.GetRequiredService<IHostEnvironment>().EnvironmentName);
 
             return new MeteredTypedCache(
-                new TypedCache(sp.GetRequiredService<IFusionCacheProvider>(), settings),
+                new TypedCache(sp.GetRequiredService<IFusionCacheProvider>(), settings, settings.KeyNamespace),
                 sp.GetRequiredService<CacheMeter>());
         }));
 

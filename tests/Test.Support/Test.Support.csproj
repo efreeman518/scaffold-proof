@@ -4,6 +4,8 @@
     <PackageReference Include="EF.Common.Contracts" />
     <PackageReference Include="EF.Domain" />
     <PackageReference Include="EF.IntegrationTesting" />
+    <PackageReference Include="EF.IntegrationTesting.PostgreSql" />
+    <PackageReference Include="EF.IntegrationTesting.SqlServer" />
     <!-- Cache backplane and distributed rate-limiter lanes: both behaviors only exist across processes. -->
     <PackageReference Include="Testcontainers.Redis" />
     <PackageReference Include="Aspire.Hosting.Testing" />

@@ -227,7 +227,7 @@ public sealed class WorkSettlementTests
             new FixedOptionsMonitor(settings),
             NullLoggerFactory.Instance)
     {
-        public Task<int> RunOnceAsync(CancellationToken ct) => ProcessBatchAsync("unused", ct);
+        public Task<int> RunOnceAsync(CancellationToken ct) => ProcessBatchAsync(ct);
 
         protected override Task HandleBatchAsync(
             IServiceProvider scope, IReadOnlyList<BlobDeleteWork> items, WorkBatchResult result, CancellationToken ct)

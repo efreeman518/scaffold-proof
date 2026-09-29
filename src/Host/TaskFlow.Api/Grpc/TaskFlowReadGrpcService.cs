@@ -1,4 +1,5 @@
 using EF.Common.Contracts;
+using EF.Common.Exceptions;
 using EF.CQRS.Abstractions;
 using Grpc.Core;
 using Microsoft.EntityFrameworkCore;
@@ -21,7 +22,7 @@ namespace TaskFlow.Api.Grpc;
 /// call. The tenant a caller sees over gRPC is therefore the tenant it would see over REST.
 ///
 /// Failures are translated by <c>EF.Grpc.ServiceErrorInterceptor</c>, registered in RegisterApiServices
-/// with <see cref="StatusFor"/> as its <c>StatusCodeMapper</c>. The mapping mirrors
+/// with <see cref="MapExceptions"/> added to its exception classifier. The mapping mirrors
 /// DefaultExceptionHandler's HTTP status choices one for one, so a client that understands the REST
 /// failure modes understands these:
 /// <list type="table">
@@ -29,7 +30,7 @@ namespace TaskFlow.Api.Grpc;
 /// <item><term>IdempotentCreateConflictException</term><description>409 -> Aborted</description></item>
 /// <item><term>UnauthorizedAccessException</term><description>403 -> PermissionDenied</description></item>
 /// <item><term>KeyNotFoundException</term><description>404 -> NotFound</description></item>
-/// <item><term>OperationCanceledException</term><description>499 -> Cancelled</description></item>
+/// <item><term>OperationCanceledException</term><description>499 -> Cancelled (DeadlineExceeded when the caller did not cancel)</description></item>
 /// <item><term>ArgumentException / FormatException / InvalidOperationException</term><description>400 -> InvalidArgument</description></item>
 /// <item><term>anything else</term><description>500 -> Internal</description></item>
 /// </list>
@@ -75,23 +76,19 @@ internal sealed class TaskFlowReadGrpcService(
     }
 
     /// <summary>
-    /// The gRPC equivalent of DefaultExceptionHandler's HTTP status selection, handed to
-    /// <c>EF.Grpc.ErrorInterceptorSettings.StatusCodeMapper</c>. An <see cref="RpcException"/> a handler
-    /// raised deliberately keeps the status it chose; the interceptor re-wraps it with a generic detail so
-    /// no exception text reaches the wire.
+    /// The gRPC equivalent of DefaultExceptionHandler's HTTP status selection, as the TaskFlow mappings
+    /// <c>EF.Common.Exceptions.ExceptionClassifier</c> adds to its defaults (UnauthorizedAccessException,
+    /// KeyNotFoundException and OperationCanceledException are already mapped there). An
+    /// <see cref="RpcException"/> a handler raised deliberately keeps the status it chose; every other
+    /// failure carries only its category name, so no exception text reaches the wire.
     /// </summary>
-    internal static StatusCode StatusFor(Exception exception) => exception switch
-    {
-        RpcException rpcException => rpcException.StatusCode,
-        ConcurrencyMismatchException => StatusCode.FailedPrecondition,
-        DbUpdateConcurrencyException => StatusCode.FailedPrecondition,
-        IdempotentCreateConflictException => StatusCode.Aborted,
-        UnauthorizedAccessException => StatusCode.PermissionDenied,
-        KeyNotFoundException => StatusCode.NotFound,
-        OperationCanceledException => StatusCode.Cancelled,
-        ArgumentException or FormatException or InvalidOperationException => StatusCode.InvalidArgument,
-        _ => StatusCode.Internal
-    };
+    internal static void MapExceptions(ExceptionClassifierOptions options) => options
+        .Map<ConcurrencyMismatchException>(ExceptionCategory.PreconditionFailed)
+        .Map<DbUpdateConcurrencyException>(ExceptionCategory.PreconditionFailed)
+        .Map<IdempotentCreateConflictException>(ExceptionCategory.Conflict)
+        .Map<ArgumentException>(ExceptionCategory.Validation)
+        .Map<FormatException>(ExceptionCategory.Validation)
+        .Map<InvalidOperationException>(ExceptionCategory.Validation);
 
     /// <summary>Routes the by-id read to whichever application style this host was configured with.</summary>
     private Task<Result<DefaultResponse<TaskItemDto>>> GetTaskItemResultAsync(Guid id, CancellationToken ct)

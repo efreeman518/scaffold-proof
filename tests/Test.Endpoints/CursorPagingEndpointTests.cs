@@ -274,7 +274,7 @@ public class CursorPagingEndpointTests
         var codec = _fixture.Factory(style).Services.GetRequiredService<CursorCodec>();
         var foreign = codec.Encode(
             TaskItemRepositoryQuery.CursorScope(Guid.NewGuid(), TaskItemSortMode.IdAsc),
-            new CursorPosition(null, Guid.CreateVersion7()));
+            new CursorPosition(null, Guid.CreateVersion7().ToString()));
 
         var (status, _, _) = await SearchAsync(client, "anything", TaskItemSortMode.IdAsc, 2, foreign);
 

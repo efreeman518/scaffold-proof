@@ -6,6 +6,9 @@ using TaskFlow.Domain.Shared.Constants;
 using TaskFlow.Domain.Shared.Enums;
 using TaskFlow.Domain.Shared.Events;
 using DomainCategoryId = TaskFlow.Domain.Shared.CategoryId;
+// The app-local domain-event contracts carry TenantId; EF.Domain.Contracts' same-named ones do not.
+using IDomainEvent = TaskFlow.Domain.Shared.IDomainEvent;
+using IHasDomainEvents = TaskFlow.Domain.Shared.IHasDomainEvents;
 using DomainTaskItemId = TaskFlow.Domain.Shared.TaskItemId;
 using DomainTenantId = TaskFlow.Domain.Shared.TenantId;
 
@@ -39,16 +42,12 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
     // Sensitive properties - persisted through the application-layer column encryptor (D-023):
     // both are stored randomized (AES-GCM); SecureDeterministic is additionally equality-queryable
     // through an HMAC blind-index sibling column populated by the persistence layer.
-    // fallback: the column converter encrypts only the stored value; the CLR value the audit interceptor
-    // serializes is plaintext. EF.Data's AuditInterceptor masks Modified payloads by the EF.Domain attribute
-    // and Added payloads (SerializeToJson) by the EF.Common one, so both are required until EF.Packages 2.0
-    // merges them (D25) and masks by entry metadata (D20, .IsSensitive() in TaskItemConfiguration).
-    [EF.Domain.Attributes.Mask("***")]
-    [EF.Common.Attributes.Mask("***")]
+    // The column converter encrypts only the stored value; the CLR value the audit interceptor serializes is
+    // plaintext, so EF.Data's AuditInterceptor masks it on both the Added and Modified payload paths.
+    [Mask("***")]
     public string? SecureDeterministic { get; private set; }
 
-    [EF.Domain.Attributes.Mask("***")]
-    [EF.Common.Attributes.Mask("***")]
+    [Mask("***")]
     public string? SecureRandom { get; private set; }
 
     // First-class scheduling dates (UTC). DateRange below is composed from them and is not mapped:

@@ -1,5 +1,5 @@
 using EF.Audit.Contracts;
-using EF.IntegrationTesting.Environment;
+using EF.Testing.Environment;
 using EF.Storage.Contracts;
 using EF.Storage.S3;
 using Microsoft.Extensions.Configuration;

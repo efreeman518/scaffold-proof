@@ -7,8 +7,9 @@ using Microsoft.Extensions.Logging;
 using TaskFlow.Hosting;
 using Test.Support.Aspire;
 using Test.Support.Hosting;
-using EnvironmentVariableScope = EF.IntegrationTesting.Environment.EnvironmentVariableScope;
-using FunctionsCoreToolsDiscovery = EF.IntegrationTesting.Environment.FunctionsCoreToolsDiscovery;
+using EnvironmentVariableScope = EF.Testing.Environment.EnvironmentVariableScope;
+using FunctionsCoreToolsDiscovery = EF.Testing.Environment.FunctionsCoreToolsDiscovery;
+using AspireTestHostContext = Test.Support.Aspire.AspireTestHostContext;
 
 namespace Test.Aspire;
 
