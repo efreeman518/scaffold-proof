@@ -42,12 +42,10 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
     // Sensitive properties - persisted through the application-layer column encryptor (D-023):
     // both are stored randomized (AES-GCM); SecureDeterministic is additionally equality-queryable
     // through an HMAC blind-index sibling column populated by the persistence layer.
-    // The column converter encrypts only the stored value; the CLR value the audit interceptor serializes is
-    // plaintext, so EF.Data's AuditInterceptor masks it on both the Added and Modified payload paths.
-    [Mask("***")]
+    // The column converter encrypts only the stored value; the CLR value is plaintext, so the persistence
+    // mapping marks both IsSensitive() and EF.Data's AuditInterceptor masks them in every audit payload.
     public string? SecureDeterministic { get; private set; }
 
-    [Mask("***")]
     public string? SecureRandom { get; private set; }
 
     // First-class scheduling dates (UTC). DateRange below is composed from them and is not mapped:
@@ -213,7 +211,7 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
     }
 
     // D-031 (aggregate-level ETag): every child mutation below calls the base Touch() so EF marks the
-    // root Modified and VersionTimestampInterceptor bumps the root Version. Child PUT/DELETE therefore
+    // root Modified and the EF.Data save pipeline bumps the root Version. Child PUT/DELETE therefore
     // use the root ETag as the If-Match currency; child DTO Version values are display-only.
     #region Child Collection Methods
 

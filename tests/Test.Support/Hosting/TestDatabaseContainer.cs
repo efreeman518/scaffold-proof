@@ -132,7 +132,6 @@ public sealed class TestDatabaseContainer(TaskFlowDbProvider provider) : IAsyncD
                 migrationsHistorySchema))
             .UseColumnEncryption(TestColumnEncryption.Encryptor)
             .AddInterceptors(
-                new VersionTimestampInterceptor(),
                 // D-026: the same interceptor the hosts register, so integration tests exercise the real
                 // staging path rather than a hand-inserted outbox row.
                 new OutboxStagingInterceptor(),

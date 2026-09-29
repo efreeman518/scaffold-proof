@@ -43,7 +43,6 @@ public static partial class RegisterServices
         // context and would recurse while the pooled factory builds its options.
         services.AddTransient(sp => new AuditInterceptor<string, Guid?>(
             sp.GetRequiredService<IInternalMessageBus>(), []));
-        services.AddSingleton<VersionTimestampInterceptor>();
         // D-026: stages raised domain events as outbox rows in the same SaveChanges as the domain write.
         services.AddSingleton<OutboxStagingInterceptor>();
         // No ConnectionNoLockInterceptor registration: nothing ever added it to a context (D-004 keeps the
@@ -67,7 +66,6 @@ public static partial class RegisterServices
             options.UseColumnEncryption(sp.GetRequiredService<IColumnEncryptor>());
             options.AddInterceptors(
                 sp.GetRequiredService<AuditInterceptor<string, Guid?>>(),
-                sp.GetRequiredService<VersionTimestampInterceptor>(),
                 sp.GetRequiredService<OutboxStagingInterceptor>(),
                 sp.GetRequiredService<BlindIndexInterceptor>());
         });

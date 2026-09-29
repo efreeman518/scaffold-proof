@@ -1,4 +1,5 @@
-﻿using EF.BackgroundServices;
+﻿using EF.Data.Migrations;
+using EF.BackgroundServices;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using TaskFlow.Infrastructure.AI;
@@ -165,7 +166,7 @@ public static class RegisterSchedulerServices
             throw new InvalidOperationException("Cannot connect TickerQ operational store database.");
         }
 
-        if (!await TaskFlowTickerQSchemaValidator.SchemaExistsAsync(db))
+        if ((await db.GetMissingTablesAsync()).Count > 0)
         {
             throw new InvalidOperationException(
                 "TickerQ schema is missing or incomplete. Run TaskFlow.DatabaseMigrator before starting Scheduler.");

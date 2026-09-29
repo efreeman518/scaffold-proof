@@ -4,7 +4,6 @@ using Microsoft.Extensions.Configuration;
 using EF.IntegrationTesting.EntityFramework;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Infrastructure.Data;
-using TaskFlow.Infrastructure.Data.Interceptors;
 using Test.Support;
 using Test.Support.Hosting;
 
@@ -52,16 +51,11 @@ public sealed class CustomApiFactory : WebApplicationFactoryBase<Program, TaskFl
     protected override void ConfigureTestConfiguration(IConfigurationBuilder config) =>
         config.AddInMemoryCollection(TestColumnEncryption.Configuration);
 
-    // The version/timestamp interceptor is part of the concurrency contract (D-021), not of the SQL
-    // provider: without it here every entity would report Version 0 and the whole ETag surface would
-    // pass the tests while being inert.
     /// <summary>Builds trxn options used by focused test cases.</summary>
     protected override DbContextOptions BuildTrxnOptions() =>
-        DbContextOptionsFactory.BuildInMemoryOptions<TaskFlowDbContextTrxn>(
-            _dbName, builder => builder.AddInterceptors(new VersionTimestampInterceptor()));
+        DbContextOptionsFactory.BuildInMemoryOptions<TaskFlowDbContextTrxn>(_dbName);
 
     /// <summary>Builds query options used by focused test cases.</summary>
     protected override DbContextOptions BuildQueryOptions() =>
-        DbContextOptionsFactory.BuildInMemoryOptions<TaskFlowDbContextQuery>(
-            _dbName, builder => builder.AddInterceptors(new VersionTimestampInterceptor()));
+        DbContextOptionsFactory.BuildInMemoryOptions<TaskFlowDbContextQuery>(_dbName);
 }

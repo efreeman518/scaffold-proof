@@ -47,7 +47,7 @@ public sealed class DatabaseMigratorIntegrationTests
         Assert.IsTrue(await TableExistsAsync(flowEngine, TaskFlowFlowEngineDbContext.SchemaName, TaskFlowFlowEngineDbContext.MigrationHistoryTable));
 
         await using var tickerQ = DbContainerFixture.CreateTickerQContext(connectionString);
-        Assert.IsTrue(await TaskFlowTickerQSchemaValidator.SchemaExistsAsync(tickerQ, TestContext.CancellationToken));
+        Assert.IsEmpty(await tickerQ.GetMissingTablesAsync(TestContext.CancellationToken));
         Assert.IsTrue(await TableExistsAsync(tickerQ, TaskFlowTickerQDbContext.SchemaName, TaskFlowTickerQDbContext.MigrationHistoryTable));
 
         // The AfterSchema data step ran once per RunAsync and stayed idempotent (BeforeSchema clears, AfterSchema inserts).
@@ -64,7 +64,7 @@ public sealed class DatabaseMigratorIntegrationTests
         await using var tickerQ = DbContainerFixture.CreateTickerQContext(connectionString);
 
         Assert.IsTrue(await tickerQ.Database.CanConnectAsync(TestContext.CancellationToken));
-        Assert.IsFalse(await TaskFlowTickerQSchemaValidator.SchemaExistsAsync(tickerQ, TestContext.CancellationToken));
+        Assert.IsNotEmpty(await tickerQ.GetMissingTablesAsync(TestContext.CancellationToken));
     }
 
     private static DatabaseMigrationRunner CreateRunner(string connectionString)

@@ -199,11 +199,10 @@ public sealed class OutboxStagingTests
     private static TaskFlowDbContextTrxn Create(string dbName) =>
         new(new DbContextOptionsBuilder<TaskFlowDbContextTrxn>()
             .UseInMemoryDatabase(dbName)
-            .AddInterceptors(
-                new VersionTimestampInterceptor(new FixedClock(Now)),
-                new OutboxStagingInterceptor(new FixedClock(Now)))
+            .AddInterceptors(new OutboxStagingInterceptor(new FixedClock(Now)))
             .Options)
         {
+            Clock = new FixedClock(Now),
             AuditId = "outbox-staging-test",
             TenantId = TestConstants.TenantId
         };
