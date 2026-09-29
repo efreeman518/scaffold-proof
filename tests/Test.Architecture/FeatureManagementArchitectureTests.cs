@@ -1,4 +1,4 @@
-using NetArchTest.Rules;
+using EF.Testing.Architecture;
 
 namespace Test.Architecture;
 
@@ -7,7 +7,7 @@ namespace Test.Architecture;
 /// and Infrastructure.AI's AiTaskReviewer (consumer checkpoint) - plus the Bootstrapper registration that
 /// wires it up. Every other assembly in the graph, and every other namespace inside the Api itself, must
 /// resolve and enforce flags through those checkpoints rather than taking a direct dependency of their own.
-/// Pure-unit tier (NetArchTest only): static assembly checks; no DI, no I/O.
+/// Pure-unit tier (EF.Testing.Architecture only): static assembly checks; no DI, no I/O.
 /// </summary>
 [TestClass]
 [TestCategory("Architecture")]
@@ -25,13 +25,10 @@ public class FeatureManagementArchitectureTests : BaseTest
                      ApplicationCqrsAssembly, InfrastructureDataAssembly, InfrastructureRepositoriesAssembly
                  })
         {
-            var result = Types.InAssembly(assembly)
-                .ShouldNot()
-                .HaveDependencyOn(FeatureManagementNamespace)
-                .GetResult();
+            var result = DependencyRules.MustNotDependOn(assembly, [FeatureManagementNamespace]);
 
             Assert.IsTrue(result.IsSuccessful,
-                $"{assembly.GetName().Name} has a forbidden dependency on {FeatureManagementNamespace}: {FormatFailingTypes(result)}");
+                $"{assembly.GetName().Name} has a forbidden dependency on {FeatureManagementNamespace}: {result}");
         }
     }
 
@@ -39,15 +36,11 @@ public class FeatureManagementArchitectureTests : BaseTest
     [TestMethod]
     public void Given_ApiAssembly_When_DependenciesCheckedOutsideFilters_Then_NoFeatureManagementUsage()
     {
-        var result = Types.InAssembly(ApiAssembly)
-            .That()
-            .DoNotResideInNamespace("TaskFlow.Api.Filters")
-            .ShouldNot()
-            .HaveDependencyOn(FeatureManagementNamespace)
-            .GetResult();
+        var result = DependencyRules.MustNotDependOn(
+            ApiAssembly, [FeatureManagementNamespace], exemptNamespaces: ["TaskFlow.Api.Filters"]);
 
         Assert.IsTrue(result.IsSuccessful,
-            $"TaskFlow.Api has a forbidden dependency on {FeatureManagementNamespace} outside Filters: {FormatFailingTypes(result)}");
+            $"TaskFlow.Api has a forbidden dependency on {FeatureManagementNamespace} outside Filters: {result}");
     }
 
     /// <summary>
@@ -58,20 +51,10 @@ public class FeatureManagementArchitectureTests : BaseTest
     public void Given_FeatureGateEndpointFilterType_When_DependenciesChecked_Then_UsesFeatureManagement()
     {
         // Internal type, not accessible via typeof/nameof from this project - matched by name string instead.
-        var result = Types.InAssembly(ApiAssembly)
-            .That()
-            .HaveName("FeatureGateEndpointFilter")
-            .Should()
-            .HaveDependencyOn(FeatureManagementNamespace)
-            .GetResult();
+        var result = DependencyRules.MustDependOn(ApiAssembly, "FeatureGateEndpointFilter", [FeatureManagementNamespace]);
 
         Assert.IsTrue(result.IsSuccessful,
             "Expected TaskFlow.Api.Filters.FeatureGateEndpointFilter to depend on Microsoft.FeatureManagement " +
-            "- if this fails the boundary test above may be passing for the wrong reason.");
+            $"- if this fails the boundary test above may be passing for the wrong reason. {result}");
     }
-
-    private static string FormatFailingTypes(NetArchTest.Rules.TestResult result) =>
-        result.FailingTypes != null
-            ? string.Join(", ", result.FailingTypes.Select(t => t.FullName))
-            : "none";
 }

@@ -1,8 +1,8 @@
+using EF.Testing.Architecture;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
-using NetArchTest.Rules;
 using System.Reflection;
 using TaskFlow.Bootstrapper;
 
@@ -17,7 +17,7 @@ namespace Test.Architecture;
 /// reference TaskFlow.Bootstrapper, an inversion of the existing dependency direction - so its default-arm
 /// coverage lives in Test.Unit's SearchProviderSelectorTests instead; this file only asserts its namespace
 /// boundary here.
-/// Pure-unit tier (NetArchTest + reflection): no I/O beyond building an in-memory ServiceCollection.
+/// Pure-unit tier (EF.Testing.Architecture + reflection): no I/O beyond building an in-memory ServiceCollection.
 /// </summary>
 [TestClass]
 [TestCategory("Architecture")]
@@ -130,13 +130,7 @@ public class ProviderSwitchArchitectureTests : BaseTest
 
     private static void AssertNoDependencyOnAny(Assembly assembly, params string[] namespaces)
     {
-        var result = Types.InAssembly(assembly).ShouldNot().HaveDependencyOnAny(namespaces).GetResult();
-        Assert.IsTrue(result.IsSuccessful,
-            $"{assembly.GetName().Name} has a forbidden dependency on {string.Join("/", namespaces)}: {FormatFailingTypes(result)}");
+        var result = DependencyRules.MustNotDependOn(assembly, namespaces);
+        Assert.IsTrue(result.IsSuccessful, result.ToString());
     }
-
-    private static string FormatFailingTypes(NetArchTest.Rules.TestResult result) =>
-        result.FailingTypes != null
-            ? string.Join(", ", result.FailingTypes.Select(t => t.FullName))
-            : "none";
 }
