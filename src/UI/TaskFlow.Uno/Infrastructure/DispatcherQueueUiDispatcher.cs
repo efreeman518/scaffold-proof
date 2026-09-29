@@ -1,5 +1,5 @@
+using EF.UI.Client;
 using Microsoft.UI.Dispatching;
-using TaskFlow.Uno.Core.Business.Notifications;
 
 namespace TaskFlow.Uno.Infrastructure;
 

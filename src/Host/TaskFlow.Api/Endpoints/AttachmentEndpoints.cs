@@ -1,9 +1,9 @@
 using EF.AspNetCore;
+using EF.AspNetCore.Concurrency;
 using EF.Common.Contracts;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using TaskFlow.Api.Endpoints.Shared;
-using TaskFlow.Api.Filters;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models;
@@ -18,7 +18,7 @@ public static class AttachmentEndpoints
     public static IEndpointRouteBuilder MapAttachmentEndpoints(this IEndpointRouteBuilder group)
     {
         var g = group.MapGroup("/attachments").WithTags("Attachments")
-            .AddEndpointFilter<ETagEndpointFilter>();
+            .WithETag();
 
         g.MapPost("/search", Search)
             .WithName("SearchAttachments")

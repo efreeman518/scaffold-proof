@@ -1,5 +1,4 @@
 using System.Text.Json;
-using TaskFlow.Uno.Core.Business.Notifications;
 using TaskFlow.Uno.Core.Client;
 
 namespace Test.UI.Uno;
@@ -38,8 +37,7 @@ public sealed class TaskFlowApiJsonContextTests
         typeof(TaskItemCursorSearchRequest),
         typeof(CursorPage<TaskItemDto>),
         typeof(TaskItemSummaryDto),
-        typeof(TaskMetadataDto),
-        typeof(ProblemDetailsPayload)
+        typeof(TaskMetadataDto)
     ];
 
     /// <summary>Serializes and deserializes every concrete transport type without a reflection resolver.</summary>

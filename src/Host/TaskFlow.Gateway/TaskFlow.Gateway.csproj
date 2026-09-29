@@ -4,14 +4,12 @@
   <Import Project="..\TaskFlow.Host.props" />
 
   <ItemGroup>
-    <PackageReference Include="Azure.Identity" />
     <PackageReference Include="Yarp.ReverseProxy" />
     <PackageReference Include="Microsoft.Extensions.ServiceDiscovery.Yarp" />
-    <!-- D-042: Gateway does not reference Bootstrapper, so it wires Azure App Configuration itself
-         (GatewayAppConfiguration.cs) instead of sharing RegisterServices.AddTaskFlowAppConfiguration.
-         No Microsoft.FeatureManagement reference here by design - Gateway evaluates no feature flags,
-         keeping it out of the "who may use Microsoft.FeatureManagement" architecture boundary. -->
-    <PackageReference Include="Microsoft.Azure.AppConfiguration.AspNetCore" />
+    <!-- D-042: Gateway does not reference Bootstrapper, so Program.cs calls EF.Host AddEfAzureAppConfiguration
+         itself (ServiceDefaults brings EF.Host). No Microsoft.FeatureManagement reference here by design -
+         Gateway evaluates no feature flags, keeping it out of the "who may use Microsoft.FeatureManagement"
+         architecture boundary. -->
   </ItemGroup>
 
   <ItemGroup>

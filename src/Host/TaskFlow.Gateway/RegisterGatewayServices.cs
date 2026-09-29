@@ -1,5 +1,6 @@
-using Azure.Core;
-using Azure.Identity;
+using EF.AspNetCore.Cors;
+using EF.AspNetCore.ExceptionHandling;
+using EF.Host;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.AspNetCore.RateLimiting;
@@ -29,11 +30,14 @@ public static class RegisterGatewayServices
     public static IServiceCollection AddGatewayServices(
         this IServiceCollection services, IConfiguration config)
     {
-        services.AddSingleton<TokenCredential>(_ => new DefaultAzureCredential());
+        // One credential for downstream token exchange, honoring ManagedIdentityClientId / AzureTenantId.
+        services.AddAzureTokenCredential(config);
         services.AddSingleton<TokenService>();
+        services.AddEfProblemDetails();
         AddAuthentication(services, config);
         AddReverseProxy(services, config);
-        AddCors(services, config);
+        // Origins validated at registration; CorsSettings:AllowCredentials (appsettings.json) allows the Uno client's credentials.
+        services.AddCorsPolicyFromConfiguration("UnoUI", config.GetSection("CorsSettings"));
         AddHealthChecks(services, config);
         AddRateLimiting(services, config);
         AddRequestTimeouts(services, config);
@@ -119,27 +123,6 @@ public static class RegisterGatewayServices
         var json = JsonSerializer.Serialize(claimsPayload);
         var encoded = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json));
         proxyRequest.Headers.TryAddWithoutValidation(OriginalUserClaimsHeaderName, encoded);
-    }
-
-    /// <summary>Registers cors dependencies in the service container.</summary>
-    private static void AddCors(IServiceCollection services, IConfiguration config)
-    {
-        var origins = config.GetSection("CorsSettings:AllowedOrigins").Get<string[]>();
-        if (origins is null || origins.Length == 0)
-        {
-            throw new InvalidOperationException("CORS is not configured. Set CorsSettings:AllowedOrigins in configuration.");
-        }
-
-        services.AddCors(options =>
-        {
-            options.AddPolicy("UnoUI", policy =>
-            {
-                policy.WithOrigins(origins)
-                    .AllowAnyMethod()
-                    .AllowAnyHeader()
-                    .AllowCredentials();
-            });
-        });
     }
 
     /// <summary>Registers health checks dependencies in the service container.</summary>

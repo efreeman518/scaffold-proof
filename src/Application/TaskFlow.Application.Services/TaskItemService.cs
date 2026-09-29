@@ -55,7 +55,8 @@ internal class TaskItemService(
     #endregion
 
     /// <summary>
-    /// Keyset page of task items. Page size and cursor faults throw ArgumentException (mapped to 400)
+    /// Keyset page of task items. An out-of-range page size throws InvalidRequestException and a bad cursor
+    /// InvalidCursorException (both mapped to 400)
     /// rather than clamping or silently restarting at page one - a silent restart would hand the caller
     /// rows it already read and look like duplicated data.
     /// </summary>
@@ -63,8 +64,8 @@ internal class TaskItemService(
         TaskItemCursorSearchRequest request, CancellationToken ct = default)
     {
         if (!PageSizeLimits.IsValid(request.PageSize))
-            throw new ArgumentException(
-                string.Format(ErrorConstants.ERROR_PAGE_SIZE_RANGE, PageSizeLimits.Min, PageSizeLimits.Max), nameof(request));
+            throw new InvalidRequestException(
+                string.Format(ErrorConstants.ERROR_PAGE_SIZE_RANGE, PageSizeLimits.Min, PageSizeLimits.Max));
 
         request.Filter = tenantBoundaryValidator.EnforceTenantFilter(request.Filter, RequestTenantId, RequestRoles, "TaskItemSearch");
 

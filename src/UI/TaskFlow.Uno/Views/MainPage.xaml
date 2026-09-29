@@ -175,13 +175,13 @@
             </ut:ControlExtensions.Icon>
         </Button>
 
-        <controls:NotificationHost Items="{Binding Notifications.Items}"
+        <controls:NotificationHost Notifications="{Binding Notifications}"
                                    VerticalAlignment="Top"
                                    HorizontalAlignment="Right"
                                    MaxWidth="420"
                                    Margin="16"
                                    Visibility="{utu:Responsive Normal=Collapsed, Wide=Visible}" />
-        <controls:NotificationHost Items="{Binding Notifications.Items}"
+        <controls:NotificationHost Notifications="{Binding Notifications}"
                                    VerticalAlignment="Bottom"
                                    HorizontalAlignment="Stretch"
                                    Margin="8,0,8,72"

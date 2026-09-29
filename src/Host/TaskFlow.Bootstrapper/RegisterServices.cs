@@ -1,5 +1,6 @@
 using EF.BackgroundServices;
 using EF.BackgroundServices.InternalMessageBus;
+using EF.Host;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TaskFlow.Bootstrapper.StartupTasks;
@@ -80,14 +81,14 @@ public static partial class RegisterServices
 
     /// <summary>
     /// Startup tasks run after the host is built, not during DI registration, so they can
-    /// resolve scoped DbContexts and tolerate local emulator startup ordering.
+    /// resolve scoped DbContexts and tolerate local emulator startup ordering. EF.Host runs them in
+    /// registration order, each in its own scope.
     /// </summary>
-    private static void AddStartupTasks(IServiceCollection services)
-    {
-        services.AddScoped<IStartupTask, WarmupDependencies>();
-        // Provision containers and tables once here instead of on every write (see the class remarks).
-        services.AddScoped<IStartupTask, EnsureExternalResources>();
-    }
+    private static void AddStartupTasks(IServiceCollection services) =>
+        services
+            .AddStartupTask<WarmupDependencies>()
+            // Provision containers and tables once here instead of on every write (see the class remarks).
+            .AddStartupTask<EnsureExternalResources>();
 
     /// <summary>Registers support services dependencies in the service container.</summary>
     private static IServiceCollection AddSupportServices(this IServiceCollection services)

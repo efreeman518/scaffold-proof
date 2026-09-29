@@ -1,17 +1,10 @@
+using EF.AspNetCore.Correlation;
+using EF.AspNetCore.HealthChecks;
+using EF.Host;
+using EF.OpenTelemetry;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
-using Microsoft.Extensions.Logging;
-using Azure.Monitor.OpenTelemetry.AspNetCore;
-using EF.AspNetCore.Correlation;
-using Azure.Monitor.OpenTelemetry.Exporter;
-using OpenTelemetry;
-using OpenTelemetry.Logs;
-using OpenTelemetry.Metrics;
-using OpenTelemetry.Trace;
 using TaskFlow.Observability.Meters;
 using TaskFlow.Observability.Tracing;
 
@@ -29,9 +22,7 @@ public static class Extensions
     private const string RabbitMqMeterName = "EF.Messaging.RabbitMq";
 
     /// <summary>Registers service defaults dependencies in the service container.</summary>
-    public static IHostApplicationBuilder AddServiceDefaults(
-        this IHostApplicationBuilder builder,
-        bool addHeaderPropagation = true)
+    public static IHostApplicationBuilder AddServiceDefaults(this IHostApplicationBuilder builder)
     {
         builder.ConfigureOpenTelemetry();
         builder.AddDefaultHealthChecks();
@@ -39,13 +30,11 @@ public static class Extensions
 
         builder.Services.AddServiceDiscovery();
         // Outbound calls carry the inbound correlation id (HttpContext.TraceIdentifier, set by UseCorrelationId);
-        // outside a request the handler sends nothing.
-        if (addHeaderPropagation)
-            builder.Services.AddCorrelationId();
+        // outside a request (message consumers, jobs, a Blazor circuit) the handler sends nothing and never throws.
+        builder.Services.AddCorrelationId();
         builder.Services.ConfigureHttpClientDefaults(http =>
         {
-            if (addHeaderPropagation)
-                http.AddCorrelationIdPropagation();
+            http.AddCorrelationIdPropagation();
             // D-063: the standard handler retries every method by default, so a 5xx or timeout on a POST would
             // repeat a non-idempotent write. Safe methods keep their retries.
             http.AddStandardResilienceHandler(o => o.Retry.DisableForUnsafeHttpMethods());
@@ -55,158 +44,37 @@ public static class Extensions
         return builder;
     }
 
-    /// <summary>Configures open telemetry behavior for this component.</summary>
-    public static IHostApplicationBuilder ConfigureOpenTelemetry(this IHostApplicationBuilder builder)
-    {
-        var metricsEnabled = builder.Configuration.GetValue("OpenTelemetry:MetricsEnabled", true);
-        var useOtlpExporter = !string.IsNullOrWhiteSpace(
-            builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]);
-        var azureMonitorConnectionString =
-            builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"];
-        var useAzureMonitor = !string.IsNullOrWhiteSpace(azureMonitorConnectionString);
-
-        // D-065: head sampling ratio. Unset keeps each exporter's default: always-on for OTLP, the distro's
-        // rate-limited sampling for Azure Monitor. An out-of-range value fails startup instead of silently
-        // exporting everything or nothing.
-        var sampleRatio = builder.Configuration.GetValue<double?>("OpenTelemetry:Tracing:SampleRatio");
-        if (sampleRatio is { } configuredRatio && !(configuredRatio >= 0 && configuredRatio <= 1))
+    /// <summary>
+    /// Logs, traces and metrics through <c>EF.OpenTelemetry</c> (section <c>OpenTelemetry</c>: <c>MetricsEnabled</c>,
+    /// <c>Tracing:SampleRatio</c> (D-065), <c>SuppressAspNetCoreInstrumentation</c>, which Functions sets because its
+    /// host already reports each invocation). TaskFlow's own meters and sources are named once here rather than per
+    /// host (D-053): a meter or source added to a shared library is then exported by every host that uses it.
+    /// </summary>
+    public static IHostApplicationBuilder ConfigureOpenTelemetry(this IHostApplicationBuilder builder) =>
+        builder.AddEfOpenTelemetry(o =>
         {
-            throw new InvalidOperationException(
-                $"OpenTelemetry:Tracing:SampleRatio must be between 0 and 1; got {configuredRatio}.");
-        }
-
-        // The Azure Functions host process already emits request telemetry for each invocation. The Azure
-        // Monitor distro always adds ASP.NET Core instrumentation (it cannot be switched off), so a worker
-        // running it would report every HTTP-triggered invocation twice with the same OperationId. Functions
-        // sets this flag; the worker then skips the distro and exports its own logs, traces and metrics through
-        // the per-signal Azure Monitor exporters, with no ASP.NET Core instrumentation.
-        var suppressAspNetCoreInstrumentation = string.Equals(
-            builder.Configuration["TASKFLOW_SUPPRESS_ASPNETCORE_INSTRUMENTATION"],
-            "true",
-            StringComparison.OrdinalIgnoreCase);
-
-        // The distro owns all three signals only when metrics are on and ASP.NET Core instrumentation is
-        // wanted; otherwise each enabled signal gets its own exporter, so disabled metrics create no
-        // MeterProvider and suppressed instrumentation is not re-added behind the flag's back.
-        var useAzureMonitorDistro = useAzureMonitor && metricsEnabled && !suppressAspNetCoreInstrumentation;
-        var useAzureMonitorSignalExporters = useAzureMonitor && !useAzureMonitorDistro;
-
-        builder.Logging.AddOpenTelemetry(logging =>
-        {
-            logging.IncludeFormattedMessage = true;
-            logging.IncludeScopes = true;
-
-            if (useOtlpExporter)
-            {
-                logging.AddOtlpExporter();
-            }
-
-            if (useAzureMonitorSignalExporters)
-            {
-                logging.AddAzureMonitorLogExporter(options =>
-                    options.ConnectionString = azureMonitorConnectionString);
-            }
-        });
-
-        var openTelemetry = builder.Services.AddOpenTelemetry();
-
-        if (metricsEnabled)
-        {
-            openTelemetry.WithMetrics(metrics =>
-            {
-                metrics.AddHttpClientInstrumentation()
-                    .AddRuntimeInstrumentation();
-
-                // TaskFlow's own instruments, named once here rather than per host: a meter added to a
-                // shared library is then exported by every host that uses it, instead of only the host
-                // whose Program.cs happened to be updated.
-                metrics.AddMeter(
-                    SchedulerJobMeter.MeterName,
-                    CacheMeter.MeterName,
-                    RateLimitingMeter.MeterName,
-                    StreamingMeter.MeterName,
-                    MessagingMetrics.MeterName,
-                    RabbitMqMeterName);
-
-                if (!suppressAspNetCoreInstrumentation)
-                {
-                    metrics.AddAspNetCoreInstrumentation();
-                }
-
-                if (useOtlpExporter)
-                {
-                    metrics.AddOtlpExporter();
-                }
-
-                if (useAzureMonitorSignalExporters)
-                {
-                    metrics.AddAzureMonitorMetricExporter(options =>
-                        options.ConnectionString = azureMonitorConnectionString);
-                }
-            });
-        }
-
-        openTelemetry.WithTracing(tracing =>
-        {
-            tracing.AddHttpClientInstrumentation();
-
-            // Parent-based so a sampled caller's trace stays whole across hosts. The Azure Monitor distro
-            // installs its own sampler, which is configured through its options below instead.
-            if (sampleRatio is { } ratio)
-            {
-                tracing.SetSampler(new ParentBasedSampler(new TraceIdRatioBasedSampler(ratio)));
-            }
-
-            // D-053: TaskFlow's own sources, named once here for the same reason the meters are - a
-            // source added inside a shared library is only exported by hosts that remembered its name.
-            tracing.AddSource(
+            o.MeterNames.AddRange([
+                SchedulerJobMeter.MeterName,
+                CacheMeter.MeterName,
+                RateLimitingMeter.MeterName,
+                StreamingMeter.MeterName,
+                MessagingMetrics.MeterName,
+                RabbitMqMeterName]);
+            o.ActivitySourceNames.AddRange([
                 TaskFlowActivitySources.MessagingName,
-                TaskFlowActivitySources.SchedulerName);
-
-            if (!suppressAspNetCoreInstrumentation)
-            {
-                tracing.AddAspNetCoreInstrumentation();
-            }
-
-            if (useOtlpExporter)
-            {
-                tracing.AddOtlpExporter();
-            }
-
-            if (useAzureMonitorSignalExporters)
-            {
-                tracing.AddAzureMonitorTraceExporter(options =>
-                    options.ConnectionString = azureMonitorConnectionString);
-            }
+                TaskFlowActivitySources.SchedulerName]);
         });
 
-        if (useAzureMonitorDistro)
-        {
-            builder.Services.AddOpenTelemetry().UseAzureMonitor(options =>
-            {
-                if (sampleRatio is { } ratio)
-                {
-                    // TracesPerSecond takes precedence over SamplingRatio when both are set, so clear it.
-                    options.SamplingRatio = (float)ratio;
-                    options.TracesPerSecond = null;
-                }
-            });
-        }
-
-        return builder;
-    }
-
-    /// <summary>Registers default health checks dependencies in the service container.</summary>
+    /// <summary>Registers the always-healthy <c>self</c> liveness check (tag <c>live</c>).</summary>
     public static IHostApplicationBuilder AddDefaultHealthChecks(this IHostApplicationBuilder builder)
     {
-        builder.Services.AddHealthChecks()
-            .AddCheck("self", () => HealthCheckResult.Healthy(), ["live"]);
+        builder.Services.AddHealthChecks().AddSelfCheck();
 
         return builder;
     }
 
     /// <summary>
-    /// Maps the D-049 probe contract, identical on every host:
+    /// Maps the D-049 probe contract, identical on every host, anonymous and exempt from rate limiting:
     /// <list type="bullet">
     /// <item><c>/healthz/live</c> - tag <c>live</c> only (<c>self</c>). A liveness failure means restart the
     /// process, so it must never depend on anything a restart cannot fix.</item>
@@ -218,23 +86,7 @@ public static class Extensions
     /// </summary>
     public static WebApplication MapDefaultEndpoints(this WebApplication app)
     {
-        app.MapHealthChecks("/healthz", new HealthCheckOptions
-        {
-            Predicate = _ => true
-        })
-        .AllowAnonymous();
-
-        app.MapHealthChecks("/healthz/live", new HealthCheckOptions
-        {
-            Predicate = r => r.Tags.Contains("live")
-        })
-        .AllowAnonymous();
-
-        app.MapHealthChecks("/healthz/ready", new HealthCheckOptions
-        {
-            Predicate = r => r.Tags.Contains("ready")
-        })
-        .AllowAnonymous();
+        app.MapEfHealthEndpoints();
 
         return app;
     }

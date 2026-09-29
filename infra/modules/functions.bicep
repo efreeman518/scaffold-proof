@@ -124,7 +124,7 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         }
         // The Functions host process emits request telemetry itself; suppress the worker's ASP.NET Core
         // instrumentation so requests are not double-reported by the Azure Monitor distro in ServiceDefaults.
-        { name: 'TASKFLOW_SUPPRESS_ASPNETCORE_INSTRUMENTATION', value: 'true' }
+        { name: 'OpenTelemetry__SuppressAspNetCoreInstrumentation', value: 'true' }
       ]
       minTlsVersion: '1.2'
     }

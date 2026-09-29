@@ -1,3 +1,4 @@
+using EF.UI.Client.Http;
 using System.Text.Json.Serialization;
 
 // Hand-authored client, not Refit: referencing the shared TaskFlow.Application.Models DTOs (or the
@@ -333,7 +334,7 @@ public class TaskItemByIdRequestBuilder
     /// <summary>Sends a PUT request. ifMatch is the expected Version (or "*" to overwrite unconditionally).</summary>
     public async Task<TaskItemDto?> PutAsync(TaskItemDto dto, string ifMatch, CancellationToken cancellationToken = default)
     {
-        var response = await TaskFlowApiJson.PutAsync(_http, $"/api/v1/task-items/{_id}", new DefaultRequest<TaskItemDto> { Item = dto }, ifMatch, cancellationToken);
+        var response = await _http.PutAsJsonAsync($"/api/v1/task-items/{_id}", new DefaultRequest<TaskItemDto> { Item = dto }, TaskFlowApiJson.TypeInfo<DefaultRequest<TaskItemDto>>(), EntityTags.Parse(ifMatch), cancellationToken);
         response.EnsureSuccessStatusCode();
         var wrapper = await TaskFlowApiJson.ReadAsync<DefaultResponse<TaskItemDto>>(response.Content, cancellationToken);
         return wrapper?.Item;
@@ -342,7 +343,7 @@ public class TaskItemByIdRequestBuilder
     /// <summary>Deletes requested data. ifMatch is the expected Version (or "*" to overwrite unconditionally).</summary>
     public async Task DeleteAsync(string ifMatch, CancellationToken cancellationToken = default)
     {
-        var response = await TaskFlowApiJson.DeleteAsync(_http, $"/api/v1/task-items/{_id}", ifMatch, cancellationToken);
+        var response = await _http.DeleteAsync($"/api/v1/task-items/{_id}", EntityTags.Parse(ifMatch), cancellationToken);
         response.EnsureSuccessStatusCode();
     }
 }
@@ -370,7 +371,7 @@ public class TaskItemCommentsRequestBuilder
     /// <summary>Removes a Comment from the TaskItem. ifMatch is the root's expected Version.</summary>
     public async Task DeleteAsync(Guid commentId, string ifMatch, CancellationToken cancellationToken = default)
     {
-        var response = await TaskFlowApiJson.DeleteAsync(_http, $"/api/v1/task-items/{_taskId}/comments/{commentId}", ifMatch, cancellationToken);
+        var response = await _http.DeleteAsync($"/api/v1/task-items/{_taskId}/comments/{commentId}", EntityTags.Parse(ifMatch), cancellationToken);
         response.EnsureSuccessStatusCode();
     }
 }
@@ -395,7 +396,7 @@ public class TaskItemChecklistItemsRequestBuilder
     /// <summary>Updates a ChecklistItem on the TaskItem. ifMatch is the root's expected Version.</summary>
     public async Task<ChecklistItemDto?> PutAsync(Guid checklistItemId, ChecklistItemDto dto, string ifMatch, CancellationToken cancellationToken = default)
     {
-        var response = await TaskFlowApiJson.PutAsync(_http, $"/api/v1/task-items/{_taskId}/checklist-items/{checklistItemId}", new DefaultRequest<ChecklistItemDto> { Item = dto }, ifMatch, cancellationToken);
+        var response = await _http.PutAsJsonAsync($"/api/v1/task-items/{_taskId}/checklist-items/{checklistItemId}", new DefaultRequest<ChecklistItemDto> { Item = dto }, TaskFlowApiJson.TypeInfo<DefaultRequest<ChecklistItemDto>>(), EntityTags.Parse(ifMatch), cancellationToken);
         response.EnsureSuccessStatusCode();
         var wrapper = await TaskFlowApiJson.ReadAsync<DefaultResponse<ChecklistItemDto>>(response.Content, cancellationToken);
         return wrapper?.Item;
@@ -404,7 +405,7 @@ public class TaskItemChecklistItemsRequestBuilder
     /// <summary>Removes a ChecklistItem from the TaskItem. ifMatch is the root's expected Version.</summary>
     public async Task DeleteAsync(Guid checklistItemId, string ifMatch, CancellationToken cancellationToken = default)
     {
-        var response = await TaskFlowApiJson.DeleteAsync(_http, $"/api/v1/task-items/{_taskId}/checklist-items/{checklistItemId}", ifMatch, cancellationToken);
+        var response = await _http.DeleteAsync($"/api/v1/task-items/{_taskId}/checklist-items/{checklistItemId}", EntityTags.Parse(ifMatch), cancellationToken);
         response.EnsureSuccessStatusCode();
     }
 }
@@ -427,7 +428,7 @@ public class TaskItemTagsRequestBuilder
     /// <summary>Removes a Tag association from the TaskItem. ifMatch is the root's expected Version.</summary>
     public async Task DeleteAsync(Guid tagId, string ifMatch, CancellationToken cancellationToken = default)
     {
-        var response = await TaskFlowApiJson.DeleteAsync(_http, $"/api/v1/task-items/{_taskId}/tags/{tagId}", ifMatch, cancellationToken);
+        var response = await _http.DeleteAsync($"/api/v1/task-items/{_taskId}/tags/{tagId}", EntityTags.Parse(ifMatch), cancellationToken);
         response.EnsureSuccessStatusCode();
     }
 }
@@ -488,7 +489,7 @@ public class CategoryByIdRequestBuilder
     /// <summary>Sends a PUT request. ifMatch is the expected Version (or "*" to overwrite unconditionally).</summary>
     public async Task<CategoryDto?> PutAsync(CategoryDto dto, string ifMatch, CancellationToken cancellationToken = default)
     {
-        var response = await TaskFlowApiJson.PutAsync(_http, $"/api/v1/categories/{_id}", new DefaultRequest<CategoryDto> { Item = dto }, ifMatch, cancellationToken);
+        var response = await _http.PutAsJsonAsync($"/api/v1/categories/{_id}", new DefaultRequest<CategoryDto> { Item = dto }, TaskFlowApiJson.TypeInfo<DefaultRequest<CategoryDto>>(), EntityTags.Parse(ifMatch), cancellationToken);
         response.EnsureSuccessStatusCode();
         var wrapper = await TaskFlowApiJson.ReadAsync<DefaultResponse<CategoryDto>>(response.Content, cancellationToken);
         return wrapper?.Item;
@@ -497,7 +498,7 @@ public class CategoryByIdRequestBuilder
     /// <summary>Deletes requested data. ifMatch is the expected Version (or "*" to overwrite unconditionally).</summary>
     public async Task DeleteAsync(string ifMatch, CancellationToken cancellationToken = default)
     {
-        var response = await TaskFlowApiJson.DeleteAsync(_http, $"/api/v1/categories/{_id}", ifMatch, cancellationToken);
+        var response = await _http.DeleteAsync($"/api/v1/categories/{_id}", EntityTags.Parse(ifMatch), cancellationToken);
         response.EnsureSuccessStatusCode();
     }
 }
@@ -558,7 +559,7 @@ public class TagByIdRequestBuilder
     /// <summary>Sends a PUT request. ifMatch is the expected Version (or "*" to overwrite unconditionally).</summary>
     public async Task<TagDto?> PutAsync(TagDto dto, string ifMatch, CancellationToken cancellationToken = default)
     {
-        var response = await TaskFlowApiJson.PutAsync(_http, $"/api/v1/tags/{_id}", new DefaultRequest<TagDto> { Item = dto }, ifMatch, cancellationToken);
+        var response = await _http.PutAsJsonAsync($"/api/v1/tags/{_id}", new DefaultRequest<TagDto> { Item = dto }, TaskFlowApiJson.TypeInfo<DefaultRequest<TagDto>>(), EntityTags.Parse(ifMatch), cancellationToken);
         response.EnsureSuccessStatusCode();
         var wrapper = await TaskFlowApiJson.ReadAsync<DefaultResponse<TagDto>>(response.Content, cancellationToken);
         return wrapper?.Item;
@@ -567,7 +568,7 @@ public class TagByIdRequestBuilder
     /// <summary>Deletes requested data. ifMatch is the expected Version (or "*" to overwrite unconditionally).</summary>
     public async Task DeleteAsync(string ifMatch, CancellationToken cancellationToken = default)
     {
-        var response = await TaskFlowApiJson.DeleteAsync(_http, $"/api/v1/tags/{_id}", ifMatch, cancellationToken);
+        var response = await _http.DeleteAsync($"/api/v1/tags/{_id}", EntityTags.Parse(ifMatch), cancellationToken);
         response.EnsureSuccessStatusCode();
     }
 }
@@ -628,7 +629,7 @@ public class AttachmentByIdRequestBuilder
     /// <summary>Deletes requested data. ifMatch is the expected Version (or "*" to overwrite unconditionally).</summary>
     public async Task DeleteAsync(string ifMatch, CancellationToken cancellationToken = default)
     {
-        var response = await TaskFlowApiJson.DeleteAsync(_http, $"/api/v1/attachments/{_id}", ifMatch, cancellationToken);
+        var response = await _http.DeleteAsync($"/api/v1/attachments/{_id}", EntityTags.Parse(ifMatch), cancellationToken);
         response.EnsureSuccessStatusCode();
     }
 }

@@ -16,9 +16,7 @@
   <ItemGroup>
     <PackageReference Include="Azure.Data.Tables" />
     <!-- D-043: Data Protection key-ring persistence, lifted here from TaskFlow.Api so Gateway/Scheduler can share it. -->
-    <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" />
-    <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Keys" />
-    <PackageReference Include="Microsoft.AspNetCore.DataProtection.StackExchangeRedis" />
+    <PackageReference Include="EF.AspNetCore.DataProtection" />
     <PackageReference Include="EF.Host" />
     <PackageReference Include="EF.Common" />
     <!-- EF.AspNetCore.HealthChecks.MemoryHealthCheck; this project already references Microsoft.AspNetCore.App. -->
@@ -45,8 +43,7 @@
     <PackageReference Include="EF.FlowEngine.Clients.ServiceBus" />
     <PackageReference Include="EF.FlowEngine.AdminApi" />
     <PackageReference Include="Aspire.Azure.AI.Inference" />
-    <!-- D-042: Azure App Configuration + Microsoft.FeatureManagement, gated on AppConfig:Endpoint. -->
-    <PackageReference Include="Microsoft.Azure.AppConfiguration.AspNetCore" />
+    <!-- D-042: Microsoft.FeatureManagement; Azure App Configuration comes from EF.Host. -->
     <PackageReference Include="Microsoft.FeatureManagement.AspNetCore" />
     <PackageReference Include="EF.AI" />
     <PackageReference Include="Microsoft.Extensions.AI" />

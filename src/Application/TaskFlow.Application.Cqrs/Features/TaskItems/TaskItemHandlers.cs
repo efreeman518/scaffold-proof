@@ -37,8 +37,8 @@ internal sealed class SearchTaskItemsHandler(
         // or silently reset to page one - a reset would re-serve rows the caller already read. The cursor
         // half is enforced by the repository, which owns the codec (ERROR_CURSOR_INVALID).
         if (!PageSizeLimits.IsValid(request.PageSize))
-            throw new ArgumentException(
-                string.Format(ErrorConstants.ERROR_PAGE_SIZE_RANGE, PageSizeLimits.Min, PageSizeLimits.Max), nameof(query));
+            throw new InvalidRequestException(
+                string.Format(ErrorConstants.ERROR_PAGE_SIZE_RANGE, PageSizeLimits.Min, PageSizeLimits.Max));
 
         request.Filter = tenantBoundaryValidator.EnforceTenantFilter(request.Filter, requestContext.TenantId, requestContext.Roles, "TaskItemSearch");
         var tenantId = request.Filter?.TenantId ?? requestContext.TenantId ?? Guid.Empty;

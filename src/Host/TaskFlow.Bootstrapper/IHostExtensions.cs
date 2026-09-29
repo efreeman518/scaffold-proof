@@ -1,4 +1,5 @@
 using EF.BackgroundServices.InternalMessageBus;
+using EF.Host;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using TaskFlow.Application.MessageHandlers;
@@ -19,15 +20,12 @@ public static class IHostExtensions
         host.Services.GetRequiredService<IInternalMessageBus>().AutoRegisterHandlers(typeof(AuditHandler).Assembly);
 
     /// <summary>
-    /// Registers message handlers before running startup tasks so migration, warmup, and
+    /// Registers message handlers before running the EF.Host startup tasks so migration, warmup, and
     /// later request processing share the same internal event pipeline.
     /// </summary>
-    public static async Task RunStartupTasks(this IHost host)
+    public static async Task RunStartupTasks(this IHost host, CancellationToken cancellationToken = default)
     {
         host.AutoRegisterMessageHandlers();
-
-        using var scope = host.Services.CreateScope();
-        foreach (var task in scope.ServiceProvider.GetServices<IStartupTask>())
-            await task.ExecuteAsync();
+        await host.RunStartupTasksAsync(cancellationToken);
     }
 }

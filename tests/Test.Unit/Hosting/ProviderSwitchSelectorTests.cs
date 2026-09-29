@@ -1,3 +1,4 @@
+using EF.AspNetCore.DataProtection;
 using Test.Support;
 using EF.Audit.Data;
 using EF.Audit.Contracts;

@@ -68,7 +68,7 @@ namespace TaskFlow.ApiClient
 
         /// <summary>Update an existing Category</summary>
         /// <param name="id">id parameter</param>
-        /// <param name="if_Match">Aggregate version from the resource's ETag, or * to overwrite unconditionally.</param>
+        /// <param name="if_Match">Entity version from the resource's ETag, or * to overwrite unconditionally.</param>
         /// <param name="body">body parameter</param>
         /// <param name="cancellationToken">The cancellation token to cancel the request.</param>
         /// <returns>OK</returns>
@@ -103,7 +103,7 @@ namespace TaskFlow.ApiClient
 
         /// <summary>Delete a Category</summary>
         /// <param name="id">id parameter</param>
-        /// <param name="if_Match">Aggregate version from the resource's ETag, or * to overwrite unconditionally.</param>
+        /// <param name="if_Match">Entity version from the resource's ETag, or * to overwrite unconditionally.</param>
         /// <param name="cancellationToken">The cancellation token to cancel the request.</param>
         /// <returns>A <see cref="Task"/> that completes when the request is finished.</returns>
         /// <exception cref="ApiException">
@@ -201,7 +201,7 @@ namespace TaskFlow.ApiClient
 
         /// <summary>Update an existing Tag</summary>
         /// <param name="id">id parameter</param>
-        /// <param name="if_Match">Aggregate version from the resource's ETag, or * to overwrite unconditionally.</param>
+        /// <param name="if_Match">Entity version from the resource's ETag, or * to overwrite unconditionally.</param>
         /// <param name="body">body parameter</param>
         /// <param name="cancellationToken">The cancellation token to cancel the request.</param>
         /// <returns>OK</returns>
@@ -236,7 +236,7 @@ namespace TaskFlow.ApiClient
 
         /// <summary>Delete a Tag</summary>
         /// <param name="id">id parameter</param>
-        /// <param name="if_Match">Aggregate version from the resource's ETag, or * to overwrite unconditionally.</param>
+        /// <param name="if_Match">Entity version from the resource's ETag, or * to overwrite unconditionally.</param>
         /// <param name="cancellationToken">The cancellation token to cancel the request.</param>
         /// <returns>A <see cref="Task"/> that completes when the request is finished.</returns>
         /// <exception cref="ApiException">
@@ -333,7 +333,7 @@ namespace TaskFlow.ApiClient
 
         /// <summary>Update an existing TaskItem</summary>
         /// <param name="id">id parameter</param>
-        /// <param name="if_Match">Aggregate version from the resource's ETag, or * to overwrite unconditionally.</param>
+        /// <param name="if_Match">Entity version from the resource's ETag, or * to overwrite unconditionally.</param>
         /// <param name="body">body parameter</param>
         /// <param name="cancellationToken">The cancellation token to cancel the request.</param>
         /// <returns>OK</returns>
@@ -368,7 +368,7 @@ namespace TaskFlow.ApiClient
 
         /// <summary>Partially update a TaskItem (JSON merge patch - omitted fields are unchanged)</summary>
         /// <param name="id">id parameter</param>
-        /// <param name="if_Match">Aggregate version from the resource's ETag, or * to overwrite unconditionally.</param>
+        /// <param name="if_Match">Entity version from the resource's ETag, or * to overwrite unconditionally.</param>
         /// <param name="body">body parameter</param>
         /// <param name="cancellationToken">The cancellation token to cancel the request.</param>
         /// <returns>OK</returns>
@@ -403,7 +403,7 @@ namespace TaskFlow.ApiClient
 
         /// <summary>Delete a TaskItem</summary>
         /// <param name="id">id parameter</param>
-        /// <param name="if_Match">Aggregate version from the resource's ETag, or * to overwrite unconditionally.</param>
+        /// <param name="if_Match">Entity version from the resource's ETag, or * to overwrite unconditionally.</param>
         /// <param name="cancellationToken">The cancellation token to cancel the request.</param>
         /// <returns>A <see cref="Task"/> that completes when the request is finished.</returns>
         /// <exception cref="ApiException">
@@ -489,7 +489,7 @@ namespace TaskFlow.ApiClient
         /// <summary>Update a Comment on a TaskItem</summary>
         /// <param name="id">id parameter</param>
         /// <param name="commentId">commentId parameter</param>
-        /// <param name="if_Match">Aggregate version from the resource's ETag, or * to overwrite unconditionally.</param>
+        /// <param name="if_Match">Entity version from the resource's ETag, or * to overwrite unconditionally.</param>
         /// <param name="body">body parameter</param>
         /// <param name="cancellationToken">The cancellation token to cancel the request.</param>
         /// <returns>OK</returns>
@@ -525,7 +525,7 @@ namespace TaskFlow.ApiClient
         /// <summary>Remove a Comment from a TaskItem</summary>
         /// <param name="id">id parameter</param>
         /// <param name="commentId">commentId parameter</param>
-        /// <param name="if_Match">Aggregate version from the resource's ETag, or * to overwrite unconditionally.</param>
+        /// <param name="if_Match">Entity version from the resource's ETag, or * to overwrite unconditionally.</param>
         /// <param name="cancellationToken">The cancellation token to cancel the request.</param>
         /// <returns>A <see cref="Task"/> that completes when the request is finished.</returns>
         /// <exception cref="ApiException">
@@ -586,7 +586,7 @@ namespace TaskFlow.ApiClient
         /// <summary>Update a ChecklistItem on a TaskItem</summary>
         /// <param name="id">id parameter</param>
         /// <param name="checklistItemId">checklistItemId parameter</param>
-        /// <param name="if_Match">Aggregate version from the resource's ETag, or * to overwrite unconditionally.</param>
+        /// <param name="if_Match">Entity version from the resource's ETag, or * to overwrite unconditionally.</param>
         /// <param name="body">body parameter</param>
         /// <param name="cancellationToken">The cancellation token to cancel the request.</param>
         /// <returns>OK</returns>
@@ -622,7 +622,7 @@ namespace TaskFlow.ApiClient
         /// <summary>Remove a ChecklistItem from a TaskItem</summary>
         /// <param name="id">id parameter</param>
         /// <param name="checklistItemId">checklistItemId parameter</param>
-        /// <param name="if_Match">Aggregate version from the resource's ETag, or * to overwrite unconditionally.</param>
+        /// <param name="if_Match">Entity version from the resource's ETag, or * to overwrite unconditionally.</param>
         /// <param name="cancellationToken">The cancellation token to cancel the request.</param>
         /// <returns>A <see cref="Task"/> that completes when the request is finished.</returns>
         /// <exception cref="ApiException">
@@ -679,7 +679,7 @@ namespace TaskFlow.ApiClient
         /// <summary>Remove a Tag association from a TaskItem</summary>
         /// <param name="id">id parameter</param>
         /// <param name="tagId">tagId parameter</param>
-        /// <param name="if_Match">Aggregate version from the resource's ETag, or * to overwrite unconditionally.</param>
+        /// <param name="if_Match">Entity version from the resource's ETag, or * to overwrite unconditionally.</param>
         /// <param name="cancellationToken">The cancellation token to cancel the request.</param>
         /// <returns>A <see cref="Task"/> that completes when the request is finished.</returns>
         /// <exception cref="ApiException">
@@ -752,7 +752,7 @@ namespace TaskFlow.ApiClient
 
         /// <summary>Update an existing Attachment</summary>
         /// <param name="id">id parameter</param>
-        /// <param name="if_Match">Aggregate version from the resource's ETag, or * to overwrite unconditionally.</param>
+        /// <param name="if_Match">Entity version from the resource's ETag, or * to overwrite unconditionally.</param>
         /// <param name="body">body parameter</param>
         /// <param name="cancellationToken">The cancellation token to cancel the request.</param>
         /// <returns>OK</returns>
@@ -787,7 +787,7 @@ namespace TaskFlow.ApiClient
 
         /// <summary>Delete an Attachment</summary>
         /// <param name="id">id parameter</param>
-        /// <param name="if_Match">Aggregate version from the resource's ETag, or * to overwrite unconditionally.</param>
+        /// <param name="if_Match">Entity version from the resource's ETag, or * to overwrite unconditionally.</param>
         /// <param name="cancellationToken">The cancellation token to cancel the request.</param>
         /// <returns>A <see cref="Task"/> that completes when the request is finished.</returns>
         /// <exception cref="ApiException">

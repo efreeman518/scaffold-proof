@@ -1,6 +1,7 @@
 using EF.Audit.AzureTable;
 using EF.Common.Contracts;
 using Azure.Storage.Blobs;
+using EF.Host;
 using EF.Storage.S3;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Azure;

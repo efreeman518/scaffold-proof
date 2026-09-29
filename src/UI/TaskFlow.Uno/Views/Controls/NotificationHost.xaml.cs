@@ -1,14 +1,13 @@
-using System.Collections.ObjectModel;
-using TaskFlow.Uno.Core.Business.Notifications;
+using EF.UI.Client.Notifications;
 
 namespace TaskFlow.Uno.Views.Controls;
 
-/// <summary>Hosts the notification host XAML view and initializes its Uno page or control.</summary>
+/// <summary>Shows the notification service's items and dismisses them through the service when the user closes one.</summary>
 public sealed partial class NotificationHost : UserControl
 {
-    public static readonly DependencyProperty ItemsProperty = DependencyProperty.Register(
-        nameof(Items),
-        typeof(ObservableCollection<Notification>),
+    public static readonly DependencyProperty NotificationsProperty = DependencyProperty.Register(
+        nameof(Notifications),
+        typeof(INotificationService),
         typeof(NotificationHost),
         new PropertyMetadata(null));
 
@@ -18,30 +17,21 @@ public sealed partial class NotificationHost : UserControl
         this.InitializeComponent();
     }
 
-    public ObservableCollection<Notification>? Items
+    /// <summary>The service whose read-only <see cref="INotificationService.Items"/> this control displays.</summary>
+    public INotificationService? Notifications
     {
-        get => (ObservableCollection<Notification>?)GetValue(ItemsProperty);
-        set => SetValue(ItemsProperty, value);
+        get => (INotificationService?)GetValue(NotificationsProperty);
+        set => SetValue(NotificationsProperty, value);
     }
 
     /// <summary>Handles info bar closed events for notification host.</summary>
     private void OnInfoBarClosed(InfoBar sender, InfoBarClosedEventArgs args)
     {
-        // Only react to user-initiated closes - programmatic dismiss via the
-        // notification service removes the item from Items directly, which
-        // would re-enter this handler with Reason=Programmatic otherwise.
+        // Only react to user-initiated closes - a programmatic dismiss by the notification service
+        // removes the item itself, which would re-enter this handler with Reason=Programmatic otherwise.
         if (args.Reason != InfoBarCloseReason.CloseButton) return;
 
-        if (sender.Tag is Guid id && Items is { } items)
-        {
-            for (var i = 0; i < items.Count; i++)
-            {
-                if (items[i].Id == id)
-                {
-                    items.RemoveAt(i);
-                    return;
-                }
-            }
-        }
+        if (sender.Tag is Guid id)
+            Notifications?.Dismiss(id);
     }
 }

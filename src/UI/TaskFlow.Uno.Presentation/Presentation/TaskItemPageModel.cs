@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.Messaging;
 using TaskFlow.Uno.Core.Business.Models;
-using TaskFlow.Uno.Core.Business.Notifications;
+using EF.UI.Client.Http;
+using System.Net;
 using TaskFlow.Uno.Core.Business.Services;
 
 namespace TaskFlow.Uno.Presentation.Presentation;
@@ -244,7 +245,7 @@ public partial record TaskItemPageModel
                 await Navigator.NavigateBackAsync(this, cancellation: CancellationToken.None);
             }
         }
-        catch (ProblemDetailsException ex) when (ex.StatusCode == 412)
+        catch (ProblemDetailsException ex) when (ex.StatusCode == HttpStatusCode.PreconditionFailed)
         {
             await ReloadTaskAsync(CancellationToken.None);
         }
@@ -261,7 +262,7 @@ public partial record TaskItemPageModel
             Messenger.Send(new TaskItemsChangedMessage(ResetToFirstPage: true));
             await Navigator.NavigateBackAsync(this, cancellation: CancellationToken.None);
         }
-        catch (ProblemDetailsException ex) when (ex.StatusCode == 412)
+        catch (ProblemDetailsException ex) when (ex.StatusCode == HttpStatusCode.PreconditionFailed)
         {
             await ReloadTaskAsync(CancellationToken.None);
         }
@@ -286,7 +287,7 @@ public partial record TaskItemPageModel
         {
             await TaskItemService.RemoveCommentAsync(taskId, commentId, comment.Version, ct);
         }
-        catch (ProblemDetailsException ex) when (ex.StatusCode == 412)
+        catch (ProblemDetailsException ex) when (ex.StatusCode == HttpStatusCode.PreconditionFailed)
         {
             // Fall through to the reload below - the comment already changed elsewhere.
         }
@@ -313,7 +314,7 @@ public partial record TaskItemPageModel
         {
             await TaskItemService.UpdateChecklistItemAsync(taskId, item with { IsCompleted = !item.IsCompleted }, item.Version, ct);
         }
-        catch (ProblemDetailsException ex) when (ex.StatusCode == 412)
+        catch (ProblemDetailsException ex) when (ex.StatusCode == HttpStatusCode.PreconditionFailed)
         {
             // Fall through to the reload below - the item already changed elsewhere.
         }
@@ -328,7 +329,7 @@ public partial record TaskItemPageModel
         {
             await TaskItemService.RemoveChecklistItemAsync(taskId, itemId, item.Version, ct);
         }
-        catch (ProblemDetailsException ex) when (ex.StatusCode == 412)
+        catch (ProblemDetailsException ex) when (ex.StatusCode == HttpStatusCode.PreconditionFailed)
         {
             // Fall through to the reload below - the item already changed elsewhere.
         }
