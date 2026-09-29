@@ -1,4 +1,5 @@
 ﻿using Azure.Identity;
+using EF.Common;
 using Azure.Search.Documents;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;

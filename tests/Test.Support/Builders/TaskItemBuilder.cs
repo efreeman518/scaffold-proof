@@ -1,3 +1,4 @@
+using EF.Domain.Contracts;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
 using TaskFlow.Domain.Shared.Enums;

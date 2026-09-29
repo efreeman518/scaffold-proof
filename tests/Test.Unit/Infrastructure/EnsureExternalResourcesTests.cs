@@ -62,7 +62,6 @@ public sealed class EnsureExternalResourcesTests
             new ConfigurationBuilder().Build(),
             new ProductionEnvironment(),
             Options.Create(new BlobStorageSettings()),
-            Options.Create(new AuditLogStorageSettings()),
             distributedLock,
             NullLogger<EnsureExternalResources>.Instance);
     }

@@ -7,7 +7,7 @@ using System.Net;
 using System.Net.Http.Json;
 using TaskFlow.Application.Models;
 using TaskFlow.Hosting;
-using TaskFlow.Infrastructure.Storage;
+using EF.Audit.AzureTable;
 
 namespace Test.Aspire;
 
@@ -85,7 +85,7 @@ public class FunctionAuditPipelineTests
                 ct);
 
             Assert.IsNotNull(auditEntity);
-            // AuditLogRepository.PartitionKey (TaskFlow.Infrastructure.Storage) writes "{tenantId}|{yyyyMMdd}",
+            // AzureTableAuditLogRepository.BuildPartitionKey (EF.Audit.AzureTable) writes "{tenantId}|{yyyyMMdd}",
             // not the bare tenant id - assert the prefix, not exact equality.
             StringAssert.StartsWith(auditEntity.PartitionKey, $"{FunctionFallbackTenantId}|");
             Assert.AreEqual(FunctionFallbackTenantId.ToString(), auditEntity.TenantId);
@@ -192,7 +192,7 @@ public class FunctionAuditPipelineTests
         HttpStatusCode lastRequestStatusCode,
         CancellationToken ct)
     {
-        // AuditLogRepository.PartitionKey (TaskFlow.Infrastructure.Storage) writes "{tenantId}|{yyyyMMdd}",
+        // AzureTableAuditLogRepository.BuildPartitionKey (EF.Audit.AzureTable) writes "{tenantId}|{yyyyMMdd}",
         // not the bare tenant id - retention deletes a whole expired day per tenant in one transaction.
         // Query the tenant's whole partition-key range (Azure Tables string-prefix technique: ge the
         // prefix, lt the prefix + the highest printable ASCII character) instead of an exact day key, so a

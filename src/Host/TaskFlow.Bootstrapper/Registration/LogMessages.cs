@@ -29,14 +29,6 @@ internal static partial class LogMessages
     [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 9, Level = LogLevel.Information, Message = "Provisioning lock {LockKey} acquired; provisioning external resources.")]
     public static partial void ProvisioningAcquired(this ILogger logger, string lockKey);
 
-    /// <summary>Logs that another replica holds the D-052 provisioning lock and this one is waiting.</summary>
-    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 10, Level = LogLevel.Information, Message = "Provisioning lock {LockKey} held elsewhere; waiting for the holder to finish.")]
-    public static partial void ProvisioningDeferred(this ILogger logger, string lockKey);
-
-    /// <summary>Logs that the previous holder released the provisioning lock and this replica now holds it.</summary>
-    [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 11, Level = LogLevel.Information, Message = "Provisioning lock {LockKey} released by its holder and acquired; re-running the idempotent provisioning.")]
-    public static partial void ProvisioningAcquiredAfterWait(this ILogger logger, string lockKey);
-
     /// <summary>Logs that the wait for another replica's provisioning ran out of budget.</summary>
     [LoggerMessage(EventId = LogEventIds.BootstrapperBase + 12, Level = LogLevel.Warning, Message = "Provisioning lock {LockKey} still held after {WaitSeconds}s; provisioning without the lock.")]
     public static partial void ProvisioningWaitTimedOut(this ILogger logger, string lockKey, int waitSeconds);

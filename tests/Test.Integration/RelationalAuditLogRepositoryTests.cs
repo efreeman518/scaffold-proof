@@ -1,3 +1,6 @@
+using Microsoft.Extensions.Options;
+using EF.Audit.Data;
+using EF.Audit.Contracts;
 using EF.Common.Contracts;
 using EF.BackgroundServices.InternalMessageBus;
 using EF.Data.Contracts;
@@ -11,7 +14,6 @@ using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
 using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Data;
-using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Infrastructure.Messaging.RabbitMq;
 using TaskFlow.Infrastructure.Repositories;
 using Test.Integration.Infrastructure;
@@ -22,10 +24,9 @@ namespace Test.Integration;
 
 /// <summary>
 /// D-039 relational audit sink against a real database, on whichever provider the lane selected
-/// (TASKFLOW_LANE). Mirrors <see cref="AuditLogRepositoryAzuriteTests"/> so the two arms are
-/// held to the same contract: the tenant-first key, the sentinel tenant for entries with no tenant, the
-/// round trip of audit metadata, and the retention sweep - here also proving the sweep really batches
-/// instead of issuing one unbounded DELETE.
+/// (TASKFLOW_LANE). Held to the audit contract: the tenant-first key, the sentinel tenant for entries with no tenant, the
+/// round trip of audit metadata, and the retention sweep, through the EF.Audit.Data repository over the app's
+/// own write context and migrated AuditLog table (the sweep's batching is the package's own test).
 /// Component tier: contexts directly against the standalone database Testcontainer.
 /// </summary>
 [TestClass]
@@ -34,8 +35,6 @@ namespace Test.Integration;
 public class RelationalAuditLogRepositoryTests
 {
     private const string SystemTenantId = "_system";
-    private const int RetentionRowCount = 250;
-    private const int RetentionBatchSize = 100;
 
     /// <summary>Inconclusive without a container runtime; fails when the database container failed to start.</summary>
     [TestInitialize]
@@ -148,7 +147,7 @@ public class RelationalAuditLogRepositoryTests
 
         await using (var db = DbContainerFixture.CreateTrxnContext(connString))
         {
-            await new RelationalAuditLogRepository(db, SystemTenantId).AppendAsync(entry, ct);
+            await NewRepository(db).AppendAsync(entry, ct);
         }
 
         await using (var verify = DbContainerFixture.CreateQueryContext(connString))
@@ -183,7 +182,7 @@ public class RelationalAuditLogRepositoryTests
 
         await using (var db = DbContainerFixture.CreateTrxnContext(connString))
         {
-            await new RelationalAuditLogRepository(db, SystemTenantId).AppendAsync(systemEntry, ct);
+            await NewRepository(db).AppendAsync(systemEntry, ct);
         }
 
         await using (var verify = DbContainerFixture.CreateQueryContext(connString))
@@ -194,7 +193,7 @@ public class RelationalAuditLogRepositoryTests
 
         await using (var db = DbContainerFixture.CreateTrxnContext(connString))
         {
-            var repository = new RelationalAuditLogRepository(db, SystemTenantId);
+            var repository = NewRepository(db);
 
             // Recorded now: outside a cutoff in the past and kept, inside a cutoff in the future and removed.
             Assert.AreEqual(0, await repository.PurgeOlderThanAsync(DateTimeOffset.UtcNow.AddDays(-1), ct));
@@ -207,35 +206,6 @@ public class RelationalAuditLogRepositoryTests
         }
     }
 
-    [TestMethod]
-    [Timeout(300000, CooperativeCancellation = true)]
-    public async Task PurgeOlderThan_WalksTheWindowInBatches_AndKeepsRowsInsideIt()
-    {
-        var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("auditpurge");
-        await MigrateAsync(connString, ct);
-
-        var cutoffUtc = DateTimeOffset.UtcNow.AddDays(-30);
-        await SeedAsync(connString, RetentionRowCount, cutoffUtc.AddDays(-1), ct);
-        // Rows inside the retention window that the sweep must not touch.
-        await SeedAsync(connString, 5, cutoffUtc.AddDays(1), ct);
-
-        await using (var db = DbContainerFixture.CreateTrxnContext(connString))
-        {
-            var repository = new RelationalAuditLogRepository(db, SystemTenantId, RetentionBatchSize);
-
-            // 250 expired rows at 100 per batch: three batches, the last one short, which is also the loop's
-            // stopping rule. A single unbounded DELETE would report the same total and prove nothing.
-            Assert.AreEqual(RetentionRowCount, await repository.PurgeOlderThanAsync(cutoffUtc, ct));
-        }
-
-        await using (var verify = DbContainerFixture.CreateQueryContext(connString))
-        {
-            Assert.AreEqual(5, await verify.AuditLog.CountAsync(ct), "rows inside the window survive");
-            Assert.AreEqual(0, await verify.AuditLog.CountAsync(e => e.RecordedUtc < cutoffUtc, ct));
-        }
-    }
-
     public TestContext TestContext { get; set; } = null!;
 
     private static async Task MigrateAsync(string connString, CancellationToken ct)
@@ -244,29 +214,7 @@ public class RelationalAuditLogRepositoryTests
         await db.Database.MigrateAsync(ct);
     }
 
-    /// <summary>
-    /// Seeds rows at a chosen <c>RecordedUtc</c>. The repository always stamps "now", so the retention
-    /// window can only be set up by writing the rows directly.
-    /// </summary>
-    private static async Task SeedAsync(string connString, int count, DateTimeOffset recordedUtc, CancellationToken ct)
-    {
-        await using var db = DbContainerFixture.CreateTrxnContext(connString);
-        for (var i = 0; i < count; i++)
-        {
-            db.AuditLog.Add(new AuditLogRecord
-            {
-                TenantId = SystemTenantId,
-                // Distinct timestamps, so the composite primary key cannot collide.
-                RecordedUtc = recordedUtc.AddMilliseconds(i),
-                Id = Guid.CreateVersion7(),
-                AuditId = "seed",
-                EntityType = "TaskItem",
-                EntityKey = i.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                Action = "Update",
-                Status = AuditStatus.Success.ToString()
-            });
-        }
-
-        await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: ct);
-    }
+    /// <summary>The package relational sink over the app write context and its migrated AuditLog table.</summary>
+    private static RelationalAuditLogRepository<TaskFlowDbContextTrxn> NewRepository(TaskFlowDbContextTrxn db) =>
+        new(db, Options.Create(new RelationalAuditLogSettings { Audit = new AuditSettings { SystemTenantId = SystemTenantId } }));
 }

@@ -83,7 +83,6 @@ public class ConventionTests : BaseTest
         "src/Application/TaskFlow.Application.MessageHandlers/Consumers/IntegrationEventConsumers.cs",
         "src/Application/TaskFlow.Application.MessageHandlers/WorkflowTriggerHandler.cs",
         "src/Application/TaskFlow.Application.Models/Reads/TaskItemSummaryDto.cs",
-        "src/Domain/TaskFlow.Domain.Model/Shared/TaskFlowEntityBase.cs",
         "src/Domain/TaskFlow.Domain.Shared/Ids/DomainIds.cs",
         "src/Host/Aspire/AppHost/LaneDefaults.cs",
         "src/Host/TaskFlow.Api/Auth/GatewayClaimsTransformation.cs",
@@ -113,7 +112,6 @@ public class ConventionTests : BaseTest
         "src/Infrastructure/TaskFlow.Infrastructure.Messaging.RabbitMq/RabbitMqConsumerHandlers.cs",
         "src/Infrastructure/TaskFlow.Infrastructure.Repositories/MongoDb/MongoTaskViewRepository.cs",
         "src/Infrastructure/TaskFlow.Infrastructure.Repositories/TaskFlowGenericRepositories.cs",
-        "src/Infrastructure/TaskFlow.Infrastructure.Repositories/TaskViewKeysetToken.cs",
         "src/Shared/TaskFlow.Hosting/HostingLane.cs",
         "src/UI/TaskFlow.Uno.Core/Client/TaskFlowApiClient.cs",
         "src/UI/TaskFlow.Uno.Presentation/Presentation/IFormGuard.cs"

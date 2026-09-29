@@ -1,8 +1,9 @@
+using TaskFlow.Application.Contracts;
+using EF.Data.Contracts;
 using EF.Common.Contracts;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using TaskFlow.Application.Contracts.Concurrency;
 
 namespace TaskFlow.Api.Middleware;
 
@@ -41,14 +42,15 @@ internal sealed class DefaultExceptionHandler(
         {
             // D-032: a stale If-Match and a lost update between load and save are the same failure to
             // the caller - 412, not the 409 this used to answer (which no client could act on).
-            ConcurrencyMismatchException
-                => (StatusCodes.Status412PreconditionFailed, "Precondition failed"),
-            // A throwing-policy save (ConcurrencyGuard.SaveAsync) raises PreconditionFailedException; a
+            // ConcurrencyGuard.Require and a throwing-policy save raise PreconditionFailedException; a
             // policy-free save still raises the raw DbUpdateConcurrencyException.
             PreconditionFailedException or DbUpdateConcurrencyException
                 => (StatusCodes.Status412PreconditionFailed, "Precondition failed"),
-            IdempotentCreateConflictException
+            ConflictException
                 => (StatusCodes.Status409Conflict, "Conflict"),
+            // D21: a tampered, foreign-tenant, other-sort-mode or stale-schema keyset cursor.
+            InvalidCursorException
+                => (StatusCodes.Status400BadRequest, "Bad request"),
             UnauthorizedAccessException
                 => (StatusCodes.Status403Forbidden, "Forbidden"),
             OperationCanceledException when HasTimeoutInChain(exception)
@@ -78,6 +80,7 @@ internal sealed class DefaultExceptionHandler(
             // Exception text never leaves the process for a server fault outside Development: SQL,
             // connection and internal messages are for the log, not an anonymous caller.
             Detail = environment.IsDevelopment() ? exception.ToString()
+                : exception is InvalidCursorException ? ErrorConstants.ERROR_CURSOR_INVALID
                 : statusCode < 500 ? exception.Message
                 : null,
             Instance = $"{httpContext.Request.Method} {httpContext.Request.Path}"

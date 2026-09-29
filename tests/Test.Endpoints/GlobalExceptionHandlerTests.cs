@@ -5,7 +5,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using TaskFlow.Api.Middleware;
-using TaskFlow.Application.Contracts.Concurrency;
+using TaskFlow.Infrastructure.Data.Provider;
 
 namespace Test.Endpoints;
 
@@ -110,7 +110,7 @@ public sealed class GlobalExceptionHandlerTests
     public async Task TryHandleAsync_AppThrownArgumentException_Returns400()
     {
         var context = NewContext();
-        var exception = Capture(() => UuidV7.TimestampOf(Guid.NewGuid()));
+        var exception = Capture(() => TaskFlowDbProviderSelector.MigrationsAssembly((TaskFlowDbProvider)99));
 
         await NewHandler().TryHandleAsync(context, exception, CancellationToken.None);
 

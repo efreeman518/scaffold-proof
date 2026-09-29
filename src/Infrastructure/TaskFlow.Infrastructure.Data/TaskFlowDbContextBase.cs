@@ -1,3 +1,4 @@
+using EF.Audit.Data;
 using EF.Data;
 using EF.Data.Encryption;
 using EF.Domain.Contracts;
@@ -5,7 +6,6 @@ using Microsoft.EntityFrameworkCore;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
 using TaskFlow.Infrastructure.Data.Configurations;
-using TaskFlow.Infrastructure.Data.Conventions;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Infrastructure.Data.ReadModel;
@@ -30,8 +30,7 @@ public abstract class TaskFlowDbContextBase(DbContextOptions options) : DbContex
         base.ConfigureConventions(configurationBuilder);
         configurationBuilder.RegisterDomainIdConversions(typeof(TenantId).Assembly);
         configurationBuilder.Properties<decimal>().HavePrecision(18, 4);
-        configurationBuilder.Properties<DateTimeOffset>().HaveConversion<UtcDateTimeOffsetConverter>();
-        configurationBuilder.Properties<DateTime>().HaveConversion<UtcDateTimeConverter>();
+        configurationBuilder.RegisterUtcTemporalConversions();
     }
 
     /// <summary>
@@ -46,8 +45,13 @@ public abstract class TaskFlowDbContextBase(DbContextOptions options) : DbContex
         // TaskItemConfiguration has no parameterless constructor (the assembly scan skips it): it binds the
         // secure-column converters to the process encryptor carried by the options (D-023).
         modelBuilder.ApplyConfiguration(new TaskItemConfiguration(this.GetColumnEncryptor()));
+        // D-039/D18: the relational audit sink is the EF.Audit.Data row, mapped into this context's schema so it
+        // shares the one migration set; the package repository writes it with an idempotent upsert.
+        modelBuilder.ApplyConfiguration(new AuditLogRecordConfiguration());
         ConfigurePostgreSqlModel(modelBuilder);
-        ConfigureTenantQueryFilters(modelBuilder);
+        // D-022: the named "Tenant" filter on every ITenantEntity<TenantId>; fails closed for a context with no
+        // tenant unless the scope is AllTenants (see RegisterServices.AllowsAllTenants).
+        ApplyTenantQueryFilters<TenantId>(modelBuilder);
         // D-021: the Version concurrency token on every IVersionedEntity; the operational, read-model and
         // audit tables are not versioned, so nothing else is tokenized.
         modelBuilder.RegisterVersionConcurrencyTokens();
@@ -79,20 +83,6 @@ public abstract class TaskFlowDbContextBase(DbContextOptions options) : DbContex
 
     /// <summary>Assembly-qualified-free provider name Npgsql reports through <see cref="DatabaseFacade.ProviderName"/>.</summary>
     private const string NpgsqlProviderName = "Npgsql.EntityFrameworkCore.PostgreSQL";
-
-    /// <summary>Configures tenant query filters behavior for this component.</summary>
-    private void ConfigureTenantQueryFilters(ModelBuilder modelBuilder)
-    {
-        var tenantEntityClrTypes = modelBuilder.Model.GetEntityTypes()
-            .Where(et => typeof(ITenantEntity<TenantId>).IsAssignableFrom(et.ClrType))
-            .Select(et => et.ClrType);
-
-        foreach (var clrType in tenantEntityClrTypes)
-        {
-            var filter = BuildTenantFilter(clrType);
-            modelBuilder.Entity(clrType).HasQueryFilter(filter);
-        }
-    }
 
     // DbSets
     public DbSet<Category> Categories { get; set; } = null!;

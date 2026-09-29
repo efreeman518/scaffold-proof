@@ -1,3 +1,5 @@
+using EF.Common;
+
 namespace TaskFlow.Application.Contracts;
 
 /// <summary>
@@ -32,8 +34,6 @@ public static class ApplicationStyleResolver
             raw = configuredStyle;
         }
 
-        return string.IsNullOrWhiteSpace(raw)
-            ? DefaultStyle
-            : StrictEnum.Parse<ApplicationStyle>(raw, "application style");
+        return StrictEnum.ParseOrDefault(raw, DefaultStyle, "application style");
     }
 }

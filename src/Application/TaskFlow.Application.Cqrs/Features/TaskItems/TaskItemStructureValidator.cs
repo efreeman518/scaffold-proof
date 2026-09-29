@@ -12,8 +12,8 @@ internal static class TaskItemStructureValidator
     /// <summary>Validates validate create rules and returns failures before work continues.</summary>
     public static Result<TaskItemDto> ValidateCreate(TaskItemDto dto)
     {
-        var common = StructureValidators.ValidateCreate(dto);
-        if (common.IsFailure) return Result<TaskItemDto>.Failure(common.ErrorMessage!);
+        var common = EntityDtoRules.ValidateCreate(dto);
+        if (common.IsFailure) return Result<TaskItemDto>.Failure(common.Errors);
 
         var errors = new List<DomainError>();
         if (string.IsNullOrWhiteSpace(dto.Title)) errors.Add(DomainError.Create("Title is required."));
@@ -25,8 +25,8 @@ internal static class TaskItemStructureValidator
     /// <summary>Validates validate update rules and returns failures before work continues.</summary>
     public static Result<TaskItemDto> ValidateUpdate(TaskItemDto dto)
     {
-        var common = StructureValidators.ValidateUpdate(dto);
-        if (common.IsFailure) return Result<TaskItemDto>.Failure(common.ErrorMessage!);
+        var common = EntityDtoRules.ValidateUpdate(dto);
+        if (common.IsFailure) return Result<TaskItemDto>.Failure(common.Errors);
 
         var errors = new List<DomainError>();
         if (string.IsNullOrWhiteSpace(dto.Title)) errors.Add(DomainError.Create("Title is required."));

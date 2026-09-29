@@ -1,3 +1,4 @@
+using EF.Tenancy;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Domain.Model;
@@ -33,7 +34,7 @@ public static class TaskItemChildLoader
         if (entity is null) return (null, null);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, requestTenantId, requestRoles, entity.TenantId.Value, operation, nameof(TaskItem), entity.Id.Value);
+            requestTenantId, requestRoles, entity.TenantId.Value, operation, nameof(TaskItem), entity.Id.Value);
         return boundary.IsFailure ? (null, boundary.ErrorMessage!) : (entity, null);
     }
 

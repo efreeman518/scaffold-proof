@@ -2,6 +2,7 @@
 using EF.Common.Contracts;
 using EF.Data.Contracts;
 using EF.Data.Encryption;
+using EF.Tenancy;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -40,7 +41,9 @@ public static partial class RegisterServices
     /// <summary>Registers shared application services dependencies in the service container.</summary>
     private static void AddSharedApplicationServices(IServiceCollection services)
     {
-        services.AddScoped<ITenantBoundaryValidator, TenantBoundaryValidator>();
+        // D14: EF.Tenancy's singleton boundary validator. Only GlobalAdmin passes the boundary; the no-request
+        // system identity carries that role too (AddRequestContext), so consumers and jobs act for any tenant.
+        services.AddTenancy(options => options.GlobalAdminRole = AppConstants.ROLE_GLOBAL_ADMIN);
 
         // Documented exception to the Service/CQRS split: the aggregate read model (summary, metadata,
         // export) is a pure projection with no domain behavior to duplicate, so both styles share it.

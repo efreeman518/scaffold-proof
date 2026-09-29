@@ -1,9 +1,9 @@
+using EF.Data.Contracts;
 using EF.Common.Contracts;
 using EF.Common.Exceptions;
 using EF.CQRS.Abstractions;
 using Grpc.Core;
 using Microsoft.EntityFrameworkCore;
-using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Cqrs.Features.TaskItems;
 using TaskFlow.Application.Models;
@@ -26,12 +26,12 @@ namespace TaskFlow.Api.Grpc;
 /// DefaultExceptionHandler's HTTP status choices one for one, so a client that understands the REST
 /// failure modes understands these:
 /// <list type="table">
-/// <item><term>ConcurrencyMismatchException / DbUpdateConcurrencyException</term><description>412 -> FailedPrecondition</description></item>
-/// <item><term>IdempotentCreateConflictException</term><description>409 -> Aborted</description></item>
+/// <item><term>PreconditionFailedException (classifier default) / DbUpdateConcurrencyException</term><description>412 -> FailedPrecondition</description></item>
+/// <item><term>ConflictException (classifier default)</term><description>409 -> Aborted</description></item>
 /// <item><term>UnauthorizedAccessException</term><description>403 -> PermissionDenied</description></item>
 /// <item><term>KeyNotFoundException</term><description>404 -> NotFound</description></item>
 /// <item><term>OperationCanceledException</term><description>499 -> Cancelled (DeadlineExceeded when the caller did not cancel)</description></item>
-/// <item><term>ArgumentException / FormatException / InvalidOperationException</term><description>400 -> InvalidArgument</description></item>
+/// <item><term>ArgumentException / InvalidCursorException / FormatException / InvalidOperationException</term><description>400 -> InvalidArgument</description></item>
 /// <item><term>anything else</term><description>500 -> Internal</description></item>
 /// </list>
 /// A missing task is not an exception on either transport: REST answers 404 from the Result's None
@@ -83,10 +83,9 @@ internal sealed class TaskFlowReadGrpcService(
     /// failure carries only its category name, so no exception text reaches the wire.
     /// </summary>
     internal static void MapExceptions(ExceptionClassifierOptions options) => options
-        .Map<ConcurrencyMismatchException>(ExceptionCategory.PreconditionFailed)
         .Map<DbUpdateConcurrencyException>(ExceptionCategory.PreconditionFailed)
-        .Map<IdempotentCreateConflictException>(ExceptionCategory.Conflict)
         .Map<ArgumentException>(ExceptionCategory.Validation)
+        .Map<InvalidCursorException>(ExceptionCategory.Validation)
         .Map<FormatException>(ExceptionCategory.Validation)
         .Map<InvalidOperationException>(ExceptionCategory.Validation);
 

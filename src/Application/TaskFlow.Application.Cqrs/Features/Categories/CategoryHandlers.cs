@@ -1,4 +1,7 @@
 ﻿using EF.Cache;
+using EF.Tenancy;
+using EF.Domain.Contracts;
+using EF.Data.Contracts;
 using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using Microsoft.Extensions.Logging;
@@ -16,23 +19,22 @@ namespace TaskFlow.Application.Cqrs.Features.Categories;
 
 /// <summary>Handles search categories work by coordinating validation, tenant boundaries, persistence, and response mapping.</summary>
 internal sealed class SearchCategoriesHandler(
-    ILogger<SearchCategoriesHandler> logger,
     IRequestContext<string, Guid?> requestContext,
-    ICategoryRepositoryQuery repoQuery)
+    ICategoryRepositoryQuery repoQuery,
+    ITenantBoundaryValidator tenantBoundaryValidator)
     : IRequestHandler<SearchCategoriesQuery, PagedResponse<CategoryDto>>
 {
     /// <summary>Handles search categories requests and returns the application result.</summary>
     public async Task<PagedResponse<CategoryDto>> HandleAsync(SearchCategoriesQuery query, CancellationToken ct = default)
     {
         var request = query.Request;
-        HandlerHelpers.EnforceTenantFilter(request, requestContext.TenantId, requestContext.Roles, logger, "CategorySearch");
+        request.Filter = tenantBoundaryValidator.EnforceTenantFilter(request.Filter, requestContext.TenantId, requestContext.Roles, "CategorySearch");
         return await repoQuery.SearchCategoriesAsync(request, query.IncludeTotal, ct);
     }
 }
 
 /// <summary>Handles get category by ID work by coordinating validation, tenant boundaries, persistence, and response mapping.</summary>
 internal sealed class GetCategoryByIdHandler(
-    ILogger<GetCategoryByIdHandler> logger,
     IRequestContext<string, Guid?> requestContext,
     ICategoryRepositoryQuery repoQuery,
     ITenantBoundaryValidator tenantBoundaryValidator)
@@ -45,7 +47,7 @@ internal sealed class GetCategoryByIdHandler(
         if (entity is null) return Result<DefaultResponse<CategoryDto>>.None();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
+            requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "Category:Get", nameof(Category), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(boundary.ErrorMessage!);
 
@@ -73,7 +75,7 @@ internal sealed class CreateCategoryHandler(
         if (validation.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(validation.Errors);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, requestContext.TenantId, requestContext.Roles, dto.TenantId,
+            requestContext.TenantId, requestContext.Roles, dto.TenantId,
             "Category:Create", nameof(Category));
         if (boundary.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(boundary.ErrorMessage!);
 
@@ -140,14 +142,14 @@ internal sealed class UpdateCategoryHandler(
         }
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
+            requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "Category:Update", nameof(Category), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(boundary.ErrorMessage!);
 
         ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(Category), entity.Id.Value);
 
         var tenantChangeCheck = tenantBoundaryValidator.PreventTenantChange(
-            logger, entity.TenantId.Value, dto.TenantId, nameof(Category), entity.Id.Value);
+            entity.TenantId.Value, dto.TenantId, nameof(Category), entity.Id.Value);
         if (tenantChangeCheck.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(tenantChangeCheck.ErrorMessage!);
 
         var updateResult = entity.Update(
@@ -179,7 +181,7 @@ internal sealed class DeleteCategoryHandler(
         if (entity is null) return Result.Success();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
+            requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "Category:Delete", nameof(Category), entity.Id.Value);
         if (boundary.IsFailure) return Result.Failure(boundary.ErrorMessage!);
 

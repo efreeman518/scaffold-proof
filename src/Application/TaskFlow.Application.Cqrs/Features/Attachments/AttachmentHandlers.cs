@@ -1,3 +1,6 @@
+using EF.Tenancy;
+using EF.Domain.Contracts;
+using EF.Data.Contracts;
 using EF.Cache;
 using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
@@ -13,29 +16,27 @@ using TaskFlow.Application.Mappers;
 using TaskFlow.Application.Models;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
-using UuidV7 = TaskFlow.Application.Contracts.Concurrency.UuidV7;
 
 namespace TaskFlow.Application.Cqrs.Features.Attachments;
 
 /// <summary>Handles search attachments work by coordinating validation, tenant boundaries, persistence, and response mapping.</summary>
 internal sealed class SearchAttachmentsHandler(
-    ILogger<SearchAttachmentsHandler> logger,
     IRequestContext<string, Guid?> requestContext,
-    IAttachmentRepositoryQuery repoQuery)
+    IAttachmentRepositoryQuery repoQuery,
+    ITenantBoundaryValidator tenantBoundaryValidator)
     : IRequestHandler<SearchAttachmentsQuery, PagedResponse<AttachmentDto>>
 {
     /// <summary>Handles search attachments requests and returns the application result.</summary>
     public async Task<PagedResponse<AttachmentDto>> HandleAsync(SearchAttachmentsQuery query, CancellationToken ct = default)
     {
         var request = query.Request;
-        HandlerHelpers.EnforceTenantFilter(request, requestContext.TenantId, requestContext.Roles, logger, "AttachmentSearch");
+        request.Filter = tenantBoundaryValidator.EnforceTenantFilter(request.Filter, requestContext.TenantId, requestContext.Roles, "AttachmentSearch");
         return await repoQuery.SearchAttachmentsAsync(request, query.IncludeTotal, ct);
     }
 }
 
 /// <summary>Handles get attachment by ID work by coordinating validation, tenant boundaries, persistence, and response mapping.</summary>
 internal sealed class GetAttachmentByIdHandler(
-    ILogger<GetAttachmentByIdHandler> logger,
     IRequestContext<string, Guid?> requestContext,
     IAttachmentRepositoryQuery repoQuery,
     ITenantBoundaryValidator tenantBoundaryValidator)
@@ -48,7 +49,7 @@ internal sealed class GetAttachmentByIdHandler(
         if (entity is null) return Result<DefaultResponse<AttachmentDto>>.None();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
+            requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "Attachment:Get", nameof(Attachment), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(boundary.ErrorMessage!);
 
@@ -75,7 +76,7 @@ internal sealed class CreateAttachmentHandler(
         if (validation.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(validation.Errors);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, requestContext.TenantId, requestContext.Roles, dto.TenantId,
+            requestContext.TenantId, requestContext.Roles, dto.TenantId,
             "Attachment:Create", nameof(Attachment));
         if (boundary.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(boundary.ErrorMessage!);
 
@@ -134,7 +135,7 @@ internal sealed class UploadAttachmentHandler(
         if (idCheck.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(idCheck.ErrorMessage!);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, requestContext.TenantId, requestContext.Roles, requestContext.TenantId,
+            requestContext.TenantId, requestContext.Roles, requestContext.TenantId,
             "Attachment:Upload", nameof(Attachment));
         if (boundary.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(boundary.ErrorMessage!);
 
@@ -148,7 +149,7 @@ internal sealed class UploadAttachmentHandler(
         {
             await blobStorage.UploadAsync("attachments", blobName, command.FileStream, command.ContentType, cancellationToken: ct);
         }
-        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
+        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.AttachmentBlobUploadFailed(ex, command.FileName);
             return Result<DefaultResponse<AttachmentDto>>.Failure(ErrorConstants.ERROR_BLOB_UPLOAD_FAILED);
@@ -201,14 +202,14 @@ internal sealed class UpdateAttachmentHandler(
         }
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
+            requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "Attachment:Update", nameof(Attachment), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(boundary.ErrorMessage!);
 
         ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(Attachment), entity.Id.Value);
 
         var tenantChangeCheck = tenantBoundaryValidator.PreventTenantChange(
-            logger, entity.TenantId.Value, dto.TenantId, nameof(Attachment), entity.Id.Value);
+            entity.TenantId.Value, dto.TenantId, nameof(Attachment), entity.Id.Value);
         if (tenantChangeCheck.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(tenantChangeCheck.ErrorMessage!);
 
         var updateResult = entity.Update(dto.FileName, dto.ContentType, dto.FileSizeBytes, dto.StorageUri);
@@ -238,7 +239,7 @@ internal sealed class DeleteAttachmentHandler(
         if (entity is null) return Result.Success();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
+            requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "Attachment:Delete", nameof(Attachment), entity.Id.Value);
         if (boundary.IsFailure) return Result.Failure(boundary.ErrorMessage!);
 

@@ -1,3 +1,5 @@
+using EF.Tenancy;
+using EF.Domain.Contracts;
 using EF.Common.Contracts;
 using EF.Data.Contracts;
 using EF.Storage.Contracts;
@@ -13,8 +15,6 @@ using TaskFlow.Application.Services.Rules;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
 using TaskFlow.Domain.Shared.Enums;
-using ConcurrencyGuard = TaskFlow.Application.Contracts.Concurrency.ConcurrencyGuard;
-using UuidV7 = TaskFlow.Application.Contracts.Concurrency.UuidV7;
 
 namespace TaskFlow.Application.Services;
 
@@ -31,7 +31,6 @@ internal class AttachmentService(
 {
     private Guid? RequestTenantId => requestContext.TenantId;
     private IReadOnlyCollection<string> RequestRoles => requestContext.Roles;
-    private bool IsGlobalAdmin => RequestRoles.Contains(AppConstants.ROLE_GLOBAL_ADMIN);
 
     #region Helpers
 
@@ -45,15 +44,7 @@ internal class AttachmentService(
     public async Task<PagedResponse<AttachmentDto>> SearchAsync(
         SearchRequest<AttachmentSearchFilter> request, bool includeTotal = false, CancellationToken ct = default)
     {
-        if (!IsGlobalAdmin)
-        {
-            request.Filter ??= new();
-            if (request.Filter.TenantId is Guid supplied && supplied != RequestTenantId)
-            {
-                logger.LogTenantFilterManipulation("AttachmentSearch", RequestTenantId, supplied);
-            }
-            request.Filter.TenantId = RequestTenantId;
-        }
+        request.Filter = tenantBoundaryValidator.EnforceTenantFilter(request.Filter, RequestTenantId, RequestRoles, "AttachmentSearch");
         return await repoQuery.SearchAttachmentsAsync(request, includeTotal, ct);
     }
 
@@ -64,7 +55,7 @@ internal class AttachmentService(
         if (entity == null) return Result<DefaultResponse<AttachmentDto>>.None();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, RequestTenantId, RequestRoles, entity.TenantId.Value,
+            RequestTenantId, RequestRoles, entity.TenantId.Value,
             "Attachment:Get", nameof(Attachment), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(boundary.ErrorMessage!);
 
@@ -82,7 +73,7 @@ internal class AttachmentService(
         if (validation.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(validation.Errors);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, RequestTenantId, RequestRoles, dto.TenantId,
+            RequestTenantId, RequestRoles, dto.TenantId,
             "Attachment:Create", nameof(Attachment));
         if (boundary.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(boundary.ErrorMessage!);
 
@@ -105,9 +96,9 @@ internal class AttachmentService(
 
         try
         {
-            await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
+            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
         }
-        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
+        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.AttachmentCreateFailed(ex);
 
@@ -138,7 +129,7 @@ internal class AttachmentService(
         if (idCheck.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(idCheck.ErrorMessage!);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, RequestTenantId, RequestRoles, RequestTenantId,
+            RequestTenantId, RequestRoles, RequestTenantId,
             "Attachment:Upload", nameof(Attachment));
         if (boundary.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(boundary.ErrorMessage!);
 
@@ -152,7 +143,7 @@ internal class AttachmentService(
         {
             await blobStorage.UploadAsync(AttachmentBlobs.ContainerName, blobName, fileStream, contentType, cancellationToken: ct);
         }
-        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
+        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.AttachmentBlobUploadFailed(ex, fileName);
             return Result<DefaultResponse<AttachmentDto>>.Failure(ErrorConstants.ERROR_BLOB_UPLOAD_FAILED);
@@ -170,9 +161,9 @@ internal class AttachmentService(
 
         try
         {
-            await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
+            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
         }
-        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
+        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.AttachmentPersistAfterUploadFailed(ex);
             return Result<DefaultResponse<AttachmentDto>>.Failure(ErrorConstants.ERROR_SAVE_FAILED);
@@ -196,14 +187,14 @@ internal class AttachmentService(
             return Result<DefaultResponse<AttachmentDto>>.Success(new DefaultResponse<AttachmentDto> { Item = null });
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, RequestTenantId, RequestRoles, entity.TenantId.Value,
+            RequestTenantId, RequestRoles, entity.TenantId.Value,
             "Attachment:Update", nameof(Attachment), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(boundary.ErrorMessage!);
 
         ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(Attachment), entity.Id.Value);
 
         var tenantChangeCheck = tenantBoundaryValidator.PreventTenantChange(
-            logger, entity.TenantId.Value, dto.TenantId, nameof(Attachment), entity.Id.Value);
+            entity.TenantId.Value, dto.TenantId, nameof(Attachment), entity.Id.Value);
         if (tenantChangeCheck.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(tenantChangeCheck.ErrorMessage!);
 
         var updateResult = entity.Update(dto.FileName, dto.ContentType, dto.FileSizeBytes, dto.StorageUri);
@@ -211,9 +202,9 @@ internal class AttachmentService(
 
         try
         {
-            await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
+            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
         }
-        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
+        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.AttachmentUpdateFailed(ex, dto.Id);
             return Result<DefaultResponse<AttachmentDto>>.Failure(ErrorConstants.ERROR_SAVE_FAILED);
@@ -229,7 +220,7 @@ internal class AttachmentService(
         if (entity == null) return Result.Success();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, RequestTenantId, RequestRoles, entity.TenantId.Value,
+            RequestTenantId, RequestRoles, entity.TenantId.Value,
             "Attachment:Delete", nameof(Attachment), entity.Id.Value);
         if (boundary.IsFailure) return Result.Failure(boundary.ErrorMessage!);
 
@@ -239,9 +230,9 @@ internal class AttachmentService(
 
         try
         {
-            await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
+            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
         }
-        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
+        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.AttachmentDeleteFailed(ex, id);
             return Result.Failure(ErrorConstants.ERROR_SAVE_FAILED);

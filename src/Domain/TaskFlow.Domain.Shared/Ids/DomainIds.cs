@@ -2,15 +2,6 @@ using EF.Domain.Contracts;
 
 namespace TaskFlow.Domain.Shared;
 
-// Non-null ids use the static abstract IDomainId<TId>.From directly (TaskItemId.From(g)); only the
-// nullable lift lives here until EF.Domain.Contracts ships DomainId.FromNullable (EF.Packages 2.0 D26).
-public static class DomainId
-{
-    public static TId? FromNullable<TId>(Guid? value)
-        where TId : struct, IDomainId<TId>
-        => value.HasValue ? TId.From(value.Value) : null;
-}
-
 // TenantId carries the same ordering operators for the cross-tenant system scans: those page by the
 // clustered (TenantId, Id) key, so the resume predicate needs a TenantId comparison EF can push into SQL.
 public readonly record struct TenantId(Guid Value) : IDomainId<TenantId>, IComparable<TenantId>

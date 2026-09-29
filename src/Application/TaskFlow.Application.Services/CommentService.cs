@@ -1,5 +1,5 @@
+using EF.Tenancy;
 using EF.Common.Contracts;
-using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.Contracts.Services;
@@ -13,14 +13,12 @@ namespace TaskFlow.Application.Services;
 
 /// <summary>Coordinates comment application use cases with validation, tenant checks, repositories, and response shaping.</summary>
 internal class CommentService(
-    ILogger<CommentService> logger,
     IRequestContext<string, Guid?> requestContext,
     ICommentRepositoryQuery repoQuery,
     ITenantBoundaryValidator tenantBoundaryValidator) : ICommentService
 {
     private Guid? RequestTenantId => requestContext.TenantId;
     private IReadOnlyCollection<string> RequestRoles => requestContext.Roles;
-    private bool IsGlobalAdmin => RequestRoles.Contains(AppConstants.ROLE_GLOBAL_ADMIN);
 
     #region Helpers
 
@@ -34,15 +32,7 @@ internal class CommentService(
     public async Task<PagedResponse<CommentDto>> SearchAsync(
         SearchRequest<CommentSearchFilter> request, bool includeTotal = false, CancellationToken ct = default)
     {
-        if (!IsGlobalAdmin)
-        {
-            request.Filter ??= new();
-            if (request.Filter.TenantId is Guid supplied && supplied != RequestTenantId)
-            {
-                logger.LogTenantFilterManipulation("CommentSearch", RequestTenantId, supplied);
-            }
-            request.Filter.TenantId = RequestTenantId;
-        }
+        request.Filter = tenantBoundaryValidator.EnforceTenantFilter(request.Filter, RequestTenantId, RequestRoles, "CommentSearch");
         return await repoQuery.SearchCommentsAsync(request, includeTotal, ct);
     }
 
@@ -53,7 +43,7 @@ internal class CommentService(
         if (entity == null) return Result<DefaultResponse<CommentDto>>.None();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, RequestTenantId, RequestRoles, entity.TenantId.Value,
+            RequestTenantId, RequestRoles, entity.TenantId.Value,
             "Comment:Get", nameof(Comment), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<CommentDto>>.Failure(boundary.ErrorMessage!);
 

@@ -1,3 +1,5 @@
+using Test.Support;
+using EF.Data.Contracts;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using TaskFlow.Application.Contracts.Storage;
@@ -29,7 +31,7 @@ public sealed class MongoTaskViewRepositoryTests
     {
         var ct = TestContext.CancellationToken;
         var settings = NewSettings();
-        var repository = new MongoTaskViewRepository(MongoDbContainerFixture.ConnectionString, settings);
+        var repository = new MongoTaskViewRepository(MongoDbContainerFixture.ConnectionString, settings, TestCursorCodec.Instance);
         var client = new MongoClient(MongoDbContainerFixture.ConnectionString);
         var database = client.GetDatabase(settings.DatabaseName);
 
@@ -110,7 +112,7 @@ public sealed class MongoTaskViewRepositoryTests
         const int pageSize = 10;
         var ct = TestContext.CancellationToken;
         var settings = NewSettings();
-        var repository = new MongoTaskViewRepository(MongoDbContainerFixture.ConnectionString, settings);
+        var repository = new MongoTaskViewRepository(MongoDbContainerFixture.ConnectionString, settings, TestCursorCodec.Instance);
         var client = new MongoClient(MongoDbContainerFixture.ConnectionString);
 
         try
@@ -138,8 +140,9 @@ public sealed class MongoTaskViewRepositoryTests
             Assert.AreEqual(rowCount, seen.Distinct(StringComparer.Ordinal).Count());
             CollectionAssert.DoesNotContain(seen, "foreign");
 
-            var foreignToken = TaskFlow.Infrastructure.Repositories.TaskViewKeysetToken.Encode(otherTenant, start, "foreign");
-            await Assert.ThrowsExactlyAsync<ArgumentException>(
+            var foreignToken = TestCursorCodec.Instance.Encode(otherTenant, new CursorPosition(
+                start.UtcTicks.ToString(System.Globalization.CultureInfo.InvariantCulture), "foreign"));
+            await Assert.ThrowsExactlyAsync<InvalidCursorException>(
                 () => repository.QueryByTenantAsync(tenantId, pageSize, foreignToken, ct));
         }
         finally

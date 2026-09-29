@@ -2,7 +2,6 @@ using EF.Common.Contracts;
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Infrastructure.Data;
-using TaskFlow.Infrastructure.Data.Interceptors;
 using Test.Support;
 using Test.Support.Builders;
 
@@ -83,9 +82,9 @@ public sealed class ConcurrencyTokenTests
     private static TaskFlowDbContextTrxn Create(string dbName, TimeProvider? clock = null) =>
         new(new DbContextOptionsBuilder<TaskFlowDbContextTrxn>()
             .UseInMemoryDatabase(dbName)
-            .AddInterceptors(new VersionTimestampInterceptor(clock))
             .Options)
         {
+            Clock = clock ?? TimeProvider.System,
             AuditId = "concurrency-test",
             TenantId = TestConstants.TenantId
         };

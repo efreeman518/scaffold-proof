@@ -1,3 +1,4 @@
+using EF.Data.Configurations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using TaskFlow.Domain.Model;
@@ -6,7 +7,7 @@ using TaskFlow.Domain.Shared;
 namespace TaskFlow.Infrastructure.Data.Configurations;
 
 /// <summary>Provides attachment behavior for the Infrastructure Configurations layer.</summary>
-public class AttachmentConfiguration : EntityBaseConfiguration<Attachment, AttachmentId>
+public class AttachmentConfiguration : TenantEntityTypeConfiguration<Attachment, AttachmentId, TenantId>
 {
     /// <summary>Configures runtime behavior for this component.</summary>
     public override void Configure(EntityTypeBuilder<Attachment> builder)
