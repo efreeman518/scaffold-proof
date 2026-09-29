@@ -1,7 +1,6 @@
-using Azure.Core;
-using Azure.Identity;
 using EF.AspNetCore.Cors;
 using EF.AspNetCore.ExceptionHandling;
+using EF.Host;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.AspNetCore.RateLimiting;
@@ -31,7 +30,8 @@ public static class RegisterGatewayServices
     public static IServiceCollection AddGatewayServices(
         this IServiceCollection services, IConfiguration config)
     {
-        services.AddSingleton<TokenCredential>(_ => new DefaultAzureCredential());
+        // One credential for downstream token exchange, honoring ManagedIdentityClientId / AzureTenantId.
+        services.AddAzureTokenCredential(config);
         services.AddSingleton<TokenService>();
         services.AddEfProblemDetails();
         AddAuthentication(services, config);

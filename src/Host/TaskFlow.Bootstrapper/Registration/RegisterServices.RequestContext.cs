@@ -1,8 +1,8 @@
+using System.Diagnostics;
+using EF.AspNetCore.RequestContext;
 using EF.Common.Contracts;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using System.Security.Claims;
 using TaskFlow.Application.Contracts;
 
 namespace TaskFlow.Bootstrapper;
@@ -11,11 +11,15 @@ namespace TaskFlow.Bootstrapper;
 public static partial class RegisterServices
 {
     /// <summary>
-    /// Registers the scoped request context. Three cases, decided by whether an HTTP request exists:
+    /// Registers the scoped claims-based request context (<c>EF.AspNetCore</c>). Three cases, decided by whether an
+    /// HTTP request exists:
     /// <list type="bullet">
-    /// <item>An authenticated HTTP caller: identity, tenant and roles from its claims.</item>
-    /// <item>An HTTP request with no authenticated user in scaffold auth mode: the scaffold fixed identity,
-    /// the same one <c>ScaffoldAuthHandler</c> issues.</item>
+    /// <item>An authenticated HTTP caller: identity (<c>oid</c>, then name identifier, then <c>sub</c>), tenant
+    /// (<c>tenant_id</c>) and roles from its claims; a token claiming <see cref="AppConstants.ROLE_SYSTEM"/> does not
+    /// get it.</item>
+    /// <item>An unauthenticated HTTP request: anonymous - no tenant, no roles. Nothing is invented for it; the
+    /// scaffold auth handler authenticates every Api request, so only anonymous surfaces (Functions HTTP triggers)
+    /// see this.</item>
     /// <item>No HTTP request (message consumers, scheduled jobs, the AI reviewer, Functions queue triggers):
     /// the explicit system identity - no tenant, <see cref="AppConstants.SYSTEM_USER_ID"/>, and the roles
     /// <see cref="AppConstants.ROLE_SYSTEM"/> plus <see cref="AppConstants.ROLE_GLOBAL_ADMIN"/>. It acts for the tenant
@@ -27,56 +31,27 @@ public static partial class RegisterServices
     /// </summary>
     internal static void AddRequestContext(IServiceCollection services)
     {
-        services.AddHttpContextAccessor();
-
-        services.AddScoped<IRequestContext<string, Guid?>>(sp =>
-        {
-            var httpContext = sp.GetRequiredService<IHttpContextAccessor>().HttpContext;
-            if (httpContext is null)
+        services.AddHttpRequestContext<Guid?>(
+            value => Guid.TryParse(value, out var tenantId) ? tenantId : null,
+            options =>
             {
-                return new RequestContext<string, Guid?>(
-                    Guid.NewGuid().ToString(),
+                options.SystemAuditId = AppConstants.SYSTEM_USER_ID;
+                options.SystemRole = AppConstants.ROLE_SYSTEM;
+            });
+
+        // The package gives the no-request context exactly one role (SystemRole); EF.Tenancy needs GlobalAdmin
+        // there as well, so the no-request branch is TaskFlow's own. HTTP requests keep the claims-based context,
+        // which strips only the system role from a token - a real GlobalAdmin claim is kept.
+        var claimsContext = services.Last(d => d.ServiceType == typeof(IRequestContext<string, Guid?>)).ImplementationFactory!;
+        services.AddScoped<IRequestContext<string, Guid?>>(sp =>
+            sp.GetRequiredService<IHttpContextAccessor>().HttpContext is null
+                ? new RequestContext<string, Guid?>(
+                    Activity.Current is { IdFormat: ActivityIdFormat.W3C } activity
+                        ? activity.TraceId.ToHexString()
+                        : Guid.NewGuid().ToString("N"),
                     AppConstants.SYSTEM_USER_ID,
                     null,
-                    [AppConstants.ROLE_SYSTEM, AppConstants.ROLE_GLOBAL_ADMIN]);
-            }
-
-            var correlationId = httpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault()
-                             ?? Guid.NewGuid().ToString();
-            var user = httpContext.User;
-
-            if (user.Identity?.IsAuthenticated != true)
-            {
-                // Scaffold is the only AuthMode (AuthModeResolver rejects anything else); a real identity
-                // provider mode must answer an unauthenticated request with an anonymous context here instead.
-                _ = AuthModeResolver.Resolve(sp.GetRequiredService<IConfiguration>()[AuthModeResolver.ConfigKey]);
-                return new RequestContext<string, Guid?>(
-                    correlationId,
-                    "scaffold-user",
-                    Guid.Parse("00000000-0000-0000-0000-000000000001"),
-                    new List<string>
-                    {
-                        AppConstants.ROLE_GLOBAL_ADMIN,
-                        AppConstants.ROLE_TENANT_ADMIN,
-                        AppConstants.ROLE_TENANT_MEMBER,
-                    });
-            }
-
-            var userId = user.FindFirst("oid")?.Value
-                      ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                      ?? user.FindFirst("sub")?.Value
-                      ?? "unknown";
-
-            var tenantClaim = user.FindFirst("tenant_id")?.Value;
-            Guid? tenantId = Guid.TryParse(tenantClaim, out var tid) ? tid : null;
-
-            // The system role is minted here for no-request work only; a token claiming it gains nothing.
-            var roles = user.FindAll(ClaimTypes.Role)
-                           .Select(c => c.Value)
-                           .Where(role => !string.Equals(role, AppConstants.ROLE_SYSTEM, StringComparison.OrdinalIgnoreCase))
-                           .ToList();
-
-            return new RequestContext<string, Guid?>(correlationId, userId, tenantId, roles);
-        });
+                    [AppConstants.ROLE_SYSTEM, AppConstants.ROLE_GLOBAL_ADMIN])
+                : (IRequestContext<string, Guid?>)claimsContext(sp));
     }
 }

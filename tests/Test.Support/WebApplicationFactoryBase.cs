@@ -18,7 +18,8 @@ public abstract class WebApplicationFactoryBase<TProgram, TTrxnContext, TQueryCo
     where TTrxnContext : DbContextBase<string, Guid?>
     where TQueryContext : DbContextBase<string, Guid?>
 {
-    protected override string? StartupTaskServiceTypeFullName => "TaskFlow.Bootstrapper.IStartupTask";
+    // EF.Host keeps the registered startup task types in one registry; removing it makes RunStartupTasksAsync a no-op.
+    protected override string? StartupTaskServiceTypeFullName => "EF.Host.StartupTaskRegistry";
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {

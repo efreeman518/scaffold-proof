@@ -25,14 +25,7 @@ public static class WebApplicationBuilderExtensions
     /// </summary>
     public static WebApplication ConfigurePipeline(this WebApplication app)
     {
-        // 0. Azure App Configuration sentinel-key refresh middleware (D-042). Guarded by the same
-        // condition AddTaskFlowAppConfiguration used: registering the middleware without the provider
-        // having been added throws, so this only runs when the provider is actually configured.
-        if (!string.IsNullOrWhiteSpace(app.Configuration[RegisterServices.AppConfigEndpointConfigKey])
-            || !string.IsNullOrWhiteSpace(app.Configuration.GetConnectionString("AppConfig")))
-        {
-            app.UseAzureAppConfiguration();
-        }
+        // Azure App Configuration refresh (D-042) runs in the background (EF.Host), not as middleware.
 
         // 1. Public scheme/host/path base from the explicitly trusted deployment proxy.
         app.UseProxyForwarding();

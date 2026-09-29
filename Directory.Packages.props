@@ -223,17 +223,8 @@
     <!-- D-038/D-060 explicit NonAzure TaskView alternative. -->
     <PackageVersion Include="MongoDB.Driver" Version="3.11.2" />
   </ItemGroup>
-  <ItemGroup Label="Data Protection">
-    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.4" />
-    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Keys" Version="1.6.4" />
-    <!-- D-043 NonAzure key-ring persistence (DataProtection:Persistence=Redis). -->
-    <PackageVersion Include="Microsoft.AspNetCore.DataProtection.StackExchangeRedis" Version="10.0.12" />
-  </ItemGroup>
-  <ItemGroup Label="Configuration and feature flags">
-    <!-- D-042: config + feature-flag provider, gated on AppConfig:Endpoint. -->
-    <PackageVersion Include="Microsoft.Azure.AppConfiguration.AspNetCore" Version="8.6.0" />
-    <!-- Functions isolated-worker equivalent of the refresh middleware above (F1 parity). -->
-    <PackageVersion Include="Microsoft.Azure.AppConfiguration.Functions.Worker" Version="8.6.0" />
+  <ItemGroup Label="Feature flags">
+    <!-- D-042: Azure App Configuration itself comes from EF.Host. -->
     <PackageVersion Include="Microsoft.FeatureManagement.AspNetCore" Version="4.7.0" />
     <!-- Infrastructure.AI checks AiReview via IVariantFeatureManager without the ASP.NET Core-specific package. -->
     <PackageVersion Include="Microsoft.FeatureManagement" Version="4.7.0" />

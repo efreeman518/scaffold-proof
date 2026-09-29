@@ -1,6 +1,7 @@
 using EF.Audit.AzureTable;
 using EF.AspNetCore.HealthChecks;
 using EF.Audit.Contracts;
+using EF.Host;
 using EF.Storage.Contracts;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
@@ -22,8 +23,7 @@ public static partial class RegisterServices
     /// </summary>
     private static void AddTableStorageServices(IServiceCollection services, IConfiguration config)
     {
-        var connection = ResolveConnectionString(
-            config,
+        var connection = config.ResolveConnection(
             "TableStorage1",
             "Values:TableStorage1",
             "Aspire:Azure:Data:Tables:TableStorage1:ConnectionString");
@@ -33,9 +33,9 @@ public static partial class RegisterServices
 
         services.AddAzureClients(builder =>
         {
-            if (TryGetServiceUri(connection, out var serviceUri))
+            if (ConnectionValue.TryGetServiceUri(connection, out var serviceUri))
             {
-                builder.UseCredential(CreateAzureCredential(config));
+                builder.UseCredential(AzureCredentialFactory.Create(config));
                 builder.AddTableServiceClient(serviceUri)
                     .WithName("TaskFlowTableClient");
             }
@@ -56,58 +56,6 @@ public static partial class RegisterServices
         });
     }
 
-    /// <summary>
-    /// Resolves Aspire, appsettings, and Functions-style connection keys in a stable order.
-    /// A real connection string wins over UseDevelopmentStorage=true, but the emulator value
-    /// is kept as a fallback when it is the only configured value.
-    /// </summary>
-    private static string? ResolveConnectionString(IConfiguration config, string connectionName, params string[] alternateKeys)
-    {
-        string? fallbackConnectionString = null;
-
-        foreach (var candidate in GetConnectionStringCandidates(config, connectionName, alternateKeys))
-        {
-            if (string.IsNullOrWhiteSpace(candidate))
-                continue;
-
-            fallbackConnectionString ??= candidate;
-
-            if (!string.Equals(candidate, "UseDevelopmentStorage=true", StringComparison.OrdinalIgnoreCase))
-                return candidate;
-        }
-
-        return fallbackConnectionString;
-    }
-
-    /// <summary>
-    /// Enumerates connection-string sources without assuming which host supplied them.
-    /// ASP.NET, Aspire, and Azure Functions use different key shapes for the same resource.
-    /// </summary>
-    private static IEnumerable<string?> GetConnectionStringCandidates(IConfiguration config, string connectionName, IEnumerable<string> alternateKeys)
-    {
-        yield return Environment.GetEnvironmentVariable($"ConnectionStrings__{connectionName}");
-        yield return config.GetConnectionString(connectionName);
-
-        foreach (var key in alternateKeys)
-        {
-            yield return Environment.GetEnvironmentVariable(key.Replace(":", "__"));
-            yield return config[key];
-        }
-    }
-
-    private static bool TryGetServiceUri(string value, out Uri serviceUri)
-    {
-        if (Uri.TryCreate(value, UriKind.Absolute, out var candidate)
-            && (candidate.Scheme == Uri.UriSchemeHttp || candidate.Scheme == Uri.UriSchemeHttps))
-        {
-            serviceUri = candidate;
-            return true;
-        }
-
-        serviceUri = null!;
-        return false;
-    }
-
     internal static string? ResolveServiceBusFullyQualifiedNamespace(IConfiguration config) =>
         config["ServiceBus1:fullyQualifiedNamespace"];
 
@@ -116,8 +64,7 @@ public static partial class RegisterServices
     /// </summary>
     private static void AddBlobStorageServices(IServiceCollection services, IConfiguration config)
     {
-        var connection = ResolveConnectionString(
-            config,
+        var connection = config.ResolveConnection(
             "BlobStorage1",
             "BlobStorage1",
             "BlobStorage1:blobServiceUri",
@@ -128,9 +75,9 @@ public static partial class RegisterServices
 
         services.AddAzureClients(builder =>
         {
-            if (TryGetServiceUri(connection, out var serviceUri))
+            if (ConnectionValue.TryGetServiceUri(connection, out var serviceUri))
             {
-                builder.UseCredential(CreateAzureCredential(config));
+                builder.UseCredential(AzureCredentialFactory.Create(config));
                 builder.AddBlobServiceClient(serviceUri)
                     .WithName("TaskFlowBlobClient");
             }
@@ -152,8 +99,7 @@ public static partial class RegisterServices
     /// </summary>
     private static void AddServiceBusServices(IServiceCollection services, IConfiguration config)
     {
-        var connStr = ResolveConnectionString(
-            config,
+        var connStr = config.ResolveConnection(
             "ServiceBus1",
             "ServiceBus1",
             "Values:ServiceBus1");
@@ -171,7 +117,7 @@ public static partial class RegisterServices
             }
             else
             {
-                builder.UseCredential(CreateAzureCredential(config));
+                builder.UseCredential(AzureCredentialFactory.Create(config));
                 builder.AddServiceBusClientWithNamespace(fullyQualifiedNamespace!)
                     .WithName("TaskFlowSBClient");
             }
@@ -202,10 +148,10 @@ public static partial class RegisterServices
         var databaseName = config["Cosmos:TaskViews:DatabaseName"] ?? "taskflow-db";
         var containerName = config["Cosmos:TaskViews:ContainerName"] ?? "task-views";
 
-        services.AddSingleton(_ => TryGetServiceUri(connection, out var serviceUri)
+        services.AddSingleton(_ => ConnectionValue.TryGetServiceUri(connection, out var serviceUri)
             ? new Microsoft.Azure.Cosmos.CosmosClient(
                 serviceUri.AbsoluteUri,
-                CreateAzureCredential(config),
+                AzureCredentialFactory.Create(config),
                 BuildCosmosClientOptions(config))
             : new Microsoft.Azure.Cosmos.CosmosClient(connection, BuildCosmosClientOptions(config)));
         services.AddSingleton<ITaskViewRepository>(sp =>
@@ -265,14 +211,14 @@ public static partial class RegisterServices
         if (!config.GetValue<bool>("HealthChecks:EnableExternalServices", false))
             return;
 
-        if (!string.IsNullOrWhiteSpace(ResolveConnectionString(
-                config, "BlobStorage1", "BlobStorage1", "BlobStorage1:blobServiceUri", "Values:BlobStorage1")))
+        if (!string.IsNullOrWhiteSpace(config.ResolveConnection(
+                "BlobStorage1", "BlobStorage1", "BlobStorage1:blobServiceUri", "Values:BlobStorage1")))
             builder.AddCheck<HealthChecks.BlobStorageHealthCheck>("blob-storage", tags: ["full", "extservice"]);
 
         if (ResolveStorageProvider(config) == StorageProvider.S3)
             builder.AddCheck<HealthChecks.S3StorageHealthCheck>("s3-storage", tags: ["full", "extservice"]);
 
-        if (!string.IsNullOrWhiteSpace(ResolveConnectionString(config, "ServiceBus1", "ServiceBus1", "Values:ServiceBus1"))
+        if (!string.IsNullOrWhiteSpace(config.ResolveConnection("ServiceBus1", "ServiceBus1", "Values:ServiceBus1"))
             || !string.IsNullOrWhiteSpace(ResolveServiceBusFullyQualifiedNamespace(config)))
             builder.AddCheck<HealthChecks.ServiceBusHealthCheck>("service-bus", tags: ["full", "extservice"]);
 

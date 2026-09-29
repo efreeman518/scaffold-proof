@@ -5,6 +5,7 @@ using EF.FlowEngine.Clients.AI;
 using EF.FlowEngine.Clients.Http;
 using EF.FlowEngine.Clients.ServiceBus;
 using EF.FlowEngine.Model;
+using EF.Host;
 using EF.Messaging.RabbitMq;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.AI;
@@ -109,7 +110,7 @@ public static partial class RegisterServices
             // Service Bus message client - reuses the application's named client for either a local
             // connection string or deployed managed identity. AddServiceBusServices has already enforced
             // the strict Azure requirement that one of those connection forms exists.
-            var sbConnStr = ResolveConnectionString(config, "ServiceBus1", "Values:ServiceBus1");
+            var sbConnStr = config.ResolveConnection("ServiceBus1", "Values:ServiceBus1");
             var fullyQualifiedNamespace = ResolveServiceBusFullyQualifiedNamespace(config);
             if (!string.IsNullOrEmpty(sbConnStr) || !string.IsNullOrWhiteSpace(fullyQualifiedNamespace))
             {

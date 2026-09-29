@@ -63,10 +63,6 @@ public static class RegisterSchedulerServices
                 includeEmbedding: AiServiceCollectionExtensions.ResolveSearchProvider(config) == SearchProvider.PgVector);
         }
 
-        // Azure App Configuration (D-042) has no HTTP middleware to trigger refresh on a worker host; this polls
-        // the refreshers instead, and is a no-op when App Configuration is not configured.
-        services.AddHostedService<AppConfigurationRefreshService>();
-
         // Registered as a hosted service so the start time is taken when the host starts, not when the health
         // check is first resolved.
         services.AddSingleton<SchedulerStartTime>();

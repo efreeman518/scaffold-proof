@@ -87,12 +87,4 @@ internal static partial class LogMessages
     /// <summary>Logs settlement statements that changed no row because another replica took the lease over.</summary>
     [LoggerMessage(EventId = LogEventIds.SchedulerBase + 22, Level = LogLevel.Warning, Message = "{WorkType}: lease {LeaseToken} was lost for {Count} row(s) before settlement; another replica owns them")]
     public static partial void WorkLeaseLost(this ILogger logger, string workType, int count, Guid leaseToken);
-
-    /// <summary>Logs the first failed Azure App Configuration refresh of a failure streak.</summary>
-    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 23, Level = LogLevel.Warning, Message = "Azure App Configuration refresh failed; the Scheduler keeps its last configuration and flags until a refresh succeeds")]
-    public static partial void AppConfigurationRefreshFailed(this ILogger logger);
-
-    /// <summary>Logs the first successful Azure App Configuration refresh after a failure streak.</summary>
-    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 24, Level = LogLevel.Information, Message = "Azure App Configuration refresh recovered after {FailedRefreshes} failed attempt(s)")]
-    public static partial void AppConfigurationRefreshRecovered(this ILogger logger, int failedRefreshes);
 }

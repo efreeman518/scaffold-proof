@@ -20,8 +20,8 @@ namespace Test.Unit.Hosting;
 
 /// <summary>
 /// The request context outside an HTTP request is an explicit system identity (no tenant, the system user,
-/// the system and global-admin roles), never the scaffold admin; the scaffold identity is for HTTP requests in scaffold
-/// auth mode only. Background writes that relied on the scaffold admin's GlobalAdmin bypass - the AI
+/// the system and global-admin roles), never the scaffold admin; an unauthenticated HTTP request is anonymous (EF.AspNetCore
+/// 2.0 invents no identity for it). Background writes that relied on the scaffold admin's GlobalAdmin bypass - the AI
 /// reviewer loading a task and adding a comment through the tenant boundary - keep working through the
 /// system identity's global-admin role (EF.Tenancy), and a token cannot claim the system role.
 /// Pure-unit tier: the real registration and the real tenant-boundary validator; repositories are mocked.
@@ -60,7 +60,7 @@ public sealed class SystemRequestContextTests
     }
 
     [TestMethod]
-    public void HttpRequestWithoutUser_InScaffoldMode_ResolvesTheScaffoldIdentity()
+    public void HttpRequestWithoutUser_ResolvesAnAnonymousContext()
     {
         using var provider = BuildProvider();
         provider.GetRequiredService<IHttpContextAccessor>().HttpContext = new DefaultHttpContext();
@@ -68,9 +68,9 @@ public sealed class SystemRequestContextTests
 
         var context = scope.ServiceProvider.GetRequiredService<IRequestContext<string, Guid?>>();
 
-        Assert.AreEqual("scaffold-user", context.AuditId);
-        Assert.AreEqual(Guid.Parse("00000000-0000-0000-0000-000000000001"), context.TenantId);
-        Assert.Contains(AppConstants.ROLE_GLOBAL_ADMIN, context.Roles);
+        Assert.AreEqual("anonymous", context.AuditId);
+        Assert.IsNull(context.TenantId, "an unauthenticated request must not be given the scaffold tenant");
+        Assert.IsEmpty(context.Roles);
     }
 
     [TestMethod]
@@ -92,6 +92,29 @@ public sealed class SystemRequestContextTests
         var context = scope.ServiceProvider.GetRequiredService<IRequestContext<string, Guid?>>();
 
         CollectionAssert.AreEqual(new[] { AppConstants.ROLE_TENANT_MEMBER }, context.Roles.ToArray());
+    }
+
+    /// <summary>Only the system role is stripped from a token: a real global-admin claim keeps its role and tenant.</summary>
+    [TestMethod]
+    public void AuthenticatedGlobalAdmin_KeepsTheGlobalAdminRole()
+    {
+        using var provider = BuildProvider();
+        provider.GetRequiredService<IHttpContextAccessor>().HttpContext = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim("oid", "admin-1"),
+                new Claim("tenant_id", SomeTenant.ToString()),
+                new Claim(ClaimTypes.Role, AppConstants.ROLE_GLOBAL_ADMIN)
+            ], "Test"))
+        };
+        using var scope = provider.CreateScope();
+
+        var context = scope.ServiceProvider.GetRequiredService<IRequestContext<string, Guid?>>();
+
+        Assert.AreEqual("admin-1", context.AuditId);
+        Assert.AreEqual(SomeTenant, context.TenantId);
+        CollectionAssert.AreEqual(new[] { AppConstants.ROLE_GLOBAL_ADMIN }, context.Roles.ToArray());
     }
 
     [TestMethod]
