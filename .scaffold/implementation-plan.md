@@ -118,8 +118,8 @@ Runtime/edge concerns (tests-after, within 5b):
 - [ ] YARP Gateway:
   - Route configuration (API forwarding)
   - User-facing auth (stub mode)
-  - Claim relay via X-Orig-Request header
-  - Service token acquisition (TokenService for downstream API calls)
+  - Claim relay via the EF.Gateway forwarded-claims header (D-068)
+  - Service token acquisition (EF.Auth AccessTokenCache for downstream API calls)
 - [ ] Scheduler host with TickerQ:
   - OverdueTaskCheck (every 6 hours)
   - RecurringTaskGeneration (daily)
@@ -143,7 +143,7 @@ Runtime/edge concerns (tests-after, within 5b):
   - API depends on Application.Contracts only (not Application.Services directly)
 - [ ] Workflow E2E tests in `Test.E2E` (multi-endpoint chains via WebApplicationFactory + Testcontainers SQL)
 - [ ] Browser UI tests in `Test.PlaywrightUI` (runs against hosted Aspire AppHost stack, not WebApplicationFactory)
-- [ ] Load tests (in-house LoadRunner): task CRUD throughput, search latency, p95/p99
+- [ ] Load tests (EF.Testing LoadRunner): task CRUD throughput, search latency, p95/p99
 - [ ] Benchmarks (BenchmarkDotNet): search projection, entity mapping, cache hit/miss
 - [ ] Dockerfiles per host (API, Gateway, Scheduler, Functions)
 - [ ] IaC (Bicep) - `infra/main.bicep` plus modules under `infra/modules/`
@@ -160,7 +160,7 @@ Runtime/edge concerns (tests-after, within 5b):
 - [ ] Auth stub -> real Entra ID JWT Bearer (config-driven)
 - [ ] Role-based policies: GlobalAdmin bypass + tenant-matched policies (TenantMember, TenantAdmin)
 - [ ] Gateway auth: user-facing (Entra External), claim relay to API
-- [ ] Service-to-service tokens: Gateway -> API via client credentials (TokenService)
+- [ ] Service-to-service tokens: Gateway -> API via client credentials (EF.Auth AccessTokenCache)
 - [ ] Claim extraction precedence: oid > NameIdentifier > sub
 - [ ] Update appsettings with Entra configuration sections (commented out for scaffold mode)
 

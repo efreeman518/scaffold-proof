@@ -383,7 +383,6 @@ module gateway 'modules/container-app.bicep' = {
     envVars: union(servingEnvVars, [
       { name: 'ReverseProxy__Clusters__api-cluster__Destinations__api__Address', value: 'https://${api.outputs.fqdn}' }
       { name: 'AggregateHealthCheck__TaskFlowApiHealthUrl', value: 'https://${api.outputs.fqdn}/health/full' }
-      { name: 'AggregateHealthCheck__TaskFlowApiClusterId', value: '' }
       { name: 'CorsSettings__AllowedOrigins__0', value: 'https://${prefix}-blazor.${containerAppsEnv.outputs.defaultDomain}' }
       { name: 'CorsSettings__AllowedOrigins__1', value: 'https://${reactStaticWebApp.outputs.defaultHostname}' }
       { name: 'CorsSettings__AllowedOrigins__2', value: 'https://${unoStaticWebApp.outputs.defaultHostname}' }
