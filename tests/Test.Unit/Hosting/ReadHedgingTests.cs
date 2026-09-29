@@ -1,3 +1,4 @@
+using EF.Testing.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -22,7 +23,7 @@ public sealed class ReadHedgingTests
     [TestMethod]
     public async Task Get_SlowerThanTheHedgingDelay_IssuesOneHedgedAttempt()
     {
-        var handler = new CountingHandler(firstAttemptDelay: TimeSpan.FromSeconds(5));
+        var handler = SlowFirstAttempt(TimeSpan.FromSeconds(5));
         using var client = BuildClient(handler, enabled: true);
 
         using var response = await client.GetAsync(new Uri("http://read/tasks"), TestContext.CancellationToken);
@@ -35,7 +36,7 @@ public sealed class ReadHedgingTests
     [TestMethod]
     public async Task Post_SlowerThanTheHedgingDelay_IsNeverHedged()
     {
-        var handler = new CountingHandler(firstAttemptDelay: TimeSpan.FromMilliseconds(400));
+        var handler = SlowFirstAttempt(TimeSpan.FromMilliseconds(400));
         using var client = BuildClient(handler, enabled: true);
 
         using var response = await client.PostAsync(
@@ -49,7 +50,7 @@ public sealed class ReadHedgingTests
     [TestMethod]
     public async Task Get_WhenHedgingDisabled_IssuesNoHedgedAttempt()
     {
-        var handler = new CountingHandler(firstAttemptDelay: TimeSpan.FromMilliseconds(400));
+        var handler = SlowFirstAttempt(TimeSpan.FromMilliseconds(400));
         using var client = BuildClient(handler, enabled: false);
 
         using var response = await client.GetAsync(new Uri("http://read/tasks"), TestContext.CancellationToken);
@@ -65,12 +66,12 @@ public sealed class ReadHedgingTests
     [TestMethod]
     public async Task HedgedGet_AttemptsUseDistinctRequestMessages()
     {
-        var handler = new CountingHandler(firstAttemptDelay: TimeSpan.FromSeconds(5));
+        var requests = new List<HttpRequestMessage>();
+        var handler = SlowFirstAttempt(TimeSpan.FromSeconds(5), seen: requests);
         using var client = BuildClient(handler, enabled: true);
 
         using var response = await client.GetAsync(new Uri("http://read/tasks"), TestContext.CancellationToken);
 
-        var requests = handler.Requests;
         Assert.HasCount(2, requests);
         Assert.IsFalse(ReferenceEquals(requests[0], requests[1]), "each hedged attempt needs its own request");
     }
@@ -79,7 +80,7 @@ public sealed class ReadHedgingTests
     [TestMethod]
     public async Task SlowHead_IsHedged()
     {
-        var handler = new CountingHandler(firstAttemptDelay: TimeSpan.FromSeconds(5));
+        var handler = SlowFirstAttempt(TimeSpan.FromSeconds(5));
         using var client = BuildClient(handler, enabled: true);
 
         using var request = new HttpRequestMessage(HttpMethod.Head, new Uri("http://read/tasks"));
@@ -96,7 +97,7 @@ public sealed class ReadHedgingTests
     [TestMethod]
     public async Task TransientPost503_NotHedged()
     {
-        var handler = new CountingHandler(TimeSpan.Zero, HttpStatusCode.ServiceUnavailable);
+        var handler = SlowFirstAttempt(TimeSpan.Zero, HttpStatusCode.ServiceUnavailable);
         using var client = BuildClient(handler, enabled: true);
 
         using var response = await client.PostAsync(
@@ -143,35 +144,23 @@ public sealed class ReadHedgingTests
             .Build();
 
     /// <summary>
-    /// Counts attempts, records each request instance, and stalls only the first, so a hedged attempt is the
-    /// one that answers.
+    /// Counts attempts (<see cref="StubHttpMessageHandler.Attempts"/>), optionally keeps each request instance, and
+    /// stalls only the first, so a hedged attempt is the one that answers.
     /// </summary>
-    private sealed class CountingHandler(TimeSpan firstAttemptDelay, HttpStatusCode status = HttpStatusCode.OK)
-        : HttpMessageHandler
-    {
-        private readonly List<HttpRequestMessage> _requests = [];
-        private int _attempts;
-
-        internal int Attempts => Volatile.Read(ref _attempts);
-
-        internal HttpRequestMessage[] Requests
+    private static StubHttpMessageHandler SlowFirstAttempt(
+        TimeSpan firstAttemptDelay, HttpStatusCode status = HttpStatusCode.OK, List<HttpRequestMessage>? seen = null) =>
+        new(async (request, attempt, cancellationToken) =>
         {
-            get
+            if (seen is not null)
             {
-                lock (_requests) return [.. _requests];
+                lock (seen) seen.Add(request);
             }
-        }
 
-        protected override async Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            lock (_requests) _requests.Add(request);
-            if (Interlocked.Increment(ref _attempts) == 1)
+            if (attempt == 1)
             {
                 await Task.Delay(firstAttemptDelay, cancellationToken);
             }
 
             return new HttpResponseMessage(status);
-        }
-    }
+        });
 }

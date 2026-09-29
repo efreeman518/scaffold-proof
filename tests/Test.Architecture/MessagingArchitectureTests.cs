@@ -1,3 +1,4 @@
+using EF.Testing.Architecture;
 using System.Reflection;
 using TaskFlow.Application.MessageHandlers;
 
@@ -7,7 +8,7 @@ namespace Test.Architecture;
 /// Messaging rules that a compiler cannot enforce: no application type reaches past the outbox to a broker.
 /// (EF.BackgroundServices 2.0 resolves every auto-registered handler from its own scope, so handler lifetime
 /// needs no attribute and no rule here.)
-/// Pure-unit tier (reflection only): static assembly checks; no DI, no I/O.
+/// Pure-unit tier (EF.Testing.Architecture reflection rules): static assembly checks; no DI, no I/O.
 /// </summary>
 [TestClass]
 [TestCategory("Architecture")]
@@ -22,27 +23,10 @@ public class MessagingArchitectureTests : BaseTest
     [TestMethod]
     public void Given_ApplicationAssemblies_When_ConstructorsScanned_Then_NoneInjectTheTransport()
     {
-        var offenders = new List<string>();
+        var result = ConstructorRules.MustNotInject(
+            [ApplicationContractsAssembly, ApplicationServicesAssembly, ApplicationCqrsAssembly, MessageHandlersAssembly],
+            ["IIntegrationEventTransport"]);
 
-        foreach (var assembly in new[]
-                 {
-                     ApplicationContractsAssembly, ApplicationServicesAssembly,
-                     ApplicationCqrsAssembly, MessageHandlersAssembly
-                 })
-        {
-            foreach (var type in assembly.GetTypes())
-            {
-                foreach (var parameter in type.GetConstructors(
-                             BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
-                             .SelectMany(c => c.GetParameters()))
-                {
-                    if (parameter.ParameterType.Name == "IIntegrationEventTransport")
-                        offenders.Add($"{type.FullName}.{parameter.Name}");
-                }
-            }
-        }
-
-        Assert.AreEqual(0, offenders.Count,
-            $"application types injecting IIntegrationEventTransport: {string.Join(", ", offenders)}");
+        Assert.IsTrue(result.IsSuccessful, $"application types injecting IIntegrationEventTransport: {result}");
     }
 }

@@ -9,6 +9,7 @@
   <ItemGroup>
     <PackageReference Include="MSTest" />
     <PackageReference Include="Appium.WebDriver" />
+    <PackageReference Include="EF.Testing" />
   </ItemGroup>
 
   <ItemGroup>

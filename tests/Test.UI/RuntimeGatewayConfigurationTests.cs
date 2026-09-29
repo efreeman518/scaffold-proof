@@ -1,3 +1,4 @@
+using EF.Testing.Http;
 using System.Net;
 using TaskFlow.Uno.Core.Client;
 
@@ -28,18 +29,12 @@ public sealed class RuntimeGatewayConfigurationTests
     [TestMethod]
     public async Task LoadAsync_RejectsMissingConfiguration()
     {
-        using var client = new HttpClient(new StubHandler(HttpStatusCode.NotFound))
+        using var client = new HttpClient(StubHttpMessageHandler.Returns(HttpStatusCode.NotFound))
         {
             BaseAddress = new Uri("https://ui.example.test/")
         };
 
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(
             () => RuntimeGatewayConfiguration.LoadAsync(client, TestContext.CancellationToken));
-    }
-
-    private sealed class StubHandler(HttpStatusCode statusCode) : HttpMessageHandler
-    {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-            Task.FromResult(new HttpResponseMessage(statusCode));
     }
 }

@@ -1,7 +1,9 @@
+using EF.Testing.Http;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using TaskFlow.Application.Models;
+using Test.Support;
 
 namespace Test.Endpoints;
 
@@ -51,7 +53,7 @@ public class ConcurrencyEndpointTests
             cancellationToken: TestContext.CancellationToken);
 
         var created = await response.ItemAsync<CategoryDto>(TestContext.CancellationToken);
-        Assert.AreEqual(created!.Version!.Value.ToString(), response.ETagValue());
+        Assert.AreEqual(created!.Version!.Value.ToString(), response.GetETagValue());
     }
 
     /// <summary>Verifies a GET carries the ETag, which is the only way a client can obtain one to write with.</summary>
@@ -68,7 +70,7 @@ public class ConcurrencyEndpointTests
         using var response = await client.GetAsync($"/api/v1/categories/{created.Id}", TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
-        Assert.AreEqual(created.Version!.Value.ToString(), response.ETagValue());
+        Assert.AreEqual(created.Version!.Value.ToString(), response.GetETagValue());
     }
 
     /// <summary>Verifies a write without If-Match is refused with 428, not silently applied.</summary>
@@ -82,10 +84,11 @@ public class ConcurrencyEndpointTests
         using var client = CreateClient(style);
         var created = await CreateCategoryAsync(client, $"Missing-{Guid.NewGuid():N}");
 
-        using var response = await client.PutWithIfMatchAsync(
+        using var response = await client.PutAsJsonWithIfMatchAsync(
             $"/api/v1/categories/{created.Id}",
             new DefaultRequest<CategoryDto> { Item = created with { Name = "Changed" } },
             ifMatch: null,
+            JsonTestOptions.Default,
             TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.PreconditionRequired, response.StatusCode);
@@ -119,10 +122,11 @@ public class ConcurrencyEndpointTests
         using var client = CreateClient(style);
         var created = await CreateCategoryAsync(client, $"Weak-{Guid.NewGuid():N}");
 
-        using var response = await client.PutWithIfMatchAsync(
+        using var response = await client.PutAsJsonWithIfMatchAsync(
             $"/api/v1/categories/{created.Id}",
             new DefaultRequest<CategoryDto> { Item = created with { Name = "Changed" } },
             $"W/\"{created.Version}\"",
+            JsonTestOptions.Default,
             TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
@@ -146,10 +150,11 @@ public class ConcurrencyEndpointTests
         using var client = CreateClient(style);
         var created = await CreateCategoryAsync(client, $"Malformed-{Guid.NewGuid():N}");
 
-        using var response = await client.PutWithIfMatchAsync(
+        using var response = await client.PutAsJsonWithIfMatchAsync(
             $"/api/v1/categories/{created.Id}",
             new DefaultRequest<CategoryDto> { Item = created with { Name = "Changed" } },
             "\"not-a-version\"",
+            JsonTestOptions.Default,
             TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
@@ -167,23 +172,25 @@ public class ConcurrencyEndpointTests
         var created = await CreateCategoryAsync(client, $"Stale-{Guid.NewGuid():N}");
 
         // First writer wins and moves the version on.
-        using var first = await client.PutWithIfMatchAsync(
+        using var first = await client.PutAsJsonWithIfMatchAsync(
             $"/api/v1/categories/{created.Id}",
             new DefaultRequest<CategoryDto> { Item = created with { Name = "First" } },
-            ConcurrencyHttpExtensions.IfMatch(created.Version!.Value),
+            ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value),
+            JsonTestOptions.Default,
             TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.OK, first.StatusCode);
         var currentVersion = (await first.ItemAsync<CategoryDto>(TestContext.CancellationToken))!.Version!.Value;
 
         // Second writer still holds the pre-first-write version.
-        using var second = await client.PutWithIfMatchAsync(
+        using var second = await client.PutAsJsonWithIfMatchAsync(
             $"/api/v1/categories/{created.Id}",
             new DefaultRequest<CategoryDto> { Item = created with { Name = "Second" } },
-            ConcurrencyHttpExtensions.IfMatch(created.Version!.Value),
+            ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value),
+            JsonTestOptions.Default,
             TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.PreconditionFailed, second.StatusCode);
-        Assert.AreEqual(currentVersion.ToString(), second.ETagValue(),
+        Assert.AreEqual(currentVersion.ToString(), second.GetETagValue(),
             "A 412 must return the current version so the caller can retry without an extra GET.");
     }
 
@@ -198,18 +205,20 @@ public class ConcurrencyEndpointTests
         using var client = CreateClient(style);
         var created = await CreateCategoryAsync(client, $"Wildcard-{Guid.NewGuid():N}");
 
-        using var bump = await client.PutWithIfMatchAsync(
+        using var bump = await client.PutAsJsonWithIfMatchAsync(
             $"/api/v1/categories/{created.Id}",
             new DefaultRequest<CategoryDto> { Item = created with { Name = "Bumped" } },
-            ConcurrencyHttpExtensions.IfMatch(created.Version!.Value),
+            ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value),
+            JsonTestOptions.Default,
             TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.OK, bump.StatusCode);
 
         // Deliberately stale caller, but with the trusted-automation override.
-        using var response = await client.PutWithIfMatchAsync(
+        using var response = await client.PutAsJsonWithIfMatchAsync(
             $"/api/v1/categories/{created.Id}",
             new DefaultRequest<CategoryDto> { Item = created with { Name = "Forced" } },
             "*",
+            JsonTestOptions.Default,
             TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
@@ -228,16 +237,17 @@ public class ConcurrencyEndpointTests
         using var client = CreateClient(style);
         var created = await CreateCategoryAsync(client, $"StaleDel-{Guid.NewGuid():N}");
 
-        using var bump = await client.PutWithIfMatchAsync(
+        using var bump = await client.PutAsJsonWithIfMatchAsync(
             $"/api/v1/categories/{created.Id}",
             new DefaultRequest<CategoryDto> { Item = created with { Name = "Bumped" } },
-            ConcurrencyHttpExtensions.IfMatch(created.Version!.Value),
+            ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value),
+            JsonTestOptions.Default,
             TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.OK, bump.StatusCode);
 
         using var response = await client.DeleteWithIfMatchAsync(
             $"/api/v1/categories/{created.Id}",
-            ConcurrencyHttpExtensions.IfMatch(created.Version!.Value),
+            ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value),
             TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.PreconditionFailed, response.StatusCode);
@@ -261,19 +271,21 @@ public class ConcurrencyEndpointTests
             cancellationToken: TestContext.CancellationToken);
         var created = (await createResponse.ItemAsync<TaskItemDto>(TestContext.CancellationToken))!;
 
-        using var patched = await client.PatchWithIfMatchAsync(
+        using var patched = await client.PatchAsJsonWithIfMatchAsync(
             $"/api/v1/task-items/{created.Id}",
             new DefaultRequest<TaskItemPatchDto> { Item = new TaskItemPatchDto { Title = "Patched" } },
-            ConcurrencyHttpExtensions.IfMatch(created.Version!.Value),
+            ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value),
+            JsonTestOptions.Default,
             TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.OK, patched.StatusCode);
         Assert.AreEqual("Patched", (await patched.ItemAsync<TaskItemDto>(TestContext.CancellationToken))!.Title);
 
-        using var stale = await client.PatchWithIfMatchAsync(
+        using var stale = await client.PatchAsJsonWithIfMatchAsync(
             $"/api/v1/task-items/{created.Id}",
             new DefaultRequest<TaskItemPatchDto> { Item = new TaskItemPatchDto { Title = "Stale" } },
-            ConcurrencyHttpExtensions.IfMatch(created.Version!.Value),
+            ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value),
+            JsonTestOptions.Default,
             TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.PreconditionFailed, stale.StatusCode);
@@ -306,14 +318,15 @@ public class ConcurrencyEndpointTests
 
         Assert.IsGreaterThan(rootVersionBefore, rootVersionAfter,
             "A child mutation must move the root aggregate version, or the root ETag lies about the aggregate.");
-        Assert.AreEqual(rootVersionAfter.ToString(), addComment.ETagValue(),
+        Assert.AreEqual(rootVersionAfter.ToString(), addComment.GetETagValue(),
             "The child add response must return the new root version as its ETag.");
 
         // A caller holding the pre-child root version is now stale for a root write.
-        using var stale = await client.PutWithIfMatchAsync(
+        using var stale = await client.PutAsJsonWithIfMatchAsync(
             $"/api/v1/task-items/{created.Id}",
             new DefaultRequest<TaskItemDto> { Item = created with { Title = "Stale root write" } },
-            ConcurrencyHttpExtensions.IfMatch(rootVersionBefore),
+            ConcurrencyHttpExtensions.FormatStrongETag(rootVersionBefore),
+            JsonTestOptions.Default,
             TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.PreconditionFailed, stale.StatusCode);
     }

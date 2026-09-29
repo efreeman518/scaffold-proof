@@ -476,15 +476,9 @@ public sealed class AppHostLaneTopologyTests
             .Build());
     }
 
-    private static string ReadAppHostSource()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "TaskFlow.slnx")))
-            directory = directory.Parent;
-
-        Assert.IsNotNull(directory, "Could not locate repository root containing TaskFlow.slnx.");
-        return File.ReadAllText(Path.Combine(directory.FullName, "src", "Host", "Aspire", "AppHost", "AppHost.cs"));
-    }
+    private static string ReadAppHostSource() =>
+        File.ReadAllText(Path.Combine(
+            RepositoryRoot.Find(markers: "TaskFlow.slnx"), "src", "Host", "Aspire", "AppHost", "AppHost.cs"));
 
     private static async Task<AppHostGraph> BuildResourceGraphAsync(
         string? lane,

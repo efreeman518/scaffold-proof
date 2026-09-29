@@ -1,6 +1,8 @@
+using EF.Testing.Http;
 using System.Net;
 using System.Net.Http.Json;
 using TaskFlow.Application.Models;
+using Test.Support;
 
 namespace Test.Endpoints;
 
@@ -98,7 +100,7 @@ public class TagEndpointTests
         var created = (await createResponse.Content.ReadFromJsonAsync<DefaultResponse<TagDto>>(TestContext.CancellationToken))!.Item;
 
         var updateDto = new TagDto { Id = created!.Id, Name = "AfterTag", Color = "#222222" };
-        var response = await client.PutWithIfMatchAsync($"/api/v1/tags/{created.Id}", new DefaultRequest<TagDto> { Item = updateDto }, ConcurrencyHttpExtensions.IfMatch(created.Version!.Value), TestContext.CancellationToken);
+        var response = await client.PutAsJsonWithIfMatchAsync($"/api/v1/tags/{created.Id}", new DefaultRequest<TagDto> { Item = updateDto }, ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), JsonTestOptions.Default, TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
         var updated = (await response.Content.ReadFromJsonAsync<DefaultResponse<TagDto>>(TestContext.CancellationToken))!.Item;
@@ -118,7 +120,7 @@ public class TagEndpointTests
         var createResponse = await client.PostAsJsonAsync("/api/v1/tags", new DefaultRequest<TagDto> { Item = dto }, cancellationToken: TestContext.CancellationToken);
         var created = (await createResponse.Content.ReadFromJsonAsync<DefaultResponse<TagDto>>(TestContext.CancellationToken))!.Item;
 
-        var response = await client.DeleteWithIfMatchAsync($"/api/v1/tags/{created!.Id}", ConcurrencyHttpExtensions.IfMatch(created.Version!.Value), TestContext.CancellationToken);
+        var response = await client.DeleteWithIfMatchAsync($"/api/v1/tags/{created!.Id}", ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.NoContent, response.StatusCode);
 

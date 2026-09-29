@@ -1,4 +1,5 @@
 using EF.Data.Migrations;
+using EF.IntegrationTesting.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Data;
@@ -73,19 +74,19 @@ public sealed class DatabaseMigratorIntegrationTests
             new EntityFrameworkMigrationTarget<TaskFlowDbContextTrxn>(
                 "TaskFlowDbContextTrxn",
                 10,
-                new TestDbContextFactory<TaskFlowDbContextTrxn>(() => DbContainerFixture.CreateTrxnContext(connectionString)),
+                new EfTestDbContextFactory<TaskFlowDbContextTrxn>(() => DbContainerFixture.CreateTrxnContext(connectionString)),
                 [],
                 NullLogger<EntityFrameworkMigrationTarget<TaskFlowDbContextTrxn>>.Instance),
             new EntityFrameworkMigrationTarget<TaskFlowFlowEngineDbContext>(
                 "TaskFlowFlowEngineDbContext",
                 20,
-                new TestDbContextFactory<TaskFlowFlowEngineDbContext>(() => DbContainerFixture.CreateFlowEngineContext(connectionString)),
+                new EfTestDbContextFactory<TaskFlowFlowEngineDbContext>(() => DbContainerFixture.CreateFlowEngineContext(connectionString)),
                 [],
                 NullLogger<EntityFrameworkMigrationTarget<TaskFlowFlowEngineDbContext>>.Instance),
             new EntityFrameworkMigrationTarget<TaskFlowTickerQDbContext>(
                 "TaskFlowTickerQDbContext",
                 30,
-                new TestDbContextFactory<TaskFlowTickerQDbContext>(() => DbContainerFixture.CreateTickerQContext(connectionString)),
+                new EfTestDbContextFactory<TaskFlowTickerQDbContext>(() => DbContainerFixture.CreateTickerQContext(connectionString)),
                 CreateTickerQDataMigrationSteps(),
                 NullLogger<EntityFrameworkMigrationTarget<TaskFlowTickerQDbContext>>.Instance)
         ],
@@ -166,15 +167,6 @@ public sealed class DatabaseMigratorIntegrationTests
                 await db.Database.CloseConnectionAsync();
             }
         }
-    }
-
-    private sealed class TestDbContextFactory<TContext>(Func<TContext> create) : IDbContextFactory<TContext>
-        where TContext : DbContext
-    {
-        public TContext CreateDbContext() => create();
-
-        public Task<TContext> CreateDbContextAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(create());
     }
 
     public TestContext TestContext { get; set; } = null!;

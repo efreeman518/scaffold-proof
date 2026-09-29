@@ -1,3 +1,4 @@
+using EF.AI.Testing;
 using EF.Common.Contracts;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -65,7 +66,7 @@ public class AiDemoServiceTests
             .ReturnsAsync((DefaultRequest<TaskItemDto> request, long? _, CancellationToken _) =>
                 Result<DefaultResponse<TaskItemDto>>.Success(new DefaultResponse<TaskItemDto> { Item = request.Item }));
 
-        var chatClient = new StaticChatClient("""
+        var chatClient = new FakeChatClient("""
             ```json
             {"suggestedPriority":"Critical","suggestedCategory":"Incident","confidence":0.94,"rationale":"Payment outage"}
             ```
@@ -103,7 +104,7 @@ public class AiDemoServiceTests
 
         var service = new TaskTriageService(
             NullLogger<TaskTriageService>.Instance,
-            new StaticChatClient("""{"suggestedPriority":null,"confidence":0.7}"""),
+            new FakeChatClient("""{"suggestedPriority":null,"confidence":0.7}"""),
             taskItemService.Object);
 
         var result = await service.TriageAsync(taskId, apply: true, TestContext.CancellationToken);
@@ -131,7 +132,7 @@ public class AiDemoServiceTests
 
         var service = new TaskDraftService(
             NullLogger<TaskDraftService>.Instance,
-            new StaticChatClient("""
+            new FakeChatClient("""
                 Draft:
                 {"description":"Prepare the quarterly compliance summary for leadership.","acceptanceCriteria":"- Summary reviewed\n- Findings attached"}
                 """),
@@ -148,36 +149,6 @@ public class AiDemoServiceTests
                 request.Item.Description!.Contains("Acceptance criteria:", StringComparison.Ordinal) &&
                 request.Item.Description.Contains("Findings attached", StringComparison.Ordinal)),
             It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    /// <summary>Small deterministic chat client for parser tests.</summary>
-    private sealed class StaticChatClient(string responseText) : IChatClient
-    {
-        internal ChatOptions? LastOptions { get; private set; }
-
-        public Task<ChatResponse> GetResponseAsync(
-        IEnumerable<ChatMessage> messages,
-        ChatOptions? options = null,
-        CancellationToken cancellationToken = default)
-        {
-            LastOptions = options;
-            return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, responseText)));
-        }
-
-        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
-            IEnumerable<ChatMessage> messages,
-            ChatOptions? options = null,
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            yield return new ChatResponseUpdate(ChatRole.Assistant, responseText);
-            await Task.CompletedTask;
-        }
-
-        public object? GetService(Type serviceType, object? serviceKey = null) => null;
-
-        public void Dispose()
-        {
-        }
     }
 
     public TestContext TestContext { get; set; } = null!;

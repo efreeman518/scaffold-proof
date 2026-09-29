@@ -2,14 +2,11 @@ using AppHost;
 using Aspire.Hosting;
 using Aspire.Hosting.Testing;
 using EF.IntegrationTesting.Aspire;
+using EF.Testing.Environment;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Hosting;
-using Test.Support.Aspire;
 using Test.Support.Hosting;
-using EnvironmentVariableScope = EF.Testing.Environment.EnvironmentVariableScope;
-using FunctionsCoreToolsDiscovery = EF.Testing.Environment.FunctionsCoreToolsDiscovery;
-using AspireTestHostContext = Test.Support.Aspire.AspireTestHostContext;
 
 namespace Test.Aspire;
 
@@ -44,8 +41,10 @@ internal static class AspireTestHost
     internal static string ConnectionString = null!;
 
     internal static TimeSpan DefaultTimeout =>
-        _hostContext?.RemainingStartupBudget
-        ?? AspireTestHostContext.ReadPositiveSeconds(StartupTimeoutEnvironmentVariable, 900);
+        _hostContext?.RemainingStartupBudget ?? StartupBudget;
+
+    private static TimeSpan StartupBudget =>
+        TestEnvironment.GetPositiveSeconds(StartupTimeoutEnvironmentVariable, TimeSpan.FromSeconds(900));
 
     /// <summary>Shared Aspire app started once for all Aspire-based mesh tests.</summary>
     internal static DistributedApplication? AspireApp { get; private set; }
@@ -58,9 +57,6 @@ internal static class AspireTestHost
 
     /// <summary>True when built Uno WASM assets are present for the static host.</summary>
     internal static bool UnoWasmAvailable { get; private set; }
-
-    /// <summary>True only when the internal Aspire diagnostic logging switch is enabled.</summary>
-    internal static bool ResourceLoggingEnabled { get; private set; }
 
     /// <summary>
     /// Starts the Aspire graph on first call and returns immediately on subsequent calls. Mesh test classes
@@ -77,10 +73,7 @@ internal static class AspireTestHost
         if (AspireApp is not null)
             return;
 
-        if (string.Equals(
-                Environment.GetEnvironmentVariable(RunAspireTestsEnvironmentVariable),
-                "false",
-                StringComparison.OrdinalIgnoreCase))
+        if (TestEnvironment.IsFalse(RunAspireTestsEnvironmentVariable))
         {
             Assert.Inconclusive($"{RunAspireTestsEnvironmentVariable}=false - Aspire mesh tier opted out.");
             return;
@@ -99,8 +92,8 @@ internal static class AspireTestHost
                 return;
 
             _hostContext = new AspireTestHostContext(
-                AspireTestHostContext.ReadPositiveSeconds(StartupTimeoutEnvironmentVariable, 900),
-                ResourceLoggingEnvironmentVariable);
+                StartupBudget,
+                new AspireTestHostOptions { IncludeResourceLogs = TestEnvironment.IsTrue(ResourceLoggingEnvironmentVariable) });
             var dockerUnavailableReason = await _hostContext.GetDockerUnavailableReasonAsync(context.CancellationToken);
             if (dockerUnavailableReason is not null)
             {
@@ -115,18 +108,9 @@ internal static class AspireTestHost
             }
             catch (Exception ex)
             {
-                foreach (var resourceName in new[]
-                {
-                    "taskflowdb",
-                    "taskflowmigrator",
-                    "taskflowapi",
-                    "taskflowgateway",
-                    "taskflowfunctions",
-                    "TableStorage1"
-                })
-                {
-                    await _hostContext.DumpResourceDiagnosticsAsync(resourceName, CancellationToken.None);
-                }
+                await _hostContext.DumpResourceDiagnosticsAsync(
+                    ["taskflowdb", "taskflowmigrator", "taskflowapi", "taskflowgateway", "taskflowfunctions", "TableStorage1"],
+                    CancellationToken.None);
 
                 try
                 {
@@ -157,14 +141,14 @@ internal static class AspireTestHost
         _environment = new EnvironmentVariableScope()
             .Set("TASKFLOW_ASPIRE_TESTING", "true");
 
-        if (!IsExplicitlyDisabled(RunFunctionsTestsEnvironmentVariable) && EnsureFuncToolAvailable())
+        if (!TestEnvironment.IsFalse(RunFunctionsTestsEnvironmentVariable) && EnsureFuncToolAvailable())
             _environment.Set("TASKFLOW_ASPIRE_FUNCTIONS_AVAILABLE", "true");
 
-        ReactAvailable = !IsExplicitlyDisabled("TASKFLOW_REACT_TESTS_ENABLED") && IsReactRunnable();
+        ReactAvailable = !TestEnvironment.IsFalse("TASKFLOW_REACT_TESTS_ENABLED") && IsReactRunnable();
         if (ReactAvailable)
             _environment.Set("TASKFLOW_ASPIRE_REACT_AVAILABLE", "true");
 
-        var unoWasmDistPath = IsExplicitlyDisabled("TASKFLOW_WASM_TESTS_ENABLED")
+        var unoWasmDistPath = TestEnvironment.IsFalse("TASKFLOW_WASM_TESTS_ENABLED")
             ? null
             : FindUnoWasmDistPath();
         UnoWasmAvailable = unoWasmDistPath is not null;
@@ -174,7 +158,6 @@ internal static class AspireTestHost
             _environment.Set("TASKFLOW_UNO_WASM_DIST_PATH", unoWasmDistPath);
         }
 
-        ResourceLoggingEnabled = hostContext.ResourceLoggingEnabled;
         var appHostProgramType = Type.GetType("Program, AppHost", throwOnError: true)!;
 
         var builder = await hostContext.RunStartupStepAsync(
@@ -185,7 +168,7 @@ internal static class AspireTestHost
                 configureBuilder: (appOptions, hostSettings) =>
                 {
                     appOptions.DisableDashboard = true;
-                    appOptions.EnableResourceLogging = ResourceLoggingEnabled;
+                    appOptions.EnableResourceLogging = hostContext.IncludeResourceLogs;
                     hostSettings.Configuration ??= new();
                     hostSettings.Configuration["Parameters:sql-password"] = LocalSqlSettings.SharedSaPassword;
                 },
@@ -252,7 +235,6 @@ internal static class AspireTestHost
             AiProvider = AspireAiProvider.None;
             ReactAvailable = false;
             UnoWasmAvailable = false;
-            ResourceLoggingEnabled = false;
         }
     }
 
@@ -274,7 +256,7 @@ internal static class AspireTestHost
     /// </summary>
     internal static async Task RequireFunctionsHostAsync(CancellationToken cancellationToken)
     {
-        if (IsExplicitlyDisabled(RunFunctionsTestsEnvironmentVariable))
+        if (TestEnvironment.IsFalse(RunFunctionsTestsEnvironmentVariable))
         {
             Assert.Inconclusive($"{RunFunctionsTestsEnvironmentVariable}=false - Functions full-stack tests opted out.");
             return;
@@ -330,7 +312,7 @@ internal static class AspireTestHost
 
     internal static void RequireAzureFoundryOrInconclusive()
     {
-        if (IsExplicitlyDisabled(RunAzureFoundryTestsEnvironmentVariable))
+        if (TestEnvironment.IsFalse(RunAzureFoundryTestsEnvironmentVariable))
         {
             Assert.Inconclusive(
                 $"{RunAzureFoundryTestsEnvironmentVariable}=false - Azure Foundry live tests opted out.");
@@ -359,35 +341,13 @@ internal static class AspireTestHost
         string.Equals(HostingLaneResolver.ResolveFromEnvironment().AiServices, "AzureInference", StringComparison.Ordinal);
 
     /// <summary>
-    /// True when an opt-out variable is <c>false</c>, <c>0</c> or <c>no</c>. The one check for every
-    /// <c>TASKFLOW_*_TESTS_ENABLED</c> switch, so the host skipping a surface and the test explaining the
-    /// skip can never disagree about what counts as an opt-out.
-    /// </summary>
-    internal static bool IsExplicitlyDisabled(string variableName)
-    {
-        var value = Environment.GetEnvironmentVariable(variableName);
-        return string.Equals(value, "false", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(value, "0", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(value, "no", StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>True when a lane switch is <c>true</c>, <c>1</c> or <c>yes</c>: the operator asked for that lane.</summary>
-    internal static bool IsExplicitlyEnabled(string variableName)
-    {
-        var value = Environment.GetEnvironmentVariable(variableName);
-        return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
     /// Test prerequisite rule for a missing optional prerequisite: Inconclusive on a default run, with the enabling
     /// command in <paramref name="message"/>; a failure when the operator explicitly enabled the lane through
     /// <paramref name="laneVariable"/>, because an enabled lane that cannot run is not a skip.
     /// </summary>
     internal static void ReportMissingPrerequisite(string laneVariable, string message)
     {
-        if (IsExplicitlyEnabled(laneVariable))
+        if (TestEnvironment.IsTrue(laneVariable))
             Assert.Fail($"{laneVariable} is explicitly enabled, but a prerequisite is missing. {message}");
 
         Assert.Inconclusive(message);
@@ -426,22 +386,7 @@ internal static class AspireTestHost
             .FirstOrDefault(path => path is not null);
     }
 
-    private static string? FindRepoRoot()
-    {
-        foreach (var start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
-        {
-            var directory = new DirectoryInfo(start);
-            while (directory is not null)
-            {
-                if (File.Exists(Path.Combine(directory.FullName, "TaskFlow.slnx")))
-                    return directory.FullName;
-
-                directory = directory.Parent;
-            }
-        }
-
-        return null;
-    }
+    private static string? FindRepoRoot() => RepositoryRoot.TryFind(markers: "TaskFlow.slnx");
 
     internal sealed record AiStatus(string Provider, bool IsConfigured);
 }

@@ -6,7 +6,9 @@
 
   <ItemGroup>
     <PackageReference Include="MSTest" />
-    <PackageReference Include="NetArchTest.Rules" />
+    <PackageReference Include="EF.Testing" />
+    <PackageReference Include="EF.Testing.Architecture" />
+    <PackageReference Include="Mono.Cecil" />
     <PackageReference Include="EF.CQRS" />
     <PackageReference Include="EF.BackgroundServices" />
     <!-- Forces the same resolved OpenAI versions as TaskFlow.Bootstrapper (now referenced below) so

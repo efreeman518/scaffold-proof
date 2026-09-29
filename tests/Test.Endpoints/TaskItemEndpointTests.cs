@@ -1,4 +1,5 @@
 using EF.Common.Contracts;
+using EF.Testing.Http;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -6,6 +7,7 @@ using System.Text.Json.Serialization;
 using TaskFlow.Application.Models;
 using TaskFlow.Application.Models.Paging;
 using TaskFlow.Domain.Shared.Enums;
+using Test.Support;
 
 namespace Test.Endpoints;
 
@@ -113,7 +115,7 @@ public class TaskItemEndpointTests
             Priority = Priority.High,
             Status = created.Status
         };
-        var response = await client.PutWithIfMatchAsync($"/api/v1/task-items/{created.Id}", new DefaultRequest<TaskItemDto> { Item = updateDto }, ConcurrencyHttpExtensions.IfMatch(created.Version!.Value), TestContext.CancellationToken);
+        var response = await client.PutAsJsonWithIfMatchAsync($"/api/v1/task-items/{created.Id}", new DefaultRequest<TaskItemDto> { Item = updateDto }, ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), JsonTestOptions.Default, TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
         var updated = (await response.Content.ReadFromJsonAsync<DefaultResponse<TaskItemDto>>(_jsonOptions, TestContext.CancellationToken))!.Item;
@@ -137,7 +139,7 @@ public class TaskItemEndpointTests
         var created = (await createResponse.Content.ReadFromJsonAsync<DefaultResponse<TaskItemDto>>(_jsonOptions, TestContext.CancellationToken))!.Item;
 
         var invalid = new TaskItemDto { Id = created!.Id, Title = "", Priority = Priority.Medium, Status = created.Status };
-        using var response = await client.PutWithIfMatchAsync($"/api/v1/task-items/{created.Id}", new DefaultRequest<TaskItemDto> { Item = invalid }, ConcurrencyHttpExtensions.IfMatch(created.Version!.Value), TestContext.CancellationToken);
+        using var response = await client.PutAsJsonWithIfMatchAsync($"/api/v1/task-items/{created.Id}", new DefaultRequest<TaskItemDto> { Item = invalid }, ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), JsonTestOptions.Default, TestContext.CancellationToken);
 
         var body = await response.Content.ReadAsStringAsync(TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode, body);
@@ -156,7 +158,7 @@ public class TaskItemEndpointTests
         var createResponse = await client.PostAsJsonAsync("/api/v1/task-items", new DefaultRequest<TaskItemDto> { Item = dto }, cancellationToken: TestContext.CancellationToken);
         var created = (await createResponse.Content.ReadFromJsonAsync<DefaultResponse<TaskItemDto>>(_jsonOptions, TestContext.CancellationToken))!.Item;
 
-        var response = await client.DeleteWithIfMatchAsync($"/api/v1/task-items/{created!.Id}", ConcurrencyHttpExtensions.IfMatch(created.Version!.Value), TestContext.CancellationToken);
+        var response = await client.DeleteWithIfMatchAsync($"/api/v1/task-items/{created!.Id}", ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.NoContent, response.StatusCode);
 
@@ -251,12 +253,12 @@ public class TaskItemEndpointTests
             Priority = Priority.Low,
             Status = created.Status
         };
-        var updateResponse = await client.PutWithIfMatchAsync($"/api/v1/task-items/{created.Id}", new DefaultRequest<TaskItemDto> { Item = updateDto }, ConcurrencyHttpExtensions.IfMatch(created.Version!.Value), TestContext.CancellationToken);
+        var updateResponse = await client.PutAsJsonWithIfMatchAsync($"/api/v1/task-items/{created.Id}", new DefaultRequest<TaskItemDto> { Item = updateDto }, ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), JsonTestOptions.Default, TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.OK, updateResponse.StatusCode);
 
         // Delete
         var updatedItem = (await updateResponse.Content.ReadFromJsonAsync<DefaultResponse<TaskItemDto>>(_jsonOptions, TestContext.CancellationToken))!.Item;
-        var deleteResponse = await client.DeleteWithIfMatchAsync($"/api/v1/task-items/{created.Id}", ConcurrencyHttpExtensions.IfMatch(updatedItem!.Version!.Value), TestContext.CancellationToken);
+        var deleteResponse = await client.DeleteWithIfMatchAsync($"/api/v1/task-items/{created.Id}", ConcurrencyHttpExtensions.FormatStrongETag(updatedItem!.Version!.Value), TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.NoContent, deleteResponse.StatusCode);
 
         // Verify deleted

@@ -1,8 +1,10 @@
 using EF.Common.Contracts;
+using EF.Testing.Http;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using TaskFlow.Application.Models;
+using Test.Support;
 
 namespace Test.Endpoints;
 
@@ -104,7 +106,7 @@ public class CategoryEndpointTests
             SortOrder = 2,
             IsActive = true
         };
-        var response = await client.PutWithIfMatchAsync($"/api/v1/categories/{created.Id}", new DefaultRequest<CategoryDto> { Item = updateDto }, ConcurrencyHttpExtensions.IfMatch(created.Version!.Value), TestContext.CancellationToken);
+        var response = await client.PutAsJsonWithIfMatchAsync($"/api/v1/categories/{created.Id}", new DefaultRequest<CategoryDto> { Item = updateDto }, ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), JsonTestOptions.Default, TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
         var updated = (await response.Content.ReadFromJsonAsync<DefaultResponse<CategoryDto>>(TestContext.CancellationToken))!.Item;
@@ -124,7 +126,7 @@ public class CategoryEndpointTests
         var createResponse = await client.PostAsJsonAsync("/api/v1/categories", new DefaultRequest<CategoryDto> { Item = dto }, cancellationToken: TestContext.CancellationToken);
         var created = (await createResponse.Content.ReadFromJsonAsync<DefaultResponse<CategoryDto>>(TestContext.CancellationToken))!.Item;
 
-        var response = await client.DeleteWithIfMatchAsync($"/api/v1/categories/{created!.Id}", ConcurrencyHttpExtensions.IfMatch(created.Version!.Value), TestContext.CancellationToken);
+        var response = await client.DeleteWithIfMatchAsync($"/api/v1/categories/{created!.Id}", ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.NoContent, response.StatusCode);
 
@@ -192,12 +194,12 @@ public class CategoryEndpointTests
             SortOrder = 5,
             IsActive = false
         };
-        var updateResponse = await client.PutWithIfMatchAsync($"/api/v1/categories/{created.Id}", new DefaultRequest<CategoryDto> { Item = updateDto }, ConcurrencyHttpExtensions.IfMatch(created.Version!.Value), TestContext.CancellationToken);
+        var updateResponse = await client.PutAsJsonWithIfMatchAsync($"/api/v1/categories/{created.Id}", new DefaultRequest<CategoryDto> { Item = updateDto }, ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), JsonTestOptions.Default, TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.OK, updateResponse.StatusCode);
 
         // Delete
         var updatedItem = (await updateResponse.Content.ReadFromJsonAsync<DefaultResponse<CategoryDto>>(TestContext.CancellationToken))!.Item;
-        var deleteResponse = await client.DeleteWithIfMatchAsync($"/api/v1/categories/{created.Id}", ConcurrencyHttpExtensions.IfMatch(updatedItem!.Version!.Value), TestContext.CancellationToken);
+        var deleteResponse = await client.DeleteWithIfMatchAsync($"/api/v1/categories/{created.Id}", ConcurrencyHttpExtensions.FormatStrongETag(updatedItem!.Version!.Value), TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.NoContent, deleteResponse.StatusCode);
 
         // Verify deleted
