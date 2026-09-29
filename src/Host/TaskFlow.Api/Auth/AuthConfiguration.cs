@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authentication;
+using EF.Auth.Fixed;
 using TaskFlow.Application.Contracts;
 
 namespace TaskFlow.Api.Auth;
@@ -10,15 +10,22 @@ namespace TaskFlow.Api.Auth;
 public static class AuthConfiguration
 {
     /// <summary>
-    /// Registers the scaffold authentication handler after validating AuthMode.
+    /// Registers the EF.Auth fixed-principal scheme with <see cref="ScaffoldPrincipal"/> after validating AuthMode.
+    /// The host fails to start outside <see cref="ScaffoldPrincipal.AllowedEnvironments"/>.
     /// </summary>
     public static IServiceCollection AddTaskFlowAuth(this IServiceCollection services, IConfiguration config)
     {
         _ = AuthModeResolver.Resolve(config[AuthModeResolver.ConfigKey]);
 
-        services.AddAuthentication(ScaffoldAuthHandler.SchemeName)
-            .AddScheme<AuthenticationSchemeOptions, ScaffoldAuthHandler>(
-                ScaffoldAuthHandler.SchemeName, _ => { });
+        services.AddAuthentication(ScaffoldPrincipal.SchemeName)
+            .AddFixedPrincipal(ScaffoldPrincipal.SchemeName, ConfigureScaffoldPrincipal);
         return services;
+    }
+
+    /// <summary>The <see cref="ScaffoldPrincipal"/> claims and allowed environments.</summary>
+    private static void ConfigureScaffoldPrincipal(FixedPrincipalOptions options)
+    {
+        options.Claims = [.. ScaffoldPrincipal.Claims.Select(c => new FixedClaim(c.Type, c.Value))];
+        options.AllowedEnvironments = [.. ScaffoldPrincipal.AllowedEnvironments];
     }
 }

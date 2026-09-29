@@ -10,9 +10,11 @@ namespace Test.Unit;
 /// </summary>
 internal static class TestWebApplication
 {
-    public static WebApplicationBuilder CreateBuilder()
+    public static WebApplicationBuilder CreateBuilder(string? environmentName = null)
     {
-        var builder = WebApplication.CreateBuilder();
+        var builder = environmentName is null
+            ? WebApplication.CreateBuilder()
+            : WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environmentName });
         builder.Configuration.Sources.Clear();
         builder.Configuration.AddInMemoryCollection(); // writable source for builder.Configuration[key] = value
         return builder;

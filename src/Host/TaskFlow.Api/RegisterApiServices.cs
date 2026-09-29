@@ -5,7 +5,7 @@ using EF.Common.Exceptions;
 using EF.Data.Contracts;
 using EF.AspNetCore.Versioning;
 using EF.Grpc;
-using Microsoft.AspNetCore.Authentication;
+using EF.Auth.Relay;
 using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json.Serialization;
@@ -29,11 +29,10 @@ namespace TaskFlow.Api;
 public static class RegisterApiServices
 {
     /// <summary>
-    /// Adds HTTP-facing dependencies without building the app. Startup logging is passed in so
-    /// auth and config failures can be reported before the runtime logger factory exists.
+    /// Adds HTTP-facing dependencies without building the app.
     /// </summary>
     public static IServiceCollection AddApiServices(
-        this IServiceCollection services, IConfiguration config, ILogger startupLogger)
+        this IServiceCollection services, IConfiguration config)
     {
         services.AddHttpContextAccessor();
         // Streaming instruments: a streamed export has no meaningful ASP.NET request duration, so the export
@@ -42,7 +41,7 @@ public static class RegisterApiServices
         AddJsonOptions(services);
         // Origins validated at registration: none, a trailing '/', a path, or '*' with credentials fails startup.
         services.AddCorsPolicyFromConfiguration("TaskFlowUi", config.GetSection("Cors"));
-        AddAuthentication(services, config, startupLogger);
+        AddAuthentication(services, config);
         AddAuthorization(services);
         AddExceptionHandling(services);
         AddRateLimiting(services, config);
@@ -83,13 +82,16 @@ public static class RegisterApiServices
         });
     }
 
-    /// <summary>Registers authentication dependencies in the service container.</summary>
-    private static void AddAuthentication(IServiceCollection services, IConfiguration config, ILogger logger)
+    /// <summary>
+    /// Registers authentication: the Scaffold fixed principal, then the EF.Auth trusted-gateway claims relay bound
+    /// from the same <c>ForwardedClaims</c> section the Gateway binds. The relay replaces the principal only for an
+    /// app-only token from a caller listed in <c>ForwardedClaims:TrustedCallerIds</c> (empty here, so it is inert:
+    /// the Scaffold principal carries no caller id), and the relayed identity holds only the relayed claims.
+    /// </summary>
+    private static void AddAuthentication(IServiceCollection services, IConfiguration config)
     {
         services.AddTaskFlowAuth(config);
-        services.Configure<GatewayClaimsTransformSettings>(
-            config.GetSection(GatewayClaimsTransformSettings.ConfigSectionName));
-        services.AddTransient<IClaimsTransformation, GatewayClaimsTransformer>();
+        services.AddForwardedClaimsTransformation(config);
     }
 
     /// <summary>Registers authorization dependencies in the service container.</summary>

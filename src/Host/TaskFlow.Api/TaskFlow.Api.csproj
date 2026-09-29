@@ -41,6 +41,8 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="EF.AspNetCore" />
+    <!-- S2/S6: the trusted-gateway claims relay and the Scaffold fixed principal. -->
+    <PackageReference Include="EF.Auth" />
     <PackageReference Include="EF.Common" />
     <!-- FlowEngine packages live in TaskFlow.Bootstrapper where DI registration happens.
          Only AdminApi is referenced here for the pipeline mapping. -->

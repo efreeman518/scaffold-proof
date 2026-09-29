@@ -2,7 +2,7 @@ using System.Net;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using TaskFlow.Api;
-using TaskFlow.Api.Auth;
+using TaskFlow.Application.Contracts;
 
 namespace Test.Endpoints;
 
@@ -62,7 +62,7 @@ public sealed class TenantRateLimitEndpointTests
         new CustomApiFactory().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("RateLimiting:DefaultTier", "premium");
-            builder.UseSetting($"RateLimiting:TenantTiers:{ScaffoldAuthHandler.ScaffoldTenantId}", "free");
+            builder.UseSetting($"RateLimiting:TenantTiers:{ScaffoldPrincipal.TenantId}", "free");
             builder.UseSetting("RateLimiting:Tiers:free:PermitLimit", tenantPermitLimit.ToString(System.Globalization.CultureInfo.InvariantCulture));
             builder.UseSetting("RateLimiting:Tiers:free:WindowSeconds", "3600");
             builder.UseSetting("RateLimiting:Export:PermitLimit", "5");
