@@ -57,9 +57,12 @@ if (usePostgres)
         .WithImage(ContainerImages.PostgreSqlRepository)
         .WithImageTag(ContainerImages.PostgreSqlTag)
         .WithEnvironment("POSTGRES_DB", "taskflowdb");
+    // PostgreSQL 18 images keep data under a major-version directory below /var/lib/postgresql and refuse to
+    // start when /var/lib/postgresql/data is a mount, which is where WithDataVolume puts it. Mount the parent
+    // instead, as deploy/compose does.
     if (!isTesting)
         postgres = postgres.WithLifetime(ContainerLifetime.Persistent)
-                           .WithDataVolume("taskflow-postgres-data");
+                           .WithVolume("taskflow-postgres-data", "/var/lib/postgresql");
     taskflowDb = postgres.AddDatabase("taskflowdb");
 }
 else

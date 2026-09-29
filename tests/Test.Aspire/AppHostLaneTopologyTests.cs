@@ -15,6 +15,9 @@ namespace Test.Aspire;
 [DoNotParallelize]
 public sealed class AppHostLaneTopologyTests
 {
+    /// <summary>MSTest-injected context; supplies the per-test cancellation token.</summary>
+    public TestContext TestContext { get; set; } = null!;
+
     private static readonly string[] LaneEnvironmentVariables =
     [
         HostingLaneResolver.LaneEnvironmentVariable,
@@ -151,6 +154,30 @@ public sealed class AppHostLaneTopologyTests
         StringAssert.Contains(source, "if (!isTesting || unoWasmAvailableInTesting || fullLaneAvailableInTesting)");
         StringAssert.Contains(source,
             ".WithEnvironment(\"RateLimiting__Tenants__Tiers__standard__PermitLimit\", \"10000\")");
+    }
+
+    /// <summary>
+    /// The persistent (non-test) NonAzure graph mounts the Postgres volume at /var/lib/postgresql: a PostgreSQL 18
+    /// image refuses to start with a mount at /var/lib/postgresql/data, so `dotnet run` of the AppHost failed.
+    /// </summary>
+    [TestMethod]
+    public async Task PersistentNonAzureGraph_MountsPostgresVolumeWherePostgres18KeepsData()
+    {
+        using var environment = new EnvironmentVariableScope();
+        foreach (var name in GraphEnvironmentVariables) environment.Set(name, null);
+
+        var programType = Type.GetType("Program, AppHost", throwOnError: true)!;
+        var builder = await DistributedApplicationTestingBuilder.CreateAsync(
+            programType,
+            args: [],
+            configureBuilder: (appOptions, _) => appOptions.DisableDashboard = true,
+            cancellationToken: TestContext.CancellationToken);
+
+        var postgres = builder.Resources.Single(resource => resource.Name == "postgres");
+        var mounts = postgres.Annotations.OfType<ContainerMountAnnotation>().ToList();
+        var volume = mounts.Single(mount => mount.Source == "taskflow-postgres-data");
+        Assert.AreEqual("/var/lib/postgresql", volume.Target);
+        Assert.IsFalse(mounts.Any(mount => mount.Target == "/var/lib/postgresql/data"));
     }
 
     [TestMethod]
