@@ -33,11 +33,11 @@ All adoption slices merged (#29-#34). a6 (proof docs and full matrix) and sa (sc
 only) run in parallel. When a6 merges, open the final PR integration/ef2-adoption -> main. Its CI run is the merge gate.
 Merge sa's scaffold-ai PR to main after its validate workflow passes.
 
-## Active agents: 2
+## Active agents: 2 (+ EF.Packages role-lists agent a45eec03, run ef2x-3cd8b7)
 
 ## FIFO queue
 
-Empty
+a7 (after a6 merges and the EF.Packages role-lists release publishes)
 
 ## Slices
 
@@ -50,6 +50,7 @@ Empty
 | a4 | Auth, gateway, rate limiting, cache, scheduler, storage, gRPC, AI: S items' proof adoption | a0, a3 | opus | merged | #34 (e292754) | removed | ab37ee30 | released | removed |
 | a5 | Testing: T items' proof adoption (LoadRunner, fixtures, architecture rules, AI fakes) | a0 | opus | merged | #30 (43a39d7) | removed | ac9178d3 | released | removed |
 | a6 | Proof docs (DESIGN-DECISIONS, REFERENCE-STATUS, README, tech design where affected) and the full test matrix including Docker integration and the Aspire lanes | a1-a5 | opus | running | `refactor/adopt2-f8ca68-a6` | `.tmp/worktrees/adopt2-f8ca68-a6` | ad76e713 | b7f810a1 | `.tmp/orchestrated-refactor/adopt2-f8ca68/a6` |
+| a7 | Bump EF.* to the next EF.Packages release (role lists: `CrossTenantRoles`, `SystemRoles`); configure `SystemRoles=[System]` and `CrossTenantRoles=[GlobalAdmin, System]`; delete the app's hand-built no-request identity | a6, EF.Packages role-lists publish | opus | queued | | | | | |
 | sa | scaffold-ai: support/ef-packages-reference.md, skills/package-dependencies.md, templates from "generate" to "reference EF.X", maintenance canaries | a6 | opus | running | scaffold-ai `docs/ef2-packages-305b93` | scaffold-ai `.tmp/worktrees/ef2-packages-305b93` | ab7a6437 | 2328f836 | scaffold-ai `.tmp/ef2-packages-305b93` |
 
 ## Slice notes
