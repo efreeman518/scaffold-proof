@@ -1,3 +1,4 @@
+using EF.Testing.Http;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -21,7 +22,7 @@ public class ProblemDetailsDelegatingHandlerTests
     public async Task SuccessResponse_Passes_Through_Without_Notifying()
     {
         var svc = new NotificationService();
-        var stub = new StubHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var stub = new StubHttpMessageHandler((_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
 
         var response = await Invoke(stub, svc);
 
@@ -34,7 +35,7 @@ public class ProblemDetailsDelegatingHandlerTests
     public async Task Non_ProblemJson_Error_Passes_Through()
     {
         var svc = new NotificationService();
-        var stub = new StubHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
+        var stub = new StubHttpMessageHandler((_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
         {
             Content = new StringContent("Plain text error", Encoding.UTF8, "text/plain")
         }));
@@ -50,7 +51,7 @@ public class ProblemDetailsDelegatingHandlerTests
     public async Task ProblemJson_Throws_ProblemDetailsException_And_Notifies()
     {
         var svc = new NotificationService();
-        var stub = new StubHandler(_ => Task.FromResult(ProblemResponse(400, "Validation failed", "Name is required")));
+        var stub = new StubHttpMessageHandler((_, _, _) => Task.FromResult(ProblemResponse(400, "Validation failed", "Name is required")));
 
         var ex = await Assert.ThrowsExactlyAsync<ProblemDetailsException>(async () =>
             await Invoke(stub, svc));
@@ -66,7 +67,7 @@ public class ProblemDetailsDelegatingHandlerTests
     public async Task ProblemJson_499_Throws_Without_Notifying()
     {
         var svc = new NotificationService();
-        var stub = new StubHandler(_ => Task.FromResult(ProblemResponse(499, "Client cancelled", "User aborted")));
+        var stub = new StubHttpMessageHandler((_, _, _) => Task.FromResult(ProblemResponse(499, "Client cancelled", "User aborted")));
 
         var ex = await Assert.ThrowsExactlyAsync<ProblemDetailsException>(async () =>
             await Invoke(stub, svc));
@@ -80,7 +81,7 @@ public class ProblemDetailsDelegatingHandlerTests
     public async Task Malformed_ProblemJson_Passes_Through()
     {
         var svc = new NotificationService();
-        var stub = new StubHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+        var stub = new StubHttpMessageHandler((_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
         {
             Content = new StringContent("{not valid json", Encoding.UTF8, "application/problem+json")
         }));
@@ -96,7 +97,7 @@ public class ProblemDetailsDelegatingHandlerTests
     public async Task Cancelled_ProblemJson_Read_Propagates_Cancellation()
     {
         var svc = new NotificationService();
-        var stub = new StubHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+        var stub = new StubHttpMessageHandler((_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
         {
             Content = new CancelledProblemContent()
         }));
@@ -112,7 +113,7 @@ public class ProblemDetailsDelegatingHandlerTests
     public async Task ProblemJson_Dedupes_On_Concurrent_Duplicates()
     {
         var svc = new NotificationService();
-        var stub = new StubHandler(_ => Task.FromResult(ProblemResponse(500, "Oops", "Server error")));
+        var stub = new StubHttpMessageHandler((_, _, _) => Task.FromResult(ProblemResponse(500, "Oops", "Server error")));
         var handler = new ProblemDetailsDelegatingHandler(svc) { InnerHandler = stub };
         var invoker = new HttpMessageInvoker(handler);
 
@@ -144,15 +145,6 @@ public class ProblemDetailsDelegatingHandlerTests
         {
             Content = new StringContent(payload, Encoding.UTF8, "application/problem+json")
         };
-    }
-
-    /// <summary>Supports test execution for Test.unit Uno scenarios.</summary>
-    private sealed class StubHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> respond)
-        : HttpMessageHandler
-    {
-        /// <summary>Verifies send behavior and protects the expected test contract.</summary>
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
-            respond(request);
     }
 
     private sealed class CancelledProblemContent : HttpContent

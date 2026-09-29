@@ -1,3 +1,4 @@
+using EF.Testing.Http;
 using System.Diagnostics;
 using System.Net;
 using Microsoft.Extensions.Configuration;
@@ -26,7 +27,7 @@ public sealed class ServiceDefaultsScaleTests
     [TestMethod]
     public async Task StandardHandler_TransientFailureOnPost_IsNotRetried()
     {
-        var handler = new FailingHandler();
+        var handler = StubHttpMessageHandler.Returns(HttpStatusCode.ServiceUnavailable);
         using var client = BuildDefaultsClient(handler);
 
         using var response = await client.PostAsync(new Uri("http://localhost/tasks"), content: null, TestContext.CancellationToken);
@@ -39,7 +40,7 @@ public sealed class ServiceDefaultsScaleTests
     [TestMethod]
     public async Task StandardHandler_TransientFailureOnGet_IsRetried()
     {
-        var handler = new FailingHandler();
+        var handler = StubHttpMessageHandler.Returns(HttpStatusCode.ServiceUnavailable);
         using var client = BuildDefaultsClient(handler);
 
         using var response = await client.GetAsync(new Uri("http://localhost/tasks"), TestContext.CancellationToken);
@@ -135,19 +136,5 @@ public sealed class ServiceDefaultsScaleTests
         var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { DisableDefaults = true });
         builder.Configuration.AddInMemoryCollection(settings);
         return builder;
-    }
-
-    /// <summary>Always answers 503, the canonical transient status, and counts attempts.</summary>
-    private sealed class FailingHandler : HttpMessageHandler
-    {
-        private int _attempts;
-
-        internal int Attempts => Volatile.Read(ref _attempts);
-
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            Interlocked.Increment(ref _attempts);
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
-        }
     }
 }

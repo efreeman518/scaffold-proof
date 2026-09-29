@@ -1,5 +1,6 @@
 using EF.Audit.Contracts;
 using EF.Storage.Contracts;
+using EF.Testing.Processes;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;

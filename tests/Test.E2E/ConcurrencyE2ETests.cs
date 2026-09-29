@@ -1,3 +1,4 @@
+using EF.Testing.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using System.Net;
@@ -67,13 +68,13 @@ public class ConcurrencyE2ETests
         using var clientB = CreateClient();
 
         var created = await CreateTaskAsync(clientA, $"Race {Guid.NewGuid():N}");
-        var ifMatch = ConcurrencyHttp.IfMatch(created.Version!.Value);
+        var ifMatch = ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value);
 
         var updateA = new DefaultRequest<TaskItemDto> { Item = created with { Title = "Winner A" } };
         var updateB = new DefaultRequest<TaskItemDto> { Item = created with { Title = "Winner B" } };
 
-        var taskA = clientA.PutWithIfMatchAsync($"/api/v1/task-items/{created.Id}", updateA, ifMatch, TestContext.CancellationToken);
-        var taskB = clientB.PutWithIfMatchAsync($"/api/v1/task-items/{created.Id}", updateB, ifMatch, TestContext.CancellationToken);
+        var taskA = clientA.PutAsJsonWithIfMatchAsync($"/api/v1/task-items/{created.Id}", updateA, ifMatch, JsonTestOptions.Default, TestContext.CancellationToken);
+        var taskB = clientB.PutAsJsonWithIfMatchAsync($"/api/v1/task-items/{created.Id}", updateB, ifMatch, JsonTestOptions.Default, TestContext.CancellationToken);
 
         var responses = await Task.WhenAll(taskA, taskB);
 
@@ -115,18 +116,19 @@ public class ConcurrencyE2ETests
 
         Assert.IsGreaterThan(created.Version!.Value, reloaded.Version!.Value,
             "A child write must move the root version, or the root ETag misrepresents the aggregate.");
-        Assert.AreEqual(reloaded.Version!.Value.ToString(), addComment.ETagValue(),
+        Assert.AreEqual(reloaded.Version!.Value.ToString(), addComment.GetETagValue(),
             "The child add response must return the new root version.");
 
         // The pre-child root version is now stale for a root write.
-        using var stale = await client.PutWithIfMatchAsync(
+        using var stale = await client.PutAsJsonWithIfMatchAsync(
             $"/api/v1/task-items/{created.Id}",
             new DefaultRequest<TaskItemDto> { Item = created with { Title = "Stale root write" } },
-            ConcurrencyHttp.IfMatch(created.Version!.Value),
+            ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value),
+            JsonTestOptions.Default,
             TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.PreconditionFailed, stale.StatusCode);
-        Assert.AreEqual(reloaded.Version!.Value.ToString(), stale.ETagValue());
+        Assert.AreEqual(reloaded.Version!.Value.ToString(), stale.GetETagValue());
     }
 
     /// <summary>

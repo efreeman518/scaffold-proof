@@ -1,6 +1,7 @@
+using EF.Testing.Environment;
+using EF.Testing.Processes;
 using Microsoft.Playwright;
 using Test.PlaywrightUI.Hosting;
-using Test.Support.Aspire;
 
 namespace Test.PlaywrightUI;
 
@@ -49,14 +50,14 @@ public sealed class TypeScriptPlaywrightSuiteTests
         string[] requestedProjects,
         bool runGatewayBlazorSmoke = false)
     {
-        if (IsExplicitlyDisabled(PlaywrightLaneVariable))
+        if (TestEnvironment.IsFalse(PlaywrightLaneVariable))
         {
             Assert.Inconclusive("TASKFLOW_PLAYWRIGHT_TESTS_ENABLED=false - Playwright full-stack tier opted out.");
             return;
         }
 
         if (requestedProjects.Any(project => project.StartsWith("uno", StringComparison.OrdinalIgnoreCase))
-            && IsExplicitlyDisabled(WasmLaneVariable))
+            && TestEnvironment.IsFalse(WasmLaneVariable))
         {
             Assert.Inconclusive("TASKFLOW_WASM_TESTS_ENABLED=false - Uno WASM full-stack tier opted out.");
             return;
@@ -117,7 +118,7 @@ public sealed class TypeScriptPlaywrightSuiteTests
             return;
         }
 
-        CommandResult result;
+        ProcessResult result;
         try
         {
             await host.RunWithinStartupBudgetAsync(
@@ -159,11 +160,14 @@ public sealed class TypeScriptPlaywrightSuiteTests
         TestContext.WriteLine(result.StandardOutput);
         TestContext.WriteLine(result.StandardError);
 
-        if (result.ExitCode != 0)
+        if (!result.Succeeded)
         {
             await host.DumpDiagnosticsAsync(CancellationToken.None);
             Assert.Fail(
-                $"TypeScript Playwright failed with exit code {result.ExitCode} project(s): {string.Join(", ", selectedProjects)}."
+                (result.TimedOut
+                    ? "TypeScript Playwright timed out"
+                    : $"TypeScript Playwright failed with exit code {result.ExitCode}")
+                + $" project(s): {string.Join(", ", selectedProjects)}."
                 + Environment.NewLine
                 + "stdout:"
                 + Environment.NewLine
@@ -184,22 +188,11 @@ public sealed class TypeScriptPlaywrightSuiteTests
     /// </summary>
     private static void ReportMissingPrerequisite(string laneVariable, string message)
     {
-        var value = Environment.GetEnvironmentVariable(laneVariable);
-        if (string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase))
+        if (TestEnvironment.IsTrue(laneVariable))
         {
             Assert.Fail($"{laneVariable} is explicitly enabled, but a prerequisite is missing. {message}");
         }
 
         Assert.Inconclusive(message);
-    }
-
-    private static bool IsExplicitlyDisabled(string variableName)
-    {
-        var value = Environment.GetEnvironmentVariable(variableName);
-        return string.Equals(value, "false", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(value, "0", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(value, "no", StringComparison.OrdinalIgnoreCase);
     }
 }

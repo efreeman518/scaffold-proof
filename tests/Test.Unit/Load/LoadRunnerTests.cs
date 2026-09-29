@@ -1,9 +1,9 @@
-using Test.Support;
+using EF.Testing.Load;
 
 namespace Test.Unit.Load;
 
 /// <summary>
-/// Guards the in-house <see cref="LoadRunner"/> itself: a broken percentile calculation, a runner that
+/// Guards the <see cref="LoadRunner"/> contract the load gates rely on: a broken percentile calculation, a runner that
 /// swallows the offered-request contract, a saturation path that stops dropping, or an exception that aborts
 /// the run would silently break every downstream load gate in <c>Test.Load</c>.
 /// </summary>

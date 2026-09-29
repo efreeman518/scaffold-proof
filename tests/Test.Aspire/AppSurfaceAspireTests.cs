@@ -1,4 +1,5 @@
 using Aspire.Hosting.Testing;
+using EF.Testing.Environment;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -98,7 +99,7 @@ public class AppSurfaceAspireTests
     {
         if (!AspireTestHost.ReactAvailable)
         {
-            if (AspireTestHost.IsExplicitlyDisabled("TASKFLOW_REACT_TESTS_ENABLED"))
+            if (TestEnvironment.IsFalse("TASKFLOW_REACT_TESTS_ENABLED"))
                 Assert.Inconclusive("TASKFLOW_REACT_TESTS_ENABLED=false - React full-stack smoke opted out.");
 
             AspireTestHost.ReportMissingPrerequisite(
@@ -124,7 +125,7 @@ public class AppSurfaceAspireTests
     {
         if (!AspireTestHost.UnoWasmAvailable)
         {
-            if (AspireTestHost.IsExplicitlyDisabled("TASKFLOW_WASM_TESTS_ENABLED"))
+            if (TestEnvironment.IsFalse("TASKFLOW_WASM_TESTS_ENABLED"))
                 Assert.Inconclusive("TASKFLOW_WASM_TESTS_ENABLED=false - Uno WASM full-stack smoke opted out.");
 
             AspireTestHost.ReportMissingPrerequisite(

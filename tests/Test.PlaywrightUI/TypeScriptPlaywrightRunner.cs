@@ -1,5 +1,6 @@
+using EF.Testing.Environment;
+using EF.Testing.Processes;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Text.Json;
 
 namespace Test.PlaywrightUI;
@@ -48,35 +49,38 @@ internal static class TypeScriptPlaywrightRunner
             "Playwright Chromium is missing and no system Chrome fallback is available. Run `npx --prefix tests/Test.PlaywrightUI playwright install chromium`, or set TASKFLOW_PLAYWRIGHT_TESTS_ENABLED=false to opt out.");
     }
 
-    internal static async Task<CommandResult> RunAsync(
+    internal static async Task<ProcessResult> RunAsync(
         IReadOnlyList<string> projects,
         CancellationToken cancellationToken)
     {
         if (projects.Count == 0)
         {
-            return new CommandResult(0, "No TypeScript Playwright projects selected.", "");
+            return new ProcessResult(0, "No TypeScript Playwright projects selected.", "", TimedOut: false, TimeSpan.Zero);
         }
 
         var stdoutBuilder = new System.Text.StringBuilder();
         var stderrBuilder = new System.Text.StringBuilder();
+        var elapsed = TimeSpan.Zero;
 
         try
         {
             foreach (var project in projects)
             {
                 var result = await RunProjectAsync(project, cancellationToken);
+                elapsed += result.Elapsed;
                 stdoutBuilder.AppendLine($"== {project} stdout ==");
                 stdoutBuilder.AppendLine(result.StandardOutput);
                 stderrBuilder.AppendLine($"== {project} stderr ==");
                 stderrBuilder.AppendLine(result.StandardError);
 
-                if (result.ExitCode != 0)
+                if (!result.Succeeded)
                 {
-                    return new CommandResult(result.ExitCode, stdoutBuilder.ToString(), stderrBuilder.ToString());
+                    return new ProcessResult(
+                        result.ExitCode, stdoutBuilder.ToString(), stderrBuilder.ToString(), result.TimedOut, elapsed);
                 }
             }
 
-            return new CommandResult(0, stdoutBuilder.ToString(), stderrBuilder.ToString());
+            return new ProcessResult(0, stdoutBuilder.ToString(), stderrBuilder.ToString(), TimedOut: false, elapsed);
         }
         catch (Win32Exception ex)
         {
@@ -84,73 +88,30 @@ internal static class TypeScriptPlaywrightRunner
         }
     }
 
-    private static async Task<CommandResult> RunProjectAsync(string project, CancellationToken cancellationToken)
+    private static Task<ProcessResult> RunProjectAsync(string project, CancellationToken cancellationToken)
     {
-        var fileName = OperatingSystem.IsWindows() ? "node.exe" : "node";
-        var startInfo = new ProcessStartInfo(fileName)
-        {
-            CreateNoWindow = true,
-            RedirectStandardError = true,
-            RedirectStandardOutput = true,
-            UseShellExecute = false,
-            WorkingDirectory = ProjectDirectory
-        };
-
-        startInfo.ArgumentList.Add(PlaywrightCliPath);
-        startInfo.ArgumentList.Add("test");
-        startInfo.ArgumentList.Add($"--project={project}");
-        startInfo.ArgumentList.Add("--retries=0");
-        startInfo.ArgumentList.Add("--max-failures=1");
         var isUno = project.StartsWith("uno", StringComparison.OrdinalIgnoreCase);
-        startInfo.ArgumentList.Add($"--timeout={ReadSeconds(TestTimeoutVariable, isUno ? 180 : 90) * 1000}");
+        var testTimeout = TestEnvironment.GetPositiveSeconds(TestTimeoutVariable, TimeSpan.FromSeconds(isUno ? 180 : 90));
 
-        using var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException($"Failed to start Playwright project {project}.");
-
-        // Drain both pipes independently of the deadline so timeout diagnostics are not cancelled
-        // with the process wait and a noisy child cannot block on a full redirected stream.
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEndAsync();
-
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(ReadSeconds(ProjectTimeoutVariable, isUno ? 360 : 180)));
-
-        try
-        {
-            await process.WaitForExitAsync(timeout.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            TryKill(process);
-            await process.WaitForExitAsync(CancellationToken.None);
-            return new CommandResult(124, await stdout, await stderr);
-        }
-
-        return new CommandResult(process.ExitCode, await stdout, await stderr);
-    }
-
-    private static int ReadSeconds(string variableName, int defaultSeconds)
-    {
-        var configured = Environment.GetEnvironmentVariable(variableName);
-        if (string.IsNullOrWhiteSpace(configured))
-        {
-            return defaultSeconds;
-        }
-
-        return int.TryParse(configured, out var seconds) && seconds > 0
-            ? seconds
-            : throw new InvalidOperationException($"{variableName} must be a positive integer number of seconds.");
-    }
-
-    private static void TryKill(Process process)
-    {
-        try
-        {
-            process.Kill(entireProcessTree: true);
-        }
-        catch (InvalidOperationException)
-        {
-        }
+        // A project that exceeds its timeout is killed with its process tree and reported as TimedOut; caller
+        // cancellation kills it the same way and propagates.
+        return ProcessRunner.RunAsync(
+            new ProcessRunOptions
+            {
+                FileName = OperatingSystem.IsWindows() ? "node.exe" : "node",
+                Arguments =
+                [
+                    PlaywrightCliPath,
+                    "test",
+                    $"--project={project}",
+                    "--retries=0",
+                    "--max-failures=1",
+                    $"--timeout={(long)testTimeout.TotalMilliseconds}"
+                ],
+                WorkingDirectory = ProjectDirectory,
+                Timeout = TestEnvironment.GetPositiveSeconds(ProjectTimeoutVariable, TimeSpan.FromSeconds(isUno ? 360 : 180))
+            },
+            cancellationToken);
     }
 
     private static string? GetManagedHeadlessShellPath()
@@ -216,7 +177,5 @@ internal static class TypeScriptPlaywrightRunner
         return paths.FirstOrDefault(File.Exists);
     }
 }
-
-internal sealed record CommandResult(int ExitCode, string StandardOutput, string StandardError);
 
 internal sealed record BrowserReadiness(bool CanRun, string Message);

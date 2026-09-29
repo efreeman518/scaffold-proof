@@ -1,4 +1,5 @@
 using EF.Common.Contracts;
+using EF.Testing.Load;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -12,7 +13,7 @@ namespace Test.Load;
 
 /// <summary>
 /// LoadRunner scenarios against the TaskItem search and CRUD endpoints, asserting error-rate and P95/P99
-/// latency baselines with the in-house, open-model <see cref="LoadRunner"/> (GR-04: no commercial-license
+/// latency baselines with the open-model EF.Testing <see cref="LoadRunner"/> (GR-04: no commercial-license
 /// load package).
 /// Load tier: both methods are <c>[Ignore]</c>'d for CI and require a running <c>taskflowapi</c> endpoint.
 /// Faster tiers (Endpoint/E2E) cannot reproduce the concurrent-load behavior these baselines guard.
@@ -79,7 +80,7 @@ public class TaskItemLoadTests
     [Ignore("Run manually - requires API host running")]
     public async Task Given_TaskItemCrudWorkflow_When_LoadApplied_Then_MeetsThroughputBaseline()
     {
-        // The prior ramp (30s) and steady (60s) phases both injected at rate 1; the in-house runner has no
+        // The prior ramp (30s) and steady (60s) phases both injected at rate 1; the open-model runner has no
         // ramping concept, so they collapse into one flat rate 1 run over the combined 90s duration.
         await WarmUpAsync(ct => RunCrudWorkflowAsync(HttpClient, ct));
         var result = await LoadRunner.RunAsync(

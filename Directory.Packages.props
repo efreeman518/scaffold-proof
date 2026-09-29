@@ -21,6 +21,9 @@
     <PackageVersion Include="EF.IntegrationTesting.Aspire" Version="2.0.111" />
     <PackageVersion Include="EF.IntegrationTesting.PostgreSql" Version="2.0.111" />
     <PackageVersion Include="EF.IntegrationTesting.SqlServer" Version="2.0.111" />
+    <PackageVersion Include="EF.Testing" Version="2.0.111" />
+    <PackageVersion Include="EF.Testing.Architecture" Version="2.0.111" />
+    <PackageVersion Include="EF.AI.Testing" Version="2.0.111" />
     <PackageVersion Include="EF.Messaging" Version="2.0.111" />
     <PackageVersion Include="EF.Messaging.RabbitMq" Version="2.0.111" />
     <PackageVersion Include="EF.Storage" Version="2.0.111" />
@@ -161,7 +164,8 @@
     <PackageVersion Include="Microsoft.Playwright" Version="1.62.0" />
     <PackageVersion Include="Appium.WebDriver" Version="8.4.0" />
     <PackageVersion Include="Moq" Version="4.20.72" />
-    <PackageVersion Include="NetArchTest.Rules" Version="1.3.2" />
+    <!-- Test.Architecture reads IL directly (ConcurrencyGuard policy check); same version EF.Testing.Architecture uses. -->
+    <PackageVersion Include="Mono.Cecil" Version="0.11.6" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
   </ItemGroup>
   <ItemGroup Label="UI">

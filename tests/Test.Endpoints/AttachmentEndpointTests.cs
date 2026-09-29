@@ -1,4 +1,5 @@
 using EF.Storage.Contracts;
+using EF.Testing.Http;
 using Microsoft.Extensions.DependencyInjection;
 using System.Net;
 using System.Net.Http.Json;
@@ -7,6 +8,7 @@ using System.Text.Json.Serialization;
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Application.Models;
 using TaskFlow.Domain.Shared.Enums;
+using Test.Support;
 
 namespace Test.Endpoints;
 
@@ -151,7 +153,7 @@ public class AttachmentEndpointTests
             OwnerType = AttachmentOwnerType.TaskItem,
             OwnerId = taskId
         };
-        var response = await client.PutWithIfMatchAsync($"/api/v1/attachments/{created.Id}", new DefaultRequest<AttachmentDto> { Item = updateDto }, ConcurrencyHttpExtensions.IfMatch(created.Version!.Value), TestContext.CancellationToken);
+        var response = await client.PutAsJsonWithIfMatchAsync($"/api/v1/attachments/{created.Id}", new DefaultRequest<AttachmentDto> { Item = updateDto }, ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), JsonTestOptions.Default, TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
         var updated = (await response.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item;
@@ -180,7 +182,7 @@ public class AttachmentEndpointTests
         var createResponse = await client.PostAsJsonAsync("/api/v1/attachments", new DefaultRequest<AttachmentDto> { Item = dto }, cancellationToken: TestContext.CancellationToken);
         var created = (await createResponse.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item;
 
-        var response = await client.DeleteWithIfMatchAsync($"/api/v1/attachments/{created!.Id}", ConcurrencyHttpExtensions.IfMatch(created.Version!.Value), TestContext.CancellationToken);
+        var response = await client.DeleteWithIfMatchAsync($"/api/v1/attachments/{created!.Id}", ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.NoContent, response.StatusCode);
 

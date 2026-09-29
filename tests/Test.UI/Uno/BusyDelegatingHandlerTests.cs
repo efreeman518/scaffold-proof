@@ -1,3 +1,4 @@
+using EF.Testing.Http;
 using System.Net;
 using TaskFlow.Uno.Core.Business.Notifications;
 using TaskFlow.Uno.Core.Client.Http;
@@ -21,7 +22,7 @@ public class BusyDelegatingHandlerTests
         var tracker = new BusyTracker();
         var gate = new TaskCompletionSource<int>();
 
-        var stub = new StubHandler(async _ =>
+        var stub = new StubHttpMessageHandler(async (_, _, _) =>
         {
             // Release the caller once the handler has entered - proves Pending
             // reaches 1 during the request.
@@ -45,7 +46,7 @@ public class BusyDelegatingHandlerTests
     public async Task SendAsync_Decrements_On_Inner_Exception()
     {
         var tracker = new BusyTracker();
-        var stub = new StubHandler(_ => throw new HttpRequestException("network fail"));
+        var stub = new StubHttpMessageHandler((_, _, _) => throw new HttpRequestException("network fail"));
         var handler = new BusyDelegatingHandler(tracker) { InnerHandler = stub };
         var invoker = new HttpMessageInvoker(handler);
 
@@ -53,14 +54,5 @@ public class BusyDelegatingHandlerTests
             await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://x/y"), default));
 
         Assert.AreEqual(0, tracker.Pending);
-    }
-
-    /// <summary>Supports test execution for Test.unit Uno scenarios.</summary>
-    private sealed class StubHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> respond)
-        : HttpMessageHandler
-    {
-        /// <summary>Verifies send behavior and protects the expected test contract.</summary>
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
-            respond(request);
     }
 }

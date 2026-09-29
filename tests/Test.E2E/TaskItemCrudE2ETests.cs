@@ -1,4 +1,5 @@
 using EF.Common.Contracts;
+using EF.Testing.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using System.Net;
@@ -82,9 +83,9 @@ public class TaskItemCrudE2ETests
             Priority = Priority.Low,
             Status = fetched.Status
         };
-        var putResp = await client.PutWithIfMatchAsync($"/api/v1/task-items/{id}",
+        var putResp = await client.PutAsJsonWithIfMatchAsync($"/api/v1/task-items/{id}",
             new DefaultRequest<TaskItemDto> { Item = updateDto },
-            ConcurrencyHttp.IfMatch(fetched.Version!.Value), TestContext.CancellationToken);
+            ConcurrencyHttpExtensions.FormatStrongETag(fetched.Version!.Value), JsonTestOptions.Default, TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.OK, putResp.StatusCode,
             $"Update failed: {await putResp.Content.ReadAsStringAsync(TestContext.CancellationToken)}");
         var updated = (await putResp.Content.ReadFromJsonAsync<DefaultResponse<TaskItemDto>>(_json, TestContext.CancellationToken))!.Item;
@@ -92,7 +93,7 @@ public class TaskItemCrudE2ETests
 
         // DELETE
         var delResp = await client.DeleteWithIfMatchAsync($"/api/v1/task-items/{id}",
-            ConcurrencyHttp.IfMatch(updated.Version!.Value), TestContext.CancellationToken);
+            ConcurrencyHttpExtensions.FormatStrongETag(updated.Version!.Value), TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.NoContent, delResp.StatusCode);
 
         // VERIFY DELETED
@@ -120,13 +121,13 @@ public class TaskItemCrudE2ETests
         Assert.AreEqual(HttpStatusCode.OK, getResp.StatusCode);
 
         var updateDto = new CategoryDto { Id = id, Name = "E2E Category Updated", IsActive = true, SortOrder = 2 };
-        var putResp = await client.PutWithIfMatchAsync($"/api/v1/categories/{id}",
+        var putResp = await client.PutAsJsonWithIfMatchAsync($"/api/v1/categories/{id}",
             new DefaultRequest<CategoryDto> { Item = updateDto },
-            ConcurrencyHttp.IfMatch(created.Version!.Value), TestContext.CancellationToken);
+            ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), JsonTestOptions.Default, TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.OK, putResp.StatusCode);
 
         var delResp = await client.DeleteWithIfMatchAsync($"/api/v1/categories/{id}",
-            ConcurrencyHttp.IfMatch(putResp.ETagValue()), TestContext.CancellationToken);
+            ConcurrencyHttpExtensions.FormatStrongETag(putResp.GetETagValue()!), TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.NoContent, delResp.StatusCode);
 
         var verifyResp = await client.GetAsync($"/api/v1/categories/{id}", TestContext.CancellationToken);
@@ -153,13 +154,13 @@ public class TaskItemCrudE2ETests
         Assert.AreEqual(HttpStatusCode.OK, getResp.StatusCode);
 
         var updateDto = new TagDto { Id = id, Name = "e2e-tag-updated", Color = "#00FF00" };
-        var putResp = await client.PutWithIfMatchAsync($"/api/v1/tags/{id}",
+        var putResp = await client.PutAsJsonWithIfMatchAsync($"/api/v1/tags/{id}",
             new DefaultRequest<TagDto> { Item = updateDto },
-            ConcurrencyHttp.IfMatch(created.Version!.Value), TestContext.CancellationToken);
+            ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), JsonTestOptions.Default, TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.OK, putResp.StatusCode);
 
         var delResp = await client.DeleteWithIfMatchAsync($"/api/v1/tags/{id}",
-            ConcurrencyHttp.IfMatch(putResp.ETagValue()), TestContext.CancellationToken);
+            ConcurrencyHttpExtensions.FormatStrongETag(putResp.GetETagValue()!), TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.NoContent, delResp.StatusCode);
 
         var verifyResp = await client.GetAsync($"/api/v1/tags/{id}", TestContext.CancellationToken);
@@ -305,7 +306,7 @@ public class TaskItemCrudE2ETests
         // Remove through the aggregate root; the orphaned row is hard-deleted
         var delResp = await client.DeleteWithIfMatchAsync(
             $"/api/v1/task-items/{taskId}/comments/{commentId}",
-            ConcurrencyHttp.IfMatch(createResp.ETagValue()), TestContext.CancellationToken);
+            ConcurrencyHttpExtensions.FormatStrongETag(createResp.GetETagValue()!), TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.NoContent, delResp.StatusCode);
 
         var verifyResp = await client.GetAsync($"/api/v1/comments/{commentId}", TestContext.CancellationToken);
@@ -337,7 +338,7 @@ public class TaskItemCrudE2ETests
         // Remove through the aggregate root
         var delResp = await client.DeleteWithIfMatchAsync(
             $"/api/v1/task-items/{taskId}/checklist-items/{created.Id}",
-            ConcurrencyHttp.IfMatch(createResp.ETagValue()), TestContext.CancellationToken);
+            ConcurrencyHttpExtensions.FormatStrongETag(createResp.GetETagValue()!), TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.NoContent, delResp.StatusCode);
     }
 

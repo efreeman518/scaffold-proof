@@ -1,3 +1,4 @@
+using EF.Testing.Http;
 using Moq;
 using System.Net;
 using System.Text;
@@ -94,7 +95,7 @@ public class TaskItemApiServiceTests
     [TestMethod]
     public async Task UpdateAsync_SendsVersionAsIfMatchHeader()
     {
-        var captureHandler = new CaptureRequestHandler();
+        var captureHandler = CaptureRequestHandler();
         using var httpClient = new HttpClient(captureHandler) { BaseAddress = new Uri("https://localhost:7200") };
         var apiClient = new TaskFlowApiClient(httpClient);
         var service = new TaskItemApiService(apiClient, Mock.Of<INotificationService>());
@@ -103,41 +104,36 @@ public class TaskItemApiServiceTests
 
         await service.UpdateAsync(model, expectedVersion: 7, TestContext.CancellationToken);
 
-        Assert.IsNotNull(captureHandler.LastIfMatch);
-        Assert.AreEqual("\"7\"", captureHandler.LastIfMatch);
+        Assert.IsNotNull(LastIfMatch(captureHandler));
+        Assert.AreEqual("\"7\"", LastIfMatch(captureHandler));
     }
 
     /// <summary>Verifies a null expectedVersion sends the wildcard If-Match ("*"), the trusted-automation override.</summary>
     [TestMethod]
     public async Task DeleteAsync_WithNullExpectedVersion_SendsWildcardIfMatch()
     {
-        var captureHandler = new CaptureRequestHandler();
+        var captureHandler = CaptureRequestHandler();
         using var httpClient = new HttpClient(captureHandler) { BaseAddress = new Uri("https://localhost:7200") };
         var apiClient = new TaskFlowApiClient(httpClient);
         var service = new TaskItemApiService(apiClient, Mock.Of<INotificationService>());
 
         await service.DeleteAsync(Guid.NewGuid(), expectedVersion: null, TestContext.CancellationToken);
 
-        Assert.AreEqual("*", captureHandler.LastIfMatch);
+        Assert.AreEqual("*", LastIfMatch(captureHandler));
     }
 
-    /// <summary>Supports test execution for Test.unit Uno scenarios.</summary>
-    private sealed class CaptureRequestHandler : HttpMessageHandler
+    /// <summary>Records each request and answers with a fresh updated task item payload.</summary>
+    private static StubHttpMessageHandler CaptureRequestHandler() => new((_, _, _) =>
     {
-        public string? LastIfMatch { get; private set; }
-
-        /// <summary>Verifies send behavior and protects the expected test contract.</summary>
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        var responseJson = "{\"item\":{\"id\":\"" + Guid.NewGuid() + "\",\"title\":\"Updated\",\"priority\":\"Medium\",\"status\":\"Open\",\"version\":8}}";
+        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
         {
-            LastIfMatch = request.Headers.IfMatch.Count > 0 ? request.Headers.IfMatch.First().Tag : null;
+            Content = new StringContent(responseJson, Encoding.UTF8, "application/json")
+        });
+    });
 
-            var responseJson = "{\"item\":{\"id\":\"" + Guid.NewGuid() + "\",\"title\":\"Updated\",\"priority\":\"Medium\",\"status\":\"Open\",\"version\":8}}";
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(responseJson, Encoding.UTF8, "application/json")
-            });
-        }
-    }
+    private static string? LastIfMatch(StubHttpMessageHandler handler) =>
+        handler.Requests[^1].Headers.TryGetValue("If-Match", out var values) ? values[0] : null;
 
     public TestContext TestContext { get; set; } = null!;
 }

@@ -1,5 +1,6 @@
 namespace Test.Integration.Infrastructure;
 
+using EF.Testing.Processes;
 using TaskFlow.Hosting;
 using Test.Support.Hosting;
 
