@@ -1,3 +1,4 @@
+using EF.AI;
 using EF.AspNetCore.Concurrency;
 using EF.AspNetCore.Cors;
 using EF.AspNetCore.ExceptionHandling;
@@ -5,11 +6,12 @@ using EF.Common.Exceptions;
 using EF.Data.Contracts;
 using EF.AspNetCore.Versioning;
 using EF.Grpc;
-using Microsoft.AspNetCore.Authentication;
+using EF.RateLimiting;
+using EF.RateLimiting.Redis;
+using EF.Auth.Relay;
 using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json.Serialization;
-using System.Threading.RateLimiting;
 using TaskFlow.Api.Auth;
 using TaskFlow.Api.Serialization;
 using TaskFlow.Api.Endpoints;
@@ -17,7 +19,6 @@ using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Models.Serialization;
 using TaskFlow.Infrastructure.Caching;
-using TaskFlow.Infrastructure.Caching.RateLimiting;
 using TaskFlow.Observability.Meters;
 
 namespace TaskFlow.Api;
@@ -29,11 +30,10 @@ namespace TaskFlow.Api;
 public static class RegisterApiServices
 {
     /// <summary>
-    /// Adds HTTP-facing dependencies without building the app. Startup logging is passed in so
-    /// auth and config failures can be reported before the runtime logger factory exists.
+    /// Adds HTTP-facing dependencies without building the app.
     /// </summary>
     public static IServiceCollection AddApiServices(
-        this IServiceCollection services, IConfiguration config, ILogger startupLogger)
+        this IServiceCollection services, IConfiguration config)
     {
         services.AddHttpContextAccessor();
         // Streaming instruments: a streamed export has no meaningful ASP.NET request duration, so the export
@@ -42,7 +42,7 @@ public static class RegisterApiServices
         AddJsonOptions(services);
         // Origins validated at registration: none, a trailing '/', a path, or '*' with credentials fails startup.
         services.AddCorsPolicyFromConfiguration("TaskFlowUi", config.GetSection("Cors"));
-        AddAuthentication(services, config, startupLogger);
+        AddAuthentication(services, config);
         AddAuthorization(services);
         AddExceptionHandling(services);
         AddRateLimiting(services, config);
@@ -83,13 +83,16 @@ public static class RegisterApiServices
         });
     }
 
-    /// <summary>Registers authentication dependencies in the service container.</summary>
-    private static void AddAuthentication(IServiceCollection services, IConfiguration config, ILogger logger)
+    /// <summary>
+    /// Registers authentication: the Scaffold fixed principal, then the EF.Auth trusted-gateway claims relay bound
+    /// from the same <c>ForwardedClaims</c> section the Gateway binds. The relay replaces the principal only for an
+    /// app-only token from a caller listed in <c>ForwardedClaims:TrustedCallerIds</c> (empty here, so it is inert:
+    /// the Scaffold principal carries no caller id), and the relayed identity holds only the relayed claims.
+    /// </summary>
+    private static void AddAuthentication(IServiceCollection services, IConfiguration config)
     {
         services.AddTaskFlowAuth(config);
-        services.Configure<GatewayClaimsTransformSettings>(
-            config.GetSection(GatewayClaimsTransformSettings.ConfigSectionName));
-        services.AddTransient<IClaimsTransformation, GatewayClaimsTransformer>();
+        services.AddForwardedClaimsTransformation(config);
     }
 
     /// <summary>Registers authorization dependencies in the service container.</summary>
@@ -127,84 +130,34 @@ public static class RegisterApiServices
     internal static void MapExceptions(ExceptionClassifierOptions options) => options
         .Map<DbUpdateConcurrencyException>(ExceptionCategory.PreconditionFailed)
         .Map<InvalidRequestException>(ExceptionCategory.Validation)
-        .Map<InvalidCursorException>(ExceptionCategory.Validation);
+        .Map<InvalidCursorException>(ExceptionCategory.Validation)
+        // S21: a call on the EF.AI disabled client (no model wired) is 503 / Unavailable, not a 500.
+        .Map<EFAIDisabledException>(ExceptionCategory.Unavailable);
 
-    /// <summary>Registers rate limiting dependencies in the service container.</summary>
+    /// <summary>
+    /// Tenant rate limiting (EF.RateLimiting, section <c>RateLimiting:Tenants</c>): the global limiter partitions on
+    /// the caller's <c>tenant_id</c> claim (so <c>UseRateLimiter</c> runs after <c>UseAuthentication</c>; the package
+    /// throws otherwise), an endpoint marked <c>RequireTenantBudget</c> spends only its named budget, a rejection is a
+    /// 429 with Retry-After and <c>ratelimit.rejected</c>. With the cache's shared Redis the budgets live in Redis
+    /// (EF.RateLimiting.Redis, one allowance across replicas, fail-open with <c>ratelimit.backend_failure</c>);
+    /// without it they stay in process, which is correct on one replica only. The health policies stay in process and
+    /// per client IP because they protect this instance's probes and must work when Redis does not; the /healthz
+    /// probes carry DisableRateLimiting (MapEfHealthEndpoints), which skips every limiter.
+    /// </summary>
     private static void AddRateLimiting(IServiceCollection services, IConfiguration config)
     {
         var healthMemoryPermitLimit = config.GetValue<int?>("RateLimiting:Health:MemoryPermitLimit") ?? 30;
         var healthDbPermitLimit = config.GetValue<int?>("RateLimiting:Health:DbPermitLimit") ?? 6;
         var healthFullPermitLimit = config.GetValue<int?>("RateLimiting:Health:FullPermitLimit") ?? 3;
 
-        services.AddTaskFlowRateLimiting(config);
+        services.AddTenantRateLimiting(config);
+        if (services.HasSharedRedis())
+            services.AddRedisRateLimiting();
 
-        services.AddRateLimiter(options =>
-        {
-            // Tenant budgets live in Redis so they are one allowance across replicas rather than one per
-            // replica; the health partitions stay in process because they exist to protect this instance's
-            // probes and must keep working when Redis does not. The /healthz probes carry DisableRateLimiting
-            // (MapEfHealthEndpoints), which skips this global limiter too.
-            options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
-            {
-                if (context.Request.Path.StartsWithSegments("/health")
-                    || context.Request.Path.StartsWithSegments("/alive"))
-                    return RateLimitPartition.GetNoLimiter("health");
-
-                // The export route counts only against its own Export budget (endpoint policy below); counting
-                // it here too would let one long export spend the tenant's interactive allowance.
-                if (context.GetEndpoint()?.Metadata.GetMetadata<ExportRateLimitPolicy>() is not null)
-                    return RateLimitPartition.GetNoLimiter("export");
-
-                var limiters = context.RequestServices.GetRequiredService<TenantRateLimiterFactory>();
-                return RateLimitPartition.Get(TenantPartitionKey(context), limiters.CreateTenantLimiter);
-            });
-
-            // The streaming export holds a connection for as long as a tenant has rows, so it gets its own
-            // budget instead of draining the tenant's interactive allowance.
-            options.AddPolicy(ExportRateLimitPolicy.PolicyName, context =>
-            {
-                var limiters = context.RequestServices.GetRequiredService<TenantRateLimiterFactory>();
-                return RateLimitPartition.Get(TenantPartitionKey(context), limiters.CreateExportLimiter);
-            });
-
-            options.AddPolicy("HealthMemory", context => RateLimitPartition.GetFixedWindowLimiter(
-                context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-                _ => new FixedWindowRateLimiterOptions
-                {
-                    PermitLimit = healthMemoryPermitLimit,
-                    Window = TimeSpan.FromSeconds(10),
-                    QueueLimit = 5,
-                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst
-                }));
-
-            options.AddPolicy("HealthDb", context => RateLimitPartition.GetFixedWindowLimiter(
-                context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-                _ => new FixedWindowRateLimiterOptions
-                {
-                    PermitLimit = healthDbPermitLimit,
-                    Window = TimeSpan.FromSeconds(10),
-                    QueueLimit = 2,
-                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst
-                }));
-
-            options.AddPolicy("HealthFull", context => RateLimitPartition.GetFixedWindowLimiter(
-                context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-                _ => new FixedWindowRateLimiterOptions
-                {
-                    PermitLimit = healthFullPermitLimit,
-                    Window = TimeSpan.FromSeconds(30),
-                    QueueLimit = 1,
-                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst
-                }));
-
-            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-            options.OnRejected = (context, _) =>
-            {
-                var limiters = context.HttpContext.RequestServices.GetRequiredService<TenantRateLimiterFactory>();
-                limiters.RecordRejected(context.HttpContext.User?.FindFirst("tenant_id")?.Value);
-                return ValueTask.CompletedTask;
-            };
-        });
+        services.AddRateLimiter(options => options
+            .AddPerClientIpFixedWindowPolicy("HealthMemory", healthMemoryPermitLimit, TimeSpan.FromSeconds(10), queueLimit: 5)
+            .AddPerClientIpFixedWindowPolicy("HealthDb", healthDbPermitLimit, TimeSpan.FromSeconds(10), queueLimit: 2)
+            .AddPerClientIpFixedWindowPolicy("HealthFull", healthFullPermitLimit, TimeSpan.FromSeconds(30), queueLimit: 1));
     }
 
     /// <summary>
@@ -223,16 +176,6 @@ public static class RegisterApiServices
             };
         });
     }
-
-    /// <summary>
-    /// Partition key for a tenant budget. An unauthenticated caller has no tenant, so it falls back to the
-    /// remote address: without that every anonymous caller would share one bucket and a single client could
-    /// exhaust the allowance for all of them.
-    /// </summary>
-    private static string TenantPartitionKey(HttpContext context) =>
-        context.User?.FindFirst("tenant_id")?.Value
-        ?? context.Connection.RemoteIpAddress?.ToString()
-        ?? "anonymous";
 
     /// <summary>Registers versioned open API dependencies in the service container.</summary>
     private static void AddVersionedOpenApi(IServiceCollection services, IConfiguration config)

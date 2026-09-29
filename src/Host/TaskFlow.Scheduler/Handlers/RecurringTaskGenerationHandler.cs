@@ -8,8 +8,7 @@ using TaskFlow.Domain.Model.ValueObjects;
 using TaskFlow.Domain.Shared;
 using TaskFlow.Domain.Shared.Constants;
 using TaskFlow.Domain.Shared.Events;
-using TaskFlow.Observability.Meters;
-using TaskFlow.Scheduler.Abstractions;
+using EF.BackgroundServices.Scheduling;
 
 namespace TaskFlow.Scheduler.Handlers;
 
@@ -22,7 +21,7 @@ namespace TaskFlow.Scheduler.Handlers;
 public sealed class RecurringTaskGenerationHandler(
     ITaskItemSystemRepository systemRepository,
     IOutboxStaging outbox,
-    SchedulerJobMeter meter,
+    ScheduledJobTelemetry telemetry,
     TimeProvider timeProvider,
     ILogger<RecurringTaskGenerationHandler> logger) : IScheduledJobHandler
 {
@@ -44,7 +43,7 @@ public sealed class RecurringTaskGenerationHandler(
             generated += await GenerateAsync(template, asOfUtc, ct);
         }
 
-        meter.RecordWork(JobName, scanned, generated);
+        telemetry.RecordWork(JobName, scanned, generated);
         logger.RecurringTemplatesFound(scanned);
     }
 

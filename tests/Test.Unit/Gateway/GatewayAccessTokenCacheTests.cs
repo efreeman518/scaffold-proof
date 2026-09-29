@@ -1,12 +1,13 @@
 using Azure.Core;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging.Abstractions;
+using EF.Auth.Tokens;
+using Microsoft.Extensions.DependencyInjection;
 using TaskFlow.Gateway;
 
 namespace Test.Unit.Gateway;
 
 /// <summary>
-/// Validates the gateway's token single-flight. Without it, a burst arriving on an expired token produces one
+/// Validates the gateway's token single-flight, through the EF.Auth <see cref="AccessTokenCache"/> the gateway
+/// registers (it replaced the app TokenService). Without it, a burst arriving on an expired token produces one
 /// identity-provider call per request - the exact moment the provider is most likely to throttle. The cache
 /// holds the in-flight acquisition, so the properties worth pinning are: one acquisition for many concurrent
 /// callers, a faulted acquisition is not cached, and a token near expiry is refreshed rather than served.
@@ -14,9 +15,9 @@ namespace Test.Unit.Gateway;
 /// </summary>
 [TestClass]
 [TestCategory("Unit")]
-public class TokenServiceTests
+public class GatewayAccessTokenCacheTests
 {
-    private const string ClusterId = "taskflow-api";
+    private static readonly string[] Scopes = ["api://taskflow/.default"];
 
     /// <summary>Fifty concurrent callers cause exactly one token acquisition.</summary>
     [TestMethod]
@@ -26,7 +27,7 @@ public class TokenServiceTests
         var service = Build(credential);
 
         var results = await Task.WhenAll(Enumerable.Range(0, 50)
-            .Select(_ => service.GetAccessTokenAsync(ClusterId, TestContext.CancellationToken)));
+            .Select(_ => Get(service, TestContext.CancellationToken)));
 
         Assert.AreEqual(1, credential.Calls);
         Assert.AreEqual(1, results.Distinct().Count(), "every caller received the same token");
@@ -39,8 +40,8 @@ public class TokenServiceTests
         var credential = new CountingCredential(_ => DateTimeOffset.UtcNow.AddHours(1));
         var service = Build(credential);
 
-        var first = await service.GetAccessTokenAsync(ClusterId, TestContext.CancellationToken);
-        var second = await service.GetAccessTokenAsync(ClusterId, TestContext.CancellationToken);
+        var first = await Get(service, TestContext.CancellationToken);
+        var second = await Get(service, TestContext.CancellationToken);
 
         Assert.AreEqual(first, second);
         Assert.AreEqual(1, credential.Calls);
@@ -58,9 +59,9 @@ public class TokenServiceTests
         var service = Build(credential);
 
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(
-            () => service.GetAccessTokenAsync(ClusterId, TestContext.CancellationToken));
+            () => Get(service, TestContext.CancellationToken));
 
-        var recovered = await service.GetAccessTokenAsync(ClusterId, TestContext.CancellationToken);
+        var recovered = await Get(service, TestContext.CancellationToken);
 
         Assert.IsNotNull(recovered);
         Assert.AreEqual(2, credential.Calls, "the failed acquisition was evicted and retried");
@@ -78,14 +79,14 @@ public class TokenServiceTests
         var service = Build(credential);
         using var firstCallerAborted = new CancellationTokenSource();
 
-        var first = service.GetAccessTokenAsync(ClusterId, firstCallerAborted.Token);
-        var second = service.GetAccessTokenAsync(ClusterId, TestContext.CancellationToken);
+        var first = Get(service, firstCallerAborted.Token);
+        var second = Get(service, TestContext.CancellationToken);
         await firstCallerAborted.CancelAsync();
         release.SetResult();
 
         await Assert.ThrowsAsync<OperationCanceledException>(() => first);
         Assert.AreEqual("token-1", await second);
-        Assert.AreEqual("token-1", await service.GetAccessTokenAsync(ClusterId, TestContext.CancellationToken));
+        Assert.AreEqual("token-1", await Get(service, TestContext.CancellationToken));
         Assert.AreEqual(1, credential.Calls, "the cancelled caller neither aborted nor evicted the shared acquisition");
     }
 
@@ -99,13 +100,13 @@ public class TokenServiceTests
             : DateTimeOffset.UtcNow.AddHours(1));
         var service = Build(credential);
 
-        var token = await service.GetAccessTokenAsync(ClusterId, TestContext.CancellationToken);
+        var token = await Get(service, TestContext.CancellationToken);
 
         Assert.AreEqual("token-2", token);
         Assert.AreEqual(2, credential.Calls);
 
         // The durable token is now cached, so a later caller does not acquire again.
-        Assert.AreEqual(token, await service.GetAccessTokenAsync(ClusterId, TestContext.CancellationToken));
+        Assert.AreEqual(token, await Get(service, TestContext.CancellationToken));
         Assert.AreEqual(2, credential.Calls);
     }
 
@@ -119,24 +120,27 @@ public class TokenServiceTests
         var credential = new CountingCredential(_ => DateTimeOffset.UtcNow.AddMinutes(1));
         var service = Build(credential);
 
-        var token = await service.GetAccessTokenAsync(ClusterId, TestContext.CancellationToken);
+        var token = await Get(service, TestContext.CancellationToken);
 
         Assert.AreEqual("token-2", token);
         Assert.AreEqual(2, credential.Calls);
     }
 
-    /// <summary>Builds the service with a configured token scope so the real acquisition path is used.</summary>
-    private static TokenService Build(TokenCredential credential)
+    /// <summary>
+    /// Resolves the cache from the gateway's own registration, with the counting credential registered ahead of it so
+    /// <c>AddAzureTokenCredential</c> (a try-add) leaves it in place.
+    /// </summary>
+    private static AccessTokenCache Build(TokenCredential credential)
     {
-        var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                [$"ReverseProxy:Clusters:{ClusterId}:TokenScope"] = "api://taskflow/.default"
-            })
-            .Build();
-
-        return new TokenService(NullLogger<TokenService>.Instance, credential, config);
+        var builder = TestWebApplication.CreateBuilder();
+        builder.Configuration["CorsSettings:AllowedOrigins:0"] = "https://localhost";
+        builder.Services.AddSingleton(credential);
+        builder.Services.AddGatewayServices(builder.Configuration);
+        return builder.Services.BuildServiceProvider().GetRequiredService<AccessTokenCache>();
     }
+
+    private static async Task<string> Get(AccessTokenCache cache, CancellationToken ct) =>
+        (await cache.GetTokenAsync(Scopes, ct)).Token;
 
     /// <summary>Counts acquisitions and lets each test decide the expiry (or throw) per call.</summary>
     private sealed class CountingCredential(Func<int, DateTimeOffset> expiryForCall, Task? gate = null) : TokenCredential

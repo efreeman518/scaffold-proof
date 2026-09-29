@@ -1,6 +1,5 @@
 using TaskFlow.Application.Contracts.Repositories;
-using TaskFlow.Observability.Meters;
-using TaskFlow.Scheduler.Abstractions;
+using EF.BackgroundServices.Scheduling;
 
 namespace TaskFlow.Scheduler.Handlers;
 
@@ -11,7 +10,7 @@ namespace TaskFlow.Scheduler.Handlers;
 /// </summary>
 public sealed class StaleTaskCleanupHandler(
     ITaskItemSystemRepository systemRepository,
-    SchedulerJobMeter meter,
+    ScheduledJobTelemetry telemetry,
     TimeProvider timeProvider,
     IConfiguration config,
     ILogger<StaleTaskCleanupHandler> logger) : IScheduledJobHandler
@@ -54,7 +53,7 @@ public sealed class StaleTaskCleanupHandler(
             after = batch[^1];
         }
 
-        meter.RecordWork(JobName, scanned, deleted);
+        telemetry.RecordWork(JobName, scanned, deleted);
         logger.StaleTasksFound(deleted, (int)(timeProvider.GetUtcNow() - cutoffUtc).TotalDays);
     }
 }

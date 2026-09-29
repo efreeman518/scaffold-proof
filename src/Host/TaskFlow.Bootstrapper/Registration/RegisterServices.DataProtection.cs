@@ -30,8 +30,9 @@ public static partial class RegisterServices
     /// the persistence (AzureBlob, Redis or None), and Azure Key Vault encrypts the keys whenever
     /// <c>DataProtectionEncryptionKeyUrl</c> is set, whatever the arm. <c>DataProtection:AzureBlob:ContainerName</c> /
     /// <c>BlobName</c> bind from the package section; the key ring location comes from <c>DataProtectionKeysFileUrl</c>
-    /// (full blob URI) or the <c>BlobStorage1</c> endpoint or connection string. The Redis arm opens its own
-    /// connection on first key access over <c>Redis1</c> (caching exposes no shared <c>IConnectionMultiplexer</c>).
+    /// (full blob URI) or the <c>BlobStorage1</c> endpoint or connection string. The Redis arm (S7) keeps the key
+    /// ring on the one <c>IConnectionMultiplexer</c> EF.Cache registers for the default cache over <c>Redis1</c>,
+    /// resolved on first key access, instead of opening a connection of its own.
     /// The framework's implicit application discriminator is kept, so payloads protected before this change still
     /// unprotect.
     /// </summary>
@@ -59,9 +60,12 @@ public static partial class RegisterServices
                         $"{DataProtectionPersistenceConfigKey}=AzureBlob requires DataProtectionKeysFileUrl or the BlobStorage1 endpoint or connection string.");
                 break;
             case DataProtectionPersistence.Redis:
-                settings.Redis.ConnectionString = config.GetConnectionString("Redis1")
-                    ?? throw new InvalidOperationException(
+                // Null ConnectionString: the package resolves the shared multiplexer from DI. The Redis1 check stays,
+                // so a lane without Redis fails at registration rather than at the first key access.
+                if (string.IsNullOrWhiteSpace(config.GetConnectionString("Redis1")))
+                    throw new InvalidOperationException(
                         $"{DataProtectionPersistenceConfigKey}=Redis requires the Redis1 connection string.");
+                settings.Redis.ConnectionString = null;
                 break;
         }
 

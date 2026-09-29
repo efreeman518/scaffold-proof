@@ -23,7 +23,7 @@ public sealed class SchedulerCronRegistrationTests
     [DataRow(StaleTaskCleanupHandler.JobName, "0 0 3 * * 0")]
     [DataRow(OutboxRetentionHandler.JobName, "0 15 * * * *")]
     [DataRow(ConsumerInboxRetentionHandler.JobName, "0 20 * * * *")]
-    [DataRow(TickerQOccurrenceRetentionHandler.JobName, "0 30 4 * * *")]
+    [DataRow(TaskMaintenanceJobs.TickerQOccurrenceRetention, "0 30 4 * * *")]
     [DataRow(AuditRetentionHandler.JobName, "0 40 4 * * *")]
     public void Given_SchedulerAssembly_When_TickerFunctionsBuilt_Then_JobCarriesItsCronExpression(
         string jobName, string expectedCron)

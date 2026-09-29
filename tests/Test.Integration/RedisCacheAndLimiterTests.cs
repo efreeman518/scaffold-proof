@@ -1,14 +1,12 @@
 using EF.Cache;
+using EF.RateLimiting;
+using EF.RateLimiting.Redis;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Caching;
 using TaskFlow.Infrastructure.Caching;
-using TaskFlow.Infrastructure.Caching.RateLimiting;
-using TaskFlow.Observability.Meters;
 using Test.Integration.Infrastructure;
 
 namespace Test.Integration;
@@ -18,7 +16,8 @@ namespace Test.Integration;
 /// in-process test: a tag invalidation that reaches another replica's L1 through the backplane, and a rate
 /// limit that is one budget shared by every replica rather than one budget each. The third test pins the
 /// failure policy - with Redis unreachable the limiter admits the request rather than rejecting it, which is
-/// deliberate and must not regress into failing closed.
+/// deliberate and must not regress into failing closed. The limiter is EF.RateLimiting.Redis over the cache's shared
+/// multiplexer, composed the way the Api composes it.
 /// Component tier: a real Redis Testcontainer; two service providers stand in for two replicas.
 /// </summary>
 [TestClass]
@@ -77,16 +76,14 @@ public class RedisCacheAndLimiterTests
     [Timeout(180000, CooperativeCancellation = true)]
     public async Task TwoLimiterInstances_ShareOneRedisBudget()
     {
-        var tenantId = Guid.NewGuid().ToString();
-        var settings = Tiers(permitLimit: 4, windowSeconds: 60);
+        var key = $"rl:IntegrationTest:default:tenant:{{{Guid.NewGuid()}}}";
+        var allowance = new RateLimitAllowance { PermitLimit = 4, WindowSeconds = 60 };
 
-        var replicaA = BuildLimiterFactory(settings, RedisContainerFixture.ConnectionString);
-        var replicaB = BuildLimiterFactory(settings, RedisContainerFixture.ConnectionString);
+        using var replicaA = BuildLimiterReplica(RedisContainerFixture.ConnectionString);
+        using var replicaB = BuildLimiterReplica(RedisContainerFixture.ConnectionString);
 
-        Assert.IsTrue(replicaA.IsDistributed);
-
-        using var limiterA = replicaA.CreateTenantLimiter(tenantId);
-        using var limiterB = replicaB.CreateTenantLimiter(tenantId);
+        using var limiterA = replicaA.GetRequiredService<ISlidingWindowLimiterFactory>().Create(key, allowance);
+        using var limiterB = replicaB.GetRequiredService<ISlidingWindowLimiterFactory>().Create(key, allowance);
 
         var acquired = 0;
         for (var i = 0; i < 3; i++)
@@ -105,11 +102,10 @@ public class RedisCacheAndLimiterTests
     public async Task RedisUnreachable_LimiterFailsOpen()
     {
         // A port nothing is listening on, with a short connect timeout so the test is not the retry policy.
-        // No abortConnect=false: the factory must survive the default (throwing) string Aspire and compose emit.
-        var deadRedis = "127.0.0.1:6399,connectTimeout=250,connectRetry=1";
-        var factory = BuildLimiterFactory(Tiers(permitLimit: 1, windowSeconds: 60), deadRedis);
-
-        using var limiter = factory.CreateTenantLimiter(Guid.NewGuid().ToString());
+        // No abortConnect=false: the composition must survive the default (throwing) string Aspire and compose emit.
+        using var replica = BuildLimiterReplica("127.0.0.1:6399,connectTimeout=250,connectRetry=1");
+        using var limiter = replica.GetRequiredService<ISlidingWindowLimiterFactory>().Create(
+            $"rl:IntegrationTest:default:tenant:{{{Guid.NewGuid()}}}", new RateLimitAllowance { PermitLimit = 1 });
 
         // Two acquisitions against a budget of one: both are admitted because the budget cannot be read.
         Assert.IsTrue((await limiter.AcquireAsync(1, TestContext.CancellationToken)).IsAcquired);
@@ -137,32 +133,30 @@ public class RedisCacheAndLimiterTests
         return services.BuildServiceProvider().GetRequiredService<ITypedCache>();
     }
 
-    /// <summary>Builds one limiter "replica" against the given Redis connection string.</summary>
-    private static TenantRateLimiterFactory BuildLimiterFactory(RateLimitingSettings settings, string connectionString)
+    /// <summary>
+    /// Builds one limiter "replica": the cache (which owns the shared multiplexer), then the tenant limiter with the
+    /// Redis backend over that multiplexer - the Api's registration order.
+    /// </summary>
+    private static ServiceProvider BuildLimiterReplica(string connectionString)
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
+                ["CacheSettings:0:Name"] = AppConstants.DEFAULT_CACHE,
+                ["CacheSettings:0:RedisConnectionStringName"] = "Redis1",
                 ["ConnectionStrings:Redis1"] = connectionString
             })
             .Build();
 
-        return new TenantRateLimiterFactory(
-            Options.Create(settings),
-            config,
-            new RateLimitingMeter(),
-            NullLogger<TenantRateLimiterFactory>.Instance);
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IHostEnvironment>(new TestHostEnvironment());
+        services.AddTaskFlowCaching(config);
+        services.AddTenantRateLimiting(config);
+        Assert.IsTrue(services.HasSharedRedis(), "the cache registered the shared multiplexer");
+        services.AddRedisRateLimiting();
+        return services.BuildServiceProvider();
     }
-
-    /// <summary>Settings with a single tier allowance.</summary>
-    private static RateLimitingSettings Tiers(int permitLimit, int windowSeconds) => new()
-    {
-        DefaultTier = RateLimitingSettings.Standard,
-        Tiers = new Dictionary<string, RateLimitTier>(StringComparer.OrdinalIgnoreCase)
-        {
-            [RateLimitingSettings.Standard] = new() { PermitLimit = permitLimit, WindowSeconds = windowSeconds }
-        }
-    };
 
     /// <summary>Polls <paramref name="condition"/> until it holds or the budget runs out.</summary>
     private static async Task<bool> WaitUntilAsync(Func<Task<bool>> condition)

@@ -1,15 +1,20 @@
 using EF.Audit.AzureTable;
 using EF.AspNetCore.HealthChecks;
 using EF.Audit.Contracts;
+using EF.Cache;
+using EF.CosmosDb;
 using EF.Host;
 using EF.Messaging.ServiceBus;
+using EF.Storage;
 using EF.Storage.Contracts;
+using EF.Storage.S3;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Storage;
+using TaskFlow.Infrastructure.Caching;
 using TaskFlow.Infrastructure.Repositories.MongoDb;
 using TaskFlow.Infrastructure.Storage;
 using TaskFlow.Infrastructure.Storage.CosmosDb;
@@ -154,12 +159,16 @@ public static partial class RegisterServices
         var databaseName = config["Cosmos:TaskViews:DatabaseName"] ?? "taskflow-db";
         var containerName = config["Cosmos:TaskViews:ContainerName"] ?? "task-views";
 
+        // S20 / D-051: Cosmos:Client binds EF.CosmosDb CosmosClientSettings (PreferredRegions, HedgingEnabled - off by
+        // default, it multiplies request units against a slow region - HedgingThresholdMs, HedgingThresholdStepMs).
+        var clientOptions = CosmosClientOptionsFactory.Create(
+            config.GetSection("Cosmos:Client").Get<CosmosClientSettings>() ?? new CosmosClientSettings());
         services.AddSingleton(_ => ConnectionValue.TryGetServiceUri(connection, out var serviceUri)
             ? new Microsoft.Azure.Cosmos.CosmosClient(
                 serviceUri.AbsoluteUri,
                 AzureCredentialFactory.Create(config),
-                BuildCosmosClientOptions(config))
-            : new Microsoft.Azure.Cosmos.CosmosClient(connection, BuildCosmosClientOptions(config)));
+                clientOptions)
+            : new Microsoft.Azure.Cosmos.CosmosClient(connection, clientOptions));
         services.AddSingleton<ITaskViewRepository>(sp =>
             new CosmosTaskViewRepository(
                 sp.GetRequiredService<Microsoft.Azure.Cosmos.CosmosClient>(),
@@ -182,27 +191,6 @@ public static partial class RegisterServices
     }
 
     /// <summary>
-    /// D-051: cross-region read hedging, off by default. After <c>threshold</c> without an answer the SDK
-    /// issues the same read against the next preferred region and takes whichever replies first, then repeats
-    /// every <c>thresholdStep</c>. It only helps a multi-region account with preferred regions configured, and
-    /// it multiplies request units on a slow region, so it stays a deployment decision rather than a default.
-    /// </summary>
-    internal static Microsoft.Azure.Cosmos.CosmosClientOptions? BuildCosmosClientOptions(IConfiguration config)
-    {
-        if (!config.GetValue("Cosmos:Hedging:Enabled", false))
-            return null;
-
-        var threshold = TimeSpan.FromMilliseconds(config.GetValue("Cosmos:Hedging:ThresholdMs", 500));
-        var thresholdStep = TimeSpan.FromMilliseconds(config.GetValue("Cosmos:Hedging:ThresholdStepMs", 100));
-
-        return new Microsoft.Azure.Cosmos.CosmosClientOptions
-        {
-            AvailabilityStrategy =
-                Microsoft.Azure.Cosmos.AvailabilityStrategy.CrossRegionHedgingStrategy(threshold, thresholdStep)
-        };
-    }
-
-    /// <summary>
     /// Adds cheap always-on checks first and gates external-service checks behind config so
     /// readiness probes do not require every emulator in lightweight local or test runs.
     /// </summary>
@@ -217,12 +205,15 @@ public static partial class RegisterServices
         if (!config.GetValue<bool>("HealthChecks:EnableExternalServices", false))
             return;
 
+        // S19: the checks verify the resource the app uses - the attachment container or bucket (least privilege:
+        // container ExistsAsync, a scoped HeadBucket) - and the Cosmos account through the registered client.
         if (!string.IsNullOrWhiteSpace(config.ResolveConnection(
                 "BlobStorage1", "BlobStorage1", "BlobStorage1:blobServiceUri", "Values:BlobStorage1")))
-            builder.AddCheck<HealthChecks.BlobStorageHealthCheck>("blob-storage", tags: ["full", "extservice"]);
+            builder.AddBlobContainerHealthCheck(
+                "blob-storage", "TaskFlowBlobClient", AttachmentBlobs.ContainerName, tags: ["full", "extservice"]);
 
         if (ResolveStorageProvider(config) == StorageProvider.S3)
-            builder.AddCheck<HealthChecks.S3StorageHealthCheck>("s3-storage", tags: ["full", "extservice"]);
+            builder.AddS3BucketHealthCheck("s3-storage", AttachmentBlobs.ContainerName, tags: ["full", "extservice"]);
 
         if (!string.IsNullOrWhiteSpace(config.ResolveConnection("ServiceBus1", "ServiceBus1", "Values:ServiceBus1"))
             || !string.IsNullOrWhiteSpace(ResolveServiceBusFullyQualifiedNamespace(config)))
@@ -230,12 +221,14 @@ public static partial class RegisterServices
                 "TaskFlowSBClient", config["DomainEventsTopic"] ?? TaskFlowIntegrationEvents.Destination, "service-bus", "full", "extservice");
 
         if (!string.IsNullOrWhiteSpace(config.GetConnectionString("CosmosDb1")))
-            builder.AddCheck<HealthChecks.CosmosDbHealthCheck>("cosmos-db", tags: ["full", "extservice"]);
+            builder.AddCosmosDbHealthCheck("cosmos-db", tags: ["full", "extservice"]);
 
         if (ResolveReadModelProvider(config) == ReadModelProvider.MongoDb)
             builder.AddCheck<HealthChecks.MongoDbHealthCheck>("mongodb", tags: ["full", "extservice"]);
 
-        if (!string.IsNullOrWhiteSpace(config.GetConnectionString("Redis1")))
-            builder.AddCheck<HealthChecks.RedisCacheHealthCheck>("redis-cache", tags: ["full", "extservice"]);
+        // S9: a ping over the shared multiplexer, Degraded on failure - the cache falls back to L1 and the rate
+        // limiter fails open, so a dead Redis is a problem to page on, not a reason to leave rotation.
+        if (services.HasSharedRedis())
+            builder.AddRedisHealthCheck("redis-cache", tags: ["full", "extservice"]);
     }
 }

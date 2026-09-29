@@ -41,6 +41,10 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="EF.AspNetCore" />
+    <!-- S2/S6: the trusted-gateway claims relay and the Scaffold fixed principal. -->
+    <PackageReference Include="EF.Auth" />
+    <!-- S10/S11: tenant-partitioned budgets, Redis-backed over the cache's shared connection when Redis is configured. -->
+    <PackageReference Include="EF.RateLimiting.Redis" />
     <PackageReference Include="EF.Common" />
     <!-- FlowEngine packages live in TaskFlow.Bootstrapper where DI registration happens.
          Only AdminApi is referenced here for the pipeline mapping. -->

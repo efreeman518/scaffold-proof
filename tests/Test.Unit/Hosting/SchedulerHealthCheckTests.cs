@@ -1,8 +1,9 @@
+using EF.BackgroundServices.TickerQ;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 using TaskFlow.Infrastructure.Data;
-using TaskFlow.Scheduler.Infrastructure;
 using TickerQ.Utilities.Entities;
 
 namespace Test.Unit.Hosting;
@@ -10,7 +11,8 @@ namespace Test.Unit.Hosting;
 /// <summary>
 /// The scheduler health check has to catch a scheduler that runs but fires nothing. It used to report Healthy
 /// whenever no occurrence had ever executed, which is exactly how a Scheduler whose cron jobs were never seeded
-/// stayed green in every environment.
+/// stayed green in every environment. The check is the EF.BackgroundServices.TickerQ one (S15) over TaskFlow's
+/// operational store, with the stall threshold the Scheduler ships in its settings.
 /// Pure-unit tier: EF InMemory operational store and a fixed clock.
 /// </summary>
 [TestClass]
@@ -19,13 +21,16 @@ public sealed class SchedulerHealthCheckTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 28, 12, 0, 0, TimeSpan.Zero);
 
+    /// <summary>Scheduling:Health:StallThreshold from the Scheduler's appsettings.json (twice the 6-hour shortest cron).</summary>
+    private static readonly TimeSpan StallThreshold = ShippedSettings();
+
     /// <summary>MSTest-injected context; supplies the per-test cancellation token.</summary>
     public TestContext TestContext { get; set; } = null!;
 
     [TestMethod]
     public async Task Given_NoExecutionEver_When_UptimeExceedsThreshold_Then_Degraded()
     {
-        var result = await CheckAsync(startedAgo: SchedulerHealthCheck.StallThreshold + TimeSpan.FromMinutes(1), lastExecutedAgo: null);
+        var result = await CheckAsync(startedAgo: StallThreshold + TimeSpan.FromMinutes(1), lastExecutedAgo: null);
 
         Assert.AreEqual(HealthStatus.Degraded, result.Status, result.Description);
     }
@@ -50,7 +55,7 @@ public sealed class SchedulerHealthCheckTests
     public async Task Given_StaleExecution_When_Checked_Then_Degraded()
     {
         var result = await CheckAsync(
-            startedAgo: TimeSpan.FromDays(3), lastExecutedAgo: SchedulerHealthCheck.StallThreshold + TimeSpan.FromMinutes(1));
+            startedAgo: TimeSpan.FromDays(3), lastExecutedAgo: StallThreshold + TimeSpan.FromMinutes(1));
 
         Assert.AreEqual(HealthStatus.Degraded, result.Status, result.Description);
     }
@@ -77,13 +82,23 @@ public sealed class SchedulerHealthCheckTests
             await db.SaveChangesAsync(ct);
         }
 
-        var clock = new FixedClock(Now);
         var startTime = new SchedulerStartTime(new FixedClock(Now - startedAgo));
-        await startTime.StartAsync(ct);
+        var check = new SchedulerHealthCheck<TaskFlowTickerQDbContext>(
+            db, startTime, Options.Create(new SchedulerHealthSettings { StallThreshold = StallThreshold }), new FixedClock(Now));
+        return await check.CheckHealthAsync(
+            new HealthCheckContext { Registration = new HealthCheckRegistration("scheduler", check, HealthStatus.Degraded, null) }, ct);
+    }
 
-        var services = new ServiceCollection().AddSingleton(db).BuildServiceProvider();
-        var check = new SchedulerHealthCheck(services, startTime, clock);
-        return await check.CheckHealthAsync(new HealthCheckContext(), ct);
+    private static TimeSpan ShippedSettings()
+    {
+        var settings = new SchedulerHealthSettings();
+        new ConfigurationBuilder()
+            .AddJsonFile(RepoRoot.Combine("src", "Host", "TaskFlow.Scheduler", "appsettings.json"), optional: false)
+            .Build()
+            .GetSection(SchedulerHealthSettings.ConfigSectionName)
+            .Bind(settings);
+        Assert.AreEqual(TimeSpan.FromHours(12), settings.StallThreshold);
+        return settings.StallThreshold;
     }
 
     private sealed class FixedClock(DateTimeOffset now) : TimeProvider

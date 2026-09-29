@@ -142,7 +142,7 @@ public static class WebApplicationBuilderExtensions
 
         var versionSet = app.BuildApiVersionSet(apiDocuments);
         // The tenant budget is the global limiter (RegisterApiServices.AddRateLimiting); a group policy over
-        // the same Redis key would spend two permits per request.
+        // the same budget would spend two permits per request.
         var api = app.MapVersionedApiGroup(ApiContract.VersionedRoutePrefix, versionSet, ApiContract.DefaultVersion);
 
         var style = ApplicationStyleResolver.Resolve(app.Configuration[ApplicationStyleResolver.ConfigKey]);

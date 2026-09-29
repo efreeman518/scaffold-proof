@@ -14,8 +14,8 @@ namespace Test.Unit.Gateway;
 
 /// <summary>
 /// Exercises the D-050 edge limiter through the limiter the gateway actually registers, not a copy of its
-/// options: a burst past the per-IP bucket is shed with 429 plus Retry-After, a second client is unaffected,
-/// probe routes are exempt, and turning the feature off leaves no global limiter at all.
+/// options (EF.RateLimiting UseEdgeLimiter): a burst past the per-IP bucket is shed with 429 plus Retry-After, a
+/// second client is unaffected, probe routes skip the bucket, and turning the feature off leaves no global limiter.
 /// </summary>
 [TestClass]
 [TestCategory("Unit")]
@@ -64,7 +64,10 @@ public sealed class GatewayEdgeRateLimitTests
         }
     }
 
-    /// <summary>Probe routes are exempt: shedding a probe is how a healthy replica gets restarted.</summary>
+    /// <summary>
+    /// Probe routes skip the per-IP bucket: shedding a probe is how a healthy replica gets restarted. They still count
+    /// against the process-wide concurrency backstop (EF.RateLimiting security fix F3).
+    /// </summary>
     [TestMethod]
     public async Task GlobalLimiter_ProbeRoutes_AreNeverShed()
     {
@@ -97,22 +100,26 @@ public sealed class GatewayEdgeRateLimitTests
     }
 
     /// <summary>
-    /// A budget the limiter constructors would refuse fails gateway registration, rather than starting a
-    /// gateway that 500s every proxied request from the first one on.
+    /// A budget the limiter constructors would refuse fails when the rate limiter options are first built (the
+    /// middleware reads them at host start), naming the key, rather than starting a gateway that 500s every proxied
+    /// request from the first one on. Nothing is clamped.
     /// </summary>
     [TestMethod]
     [DataRow("TokensPerPeriod", "0")]
     [DataRow("ReplenishmentSeconds", "0")]
     [DataRow("QueueLimit", "-1")]
     [DataRow("MaxConcurrentRequests", "0")]
-    public void AddGatewayServices_InvalidEdgeBudget_FailsAtRegistration(string key, string value)
+    [DataRow("IPv6PrefixLength", "0")]
+    public void AddGatewayServices_InvalidEdgeBudget_FailsWhenTheLimiterIsBuilt(string key, string value)
     {
         var builder = TestWebApplication.CreateBuilder();
         builder.Configuration["CorsSettings:AllowedOrigins:0"] = "https://localhost";
         builder.Configuration[$"RateLimiting:Edge:{key}"] = value;
+        builder.Services.AddGatewayServices(builder.Configuration);
+        using var provider = builder.Services.BuildServiceProvider();
 
-        var ex = Assert.ThrowsExactly<InvalidOperationException>(
-            () => builder.Services.AddGatewayServices(builder.Configuration));
+        var ex = Assert.ThrowsExactly<ArgumentOutOfRangeException>(
+            () => provider.GetRequiredService<IOptions<RateLimiterOptions>>().Value);
 
         Assert.Contains($"RateLimiting:Edge:{key}", ex.Message);
     }

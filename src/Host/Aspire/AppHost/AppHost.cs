@@ -348,7 +348,7 @@ if (isTesting)
 {
     api = api
         .WithEnvironment("Cors__AllowedOrigins__0", "http://localhost")
-        .WithEnvironment("RateLimiting__Tiers__standard__PermitLimit", "10000");
+        .WithEnvironment("RateLimiting__Tenants__Tiers__standard__PermitLimit", "10000");
 
 }
 

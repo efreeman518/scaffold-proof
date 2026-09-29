@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
 using TaskFlow.Observability.Meters;
-using TaskFlow.Observability.Tracing;
 
 namespace Microsoft.Extensions.Hosting;
 
@@ -33,6 +32,13 @@ public static class Extensions
     /// so ServiceDefaults does not take an EF Core dependency for one string; the unit test probes the constant.
     /// </summary>
     private const string OutboxActivitySourceName = "EF.Data.Outbox";
+
+    /// <summary>
+    /// <c>EF.RateLimiting.RateLimitingTelemetryOptions.MeterName</c> (<c>ratelimit.rejected</c>,
+    /// <c>ratelimit.backend_failure</c> - the fail-open signal to alert on), spelled out for the same reason as
+    /// <see cref="RabbitMqMeterName"/>; the unit test probes the package default.
+    /// </summary>
+    private const string RateLimitingMeterName = "EF.RateLimiting";
 
     /// <summary>Registers service defaults dependencies in the service container.</summary>
     public static IHostApplicationBuilder AddServiceDefaults(this IHostApplicationBuilder builder)
@@ -67,16 +73,13 @@ public static class Extensions
         builder.AddEfOpenTelemetry(o =>
         {
             o.MeterNames.AddRange([
-                SchedulerJobMeter.MeterName,
-                CacheMeter.MeterName,
-                RateLimitingMeter.MeterName,
+                RateLimitingMeterName,
                 StreamingMeter.MeterName,
                 MessagingName,
                 RabbitMqMeterName]);
             o.ActivitySourceNames.AddRange([
                 MessagingName,
-                OutboxActivitySourceName,
-                TaskFlowActivitySources.SchedulerName]);
+                OutboxActivitySourceName]);
         });
 
     /// <summary>Registers the always-healthy <c>self</c> liveness check (tag <c>live</c>).</summary>

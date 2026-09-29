@@ -4,7 +4,6 @@ using TaskFlow.Domain.Model.ValueObjects;
 using TaskFlow.Domain.Shared;
 using TaskFlow.Domain.Shared.Enums;
 using TaskFlow.Domain.Shared.Events;
-using TaskFlow.Observability.Meters;
 using TaskFlow.Scheduler.Handlers;
 using Test.Support;
 
@@ -33,7 +32,7 @@ public class RecurringTaskGenerationHandlerTests
         _handler = new RecurringTaskGenerationHandler(
             _repo,
             _outbox,
-            new SchedulerJobMeter(),
+            SchedulerTestTelemetry.Create(),
             new FixedTimeProvider(Now),
             NullLogger<RecurringTaskGenerationHandler>.Instance);
     }

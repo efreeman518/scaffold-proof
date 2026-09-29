@@ -1,3 +1,4 @@
+using EF.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.FeatureManagement;
@@ -19,7 +20,7 @@ public sealed class AiTaskReviewer(
     /// <inheritdoc />
     public async Task ReviewNewTaskAsync(Guid taskId, Guid tenantId, CancellationToken ct = default)
     {
-        if (chatClient is NoOpChatClient)
+        if (chatClient.IsDisabled())
         {
             logger.AiReviewerSkipped(taskId);
             return;

@@ -21,8 +21,4 @@ internal static partial class LogMessages
     /// <summary>Logs application shutdown.</summary>
     [LoggerMessage(EventId = LogEventIds.ApiBase + 4, Level = LogLevel.Information, Message = "{AppName} {Environment} - Ending application.")]
     public static partial void EndingApplication(this ILogger logger, string appName, string environment);
-
-    /// <summary>Logs that forwarded gateway claims could not be parsed.</summary>
-    [LoggerMessage(EventId = LogEventIds.ApiBase + 6, Level = LogLevel.Warning, Message = "Failed to parse forwarded gateway claims from {HeaderName}")]
-    public static partial void GatewayClaimsParseFailed(this ILogger logger, Exception exception, string headerName);
 }

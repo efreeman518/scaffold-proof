@@ -1,6 +1,9 @@
+using EF.AI.Chat;
 using EF.AI.Testing;
 using EF.Common.Contracts;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using TaskFlow.Application.Contracts.Services;
@@ -19,9 +22,9 @@ namespace Test.Unit.AI;
 [TestCategory("Unit")]
 public class AiDemoServiceTests
 {
-    /// <summary>No-op chat keeps D4 read/write-safe and reports AI as disabled.</summary>
+    /// <summary>The EF.AI disabled client keeps D4 read/write-safe and reports AI as disabled, without calling it.</summary>
     [TestMethod]
-    public async Task TriageAsync_WithNoOpChatClient_ReturnsNotConfiguredWithoutUpdate()
+    public async Task TriageAsync_WithDisabledChatClient_ReturnsNotConfiguredWithoutUpdate()
     {
         var taskId = Guid.NewGuid();
         var taskItemService = new Mock<ITaskItemService>();
@@ -34,7 +37,7 @@ public class AiDemoServiceTests
 
         var service = new TaskTriageService(
             NullLogger<TaskTriageService>.Instance,
-            new NoOpChatClient(NullLogger<NoOpChatClient>.Instance),
+            DisabledChatClient(),
             taskItemService.Object);
 
         var result = await service.TriageAsync(taskId, apply: true, TestContext.CancellationToken);
@@ -152,4 +155,11 @@ public class AiDemoServiceTests
     }
 
     public TestContext TestContext { get; set; } = null!;
+
+    /// <summary>The client AddAiServices registers when no model is wired: EF.AI's disabled client.</summary>
+    private static IChatClient DisabledChatClient() => new ServiceCollection()
+        .AddLogging()
+        .AddEFChatClient(new ConfigurationBuilder().Build().GetSection(EFChatClientSettings.SectionName))
+        .BuildServiceProvider()
+        .GetRequiredService<IChatClient>();
 }

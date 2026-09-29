@@ -27,7 +27,7 @@ namespace Test.Load;
 /// 4. From the same repo root run:
 ///    <c>$env:TASKFLOW_LOAD_BASE_URL="http://localhost:5188"; dotnet test tests\Test.Load\Test.Load.csproj --filter TestCategory=Load</c>.
 /// Default simulations stay below the API's 100 request/minute tenant rate limit. Raise
-/// <c>RateLimiting:PerTenant:PermitLimit</c> before using higher injection profiles.
+/// <c>RateLimiting:Tenants:Tiers:standard:PermitLimit</c> before using higher injection profiles.
 /// </summary>
 [TestClass]
 [TestCategory("Load")]

@@ -1,3 +1,4 @@
+using EF.AI;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.AI;
 using System.Runtime.CompilerServices;
@@ -19,6 +20,11 @@ public static class AiDemoEndpoints
         MaxOutputTokens = 128
     };
 
+    /// <summary>The answer of the demo routes when no model is wired (the EF.AI disabled client).</summary>
+    private const string NotConfigured =
+        "AI model is not configured. Wire an Azure AI Foundry deployment or OpenAI-compatible " +
+        "endpoint to enable AI responses.";
+
     /// <summary>Registers the AI demo routes under the /ai group.</summary>
     public static IEndpointRouteBuilder MapAiDemoEndpoints(this IEndpointRouteBuilder app)
     {
@@ -30,15 +36,19 @@ public static class AiDemoEndpoints
             [FromServices] IChatClient chatClient,
             CancellationToken ct) =>
         {
+            // The disabled client throws on every call, so the route answers "not configured" itself.
+            if (chatClient.IsDisabled())
+                return Results.Ok(new AiChatResponse(NotConfigured, false));
+
             var response = await chatClient.GetResponseAsync(request.Message, DemoChatOptions, ct);
-            return Results.Ok(new AiChatResponse(response.Text, chatClient is not NoOpChatClient));
+            return Results.Ok(new AiChatResponse(response.Text, true));
         }).WithName("AiChat");
 
         // No-call status used by tests and diagnostics to distinguish live AI from no-op fallback.
         group.MapGet("/status", (
             [FromServices] IChatClient chatClient,
             [FromServices] AiProviderInfo provider) =>
-            Results.Ok(new AiStatusResponse(provider.Name, chatClient is not NoOpChatClient)))
+            Results.Ok(new AiStatusResponse(provider.Name, !chatClient.IsDisabled())))
             .WithName("AiStatus");
 
         // D2 - Streaming completion: token stream as Server-Sent Events.
@@ -83,6 +93,12 @@ public static class AiDemoEndpoints
     private static async IAsyncEnumerable<string> StreamTokens(
         IChatClient chatClient, string message, [EnumeratorCancellation] CancellationToken ct)
     {
+        if (chatClient.IsDisabled())
+        {
+            yield return NotConfigured;
+            yield break;
+        }
+
         await foreach (var update in chatClient.GetStreamingResponseAsync(message, DemoChatOptions, ct))
         {
             if (!string.IsNullOrEmpty(update.Text))

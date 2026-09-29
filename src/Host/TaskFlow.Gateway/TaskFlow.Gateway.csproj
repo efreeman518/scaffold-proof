@@ -6,6 +6,10 @@
   <ItemGroup>
     <PackageReference Include="Yarp.ReverseProxy" />
     <PackageReference Include="Microsoft.Extensions.ServiceDiscovery.Yarp" />
+    <!-- S1/S3/S6/S22: AccessTokenCache, the claims relay transforms, the fixed principal and the downstream probe. -->
+    <PackageReference Include="EF.Gateway" />
+    <!-- S12/H11: the edge limiter and the per-client-IP health policies. -->
+    <PackageReference Include="EF.RateLimiting" />
     <!-- D-042: Gateway does not reference Bootstrapper, so Program.cs calls EF.Host AddEfAzureAppConfiguration
          itself (ServiceDefaults brings EF.Host). No Microsoft.FeatureManagement reference here by design -
          Gateway evaluates no feature flags, keeping it out of the "who may use Microsoft.FeatureManagement"

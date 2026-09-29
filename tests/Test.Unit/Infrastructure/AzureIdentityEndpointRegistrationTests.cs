@@ -59,6 +59,12 @@ public sealed class AzureIdentityEndpointRegistrationTests
 
         var healthChecks = provider.GetRequiredService<IOptions<HealthCheckServiceOptions>>().Value;
         Assert.IsTrue(healthChecks.Registrations.Any(registration => registration.Name == "service-bus"));
+
+        // S19: the package checks, built from the registered clients without a network call.
+        Assert.IsInstanceOfType<EF.Storage.BlobContainerHealthCheck>(
+            healthChecks.Registrations.Single(r => r.Name == "blob-storage").Factory(provider));
+        Assert.IsInstanceOfType<EF.CosmosDb.CosmosDbHealthCheck>(
+            healthChecks.Registrations.Single(r => r.Name == "cosmos-db").Factory(provider));
     }
 
     [TestMethod]

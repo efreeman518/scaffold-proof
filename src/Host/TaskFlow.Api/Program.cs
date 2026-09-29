@@ -36,7 +36,7 @@ try
         .RegisterDomainServices(config)
         .RegisterApplicationServices(config)
         .RegisterBackgroundServices(config)
-        .AddApiServices(config, startupLogger);
+        .AddApiServices(config);
 
     // 4. Build + pipeline
     var app = builder.Build().ConfigurePipeline();

@@ -12,7 +12,6 @@ using TaskFlow.Domain.Shared.Enums;
 using TaskFlow.Domain.Shared.Events;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Repositories;
-using TaskFlow.Observability.Meters;
 using SchedulerHost::TaskFlow.Scheduler.Handlers;
 using Test.Integration.Infrastructure;
 using Test.Support;
@@ -158,7 +157,7 @@ public class SchedulerJobIntegrationTests
             var handler = new OverdueTaskCheckHandler(
                 new TaskItemSystemRepository(db),
                 new OutboxStaging<TaskFlowDbContextTrxn>(db, TestOutbox.Options),
-                new SchedulerJobMeter(),
+                SchedulerTestTelemetry.Create(),
                 TimeProvider.System,
                 NullLogger<OverdueTaskCheckHandler>.Instance);
             await handler.HandleAsync(TestContext.CancellationToken);
@@ -185,7 +184,7 @@ public class SchedulerJobIntegrationTests
             var handler = new RecurringTaskGenerationHandler(
                 new TaskItemSystemRepository(db),
                 new OutboxStaging<TaskFlowDbContextTrxn>(db, TestOutbox.Options),
-                new SchedulerJobMeter(),
+                SchedulerTestTelemetry.Create(),
                 new FixedTimeProvider(Now),
                 NullLogger<RecurringTaskGenerationHandler>.Instance);
             await handler.HandleAsync(TestContext.CancellationToken);
@@ -213,7 +212,7 @@ public class SchedulerJobIntegrationTests
         await using var db = DbContainerFixture.CreateTrxnContext();
         var handler = new StaleTaskCleanupHandler(
             new TaskItemSystemRepository(db),
-            new SchedulerJobMeter(),
+            SchedulerTestTelemetry.Create(),
             TimeProvider.System,
             new ConfigurationBuilder().Build(),
             NullLogger<StaleTaskCleanupHandler>.Instance);

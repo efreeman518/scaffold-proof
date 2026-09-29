@@ -19,7 +19,7 @@ namespace Test.Integration;
 [DoNotParallelize]
 public sealed class AiWorkflowIntegrationTests
 {
-    // Scaffold auth identity (ScaffoldAuthHandler) the in-process host authenticates every request as.
+    // Scaffold auth identity (ScaffoldPrincipal, EF.Auth fixed principal) the in-process host authenticates every request as.
     private const string TenantId = "00000000-0000-0000-0000-000000000001";
     private static readonly TimeSpan PollTimeout = TimeSpan.FromSeconds(60);
     // The engine drives the workflow in the background and it terminates within a second or two, so a

@@ -1,8 +1,7 @@
-﻿using EF.Data.Migrations;
 using EF.BackgroundServices;
+using EF.BackgroundServices.TickerQ;
 using EF.Data.Outbox;
 using EF.Messaging;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using TaskFlow.Infrastructure.AI;
 using TaskFlow.Infrastructure.Data;
@@ -10,16 +9,14 @@ using TaskFlow.Infrastructure.Data.Provider;
 using TaskFlow.Infrastructure.Messaging.RabbitMq;
 using TaskFlow.Scheduler.Handlers;
 using TaskFlow.Scheduler.Handlers.Retention;
-using TaskFlow.Scheduler.Infrastructure;
 using TaskFlow.Scheduler.Jobs;
 using TaskFlow.Bootstrapper;
 using TaskFlow.Infrastructure.Data.Operational;
-using TaskFlow.Observability.Meters;
-using TaskFlow.Scheduler.Telemetry;
 using TaskFlow.Scheduler.Workers;
 using TickerQ.Dashboard.DependencyInjection;
 using TickerQ.DependencyInjection;
-using TickerQ.EntityFrameworkCore.DependencyInjection;
+using TickerQ.Utilities;
+using TickerQ.Utilities.Entities;
 
 namespace TaskFlow.Scheduler;
 
@@ -41,11 +38,8 @@ public static class RegisterSchedulerServices
         services.AddScoped<StaleTaskCleanupHandler>();
         services.AddScoped<OutboxRetentionHandler>();
         services.AddScoped<ConsumerInboxRetentionHandler>();
-        services.AddScoped<TickerQOccurrenceRetentionHandler>();
         services.AddScoped<AuditRetentionHandler>();
         services.AddScoped<TaskMaintenanceJobs>();
-        services.AddSingleton<SchedulingMetrics>();
-        services.AddSingleton<SchedulerJobMeter>();
         // Already added by the shared application registration; TryAdd keeps one meter per process.
         services.TryAddSingleton<MessagingMetrics>();
 
@@ -70,13 +64,7 @@ public static class RegisterSchedulerServices
                 includeEmbedding: AiServiceCollectionExtensions.ResolveSearchProvider(config) == SearchProvider.PgVector);
         }
 
-        // Registered as a hosted service so the start time is taken when the host starts, not when the health
-        // check is first resolved.
-        services.AddSingleton<SchedulerStartTime>();
-        services.AddHostedService(sp => sp.GetRequiredService<SchedulerStartTime>());
-
         services.AddHealthChecks()
-            .AddCheck<SchedulerHealthCheck>("scheduler", tags: ["ready", "memory"])
             // M13: Degraded past 60 s lag or 10k pending, Unhealthy past 300 s or 50k.
             .AddLeasedWorkBacklogCheck<OutboxMessage>("outbox", tags: ["ready", "full"])
             // Report-only: the blob-delete backlog is visible (and gauged) but never degrades readiness.
@@ -89,99 +77,84 @@ public static class RegisterSchedulerServices
         return services;
     }
 
+    /// <summary>
+    /// TickerQ through EF.BackgroundServices.TickerQ (S14/S15): <c>AddEFTickerQ</c> binds <c>Scheduling</c>
+    /// (MaxConcurrency, PollIntervalSeconds; UTC and the <c>{MachineName}:{ProcessId}</c> node identity, because
+    /// Aspire runs two Scheduler replicas on one host), registers <see cref="ScheduledJobRunner"/> and its telemetry,
+    /// and, with the operational store, seeds the <c>[TickerFunction]</c> crons inside the distributed seed lock
+    /// (EF.Cache's <c>IDistributedLock</c>: Redis, or in-process on a single replica) and registers the package
+    /// occurrence retention handler. The stall check (<c>Scheduling:Health:StallThreshold</c>, Degraded) needs the
+    /// store, so it is registered with it. The host must also call <c>UseTickerQ()</c>.
+    /// </summary>
     public static IHostApplicationBuilder AddTickerQConfig(this IHostApplicationBuilder builder)
     {
         var config = builder.Configuration;
-        var maxConcurrency = config.GetValue("Scheduling:MaxConcurrency", Math.Max(1, Environment.ProcessorCount));
-        var pollIntervalSeconds = config.GetValue("Scheduling:PollIntervalSeconds", 30);
-        var usePersistence = config.GetValue("Scheduling:UsePersistence", true);
 
-        builder.Services.AddTickerQ(options =>
+        if (!config.GetValue("Scheduling:UsePersistence", true))
         {
-            options.SetExceptionHandler<TaskFlowSchedulerExceptionHandler>();
+            builder.Services.AddEFTickerQ(config, options => AddDashboard(options, config));
+            return builder;
+        }
 
-            options.ConfigureScheduler(scheduler =>
-            {
-                scheduler.MaxConcurrency = maxConcurrency;
-                scheduler.SchedulerTimeZone = TimeZoneInfo.Utc;
-                scheduler.IdleWorkerTimeOut = TimeSpan.FromMinutes(2);
-                scheduler.FallbackIntervalChecker = TimeSpan.FromSeconds(pollIntervalSeconds);
-                // Machine name alone collides when two replicas share a host (Aspire runs the Scheduler with
-                // WithReplicas(2)); TickerQ leases cron occurrences by node identity, so two nodes claiming the
-                // same name would each believe they hold the other's lease.
-                scheduler.NodeIdentifier = $"{Environment.MachineName}:{Environment.ProcessId}";
-            });
+        var connStr = config.GetConnectionString("TickerQDbContext");
+        if (string.IsNullOrWhiteSpace(connStr))
+        {
+            throw new InvalidOperationException("Connection string 'TickerQDbContext' is required.");
+        }
 
-            if (usePersistence)
-            {
-                var connStr = config.GetConnectionString("TickerQDbContext");
-                if (string.IsNullOrWhiteSpace(connStr))
-                {
-                    throw new InvalidOperationException("Connection string 'TickerQDbContext' is required.");
-                }
-
-                // shortcut: TickerQ keeps a scoped (non-pooled) context because UseTickerQDbContext only accepts
-                // Action<DbContextOptionsBuilder>; upgrade path is an upstream factory/pooled overload in TickerQ.EntityFrameworkCore.
-                options.AddOperationalStore(efOptions =>
-                    efOptions.UseTickerQDbContext<TaskFlowTickerQDbContext>(
-                        dbOptions => dbOptions.UseTaskFlowProvider(TaskFlowProviderOptions.FromConfiguration(
-                            config,
-                            connStr,
-                            TaskFlowTickerQDbContext.MigrationHistoryTable,
-                            TaskFlowTickerQDbContext.SchemaName)),
-                        schema: TaskFlowTickerQDbContext.SchemaName));
-            }
-
-            var enableDashboard = config.GetValue("Scheduling:EnableDashboard", false);
-            if (enableDashboard)
-            {
-                options.AddDashboard(dashboard =>
-                {
-                    dashboard.SetBasePath(config["Scheduling:Dashboard:BasePath"] ?? "/scheduler");
-
-                    var username = config["Scheduling:Dashboard:Username"];
-                    var password = config["Scheduling:Dashboard:Password"];
-                    if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
-                    {
-                        throw new InvalidOperationException(
-                            "TickerQ dashboard requires Scheduling:Dashboard:Username and Scheduling:Dashboard:Password.");
-                    }
-
-                    dashboard.WithBasicAuth(username, password);
-                });
-            }
-        });
+        // shortcut: TickerQ keeps a scoped (non-pooled) context because UseTickerQDbContext only accepts
+        // Action<DbContextOptionsBuilder>; upgrade path is an upstream factory/pooled overload in TickerQ.EntityFrameworkCore.
+        builder.Services.AddEFTickerQ<TaskFlowTickerQDbContext>(
+            config,
+            dbOptions => dbOptions.UseTaskFlowProvider(TaskFlowProviderOptions.FromConfiguration(
+                config,
+                connStr,
+                TaskFlowTickerQDbContext.MigrationHistoryTable,
+                TaskFlowTickerQDbContext.SchemaName)),
+            TaskFlowTickerQDbContext.SchemaName,
+            options => AddDashboard(options, config));
+        builder.Services.AddHealthChecks()
+            .AddSchedulerHealthCheck<TaskFlowTickerQDbContext>(tags: ["ready", "memory"]);
 
         return builder;
     }
 
+    /// <summary>The TickerQ dashboard, only when <c>Scheduling:EnableDashboard</c> is set, and never without basic auth.</summary>
+    private static void AddDashboard(TickerOptionsBuilder<TimeTickerEntity, CronTickerEntity> options, IConfiguration config)
+    {
+        if (!config.GetValue("Scheduling:EnableDashboard", false))
+            return;
+
+        options.AddDashboard(dashboard =>
+        {
+            dashboard.SetBasePath(config["Scheduling:Dashboard:BasePath"] ?? "/scheduler");
+
+            var username = config["Scheduling:Dashboard:Username"];
+            var password = config["Scheduling:Dashboard:Password"];
+            if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
+            {
+                throw new InvalidOperationException(
+                    "TickerQ dashboard requires Scheduling:Dashboard:Username and Scheduling:Dashboard:Password.");
+            }
+
+            dashboard.WithBasicAuth(username, password);
+        });
+    }
+
+    /// <summary>
+    /// Scheduler is a runtime host, not a migration owner: a missing schema means the deployment skipped
+    /// TaskFlow.DatabaseMigrator or pointed TickerQDbContext at the wrong database. The EF.BackgroundServices.TickerQ
+    /// validator names every missing table and never changes schema.
+    /// </summary>
     public static async Task ValidateTickerQDatabase(this WebApplication app)
     {
-        var config = app.Configuration;
-        var logger = app.Logger;
-        var usePersistence = config.GetValue("Scheduling:UsePersistence", true);
-        if (!usePersistence)
+        if (!app.Configuration.GetValue("Scheduling:UsePersistence", true))
         {
-            logger.TickerQPersistenceDisabled();
+            app.Logger.TickerQPersistenceDisabled();
             return;
         }
 
-        using var scope = app.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<TaskFlowTickerQDbContext>();
-
-        // Scheduler is a runtime host, not a migration owner. Missing schema means the
-        // deployment skipped TaskFlow.DatabaseMigrator or pointed TickerQDbContext at the wrong database.
-        if (!await db.Database.CanConnectAsync())
-        {
-            throw new InvalidOperationException("Cannot connect TickerQ operational store database.");
-        }
-
-        if ((await db.GetMissingTablesAsync()).Count > 0)
-        {
-            throw new InvalidOperationException(
-                "TickerQ schema is missing or incomplete. Run TaskFlow.DatabaseMigrator before starting Scheduler.");
-        }
-
-        logger.TickerQSchemaValidated();
+        await TickerQSchemaValidator.ValidateAsync<TaskFlowTickerQDbContext>(app.Services);
+        app.Logger.TickerQSchemaValidated();
     }
 }
