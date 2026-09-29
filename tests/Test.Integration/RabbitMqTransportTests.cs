@@ -86,6 +86,40 @@ public sealed class RabbitMqTransportTests
         }
     }
 
+    /// <summary>M19: every TaskFlow queue is a quorum queue, so the retry bound holds across consumer replicas.</summary>
+    [TestMethod]
+    [Timeout(300000, CooperativeCancellation = true)]
+    public async Task Topology_DeclaresEveryQueueAsQuorum()
+    {
+        var ct = TestContext.CancellationToken;
+        var broker = RabbitMqBrokerFixture.Container;
+
+        await using var provider = BuildProvider(broker, $"quorum-{Guid.NewGuid():N}");
+        await provider.GetRequiredService<IRabbitMqTopologyDeclarer>()
+            .DeclareAsync(TaskFlowRabbitMqTopology.Build(includeEmbedding: true), ct);
+
+        var listed = await broker.ExecAsync(["rabbitmqctl", "list_queues", "--quiet", "--no-table-headers", "name", "type"], ct);
+        Assert.AreEqual(0L, listed.ExitCode, listed.Stderr);
+        var types = listed.Stdout
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(line => line.Split('\t', StringSplitOptions.TrimEntries))
+            .Where(columns => columns.Length == 2)
+            .ToDictionary(columns => columns[0], columns => columns[1], StringComparer.Ordinal);
+
+        foreach (var queue in new[]
+                 {
+                     TaskFlowRabbitMqTopology.ProjectionQueue,
+                     TaskFlowRabbitMqTopology.AiReviewQueue,
+                     TaskFlowRabbitMqTopology.WorkflowQueue,
+                     TaskFlowRabbitMqTopology.EmbeddingQueue,
+                     TaskFlowRabbitMqTopology.DeadLetterQueue
+                 })
+        {
+            Assert.IsTrue(types.TryGetValue(queue, out var type), $"{queue} was not declared: {listed.Stdout}");
+            Assert.AreEqual("quorum", type, queue);
+        }
+    }
+
     [TestMethod]
     [Timeout(300000, CooperativeCancellation = true)]
     public async Task StatusChangedEvent_ReachesOnlyTheProjectionQueue()
