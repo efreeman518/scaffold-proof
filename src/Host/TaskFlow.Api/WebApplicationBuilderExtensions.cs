@@ -9,7 +9,6 @@ using TaskFlow.Api.Endpoints;
 using TaskFlow.Api.Endpoints.Cqrs;
 using TaskFlow.Api.Grpc;
 using TaskFlow.Application.Contracts;
-using TaskFlow.Bootstrapper;
 
 namespace TaskFlow.Api;
 

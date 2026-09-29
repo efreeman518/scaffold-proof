@@ -1,5 +1,5 @@
 using TaskFlow.Uno.Core.Business.Models;
-using TaskFlow.Uno.Core.Business.Notifications;
+using EF.UI.Client.Notifications;
 using TaskFlow.Uno.Core.Client;
 
 namespace TaskFlow.Uno.Core.Business.Services;
@@ -65,7 +65,7 @@ public class TaskItemApiService(
         var dto = MapToDto(model);
         var result = await client.Api.TaskItems.PostAsync(dto, cancellationToken: ct);
         var created = MapToModel(result!);
-        await notifications.ShowSuccess($"Created task \"{created.Title}\".", ct: ct);
+        notifications.ShowSuccess($"Created task \"{created.Title}\".");
         return created;
     }
 
@@ -75,7 +75,7 @@ public class TaskItemApiService(
         var dto = MapToDto(model);
         var result = await client.Api.TaskItems[model.Id!.Value].PutAsync(dto, IfMatch(expectedVersion), cancellationToken: ct);
         var updated = MapToModel(result!);
-        await notifications.ShowSuccess($"Updated task \"{updated.Title}\".", ct: ct);
+        notifications.ShowSuccess($"Updated task \"{updated.Title}\".");
         return updated;
     }
 
@@ -83,7 +83,7 @@ public class TaskItemApiService(
     public async Task DeleteAsync(Guid id, long? expectedVersion, CancellationToken ct = default)
     {
         await client.Api.TaskItems[id].DeleteAsync(IfMatch(expectedVersion), cancellationToken: ct);
-        await notifications.ShowSuccess("Task deleted.", ct: ct);
+        notifications.ShowSuccess("Task deleted.");
     }
 
     /// <summary>Adds a comment to the TaskItem aggregate through the root.</summary>

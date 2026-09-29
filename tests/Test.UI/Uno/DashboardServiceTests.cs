@@ -1,5 +1,5 @@
 using Moq;
-using TaskFlow.Uno.Core.Business.Notifications;
+using EF.UI.Client.Notifications;
 using TaskFlow.Uno.Core.Business.Services;
 using TaskFlow.Uno.Core.Client;
 
