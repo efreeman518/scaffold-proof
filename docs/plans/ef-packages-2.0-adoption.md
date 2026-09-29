@@ -36,7 +36,7 @@ the full matrix) runs after all of them; then sa (scaffold-ai).
 
 ## FIFO queue
 
-a4 (after a3), a6, sa
+a6, sa
 
 ## Slices
 
@@ -44,9 +44,9 @@ a4 (after a3), a6, sa
 |---|---|---|---|---|---|---|---|---|---|
 | a0 | Bump every EF.* to 2.0.111; fix every compile break and removed API (moved namespaces, deleted overloads, renamed packages such as EF.UI.Refit, fail-closed tenant filter wiring, AuditLog column migration); solution builds; tests green | - | opus | merged | #29 (248c897) | removed | ada9b31b | released | removed |
 | a1 | Data, domain, common, tenancy, audit: D items' proof adoption | a0 | opus | merged | #31 (e08dfa0) | removed | a86cdfed | released | removed |
-| a2 | Messaging, outbox, inbox: M items' proof adoption | a0 | opus | running | `refactor/adopt2-f8ca68-a2` | `.tmp/worktrees/adopt2-f8ca68-a2` | a5a367d1 | 6d3bbc4f | `.tmp/orchestrated-refactor/adopt2-f8ca68/a2` |
-| a3 | Hosting, web, UI client: H and U items' proof adoption | a0 | opus | rebasing onto a5 + narrowing ArgumentException mapping | `refactor/adopt2-f8ca68-a3` | `.tmp/worktrees/adopt2-f8ca68-a3` | a5993a86 | 5822fc34 | `.tmp/orchestrated-refactor/adopt2-f8ca68/a3` |
-| a4 | Auth, gateway, rate limiting, cache, scheduler, storage, gRPC, AI: S items' proof adoption | a0, a3 | opus | queued | | | | | |
+| a2 | Messaging, outbox, inbox: M items' proof adoption | a0 | opus | final rebase onto a3 | `refactor/adopt2-f8ca68-a2` | `.tmp/worktrees/adopt2-f8ca68-a2` | a5a367d1 | 6d3bbc4f | `.tmp/orchestrated-refactor/adopt2-f8ca68/a2` |
+| a3 | Hosting, web, UI client: H and U items' proof adoption | a0 | opus | merged | #32 (92d0986) | removed | a5993a86 | released | removed |
+| a4 | Auth, gateway, rate limiting, cache, scheduler, storage, gRPC, AI: S items' proof adoption | a0, a3 | opus | running | `refactor/adopt2-f8ca68-a4` | `.tmp/worktrees/adopt2-f8ca68-a4` | ab37ee30 | cb9af68e | `.tmp/orchestrated-refactor/adopt2-f8ca68/a4` |
 | a5 | Testing: T items' proof adoption (LoadRunner, fixtures, architecture rules, AI fakes) | a0 | opus | merged | #30 (43a39d7) | removed | ac9178d3 | released | removed |
 | a6 | Proof docs (DESIGN-DECISIONS, REFERENCE-STATUS, README, tech design where affected) and the full test matrix including Docker integration and the Aspire lanes | a1-a5 | opus | queued | | | | | |
 | sa | scaffold-ai: support/ef-packages-reference.md, skills/package-dependencies.md, templates from "generate" to "reference EF.X", maintenance canaries | a6 | opus | queued | | | | | |
@@ -72,6 +72,12 @@ a4 (after a3), a6, sa
   list of system roles.
 - a3: sent back because mapping every framework `ArgumentException` to 400 hides server bugs (R14); map only
   app client-input types.
+
+- a3 (#32): H14 package context over HTTP; the app keeps its no-request branch `[System, GlobalAdmin]`. Only
+  `InvalidRequestException` and `InvalidCursorException` map to 400 (R14). Config rename
+  `TASKFLOW_SUPPRESS_ASPNETCORE_INSTRUMENTATION` -> `OpenTelemetry__SuppressAspNetCoreInstrumentation` (AppHost,
+  bicep, main.json). OpenAPI document and React types regenerated. For a6: `docs/tech-design.html:851` and
+  DESIGN-DECISIONS D-053 still describe the old messaging trace source.
 
 ## Kept on disk
 
