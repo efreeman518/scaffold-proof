@@ -10,7 +10,7 @@ TaskFlow runs on the EF.Packages 2.0 platform packages (every `EF.*` platform id
 
 | Field | Value |
 |---|---|
-| Last verified | 2026-09-29 (Release build, Uno build, analyzers, vulnerability audit, fast matrix, component containers on both lanes plus MongoDB, Aspire topology and core-lane meshes on both lanes, NonAzure full-lane graph); 2026-09-16 (mobile, images, deployment lanes) |
+| Last verified | 2026-09-29 (Release build, Uno build, analyzers, vulnerability audit, fast matrix, component containers on both lanes plus MongoDB, Aspire topology and core-lane meshes on both lanes, NonAzure full-lane graph, Test.PlaywrightUI on both lanes, Test.Load on the NonAzure dev stack); 2026-09-16 (mobile, images, deployment lanes) |
 | Solution | `TaskFlow.slnx` (47 projects) |
 | Target framework | .NET 10 |
 | Configuration | Release |
@@ -34,13 +34,13 @@ A Debug restore of the Uno project followed by a Release `--no-restore` build fa
 | Project | Passed | Duration |
 |---|---:|---:|
 | Test.Unit | 624 | 16 s |
-| Test.UI | 52 | 1 s |
+| Test.UI | 54 | 1 s |
 | Test.Architecture | 81 | 2 s |
 | Test.Endpoints | 196 | 8 s |
 | Test.Integration.FlowEngine | 18 | 0.2 s |
 | Test.Mutation | 27 | 0.1 s |
 | Test.PlaywrightUI (`TestCategory=Unit`) | 1 | 0.1 s |
-| **Total** | **999** | |
+| **Total** | **1001** | |
 
 `Test.Unit` used the CI 15-second blame-hang timeout. `dotnet format analyzers TaskFlow.slnx --severity warn --verify-no-changes --no-restore` passed with no changes or diagnostics. Types the EF.* packages own are tested by the package suites, not here.
 
@@ -62,7 +62,7 @@ A Debug restore of the Uno project followed by a Release `--no-restore` build fa
 
 | Lane | Scope | Passed | Skipped | Failed | Notes |
 |---|---|---:|---:|---:|---|
-| none | CI topology contracts (`AppHostLaneTopologyTests`, `AppHostMigratorTopologyTests`) | 38 | 0 | 0 | No containers; includes the persistent-graph Postgres volume contract |
+| none | CI topology contracts (`AppHostLaneTopologyTests`, `AppHostMigratorTopologyTests`) | 41 | 0 | 0 | No containers; includes the persistent-graph contracts (Postgres volume mount, IPv4 loopback endpoints, load profile) |
 | NonAzure / PostgreSqlJsonb | CI core-lane mesh (Foundry, Functions, React and WASM off) | 59 | 12 | 0 | Skips: 5 Foundry, 3 Azure Table audit (Azure-only), 2 React/Uno opted out, 2 outbox mesh (no Scheduler in the CI mesh graph) |
 | Azure / Cosmos | CI core-lane mesh (same switches) | 61 | 10 | 0 | Skips: 5 Foundry, 2 React/Uno opted out, 1 Functions audit (Functions off), 2 outbox mesh. The first attempt failed 10 tests in class initialization: the container runtime created the SQL Server, Service Bus, Azurite and Redis containers but never started them while host CPU was saturated by other sessions' builds, and Aspire reported `taskflowdb` FailedToStart. The rerun with resource logging passed with no code change |
 | NonAzure / PostgreSqlJsonb | Full-lane acceptance filter (`AppSurfaceAspireTests`, `OutboxMeshTests`; Scheduler and Uno WASM on, React off) | 5 | 2 | 0 | Gateway, ETag through YARP, Blazor, Uno WASM and the outbox mesh (every consumer records the event exactly once). Skips: React (no `node_modules`), RabbitMQ dead-lettering (covered by the `EF.Messaging.RabbitMq` suite by design) |
@@ -73,11 +73,11 @@ The Azure full-lane acceptance filter (Functions on) and the Azure Foundry live 
 
 | Surface | Result | Evidence boundary |
 |---|---|---|
-| Test.PlaywrightUI, NonAzure (2026-09-29) | 1 passed, 3 inconclusive | The Blazor, React and Uno TypeScript projects reported Inconclusive: `tests/Test.PlaywrightUI` has no `node_modules` in this checkout (`npm ci --prefix tests/Test.PlaywrightUI`; React also needs `npm ci --prefix src/UI/TaskFlow.React`). The Azure lane was not run for the same reason |
-| Full Test.PlaywrightUI (2026-09-16) | 8 passed | Blazor, React, Uno WASM, and empty-browser cold start, on the pre-adoption package set |
+| Test.PlaywrightUI, NonAzure / PostgreSqlJsonb (2026-09-29) | 4 passed, 0 failed/skipped | Blazor, React, Uno WASM and the published Release Uno cold start; the TypeScript projects ran 18 tests (1, 5, 6 and 6), all passed, in 8 min 37 s |
+| Test.PlaywrightUI, Azure / Cosmos (2026-09-29) | 4 passed, 0 failed/skipped | Same projects and 18 TypeScript tests, all passed, in 11 min 21 s |
 | Android mobile (2026-09-16) | 3 passed | Appium Android runner, pre-adoption package set |
 | iOS mobile | Not run | All 3 Uno projects compiled for iOS; Windows has no runnable iOS app/test host |
-| Test.Load (2026-09-29) | Blocked | The persistent NonAzure dev stack (`dotnet run --project src/Host/Aspire/AppHost`, Release exe and Debug CLI launch both tried) never reaches readiness on this machine: RabbitMQ turns healthy, but the Redis, PostgreSQL and SeaweedFS health checks never report healthy although each container runs and answers on its published port, so the migrator and the hosts are never started. The test-mode graphs above start normally. Root cause not established |
+| Test.Load (2026-09-29) | 2 passed | Against the live NonAzure dev stack (`TASKFLOW_ASPIRE_LOAD_PROFILE=true`, restarted over its persistent containers and volumes; API at `http://localhost:8080`). Task search, 1 request/s for 30 s: 30 offered, 30 succeeded, 0 dropped, p50 13 ms, p95 20 ms, p99 23 ms. CRUD workflow (search, create, get, update, delete, verify), 1 cycle/s for 90 s: 90 offered, 90 succeeded, 0 dropped, p50 66 ms, p95 83 ms, p99 91 ms. Local smoke only: the 5,000 RPS gate stays deployment-only (`tests/Test.Load/README.md`) |
 
 Five live Azure AI Foundry tests are not run without an external endpoint and credentials: three `AiFoundryLiveSmokeTests` cases and two `FlowEngineFoundryWorkflowTests` cases.
 
@@ -146,14 +146,14 @@ Status meanings:
 | Redis cache (FusionCache) and rate limiter | proven | `EF.Cache.ITypedCache` over one shared Redis multiplexer (`AddTypedCache`); `EF.RateLimiting` tenant budgets with `EF.RateLimiting.Redis` fail-open over the same multiplexer; `Test.Integration/RedisCacheAndLimiterTests.cs` (Redis cache and limiter over the shared multiplexer); `TenantRateLimitingCompositionTests` |
 | Generated API clients (Refitter, openapi-typescript) | proven | `src/UI/TaskFlow.ApiClient` and React `types.ts` regenerate from the committed OpenAPI document |
 | Aspire, Gateway, Scheduler, Functions | proven except blocked Azure full graph | Build, topology, unit, endpoint and Compose evidence; core-lane meshes pass on both lanes and the NonAzure full-lane filter passes 5 with 2 by-design skips (2026-09-29); the Azure full graph (Functions on) was last observed blocked by the Aspire SQL child-health ordering defect (2026-09-16) |
-| Uno, Blazor, React | proven | Build, Test.UI, Compose smoke, and full Playwright 8/8 including Uno WASM cold start |
+| Uno, Blazor, React | proven | Build, Test.UI, Compose smoke, and Test.PlaywrightUI 4/4 on both lanes including the published Release Uno cold start (2026-09-29) |
 | FlowEngine | proven | Runtime wiring, separate-schema migration, definition/integration cases including the If-Match:* connector override (D-032) |
 | GitHub Actions and deployment workflow shape | proven | Workflow contract tests and CI execution |
 | Bicep module shape (SQL Server, Service Bus, Storage, Cosmos, Redis, Container Apps/Functions, scale rules) | proven | `main`, foundation, and all three parameter files compile; Bicep contract tests |
 | Live Entra or CIAM sign-in | deployment-only | Scaffold auth is the local proof |
 | Azure AI Foundry, Azure AI Inference, and Azure AI Search | deployment-only | Azure AI resources are externally provisioned. Configuration and provider-selection contracts pass; five live cloud tests were not run without an endpoint, deployment, and credentials |
 | Key Vault backed encryption and data-protection keys | deployment-only | AppHost and Bicep wiring exist; live vault, CMK, identity, RBAC require deployment |
-| 5,000 RPS load gate | deployment-only | Test.Load (`EF.Testing.Load.LoadRunner`) exists but is manual; the local smoke is blocked on 2026-09-29 (see Browser, mobile, and load) |
+| 5,000 RPS load gate | deployment-only | Test.Load (`EF.Testing.Load.LoadRunner`) is manual; its local smoke passed on the NonAzure dev stack on 2026-09-29 (see Browser, mobile, and load) |
 | Production infrastructure rollout | deployment-only | Deployment workflow and Bicep validated without a live rollout |
 | Existing Foundry account, prompt agent, pre-existing agent opt-ins | documented-only | Commented examples only |
 | Notifications | not enabled | `includeNotifications: false` |
@@ -193,7 +193,7 @@ Status meanings:
 | Internal gRPC read service (D-054) | proven | `Test.Endpoints/TaskFlowReadGrpcTests.cs` (in-memory `GrpcChannel` parity with the REST summary); `Test.Unit/Contracts/TaskFlowReadGrpcMapperTests.cs`; `Test.Architecture/GrpcArchitectureTests.cs` (gRPC service lives only in the Api host) |
 | MessagePack L2 cache serializer (D-048/D-056) | proven | `Test.Unit/Infrastructure/CacheSerializerTests.cs` (round trip, both serializers); `Test.Integration/MessagePackCacheTests.cs` (L2 Redis round trip) |
 | Compose lane (Docker Compose + Caddy) + VPS deploy workflow (D-036) | proven (Compose); CI-only (VPS deploy) | Canonical and local JSONB/Mongo Compose shapes pass; worker also validated eight none, Mongo, pooler, and combined shapes. `deploy-vps.yml` remains `workflow_dispatch` deploy/rollback evidence only. |
-| Load runner (D-062) | proven (runner); deployment-only (load gate) | `EF.Testing.Load.LoadRunner`; `Test.Unit/Load/LoadRunnerTests.cs` (the runner contract TaskFlow relies on); `Test.Load/TaskItemLoadTests.cs` scenarios assert error rate and p95/p99 but stay manual |
+| Load runner (D-062) | proven (runner); deployment-only (load gate) | `EF.Testing.Load.LoadRunner`; `Test.Unit/Load/LoadRunnerTests.cs` (the runner contract TaskFlow relies on); `Test.Load/TaskItemLoadTests.cs` scenarios assert error rate and p95/p99 and stay manual (CRUD sends If-Match on update and delete) |
 | No unsafe-method retry (D-063) | proven | `Test.Unit/Hosting/ServiceDefaultsScaleTests.cs` (transient 503: POST sent once, GET retried three times); Blazor clients inherit the ServiceDefaults handler with header propagation off, the read-only gRPC client keeps retries |
 | Api error mapping (D-066) | proven | `Test.Endpoints/GlobalExceptionHandlerTests.cs` (client abort 499, uncaused cancellation or timeout 504, framework faults 500, `InvalidRequestException`/`InvalidCursorException` 400, mapped exceptions their status, no 5xx detail outside Development); `TaskItemEndpointTests.Given_InvalidPayload_When_PutUpdate_Then_Returns400`; `CategoryServiceTests`/`CqrsFailureMappingTests` (fixed save message, cancellation propagates, create race replays or 409) |
 | System request context (D-067) | proven | `Test.Unit/Hosting/SystemRequestContextTests.cs` (no request resolves the system identity, anonymous HTTP request, a token claiming `System` does not get it, a real GlobalAdmin keeps its role, the system identity passes the tenant boundary for the tenant the data names, background comment write saves); `TenantTargetingContextAccessorTests.GetContextAsync_SequentialRequestsFromDifferentTenants_TargetsEachTenant` |
@@ -203,7 +203,7 @@ Status meanings:
 | Scheduler cron seeding and health (D-009) | proven | `SchedulerCronRegistrationTests`; `Test.Integration/SchedulerCronSeedingTests.HostStart_SeedsEveryDeclaredCronJob_AndARestartAddsNone` (plus a due ticker run through `ScheduledJobRunner`); `SchedulerHealthCheckTests` (package check with the shipped threshold) |
 | Strict config and id validation (D-069) | proven | `EF.Common` `StrictEnum` and `EF.Common.Contracts.UuidV7` (package suites); `TaskFlowDbProviderSelectorTests.PoolerModeSelector_NumericOrCombinedValue_Throws`; Endpoint cases reject a non-v7 caller id with 400 |
 | Audit masking of secure columns (D-023) | proven | `AuditMaskingTests.Given_SecureTaskItemValues_When_CreatedAndUpdated_Then_AuditPayloadsCarryNoPlaintext` |
-| Uno WASM host contract (D-070) | proven | `Test.UI/WasmHost/WasmHostHttpContractTests.cs` (encoding by Accept-Encoding quality, immutable fingerprinted assets, no-cache index, 404 for missing assets, SPA fallback, `/app-config.json`); nginx static contract in `DeploymentWorkflowContractTests` |
+| Uno WASM host contract (D-070) | proven | `Test.UI/WasmHost/WasmHostHttpContractTests.cs` (encoding by Accept-Encoding quality, immutable fingerprinted assets, no-cache index, 404 for missing assets, SPA fallback, `/app-config.json`, the publish-rewritten `uno-config.js` served from disk); nginx static contract in `DeploymentWorkflowContractTests` |
 | Test prerequisites and default-lane test hosts (D-071) | proven | `Test.Unit` `TestPrerequisiteContractTests`; `Test.Endpoints/EndpointHostLaneTests.cs` (endpoint host boots the NonAzure lane container-free) |
 | NonAzure default lane (D-060) | proven | `HostingLaneContractTests.Resolve_Unset_ReturnsExactNonAzureProfile`; `AppHostLaneTopologyTests.FullLane_UnsetLaneGraph_IsNonAzureTopology`; `BicepInfrastructureContractTests.AzureDeployment_EveryHostSetsTheAzureLaneExplicitly`; AI provider switch in `AppHostLaneTopologyTests.AzureFoundry_*` |
 | Request timeouts, shutdown drain, runtime evidence (D-064) | proven (wiring); deployment-only (live drain) | `Test.Endpoints/RequestTimeoutEndpointTests.cs` and `Test.Unit/Gateway/GatewayRequestTimeoutTests.cs` (default policies, streaming opt-outs, YARP `TimeoutPolicy: Disable`); `Test.Unit/Hosting/ServiceDefaultsScaleTests.cs` (readiness unhealthy for the drain, budget validation); `Test.Unit/Infrastructure/BicepInfrastructureContractTests.cs` and `DeploymentWorkflowContractTests.cs` (Container Apps drain, Compose budget) |
@@ -228,10 +228,9 @@ Validate locally with `az bicep build --file infra/main.bicep` and `docker compo
 
 1. Azure Aspire full-graph acceptance (Functions on) was last observed blocked on 2026-09-16 by Aspire's SQL child-database probe running before `ResourceReadyEvent` creates the database; it was not rerun on 2026-09-29, when the Azure core-lane mesh passed. The latest stable 13.5.4 and tested 13.5.3 behave identically. Remove this blocker only after an upstream release changes that ordering and the exact Azure/Cosmos CI filter passes all 10 selected tests without skips or inconclusive results.
 2. Five live Azure AI Foundry tests require an externally provisioned endpoint, deployment, and credential. They were not run on 2026-09-29.
-3. The 5,000 RPS load gate is deployment-only by design. No VPS or Azure deployment ran. The local Test.Load smoke is blocked because the persistent NonAzure dev stack never reaches readiness on this machine (Redis, PostgreSQL and SeaweedFS health checks never report healthy); diagnose that before the next manual load run.
+3. The 5,000 RPS load gate is deployment-only by design. No VPS or Azure deployment ran.
 4. Machine-level tooling updates require actions outside this repository: finish the .NET workload manifest update, run the administrator Node.js MSI, accept Android licenses, and replace the preview Functions CLI when a working current bootstrap is available.
-5. Browser WASM trimming remains disabled for Release because upstream Uno dependencies emit `IL2104` under warnings-as-errors. Remove the workaround when those packages become trim-clean; current cold-start and full-browser evidence is 8/8.
+5. Browser WASM trimming remains disabled for Release because upstream Uno dependencies emit `IL2104` under warnings-as-errors. Remove the workaround when those packages become trim-clean; current cold-start and full-browser evidence passes on both lanes (2026-09-29).
 6. iOS compile proof is current, but runnable iOS Appium acceptance requires a supported macOS/Xcode host.
 7. The direct package-outdated command is blocked by the .NET CLI `Sequence contains no matching element` failure. Authenticated restore, build, and vulnerability audit passed; rerun direct outdated discovery after the CLI defect is resolved.
-8. Browser acceptance needs the TypeScript Playwright and React dependencies in the checkout: `npm ci --prefix tests/Test.PlaywrightUI` and `npm ci --prefix src/UI/TaskFlow.React`, then rerun Test.PlaywrightUI on both lanes.
-9. The scaffold-ai TaskFlow proof map and feature sentinels still name the app files and calls the EF.Packages 2.0 adoption replaced (35 `validate-reference.py` issues); the scaffold-ai side owns that update.
+8. The scaffold-ai TaskFlow proof map and feature sentinels still name the app files and calls the EF.Packages 2.0 adoption replaced (35 `validate-reference.py` issues); the scaffold-ai side owns that update.
