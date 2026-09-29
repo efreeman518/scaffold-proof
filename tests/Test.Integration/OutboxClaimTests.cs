@@ -1,6 +1,8 @@
 using EF.Data.Contracts;
 using EF.Data.Outbox;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
@@ -225,6 +227,40 @@ public class OutboxClaimTests
         Assert.AreEqual(0, await verify.OutboxMessages.CountAsync(ct),
             "an event may not outlive the domain write it describes");
         Assert.AreEqual(0, await verify.TaskItems.IgnoreQueryFilters().CountAsync(ct));
+    }
+
+    /// <summary>
+    /// The migration to the package outbox shape carries every row's tenant into the TenantId header before it
+    /// drops the column, so a row staged before the upgrade is still published with its tenant.
+    /// </summary>
+    [TestMethod]
+    [Timeout(300000, CooperativeCancellation = true)]
+    public async Task Migration_CarriesThePreExistingTenantIntoTheHeaders()
+    {
+        var ct = TestContext.CancellationToken;
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("outboxheaders");
+        await using var db = DbContainerFixture.CreateTrxnContext(connString);
+        var migrations = db.Database.GetMigrations().ToList();
+        var packageShape = migrations.FindIndex(m => m.EndsWith("_PackageOutboxMessage", StringComparison.Ordinal));
+        Assert.IsGreaterThan(0, packageShape, "the package outbox migration must exist and not be the first");
+
+        var migrator = db.GetService<IMigrator>();
+        await migrator.MigrateAsync(migrations[packageShape - 1], cancellationToken: ct);
+        var id = Guid.CreateVersion7();
+        var tenantId = Guid.CreateVersion7();
+        var now = DateTimeOffset.UtcNow;
+        await db.Database.ExecuteSqlAsync(
+            $"""
+            INSERT INTO taskflow."OutboxMessage" ("Id", "TenantId", "AvailableAtUtc", "AttemptCount", "Destination", "EventType", "EventVersion", "Payload", "OccurredAtUtc")
+            VALUES ({id}, {tenantId}, {now}, 0, {TaskFlowIntegrationEvents.Destination}, {"TaskItemCreatedEvent"}, 1, {"{}"}, {now})
+            """, ct);
+
+        await migrator.MigrateAsync(cancellationToken: ct);
+
+        var row = await db.OutboxMessages.AsNoTracking().SingleAsync(m => m.Id == id, ct);
+        var headers = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(row.Headers!);
+        Assert.AreEqual(tenantId.ToString(), headers![TaskFlowIntegrationEvents.TenantIdHeader],
+            "the header must hold the tenant in the lowercase form Guid.ToString() writes for new rows");
     }
 
     public TestContext TestContext { get; set; } = null!;
