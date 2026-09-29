@@ -92,10 +92,11 @@ public static partial class RegisterServices
     /// <summary>Registers message handlers dependencies in the service container.</summary>
     private static void AddMessageHandlers(IServiceCollection services, IConfiguration config)
     {
-        // D-029 claim timings (lease, poll, wait margin); defaults suit RabbitMQ and Service Bus alike.
+        // D-029 claim timings (lease, renewal ceiling, poll, wait margin); the package defaults suit RabbitMQ and
+        // Service Bus alike, MaxClaimDuration (10 min) included, so none is set here.
         services.AddOptions<InboxClaimOptions>()
             .Bind(config.GetSection(InboxClaimOptions.ConfigSectionName))
-            .Validate(o => o.IsValid(), "Messaging:Inbox timings must have a positive ClaimLease, a non-negative WaitMargin and a positive WaitPollInterval below WaitBound.")
+            .Validate(o => o.IsValid(), "Messaging:Inbox timings must have a positive ClaimLease, a MaxClaimDuration above ClaimLease, a non-negative WaitMargin and a positive WaitPollInterval below WaitBound.")
             .ValidateOnStart();
         // D-034/D-048: one envelope reader configuration for the Service Bus triggers and the RabbitMQ handlers.
         services.Configure<IntegrationEnvelopeReaderOptions>(TaskFlowIntegrationEvents.ConfigureReader);
