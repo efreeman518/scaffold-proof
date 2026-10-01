@@ -342,32 +342,37 @@ internal class TaskItemService(
         var idCheck = UuidV7.ValidateCallerId(comment.Id);
         if (idCheck.IsFailure) return Result<DefaultResponse<CommentDto>>.Failure(idCheck.ErrorMessage!);
 
-        var (entity, error) = await LoadRootAsync(taskItemId, "TaskItem:AddComment", ct);
-        if (error is not null) return Result<DefaultResponse<CommentDto>>.Failure(error);
-        if (entity is null) return Result<DefaultResponse<CommentDto>>.Success(new DefaultResponse<CommentDto> { Item = null });
-
-        if (comment.Id is Guid callerId && callerId != Guid.Empty)
+        // An add carries no If-Match, so the caller's intent wins a race with another write to the aggregate
+        // (D-031 bumps the root on every child write): a lost save re-reads and decides again (D-073).
+        return await repoTrxn.RetryOnConcurrencyAsync(async attemptCt =>
         {
-            var existing = await TaskItemChildLoader.LoadCommentAsync(repoTrxn, taskItemId, callerId, ct);
-            if (existing is not null)
+            var (entity, error) = await LoadRootAsync(taskItemId, "TaskItem:AddComment", attemptCt);
+            if (error is not null) return Result<DefaultResponse<CommentDto>>.Failure(error);
+            if (entity is null) return Result<DefaultResponse<CommentDto>>.Success(new DefaultResponse<CommentDto> { Item = null });
+
+            if (comment.Id is Guid callerId && callerId != Guid.Empty)
             {
-                var existingDto = existing.ToDto();
-                if (!IdempotentCreateGuard.IsEquivalent(existingDto, comment))
-                    throw new ConflictException(nameof(Comment), callerId.ToString());
+                var existing = await TaskItemChildLoader.LoadCommentAsync(repoTrxn, taskItemId, callerId, attemptCt);
+                if (existing is not null)
+                {
+                    var existingDto = existing.ToDto();
+                    if (!IdempotentCreateGuard.IsEquivalent(existingDto, comment))
+                        throw new ConflictException(nameof(Comment), callerId.ToString());
 
-                return Result<DefaultResponse<CommentDto>>.Success(
-                    new DefaultResponse<CommentDto> { Item = existingDto, IsReplay = true, AggregateVersion = entity.Version });
+                    return Result<DefaultResponse<CommentDto>>.Success(
+                        new DefaultResponse<CommentDto> { Item = existingDto, IsReplay = true, AggregateVersion = entity.Version });
+                }
             }
-        }
 
-        var addResult = entity.AddComment(comment.Body, DomainId.FromNullable<CommentId>(comment.Id));
-        if (addResult.IsFailure) return Result<DefaultResponse<CommentDto>>.Failure(addResult.ErrorMessage!);
+            var addResult = entity.AddComment(comment.Body, DomainId.FromNullable<CommentId>(comment.Id));
+            if (addResult.IsFailure) return Result<DefaultResponse<CommentDto>>.Failure(addResult.ErrorMessage!);
 
-        var save = await SaveAggregateAsync("Error adding Comment to TaskItem {Id}", ct, taskItemId);
-        if (save.IsFailure) return Result<DefaultResponse<CommentDto>>.Failure(save.ErrorMessage!);
+            var save = await SaveAggregateAsync("Error adding Comment to TaskItem {Id}", attemptCt, taskItemId);
+            if (save.IsFailure) return Result<DefaultResponse<CommentDto>>.Failure(save.ErrorMessage!);
 
-        return Result<DefaultResponse<CommentDto>>.Success(
-            new DefaultResponse<CommentDto> { Item = addResult.Value!.ToDto(), AggregateVersion = entity.Version });
+            return Result<DefaultResponse<CommentDto>>.Success(
+                new DefaultResponse<CommentDto> { Item = addResult.Value!.ToDto(), AggregateVersion = entity.Version });
+        }, cancellationToken: ct);
     }
 
     /// <summary>Updates a comment owned by a TaskItem through the aggregate root.</summary>
@@ -421,34 +426,39 @@ internal class TaskItemService(
         var idCheck = UuidV7.ValidateCallerId(checklistItem.Id);
         if (idCheck.IsFailure) return Result<DefaultResponse<ChecklistItemDto>>.Failure(idCheck.ErrorMessage!);
 
-        var (entity, error) = await LoadRootAsync(taskItemId, "TaskItem:AddChecklistItem", ct);
-        if (error is not null) return Result<DefaultResponse<ChecklistItemDto>>.Failure(error);
-        if (entity is null) return Result<DefaultResponse<ChecklistItemDto>>.Success(new DefaultResponse<ChecklistItemDto> { Item = null });
-
-        if (checklistItem.Id is Guid callerId && callerId != Guid.Empty)
+        // An add carries no If-Match, so the caller's intent wins a race with another write to the aggregate
+        // (D-031 bumps the root on every child write): a lost save re-reads and decides again (D-073).
+        return await repoTrxn.RetryOnConcurrencyAsync(async attemptCt =>
         {
-            var existing = await TaskItemChildLoader.LoadChecklistItemAsync(repoTrxn, taskItemId, callerId, ct);
-            if (existing is not null)
+            var (entity, error) = await LoadRootAsync(taskItemId, "TaskItem:AddChecklistItem", attemptCt);
+            if (error is not null) return Result<DefaultResponse<ChecklistItemDto>>.Failure(error);
+            if (entity is null) return Result<DefaultResponse<ChecklistItemDto>>.Success(new DefaultResponse<ChecklistItemDto> { Item = null });
+
+            if (checklistItem.Id is Guid callerId && callerId != Guid.Empty)
             {
-                var existingDto = existing.ToDto();
-                if (!IdempotentCreateGuard.IsEquivalent(existingDto, checklistItem))
-                    throw new ConflictException(nameof(ChecklistItem), callerId.ToString());
+                var existing = await TaskItemChildLoader.LoadChecklistItemAsync(repoTrxn, taskItemId, callerId, attemptCt);
+                if (existing is not null)
+                {
+                    var existingDto = existing.ToDto();
+                    if (!IdempotentCreateGuard.IsEquivalent(existingDto, checklistItem))
+                        throw new ConflictException(nameof(ChecklistItem), callerId.ToString());
 
-                return Result<DefaultResponse<ChecklistItemDto>>.Success(
-                    new DefaultResponse<ChecklistItemDto> { Item = existingDto, IsReplay = true, AggregateVersion = entity.Version });
+                    return Result<DefaultResponse<ChecklistItemDto>>.Success(
+                        new DefaultResponse<ChecklistItemDto> { Item = existingDto, IsReplay = true, AggregateVersion = entity.Version });
+                }
             }
-        }
 
-        var addResult = entity.AddChecklistItem(
-            checklistItem.Title, checklistItem.SortOrder, DomainId.FromNullable<ChecklistItemId>(checklistItem.Id));
-        if (addResult.IsFailure) return Result<DefaultResponse<ChecklistItemDto>>.Failure(addResult.ErrorMessage!);
-        if (checklistItem.IsCompleted) addResult.Value!.Update(isCompleted: true);
+            var addResult = entity.AddChecklistItem(
+                checklistItem.Title, checklistItem.SortOrder, DomainId.FromNullable<ChecklistItemId>(checklistItem.Id));
+            if (addResult.IsFailure) return Result<DefaultResponse<ChecklistItemDto>>.Failure(addResult.ErrorMessage!);
+            if (checklistItem.IsCompleted) addResult.Value!.Update(isCompleted: true);
 
-        var save = await SaveAggregateAsync("Error adding ChecklistItem to TaskItem {Id}", ct, taskItemId);
-        if (save.IsFailure) return Result<DefaultResponse<ChecklistItemDto>>.Failure(save.ErrorMessage!);
+            var save = await SaveAggregateAsync("Error adding ChecklistItem to TaskItem {Id}", attemptCt, taskItemId);
+            if (save.IsFailure) return Result<DefaultResponse<ChecklistItemDto>>.Failure(save.ErrorMessage!);
 
-        return Result<DefaultResponse<ChecklistItemDto>>.Success(
-            new DefaultResponse<ChecklistItemDto> { Item = addResult.Value!.ToDto(), AggregateVersion = entity.Version });
+            return Result<DefaultResponse<ChecklistItemDto>>.Success(
+                new DefaultResponse<ChecklistItemDto> { Item = addResult.Value!.ToDto(), AggregateVersion = entity.Version });
+        }, cancellationToken: ct);
     }
 
     /// <summary>Updates a checklist item owned by a TaskItem through the aggregate root.</summary>
@@ -496,24 +506,29 @@ internal class TaskItemService(
     /// <summary>Associates an existing Tag with a TaskItem through the aggregate root.</summary>
     public async Task<Result<DefaultResponse<TaskItemTagDto>>> AssociateTagAsync(Guid taskItemId, Guid tagId, CancellationToken ct = default)
     {
-        var (entity, error) = await LoadRootAsync(taskItemId, "TaskItem:AssociateTag", ct);
-        if (error is not null) return Result<DefaultResponse<TaskItemTagDto>>.Failure(error);
-        if (entity is null) return Result<DefaultResponse<TaskItemTagDto>>.Success(new DefaultResponse<TaskItemTagDto> { Item = null });
+        // An add carries no If-Match, so the caller's intent wins a race with another write to the aggregate
+        // (D-031 bumps the root on every child write): a lost save re-reads and decides again (D-073).
+        return await repoTrxn.RetryOnConcurrencyAsync(async attemptCt =>
+        {
+            var (entity, error) = await LoadRootAsync(taskItemId, "TaskItem:AssociateTag", attemptCt);
+            if (error is not null) return Result<DefaultResponse<TaskItemTagDto>>.Failure(error);
+            if (entity is null) return Result<DefaultResponse<TaskItemTagDto>>.Success(new DefaultResponse<TaskItemTagDto> { Item = null });
 
-        // Association is idempotent by tag id: an existing row is returned rather than duplicated.
-        var existing = await TaskItemChildLoader.LoadTaskItemTagAsync(repoTrxn, taskItemId, tagId, ct);
-        if (existing is not null)
+            // Association is idempotent by tag id: an existing row is returned rather than duplicated.
+            var existing = await TaskItemChildLoader.LoadTaskItemTagAsync(repoTrxn, taskItemId, tagId, attemptCt);
+            if (existing is not null)
+                return Result<DefaultResponse<TaskItemTagDto>>.Success(
+                    new DefaultResponse<TaskItemTagDto> { Item = existing.ToDto(), IsReplay = true, AggregateVersion = entity.Version });
+
+            var associateResult = entity.AssociateTag(TagId.From(tagId));
+            if (associateResult.IsFailure) return Result<DefaultResponse<TaskItemTagDto>>.Failure(associateResult.ErrorMessage!);
+
+            var save = await SaveAggregateAsync("Error associating Tag {TagId} with TaskItem {Id}", attemptCt, tagId, taskItemId);
+            if (save.IsFailure) return Result<DefaultResponse<TaskItemTagDto>>.Failure(save.ErrorMessage!);
+
             return Result<DefaultResponse<TaskItemTagDto>>.Success(
-                new DefaultResponse<TaskItemTagDto> { Item = existing.ToDto(), IsReplay = true, AggregateVersion = entity.Version });
-
-        var associateResult = entity.AssociateTag(TagId.From(tagId));
-        if (associateResult.IsFailure) return Result<DefaultResponse<TaskItemTagDto>>.Failure(associateResult.ErrorMessage!);
-
-        var save = await SaveAggregateAsync("Error associating Tag {TagId} with TaskItem {Id}", ct, tagId, taskItemId);
-        if (save.IsFailure) return Result<DefaultResponse<TaskItemTagDto>>.Failure(save.ErrorMessage!);
-
-        return Result<DefaultResponse<TaskItemTagDto>>.Success(
-            new DefaultResponse<TaskItemTagDto> { Item = associateResult.Value!.ToDto(), AggregateVersion = entity.Version });
+                new DefaultResponse<TaskItemTagDto> { Item = associateResult.Value!.ToDto(), AggregateVersion = entity.Version });
+        }, cancellationToken: ct);
     }
 
     /// <summary>Removes a Tag association from a TaskItem through the aggregate root.</summary>

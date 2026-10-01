@@ -146,6 +146,10 @@ public sealed class SystemRequestContextTests
         var task = new TaskItemBuilder().WithTenantId(SomeTenant).Build();
         var repoTrxn = new Mock<ITaskItemRepositoryTrxn>();
         repoTrxn.Setup(r => r.GetTaskItemAsync(task.Id, false, It.IsAny<CancellationToken>())).ReturnsAsync(task);
+        // The add runs inside the repository's fresh-read retry (D-073); one run, as when no race is lost.
+        repoTrxn.Setup(r => r.RetryOnConcurrencyAsync(
+                It.IsAny<Func<CancellationToken, Task<Result<DefaultResponse<CommentDto>>>>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Returns((Func<CancellationToken, Task<Result<DefaultResponse<CommentDto>>>> work, int _, CancellationToken token) => work(token));
         var service = new TaskItemService(
             NullLogger<TaskItemService>.Instance,
             systemContext,
