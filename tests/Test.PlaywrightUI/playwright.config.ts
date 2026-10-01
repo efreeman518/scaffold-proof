@@ -23,10 +23,12 @@ function getManagedHeadlessShellPath() {
 const systemChromePath = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 const managedHeadlessShellPath = getManagedHeadlessShellPath();
 const managedHeadlessShellMissing = !managedHeadlessShellPath || !existsSync(managedHeadlessShellPath);
-const useSystemChrome = process.platform === "win32" &&
+// "true" is the MSTest runner's decision for this launch (it also finds Chrome under Program Files (x86)).
+const useSystemChrome = process.env.PLAYWRIGHT_USE_SYSTEM_CHROME === "true" || (
+  process.platform === "win32" &&
   managedHeadlessShellMissing &&
   process.env.PLAYWRIGHT_USE_SYSTEM_CHROME !== "false" &&
-  existsSync(systemChromePath);
+  existsSync(systemChromePath));
 
 const chromeFallback = useSystemChrome ? { channel: "chrome" } : {};
 

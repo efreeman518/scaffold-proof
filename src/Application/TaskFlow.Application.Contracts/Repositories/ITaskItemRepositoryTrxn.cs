@@ -30,4 +30,13 @@ public interface ITaskItemRepositoryTrxn : IRepositoryTrxn<TaskItem, TaskItemId>
     /// collections, so severing the navigation cannot orphan the row for it - the delete is explicit.
     /// </summary>
     void DeleteChild<TChild>(TChild child) where TChild : class;
+
+    /// <summary>
+    /// Saves a child add with <see cref="OptimisticConcurrencyWinner.Throw"/> (D-073). A write failure after which
+    /// <paramref name="callerKeyStored"/> finds the caller-supplied child key in the store means another request inserted
+    /// that key first (this save ran the child INSERT before the root UPDATE that would have lost the version check): it
+    /// is rethrown as a lost optimistic-concurrency save, so <see cref="IRepositoryBase.RetryOnConcurrencyAsync"/>
+    /// re-reads and replays. Any other failure propagates unchanged. Null means the key is server-generated.
+    /// </summary>
+    Task SaveChildAddAsync(Func<CancellationToken, Task<bool>>? callerKeyStored, CancellationToken ct = default);
 }

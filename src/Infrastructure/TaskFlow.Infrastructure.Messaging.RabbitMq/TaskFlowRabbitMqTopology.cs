@@ -33,6 +33,15 @@ public static class TaskFlowRabbitMqTopology
     public const string EmbeddingQueue = "taskflow." + TaskEmbeddingConsumer.Name;
 
     /// <summary>
+    /// Every queue is a quorum queue (M19): its broker delivery count bounds a retrying message across all
+    /// consumer replicas, where a classic queue leaves only the per-replica local count (N replicas allow
+    /// N x <c>MaxDeliveryCount</c> attempts). The type is fixed at creation, so an existing classic queue must be
+    /// deleted before this declaration succeeds (PRECONDITION_FAILED otherwise).
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, object?> QuorumQueueArguments =
+        new Dictionary<string, object?> { ["x-queue-type"] = "quorum" };
+
+    /// <summary>
     /// Builds the declaration passed to the package topology declarer. Declaration is idempotent.
     /// </summary>
     /// <param name="includeEmbedding">
@@ -49,12 +58,12 @@ public static class TaskFlowRabbitMqTopology
         ],
         Queues:
         [
-            new RabbitMqQueue(ProjectionQueue, DeadLetterExchange: DeadLetterExchange),
-            new RabbitMqQueue(AiReviewQueue, DeadLetterExchange: DeadLetterExchange),
-            new RabbitMqQueue(WorkflowQueue, DeadLetterExchange: DeadLetterExchange),
-            new RabbitMqQueue(DeadLetterQueue),
+            new RabbitMqQueue(ProjectionQueue, DeadLetterExchange: DeadLetterExchange, Arguments: QuorumQueueArguments),
+            new RabbitMqQueue(AiReviewQueue, DeadLetterExchange: DeadLetterExchange, Arguments: QuorumQueueArguments),
+            new RabbitMqQueue(WorkflowQueue, DeadLetterExchange: DeadLetterExchange, Arguments: QuorumQueueArguments),
+            new RabbitMqQueue(DeadLetterQueue, Arguments: QuorumQueueArguments),
             .. includeEmbedding
-                ? new[] { new RabbitMqQueue(EmbeddingQueue, DeadLetterExchange: DeadLetterExchange) }
+                ? new[] { new RabbitMqQueue(EmbeddingQueue, DeadLetterExchange: DeadLetterExchange, Arguments: QuorumQueueArguments) }
                 : Array.Empty<RabbitMqQueue>()
         ],
         Bindings:

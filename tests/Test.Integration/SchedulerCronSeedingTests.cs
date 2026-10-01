@@ -52,7 +52,7 @@ public class SchedulerCronSeedingTests
     public async Task HostStart_SeedsEveryDeclaredCronJob_AndARestartAddsNone()
     {
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("tickerqseed");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("tickerqseed", ct);
         await using (var migrate = DbContainerFixture.CreateTickerQContext(connString))
         {
             await migrate.Database.MigrateAsync(ct);
@@ -75,7 +75,7 @@ public class SchedulerCronSeedingTests
     public async Task DueTicker_RunsItsJobThroughTheRunner()
     {
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("tickerqrun");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("tickerqrun", ct);
         await using (var migrate = DbContainerFixture.CreateTickerQContext(connString))
         {
             await migrate.Database.MigrateAsync(ct);
@@ -117,7 +117,7 @@ public class SchedulerCronSeedingTests
     public async Task SchemaValidator_MissingTables_Throws()
     {
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("tickerqnoschema");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("tickerqnoschema", ct);
         using var host = BuildHost(connString);
 
         var ex = await Assert.ThrowsExactlyAsync<InvalidOperationException>(

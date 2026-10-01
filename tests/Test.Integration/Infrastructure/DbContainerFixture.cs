@@ -30,8 +30,8 @@ internal static class DbContainerFixture
     internal static Task StopAsync() => Container.DisposeAsync().AsTask();
 
     /// <summary>Creates an empty isolated database and returns a connection string pointing to it.</summary>
-    internal static Task<string> CreateEmptyDatabaseConnectionStringAsync(string prefix) =>
-        Container.CreateEmptyDatabaseAsync(prefix);
+    internal static Task<string> CreateEmptyDatabaseConnectionStringAsync(string prefix, CancellationToken cancellationToken) =>
+        Container.CreateEmptyDatabaseAsync(prefix, cancellationToken);
 
     // The component contexts carry no tenant, and EF.Data's tenant query filter reads nothing for a tenant-less
     // context unless it is marked all-tenants; a test that pins a tenant sets TenantId and clears AllTenants.
@@ -39,6 +39,13 @@ internal static class DbContainerFixture
     /// <summary>Builds a trxn context against the container.</summary>
     internal static TaskFlowDbContextTrxn CreateTrxnContext(string? connString = null) =>
         new(Container.BuildOptions<TaskFlowDbContextTrxn>(connString, TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName))
+        { AuditId = "integration-test", AllTenants = true };
+
+    /// <summary>Builds a trxn context against the container with extra interceptors attached (a staged race, for instance).</summary>
+    internal static TaskFlowDbContextTrxn CreateTrxnContext(
+        string? connString, params Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] interceptors) =>
+        new(Container.BuildOptions<TaskFlowDbContextTrxn>(
+            connString, TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName, interceptors))
         { AuditId = "integration-test", AllTenants = true };
 
     /// <summary>

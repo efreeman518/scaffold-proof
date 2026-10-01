@@ -37,7 +37,7 @@ public class OutboxClaimTests
     public async Task ConcurrentClaimers_NeverOverlap_AndDrainEveryRow()
     {
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("outboxclaim");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("outboxclaim", ct);
         await MigrateAsync(connString, ct);
         await SeedOutboxAsync(connString, RowCount, ct);
 
@@ -62,7 +62,7 @@ public class OutboxClaimTests
     public async Task ExpiredLease_IsReclaimable_AndDeadLetteredRowSurvives()
     {
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("outboxlease");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("outboxlease", ct);
         await MigrateAsync(connString, ct);
         await SeedOutboxAsync(connString, 1, ct);
 
@@ -111,7 +111,7 @@ public class OutboxClaimTests
     public async Task ExhaustedRowWithExpiredLease_IsDeadLetteredOnTheNextClaim()
     {
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("outboxpoison");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("outboxpoison", ct);
         await MigrateAsync(connString, ct);
         await SeedOutboxAsync(connString, 1, ct);
 
@@ -148,7 +148,7 @@ public class OutboxClaimTests
     public async Task Claim_HonorsTheCallersAttemptCeiling()
     {
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("outboxceiling");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("outboxceiling", ct);
         await MigrateAsync(connString, ct);
         await SeedOutboxAsync(connString, 1, ct);
 
@@ -178,7 +178,7 @@ public class OutboxClaimTests
     public async Task Abandon_RestoresTheAttempt_AndForeignTokensSettleNothing()
     {
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("outboxabandon");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("outboxabandon", ct);
         await MigrateAsync(connString, ct);
         await SeedOutboxAsync(connString, 1, ct);
 
@@ -204,7 +204,7 @@ public class OutboxClaimTests
     public async Task RolledBackSave_LeavesNoOutboxRow()
     {
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("outboxtrx");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("outboxtrx", ct);
         await MigrateAsync(connString, ct);
 
         await using var db = DbContainerFixture.CreateTrxnContext(connString);
@@ -238,7 +238,7 @@ public class OutboxClaimTests
     public async Task Migration_CarriesThePreExistingTenantIntoTheHeaders()
     {
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("outboxheaders");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("outboxheaders", ct);
         await using var db = DbContainerFixture.CreateTrxnContext(connString);
         var migrations = db.Database.GetMigrations().ToList();
         var packageShape = migrations.FindIndex(m => m.EndsWith("_PackageOutboxMessage", StringComparison.Ordinal));

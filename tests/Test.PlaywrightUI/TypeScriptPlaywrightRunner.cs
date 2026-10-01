@@ -12,6 +12,7 @@ internal static class TypeScriptPlaywrightRunner
 {
     private const string ProjectTimeoutVariable = "TASKFLOW_PLAYWRIGHT_PROJECT_TIMEOUT_SECONDS";
     private const string TestTimeoutVariable = "TASKFLOW_PLAYWRIGHT_TEST_TIMEOUT_SECONDS";
+    private const string UseSystemChromeVariable = "PLAYWRIGHT_USE_SYSTEM_CHROME";
 
     internal static string ProjectDirectory => Path.GetFullPath(Path.Combine(
         AppContext.BaseDirectory,
@@ -36,13 +37,13 @@ internal static class TypeScriptPlaywrightRunner
 
         var systemChrome = GetSystemChromePath();
         if (systemChrome is not null && !string.Equals(
-                Environment.GetEnvironmentVariable("PLAYWRIGHT_USE_SYSTEM_CHROME"),
+                Environment.GetEnvironmentVariable(UseSystemChromeVariable),
                 "false",
                 StringComparison.OrdinalIgnoreCase))
         {
-            Environment.SetEnvironmentVariable("PLAYWRIGHT_USE_SYSTEM_CHROME", "true");
             return new BrowserReadiness(true,
-                $"Playwright-managed Chromium is missing; using installed Chrome: {systemChrome}");
+                $"Playwright-managed Chromium is missing; using installed Chrome: {systemChrome}",
+                UseSystemChrome: true);
         }
 
         return new BrowserReadiness(false,
@@ -51,6 +52,7 @@ internal static class TypeScriptPlaywrightRunner
 
     internal static async Task<ProcessResult> RunAsync(
         IReadOnlyList<string> projects,
+        BrowserReadiness readiness,
         CancellationToken cancellationToken)
     {
         if (projects.Count == 0)
@@ -66,7 +68,7 @@ internal static class TypeScriptPlaywrightRunner
         {
             foreach (var project in projects)
             {
-                var result = await RunProjectAsync(project, cancellationToken);
+                var result = await RunProjectAsync(project, readiness.UseSystemChrome, cancellationToken);
                 elapsed += result.Elapsed;
                 stdoutBuilder.AppendLine($"== {project} stdout ==");
                 stdoutBuilder.AppendLine(result.StandardOutput);
@@ -88,7 +90,10 @@ internal static class TypeScriptPlaywrightRunner
         }
     }
 
-    private static Task<ProcessResult> RunProjectAsync(string project, CancellationToken cancellationToken)
+    private static Task<ProcessResult> RunProjectAsync(
+        string project,
+        bool useSystemChrome,
+        CancellationToken cancellationToken)
     {
         var isUno = project.StartsWith("uno", StringComparison.OrdinalIgnoreCase);
         var testTimeout = TestEnvironment.GetPositiveSeconds(TestTimeoutVariable, TimeSpan.FromSeconds(isUno ? 180 : 90));
@@ -109,6 +114,10 @@ internal static class TypeScriptPlaywrightRunner
                     $"--timeout={(long)testTimeout.TotalMilliseconds}"
                 ],
                 WorkingDirectory = ProjectDirectory,
+                // The Chrome fallback decision is handed to this Playwright child only, never set process-wide.
+                Environment = useSystemChrome
+                    ? new Dictionary<string, string?> { [UseSystemChromeVariable] = "true" }
+                    : new Dictionary<string, string?>(),
                 Timeout = TestEnvironment.GetPositiveSeconds(ProjectTimeoutVariable, TimeSpan.FromSeconds(isUno ? 360 : 180))
             },
             cancellationToken);
@@ -178,4 +187,4 @@ internal static class TypeScriptPlaywrightRunner
     }
 }
 
-internal sealed record BrowserReadiness(bool CanRun, string Message);
+internal sealed record BrowserReadiness(bool CanRun, string Message, bool UseSystemChrome = false);

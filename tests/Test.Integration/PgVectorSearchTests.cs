@@ -61,7 +61,7 @@ public class PgVectorSearchTests
         if (DbContainerFixture.Provider != TaskFlowDbProvider.PostgreSql) Assert.Inconclusive("SqlServer lane.");
 
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("pgvector");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("pgvector", ct);
         await MigrateAsync(connString, ct);
 
         await using var db = DbContainerFixture.CreateQueryContext(connString);
@@ -92,7 +92,7 @@ public class PgVectorSearchTests
         if (DbContainerFixture.Provider != TaskFlowDbProvider.PostgreSql) Assert.Inconclusive("SqlServer lane.");
 
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("pgvector");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("pgvector", ct);
         await MigrateAsync(connString, ct);
 
         var databaseTaskId = await SeedTaskAsync(connString, "Migrate the database", ct);
@@ -152,7 +152,7 @@ public class PgVectorSearchTests
         if (DbContainerFixture.Provider != TaskFlowDbProvider.PostgreSql) Assert.Inconclusive("SqlServer lane.");
 
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("pgvector");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("pgvector", ct);
         await MigrateAsync(connString, ct);
         var taskId = await SeedTaskAsync(connString, "Temporary task", ct);
 

@@ -23,6 +23,63 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TaskFlow
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("EF.Audit.Data.AuditLogRecord", b =>
+                {
+                    b.Property<string>("TenantId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("RecordedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("AuditId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<long>("ElapsedTimeTicks")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("EntityKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Error")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Metadata")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset>("StartedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.HasKey("TenantId", "RecordedUtc", "Id");
+
+                    b.HasIndex("RecordedUtc")
+                        .HasDatabaseName("IX_AuditLog_RecordedUtc");
+
+                    b.ToTable("AuditLog", "taskflow");
+                });
+
             modelBuilder.Entity("EF.Data.Outbox.InboxEntry", b =>
                 {
                     b.Property<string>("Consumer")
@@ -395,15 +452,18 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TaskFlow
                     b.Property<byte[]>("SecureDeterministic")
                         .HasMaxLength(256)
                         .HasColumnType("varbinary(256)")
+                        .HasAnnotation("EF:Sensitive", true)
                         .HasAnnotation("EF.Data.Encryption:BlindIndex", "SecureDeterministicBlindIndex");
 
                     b.Property<byte[]>("SecureDeterministicBlindIndex")
                         .HasMaxLength(32)
-                        .HasColumnType("varbinary(32)");
+                        .HasColumnType("varbinary(32)")
+                        .HasAnnotation("EF:Sensitive", true);
 
                     b.Property<byte[]>("SecureRandom")
                         .HasMaxLength(256)
-                        .HasColumnType("varbinary(256)");
+                        .HasColumnType("varbinary(256)")
+                        .HasAnnotation("EF:Sensitive", true);
 
                     b.Property<DateTimeOffset?>("StartDate")
                         .HasColumnType("datetimeoffset");
@@ -495,63 +555,6 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TaskFlow
                         .HasDatabaseName("IX_TaskItemTag_TenantId_TaskItemId_TagId");
 
                     b.ToTable("TaskItemTag", "taskflow");
-                });
-
-            modelBuilder.Entity("TaskFlow.Infrastructure.Data.Operational.AuditLogRecord", b =>
-                {
-                    b.Property<string>("TenantId")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<DateTimeOffset>("RecordedUtc")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Action")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("AuditId")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<long>("ElapsedTimeTicks")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("EntityKey")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<string>("EntityType")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<string>("Error")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Metadata")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTimeOffset>("StartedAtUtc")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.HasKey("TenantId", "RecordedUtc", "Id");
-
-                    b.HasIndex("RecordedUtc")
-                        .HasDatabaseName("IX_AuditLog_RecordedUtc");
-
-                    b.ToTable("AuditLog", "taskflow");
                 });
 
             modelBuilder.Entity("TaskFlow.Infrastructure.Data.Operational.BlobDeleteWork", b =>

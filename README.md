@@ -72,6 +72,8 @@ Apply it with `podman machine stop`, `podman machine set --user-mode-networking=
 
 Under mirrored networking a connect to `::1` on a port the container runtime published on `127.0.0.1` hangs instead of being refused. The persistent `dotnet run` stack is proxyless, so the AppHost points every persistent container endpoint at `127.0.0.1`; custom tooling against those ports should use `127.0.0.1` rather than `localhost` as well.
 
+The persistent NonAzure dev broker (volume `taskflow-rabbitmq-data`) keeps the queues an earlier run declared. TaskFlow now declares them as quorum queues, and RabbitMQ fixes a queue's type at creation, so a volume that still holds the classic queues makes the Scheduler fail its topology declaration with `PRECONDITION_FAILED`. Delete them once with the AppHost stopped and only the RabbitMQ container running (`podman start` it; its name starts with `rabbitmq-`), then start the AppHost again: `foreach ($q in 'taskflow.projection','taskflow.ai-review','taskflow.workflow','taskflow.embedding','taskflow.dead-letter') { podman exec <rabbitmq container> rabbitmqctl delete_queue $q }`. `taskflow.embedding` exists only on the PgVector arm. Removing the `taskflow-rabbitmq-data` volume instead also works and discards every message and definition on the broker.
+
 For the manual `Test.Load` lane, start the AppHost with `$env:TASKFLOW_ASPIRE_LOAD_PROFILE = "true"` (it raises the scaffold tenant's rate-limit tier) and follow the steps on `tests/Test.Load/TaskItemLoadTests.cs`.
 
 Generated API clients (Blazor Refit, React `openapi-typescript`) regenerate per [`docs/plans/client-generation.md`](docs/plans/client-generation.md).

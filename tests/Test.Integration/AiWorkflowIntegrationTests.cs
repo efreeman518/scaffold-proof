@@ -100,7 +100,7 @@ public sealed class AiWorkflowIntegrationTests
     // Runtime hosts do not migrate. Component test owns schema prep before API factory starts.
     private static async Task<string> IsolatedMigratedConnectionStringAsync(CancellationToken ct)
     {
-        var connectionString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("TaskFlow_AiWorkflow");
+        var connectionString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("TaskFlow_AiWorkflow", ct);
 
         await using var trxn = DbContainerFixture.CreateTrxnContext(connectionString);
         await trxn.Database.MigrateAsync(ct);

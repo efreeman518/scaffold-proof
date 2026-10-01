@@ -1,4 +1,5 @@
 using EF.Data.Outbox;
+using EF.IntegrationTesting.AspNetCore;
 using EF.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -179,7 +180,7 @@ public class InboxStoreTests
     public async Task Migration_BackfillsPreExistingClaimsAsCompleted()
     {
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("inboxbackfill");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("inboxbackfill", ct);
         await using var db = DbContainerFixture.CreateTrxnContext(connString);
         var migrations = db.Database.GetMigrations().ToList();
         var twoState = migrations.FindIndex(m => m.EndsWith("_TwoStateInboxAndOutboxTraceContext", StringComparison.Ordinal));
@@ -305,20 +306,15 @@ public class InboxStoreTests
 
     private static async Task<string> MigratedDatabaseAsync(string prefix, CancellationToken ct)
     {
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync(prefix);
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync(prefix, ct);
         await using var db = DbContainerFixture.CreateTrxnContext(connString);
         await db.Database.MigrateAsync(ct);
         return connString;
     }
 
     private static InboxStore<TaskFlowDbContextTrxn> Store(TaskFlowDbContextTrxn db, string connString, TimeProvider? clock = null) =>
-        new(db, new ContainerContextFactory(connString), clock);
-
-    /// <summary>Fresh contexts for renewal, the way the pooled factory hands them out in the hosts.</summary>
-    private sealed class ContainerContextFactory(string connString) : IDbContextFactory<TaskFlowDbContextTrxn>
-    {
-        public TaskFlowDbContextTrxn CreateDbContext() => DbContainerFixture.CreateTrxnContext(connString);
-    }
+        // Fresh contexts for renewal, the way the pooled factory hands them out in the hosts.
+        new(db, new EfTestDbContextFactory<TaskFlowDbContextTrxn>(() => DbContainerFixture.CreateTrxnContext(connString)), clock);
 
     private sealed class MutableClock(DateTimeOffset start) : TimeProvider
     {

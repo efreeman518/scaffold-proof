@@ -136,7 +136,7 @@ public sealed class TypeScriptPlaywrightSuiteTests
 
             result = await host.RunWithinStartupBudgetAsync(
                 "Playwright browser launch and smoke",
-                token => TypeScriptPlaywrightRunner.RunAsync(selectedProjects, token),
+                token => TypeScriptPlaywrightRunner.RunAsync(selectedProjects, readiness, token),
                 TestContext.CancellationToken);
         }
         catch (InvalidOperationException ex) when (

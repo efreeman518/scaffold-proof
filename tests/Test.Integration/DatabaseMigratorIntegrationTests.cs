@@ -30,7 +30,7 @@ public sealed class DatabaseMigratorIntegrationTests
     [Timeout(180000, CooperativeCancellation = true)]
     public async Task DatabaseMigrator_AppliesAllTargets_AndIsIdempotent()
     {
-        var connectionString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("TaskFlowMigrator");
+        var connectionString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("TaskFlowMigrator", TestContext.CancellationToken);
         var runner = CreateRunner(connectionString);
 
         await runner.RunAsync(TestContext.CancellationToken);
@@ -60,7 +60,7 @@ public sealed class DatabaseMigratorIntegrationTests
     [Timeout(120000, CooperativeCancellation = true)]
     public async Task TickerQValidation_FailsWhenSchemaMissing()
     {
-        var connectionString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("TickerQMissing");
+        var connectionString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("TickerQMissing", TestContext.CancellationToken);
         await using var tickerQ = DbContainerFixture.CreateTickerQContext(connectionString);
 
         Assert.IsTrue(await tickerQ.Database.CanConnectAsync(TestContext.CancellationToken));
