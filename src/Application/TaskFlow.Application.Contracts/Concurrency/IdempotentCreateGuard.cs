@@ -28,28 +28,40 @@ public static class IdempotentCreateGuard
             : throw new ConflictException(entityType, entityId.ToString());
     }
 
-    /// <summary>True when a repeated TaskItem create carries the same scalar payload.</summary>
-    public static bool IsEquivalent(TaskItemDto existing, TaskItemDto incoming) =>
-        existing.Title == incoming.Title
-        && existing.Description == incoming.Description
-        && existing.Priority == incoming.Priority
-        && existing.Features == incoming.Features
-        && existing.EstimatedEffort == incoming.EstimatedEffort
-        && existing.ActualEffort == incoming.ActualEffort
-        && existing.CategoryId == incoming.CategoryId
-        && existing.ParentTaskItemId == incoming.ParentTaskItemId
-        && existing.StartDate == incoming.StartDate
-        && existing.DueDate == incoming.DueDate
-        && existing.RecurrenceInterval == incoming.RecurrenceInterval
-        && existing.RecurrenceFrequency == incoming.RecurrenceFrequency
-        && existing.RecurrenceEndDate == incoming.RecurrenceEndDate;
+    /// <summary>
+    /// True when a repeated TaskItem create carries the same scalar payload, judged as the create applied it: the
+    /// create attaches a recurrence pattern only when both the interval and the frequency are present
+    /// (<c>TaskItemMapper.ToEntity</c>) and otherwise drops all three recurrence fields, so a resend of the same request
+    /// compares those fields as dropped too.
+    /// </summary>
+    public static bool IsEquivalent(TaskItemDto existing, TaskItemDto incoming)
+    {
+        var recurs = incoming.RecurrenceInterval.HasValue && !string.IsNullOrEmpty(incoming.RecurrenceFrequency);
+        return existing.Title == incoming.Title
+            && existing.Description == incoming.Description
+            && existing.Priority == incoming.Priority
+            && existing.Features == incoming.Features
+            && existing.EstimatedEffort == incoming.EstimatedEffort
+            && existing.ActualEffort == incoming.ActualEffort
+            && existing.CategoryId == incoming.CategoryId
+            && existing.ParentTaskItemId == incoming.ParentTaskItemId
+            && existing.StartDate == incoming.StartDate
+            && existing.DueDate == incoming.DueDate
+            && existing.RecurrenceInterval == (recurs ? incoming.RecurrenceInterval : null)
+            && existing.RecurrenceFrequency == (recurs ? incoming.RecurrenceFrequency : null)
+            && existing.RecurrenceEndDate == (recurs ? incoming.RecurrenceEndDate : null);
+    }
 
-    /// <summary>True when a repeated Category create carries the same scalar payload.</summary>
+    /// <summary>
+    /// True when a repeated Category create carries the same scalar payload, judged as the create applied it: the
+    /// create always stores <c>IsActive = true</c> (<c>Category.Create</c> takes no flag), so the request's
+    /// <c>IsActive</c>, unset or not, is compared as true.
+    /// </summary>
     public static bool IsEquivalent(CategoryDto existing, CategoryDto incoming) =>
         existing.Name == incoming.Name
         && existing.Description == incoming.Description
         && existing.SortOrder == incoming.SortOrder
-        && existing.IsActive == incoming.IsActive
+        && existing.IsActive
         && existing.ParentCategoryId == incoming.ParentCategoryId;
 
     /// <summary>True when a repeated Tag create carries the same scalar payload.</summary>

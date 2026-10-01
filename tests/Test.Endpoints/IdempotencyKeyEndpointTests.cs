@@ -70,11 +70,10 @@ public class IdempotencyKeyEndpointTests
         var key = NewKey();
         var suffix = Guid.NewGuid().ToString("N")[..12];
         var ownerId = resource == "attachments" ? await CreateTaskAsync(client) : Guid.Empty;
-        // IsActive = true: a category create always stores it, and the D-033 replay compares it (an omitted value is a 409).
 
         async Task<HttpResponseMessage> CreateAsync() => resource switch
         {
-            "categories" => await PostAsync(client, "/api/v1/categories", new CategoryDto { Name = $"Cat-{suffix}", IsActive = true }, key),
+            "categories" => await PostAsync(client, "/api/v1/categories", new CategoryDto { Name = $"Cat-{suffix}" }, key),
             "tags" => await PostAsync(client, "/api/v1/tags", new TagDto { Name = $"Tag-{suffix}", Color = "#123456" }, key),
             _ => await PostAsync(client, "/api/v1/attachments", new AttachmentDto
             {
