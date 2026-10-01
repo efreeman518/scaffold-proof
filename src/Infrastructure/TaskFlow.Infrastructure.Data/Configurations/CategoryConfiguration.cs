@@ -25,7 +25,7 @@ public class CategoryConfiguration : TenantEntityTypeConfiguration<Category, Cat
             .OnDelete(DeleteBehavior.Restrict);
 
         // Restrict, not SetNull: a composite FK cannot null only its CategoryId half. Callers clear
-        // TaskItem.CategoryId for the tenant first (ICategoryRepositoryTrxn.ClearCategoryFromTaskItemsAsync).
+        // TaskItem.CategoryId for the tenant in the same unit of work (ICategoryRepositoryTrxn.DeleteCategoryAsync).
         builder.HasMany(e => e.TaskItems)
             .WithOne(e => e.Category)
             .HasForeignKey(e => new { e.TenantId, e.CategoryId })

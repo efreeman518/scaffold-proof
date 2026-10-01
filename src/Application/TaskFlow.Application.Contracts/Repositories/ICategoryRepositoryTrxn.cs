@@ -11,9 +11,10 @@ public interface ICategoryRepositoryTrxn : IRepositoryTrxn<Category, CategoryId>
     Task<Category?> GetCategoryAsync(CategoryId id, CancellationToken ct = default);
 
     /// <summary>
-    /// Clears <c>TaskItem.CategoryId</c> for every task of the current tenant that references the category,
-    /// as a set-based update. Required before deleting a category: the composite FK (TenantId, CategoryId)
-    /// cannot cascade to SetNull (D-022). Returns the number of detached tasks.
+    /// Deletes the category as one unit of work with one <c>OptimisticConcurrencyWinner.Throw</c> save: first clears
+    /// <c>TaskItem.CategoryId</c> for every task of the current tenant that references it (the composite FK
+    /// (TenantId, CategoryId) cannot cascade to SetNull, D-022), then removes the row. A failed or lost save leaves the
+    /// tasks' references in place, so a fresh-read retry (D-073) can run it again.
     /// </summary>
-    Task<int> ClearCategoryFromTaskItemsAsync(CategoryId categoryId, CancellationToken ct = default);
+    Task DeleteCategoryAsync(Category category, CancellationToken ct = default);
 }

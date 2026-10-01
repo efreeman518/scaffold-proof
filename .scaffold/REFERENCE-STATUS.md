@@ -29,30 +29,30 @@ A Debug restore of the Uno project followed by a Release `--no-restore` build fa
 
 ### Fast matrix
 
-Release `--no-build`, run serially; Unit, Architecture, Endpoints and Integration.FlowEngine 2026-10-01 (EF.FlowEngine 1.0.199), UI 2026-09-30 (EF.* 2.0.115), the rest 2026-09-29. No failed, skipped, or inconclusive tests:
+Release `--no-build`, run serially; Unit, Architecture and Endpoints 2026-10-01, UI 2026-09-30 (EF.* 2.0.115), the rest 2026-09-29. No failed, skipped, or inconclusive tests:
 
 | Project | Passed | Duration |
 |---|---:|---:|
-| Test.Unit | 630 | 17 s |
+| Test.Unit | 655 | 16 s |
 | Test.UI | 54 | 1 s |
 | Test.Architecture | 81 | 2 s |
-| Test.Endpoints | 199 | 9 s |
-| Test.Integration.FlowEngine | 25 | 0.3 s |
+| Test.Endpoints | 199 | 8 s |
+| Test.Integration.FlowEngine | 18 | 0.2 s |
 | Test.Mutation | 27 | 0.1 s |
 | Test.PlaywrightUI (`TestCategory=Unit`) | 1 | 0.1 s |
-| **Total** | **1017** | |
+| **Total** | **1035** | |
 
 `Test.Unit` used the CI 15-second blame-hang timeout. `dotnet format analyzers TaskFlow.slnx --severity warn --verify-no-changes --no-restore` passed with no changes or diagnostics. Types the EF.* packages own are tested by the package suites, not here.
 
 ### Component containers
 
-Release `--no-build`, Podman Docker-compatible context; Test.Integration 2026-09-30 (EF.* 2.0.115; the PostgreSqlJsonb and Azure rows re-ran 2026-10-01 under EF.FlowEngine 1.0.199 with the same counts), Test.E2E 2026-09-29:
+Release `--no-build`, Podman Docker-compatible context; Test.Integration 2026-10-01 (EF.* 2.0.115; the MongoDb row 2026-09-30), Test.E2E 2026-09-29:
 
 | Lane | Project | Passed | Skipped | Duration |
 |---|---|---:|---:|---:|
-| unset (resolves NonAzure) / PostgreSqlJsonb | Test.Integration | 98 | 5 (Azure-only) | 114 s |
-| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 84 | 19 (NonAzure-only) | 216 s |
-| NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | Test.Integration | 92 | 3 | 106 s (before the 8 same-key and exhaustion race cases, which then passed under MongoDb with the rest of `ChildAddConcurrencyTests`, 14/14) |
+| `TASKFLOW_LANE=NonAzure` / PostgreSqlJsonb | Test.Integration | 114 | 5 (Azure-only) | 126 s |
+| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 100 | 19 (NonAzure-only) | 179 s |
+| NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | Test.Integration | 92 | 3 | 106 s (before the 8 same-key and exhaustion race cases, which then passed under MongoDb with the rest of `ChildAddConcurrencyTests`, 14/14; before the 12 `WildcardWriteConcurrencyTests` and 4 `CategoryDeleteAtomicityTests` cases) |
 | unset (resolves NonAzure) | Test.E2E | 10 | 0 | 15 s |
 | `TASKFLOW_LANE=Azure` | Test.E2E | 10 | 0 | 33 s |
 
@@ -197,7 +197,7 @@ Status meanings:
 | No unsafe-method retry (D-063) | proven | `Test.Unit/Hosting/ServiceDefaultsScaleTests.cs` (transient 503: POST sent once, GET retried three times; the FlowEngine `taskflow-api` client sends a GET once); Blazor clients inherit the ServiceDefaults handler with header propagation off, the read-only gRPC client keeps retries |
 | Api error mapping (D-066) | proven | `Test.Endpoints/GlobalExceptionHandlerTests.cs` (client abort 499, uncaused cancellation or timeout 504, framework faults 500, `InvalidRequestException`/`InvalidCursorException` 400, mapped exceptions their status, no 5xx detail outside Development); `TaskItemEndpointTests.Given_InvalidPayload_When_PutUpdate_Then_Returns400`; `CategoryServiceTests`/`CqrsFailureMappingTests` (fixed save message, cancellation propagates, create race replays or 409) |
 | System request context (D-067) | proven | `Test.Unit/Hosting/SystemRequestContextTests.cs` (no request resolves the system identity, anonymous HTTP request, a token claiming `System` does not get it, a real GlobalAdmin keeps its role, the package system context carries only `System`, which passes the real `AddTenantBoundary` registration (`CrossTenantRoles = [GlobalAdmin, System]`) for the tenant the data names, background comment write saves); `TenantTargetingContextAccessorTests.GetContextAsync_SequentialRequestsFromDifferentTenants_TargetsEachTenant` |
-| Save classification and child-add fresh-read retry (D-073) | proven | `Test.Integration/ChildAddConcurrencyTests.cs` on PostgreSQL and SQL Server: an interceptor commits a competing comment before the first save of a comment add, checklist add or tag association (service and CQRS); the add is saved, the root version moves twice and the response reports the retried version; a competing insert of the same comment id, checklist item id or tag association replays the stored row; a competing write before every attempt ends in 409 after three saves. Before each fix the cases failed on both providers (412 `expected version 1, current 2`; 400 `The change could not be saved.` for the same key; 412 instead of 409 on exhaustion); `Test.Unit/Cqrs/CqrsChildAddRetryTests.cs` pins the CQRS adds to the wrapper; `ConcurrencyArchitectureTests` keeps every Application save on `Throw` |
+| Save classification and fresh-read retry for child adds and `If-Match: *` writes (D-073, D-032) | proven | `Test.Integration/ChildAddConcurrencyTests.cs` on PostgreSQL and SQL Server: an interceptor commits a competing comment before the first save of a comment add, checklist add or tag association (service and CQRS); the add is saved, the root version moves twice and the response reports the retried version; a competing insert of the same comment id, checklist item id or tag association replays the stored row; a competing write before every attempt ends in 409 after three saves. `Test.Integration/WildcardWriteConcurrencyTests.cs` on both providers stages the same race for a wildcard root PATCH, PUT and DELETE and a comment PUT (service and CQRS): each re-reads and applies on top of the competing write (the PUT replaces the fresh child set), the root version moves twice, a competing write before every attempt ends in 409 after three saves, and a concrete If-Match that goes stale before the save still answers 412 after one save. Before each fix the cases failed on both providers (412 `expected version 1, current 2`; 400 `The change could not be saved.` for the same key; 412 instead of 409 on exhaustion; the wildcard cases 10 of 12 on each provider, the 2 concrete-version guards passing); `Test.Integration/CategoryDeleteAtomicityTests.cs` on both providers fails the Category delete's save after the task detach and checks the tasks keep their category (before the fix 2 of 2 failed on each provider: the detach had committed), and makes a wildcard Category delete lose a race to a category edit and retry; `Test.Unit/Cqrs/CqrsConcurrencyRetryTests.cs` pins the CQRS adds and all 14 CQRS If-Match writes to the wrapper (wildcard: one save inside it; concrete: one save, no retry); `ConcurrencyArchitectureTests` keeps every Application save on `Throw` |
 | Gateway identity relay and token acquisition (D-068) | proven | `Test.Endpoints/ForwardedClaimsRelayTests.cs` (trusted app-only token yields only the relayed user, delegated or unlisted callers are not trusted, shipped settings trust nobody, Gateway and Api `ForwardedClaims` settings agree, a trusted app-only caller without a relay header gets 403 on a data route and neither 401 nor 403 on `/health/full`, and 403 there once `ServicePathPrefixes` is cleared); `Test.Unit/Gateway/GatewayAuthModeTests.cs` (every route's cluster relays user claims, and the forged inbound header is replaced through the Gateway's YARP transforms); `Test.Unit/Gateway/GatewayAccessTokenCacheTests.cs` (single-flight, first caller cancelling, faulted acquisition not cached, refresh before expiry) |
 | Tenant rate limiting and edge limits (D-050) | proven | `TenantRateLimitEndpointTests` (tenant tier applied after auth, export counted once); `TenantRateLimitingCompositionTests` (unreachable Redis fails open, no Redis stays in process); `GatewayEdgeRateLimitTests.AddGatewayServices_InvalidEdgeBudget_FailsWhenTheLimiterIsBuilt`; `BicepInfrastructureContractTests.MainBicep_GatewayAppliesExactlyOneForwardedHop` |
 | Two-state inbox and outbox settlement (D-026, D-029, D-053) | proven | `Test.Unit/Infrastructure/MessagingConsumerTests.cs` (TaskFlow consumers on the package base); `Test.Integration/InboxStoreTests.cs` and `OutboxClaimTests.cs` on both providers; `Test.Aspire/OutboxMeshTests.cs` (every consumer records the event exactly once); `BrokerTracePropagationTests.OutboxHop_ConsumerContinuesTheRequestTrace_NotTheDrain`; settlement and transports are proven by the `EF.Data.Outbox` and `EF.Messaging` suites |

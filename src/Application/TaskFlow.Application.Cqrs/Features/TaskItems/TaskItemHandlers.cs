@@ -150,6 +150,17 @@ internal sealed class UpdateTaskItemHandler(
         var validation = TaskItemStructureValidator.ValidateUpdate(dto);
         if (validation.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(validation.Errors);
 
+        // If-Match: * re-reads and applies again when it loses a race (D-073); a concrete version keeps its 412.
+        var result = await ConcurrencyRetry.RunAsync(repoTrxn, command.ExpectedVersion, nameof(TaskItem), dto.Id!.Value,
+            attemptCt => UpdateOnceAsync(dto, command.ExpectedVersion, attemptCt), ct);
+        if (result.IsSuccess && result.Value!.Item is not null)
+            await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(TaskItem)), ct);
+        return result;
+    }
+
+    /// <summary>One read, update and save; run again on a lost wildcard race.</summary>
+    private async Task<Result<DefaultResponse<TaskItemDto>>> UpdateOnceAsync(TaskItemDto dto, long? expectedVersion, CancellationToken ct)
+    {
         var entity = await repoTrxn.GetTaskItemAsync(TaskItemId.From(dto.Id!.Value), ct: ct);
         if (entity is null)
         {
@@ -162,7 +173,7 @@ internal sealed class UpdateTaskItemHandler(
         if (boundary.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(boundary.ErrorMessage!);
 
         // After load, before any mutation: a stale caller must not run the status state machine.
-        ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
+        ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
 
         var tenantChangeCheck = tenantBoundaryValidator.PreventTenantChange(
             entity.TenantId.Value, dto.TenantId, nameof(TaskItem), entity.Id.Value);
@@ -204,7 +215,6 @@ internal sealed class UpdateTaskItemHandler(
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error updating TaskItem {Id}", ct, dto.Id);
         if (save.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(save.ErrorMessage!);
 
-        await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(TaskItem)), ct);
         return HandlerHelpers.Success(entity.ToDto());
     }
 }
@@ -221,23 +231,30 @@ internal sealed class DeleteTaskItemHandler(
     /// <summary>Handles delete task item requests and returns the application result.</summary>
     public async Task<Result> HandleAsync(DeleteTaskItemCommand command, CancellationToken ct = default)
     {
+        // If-Match: * re-reads and deletes again when it loses a race (D-073); a concrete version keeps its 412.
+        var (result, deleted) = await ConcurrencyRetry.RunAsync(repoTrxn, command.ExpectedVersion, nameof(TaskItem), command.Id,
+            attemptCt => DeleteOnceAsync(command, attemptCt), ct);
+        if (deleted) await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(TaskItem)), ct);
+        return result;
+    }
+
+    /// <summary>One read, delete and save; <c>Deleted</c> is true when a row was removed.</summary>
+    private async Task<(Result Result, bool Deleted)> DeleteOnceAsync(DeleteTaskItemCommand command, CancellationToken ct)
+    {
         var entity = await repoTrxn.GetTaskItemAsync(TaskItemId.From(command.Id), ct: ct);
-        if (entity is null) return Result.Success();
+        if (entity is null) return (Result.Success(), false);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "TaskItem:Delete", nameof(TaskItem), entity.Id.Value);
-        if (boundary.IsFailure) return Result.Failure(boundary.ErrorMessage!);
+        if (boundary.IsFailure) return (Result.Failure(boundary.ErrorMessage!), false);
 
         ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
 
         repoTrxn.Delete(entity);
 
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error deleting TaskItem {Id}", ct, command.Id);
-        if (save.IsFailure) return save;
-
-        await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(TaskItem)), ct);
-        return Result.Success();
+        return (save, save.IsSuccess);
     }
 }
 
@@ -256,6 +273,17 @@ internal sealed class PatchTaskItemHandler(
 {
     /// <summary>Handles patch task item requests and returns the application result.</summary>
     public async Task<Result<DefaultResponse<TaskItemDto>>> HandleAsync(PatchTaskItemCommand command, CancellationToken ct = default)
+    {
+        // If-Match: * re-reads and applies again when it loses a race (D-073); a concrete version keeps its 412.
+        var result = await ConcurrencyRetry.RunAsync(repoTrxn, command.ExpectedVersion, nameof(TaskItem), command.Id,
+            attemptCt => PatchOnceAsync(command, attemptCt), ct);
+        if (result.IsSuccess && result.Value!.Item is not null)
+            await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(TaskItem)), ct);
+        return result;
+    }
+
+    /// <summary>One read, merge and save; run again on a lost wildcard race.</summary>
+    private async Task<Result<DefaultResponse<TaskItemDto>>> PatchOnceAsync(PatchTaskItemCommand command, CancellationToken ct)
     {
         var entity = await repoTrxn.GetTaskItemAsync(TaskItemId.From(command.Id), ct: ct);
         if (entity is null) return HandlerHelpers.NotFoundResponse<TaskItemDto>();
@@ -280,7 +308,6 @@ internal sealed class PatchTaskItemHandler(
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error patching TaskItem {Id}", ct, command.Id);
         if (save.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(save.ErrorMessage!);
 
-        await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(TaskItem)), ct);
         return HandlerHelpers.Success(entity.ToDto());
     }
 }

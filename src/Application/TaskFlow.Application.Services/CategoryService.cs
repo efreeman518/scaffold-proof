@@ -133,6 +133,16 @@ internal class CategoryService(
         var validation = CategoryStructureValidator.ValidateUpdate(dto);
         if (validation.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(validation.Errors);
 
+        // If-Match: * re-reads and applies again when it loses a race (D-073); a concrete version keeps its 412.
+        var result = await ConcurrencyRetry.RunAsync(repoTrxn, expectedVersion, nameof(Category), dto.Id!.Value,
+            attemptCt => UpdateOnceAsync(dto, expectedVersion, attemptCt), ct);
+        if (result.IsSuccess && result.Value!.Item is not null) await InvalidateMetadataAsync(ct);
+        return result;
+    }
+
+    /// <summary>One read, update and save of <see cref="UpdateAsync"/>; run again on a lost wildcard race.</summary>
+    private async Task<Result<DefaultResponse<CategoryDto>>> UpdateOnceAsync(CategoryDto dto, long? expectedVersion, CancellationToken ct)
+    {
         var entity = await repoTrxn.GetCategoryAsync(CategoryId.From(dto.Id!.Value), ct);
         if (entity == null)
             return Result<DefaultResponse<CategoryDto>>.Success(new DefaultResponse<CategoryDto> { Item = null });
@@ -163,37 +173,44 @@ internal class CategoryService(
             return Result<DefaultResponse<CategoryDto>>.Failure(ErrorConstants.ERROR_SAVE_FAILED);
         }
 
-        await InvalidateMetadataAsync(ct);
         return Result<DefaultResponse<CategoryDto>>.Success(BuildResponse(entity.ToDto()));
     }
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
     public async Task<Result> DeleteAsync(Guid id, long? expectedVersion, CancellationToken ct = default)
     {
+        // If-Match: * re-reads and deletes again when it loses a race (D-073); a concrete version keeps its 412.
+        var (result, deleted) = await ConcurrencyRetry.RunAsync(repoTrxn, expectedVersion, nameof(Category), id,
+            attemptCt => DeleteOnceAsync(id, expectedVersion, attemptCt), ct);
+        if (deleted) await InvalidateMetadataAsync(ct);
+        return result;
+    }
+
+    /// <summary>One read, delete and save of <see cref="DeleteAsync"/>; <c>Deleted</c> is true when a row was removed.</summary>
+    private async Task<(Result Result, bool Deleted)> DeleteOnceAsync(Guid id, long? expectedVersion, CancellationToken ct)
+    {
         var entity = await repoTrxn.GetCategoryAsync(CategoryId.From(id), ct);
-        if (entity == null) return Result.Success();
+        if (entity == null) return (Result.Success(), false);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             RequestTenantId, RequestRoles, entity.TenantId.Value,
             "Category:Delete", nameof(Category), entity.Id.Value);
-        if (boundary.IsFailure) return Result.Failure(boundary.ErrorMessage!);
+        if (boundary.IsFailure) return (Result.Failure(boundary.ErrorMessage!), false);
 
         ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(Category), entity.Id.Value);
 
         try
         {
-            // Composite FK (TenantId, CategoryId) cannot cascade to SetNull; detach the tenant's tasks first (D-022).
-            await repoTrxn.ClearCategoryFromTaskItemsAsync(entity.Id, ct);
-            repoTrxn.Delete(entity);
-            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
+            // Composite FK (TenantId, CategoryId) cannot cascade to SetNull: the repository detaches the tenant's
+            // tasks and deletes the row in one unit with one Throw save (D-022), so a failed save detaches nothing.
+            await repoTrxn.DeleteCategoryAsync(entity, ct);
         }
         catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.CategoryDeleteFailed(ex, id);
-            return Result.Failure(ErrorConstants.ERROR_SAVE_FAILED);
+            return (Result.Failure(ErrorConstants.ERROR_SAVE_FAILED), false);
         }
 
-        await InvalidateMetadataAsync(ct);
-        return Result.Success();
+        return (Result.Success(), true);
     }
 }

@@ -41,7 +41,7 @@ internal sealed class AddTaskItemCommentHandler(
         // An add carries no If-Match, so the caller's intent wins a race with another write to the aggregate
         // (D-031 bumps the root on every child write) or with a same-key add: a lost save re-reads and decides
         // again, and a race lost on every attempt is 409 (D-073).
-        return await ChildAddRetry.RunAsync(repoTrxn, nameof(Comment), command.TaskItemId, async attemptCt =>
+        return await ConcurrencyRetry.RunAsync(repoTrxn, nameof(Comment), command.TaskItemId, async attemptCt =>
         {
             var (entity, error) = await TaskItemChildLoader.LoadRootAsync(
                 repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
@@ -90,25 +90,30 @@ internal sealed class UpdateTaskItemCommentHandler(
     /// <summary>Handles update comment requests and returns the application result.</summary>
     public async Task<Result<DefaultResponse<CommentDto>>> HandleAsync(UpdateTaskItemCommentCommand command, CancellationToken ct = default)
     {
-        var (entity, error) = await TaskItemChildLoader.LoadRootAsync(
-            repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
-            command.TaskItemId, "TaskItem:UpdateComment", ct);
-        if (error is not null) return Result<DefaultResponse<CommentDto>>.Failure(error);
-        if (entity is null) return HandlerHelpers.NotFoundResponse<CommentDto>();
+        // If-Match: * re-reads the root and applies again when it loses a race (D-073); a concrete root
+        // version keeps its 412.
+        return await ConcurrencyRetry.RunAsync(repoTrxn, command.ExpectedVersion, nameof(TaskItem), command.TaskItemId, async attemptCt =>
+        {
+            var (entity, error) = await TaskItemChildLoader.LoadRootAsync(
+                repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
+                command.TaskItemId, "TaskItem:UpdateComment", attemptCt);
+            if (error is not null) return Result<DefaultResponse<CommentDto>>.Failure(error);
+            if (entity is null) return HandlerHelpers.NotFoundResponse<CommentDto>();
 
-        ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
+            ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
 
-        var comment = await TaskItemChildLoader.LoadCommentAsync(repoTrxn, command.TaskItemId, command.CommentId, ct);
-        if (comment is null) return HandlerHelpers.NotFoundResponse<CommentDto>();
+            var comment = await TaskItemChildLoader.LoadCommentAsync(repoTrxn, command.TaskItemId, command.CommentId, attemptCt);
+            if (comment is null) return HandlerHelpers.NotFoundResponse<CommentDto>();
 
-        var updateResult = comment.Update(command.Comment.Body);
-        if (updateResult.IsFailure) return Result<DefaultResponse<CommentDto>>.Failure(updateResult.ErrorMessage!);
-        entity.MarkChildMutated();
+            var updateResult = comment.Update(command.Comment.Body);
+            if (updateResult.IsFailure) return Result<DefaultResponse<CommentDto>>.Failure(updateResult.ErrorMessage!);
+            entity.MarkChildMutated();
 
-        var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error updating Comment {CommentId} on TaskItem {Id}", ct, command.CommentId, command.TaskItemId);
-        if (save.IsFailure) return Result<DefaultResponse<CommentDto>>.Failure(save.ErrorMessage!);
+            var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error updating Comment {CommentId} on TaskItem {Id}", attemptCt, command.CommentId, command.TaskItemId);
+            if (save.IsFailure) return Result<DefaultResponse<CommentDto>>.Failure(save.ErrorMessage!);
 
-        return HandlerHelpers.SuccessForChild(comment.ToDto(), entity.Version);
+            return HandlerHelpers.SuccessForChild(comment.ToDto(), entity.Version);
+        }, ct);
     }
 }
 
@@ -123,24 +128,29 @@ internal sealed class RemoveTaskItemCommentHandler(
     /// <summary>Handles remove comment requests and returns the application result.</summary>
     public async Task<Result> HandleAsync(RemoveTaskItemCommentCommand command, CancellationToken ct = default)
     {
-        var (entity, error) = await TaskItemChildLoader.LoadRootAsync(
-            repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
-            command.TaskItemId, "TaskItem:RemoveComment", ct);
-        if (error is not null) return Result.Failure(error);
-        if (entity is null) return Result.Success(); // Idempotent: parent gone means child gone.
-
-        ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
-
-        var comment = await TaskItemChildLoader.LoadCommentAsync(repoTrxn, command.TaskItemId, command.CommentId, ct);
-        if (comment is not null)
+        // If-Match: * re-reads the root and applies again when it loses a race (D-073); a concrete root
+        // version keeps its 412.
+        return await ConcurrencyRetry.RunAsync(repoTrxn, command.ExpectedVersion, nameof(TaskItem), command.TaskItemId, async attemptCt =>
         {
-            // The root's child collections are not loaded, so the row is deleted explicitly rather
-            // than by severing a navigation that would orphan it.
-            entity.RemoveComment(comment);
-            repoTrxn.DeleteChild(comment);
-        }
+            var (entity, error) = await TaskItemChildLoader.LoadRootAsync(
+                repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
+                command.TaskItemId, "TaskItem:RemoveComment", attemptCt);
+            if (error is not null) return Result.Failure(error);
+            if (entity is null) return Result.Success(); // Idempotent: parent gone means child gone.
 
-        return await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error removing Comment {CommentId} from TaskItem {Id}", ct, command.CommentId, command.TaskItemId);
+            ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
+
+            var comment = await TaskItemChildLoader.LoadCommentAsync(repoTrxn, command.TaskItemId, command.CommentId, attemptCt);
+            if (comment is not null)
+            {
+                // The root's child collections are not loaded, so the row is deleted explicitly rather
+                // than by severing a navigation that would orphan it.
+                entity.RemoveComment(comment);
+                repoTrxn.DeleteChild(comment);
+            }
+
+            return await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error removing Comment {CommentId} from TaskItem {Id}", attemptCt, command.CommentId, command.TaskItemId);
+        }, ct);
     }
 }
 
@@ -161,7 +171,7 @@ internal sealed class AddTaskItemChecklistItemHandler(
         // An add carries no If-Match, so the caller's intent wins a race with another write to the aggregate
         // (D-031 bumps the root on every child write) or with a same-key add: a lost save re-reads and decides
         // again, and a race lost on every attempt is 409 (D-073).
-        return await ChildAddRetry.RunAsync(repoTrxn, nameof(ChecklistItem), command.TaskItemId, async attemptCt =>
+        return await ConcurrencyRetry.RunAsync(repoTrxn, nameof(ChecklistItem), command.TaskItemId, async attemptCt =>
         {
             var (entity, error) = await TaskItemChildLoader.LoadRootAsync(
                 repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
@@ -216,25 +226,30 @@ internal sealed class UpdateTaskItemChecklistItemHandler(
     /// <summary>Handles update checklist item requests and returns the application result.</summary>
     public async Task<Result<DefaultResponse<ChecklistItemDto>>> HandleAsync(UpdateTaskItemChecklistItemCommand command, CancellationToken ct = default)
     {
-        var (entity, error) = await TaskItemChildLoader.LoadRootAsync(
-            repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
-            command.TaskItemId, "TaskItem:UpdateChecklistItem", ct);
-        if (error is not null) return Result<DefaultResponse<ChecklistItemDto>>.Failure(error);
-        if (entity is null) return HandlerHelpers.NotFoundResponse<ChecklistItemDto>();
+        // If-Match: * re-reads the root and applies again when it loses a race (D-073); a concrete root
+        // version keeps its 412.
+        return await ConcurrencyRetry.RunAsync(repoTrxn, command.ExpectedVersion, nameof(TaskItem), command.TaskItemId, async attemptCt =>
+        {
+            var (entity, error) = await TaskItemChildLoader.LoadRootAsync(
+                repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
+                command.TaskItemId, "TaskItem:UpdateChecklistItem", attemptCt);
+            if (error is not null) return Result<DefaultResponse<ChecklistItemDto>>.Failure(error);
+            if (entity is null) return HandlerHelpers.NotFoundResponse<ChecklistItemDto>();
 
-        ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
+            ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
 
-        var item = await TaskItemChildLoader.LoadChecklistItemAsync(repoTrxn, command.TaskItemId, command.ChecklistItemId, ct);
-        if (item is null) return HandlerHelpers.NotFoundResponse<ChecklistItemDto>();
+            var item = await TaskItemChildLoader.LoadChecklistItemAsync(repoTrxn, command.TaskItemId, command.ChecklistItemId, attemptCt);
+            if (item is null) return HandlerHelpers.NotFoundResponse<ChecklistItemDto>();
 
-        var updateResult = item.Update(command.ChecklistItem.Title, command.ChecklistItem.IsCompleted, command.ChecklistItem.SortOrder);
-        if (updateResult.IsFailure) return Result<DefaultResponse<ChecklistItemDto>>.Failure(updateResult.ErrorMessage!);
-        entity.MarkChildMutated();
+            var updateResult = item.Update(command.ChecklistItem.Title, command.ChecklistItem.IsCompleted, command.ChecklistItem.SortOrder);
+            if (updateResult.IsFailure) return Result<DefaultResponse<ChecklistItemDto>>.Failure(updateResult.ErrorMessage!);
+            entity.MarkChildMutated();
 
-        var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error updating ChecklistItem {ChecklistItemId} on TaskItem {Id}", ct, command.ChecklistItemId, command.TaskItemId);
-        if (save.IsFailure) return Result<DefaultResponse<ChecklistItemDto>>.Failure(save.ErrorMessage!);
+            var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error updating ChecklistItem {ChecklistItemId} on TaskItem {Id}", attemptCt, command.ChecklistItemId, command.TaskItemId);
+            if (save.IsFailure) return Result<DefaultResponse<ChecklistItemDto>>.Failure(save.ErrorMessage!);
 
-        return HandlerHelpers.SuccessForChild(item.ToDto(), entity.Version);
+            return HandlerHelpers.SuccessForChild(item.ToDto(), entity.Version);
+        }, ct);
     }
 }
 
@@ -249,22 +264,27 @@ internal sealed class RemoveTaskItemChecklistItemHandler(
     /// <summary>Handles remove checklist item requests and returns the application result.</summary>
     public async Task<Result> HandleAsync(RemoveTaskItemChecklistItemCommand command, CancellationToken ct = default)
     {
-        var (entity, error) = await TaskItemChildLoader.LoadRootAsync(
-            repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
-            command.TaskItemId, "TaskItem:RemoveChecklistItem", ct);
-        if (error is not null) return Result.Failure(error);
-        if (entity is null) return Result.Success(); // Idempotent.
-
-        ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
-
-        var item = await TaskItemChildLoader.LoadChecklistItemAsync(repoTrxn, command.TaskItemId, command.ChecklistItemId, ct);
-        if (item is not null)
+        // If-Match: * re-reads the root and applies again when it loses a race (D-073); a concrete root
+        // version keeps its 412.
+        return await ConcurrencyRetry.RunAsync(repoTrxn, command.ExpectedVersion, nameof(TaskItem), command.TaskItemId, async attemptCt =>
         {
-            entity.RemoveChecklistItem(item);
-            repoTrxn.DeleteChild(item);
-        }
+            var (entity, error) = await TaskItemChildLoader.LoadRootAsync(
+                repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
+                command.TaskItemId, "TaskItem:RemoveChecklistItem", attemptCt);
+            if (error is not null) return Result.Failure(error);
+            if (entity is null) return Result.Success(); // Idempotent.
 
-        return await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error removing ChecklistItem {ChecklistItemId} from TaskItem {Id}", ct, command.ChecklistItemId, command.TaskItemId);
+            ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
+
+            var item = await TaskItemChildLoader.LoadChecklistItemAsync(repoTrxn, command.TaskItemId, command.ChecklistItemId, attemptCt);
+            if (item is not null)
+            {
+                entity.RemoveChecklistItem(item);
+                repoTrxn.DeleteChild(item);
+            }
+
+            return await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error removing ChecklistItem {ChecklistItemId} from TaskItem {Id}", attemptCt, command.ChecklistItemId, command.TaskItemId);
+        }, ct);
     }
 }
 
@@ -282,7 +302,7 @@ internal sealed class AssociateTaskItemTagHandler(
         // An add carries no If-Match, so the caller's intent wins a race with another write to the aggregate
         // (D-031 bumps the root on every child write) or with a same-key add: a lost save re-reads and decides
         // again, and a race lost on every attempt is 409 (D-073).
-        return await ChildAddRetry.RunAsync(repoTrxn, nameof(TaskItemTag), command.TaskItemId, async attemptCt =>
+        return await ConcurrencyRetry.RunAsync(repoTrxn, nameof(TaskItemTag), command.TaskItemId, async attemptCt =>
         {
             var (entity, error) = await TaskItemChildLoader.LoadRootAsync(
                 repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
@@ -321,21 +341,26 @@ internal sealed class RemoveTaskItemTagHandler(
     /// <summary>Handles remove tag requests and returns the application result.</summary>
     public async Task<Result> HandleAsync(RemoveTaskItemTagCommand command, CancellationToken ct = default)
     {
-        var (entity, error) = await TaskItemChildLoader.LoadRootAsync(
-            repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
-            command.TaskItemId, "TaskItem:RemoveTag", ct);
-        if (error is not null) return Result.Failure(error);
-        if (entity is null) return Result.Success(); // Idempotent.
-
-        ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
-
-        var association = await TaskItemChildLoader.LoadTaskItemTagAsync(repoTrxn, command.TaskItemId, command.TagId, ct);
-        if (association is not null)
+        // If-Match: * re-reads the root and applies again when it loses a race (D-073); a concrete root
+        // version keeps its 412.
+        return await ConcurrencyRetry.RunAsync(repoTrxn, command.ExpectedVersion, nameof(TaskItem), command.TaskItemId, async attemptCt =>
         {
-            entity.RemoveTag(association);
-            repoTrxn.DeleteChild(association);
-        }
+            var (entity, error) = await TaskItemChildLoader.LoadRootAsync(
+                repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
+                command.TaskItemId, "TaskItem:RemoveTag", attemptCt);
+            if (error is not null) return Result.Failure(error);
+            if (entity is null) return Result.Success(); // Idempotent.
 
-        return await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error removing Tag {TagId} from TaskItem {Id}", ct, command.TagId, command.TaskItemId);
+            ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
+
+            var association = await TaskItemChildLoader.LoadTaskItemTagAsync(repoTrxn, command.TaskItemId, command.TagId, attemptCt);
+            if (association is not null)
+            {
+                entity.RemoveTag(association);
+                repoTrxn.DeleteChild(association);
+            }
+
+            return await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error removing Tag {TagId} from TaskItem {Id}", attemptCt, command.TagId, command.TaskItemId);
+        }, ct);
     }
 }
