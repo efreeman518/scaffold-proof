@@ -29,29 +29,29 @@ A Debug restore of the Uno project followed by a Release `--no-restore` build fa
 
 ### Fast matrix
 
-Release `--no-build`, run serially; Unit, UI, Architecture and Endpoints 2026-09-30 (EF.* 2.0.115), the rest 2026-09-29. No failed, skipped, or inconclusive tests:
+Release `--no-build`, run serially; Unit, Architecture, Endpoints and Integration.FlowEngine 2026-10-01 (EF.FlowEngine 1.0.199), UI 2026-09-30 (EF.* 2.0.115), the rest 2026-09-29. No failed, skipped, or inconclusive tests:
 
 | Project | Passed | Duration |
 |---|---:|---:|
-| Test.Unit | 627 | 16 s |
+| Test.Unit | 630 | 17 s |
 | Test.UI | 54 | 1 s |
 | Test.Architecture | 81 | 2 s |
-| Test.Endpoints | 199 | 8 s |
-| Test.Integration.FlowEngine | 18 | 0.2 s |
+| Test.Endpoints | 199 | 9 s |
+| Test.Integration.FlowEngine | 25 | 0.3 s |
 | Test.Mutation | 27 | 0.1 s |
 | Test.PlaywrightUI (`TestCategory=Unit`) | 1 | 0.1 s |
-| **Total** | **1007** | |
+| **Total** | **1017** | |
 
 `Test.Unit` used the CI 15-second blame-hang timeout. `dotnet format analyzers TaskFlow.slnx --severity warn --verify-no-changes --no-restore` passed with no changes or diagnostics. Types the EF.* packages own are tested by the package suites, not here.
 
 ### Component containers
 
-Release `--no-build`, Podman Docker-compatible context; Test.Integration 2026-09-30 (EF.* 2.0.115), Test.E2E 2026-09-29:
+Release `--no-build`, Podman Docker-compatible context; Test.Integration 2026-09-30 (EF.* 2.0.115; the PostgreSqlJsonb and Azure rows re-ran 2026-10-01 under EF.FlowEngine 1.0.199 with the same counts), Test.E2E 2026-09-29:
 
 | Lane | Project | Passed | Skipped | Duration |
 |---|---|---:|---:|---:|
-| unset (resolves NonAzure) / PostgreSqlJsonb | Test.Integration | 98 | 5 (Azure-only) | 97 s |
-| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 84 | 19 (NonAzure-only) | 163 s |
+| unset (resolves NonAzure) / PostgreSqlJsonb | Test.Integration | 98 | 5 (Azure-only) | 114 s |
+| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 84 | 19 (NonAzure-only) | 216 s |
 | NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | Test.Integration | 92 | 3 | 106 s (before the 8 same-key and exhaustion race cases, which then passed under MongoDb with the rest of `ChildAddConcurrencyTests`, 14/14) |
 | unset (resolves NonAzure) | Test.E2E | 10 | 0 | 15 s |
 | `TASKFLOW_LANE=Azure` | Test.E2E | 10 | 0 | 33 s |
@@ -147,7 +147,7 @@ Status meanings:
 | Generated API clients (Refitter, openapi-typescript) | proven | `src/UI/TaskFlow.ApiClient` and React `types.ts` regenerate from the committed OpenAPI document |
 | Aspire, Gateway, Scheduler, Functions | proven except blocked Azure full graph | Build, topology, unit, endpoint and Compose evidence; core-lane meshes pass on both lanes and the NonAzure full-lane filter passes 5 with 2 by-design skips (2026-09-29); the Azure full graph (Functions on) was last observed blocked by the Aspire SQL child-health ordering defect (2026-09-16) |
 | Uno, Blazor, React | proven | Build, Test.UI, Compose smoke, and Test.PlaywrightUI 4/4 on both lanes including the published Release Uno cold start (2026-09-29) |
-| FlowEngine | proven | Runtime wiring, separate-schema migration, definition/integration cases including the If-Match:* connector override (D-032) |
+| FlowEngine | proven | Runtime wiring, separate-schema migration, definition/integration cases including the If-Match:* connector override (D-032); EF.FlowEngine 1.0.199 node retry ownership: every `taskflow-api` node declares an exponential `retryPolicy` with no 412 (`WorkflowDefinitionValidityTests`), a 503 PATCH is resent and a 412 PATCH is not (`FlowEngineWorkflowTests`) |
 | GitHub Actions and deployment workflow shape | proven | Workflow contract tests and CI execution |
 | Bicep module shape (SQL Server, Service Bus, Storage, Cosmos, Redis, Container Apps/Functions, scale rules) | proven | `main`, foundation, and all three parameter files compile; Bicep contract tests |
 | Live Entra or CIAM sign-in | deployment-only | Scaffold auth is the local proof |
@@ -194,7 +194,7 @@ Status meanings:
 | MessagePack L2 cache serializer (D-048/D-056) | proven | `Test.Unit/Infrastructure/CacheSerializerTests.cs` (round trip, both serializers); `Test.Integration/MessagePackCacheTests.cs` (L2 Redis round trip) |
 | Compose lane (Docker Compose + Caddy) + VPS deploy workflow (D-036) | proven (Compose); CI-only (VPS deploy) | Canonical and local JSONB/Mongo Compose shapes pass; worker also validated eight none, Mongo, pooler, and combined shapes. `deploy-vps.yml` remains `workflow_dispatch` deploy/rollback evidence only. |
 | Load runner (D-062) | proven (runner); deployment-only (load gate) | `EF.Testing.Load.LoadRunner`; `Test.Unit/Load/LoadRunnerTests.cs` (the runner contract TaskFlow relies on); `Test.Load/TaskItemLoadTests.cs` scenarios assert error rate and p95/p99 and stay manual (CRUD sends If-Match on update and delete) |
-| No unsafe-method retry (D-063) | proven | `Test.Unit/Hosting/ServiceDefaultsScaleTests.cs` (transient 503: POST sent once, GET retried three times); Blazor clients inherit the ServiceDefaults handler with header propagation off, the read-only gRPC client keeps retries |
+| No unsafe-method retry (D-063) | proven | `Test.Unit/Hosting/ServiceDefaultsScaleTests.cs` (transient 503: POST sent once, GET retried three times; the FlowEngine `taskflow-api` client sends a GET once); Blazor clients inherit the ServiceDefaults handler with header propagation off, the read-only gRPC client keeps retries |
 | Api error mapping (D-066) | proven | `Test.Endpoints/GlobalExceptionHandlerTests.cs` (client abort 499, uncaused cancellation or timeout 504, framework faults 500, `InvalidRequestException`/`InvalidCursorException` 400, mapped exceptions their status, no 5xx detail outside Development); `TaskItemEndpointTests.Given_InvalidPayload_When_PutUpdate_Then_Returns400`; `CategoryServiceTests`/`CqrsFailureMappingTests` (fixed save message, cancellation propagates, create race replays or 409) |
 | System request context (D-067) | proven | `Test.Unit/Hosting/SystemRequestContextTests.cs` (no request resolves the system identity, anonymous HTTP request, a token claiming `System` does not get it, a real GlobalAdmin keeps its role, the package system context carries only `System`, which passes the real `AddTenantBoundary` registration (`CrossTenantRoles = [GlobalAdmin, System]`) for the tenant the data names, background comment write saves); `TenantTargetingContextAccessorTests.GetContextAsync_SequentialRequestsFromDifferentTenants_TargetsEachTenant` |
 | Save classification and child-add fresh-read retry (D-073) | proven | `Test.Integration/ChildAddConcurrencyTests.cs` on PostgreSQL and SQL Server: an interceptor commits a competing comment before the first save of a comment add, checklist add or tag association (service and CQRS); the add is saved, the root version moves twice and the response reports the retried version; a competing insert of the same comment id, checklist item id or tag association replays the stored row; a competing write before every attempt ends in 409 after three saves. Before each fix the cases failed on both providers (412 `expected version 1, current 2`; 400 `The change could not be saved.` for the same key; 412 instead of 409 on exhaustion); `Test.Unit/Cqrs/CqrsChildAddRetryTests.cs` pins the CQRS adds to the wrapper; `ConcurrencyArchitectureTests` keeps every Application save on `Throw` |
