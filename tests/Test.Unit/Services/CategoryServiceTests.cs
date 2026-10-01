@@ -39,6 +39,8 @@ public class CategoryServiceTests
     [TestInitialize]
     public void Setup()
     {
+        // Writes sent without a concrete If-Match run inside the fresh-read retry (D-073); one run, as when no race is lost.
+        RetryProbe.PassThrough(_repoTrxnMock);
         _requestContextMock.Setup(x => x.TenantId).Returns(TestConstants.TenantId);
         _requestContextMock.Setup(x => x.Roles).Returns(new List<string>());
         _tenantBoundaryValidatorMock
