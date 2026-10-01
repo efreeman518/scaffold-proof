@@ -1,6 +1,7 @@
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Application.Contracts.Repositories;
+using TaskFlow.Domain.Shared;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Operational;
 
@@ -13,6 +14,9 @@ namespace TaskFlow.Infrastructure.Repositories;
 public sealed class IdempotencyKeyRepository(TaskFlowDbContextTrxn db, TimeProvider? timeProvider = null)
     : IIdempotencyKeyRepository
 {
+    /// <summary>Rows one purge statement deletes; the inbox purge's batch size.</summary>
+    public const int PurgeBatchSize = BatchedExecute.DefaultBatchSize;
+
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     /// <inheritdoc />
@@ -21,7 +25,25 @@ public sealed class IdempotencyKeyRepository(TaskFlowDbContextTrxn db, TimeProvi
         // A retry finds its mapping here; only a first attempt or a concurrent duplicate inserts.
         if (await FindAsync(tenantId, scope, key, ct).ConfigureAwait(ConfigureAwaitOptions.None) is Guid stored)
             return stored;
+        return await AddAsync(tenantId, scope, key, ct).ConfigureAwait(ConfigureAwaitOptions.None);
+    }
 
+    /// <inheritdoc />
+    public async Task<Guid?> GetOrAddChildEntityIdAsync(
+        Guid tenantId, string scope, string key, Guid taskItemId, CancellationToken ct = default)
+    {
+        if (await FindAsync(tenantId, scope, key, ct).ConfigureAwait(ConfigureAwaitOptions.None) is Guid stored)
+            return stored;
+        // The tenant query filter scopes the read: a task in another tenant, or none, stores no mapping.
+        var id = TaskItemId.From(taskItemId);
+        if (!await db.TaskItems.AsNoTracking().AnyAsync(t => t.Id == id, ct).ConfigureAwait(ConfigureAwaitOptions.None))
+            return null;
+        return await AddAsync(tenantId, scope, key, ct).ConfigureAwait(ConfigureAwaitOptions.None);
+    }
+
+    /// <summary>Stores a new mapping, or returns a concurrent duplicate's id when it stored the key first.</summary>
+    private async Task<Guid> AddAsync(Guid tenantId, string scope, string key, CancellationToken ct)
+    {
         var now = _timeProvider.GetUtcNow();
         var record = new IdempotencyKeyRecord
         {
@@ -53,8 +75,11 @@ public sealed class IdempotencyKeyRepository(TaskFlowDbContextTrxn db, TimeProvi
     }
 
     /// <inheritdoc />
+    // Batched like the inbox purge (same size and ceiling), keyed on the unique EntityId: short statements keep SQL
+    // Server from escalating one large delete to a table lock that would block the create path's mapping inserts.
     public Task<int> PurgeAsync(DateTimeOffset cutoffUtc, CancellationToken ct = default) =>
-        db.IdempotencyKeys.Where(e => e.CreatedUtc < cutoffUtc).ExecuteDeleteAsync(ct);
+        db.IdempotencyKeys.ExecuteDeleteBatchedAsync(
+            e => e.CreatedUtc < cutoffUtc, e => e.EntityId, PurgeBatchSize, BatchedExecute.DefaultMaxBatches, ct);
 
     private Task<Guid?> FindAsync(Guid tenantId, string scope, string key, CancellationToken ct) =>
         db.IdempotencyKeys.AsNoTracking()

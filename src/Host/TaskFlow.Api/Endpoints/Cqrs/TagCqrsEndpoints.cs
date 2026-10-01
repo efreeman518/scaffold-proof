@@ -38,7 +38,8 @@ public static class TagCqrsEndpoints
             .Produces<DefaultResponse<TagDto>>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status409Conflict)
-            .WithSummary("Create a new Tag");
+            .WithSummary("Create a new Tag")
+            .WithIdempotencyKey<TagDto>(IdempotencyKeyFilter.TagCreateScope);
 
         g.MapPut("/{id:guid}", Update)
             .WithName("UpdateTag")

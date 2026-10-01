@@ -232,17 +232,21 @@ internal sealed class DeleteTaskItemHandler(
     public async Task<Result> HandleAsync(DeleteTaskItemCommand command, CancellationToken ct = default)
     {
         // If-Match: * re-reads and deletes again when it loses a race (D-073); a concrete version keeps its 412.
+        var saveSent = false;
         var (result, deleted) = await ConcurrencyRetry.RunAsync(repoTrxn, command.ExpectedVersion, nameof(TaskItem), command.Id,
-            attemptCt => DeleteOnceAsync(command, attemptCt), ct);
+            attemptCt => DeleteOnceAsync(command, saveSent, () => saveSent = true, attemptCt), ct);
         if (deleted) await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(TaskItem)), ct);
         return result;
     }
 
     /// <summary>One read, delete and save; <c>Deleted</c> is true when a row was removed.</summary>
-    private async Task<(Result Result, bool Deleted)> DeleteOnceAsync(DeleteTaskItemCommand command, CancellationToken ct)
+    private async Task<(Result Result, bool Deleted)> DeleteOnceAsync(
+        DeleteTaskItemCommand command, bool saveSent, Action markSaveSent, CancellationToken ct)
     {
         var entity = await repoTrxn.GetTaskItemAsync(TaskItemId.From(command.Id), ct: ct);
-        if (entity is null) return (Result.Success(), false);
+        // D-073: gone on a wildcard retry after an earlier attempt sent its save (a commit that landed but was reported
+        // failed, or a competing delete) counts as deleted, so the after-save effects run; gone on the first attempt does not.
+        if (entity is null) return (Result.Success(), saveSent);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
@@ -252,6 +256,7 @@ internal sealed class DeleteTaskItemHandler(
         ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
 
         repoTrxn.Delete(entity);
+        markSaveSent();
 
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error deleting TaskItem {Id}", ct, command.Id);
         return (save, save.IsSuccess);

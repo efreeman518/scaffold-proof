@@ -50,6 +50,54 @@ public class IdempotencyKeyEndpointTests
         Assert.AreEqual(created.Version, replayed.Version, "a replay must not bump the stored version");
     }
 
+    /// <summary>
+    /// Category, Tag and Attachment creates honor the key the same way as a task create: the same key twice creates one
+    /// row (201, then a 200 replay of it), and the key is scoped to its entity type. Before, the header was ignored and
+    /// the resend created a second row.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service, "categories")]
+    [DataRow(EndpointStyles.Cqrs, "categories")]
+    [DataRow(EndpointStyles.Service, "tags")]
+    [DataRow(EndpointStyles.Cqrs, "tags")]
+    [DataRow(EndpointStyles.Service, "attachments")]
+    [DataRow(EndpointStyles.Cqrs, "attachments")]
+    [TestMethod]
+    public async Task Given_SameKeyTwice_When_CreateCategoryTagOrAttachment_Then_CreatesOneAndReplaysIt(string style, string resource)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = _fixture.CreateClient(style);
+        var key = NewKey();
+        var suffix = Guid.NewGuid().ToString("N")[..12];
+        var ownerId = resource == "attachments" ? await CreateTaskAsync(client) : Guid.Empty;
+
+        async Task<HttpResponseMessage> CreateAsync() => resource switch
+        {
+            "categories" => await PostAsync(client, "/api/v1/categories", new CategoryDto { Name = $"Cat-{suffix}" }, key),
+            "tags" => await PostAsync(client, "/api/v1/tags", new TagDto { Name = $"Tag-{suffix}", Color = "#123456" }, key),
+            _ => await PostAsync(client, "/api/v1/attachments", new AttachmentDto
+            {
+                FileName = $"{suffix}.pdf",
+                ContentType = "application/pdf",
+                FileSizeBytes = 1024,
+                StorageUri = $"https://storage.example.com/{suffix}.pdf",
+                OwnerType = TaskFlow.Domain.Shared.Enums.AttachmentOwnerType.TaskItem,
+                OwnerId = ownerId
+            }, key)
+        };
+
+        using var first = await CreateAsync();
+        using var second = await CreateAsync();
+
+        Assert.AreEqual(HttpStatusCode.Created, first.StatusCode, await first.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        Assert.AreEqual(HttpStatusCode.OK, second.StatusCode, await second.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        using var created = System.Text.Json.JsonDocument.Parse(await first.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        using var replayed = System.Text.Json.JsonDocument.Parse(await second.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        Assert.AreEqual(
+            created.RootElement.GetProperty("item").GetProperty("id").GetGuid(),
+            replayed.RootElement.GetProperty("item").GetProperty("id").GetGuid());
+    }
+
     /// <summary>A different key is a different logical request, so it creates a second task.</summary>
     [TestCategory("Endpoint")]
     [DataRow(EndpointStyles.Service)]
@@ -92,6 +140,54 @@ public class IdempotencyKeyEndpointTests
         Assert.AreEqual(bodyId, (await withBodyId.ItemAsync<TaskItemDto>(TestContext.CancellationToken))!.Id);
         Assert.AreEqual(HttpStatusCode.Created, keyOnly.StatusCode, "the key was ignored, so it maps to a new id");
         Assert.AreNotEqual(bodyId, (await keyOnly.ItemAsync<TaskItemDto>(TestContext.CancellationToken))!.Id);
+    }
+
+    /// <summary>
+    /// An empty body id (<see cref="Guid.Empty"/>) is no id, so the header still maps: the same key twice creates one
+    /// task. Before, the header was ignored and the create answered 400 (GR-17 rejects an empty caller id).
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_EmptyBodyId_When_CreateTaskItemWithKeyTwice_Then_TheKeyMapsAndCreatesOne(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = _fixture.CreateClient(style);
+        var key = NewKey();
+        var title = $"EmptyId-{Guid.NewGuid():N}";
+
+        using var first = await PostAsync(client, "/api/v1/task-items", new TaskItemDto { Id = Guid.Empty, Title = title }, key);
+        using var second = await PostAsync(client, "/api/v1/task-items", new TaskItemDto { Id = Guid.Empty, Title = title }, key);
+
+        Assert.AreEqual(HttpStatusCode.Created, first.StatusCode, await first.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        Assert.AreEqual(HttpStatusCode.OK, second.StatusCode, "the empty id is no id, so the key replays the first create");
+        Assert.AreEqual(
+            (await first.ItemAsync<TaskItemDto>(TestContext.CancellationToken))!.Id,
+            (await second.ItemAsync<TaskItemDto>(TestContext.CancellationToken))!.Id);
+    }
+
+    /// <summary>
+    /// The same rule on a child add: an empty body id is no id, so the key maps and the resend replays the first
+    /// comment. Before, the header was ignored and the add answered 400 (an empty caller id is not a UUIDv7).
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_EmptyBodyId_When_AddCommentWithKeyTwice_Then_AddsOne(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = _fixture.CreateClient(style);
+        var taskId = await CreateTaskAsync(client);
+        var key = NewKey();
+
+        using var first = await PostAsync(client, $"/api/v1/task-items/{taskId}/comments", new CommentDto { Id = Guid.Empty, Body = "keyed" }, key);
+        using var second = await PostAsync(client, $"/api/v1/task-items/{taskId}/comments", new CommentDto { Id = Guid.Empty, Body = "keyed" }, key);
+
+        Assert.AreEqual(HttpStatusCode.Created, first.StatusCode, await first.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        Assert.AreEqual(HttpStatusCode.OK, second.StatusCode, await second.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        Assert.AreEqual(1, await CountAsync(client, $"/api/v1/task-items/{taskId}", "comments"));
     }
 
     /// <summary>
@@ -163,6 +259,34 @@ public class IdempotencyKeyEndpointTests
         var firstId = (await first.ItemAsync<CommentDto>(TestContext.CancellationToken))!.Id;
         Assert.AreEqual(firstId, (await second.ItemAsync<CommentDto>(TestContext.CancellationToken))!.Id);
         Assert.AreNotEqual(firstId, (await other.ItemAsync<CommentDto>(TestContext.CancellationToken))!.Id);
+        Assert.AreEqual(1, await CountAsync(client, $"/api/v1/task-items/{taskId}", "comments"));
+    }
+
+    /// <summary>
+    /// The child-add scope names the root by its parsed id, so one key sent with the task id in another accepted
+    /// format (no hyphens, upper case, braces) is the same logical request and adds one comment.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_SameKeyWithTheTaskIdInOtherFormats_When_AddComment_Then_AddsOne(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = _fixture.CreateClient(style);
+        var taskId = await CreateTaskAsync(client);
+        var key = NewKey();
+
+        using var first = await PostAsync(client, $"/api/v1/task-items/{taskId:D}/comments", new CommentDto { Body = "keyed" }, key);
+        Assert.AreEqual(HttpStatusCode.Created, first.StatusCode, await first.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        var firstId = (await first.ItemAsync<CommentDto>(TestContext.CancellationToken))!.Id;
+        foreach (var format in new[] { taskId.ToString("N"), taskId.ToString("D").ToUpperInvariant(), taskId.ToString("B") })
+        {
+            using var resend = await PostAsync(client, $"/api/v1/task-items/{format}/comments", new CommentDto { Body = "keyed" }, key);
+            Assert.AreEqual(HttpStatusCode.OK, resend.StatusCode, $"{format}: {await resend.Content.ReadAsStringAsync(TestContext.CancellationToken)}");
+            Assert.AreEqual(firstId, (await resend.ItemAsync<CommentDto>(TestContext.CancellationToken))!.Id, format);
+        }
+
         Assert.AreEqual(1, await CountAsync(client, $"/api/v1/task-items/{taskId}", "comments"));
     }
 

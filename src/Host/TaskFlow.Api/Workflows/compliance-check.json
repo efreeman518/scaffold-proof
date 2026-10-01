@@ -117,7 +117,6 @@
       "type": "integration",
       "label": "Mark task resolved",
       "intent": "Post a follow-up comment and tag the task as compliance-reviewed.",
-      "retryPolicy": { "maxAttempts": 3, "backoff": "Exponential" },
       "config": {
         "clientRef": "taskflow-api",
         "method": "POST",
@@ -132,7 +131,6 @@
       "type": "integration",
       "label": "Post reminder comment",
       "intent": "For tasks expiring soon, attach a reminder comment via the public API.",
-      "retryPolicy": { "maxAttempts": 3, "backoff": "Exponential" },
       "config": {
         "clientRef": "taskflow-api",
         "method": "POST",

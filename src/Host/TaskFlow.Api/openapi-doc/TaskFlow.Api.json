@@ -287,6 +287,18 @@
         ],
         "summary": "Create a new Category",
         "operationId": "CreateCategory",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Optional client key that makes a resent create or add replay its first result instead of writing again. Ignored when the body carries a non-empty id.",
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -638,6 +650,18 @@
         ],
         "summary": "Create a new Tag",
         "operationId": "CreateTag",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Optional client key that makes a resent create or add replay its first result instead of writing again. Ignored when the body carries a non-empty id.",
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -1076,6 +1100,18 @@
         ],
         "summary": "Create a new TaskItem (optional caller-supplied UUIDv7 id makes it idempotent)",
         "operationId": "CreateTaskItem",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Optional client key that makes a resent create or add replay its first result instead of writing again. Ignored when the body carries a non-empty id.",
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -1161,6 +1197,16 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Optional client key that makes a resent create or add replay its first result instead of writing again. Ignored when the body carries a non-empty id.",
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
             }
           }
         ],
@@ -1438,6 +1484,16 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Optional client key that makes a resent create or add replay its first result instead of writing again. Ignored when the body carries a non-empty id.",
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
             }
           }
         ],
@@ -2365,6 +2421,18 @@
         ],
         "summary": "Create a new Attachment",
         "operationId": "CreateAttachment",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Optional client key that makes a resent create or add replay its first result instead of writing again. Ignored when the body carries a non-empty id.",
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {

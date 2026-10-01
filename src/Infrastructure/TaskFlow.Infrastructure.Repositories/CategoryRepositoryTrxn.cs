@@ -51,7 +51,9 @@ public class CategoryRepositoryTrxn(TaskFlowDbContextTrxn db)
         if (DB.Database.IsRelational())
         {
             await tasks
-                .ExecuteUpdateAsync(s => s.SetProperty(t => t.CategoryId, (CategoryId?)null), ct)
+                // D-073: the detach moves each task's Version, so a PUT holding the task's pre-delete ETag answers 412
+                // instead of restoring the dangling category id.
+                .ExecuteUpdateAsync(s => s.SetProperty(t => t.CategoryId, (CategoryId?)null).StampModified(DB.Clock.GetUtcNow()), ct)
                 .ConfigureAwait(ConfigureAwaitOptions.None);
         }
         else

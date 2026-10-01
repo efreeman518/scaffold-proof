@@ -12,6 +12,7 @@ using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Infrastructure.Repositories;
 using Test.Integration.Infrastructure;
 using Test.Support;
+using Test.Support.Builders;
 
 namespace Test.Integration;
 
@@ -53,13 +54,9 @@ public sealed class IdempotencyKeyIntegrationTests
         _factory = new FlowEngineWorkflowApiFactory(
             _connectionString,
             _ => "{}",
-            configureServices: services =>
-            {
-                // The host's repository, on a context that carries the race interceptor; disarmed it is a no-op.
-                services.AddScoped(_ => new RaceContext(DbContainerFixture.CreateTrxnContext(_connectionString, Race)));
-                services.AddScoped<IIdempotencyKeyRepository>(sp =>
-                    new IdempotencyKeyRepository(sp.GetRequiredService<RaceContext>().Db));
-            });
+            // The race interceptor joins the host's own write context, so the HTTP cases run the real path: the filter's
+            // mapping save and the handler's write share the request's scoped, tenant-filtered context. Disarmed it is a no-op.
+            configureServices: services => services.ConfigureDbContext<TaskFlowDbContextTrxn>(options => options.AddInterceptors(Race)));
     }
 
     /// <summary>Disposes the shared API host.</summary>
@@ -88,6 +85,29 @@ public sealed class IdempotencyKeyIntegrationTests
         Assert.AreEqual(7, first.Version, "the mapped id is a UUIDv7 (GR-17)");
         Assert.AreEqual(4, new[] { first, otherKey, otherTenant, otherScope }.Distinct().Count());
         Assert.AreEqual(1, await CountMappingsAsync(TenantId, Scope, key, ct));
+    }
+
+    /// <summary>
+    /// Keys are compared ordinally on both providers: "abc" and "ABC" map to two ids and store two rows. SQL Server's
+    /// default collation is case-insensitive, so without the binary key collation the second lookup found the first
+    /// row (and its insert would have failed on the unique index).
+    /// </summary>
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task GetOrAdd_KeysThatDifferOnlyByCase_AreDistinctKeys()
+    {
+        var ct = TestContext.CancellationToken;
+        var tenant = Guid.CreateVersion7();
+
+        var lower = await WithRepositoryAsync(r => r.GetOrAddEntityIdAsync(tenant, Scope, "abc", ct));
+        var upper = await WithRepositoryAsync(r => r.GetOrAddEntityIdAsync(tenant, Scope, "ABC", ct));
+        var scopeUpper = await WithRepositoryAsync(r => r.GetOrAddEntityIdAsync(tenant, Scope.ToUpperInvariant(), "abc", ct));
+
+        Assert.AreNotEqual(lower, upper, "a key that differs only by case is another key");
+        Assert.AreNotEqual(lower, scopeUpper, "a scope that differs only by case is another scope");
+        Assert.AreEqual(lower, await WithRepositoryAsync(r => r.GetOrAddEntityIdAsync(tenant, Scope, "abc", ct)));
+        await using var verify = DbContainerFixture.CreateTrxnContext(_connectionString);
+        Assert.AreEqual(3, await verify.IdempotencyKeys.CountAsync(m => m.TenantId == tenant, ct));
     }
 
     /// <summary>
@@ -131,6 +151,33 @@ public sealed class IdempotencyKeyIntegrationTests
         await using var verify = DbContainerFixture.CreateTrxnContext(_connectionString);
         var left = await verify.IdempotencyKeys.AsNoTracking().Where(m => m.TenantId == tenant).Select(m => m.Key).ToListAsync(ct);
         CollectionAssert.AreEquivalent(new[] { "recent" }, left);
+    }
+
+    /// <summary>
+    /// The purge deletes in bounded batches (like the inbox purge), so a large sweep is several short statements rather
+    /// than one that could escalate to a table lock and block create-path inserts.
+    /// </summary>
+    [TestMethod]
+    [Timeout(180000, CooperativeCancellation = true)]
+    public async Task Purge_DeletesInBatchesOfAtMostTheBatchSize()
+    {
+        var ct = TestContext.CancellationToken;
+        var tenant = Guid.CreateVersion7();
+        var old = DateTimeOffset.UtcNow.AddDays(-8);
+        await using (var seed = DbContainerFixture.CreateTrxnContext(_connectionString))
+        {
+            seed.IdempotencyKeys.AddRange(Enumerable.Range(0, (2 * IdempotencyKeyRepository.PurgeBatchSize) + 1)
+                .Select(i => Mapping(tenant, $"bulk-{i}", old)));
+            await seed.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct);
+        }
+        var deletes = new DeleteCounter();
+
+        var purged = await WithRepositoryAsync(r => r.PurgeAsync(old.AddDays(1), ct), deletes);
+
+        Assert.IsGreaterThanOrEqualTo((2 * IdempotencyKeyRepository.PurgeBatchSize) + 1, purged);
+        Assert.IsGreaterThanOrEqualTo(3, deletes.Statements, "2001 rows in batches of 1000 take at least three statements");
+        await using var verify = DbContainerFixture.CreateTrxnContext(_connectionString);
+        Assert.AreEqual(0, await verify.IdempotencyKeys.CountAsync(m => m.TenantId == tenant, ct));
     }
 
     /// <summary>Through the API: the same key twice creates one task row and replays it; another key creates a second.</summary>
@@ -200,6 +247,64 @@ public sealed class IdempotencyKeyIntegrationTests
         Assert.AreEqual(1, await CountTasksAsync(title, ct));
     }
 
+    /// <summary>
+    /// The real host path for a child add, on the request's one scoped write context: the filter's mapping insert loses
+    /// to a concurrent duplicate committed first (the unique index fails the save), the existence read hands it the
+    /// winner's id, and the handler's <c>RetryOnConcurrencyAsync</c> then starts on that same context, which refuses to
+    /// run over pending changes; the failed mapping row must not still be tracked. The add creates the winner's comment
+    /// and the resend replays it.
+    /// </summary>
+    [TestMethod]
+    [Timeout(180000, CooperativeCancellation = true)]
+    public async Task Post_ConcurrentSameKeyComment_OnTheHostsScopedContext_AddsOneComment()
+    {
+        var ct = TestContext.CancellationToken;
+        using var client = _factory!.CreateClient();
+        var (_, taskId) = await CreateTaskAsync(client, $"Root-{Guid.NewGuid():N}", key: null, ct);
+        var key = NewKey();
+        var winner = Race.Arm(TenantId, $"task-item.comment.add:{taskId:D}", key);
+
+        using var first = await PostAsync(client, $"/api/v1/task-items/{taskId}/comments", new { item = new { body = "raced" } }, key, ct);
+        using var resend = await PostAsync(client, $"/api/v1/task-items/{taskId}/comments", new { item = new { body = "raced" } }, key, ct);
+
+        Assert.IsTrue(Race.Ran, "the race must have been staged inside the host's mapping save");
+        Assert.AreEqual(HttpStatusCode.Created, first.StatusCode, await first.Content.ReadAsStringAsync(ct));
+        Assert.AreEqual(HttpStatusCode.OK, resend.StatusCode, await resend.Content.ReadAsStringAsync(ct));
+        await using var verify = DbContainerFixture.CreateTrxnContext(_connectionString);
+        var comments = await verify.Comments.IgnoreQueryFilters().Where(c => c.TaskItemId == TaskItemId.From(taskId))
+            .Select(c => c.Id).ToListAsync(ct);
+        Assert.HasCount(1, comments);
+        Assert.AreEqual(winner, comments[0].Value, "the losing mapping insert reuses the competitor's id");
+    }
+
+    /// <summary>
+    /// A child add's key is mapped only for a task the caller's tenant can see. A key sent to a task that does not exist,
+    /// or exists in another tenant, stores no mapping and the add answers its usual 404. Before, both stored a mapping.
+    /// </summary>
+    [TestMethod]
+    [Timeout(180000, CooperativeCancellation = true)]
+    public async Task Post_ChildAddWithKey_ToAMissingOrForeignTask_Returns404_AndStoresNoMapping()
+    {
+        var ct = TestContext.CancellationToken;
+        using var client = _factory!.CreateClient();
+        var foreignTask = new TaskItemBuilder().WithTenantId(Guid.CreateVersion7()).WithTitle($"Foreign-{Guid.NewGuid():N}").Build();
+        await using (var seed = DbContainerFixture.CreateTrxnContext(_connectionString))
+        {
+            seed.TaskItems.Add(foreignTask);
+            await seed.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct);
+        }
+
+        foreach (var taskId in new[] { Guid.CreateVersion7(), foreignTask.Id.Value })
+        {
+            var key = NewKey();
+            using var response = await PostAsync(client, $"/api/v1/task-items/{taskId}/comments", new { item = new { body = "keyed" } }, key, ct);
+
+            Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode, await response.Content.ReadAsStringAsync(ct));
+            await using var verify = DbContainerFixture.CreateTrxnContext(_connectionString);
+            Assert.AreEqual(0, await verify.IdempotencyKeys.CountAsync(m => m.Key == key, ct), $"no mapping for task {taskId}");
+        }
+    }
+
     private static string NewKey() => $"key-{Guid.NewGuid():N}";
 
     private static IdempotencyKeyRecord Mapping(Guid tenant, string key, DateTimeOffset createdUtc) => new()
@@ -245,11 +350,17 @@ public sealed class IdempotencyKeyIntegrationTests
         return (response.StatusCode, payload.RootElement.GetProperty("item").GetProperty("id").GetGuid());
     }
 
-    /// <summary>Scoped owner of the raced context, so the host's request scope disposes it.</summary>
-    private sealed class RaceContext(TaskFlowDbContextTrxn db) : IAsyncDisposable
+    /// <summary>Counts the DELETE statements a context sends.</summary>
+    private sealed class DeleteCounter : DbCommandInterceptor
     {
-        public TaskFlowDbContextTrxn Db { get; } = db;
-        public ValueTask DisposeAsync() => Db.DisposeAsync();
+        public int Statements { get; private set; }
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            System.Data.Common.DbCommand command, CommandEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("DELETE", StringComparison.OrdinalIgnoreCase)) Statements++;
+            return ValueTask.FromResult(result);
+        }
     }
 
     /// <summary>

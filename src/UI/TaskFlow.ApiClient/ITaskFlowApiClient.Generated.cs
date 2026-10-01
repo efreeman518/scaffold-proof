@@ -132,6 +132,7 @@ namespace TaskFlow.ApiClient
         Task DeleteCategoryAsync(System.Guid id, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
 
         /// <summary>Create a new Category</summary>
+        /// <param name="idempotency_Key">Optional client key that makes a resent create or add replay its first result instead of writing again. Ignored when the body carries a non-empty id.</param>
         /// <param name="body">body parameter</param>
         /// <param name="cancellationToken">The cancellation token to cancel the request.</param>
         /// <returns>OK</returns>
@@ -265,6 +266,7 @@ namespace TaskFlow.ApiClient
         Task DeleteTagAsync(System.Guid id, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
 
         /// <summary>Create a new Tag</summary>
+        /// <param name="idempotency_Key">Optional client key that makes a resent create or add replay its first result instead of writing again. Ignored when the body carries a non-empty id.</param>
         /// <param name="body">body parameter</param>
         /// <param name="cancellationToken">The cancellation token to cancel the request.</param>
         /// <returns>OK</returns>
@@ -432,6 +434,7 @@ namespace TaskFlow.ApiClient
         Task DeleteTaskItemAsync(System.Guid id, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
 
         /// <summary>Create a new TaskItem (optional caller-supplied UUIDv7 id makes it idempotent)</summary>
+        /// <param name="idempotency_Key">Optional client key that makes a resent create or add replay its first result instead of writing again. Ignored when the body carries a non-empty id.</param>
         /// <param name="body">body parameter</param>
         /// <param name="cancellationToken">The cancellation token to cancel the request.</param>
         /// <returns>OK</returns>
@@ -458,6 +461,7 @@ namespace TaskFlow.ApiClient
 
         /// <summary>Add a Comment to a TaskItem</summary>
         /// <param name="id">id parameter</param>
+        /// <param name="idempotency_Key">Optional client key that makes a resent create or add replay its first result instead of writing again. Ignored when the body carries a non-empty id.</param>
         /// <param name="body">body parameter</param>
         /// <param name="cancellationToken">The cancellation token to cancel the request.</param>
         /// <returns>OK</returns>
@@ -555,6 +559,7 @@ namespace TaskFlow.ApiClient
 
         /// <summary>Add a ChecklistItem to a TaskItem</summary>
         /// <param name="id">id parameter</param>
+        /// <param name="idempotency_Key">Optional client key that makes a resent create or add replay its first result instead of writing again. Ignored when the body carries a non-empty id.</param>
         /// <param name="body">body parameter</param>
         /// <param name="cancellationToken">The cancellation token to cancel the request.</param>
         /// <returns>OK</returns>
@@ -816,6 +821,7 @@ namespace TaskFlow.ApiClient
         Task DeleteAttachmentAsync(System.Guid id, [Header("If-Match")] string if_Match, CancellationToken cancellationToken = default);
 
         /// <summary>Create a new Attachment</summary>
+        /// <param name="idempotency_Key">Optional client key that makes a resent create or add replay its first result instead of writing again. Ignored when the body carries a non-empty id.</param>
         /// <param name="body">body parameter</param>
         /// <param name="cancellationToken">The cancellation token to cancel the request.</param>
         /// <returns>OK</returns>

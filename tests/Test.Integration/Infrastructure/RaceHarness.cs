@@ -30,6 +30,9 @@ internal static class RaceHarness
     internal static ITenantBoundaryValidator Boundary => Services.GetRequiredService<ITenantBoundaryValidator>();
     internal static ITypedCache Cache => Services.GetRequiredService<ITypedCache>();
 
+    /// <summary>A cache of its own, so a test can observe an eviction no other test triggered.</summary>
+    internal static ITypedCache NewCache() => BuildServices().GetRequiredService<ITypedCache>();
+
     internal static RequestContext<string, Guid?> RequestContext() =>
         new("race-test", "race-user", TenantGuid, [AppConstants.ROLE_TENANT_MEMBER]);
 

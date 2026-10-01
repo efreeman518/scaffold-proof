@@ -13,7 +13,7 @@ using TaskFlow.Infrastructure.Data;
 namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.TaskFlow
 {
     [DbContext(typeof(TaskFlowDbContextTrxn))]
-    [Migration("20261001195628_InitialCreate")]
+    [Migration("20261001210623_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />

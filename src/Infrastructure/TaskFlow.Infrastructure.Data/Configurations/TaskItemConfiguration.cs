@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
+using TaskFlow.Domain.Shared.Constants;
 
 namespace TaskFlow.Infrastructure.Data.Configurations;
 
@@ -27,8 +28,8 @@ public class TaskItemConfiguration(IColumnEncryptor encryptor) : TenantEntityTyp
         builder.Property(e => e.Priority).HasConversion<int>();
         builder.Property(e => e.Status).HasConversion<int>();
         builder.Property(e => e.Features).HasConversion<int>();
-        builder.Property(e => e.EstimatedEffort).HasPrecision(10, 2);
-        builder.Property(e => e.ActualEffort).HasPrecision(10, 2);
+        builder.Property(e => e.EstimatedEffort).HasPrecision(10, DomainConstants.EFFORT_SCALE);
+        builder.Property(e => e.ActualEffort).HasPrecision(10, DomainConstants.EFFORT_SCALE);
 
         // D-023: application-layer AES-256-GCM on both providers. Ciphertext = nonce 12 + plaintext (<= 200) + tag 16,
         // stored as varbinary(256) / bytea. Both columns are randomized; SecureDeterministic is equality-queryable

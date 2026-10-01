@@ -245,8 +245,9 @@ internal sealed class DeleteAttachmentHandler(
     {
         // If-Match: * re-reads and deletes again when it loses a race (D-073); a concrete version keeps its 412. The
         // blob delete and cache eviction are outside effects, so they run once, after the save that removed the row.
+        Attachment? sent = null;
         var (result, entity) = await ConcurrencyRetry.RunAsync(repoTrxn, command.ExpectedVersion, nameof(Attachment), command.Id,
-            attemptCt => DeleteOnceAsync(command, attemptCt), ct);
+            attemptCt => DeleteOnceAsync(command, sent, e => sent = e, attemptCt), ct);
         if (entity is null) return result;
 
         if (blobStorage is not null && !string.IsNullOrEmpty(entity.StorageUri))
@@ -267,10 +268,14 @@ internal sealed class DeleteAttachmentHandler(
     }
 
     /// <summary>One read, delete and save; <c>Deleted</c> is the removed row, if any.</summary>
-    private async Task<(Result Result, Attachment? Deleted)> DeleteOnceAsync(DeleteAttachmentCommand command, CancellationToken ct)
+    private async Task<(Result Result, Attachment? Deleted)> DeleteOnceAsync(
+        DeleteAttachmentCommand command, Attachment? sent, Action<Attachment> markSaveSent, CancellationToken ct)
     {
         var entity = await repoTrxn.GetAttachmentAsync(AttachmentId.From(command.Id), ct);
-        if (entity is null) return (Result.Success(), null);
+        // D-073: gone on a wildcard retry after an earlier attempt sent its save (a commit that landed but was reported
+        // failed, or a competing delete) returns that attempt's row, so the blob delete still runs; gone on the first
+        // attempt returns none.
+        if (entity is null) return (Result.Success(), sent);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
@@ -280,6 +285,7 @@ internal sealed class DeleteAttachmentHandler(
         ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(Attachment), entity.Id.Value);
 
         repoTrxn.Delete(entity);
+        markSaveSent(entity);
 
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error deleting Attachment {Id}", ct, command.Id);
         return (save, save.IsSuccess ? entity : null);

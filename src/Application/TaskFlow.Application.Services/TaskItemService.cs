@@ -304,19 +304,23 @@ internal class TaskItemService(
     public async Task<Result> DeleteAsync(Guid id, long? expectedVersion, CancellationToken ct = default)
     {
         // If-Match: * re-reads and deletes again when it loses a race (D-073); a concrete version keeps its 412.
+        var saveSent = false;
         var (result, deleted) = await ConcurrencyRetry.RunAsync(repoTrxn, expectedVersion, nameof(TaskItem), id,
-            attemptCt => DeleteOnceAsync(id, expectedVersion, attemptCt), ct);
+            attemptCt => DeleteOnceAsync(id, expectedVersion, saveSent, () => saveSent = true, attemptCt), ct);
         if (deleted) await InvalidateTaskSnapshotsAsync(ct);
         return result;
     }
 
     /// <summary>One read, delete and save of <see cref="DeleteAsync"/>; <c>Deleted</c> is true when a row was removed.</summary>
-    private async Task<(Result Result, bool Deleted)> DeleteOnceAsync(Guid id, long? expectedVersion, CancellationToken ct)
+    private async Task<(Result Result, bool Deleted)> DeleteOnceAsync(
+        Guid id, long? expectedVersion, bool saveSent, Action markSaveSent, CancellationToken ct)
     {
         var entity = await repoTrxn.GetTaskItemAsync(TaskItemId.From(id), ct: ct);
         // Deleting an id that is already gone stays 204: the caller's desired state is reached, and a
         // 412 here would make a safe retry look like a conflict.
-        if (entity == null) return (Result.Success(), false);
+        // D-073: gone on a wildcard retry after an earlier attempt sent its save (a commit that landed but was reported
+        // failed, or a competing delete) counts as deleted, so the after-save effects run; gone on the first attempt does not.
+        if (entity == null) return (Result.Success(), saveSent);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             RequestTenantId, RequestRoles, entity.TenantId.Value,
@@ -326,6 +330,7 @@ internal class TaskItemService(
         ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
 
         repoTrxn.Delete(entity);
+        markSaveSent();
 
         try
         {

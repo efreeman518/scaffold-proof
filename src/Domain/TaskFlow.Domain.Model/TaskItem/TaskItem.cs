@@ -130,7 +130,7 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
         {
             RecurrenceTemplateId = templateId,
             OccurrenceUtc = occurrenceUtc,
-            DueDate = occurrenceUtc
+            DueDate = StoredPrecision.Timestamp(occurrenceUtc)
         };
         return entity.Valid();
     }
@@ -157,8 +157,8 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
         if (description is not null) Description = description;
         if (priority.HasValue) Priority = priority.Value;
         if (features.HasValue) Features = features.Value;
-        if (estimatedEffort.HasValue) EstimatedEffort = estimatedEffort.Value;
-        if (actualEffort.HasValue) ActualEffort = actualEffort.Value;
+        if (estimatedEffort.HasValue) EstimatedEffort = StoredPrecision.Effort(estimatedEffort);
+        if (actualEffort.HasValue) ActualEffort = StoredPrecision.Effort(actualEffort);
         if (categoryId.HasValue) CategoryId = categoryId.Value.Value == Guid.Empty ? null : categoryId.Value;
         if (parentTaskItemId.HasValue) ParentTaskItemId = parentTaskItemId.Value.Value == Guid.Empty ? null : parentTaskItemId.Value;
         if (secureDeterministic is not null) SecureDeterministic = secureDeterministic;
@@ -326,8 +326,8 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
     /// </summary>
     public void UpdateDateRange(DateTimeOffset? startDate, DateTimeOffset? dueDate)
     {
-        StartDate = startDate;
-        DueDate = dueDate;
+        StartDate = StoredPrecision.Timestamp(startDate);
+        DueDate = StoredPrecision.Timestamp(dueDate);
     }
 
     /// <summary>
