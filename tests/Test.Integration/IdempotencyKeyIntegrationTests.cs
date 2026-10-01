@@ -12,6 +12,7 @@ using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Infrastructure.Repositories;
 using Test.Integration.Infrastructure;
 using Test.Support;
+using Test.Support.Builders;
 
 namespace Test.Integration;
 
@@ -53,13 +54,9 @@ public sealed class IdempotencyKeyIntegrationTests
         _factory = new FlowEngineWorkflowApiFactory(
             _connectionString,
             _ => "{}",
-            configureServices: services =>
-            {
-                // The host's repository, on a context that carries the race interceptor; disarmed it is a no-op.
-                services.AddScoped(_ => new RaceContext(DbContainerFixture.CreateTrxnContext(_connectionString, Race)));
-                services.AddScoped<IIdempotencyKeyRepository>(sp =>
-                    new IdempotencyKeyRepository(sp.GetRequiredService<RaceContext>().Db));
-            });
+            // The race interceptor joins the host's own write context, so the HTTP cases run the real path: the filter's
+            // mapping save and the handler's write share the request's scoped, tenant-filtered context. Disarmed it is a no-op.
+            configureServices: services => services.ConfigureDbContext<TaskFlowDbContextTrxn>(options => options.AddInterceptors(Race)));
     }
 
     /// <summary>Disposes the shared API host.</summary>
@@ -250,6 +247,34 @@ public sealed class IdempotencyKeyIntegrationTests
         Assert.AreEqual(1, await CountTasksAsync(title, ct));
     }
 
+    /// <summary>
+    /// A child add's key is mapped only for a task the caller's tenant can see. A key sent to a task that does not exist,
+    /// or exists in another tenant, stores no mapping and the add answers its usual 404. Before, both stored a mapping.
+    /// </summary>
+    [TestMethod]
+    [Timeout(180000, CooperativeCancellation = true)]
+    public async Task Post_ChildAddWithKey_ToAMissingOrForeignTask_Returns404_AndStoresNoMapping()
+    {
+        var ct = TestContext.CancellationToken;
+        using var client = _factory!.CreateClient();
+        var foreignTask = new TaskItemBuilder().WithTenantId(Guid.CreateVersion7()).WithTitle($"Foreign-{Guid.NewGuid():N}").Build();
+        await using (var seed = DbContainerFixture.CreateTrxnContext(_connectionString))
+        {
+            seed.TaskItems.Add(foreignTask);
+            await seed.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct);
+        }
+
+        foreach (var taskId in new[] { Guid.CreateVersion7(), foreignTask.Id.Value })
+        {
+            var key = NewKey();
+            using var response = await PostAsync(client, $"/api/v1/task-items/{taskId}/comments", new { item = new { body = "keyed" } }, key, ct);
+
+            Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode, await response.Content.ReadAsStringAsync(ct));
+            await using var verify = DbContainerFixture.CreateTrxnContext(_connectionString);
+            Assert.AreEqual(0, await verify.IdempotencyKeys.CountAsync(m => m.Key == key, ct), $"no mapping for task {taskId}");
+        }
+    }
+
     private static string NewKey() => $"key-{Guid.NewGuid():N}";
 
     private static IdempotencyKeyRecord Mapping(Guid tenant, string key, DateTimeOffset createdUtc) => new()
@@ -306,13 +331,6 @@ public sealed class IdempotencyKeyIntegrationTests
             if (command.CommandText.Contains("DELETE", StringComparison.OrdinalIgnoreCase)) Statements++;
             return ValueTask.FromResult(result);
         }
-    }
-
-    /// <summary>Scoped owner of the raced context, so the host's request scope disposes it.</summary>
-    private sealed class RaceContext(TaskFlowDbContextTrxn db) : IAsyncDisposable
-    {
-        public TaskFlowDbContextTrxn Db { get; } = db;
-        public ValueTask DisposeAsync() => Db.DisposeAsync();
     }
 
     /// <summary>

@@ -40,7 +40,7 @@ public static class TaskItemCqrsEndpoints
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status409Conflict)
             .WithSummary("Create a new TaskItem (optional caller-supplied UUIDv7 id makes it idempotent)")
-            .WithIdempotencyKey<TaskItemDto>(_ => IdempotencyKeyFilter.TaskItemCreateScope);
+            .WithIdempotencyKey<TaskItemDto>(IdempotencyKeyFilter.TaskItemCreateScope);
 
         g.MapPut("/{id:guid}", Update)
             .WithName("UpdateTaskItem")
@@ -79,7 +79,7 @@ public static class TaskItemCqrsEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .WithSummary("Add a Comment to a TaskItem")
-            .WithIdempotencyKey<CommentDto>(http => IdempotencyKeyFilter.TaskItemChildScope(http, "comment"));
+            .WithTaskItemChildIdempotencyKey<CommentDto>("comment");
 
         g.MapPut("/{id:guid}/comments/{commentId:guid}", UpdateComment)
             .WithName("UpdateTaskItemComment")
@@ -104,7 +104,7 @@ public static class TaskItemCqrsEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .WithSummary("Add a ChecklistItem to a TaskItem")
-            .WithIdempotencyKey<ChecklistItemDto>(http => IdempotencyKeyFilter.TaskItemChildScope(http, "checklist"));
+            .WithTaskItemChildIdempotencyKey<ChecklistItemDto>("checklist");
 
         g.MapPut("/{id:guid}/checklist-items/{checklistItemId:guid}", UpdateChecklistItem)
             .WithName("UpdateTaskItemChecklistItem")

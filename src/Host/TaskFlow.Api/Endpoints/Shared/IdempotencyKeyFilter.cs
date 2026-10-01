@@ -25,18 +25,38 @@ internal static class IdempotencyKeyFilter
     /// Child-add scopes carry the root id, so one key used on two tasks maps to two different children. The id is the
     /// parsed route value in "D" format, so the same task named in another accepted format is the same scope.
     /// </summary>
-    public static string TaskItemChildScope(HttpContext httpContext, string child) =>
-        $"task-item.{child}.add:{RouteTaskItemId(httpContext).ToString("D", CultureInfo.InvariantCulture)}";
+    public static string TaskItemChildScope(Guid taskItemId, string child) =>
+        $"task-item.{child}.add:{taskItemId.ToString("D", CultureInfo.InvariantCulture)}";
 
     /// <summary>The <c>{id:guid}</c> route value; the route constraint has already accepted it as a Guid.</summary>
     private static Guid RouteTaskItemId(HttpContext httpContext) =>
         Guid.Parse(Convert.ToString(httpContext.GetRouteValue("id"), CultureInfo.InvariantCulture)!, CultureInfo.InvariantCulture);
 
+    /// <summary>Maps the key of a create whose scope is fixed (<paramref name="scope"/>).</summary>
+    public static RouteHandlerBuilder WithIdempotencyKey<TDto>(this RouteHandlerBuilder builder, string scope)
+        where TDto : EntityBaseDto =>
+        builder.WithKeyMapping<TDto>(async (repository, tenantId, _, key, ct) =>
+            await repository.GetOrAddEntityIdAsync(tenantId, scope, key, ct));
+
+    /// <summary>
+    /// Maps the key of a child add on the <c>{id}</c> task. The mapping is stored only when that task exists and the
+    /// caller's tenant can see it; otherwise nothing is stored and the handler answers its usual 404.
+    /// </summary>
+    public static RouteHandlerBuilder WithTaskItemChildIdempotencyKey<TDto>(this RouteHandlerBuilder builder, string child)
+        where TDto : EntityBaseDto =>
+        builder.WithKeyMapping<TDto>((repository, tenantId, httpContext, key, ct) =>
+        {
+            var taskItemId = RouteTaskItemId(httpContext);
+            return repository.GetOrAddChildEntityIdAsync(tenantId, TaskItemChildScope(taskItemId, child), key, taskItemId, ct);
+        });
+
     /// <summary>
     /// Applies the mapping to a route whose body is a <see cref="DefaultRequest{T}"/> of <typeparamref name="TDto"/>.
-    /// The routes already declare their 400 (ProducesValidationProblem), so the OpenAPI document is unchanged.
+    /// The routes already declare their 400 (ProducesValidationProblem).
     /// </summary>
-    public static RouteHandlerBuilder WithIdempotencyKey<TDto>(this RouteHandlerBuilder builder, Func<HttpContext, string> scope)
+    private static RouteHandlerBuilder WithKeyMapping<TDto>(
+        this RouteHandlerBuilder builder,
+        Func<IIdempotencyKeyRepository, Guid, HttpContext, string, CancellationToken, Task<Guid?>> map)
         where TDto : EntityBaseDto =>
         builder
             .AddEndpointFilter(async (context, next) =>
@@ -53,8 +73,9 @@ internal static class IdempotencyKeyFilter
 
                 var services = context.HttpContext.RequestServices;
                 var tenantId = services.GetRequiredService<IRequestContext<string, Guid?>>().TenantId ?? Guid.Empty;
-                item.Id = await services.GetRequiredService<IIdempotencyKeyRepository>().GetOrAddEntityIdAsync(
-                    tenantId, scope(context.HttpContext), headers[0]!, context.HttpContext.RequestAborted);
+                if (await map(services.GetRequiredService<IIdempotencyKeyRepository>(), tenantId, context.HttpContext,
+                        headers[0]!, context.HttpContext.RequestAborted) is Guid mapped)
+                    item.Id = mapped;
                 return await next(context);
             });
 }

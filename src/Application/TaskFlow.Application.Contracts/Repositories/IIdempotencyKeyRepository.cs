@@ -13,6 +13,13 @@ public interface IIdempotencyKeyRepository
     /// </summary>
     Task<Guid> GetOrAddEntityIdAsync(Guid tenantId, string scope, string key, CancellationToken ct = default);
 
+    /// <summary>
+    /// <see cref="GetOrAddEntityIdAsync"/> for a child add on <paramref name="taskItemId"/>: a new mapping is stored only
+    /// when that task exists and the context tenant can see it (a tenant-filtered existence read before the insert).
+    /// Returns <c>null</c>, and stores nothing, when it cannot, so the add answers its usual 404.
+    /// </summary>
+    Task<Guid?> GetOrAddChildEntityIdAsync(Guid tenantId, string scope, string key, Guid taskItemId, CancellationToken ct = default);
+
     /// <summary>Deletes mappings created before <paramref name="cutoffUtc"/>. Returns the number of rows deleted.</summary>
     Task<int> PurgeAsync(DateTimeOffset cutoffUtc, CancellationToken ct = default);
 }

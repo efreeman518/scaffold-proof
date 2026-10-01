@@ -1,6 +1,7 @@
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Application.Contracts.Repositories;
+using TaskFlow.Domain.Shared;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Operational;
 
@@ -24,7 +25,25 @@ public sealed class IdempotencyKeyRepository(TaskFlowDbContextTrxn db, TimeProvi
         // A retry finds its mapping here; only a first attempt or a concurrent duplicate inserts.
         if (await FindAsync(tenantId, scope, key, ct).ConfigureAwait(ConfigureAwaitOptions.None) is Guid stored)
             return stored;
+        return await AddAsync(tenantId, scope, key, ct).ConfigureAwait(ConfigureAwaitOptions.None);
+    }
 
+    /// <inheritdoc />
+    public async Task<Guid?> GetOrAddChildEntityIdAsync(
+        Guid tenantId, string scope, string key, Guid taskItemId, CancellationToken ct = default)
+    {
+        if (await FindAsync(tenantId, scope, key, ct).ConfigureAwait(ConfigureAwaitOptions.None) is Guid stored)
+            return stored;
+        // The tenant query filter scopes the read: a task in another tenant, or none, stores no mapping.
+        var id = TaskItemId.From(taskItemId);
+        if (!await db.TaskItems.AsNoTracking().AnyAsync(t => t.Id == id, ct).ConfigureAwait(ConfigureAwaitOptions.None))
+            return null;
+        return await AddAsync(tenantId, scope, key, ct).ConfigureAwait(ConfigureAwaitOptions.None);
+    }
+
+    /// <summary>Stores a new mapping, or returns a concurrent duplicate's id when it stored the key first.</summary>
+    private async Task<Guid> AddAsync(Guid tenantId, string scope, string key, CancellationToken ct)
+    {
         var now = _timeProvider.GetUtcNow();
         var record = new IdempotencyKeyRecord
         {
