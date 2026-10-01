@@ -1397,7 +1397,10 @@ export interface operations {
     CreateCategory: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional client key that makes a resent create or add replay its first result instead of writing again. Ignored when the body carries a non-empty id. */
+                "Idempotency-Key"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -1639,7 +1642,10 @@ export interface operations {
     CreateTag: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional client key that makes a resent create or add replay its first result instead of writing again. Ignored when the body carries a non-empty id. */
+                "Idempotency-Key"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -1946,7 +1952,10 @@ export interface operations {
     CreateTaskItem: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional client key that makes a resent create or add replay its first result instead of writing again. Ignored when the body carries a non-empty id. */
+                "Idempotency-Key"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -2001,7 +2010,10 @@ export interface operations {
     AddTaskItemComment: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional client key that makes a resent create or add replay its first result instead of writing again. Ignored when the body carries a non-empty id. */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 id: string;
             };
@@ -2186,7 +2198,10 @@ export interface operations {
     AddTaskItemChecklistItem: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional client key that makes a resent create or add replay its first result instead of writing again. Ignored when the body carries a non-empty id. */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 id: string;
             };
@@ -2663,7 +2678,10 @@ export interface operations {
     CreateAttachment: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional client key that makes a resent create or add replay its first result instead of writing again. Ignored when the body carries a non-empty id. */
+                "Idempotency-Key"?: string;
+            };
             path?: never;
             cookie?: never;
         };

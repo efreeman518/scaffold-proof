@@ -19,7 +19,9 @@
   "returnIObservable": false,
   "responseTypeOverride": {},
   "generateOperationHeaders": true,
-  "ignoredOperationHeaders": [],
+  "ignoredOperationHeaders": [
+    "Idempotency-Key"
+  ],
   "typeAccessibility": "Public",
   "useCancellationTokens": true,
   "useIsoDateFormat": false,

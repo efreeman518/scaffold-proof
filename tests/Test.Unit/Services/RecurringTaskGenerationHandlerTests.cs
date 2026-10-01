@@ -129,6 +129,26 @@ public class RecurringTaskGenerationHandlerTests
         Assert.AreEqual(firstRun.Count, firstRun.Distinct().Count());
     }
 
+    /// <summary>
+    /// An occurrence the insert-if-absent finds stored is not announced again: its created event was staged when it
+    /// was inserted, under the same id. Only the inserted ones are staged and counted.
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public async Task HandleAsync_ExistingOccurrence_IsNotStagedAgain()
+    {
+        _repo.DueTemplates.Add(Template(Now.AddDays(-2), RecurrencePattern.Daily, interval: 1));
+        await _handler.HandleAsync(TestContext.CancellationToken);
+        var ids = _repo.UpsertedOccurrences.ConvertAll(o => o.Id.Value);
+        _repo.ExistingOccurrences.UnionWith(ids.Take(2));
+        _repo.UpsertedOccurrences.Clear();
+        _outbox.Staged.Clear();
+
+        await _handler.HandleAsync(TestContext.CancellationToken);
+
+        CollectionAssert.AreEqual(ids.Skip(2).ToArray(), _outbox.Staged.ConvertAll(s => s.Envelope.Id).ToArray());
+    }
+
     /// <summary>A far-behind template catches up at most 12 occurrences per run.</summary>
     [TestMethod]
     [TestCategory("Unit")]

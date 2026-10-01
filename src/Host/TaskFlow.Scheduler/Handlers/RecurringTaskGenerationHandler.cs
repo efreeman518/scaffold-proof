@@ -14,9 +14,9 @@ namespace TaskFlow.Scheduler.Handlers;
 
 /// <summary>
 /// Materializes the due occurrences of recurring templates. Per template, one transaction: advance the
-/// template's next-occurrence pointer under a guard, upsert the occurrences, stage a created event for each.
-/// Everything is keyed deterministically, so a re-run - or two replicas racing - produces the same rows, not
-/// a second set.
+/// template's next-occurrence pointer under a guard, insert each occurrence if absent, and stage a created
+/// event for each one inserted. Everything is keyed deterministically, so a re-run - or two replicas racing -
+/// produces the same rows, not a second set.
 /// </summary>
 public sealed class RecurringTaskGenerationHandler(
     ITaskItemSystemRepository systemRepository,
@@ -90,23 +90,28 @@ public sealed class RecurringTaskGenerationHandler(
             occurrences.Add(created.Value!);
         }
 
-        var written = 0;
-        await systemRepository.ExecuteInTransactionAsync(async token =>
+        // The committed attempt's count only. The guarded advance also covers a retry after a commit that landed:
+        // the pointer has already moved, so the retry writes and stages nothing.
+        return await systemRepository.ExecuteInTransactionAsync(async token =>
         {
             // The guarded advance runs first and is the lock: if another replica already moved this template,
             // its occurrences are the same rows this run would write, so this transaction commits nothing.
             if (!await systemRepository.AdvanceNextOccurrenceAsync(tenantId, templateId, dueFrom, nextDue, token))
-                return;
+                return 0;
 
-            if (occurrences.Count == 0) return;
+            var inserted = 0;
+            foreach (var occurrence in occurrences)
+            {
+                // An occurrence that already exists (the pointer was re-seeded over generated ones when the
+                // pattern was attached again) was announced when it was inserted; its id may still be in the outbox.
+                if (!await systemRepository.InsertOccurrenceIfAbsentAsync(occurrence, token)) continue;
+                Stage(occurrence, asOfUtc);
+                inserted++;
+            }
 
-            await systemRepository.UpsertOccurrencesAsync(occurrences, token);
-            foreach (var occurrence in occurrences) Stage(occurrence, asOfUtc);
-            await systemRepository.SaveChangesAsync(token);
-            written = occurrences.Count;
+            if (inserted > 0) await systemRepository.SaveWithThrowPolicyAsync(token);
+            return inserted;
         }, ct);
-
-        return written;
     }
 
     /// <summary>

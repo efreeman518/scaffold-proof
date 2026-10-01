@@ -1,12 +1,6 @@
-using EF.Cache;
 using EF.Common.Contracts;
 using EF.Data.Contracts;
-using EF.Tenancy;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Diagnostics;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Cqrs.Features.TaskItems;
@@ -14,12 +8,11 @@ using TaskFlow.Application.Models;
 using TaskFlow.Application.Services;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
-using TaskFlow.Infrastructure.Caching;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Repositories;
 using Test.Integration.Infrastructure;
 using Test.Support;
-using Test.Support.Builders;
+using static Test.Integration.Infrastructure.RaceHarness;
 
 namespace Test.Integration;
 
@@ -37,7 +30,6 @@ public class ChildAddConcurrencyTests
 {
     private const string Service = "Service";
     private const string Cqrs = "Cqrs";
-    private static readonly Guid TenantGuid = TestConstants.TenantId;
 
     /// <summary>Ensures the shared SQL schema exists before this class runs (idempotent migrate).</summary>
     [ClassInitialize]
@@ -61,7 +53,7 @@ public class ChildAddConcurrencyTests
     [DataRow(Cqrs)]
     public async Task Given_ConcurrentChildWrite_When_CommentAdded_Then_RetriesAndKeepsBoth(string style)
     {
-        var taskId = await SeedTaskAsync();
+        var taskId = await SeedTaskAsync(TestContext.CancellationToken);
         var dto = new CommentDto { Id = Guid.CreateVersion7(), Body = "raced comment" };
 
         var (response, race) = await RunRacedAsync(taskId, style,
@@ -85,7 +77,7 @@ public class ChildAddConcurrencyTests
     [DataRow(Cqrs)]
     public async Task Given_ConcurrentChildWrite_When_ChecklistItemAdded_Then_RetriesAndSaves(string style)
     {
-        var taskId = await SeedTaskAsync();
+        var taskId = await SeedTaskAsync(TestContext.CancellationToken);
         var dto = new ChecklistItemDto { Id = Guid.CreateVersion7(), Title = "raced step", SortOrder = 1 };
 
         var (response, race) = await RunRacedAsync(taskId, style,
@@ -109,7 +101,7 @@ public class ChildAddConcurrencyTests
     [DataRow(Cqrs)]
     public async Task Given_ConcurrentChildWrite_When_TagAssociated_Then_RetriesAndSaves(string style)
     {
-        var taskId = await SeedTaskAsync();
+        var taskId = await SeedTaskAsync(TestContext.CancellationToken);
         var tagId = await SeedTagAsync();
 
         var (response, race) = await RunRacedAsync(taskId, style,
@@ -137,7 +129,7 @@ public class ChildAddConcurrencyTests
     [DataRow(Cqrs)]
     public async Task Given_SameIdStoredConcurrently_When_CommentAdded_Then_Replays(string style)
     {
-        var taskId = await SeedTaskAsync();
+        var taskId = await SeedTaskAsync(TestContext.CancellationToken);
         var dto = new CommentDto { Id = Guid.CreateVersion7(), Body = "same-id comment" };
         var race = new CompetingWrite(DbContainerFixture.ConnectionString, taskId, (other, ct) =>
         {
@@ -165,7 +157,7 @@ public class ChildAddConcurrencyTests
     [DataRow(Cqrs)]
     public async Task Given_SameIdStoredConcurrently_When_ChecklistItemAdded_Then_Replays(string style)
     {
-        var taskId = await SeedTaskAsync();
+        var taskId = await SeedTaskAsync(TestContext.CancellationToken);
         var dto = new ChecklistItemDto { Id = Guid.CreateVersion7(), Title = "same-id step", SortOrder = 2 };
         var race = new CompetingWrite(DbContainerFixture.ConnectionString, taskId, (other, ct) =>
         {
@@ -193,7 +185,7 @@ public class ChildAddConcurrencyTests
     [DataRow(Cqrs)]
     public async Task Given_SameTagStoredConcurrently_When_TagAssociated_Then_Replays(string style)
     {
-        var taskId = await SeedTaskAsync();
+        var taskId = await SeedTaskAsync(TestContext.CancellationToken);
         var tagId = await SeedTagAsync();
         var race = new CompetingWrite(DbContainerFixture.ConnectionString, taskId, (other, ct) =>
         {
@@ -223,7 +215,7 @@ public class ChildAddConcurrencyTests
     [DataRow(Cqrs)]
     public async Task Given_RootChangedBeforeEveryAttempt_When_CommentAdded_Then_Conflict(string style)
     {
-        var taskId = await SeedTaskAsync();
+        var taskId = await SeedTaskAsync(TestContext.CancellationToken);
         var dto = new CommentDto { Id = Guid.CreateVersion7(), Body = "never saved" };
         var race = new CompetingWrite(DbContainerFixture.ConnectionString, taskId, everySave: true);
 
@@ -290,15 +282,6 @@ public class ChildAddConcurrencyTests
         Assert.AreEqual<long?>(root.Version, reportedVersion, "the response reports the version the retried save wrote");
     }
 
-    private async Task<Guid> SeedTaskAsync()
-    {
-        await using var db = DbContainerFixture.CreateTrxnContext();
-        var task = new TaskItemBuilder().WithTenantId(TenantGuid).WithTitle($"Race-{Guid.NewGuid():N}").Build();
-        db.TaskItems.Add(task);
-        await db.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: TestContext.CancellationToken);
-        return task.Id.Value;
-    }
-
     private async Task<Guid> SeedTagAsync()
     {
         await using var db = DbContainerFixture.CreateTrxnContext();
@@ -306,82 +289,6 @@ public class ChildAddConcurrencyTests
         db.Tags.Add(tag);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: TestContext.CancellationToken);
         return tag.Id.Value;
-    }
-
-    private static RequestContext<string, Guid?> RequestContext() =>
-        new("race-test", "race-user", TenantGuid, [AppConstants.ROLE_TENANT_MEMBER]);
-
-    private static readonly ServiceProvider Services = BuildServices();
-    private static ITenantBoundaryValidator Boundary => Services.GetRequiredService<ITenantBoundaryValidator>();
-    private static ITypedCache Cache => Services.GetRequiredService<ITypedCache>();
-
-    /// <summary>The real tenant boundary and an L1-only cache (child adds never touch the cache).</summary>
-    private static ServiceProvider BuildServices()
-    {
-        var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["CacheSettings:0:Name"] = AppConstants.DEFAULT_CACHE,
-                ["OpenTelemetry:MetricsEnabled"] = "false"
-            })
-            .Build();
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSingleton<IHostEnvironment>(new RaceTestHostEnvironment());
-        services.AddTaskFlowCaching(config);
-        services.AddTenancy(options => options.CrossTenantRoles = [AppConstants.ROLE_GLOBAL_ADMIN, AppConstants.ROLE_SYSTEM]);
-        return services.BuildServiceProvider();
-    }
-
-    /// <summary>
-    /// Before the handler's first save (or before every save, to exhaust the retry), commits a competing write from
-    /// another context. The default write is a comment added through the root, so the root version moves past the one
-    /// the handler loaded. Counts the handler's saves.
-    /// </summary>
-    private sealed class CompetingWrite(
-        string connectionString, Guid taskId, Func<TaskFlowDbContextTrxn, CancellationToken, Task>? write = null, bool everySave = false)
-        : SaveChangesInterceptor
-    {
-        public const string CompetingBody = "competing comment";
-
-        public bool Ran { get; private set; }
-        public int Saves { get; private set; }
-        public long SeededVersion { get; private set; }
-
-        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
-            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
-        {
-            Saves++;
-            if (!Ran || everySave)
-            {
-                await using var other = DbContainerFixture.CreateTrxnContext(connectionString);
-                if (write is null)
-                {
-                    var root = await new TaskItemRepositoryTrxn(other).GetTaskItemAsync(TaskItemId.From(taskId), inclChildren: false, cancellationToken)
-                        ?? throw new InvalidOperationException("seeded task not found");
-                    if (!Ran) SeededVersion = root.Version;
-                    Assert.IsTrue(root.AddComment(CompetingBody).IsSuccess);
-                }
-                else
-                {
-                    await write(other, cancellationToken);
-                }
-
-                Ran = true;
-                await other.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: cancellationToken);
-            }
-
-            return result;
-        }
-    }
-
-    private sealed class RaceTestHostEnvironment : IHostEnvironment
-    {
-        public string EnvironmentName { get; set; } = "IntegrationTest";
-        public string ApplicationName { get; set; } = nameof(ChildAddConcurrencyTests);
-        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
-        public Microsoft.Extensions.FileProviders.IFileProvider ContentRootFileProvider { get; set; } =
-            new Microsoft.Extensions.FileProviders.NullFileProvider();
     }
 
     public TestContext TestContext { get; set; } = null!;

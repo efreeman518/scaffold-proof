@@ -134,6 +134,17 @@ internal sealed class UpdateTagHandler(
         var validation = TagStructureValidator.ValidateUpdate(dto);
         if (validation.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(validation.Errors);
 
+        // If-Match: * re-reads and applies again when it loses a race (D-073); a concrete version keeps its 412.
+        var result = await ConcurrencyRetry.RunAsync(repoTrxn, command.ExpectedVersion, nameof(Tag), dto.Id!.Value,
+            attemptCt => UpdateOnceAsync(dto, command.ExpectedVersion, attemptCt), ct);
+        if (result.IsSuccess && result.Value!.Item is not null)
+            await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(Tag)), ct);
+        return result;
+    }
+
+    /// <summary>One read, update and save; run again on a lost wildcard race.</summary>
+    private async Task<Result<DefaultResponse<TagDto>>> UpdateOnceAsync(TagDto dto, long? expectedVersion, CancellationToken ct)
+    {
         var entity = await repoTrxn.GetAsync(TagId.From(dto.Id!.Value), ct);
         if (entity is null)
         {
@@ -145,7 +156,7 @@ internal sealed class UpdateTagHandler(
             "Tag:Update", nameof(Tag), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(boundary.ErrorMessage!);
 
-        ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(Tag), entity.Id.Value);
+        ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(Tag), entity.Id.Value);
 
         var tenantChangeCheck = tenantBoundaryValidator.PreventTenantChange(
             entity.TenantId.Value, dto.TenantId, nameof(Tag), entity.Id.Value);
@@ -157,7 +168,6 @@ internal sealed class UpdateTagHandler(
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error updating Tag {Id}", ct, dto.Id);
         if (save.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(save.ErrorMessage!);
 
-        await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(Tag)), ct);
         return HandlerHelpers.Success(entity.ToDto());
     }
 }
@@ -174,22 +184,34 @@ internal sealed class DeleteTagHandler(
     /// <summary>Handles delete tag requests and returns the application result.</summary>
     public async Task<Result> HandleAsync(DeleteTagCommand command, CancellationToken ct = default)
     {
+        // If-Match: * re-reads and deletes again when it loses a race (D-073); a concrete version keeps its 412.
+        var saveSent = false;
+        var (result, deleted) = await ConcurrencyRetry.RunAsync(repoTrxn, command.ExpectedVersion, nameof(Tag), command.Id,
+            attemptCt => DeleteOnceAsync(command, saveSent, () => saveSent = true, attemptCt), ct);
+        if (deleted) await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(Tag)), ct);
+        return result;
+    }
+
+    /// <summary>One read, delete and save; <c>Deleted</c> is true when a row was removed.</summary>
+    private async Task<(Result Result, bool Deleted)> DeleteOnceAsync(
+        DeleteTagCommand command, bool saveSent, Action markSaveSent, CancellationToken ct)
+    {
         var entity = await repoTrxn.GetAsync(TagId.From(command.Id), ct);
-        if (entity is null) return Result.Success();
+        // D-073: gone on a wildcard retry after an earlier attempt sent its save (a commit that landed but was reported
+        // failed, or a competing delete) counts as deleted, so the after-save effects run; gone on the first attempt does not.
+        if (entity is null) return (Result.Success(), saveSent);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "Tag:Delete", nameof(Tag), entity.Id.Value);
-        if (boundary.IsFailure) return Result.Failure(boundary.ErrorMessage!);
+        if (boundary.IsFailure) return (Result.Failure(boundary.ErrorMessage!), false);
 
         ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(Tag), entity.Id.Value);
 
         repoTrxn.Delete(entity);
+        markSaveSent();
 
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error deleting Tag {Id}", ct, command.Id);
-        if (save.IsFailure) return save;
-
-        await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(Tag)), ct);
-        return Result.Success();
+        return (save, save.IsSuccess);
     }
 }

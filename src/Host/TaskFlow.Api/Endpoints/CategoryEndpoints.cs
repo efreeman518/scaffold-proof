@@ -37,7 +37,8 @@ public static class CategoryEndpoints
             .Produces<DefaultResponse<CategoryDto>>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status409Conflict)
-            .WithSummary("Create a new Category");
+            .WithSummary("Create a new Category")
+            .WithIdempotencyKey<CategoryDto>(IdempotencyKeyFilter.CategoryCreateScope);
 
         g.MapPut("/{id:guid}", Update)
             .WithName("UpdateCategory")

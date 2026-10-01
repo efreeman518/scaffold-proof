@@ -1,3 +1,4 @@
+using EF.Data;
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Query;
@@ -31,26 +32,40 @@ public class CategoryRepositoryTrxn(TaskFlowDbContextTrxn db)
     }
 
     /// <inheritdoc />
-    // The tenant query filter scopes the update to the context tenant. shortcut: ExecuteUpdate commits
-    // immediately, so a failing category delete afterwards leaves the tasks detached; wrap both in
-    // CreateExecutionStrategy().ExecuteAsync + transaction if that ever matters.
-    public async Task<int> ClearCategoryFromTaskItemsAsync(CategoryId categoryId, CancellationToken ct = default)
+    // On a relational store the detach is a set-based ExecuteUpdate, so it runs with the delete's save in one
+    // transaction under the execution strategy (ResilientTransaction): a failed or lost save rolls the detach back.
+    // The action holds no read, so a strategy re-run sends the same detach and delete. The tenant query filter scopes
+    // the update to the context tenant.
+    public Task DeleteCategoryAsync(Category category, CancellationToken ct = default)
     {
-        var tasks = DB.Set<TaskItem>().Where(t => t.CategoryId == categoryId);
+        if (!DB.Database.IsRelational())
+            return DetachAndDeleteAsync(category, ct);
+
+        return ResilientTransaction.New(DB).ExecuteAsync(token => DetachAndDeleteAsync(category, token), ct);
+    }
+
+    /// <summary>Detaches the category's tasks, deletes the category and saves once with the Throw policy.</summary>
+    private async Task DetachAndDeleteAsync(Category category, CancellationToken ct)
+    {
+        var tasks = DB.Set<TaskItem>().Where(t => t.CategoryId == category.Id);
         if (DB.Database.IsRelational())
         {
-            return await tasks
-                .ExecuteUpdateAsync(s => s.SetProperty(t => t.CategoryId, (CategoryId?)null), ct)
+            await tasks
+                // D-073: the detach moves each task's Version, so a PUT holding the task's pre-delete ETag answers 412
+                // instead of restoring the dangling category id.
+                .ExecuteUpdateAsync(s => s.SetProperty(t => t.CategoryId, (CategoryId?)null).StampModified(DB.Clock.GetUtcNow()), ct)
                 .ConfigureAwait(ConfigureAwaitOptions.None);
         }
-
-        // The InMemory test provider has no ExecuteUpdate; clear through the tracked aggregate instead.
-        var tracked = await tasks.ToListAsync(ct).ConfigureAwait(ConfigureAwaitOptions.None);
-        foreach (var task in tracked)
+        else
         {
-            task.Update(categoryId: CategoryId.From(Guid.Empty));
+            // The InMemory test provider has no ExecuteUpdate; clear through the tracked aggregate, in the same save.
+            foreach (var task in await tasks.ToListAsync(ct).ConfigureAwait(ConfigureAwaitOptions.None))
+            {
+                task.Update(categoryId: CategoryId.From(Guid.Empty));
+            }
         }
 
-        return tracked.Count;
+        Delete(category);
+        await SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct).ConfigureAwait(ConfigureAwaitOptions.None);
     }
 }

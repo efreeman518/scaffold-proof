@@ -143,11 +143,11 @@ internal sealed class UploadAttachmentHandler(
             return Result<DefaultResponse<AttachmentDto>>.Failure("Blob storage is not configured.");
 
         var tenantId = requestContext.TenantId ?? Guid.Empty;
-        var blobName = $"{tenantId}/{command.OwnerId}/{command.FileName}";
+        var blobName = AttachmentBlobs.BlobName(tenantId, command.OwnerId, command.FileName);
 
         try
         {
-            await blobStorage.UploadAsync("attachments", blobName, command.FileStream, command.ContentType, cancellationToken: ct);
+            await blobStorage.UploadAsync(AttachmentBlobs.ContainerName, blobName, command.FileStream, command.ContentType, cancellationToken: ct);
         }
         catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
@@ -195,6 +195,14 @@ internal sealed class UpdateAttachmentHandler(
         var validation = AttachmentStructureValidator.ValidateUpdate(dto);
         if (validation.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(validation.Errors);
 
+        // If-Match: * re-reads and applies again when it loses a race (D-073); a concrete version keeps its 412.
+        return await ConcurrencyRetry.RunAsync(repoTrxn, command.ExpectedVersion, nameof(Attachment), dto.Id!.Value,
+            attemptCt => UpdateOnceAsync(dto, command.ExpectedVersion, attemptCt), ct);
+    }
+
+    /// <summary>One read, update and save; run again on a lost wildcard race.</summary>
+    private async Task<Result<DefaultResponse<AttachmentDto>>> UpdateOnceAsync(AttachmentDto dto, long? expectedVersion, CancellationToken ct)
+    {
         var entity = await repoTrxn.GetAttachmentAsync(AttachmentId.From(dto.Id!.Value), ct);
         if (entity is null)
         {
@@ -206,7 +214,7 @@ internal sealed class UpdateAttachmentHandler(
             "Attachment:Update", nameof(Attachment), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(boundary.ErrorMessage!);
 
-        ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(Attachment), entity.Id.Value);
+        ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(Attachment), entity.Id.Value);
 
         var tenantChangeCheck = tenantBoundaryValidator.PreventTenantChange(
             entity.TenantId.Value, dto.TenantId, nameof(Attachment), entity.Id.Value);
@@ -235,27 +243,19 @@ internal sealed class DeleteAttachmentHandler(
     /// <summary>Handles delete attachment requests and returns the application result.</summary>
     public async Task<Result> HandleAsync(DeleteAttachmentCommand command, CancellationToken ct = default)
     {
-        var entity = await repoTrxn.GetAttachmentAsync(AttachmentId.From(command.Id), ct);
-        if (entity is null) return Result.Success();
-
-        var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
-            "Attachment:Delete", nameof(Attachment), entity.Id.Value);
-        if (boundary.IsFailure) return Result.Failure(boundary.ErrorMessage!);
-
-        ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(Attachment), entity.Id.Value);
-
-        repoTrxn.Delete(entity);
-
-        var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error deleting Attachment {Id}", ct, command.Id);
-        if (save.IsFailure) return save;
+        // If-Match: * re-reads and deletes again when it loses a race (D-073); a concrete version keeps its 412. The
+        // blob delete and cache eviction are outside effects, so they run once, after the save that removed the row.
+        Attachment? sent = null;
+        var (result, entity) = await ConcurrencyRetry.RunAsync(repoTrxn, command.ExpectedVersion, nameof(Attachment), command.Id,
+            attemptCt => DeleteOnceAsync(command, sent, e => sent = e, attemptCt), ct);
+        if (entity is null) return result;
 
         if (blobStorage is not null && !string.IsNullOrEmpty(entity.StorageUri))
         {
             try
             {
-                var blobName = $"{entity.TenantId.Value}/{entity.OwnerId}/{entity.FileName}";
-                await blobStorage.DeleteAsync("attachments", blobName, ct);
+                var blobName = AttachmentBlobs.BlobName(entity.TenantId.Value, entity.OwnerId, entity.FileName);
+                await blobStorage.DeleteAsync(AttachmentBlobs.ContainerName, blobName, ct);
             }
             catch (Exception ex)
             {
@@ -265,5 +265,29 @@ internal sealed class DeleteAttachmentHandler(
 
         await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(Attachment)), ct);
         return Result.Success();
+    }
+
+    /// <summary>One read, delete and save; <c>Deleted</c> is the removed row, if any.</summary>
+    private async Task<(Result Result, Attachment? Deleted)> DeleteOnceAsync(
+        DeleteAttachmentCommand command, Attachment? sent, Action<Attachment> markSaveSent, CancellationToken ct)
+    {
+        var entity = await repoTrxn.GetAttachmentAsync(AttachmentId.From(command.Id), ct);
+        // D-073: gone on a wildcard retry after an earlier attempt sent its save (a commit that landed but was reported
+        // failed, or a competing delete) returns that attempt's row, so the blob delete still runs; gone on the first
+        // attempt returns none.
+        if (entity is null) return (Result.Success(), sent);
+
+        var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
+            requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
+            "Attachment:Delete", nameof(Attachment), entity.Id.Value);
+        if (boundary.IsFailure) return (Result.Failure(boundary.ErrorMessage!), null);
+
+        ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(Attachment), entity.Id.Value);
+
+        repoTrxn.Delete(entity);
+        markSaveSent(entity);
+
+        var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error deleting Attachment {Id}", ct, command.Id);
+        return (save, save.IsSuccess ? entity : null);
     }
 }

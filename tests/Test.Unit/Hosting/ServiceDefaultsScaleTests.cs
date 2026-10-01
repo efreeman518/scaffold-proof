@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Http.Resilience;
+using TaskFlow.Bootstrapper;
 
 namespace Test.Unit.Hosting;
 
@@ -44,17 +45,38 @@ public sealed class ServiceDefaultsScaleTests
         Assert.AreEqual(4, handler.Attempts);
     }
 
-    private HttpClient BuildDefaultsClient(HttpMessageHandler handler)
+    /// <summary>
+    /// The FlowEngine self-call client sends even a GET once: the workflow node retryPolicy is the only retry owner
+    /// (EF.FlowEngine 1.0.199), so the inherited standard handler must not multiply node attempts.
+    /// </summary>
+    [TestMethod]
+    public async Task TaskFlowApiClient_TransientFailureOnGet_IsSentOnce()
+    {
+        var handler = StubHttpMessageHandler.Returns(HttpStatusCode.ServiceUnavailable);
+        using var client = BuildDefaultsClient(handler, RegisterServices.TaskFlowApiClientName,
+            services => RegisterServices.AddTaskFlowApiHttpClient(services, "http://localhost"));
+
+        using var response = await client.GetAsync(new Uri("http://localhost/tasks"), TestContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.AreEqual(1, handler.Attempts);
+    }
+
+    private HttpClient BuildDefaultsClient(
+        HttpMessageHandler handler,
+        string clientName = "defaults",
+        Func<IServiceCollection, IHttpClientBuilder>? addClient = null)
     {
         var builder = CreateBuilder([]);
         builder.AddServiceDefaults();
         // Keep the standard retry count but not its multi-second backoff.
         builder.Services.PostConfigureAll<HttpStandardResilienceOptions>(o => o.Retry.Delay = TimeSpan.FromMilliseconds(1));
-        builder.Services.AddHttpClient("defaults").ConfigurePrimaryHttpMessageHandler(() => handler);
+        (addClient?.Invoke(builder.Services) ?? builder.Services.AddHttpClient(clientName))
+            .ConfigurePrimaryHttpMessageHandler(() => handler);
 
         var provider = builder.Services.BuildServiceProvider();
         TestContext.CancellationToken.Register(provider.Dispose);
-        return provider.GetRequiredService<IHttpClientFactory>().CreateClient("defaults");
+        return provider.GetRequiredService<IHttpClientFactory>().CreateClient(clientName);
     }
 
     private static HostApplicationBuilder CreateBuilder(Dictionary<string, string?> settings)

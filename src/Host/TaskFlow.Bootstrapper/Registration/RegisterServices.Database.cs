@@ -122,6 +122,8 @@ public static partial class RegisterServices
         // Cross-tenant system access for the scheduler jobs (IgnoreQueryFilters), so background work no
         // longer leans on the request context defaulting to global admin.
         services.AddScoped<ITaskItemSystemRepository, TaskItemSystemRepository>();
+        // D-074: Idempotency-Key header mappings, saved on the write context ahead of the request's own write.
+        services.AddScoped<IIdempotencyKeyRepository, IdempotencyKeyRepository>();
     }
 
     // An empty connection string leaves the context unconfigured so test hosts can replace it (InMemory).

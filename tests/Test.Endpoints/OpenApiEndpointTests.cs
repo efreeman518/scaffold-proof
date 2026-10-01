@@ -83,6 +83,45 @@ public sealed class OpenApiEndpointTests
     }
 
     /// <summary>
+    /// Verifies every route that honors <c>Idempotency-Key</c> (D-074) documents it as an optional header of at most
+    /// 200 characters, so generated clients can send it, and that a route which ignores it does not.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [TestMethod]
+    public async Task Given_KeyedRoutes_When_GetV1Document_Then_DeclareTheOptionalIdempotencyKeyHeader()
+    {
+        using var client = _factory.CreateClient();
+        using var response = await client.GetAsync("/openapi/v1.json", TestContext.CancellationToken);
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        var paths = document.RootElement.GetProperty("paths");
+
+        foreach (var path in new[]
+                 {
+                     "/api/v1/task-items", "/api/v1/categories", "/api/v1/tags", "/api/v1/attachments",
+                     "/api/v1/task-items/{id}/comments", "/api/v1/task-items/{id}/checklist-items"
+                 })
+        {
+            var header = IdempotencyKeyParameter(paths.GetProperty(path).GetProperty("post"));
+            Assert.IsNotNull(header, $"POST {path} honors Idempotency-Key and must declare it");
+            Assert.IsFalse(header.Value.TryGetProperty("required", out var required) && required.GetBoolean(), $"{path}: the key is optional");
+            Assert.AreEqual("string", header.Value.GetProperty("schema").GetProperty("type").GetString(), path);
+            Assert.AreEqual(200, header.Value.GetProperty("schema").GetProperty("maxLength").GetInt32(), path);
+        }
+
+        Assert.IsNull(IdempotencyKeyParameter(paths.GetProperty("/api/v1/attachments/upload").GetProperty("post")),
+            "the multipart upload does not honor the key");
+        Assert.IsNull(IdempotencyKeyParameter(paths.GetProperty("/api/v1/categories/{id}").GetProperty("put")),
+            "an If-Match write does not honor the key");
+    }
+
+    private static JsonElement? IdempotencyKeyParameter(JsonElement operation) =>
+        operation.TryGetProperty("parameters", out var parameters)
+            ? parameters.EnumerateArray().Cast<JsonElement?>().FirstOrDefault(p =>
+                p!.Value.GetProperty("name").GetString() == "Idempotency-Key" && p.Value.GetProperty("in").GetString() == "header")
+            : null;
+
+    /// <summary>
     /// Drift guard for client codegen (Refitter, openapi-typescript): both read the committed
     /// src/Host/TaskFlow.Api/openapi-doc/TaskFlow.Api.json build artifact offline, so a hand-edited
     /// endpoint that forgot to rebuild would silently ship stale generated clients without this.

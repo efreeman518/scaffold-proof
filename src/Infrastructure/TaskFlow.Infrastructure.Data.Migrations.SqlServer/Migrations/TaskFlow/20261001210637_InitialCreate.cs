@@ -37,14 +37,37 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TaskFlow
                 });
 
             migrationBuilder.CreateTable(
+                name: "AuditLog",
+                schema: "taskflow",
+                columns: table => new
+                {
+                    TenantId = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: false),
+                    RecordedUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    AuditId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
+                    EntityType = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    EntityKey = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    Action = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: false),
+                    Status = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
+                    StartedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    ElapsedTimeTicks = table.Column<long>(type: "bigint", nullable: false),
+                    Metadata = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Error = table.Column<string>(type: "nvarchar(max)", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_AuditLog", x => new { x.TenantId, x.RecordedUtc, x.Id });
+                });
+
+            migrationBuilder.CreateTable(
                 name: "BlobDeleteWork",
                 schema: "taskflow",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    TenantId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     ContainerName = table.Column<string>(type: "nvarchar(63)", maxLength: 63, nullable: false),
                     BlobName = table.Column<string>(type: "nvarchar(1024)", maxLength: 1024, nullable: false),
-                    TenantId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     AvailableAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
                     LeaseToken = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     LeaseOwner = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true),
@@ -91,13 +114,32 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TaskFlow
                 schema: "taskflow",
                 columns: table => new
                 {
-                    Consumer = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: false),
+                    Consumer = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
                     MessageId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    ProcessedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false)
+                    ClaimToken = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    ClaimedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    LeaseExpiresUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    CompletedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_ConsumerInbox", x => new { x.Consumer, x.MessageId });
+                });
+
+            migrationBuilder.CreateTable(
+                name: "IdempotencyKey",
+                schema: "taskflow",
+                columns: table => new
+                {
+                    EntityId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    TenantId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Scope = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: false, collation: "Latin1_General_100_BIN2"),
+                    Key = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false, collation: "Latin1_General_100_BIN2"),
+                    CreatedUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_IdempotencyKey", x => x.EntityId);
                 });
 
             migrationBuilder.CreateTable(
@@ -111,8 +153,10 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TaskFlow
                     EventVersion = table.Column<int>(type: "int", nullable: false),
                     Payload = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     CorrelationId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true),
+                    TraceParent = table.Column<string>(type: "nvarchar(55)", maxLength: 55, nullable: true),
+                    TraceState = table.Column<string>(type: "nvarchar(512)", maxLength: 512, nullable: true),
+                    Headers = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     OccurredAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
-                    TenantId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     AvailableAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
                     LeaseToken = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     LeaseOwner = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true),
@@ -142,6 +186,35 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TaskFlow
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Tag", x => new { x.TenantId, x.Id });
+                });
+
+            migrationBuilder.CreateTable(
+                name: "TaskView",
+                schema: "taskflow",
+                columns: table => new
+                {
+                    TenantId = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: false),
+                    Id = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: false),
+                    Title = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    Status = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
+                    Priority = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
+                    CategoryName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true),
+                    StartDate = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    DueDate = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    CompletedDate = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    IsOverdue = table.Column<bool>(type: "bit", nullable: false),
+                    CommentCount = table.Column<int>(type: "int", nullable: false),
+                    ChecklistTotal = table.Column<int>(type: "int", nullable: false),
+                    ChecklistCompleted = table.Column<int>(type: "int", nullable: false),
+                    AttachmentCount = table.Column<int>(type: "int", nullable: false),
+                    SubTaskCount = table.Column<int>(type: "int", nullable: false),
+                    CreatedUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    LastModifiedUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    Document = table.Column<string>(type: "nvarchar(max)", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_TaskView", x => new { x.TenantId, x.Id });
                 });
 
             migrationBuilder.CreateTable(
@@ -287,6 +360,12 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TaskFlow
                 columns: new[] { "TenantId", "OwnerType", "OwnerId", "Id" });
 
             migrationBuilder.CreateIndex(
+                name: "IX_AuditLog_RecordedUtc",
+                schema: "taskflow",
+                table: "AuditLog",
+                column: "RecordedUtc");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_BlobDeleteWork_Dispatch",
                 schema: "taskflow",
                 table: "BlobDeleteWork",
@@ -324,10 +403,23 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TaskFlow
                 columns: new[] { "TenantId", "TaskItemId", "Id" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_ConsumerInbox_ProcessedAtUtc",
+                name: "IX_ConsumerInbox_Retention",
                 schema: "taskflow",
                 table: "ConsumerInbox",
-                column: "ProcessedAtUtc");
+                columns: new[] { "CompletedAtUtc", "LeaseExpiresUtc" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_IdempotencyKey_CreatedUtc",
+                schema: "taskflow",
+                table: "IdempotencyKey",
+                column: "CreatedUtc");
+
+            migrationBuilder.CreateIndex(
+                name: "UX_IdempotencyKey_TenantId_Scope_Key",
+                schema: "taskflow",
+                table: "IdempotencyKey",
+                columns: new[] { "TenantId", "Scope", "Key" },
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_OutboxMessage_Dispatch",
@@ -428,6 +520,13 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TaskFlow
                 table: "TaskItemTag",
                 columns: new[] { "TenantId", "TaskItemId", "TagId" },
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_TaskView_TenantId_LastModifiedUtc_Id",
+                schema: "taskflow",
+                table: "TaskView",
+                columns: new[] { "TenantId", "LastModifiedUtc", "Id" },
+                descending: new[] { false, true, true });
         }
 
         /// <inheritdoc />
@@ -435,6 +534,10 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TaskFlow
         {
             migrationBuilder.DropTable(
                 name: "Attachment",
+                schema: "taskflow");
+
+            migrationBuilder.DropTable(
+                name: "AuditLog",
                 schema: "taskflow");
 
             migrationBuilder.DropTable(
@@ -454,11 +557,19 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TaskFlow
                 schema: "taskflow");
 
             migrationBuilder.DropTable(
+                name: "IdempotencyKey",
+                schema: "taskflow");
+
+            migrationBuilder.DropTable(
                 name: "OutboxMessage",
                 schema: "taskflow");
 
             migrationBuilder.DropTable(
                 name: "TaskItemTag",
+                schema: "taskflow");
+
+            migrationBuilder.DropTable(
+                name: "TaskView",
                 schema: "taskflow");
 
             migrationBuilder.DropTable(

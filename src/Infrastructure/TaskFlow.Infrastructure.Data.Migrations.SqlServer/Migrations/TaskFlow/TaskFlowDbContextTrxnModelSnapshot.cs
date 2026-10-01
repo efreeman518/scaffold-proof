@@ -609,6 +609,41 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TaskFlow
                     b.ToTable("BlobDeleteWork", "taskflow");
                 });
 
+            modelBuilder.Entity("TaskFlow.Infrastructure.Data.Operational.IdempotencyKeyRecord", b =>
+                {
+                    b.Property<Guid>("EntityId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("EntityId");
+
+                    b.HasIndex("CreatedUtc")
+                        .HasDatabaseName("IX_IdempotencyKey_CreatedUtc");
+
+                    b.HasIndex("TenantId", "Scope", "Key")
+                        .IsUnique()
+                        .HasDatabaseName("UX_IdempotencyKey_TenantId_Scope_Key");
+
+                    b.ToTable("IdempotencyKey", "taskflow");
+                });
+
             modelBuilder.Entity("TaskFlow.Infrastructure.Data.ReadModel.TaskViewRecord", b =>
                 {
                     b.Property<string>("TenantId")

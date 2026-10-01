@@ -243,9 +243,12 @@ and consumer-side inbox don't change.
 events, running as global admin regardless of tenant.
 
 **Shape**: `ITaskItemSystemRepository` (Trxn context, `IgnoreQueryFilters()` - cross-tenant system
-jobs by design): `StreamOverdueAsync`, `MarkOverdueNotifiedAsync`, `StreamDueTemplatesAsync`,
-`UpsertOccurrencesAsync`, `AdvanceNextOccurrenceAsync(tenantId, templateId, expectedNext, newNext)`,
-`GetStaleBatchAsync`, `StageBlobDeletesAsync`, `DeleteStaleBatchAsync`. Every staged event uses a
+jobs by design): `StreamOverdueAsync`, `MarkOverdueNotifiedAsync` (one task, returns bool),
+`StreamDueTemplatesAsync`, `InsertOccurrenceIfAbsentAsync` (one occurrence, returns bool),
+`AdvanceNextOccurrenceAsync(tenantId, templateId, expectedNext, newNext)`, `GetStaleBatchAsync`,
+`DeleteStaleTaskAsync` (one task, returns bool), `StageBlobDeletesAsync`, `DeleteAttachmentsAsync`, and
+`ExecuteInTransactionAsync<T>`. A job stages a deterministic id only for a row its own guarded write
+changed (D-009). Every staged event uses a
 deterministic id (`EF.Common.DeterministicGuid.Create(DomainConstants.DETERMINISTIC_ID_NAMESPACE,
 label, ...parts)`, real UUIDv5/SHA-1) so a re-run over the same data produces zero new rows: the
 `overdue` label keys on `(tenant, task, dueDate)`, `recurrence` on `(tenant, template,
@@ -532,10 +535,10 @@ than clobber each other; zero rows affected is a no-op matching the Cosmos 404 a
 names: `RelationalTaskViewRepository` (constructor takes both `TaskFlowDbContextTrxn` for writes/patches
 and `TaskFlowDbContextQuery` - the read-replica connection - for gets/pages) and
 `RelationalAuditLogRepository` (append is a FlexLabs `Upsert(...).On(...).NoUpdate()` insert-only
-upsert on `(TenantId, RecordedUtc, Id)`; purge is `ExecuteDeleteBatchedAsync` keyed on `Id`). Migrations:
-`20260908222032_AddRelationalReadModelAndAudit` (`TaskFlow.Infrastructure.Data.Migrations.SqlServer`)
-and `20260908222051_AddRelationalReadModelAndAudit`
-(`TaskFlow.Infrastructure.Data.Migrations.PostgreSql`), both under `Migrations/TaskFlow/`.
+upsert on `(TenantId, RecordedUtc, Id)`; purge is `ExecuteDeleteBatchedAsync` keyed on `Id`). Schema: the
+`TaskFlow` context's single `InitialCreate` migration in each provider assembly
+(`TaskFlow.Infrastructure.Data.Migrations.SqlServer`, `...Migrations.PostgreSql`, under `Migrations/TaskFlow/`);
+D-025 regenerates it for every schema change.
 
 **Proof**: `tests/Test.Integration/RelationalTaskViewRepositoryTests.cs` and
 `RelationalAuditLogRepositoryTests.cs` (per the orchestration session log, 50 tests passed on each of

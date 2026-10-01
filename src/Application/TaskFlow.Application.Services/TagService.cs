@@ -132,6 +132,16 @@ internal class TagService(
         var validation = TagStructureValidator.ValidateUpdate(dto);
         if (validation.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(validation.Errors);
 
+        // If-Match: * re-reads and applies again when it loses a race (D-073); a concrete version keeps its 412.
+        var result = await ConcurrencyRetry.RunAsync(repoTrxn, expectedVersion, nameof(Tag), dto.Id!.Value,
+            attemptCt => UpdateOnceAsync(dto, expectedVersion, attemptCt), ct);
+        if (result.IsSuccess && result.Value!.Item is not null) await InvalidateMetadataAsync(ct);
+        return result;
+    }
+
+    /// <summary>One read, update and save of <see cref="UpdateAsync"/>; run again on a lost wildcard race.</summary>
+    private async Task<Result<DefaultResponse<TagDto>>> UpdateOnceAsync(TagDto dto, long? expectedVersion, CancellationToken ct)
+    {
         var entity = await repoTrxn.GetAsync(TagId.From(dto.Id!.Value), ct);
         if (entity == null)
             return Result<DefaultResponse<TagDto>>.Success(new DefaultResponse<TagDto> { Item = null });
@@ -160,24 +170,38 @@ internal class TagService(
             return Result<DefaultResponse<TagDto>>.Failure(ErrorConstants.ERROR_SAVE_FAILED);
         }
 
-        await InvalidateMetadataAsync(ct);
         return Result<DefaultResponse<TagDto>>.Success(BuildResponse(entity.ToDto()));
     }
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
     public async Task<Result> DeleteAsync(Guid id, long? expectedVersion, CancellationToken ct = default)
     {
+        // If-Match: * re-reads and deletes again when it loses a race (D-073); a concrete version keeps its 412.
+        var saveSent = false;
+        var (result, deleted) = await ConcurrencyRetry.RunAsync(repoTrxn, expectedVersion, nameof(Tag), id,
+            attemptCt => DeleteOnceAsync(id, expectedVersion, saveSent, () => saveSent = true, attemptCt), ct);
+        if (deleted) await InvalidateMetadataAsync(ct);
+        return result;
+    }
+
+    /// <summary>One read, delete and save of <see cref="DeleteAsync"/>; <c>Deleted</c> is true when a row was removed.</summary>
+    private async Task<(Result Result, bool Deleted)> DeleteOnceAsync(
+        Guid id, long? expectedVersion, bool saveSent, Action markSaveSent, CancellationToken ct)
+    {
         var entity = await repoTrxn.GetAsync(TagId.From(id), ct);
-        if (entity == null) return Result.Success();
+        // D-073: gone on a wildcard retry after an earlier attempt sent its save (a commit that landed but was reported
+        // failed, or a competing delete) counts as deleted, so the after-save effects run; gone on the first attempt does not.
+        if (entity == null) return (Result.Success(), saveSent);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             RequestTenantId, RequestRoles, entity.TenantId.Value,
             "Tag:Delete", nameof(Tag), entity.Id.Value);
-        if (boundary.IsFailure) return Result.Failure(boundary.ErrorMessage!);
+        if (boundary.IsFailure) return (Result.Failure(boundary.ErrorMessage!), false);
 
         ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(Tag), entity.Id.Value);
 
         repoTrxn.Delete(entity);
+        markSaveSent();
 
         try
         {
@@ -186,10 +210,9 @@ internal class TagService(
         catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.TagDeleteFailed(ex, id);
-            return Result.Failure(ErrorConstants.ERROR_SAVE_FAILED);
+            return (Result.Failure(ErrorConstants.ERROR_SAVE_FAILED), false);
         }
 
-        await InvalidateMetadataAsync(ct);
-        return Result.Success();
+        return (Result.Success(), true);
     }
 }

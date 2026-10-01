@@ -39,18 +39,21 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
     }
 
     /// <inheritdoc />
-    public Task<int> MarkOverdueNotifiedAsync(
-        Guid tenantId, IReadOnlyCollection<Guid> ids, DateTimeOffset asOfUtc, CancellationToken ct = default)
+    public async Task<bool> MarkOverdueNotifiedAsync(
+        Guid tenantId, Guid id, DateTimeOffset asOfUtc, CancellationToken ct = default)
     {
-        if (ids.Count == 0) return Task.FromResult(0);
-        var typedIds = ids.Select(TaskItemId.From).ToList();
+        var typedId = TaskItemId.From(id);
         var typedTenantId = TenantId.From(tenantId);
 
         // The candidate predicate is restated here, not trusted from the scan: between the two statements a
         // task can be completed or rescheduled, and marking it then would suppress a notification it is owed.
-        return OverdueCandidates(asOfUtc)
-            .Where(e => e.TenantId == typedTenantId && typedIds.Contains(e.Id))
-            .ExecuteUpdateAsync(s => s.SetProperty(e => e.OverdueNotifiedForDueDate, e => e.DueDate), ct);
+        // Per row, not one IN-list update: a count cannot say which rows another replica marked first, and
+        // RETURNING is not portable through ExecuteUpdate on both providers.
+        var affected = await OverdueCandidates(asOfUtc)
+            .Where(e => e.TenantId == typedTenantId && e.Id == typedId)
+            .ExecuteUpdateAsync(s => s.SetProperty(e => e.OverdueNotifiedForDueDate, e => e.DueDate).StampModified(DB.Clock.GetUtcNow()), ct)
+            .ConfigureAwait(ConfigureAwaitOptions.None);
+        return affected > 0;
     }
 
     /// <inheritdoc />
@@ -67,12 +70,17 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
     /// <inheritdoc />
     // D-028: MERGE on SQL Server, ON CONFLICT DO NOTHING on PostgreSQL, keyed on the unique
     // IX_TaskItem_TenantId_RecurrenceTemplateId_OccurrenceUtc. A null whenMatched is the package's
-    // insert-if-absent arm, so a template that already produced this occurrence is left untouched.
-    public Task<int> UpsertOccurrencesAsync(IReadOnlyCollection<TaskItem> occurrences, CancellationToken ct = default) =>
-        UpsertRangeAsync(
-            occurrences,
+    // insert-if-absent arm, so a template that already produced this occurrence is left untouched and the
+    // statement affects no row.
+    // The upsert bypasses the save pipeline, so the occurrence is stamped as a tracked insert would be (D-073).
+    public async Task<bool> InsertOccurrenceIfAbsentAsync(TaskItem occurrence, CancellationToken ct = default)
+    {
+        SetBasedWriteStamp.StampAdded(DB, occurrence, DB.Clock.GetUtcNow());
+        return await UpsertAsync(
+            occurrence,
             e => new { e.TenantId, e.RecurrenceTemplateId, e.OccurrenceUtc },
-            cancellationToken: ct);
+            cancellationToken: ct).ConfigureAwait(ConfigureAwaitOptions.None) > 0;
+    }
 
     /// <inheritdoc />
     public async Task<bool> AdvanceNextOccurrenceAsync(
@@ -85,7 +93,7 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
             .IgnoreQueryFilters()
             .Where(e => e.TenantId == typedTenantId && e.Id == typedTemplateId
                 && e.NextOccurrenceAtUtc == expectedNextUtc)
-            .ExecuteUpdateAsync(s => s.SetProperty(e => e.NextOccurrenceAtUtc, newNextUtc), ct)
+            .ExecuteUpdateAsync(s => s.SetProperty(e => e.NextOccurrenceAtUtc, newNextUtc).StampModified(DB.Clock.GetUtcNow()), ct)
             .ConfigureAwait(ConfigureAwaitOptions.None);
 
         return affected > 0;
@@ -156,40 +164,65 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
     }
 
     /// <inheritdoc />
-    public async Task<int> DeleteStaleBatchAsync(
-        Guid tenantId, IReadOnlyCollection<Guid> taskIds, DateTimeOffset cutoffUtc, CancellationToken ct = default)
+    public async Task<bool> DeleteStaleTaskAsync(
+        Guid tenantId, Guid taskId, DateTimeOffset cutoffUtc, CancellationToken ct = default)
     {
-        if (taskIds.Count == 0) return 0;
+        var typedTenantId = TenantId.From(tenantId);
+        var typedId = TaskItemId.From(taskId);
+
+        // Predicate restated: a task reopened between the scan and this statement must survive. Per row, not one
+        // IN-list delete: a count cannot say which tasks another run removed first (RETURNING is not portable
+        // through ExecuteDelete on both providers), and only the remover may queue the task's blob work.
+        var affected = await StaleCandidates(cutoffUtc)
+            .Where(e => e.TenantId == typedTenantId && e.Id == typedId)
+            .ExecuteDeleteAsync(ct)
+            .ConfigureAwait(ConfigureAwaitOptions.None);
+        return affected > 0;
+    }
+
+    /// <inheritdoc />
+    public Task<int> DeleteAttachmentsAsync(Guid tenantId, IReadOnlyCollection<Guid> taskIds, CancellationToken ct = default)
+    {
+        if (taskIds.Count == 0) return Task.FromResult(0);
         var typedTenantId = TenantId.From(tenantId);
         var ids = taskIds.ToList();
-        var typedIds = taskIds.Select(TaskItemId.From).ToList();
 
-        // Attachments hang off a polymorphic owner, not a foreign key, so nothing cascades them.
-        await DB.Set<Attachment>()
+        return DB.Set<Attachment>()
             .IgnoreQueryFilters()
             .Where(a => a.TenantId == typedTenantId
                 && a.OwnerType == AttachmentOwnerType.TaskItem
                 && ids.Contains(a.OwnerId))
-            .ExecuteDeleteAsync(ct)
-            .ConfigureAwait(ConfigureAwaitOptions.None);
-
-        // Predicate restated: a task reopened between the scan and this statement must survive.
-        return await StaleCandidates(cutoffUtc)
-            .Where(e => e.TenantId == typedTenantId && typedIds.Contains(e.Id))
-            .ExecuteDeleteAsync(ct)
-            .ConfigureAwait(ConfigureAwaitOptions.None);
+            .ExecuteDeleteAsync(ct);
     }
 
     /// <inheritdoc />
-    public Task ExecuteInTransactionAsync(Func<CancellationToken, Task> work, CancellationToken ct = default) =>
-        ResilientTransaction.New(DB).ExecuteAsync(work, ct);
+    // Saves inside work keep the default acceptAllChangesOnSuccess: true. EF.Data's alternative (accept after the
+    // commit, so a retry re-sends the same changes) does not fit: work re-stages its rows on every attempt, and they
+    // would collide with rows still tracked as Added. Clearing per attempt, as DbContextBase.RetryOnConcurrencyAsync
+    // does, re-runs the reads and guards against the database as it now is (D-009, D-073).
+    public async Task<T> ExecuteInTransactionAsync<T>(Func<CancellationToken, Task<T>> work, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(work);
+        DB.ChangeTracker.DetectChanges();
+        if (DB.ChangeTracker.HasChanges())
+            throw new InvalidOperationException(
+                "ExecuteInTransactionAsync clears the change tracker on each attempt; save or discard the pending changes first.");
+
+        T result = default!;
+        await ResilientTransaction.New(DB).ExecuteAsync(async token =>
+        {
+            DB.ChangeTracker.Clear();
+            result = await work(token).ConfigureAwait(ConfigureAwaitOptions.None);
+        }, ct).ConfigureAwait(ConfigureAwaitOptions.None);
+        return result;
+    }
 
     /// <inheritdoc />
     // Throw, not ClientWins: the rows saved here are operational (outbox, blob-delete work) and carry no
     // concurrency token, so a conflict would mean the unit of work is not what this job thinks it is.
-    // `new` because RepositoryBase.SaveChangesAsync(ct) is the policy-free overload (plain
-    // DbContext.SaveChangesAsync); every save on this path has to carry the Throw policy (D-032).
-    public new Task<int> SaveChangesAsync(CancellationToken ct = default) =>
+    // Not named SaveChangesAsync: RepositoryBase.SaveChangesAsync(ct) is the policy-free overload (plain
+    // DbContext.SaveChangesAsync); every save on this path carries the Throw policy (D-032).
+    public Task<int> SaveWithThrowPolicyAsync(CancellationToken ct = default) =>
         DB.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct);
 
     /// <summary>Past due, still open, and not yet announced for this particular due date.</summary>
