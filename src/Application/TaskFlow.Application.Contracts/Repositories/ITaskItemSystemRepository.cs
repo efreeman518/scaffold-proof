@@ -103,6 +103,10 @@ public interface ITaskItemSystemRepository
     /// <exception cref="InvalidOperationException">The write context has pending changes when this is called.</exception>
     Task<T> ExecuteInTransactionAsync<T>(Func<CancellationToken, Task<T>> work, CancellationToken ct = default);
 
-    /// <summary>Commits rows staged on the shared write context (outbox rows, blob-delete work).</summary>
-    Task<int> SaveChangesAsync(CancellationToken ct = default);
+    /// <summary>
+    /// Commits rows staged on the shared write context (outbox rows, blob-delete work) with
+    /// <c>OptimisticConcurrencyWinner.Throw</c> (D-032). Named for the policy rather than <c>SaveChangesAsync</c> so the
+    /// architecture rule, which flags every <c>SaveChangesAsync</c> call that is not Throw, never has to trust an app contract.
+    /// </summary>
+    Task<int> SaveWithThrowPolicyAsync(CancellationToken ct = default);
 }

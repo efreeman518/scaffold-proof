@@ -118,10 +118,10 @@ internal sealed class FakeTaskItemSystemRepository : ITaskItemSystemRepository
         return result;
     }
 
-    public Task<int> SaveChangesAsync(CancellationToken ct = default)
+    public Task<int> SaveWithThrowPolicyAsync(CancellationToken ct = default)
     {
         SaveCount++;
-        Calls.Add(nameof(SaveChangesAsync));
+        Calls.Add(nameof(SaveWithThrowPolicyAsync));
         return Task.FromResult(0);
     }
 }

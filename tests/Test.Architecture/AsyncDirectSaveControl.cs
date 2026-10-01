@@ -1,4 +1,5 @@
 using EF.Data.Contracts;
+using TaskFlow.Infrastructure.Data;
 
 namespace Test.Architecture;
 
@@ -16,4 +17,16 @@ internal static class AsyncDirectSaveControl
 
     internal static async Task<int> SaveThrowAsync(IRepositoryBase repository, CancellationToken ct) =>
         await repository.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
+
+    internal static async Task<int> SaveDbContextPolicyFreeAsync(TaskFlowDbContextTrxn db, CancellationToken ct) =>
+        await db.SaveChangesAsync(ct);
+
+    internal static async Task<int> SaveDbContextClientWinsAsync(TaskFlowDbContextTrxn db, CancellationToken ct) =>
+        await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: ct);
+
+    internal static async Task<int> SaveDbContextDbWinsAsync(TaskFlowDbContextTrxn db, CancellationToken ct) =>
+        await db.SaveChangesAsync(OptimisticConcurrencyWinner.DBWins, cancellationToken: ct);
+
+    internal static async Task<int> SaveDbContextThrowAsync(TaskFlowDbContextTrxn db, CancellationToken ct) =>
+        await db.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct);
 }

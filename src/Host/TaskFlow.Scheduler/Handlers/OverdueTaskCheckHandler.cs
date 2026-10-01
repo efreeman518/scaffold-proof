@@ -74,7 +74,7 @@ public sealed class OverdueTaskCheckHandler(
                     marked++;
                 }
 
-                if (marked > 0) await systemRepository.SaveChangesAsync(token);
+                if (marked > 0) await systemRepository.SaveWithThrowPolicyAsync(token);
                 return marked;
             }, ct);
         }
