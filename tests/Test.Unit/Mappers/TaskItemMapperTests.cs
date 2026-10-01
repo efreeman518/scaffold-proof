@@ -1,5 +1,6 @@
 using TaskFlow.Application.Mappers;
 using TaskFlow.Application.Models;
+using TaskFlow.Domain.Shared;
 using TaskFlow.Domain.Shared.Enums;
 using Test.Support;
 using Test.Support.Builders;
@@ -37,7 +38,7 @@ public class TaskItemMapperTests
     public void Given_EntityWithDateRange_When_MappedToDto_Then_DatesFlattenedCorrectly()
     {
         var entity = new TaskItemBuilder().Build();
-        var start = DateTimeOffset.UtcNow;
+        var start = StoredPrecision.Timestamp(DateTimeOffset.UtcNow);
         var due = start.AddDays(7);
         entity.UpdateDateRange(start, due);
 
@@ -66,7 +67,7 @@ public class TaskItemMapperTests
     [TestCategory("Unit")]
     public void Given_DtoWithDates_When_MappedToEntity_Then_DateRangeSet()
     {
-        var start = DateTimeOffset.UtcNow;
+        var start = StoredPrecision.Timestamp(DateTimeOffset.UtcNow);
         var due = start.AddDays(5);
         var dto = new TaskItemDto { Title = "With Dates", StartDate = start, DueDate = due };
         var result = dto.ToEntity(TestConstants.TenantId);

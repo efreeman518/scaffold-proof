@@ -33,14 +33,14 @@ Release `--no-build` after a `--no-incremental` Release solution build (0 warnin
 
 | Project | Passed | Duration |
 |---|---:|---:|
-| Test.Unit | 662 | 16 s |
+| Test.Unit | 670 | 16 s |
 | Test.UI | 54 | 1 s |
 | Test.Architecture | 87 | 2 s |
-| Test.Endpoints | 234 | 8 s |
+| Test.Endpoints | 236 | 8 s |
 | Test.Integration.FlowEngine | 26 | 0.3 s |
 | Test.Mutation | 27 | 0.1 s |
 | Test.PlaywrightUI (`TestCategory=Unit`) | 1 | 0.1 s |
-| **Total** | **1091** | |
+| **Total** | **1101** | |
 
 `Test.Unit` used the CI 15-second blame-hang timeout. `dotnet format analyzers TaskFlow.slnx --severity warn --verify-no-changes --no-restore` passed with no changes or diagnostics. Types the EF.* packages own are tested by the package suites, not here.
 
@@ -50,8 +50,8 @@ Release `--no-build`, Podman Docker-compatible context; Test.Integration 2026-10
 
 | Lane | Project | Passed | Skipped | Duration |
 |---|---|---:|---:|---:|
-| `TASKFLOW_LANE=NonAzure` / PostgreSqlJsonb | Test.Integration | 142 | 5 (Azure-only) | 105 s |
-| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 128 | 19 (NonAzure-only) | 174 s |
+| `TASKFLOW_LANE=NonAzure` / PostgreSqlJsonb | Test.Integration | 143 | 5 (Azure-only) | 107 s |
+| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 129 | 19 (NonAzure-only) | 160 s |
 | NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | Test.Integration | 144 | 3 | 106 s |
 | unset (resolves NonAzure) | Test.E2E | 10 | 0 | 15 s |
 | `TASKFLOW_LANE=Azure` | Test.E2E | 10 | 0 | 33 s |

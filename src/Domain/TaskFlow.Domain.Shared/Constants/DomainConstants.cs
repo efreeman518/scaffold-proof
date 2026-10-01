@@ -16,6 +16,9 @@ public static class DomainConstants
     public const int RULE_ATTACHMENT_CONTENTTYPE_LENGTH_MAX = 100;
     public const int RULE_ATTACHMENT_STORAGEURI_LENGTH_MAX = 2000;
 
+    // Decimal places of TaskItem.EstimatedEffort/ActualEffort (decimal(10, EFFORT_SCALE)); StoredPrecision rounds to it.
+    public const int EFFORT_SCALE = 2;
+
     // Max UTF8 plaintext bytes for the encrypted secure properties (D-023): ciphertext = 12 nonce + plaintext + 16 tag <= 256.
     public const int RULE_SECURE_PROPERTY_MAX_BYTES = 200;
 

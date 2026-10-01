@@ -1,5 +1,6 @@
 using EF.Common.Contracts;
 using TaskFlow.Application.Models;
+using TaskFlow.Domain.Shared;
 
 namespace TaskFlow.Application.Contracts.Concurrency;
 
@@ -41,12 +42,12 @@ public static class IdempotentCreateGuard
             && existing.Description == incoming.Description
             && existing.Priority == incoming.Priority
             && existing.Features == incoming.Features
-            && existing.EstimatedEffort == incoming.EstimatedEffort
-            && existing.ActualEffort == incoming.ActualEffort
+            && existing.EstimatedEffort == StoredPrecision.Effort(incoming.EstimatedEffort)
+            && existing.ActualEffort == StoredPrecision.Effort(incoming.ActualEffort)
             && existing.CategoryId == incoming.CategoryId
             && existing.ParentTaskItemId == incoming.ParentTaskItemId
-            && existing.StartDate == incoming.StartDate
-            && existing.DueDate == incoming.DueDate
+            && existing.StartDate == StoredPrecision.Timestamp(incoming.StartDate)
+            && existing.DueDate == StoredPrecision.Timestamp(incoming.DueDate)
             && existing.RecurrenceInterval == (recurs ? incoming.RecurrenceInterval : null)
             && existing.RecurrenceFrequency == (recurs ? incoming.RecurrenceFrequency : null)
             && existing.RecurrenceEndDate == (recurs ? incoming.RecurrenceEndDate : null);

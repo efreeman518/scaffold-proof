@@ -79,6 +79,34 @@ public class IdempotentCreateReplayEndpointTests
         Assert.AreEqual(HttpStatusCode.Conflict, different.StatusCode, await different.Content.ReadAsStringAsync(TestContext.CancellationToken));
     }
 
+    /// <summary>
+    /// The database stores effort to two decimals and a date to whole microseconds, so the create normalizes them in the
+    /// domain. An identical resend carrying more precision than that replays, and the stored value is the normalized one.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_TaskItemResentWithMoreThanStoredPrecision_When_Created_Then_ReplaysWithTheStoredValues(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = _fixture.CreateClient(style);
+        var id = Guid.CreateVersion7();
+        var due = new DateTimeOffset(2030, 5, 6, 7, 8, 9, TimeSpan.Zero).AddTicks(1234567);
+        var dto = new TaskItemDto { Id = id, Title = $"Replay-{Guid.NewGuid():N}", EstimatedEffort = 1.23456m, ActualEffort = 2.005m, StartDate = due, DueDate = due };
+
+        using var first = await PostAsync(client, "/api/v1/task-items", dto);
+        using var resend = await PostAsync(client, "/api/v1/task-items", dto);
+
+        Assert.AreEqual(HttpStatusCode.Created, first.StatusCode, await first.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        Assert.AreEqual(HttpStatusCode.OK, resend.StatusCode, await resend.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        var stored = (await resend.ItemAsync<TaskItemDto>(TestContext.CancellationToken))!;
+        Assert.AreEqual(1.23m, stored.EstimatedEffort);
+        Assert.AreEqual(2.01m, stored.ActualEffort);
+        Assert.AreEqual(due.Ticks - 7, stored.DueDate!.Value.Ticks);
+        Assert.AreEqual(due.Ticks - 7, stored.StartDate!.Value.Ticks);
+    }
+
     private async Task<HttpResponseMessage> PostAsync<T>(HttpClient client, string url, T item) =>
         await client.PostAsJsonAsync(url, new DefaultRequest<T> { Item = item }, cancellationToken: TestContext.CancellationToken);
 }
