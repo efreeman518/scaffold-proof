@@ -248,6 +248,36 @@ public sealed class IdempotencyKeyIntegrationTests
     }
 
     /// <summary>
+    /// The real host path for a child add, on the request's one scoped write context: the filter's mapping insert loses
+    /// to a concurrent duplicate committed first (the unique index fails the save), the existence read hands it the
+    /// winner's id, and the handler's <c>RetryOnConcurrencyAsync</c> then starts on that same context, which refuses to
+    /// run over pending changes; the failed mapping row must not still be tracked. The add creates the winner's comment
+    /// and the resend replays it.
+    /// </summary>
+    [TestMethod]
+    [Timeout(180000, CooperativeCancellation = true)]
+    public async Task Post_ConcurrentSameKeyComment_OnTheHostsScopedContext_AddsOneComment()
+    {
+        var ct = TestContext.CancellationToken;
+        using var client = _factory!.CreateClient();
+        var (_, taskId) = await CreateTaskAsync(client, $"Root-{Guid.NewGuid():N}", key: null, ct);
+        var key = NewKey();
+        var winner = Race.Arm(TenantId, $"task-item.comment.add:{taskId:D}", key);
+
+        using var first = await PostAsync(client, $"/api/v1/task-items/{taskId}/comments", new { item = new { body = "raced" } }, key, ct);
+        using var resend = await PostAsync(client, $"/api/v1/task-items/{taskId}/comments", new { item = new { body = "raced" } }, key, ct);
+
+        Assert.IsTrue(Race.Ran, "the race must have been staged inside the host's mapping save");
+        Assert.AreEqual(HttpStatusCode.Created, first.StatusCode, await first.Content.ReadAsStringAsync(ct));
+        Assert.AreEqual(HttpStatusCode.OK, resend.StatusCode, await resend.Content.ReadAsStringAsync(ct));
+        await using var verify = DbContainerFixture.CreateTrxnContext(_connectionString);
+        var comments = await verify.Comments.IgnoreQueryFilters().Where(c => c.TaskItemId == TaskItemId.From(taskId))
+            .Select(c => c.Id).ToListAsync(ct);
+        Assert.HasCount(1, comments);
+        Assert.AreEqual(winner, comments[0].Value, "the losing mapping insert reuses the competitor's id");
+    }
+
+    /// <summary>
     /// A child add's key is mapped only for a task the caller's tenant can see. A key sent to a task that does not exist,
     /// or exists in another tenant, stores no mapping and the add answers its usual 404. Before, both stored a mapping.
     /// </summary>
