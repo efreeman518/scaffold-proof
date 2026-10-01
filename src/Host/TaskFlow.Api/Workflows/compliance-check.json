@@ -121,6 +121,7 @@
       "config": {
         "clientRef": "taskflow-api",
         "method": "POST",
+        "idempotencyKeyHeader": "Idempotency-Key",
         "path": "/api/v1/task-items/{{$.context._loopItem.Id}}/comments",
         "body": { "item": { "Body": "Compliance review complete: {{$.context._humanTaskResponse.notes}}" } },
         "idempotencyKey": "$.context._loopItem.Id + '-compliance-resolved'"
@@ -136,6 +137,7 @@
       "config": {
         "clientRef": "taskflow-api",
         "method": "POST",
+        "idempotencyKeyHeader": "Idempotency-Key",
         "path": "/api/v1/task-items/{{$.context._loopItem.Id}}/comments",
         "body": { "item": { "Body": "Compliance evidence is expiring soon - please refresh." } },
         "idempotencyKey": "$.context._loopItem.Id + '-compliance-reminder'"

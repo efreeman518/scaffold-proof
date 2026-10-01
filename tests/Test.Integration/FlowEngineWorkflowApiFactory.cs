@@ -44,10 +44,20 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
     private readonly EnvironmentVariableScope _environment = new();
 
     private readonly Func<string, string> _chatReply;
+    private readonly Action<IHttpClientBuilder>? _configureSelfCallClient;
+    private readonly Action<IServiceCollection>? _configureServices;
 
-    public FlowEngineWorkflowApiFactory(string connectionString, Func<string, string> chatReply)
+    /// <param name="configureSelfCallClient">Adds test handlers to the "taskflow-api" self-call client, inside its resilience handler.</param>
+    /// <param name="configureServices">Last service registrations, after the host's own (a staged race, for instance).</param>
+    public FlowEngineWorkflowApiFactory(
+        string connectionString,
+        Func<string, string> chatReply,
+        Action<IHttpClientBuilder>? configureSelfCallClient = null,
+        Action<IServiceCollection>? configureServices = null)
     {
         _chatReply = chatReply;
+        _configureSelfCallClient = configureSelfCallClient;
+        _configureServices = configureServices;
 
         // Development so the host AND Program's own config-driven gates (the migration startup tasks read
         // config["ASPNETCORE_ENVIRONMENT"]) both see Development. Set as an env var so WebApplication.CreateBuilder
@@ -114,8 +124,10 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
             // Route the self-call HTTP connector back into this in-process server so workflow-driven
             // writes exercise the real endpoints + SQL. Server is built lazily, after startup, so it is
             // safe to resolve it inside the handler factory (invoked on first self-call at run time).
-            services.AddHttpClient("taskflow-api")
+            var selfCall = services.AddHttpClient("taskflow-api")
                 .ConfigurePrimaryHttpMessageHandler(() => Server.CreateHandler());
+            _configureSelfCallClient?.Invoke(selfCall);
+            _configureServices?.Invoke(services);
         });
     }
 

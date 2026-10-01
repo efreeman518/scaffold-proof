@@ -86,15 +86,16 @@ public class WorkflowDefinitionValidityTests
 
     /// <summary>
     /// The node RetryPolicy is the only retry owner for the taskflow-api calls (the resilient HTTP adapter sends
-    /// once per attempt), so every integration node declares one with exponential backoff. No node sends an
-    /// idempotency header (the API does not deduplicate one yet), so the unsafe methods keep the engine's
-    /// 409/429/503 default: no node overrides the status list, and no list carries 412 (D-032: a stale
-    /// precondition is never resent).
+    /// once per attempt), so every integration node declares one with exponential backoff. The POST nodes send the
+    /// engine-generated key in the <c>Idempotency-Key</c> header the API deduplicates (D-074), which opts them into
+    /// the full inherited status list (408, 409, 429, 500, 502, 503, 504) and transport retries. The If-Match: *
+    /// PATCH nodes send no key and keep the engine's 409/429/503 unsafe-method default. No node overrides the
+    /// inherited list, and no list carries 412 (D-032: a stale precondition is never resent).
     /// </summary>
     [TestMethod]
     [DynamicData(nameof(AllWorkflows))]
     [TestCategory("Integration")]
-    public void Each_Integration_Node_Declares_Exponential_RetryPolicy_With_Unsafe_Defaults(string fileName, string _id, string _version)
+    public void Each_Integration_Node_Declares_Exponential_RetryPolicy_And_Only_Posts_Are_Keyed(string fileName, string _id, string _version)
     {
         var def = JsonSerializer.Deserialize<WorkflowDefinition>(ReadWorkflowFile(fileName), JsonOpts)!;
         var integrationNodes = def.Nodes.Values.Where(n => n.Type == "integration").ToList();
@@ -110,8 +111,10 @@ public class WorkflowDefinitionValidityTests
 
             var config = JsonSerializer.Deserialize<IntegrationNodeConfig>(JsonSerializer.Serialize(node.Config, JsonOpts), JsonOpts)!;
             Assert.AreEqual("taskflow-api", config.ClientRef, $"{fileName}:{node.Id}");
-            Assert.IsNull(config.IdempotencyKeyHeader, $"{fileName}:{node.Id} sends an idempotency header the API does not deduplicate");
-            Assert.IsNull(config.RetryOnStatusCodes, $"{fileName}:{node.Id} must inherit the unsafe-method default status list");
+            var expectedHeader = string.Equals(config.Method, "POST", StringComparison.OrdinalIgnoreCase) ? "Idempotency-Key" : null;
+            Assert.AreEqual(expectedHeader, config.IdempotencyKeyHeader,
+                $"{fileName}:{node.Id} ({config.Method}): only the POST nodes, whose API routes deduplicate the header, send it");
+            Assert.IsNull(config.RetryOnStatusCodes, $"{fileName}:{node.Id} must inherit the default status list");
         }
     }
 
@@ -228,9 +231,10 @@ public class WorkflowDefinitionValidityTests
     /// every create lands in - the exact cost GR-17 exists to avoid. The create endpoint answers 400 and
     /// the loop lands on <c>n-output-failed</c>.
     /// <para>
-    /// So the body must keep sending no <c>Id</c> and rely on the integration node's own
-    /// <c>idempotencyKey</c>, which is already keyed by task id + iteration index. This test fails if
-    /// someone re-adds the id without first getting a UUIDv7-shaped iteration id from the package.
+    /// So the body sends no <c>Id</c>. Retry idempotency comes from the <c>Idempotency-Key</c> header instead
+    /// (D-074): the engine sends one generated key across an iteration's attempts, and the API maps it to a stored
+    /// UUIDv7, so every attempt creates or replays the same subtask. This test fails if someone re-adds the id
+    /// or drops the header.
     /// </para>
     /// </summary>
     [TestMethod]
@@ -248,9 +252,8 @@ public class WorkflowDefinitionValidityTests
         Assert.IsFalse(
             body.GetProperty("body").GetProperty("item").TryGetProperty("Id", out _),
             "the created subtask must not carry the loop's per-iteration id while that id is a UUIDv5 (GR-17)");
-        Assert.IsTrue(
-            body.TryGetProperty("idempotencyKey", out var key) && !string.IsNullOrWhiteSpace(key.GetString()),
-            "retry idempotency for the create must come from the integration node's idempotencyKey instead");
+        Assert.AreEqual("Idempotency-Key", body.GetProperty("idempotencyKeyHeader").GetString(),
+            "retry idempotency for the create must come from the deduplicated Idempotency-Key header instead");
     }
 
     private static bool IsCamelCaseIdempotencyKeyFalsePositive(string warning, JsonElement nodes)

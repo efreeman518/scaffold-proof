@@ -12,6 +12,7 @@ public static class ErrorConstants
     // Idempotent create and paging contract (GR-17, GR-18); the If-Match texts come from EF.AspNetCore.Concurrency.
     public const string ERROR_CURSOR_INVALID = "Cursor is invalid, expired, or does not match the requested sort mode.";
     public const string ERROR_PAGE_SIZE_RANGE = "Page size must be between {0} and {1}.";
+    public const string ERROR_IDEMPOTENCY_KEY_INVALID = "The Idempotency-Key header must be one non-empty value of at most {0} characters.";
 
     // Fixed client text for failed writes; the provider exception (schema, table, key values) is logged only.
     public const string ERROR_SAVE_FAILED = "The change could not be saved.";

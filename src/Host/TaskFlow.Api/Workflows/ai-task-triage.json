@@ -102,6 +102,7 @@
       "config": {
         "clientRef": "taskflow-api",
         "method": "POST",
+        "idempotencyKeyHeader": "Idempotency-Key",
         "path": "/api/v1/task-items/{{$.params.taskId}}/comments",
         "body": { "item": { "Body": "Critical-priority elevation rejected by quorum reviewers." } },
         "idempotencyKey": "$.params.taskId + '-reject-comment'"
