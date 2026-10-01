@@ -29,18 +29,18 @@ A Debug restore of the Uno project followed by a Release `--no-restore` build fa
 
 ### Fast matrix
 
-Release `--no-build`, run serially; Unit, UI, Architecture and Endpoints 2026-09-30 (EF.* 2.0.115), the rest 2026-09-29. No failed, skipped, or inconclusive tests:
+Release `--no-build`, run serially; Unit and Architecture 2026-10-01, UI and Endpoints 2026-09-30 (EF.* 2.0.115), the rest 2026-09-29. No failed, skipped, or inconclusive tests:
 
 | Project | Passed | Duration |
 |---|---:|---:|
-| Test.Unit | 627 | 16 s |
+| Test.Unit | 629 | 15 s |
 | Test.UI | 54 | 1 s |
-| Test.Architecture | 81 | 2 s |
+| Test.Architecture | 81 | 3 s |
 | Test.Endpoints | 199 | 8 s |
 | Test.Integration.FlowEngine | 18 | 0.2 s |
 | Test.Mutation | 27 | 0.1 s |
 | Test.PlaywrightUI (`TestCategory=Unit`) | 1 | 0.1 s |
-| **Total** | **1007** | |
+| **Total** | **1009** | |
 
 `Test.Unit` used the CI 15-second blame-hang timeout. `dotnet format analyzers TaskFlow.slnx --severity warn --verify-no-changes --no-restore` passed with no changes or diagnostics. Types the EF.* packages own are tested by the package suites, not here.
 
@@ -50,8 +50,8 @@ Release `--no-build`, Podman Docker-compatible context; Test.Integration Postgre
 
 | Lane | Project | Passed | Skipped | Duration |
 |---|---|---:|---:|---:|
-| unset (resolves NonAzure) / PostgreSqlJsonb | Test.Integration | 104 | 5 (Azure-only) | 106 s |
-| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 90 | 19 (NonAzure-only) | 197 s |
+| unset (resolves NonAzure) / PostgreSqlJsonb | Test.Integration | 106 | 5 (Azure-only) | 107 s |
+| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 92 | 19 (NonAzure-only) | 198 s |
 | NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | Test.Integration | 92 | 3 | 106 s (before the 8 same-key and exhaustion race cases, which then passed under MongoDb with the rest of `ChildAddConcurrencyTests`, 14/14) |
 | unset (resolves NonAzure) | Test.E2E | 10 | 0 | 15 s |
 | `TASKFLOW_LANE=Azure` | Test.E2E | 10 | 0 | 33 s |
@@ -202,7 +202,7 @@ Status meanings:
 | Tenant rate limiting and edge limits (D-050) | proven | `TenantRateLimitEndpointTests` (tenant tier applied after auth, export counted once); `TenantRateLimitingCompositionTests` (unreachable Redis fails open, no Redis stays in process); `GatewayEdgeRateLimitTests.AddGatewayServices_InvalidEdgeBudget_FailsWhenTheLimiterIsBuilt`; `BicepInfrastructureContractTests.MainBicep_GatewayAppliesExactlyOneForwardedHop` |
 | Two-state inbox and outbox settlement (D-026, D-029, D-053) | proven | `Test.Unit/Infrastructure/MessagingConsumerTests.cs` (TaskFlow consumers on the package base); `Test.Integration/InboxStoreTests.cs` and `OutboxClaimTests.cs` on both providers; `Test.Aspire/OutboxMeshTests.cs` (every consumer records the event exactly once); `BrokerTracePropagationTests.OutboxHop_ConsumerContinuesTheRequestTrace_NotTheDrain`; settlement and transports are proven by the `EF.Data.Outbox` and `EF.Messaging` suites |
 | Scheduler cron seeding and health (D-009) | proven | `SchedulerCronRegistrationTests`; `Test.Integration/SchedulerCronSeedingTests.HostStart_SeedsEveryDeclaredCronJob_AndARestartAddsNone` (plus a due ticker run through `ScheduledJobRunner`); `SchedulerHealthCheckTests` (package check with the shipped threshold) |
-| Scheduler transaction retry (D-009) | proven | `Test.Integration/SchedulerTransactionRetryTests.cs` on PostgreSQL and SQL Server: a `DbTransactionInterceptor` throws one provider-transient exception (PostgresException 40001; `TimeoutException`, which the SQL Server strategy retries) before or after the first commit of each job. All three jobs complete with one outbox or blob-delete row per message id; after a lost commit the count is reported once, after a landed commit the retry is a no-op and reports 0. Before the per-attempt tracker clear the three before-commit cases failed on both providers ("already being tracked" on the re-staged `OutboxMessage` or `BlobDeleteWork`) |
+| Scheduler transaction retry (D-009) | proven | `Test.Integration/SchedulerTransactionRetryTests.cs` on PostgreSQL and SQL Server: a `DbTransactionInterceptor` throws one provider-transient exception (PostgresException 40001; `TimeoutException`, which the SQL Server strategy retries) before or after the first commit of each job. All three jobs complete with one outbox or blob-delete row per message id; after a lost commit the count is reported once, after a landed commit the retry is a no-op and reports 0. A competing overdue replica that marks and announces two of three tasks inside the run's window leaves the run announcing and reporting only the third, and a recurrence pointer re-seeded over generated occurrences announces only the new ones; both failed on `PK_OutboxMessage` on both providers before each job staged only the rows its own guarded write changed. Before the per-attempt tracker clear the three before-commit cases failed on both providers ("already being tracked" on the re-staged `OutboxMessage` or `BlobDeleteWork`) |
 | Strict config and id validation (D-069) | proven | `EF.Common` `StrictEnum` and `EF.Common.Contracts.UuidV7` (package suites); `TaskFlowDbProviderSelectorTests.PoolerModeSelector_NumericOrCombinedValue_Throws`; Endpoint cases reject a non-v7 caller id with 400 |
 | Audit masking of secure columns (D-023) | proven | `AuditMaskingTests.Given_SecureTaskItemValues_When_CreatedAndUpdated_Then_AuditPayloadsCarryNoPlaintext` |
 | Uno WASM host contract (D-070) | proven | `Test.UI/WasmHost/WasmHostHttpContractTests.cs` (encoding by Accept-Encoding quality, immutable fingerprinted assets, no-cache index, 404 for missing assets, SPA fallback, `/app-config.json`, the publish-rewritten `uno-config.js` served from disk); nginx static contract in `DeploymentWorkflowContractTests` |
