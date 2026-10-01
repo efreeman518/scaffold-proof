@@ -29,7 +29,7 @@ A Debug restore of the Uno project followed by a Release `--no-restore` build fa
 
 ### Fast matrix
 
-Release `--no-build` after a `--no-incremental` Release solution build (0 warnings, 0 errors), run serially; Unit, Architecture, Endpoints and Integration.FlowEngine 2026-10-01 (EF.* 2.0.116, EF.FlowEngine 1.0.199, review fixes on `fix/followups-4e1efc-r`), UI 2026-09-30 (EF.* 2.0.115), the rest 2026-09-29. No failed, skipped, or inconclusive tests:
+Release `--no-build` after a `--no-incremental` Release solution build (0 warnings, 0 errors), run serially; Unit, Architecture, Endpoints and Integration.FlowEngine 2026-10-01 (EF.* 2.0.116, EF.FlowEngine 1.0.199), UI 2026-09-30 (EF.* 2.0.115), the rest 2026-09-29. No failed, skipped, or inconclusive tests:
 
 | Project | Passed | Duration |
 |---|---:|---:|
@@ -46,7 +46,7 @@ Release `--no-build` after a `--no-incremental` Release solution build (0 warnin
 
 ### Component containers
 
-Release `--no-build`, Podman Docker-compatible context; Test.Integration 2026-10-01 (EF.* 2.0.116, EF.FlowEngine 1.0.199, regenerated `InitialCreate`, review fixes on `fix/followups-4e1efc-r`), Test.E2E 2026-09-29:
+Release `--no-build`, Podman Docker-compatible context; Test.Integration 2026-10-01 (EF.* 2.0.116, EF.FlowEngine 1.0.199, regenerated `InitialCreate`), Test.E2E 2026-09-29:
 
 | Lane | Project | Passed | Skipped | Duration |
 |---|---|---:|---:|---:|
