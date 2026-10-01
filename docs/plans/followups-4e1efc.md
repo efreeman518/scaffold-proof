@@ -13,12 +13,13 @@ and adopting the FlowEngine retry release. The next session resumes from this fi
 
 | Id | Repo | Scope | Depends | Model | Status | Branch / PR | Agent | Lease |
 |---|---|---|---|---|---|---|---|---|
-| P1 | proof | Scheduler `ExecuteInTransactionAsync` retry safety: clean tracker per attempt, counts after success, commit-landed case; transient-commit race tests on both providers | - | opus | running | fix/followups-4e1efc-p1 | a31c3365 | 442b78a8 |
+| P1 | proof | Scheduler `ExecuteInTransactionAsync` retry safety: clean tracker per attempt, counts after success, commit-landed case; transient-commit race tests on both providers | - | opus | merged #40 | removed | a31c3365 | released |
 | P2 | proof | `If-Match: *` writes run inside `RetryOnConcurrencyAsync`, exhaustion 409; root and child PUT/PATCH/DELETE and Category/Tag/Attachment; race tests; atomic category delete | - | opus | merged #39 (76cfe24) | removed | afe86938 | released |
-| FE | proof | FlowEngine retry release: bump; API honors `Idempotency-Key` on POST create and child adds (UUIDv5 id when body Id is null); workflow nodes get `idempotencyKeyHeader` and explicit `retryPolicy`; tests | - | opus | running | fix/followups-4e1efc-fe | a7cfe964 | 879d4064 |
-| P3 | proof | Throw-policy architecture scan covers Infrastructure.Repositories and the Scheduler host | P1 | sonnet | queued | | | |
+| FE | proof | FlowEngine retry release: bump; API honors `Idempotency-Key` on POST create and child adds (UUIDv5 id when body Id is null); workflow nodes get `idempotencyKeyHeader` and explicit `retryPolicy`; tests | - | opus | merged #42 | removed | a7cfe964 | released |
+| P3 | proof | Throw-policy architecture scan covers Infrastructure.Repositories and the Scheduler host | P1 | sonnet | merged #41 | removed | a17a6b07 | released |
 | E1 | EF.Packages | Hunt the one-off EF.Test.Unit failure: three real-clock or file races found and fixed | - | sonnet | merged EF.Packages #90, published 2.0.116 | removed | a51770ad | released |
-| S | scaffold-ai | Instruction follow-through: transaction retry shape, `If-Match: *` retry, idempotency header, explicit FlowEngine node retry policies; the scaffold repos keep one regenerated initial migration per DbContext | P1, P2, FE | sonnet | queued | | | |
+| R | proof | Independent review findings: loop-node config and D-059, SQL Server binary collation on keys, Guid-normalized scopes, Guid.Empty body id, wildcard delete after a landed commit, batched purge and root check, set-based writes bump Version, host-path tests, Idempotency-Key on all creates and in OpenAPI | P1, P2, P3, FE | opus | running | fix/followups-4e1efc-r | a1b7724b | 3b5c91ac |
+| S | scaffold-ai | Instruction follow-through: transaction retry shape, `If-Match: *` retry, idempotency header, explicit FlowEngine node retry policies; the scaffold repos keep one regenerated initial migration per DbContext | P1, P2, FE | sonnet | running (opus) | docs/followups-4e1efc-s | a63337e4 | fdf21a32 | | | |
 
 ## Decisions
 
@@ -33,5 +34,7 @@ and adopting the FlowEngine retry release. The next session resumes from this fi
 
 ## Next action
 
-P1, P2 and FE are running in worktrees `.tmp/worktrees/followups-4e1efc-<slice>`, with state in `.tmp/orchestrated-refactor/followups-4e1efc/<slice>`. The E1 loop logs to EF.Packages `.tmp/followups-4e1efc-e1`. When P1, P2 and FE are merged into the integration branch, run P3, one independent review
-of P1+P2+FE, then the final PR. S runs after the proof slices merge.
+P1, P2, P3 and FE are merged into the integration branch (#39-#42). R (the review fixes) and S (scaffold-ai) are
+running. When R merges: rerun the full gate, open the final PR to main (CI is the gate), then merge S after
+validate-reference passes against the final branch. Upstream FlowEngine defects (Retry=null start failure,
+AddDirectHttpClient at startup, GetWarnings casing, loop-body key and retry) went to the owner as prompts.
