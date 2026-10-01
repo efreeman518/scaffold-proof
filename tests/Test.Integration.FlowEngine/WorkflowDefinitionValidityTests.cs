@@ -19,6 +19,10 @@ public class WorkflowDefinitionValidityTests
     private const string DecomposerId = "ai-task-decomposer";
     private const string ComplianceId = "compliance-check";
 
+    // The POST nodes outside a loop body. Revisit the loop-body POST nodes (n-loop-create-one, n-mark-resolved,
+    // n-remind) when FlowEngine generates a per-iteration Idempotency-Key.
+    private static readonly HashSet<string> KeyedPostNodes = ["n-compensate-reject"];
+
     /// <summary>Verifies all workflows behavior and protects the expected test contract.</summary>
     public static IEnumerable<object[]> AllWorkflows() =>
     [
@@ -86,16 +90,18 @@ public class WorkflowDefinitionValidityTests
 
     /// <summary>
     /// The node RetryPolicy is the only retry owner for the taskflow-api calls (the resilient HTTP adapter sends
-    /// once per attempt), so every integration node declares one with exponential backoff. The POST nodes send the
-    /// engine-generated key in the <c>Idempotency-Key</c> header the API deduplicates (D-074), which opts them into
-    /// the full inherited status list (408, 409, 429, 500, 502, 503, 504) and transport retries. The If-Match: *
-    /// PATCH nodes send no key and keep the engine's 409/429/503 unsafe-method default. No node overrides the
-    /// inherited list, and no list carries 412 (D-032: a stale precondition is never resent).
+    /// once per attempt), so every integration node declares one with exponential backoff. The top-level POST node
+    /// sends the engine-generated key in the <c>Idempotency-Key</c> header the API deduplicates (D-074), which opts
+    /// it into the full inherited status list (408, 409, 429, 500, 502, 503, 504) and transport retries. The loop-body
+    /// POST nodes must not: EF.FlowEngine 1.0.199 generates the same key for every iteration of a loop-body node, so
+    /// the API would replay the first iteration's row for the next one (and it applies no retryPolicy there). The
+    /// If-Match: * PATCH nodes send no key and keep the engine's 409/429/503 unsafe-method default. No node overrides
+    /// the inherited list, and no list carries 412 (D-032: a stale precondition is never resent).
     /// </summary>
     [TestMethod]
     [DynamicData(nameof(AllWorkflows))]
     [TestCategory("Integration")]
-    public void Each_Integration_Node_Declares_Exponential_RetryPolicy_And_Only_Posts_Are_Keyed(string fileName, string _id, string _version)
+    public void Each_Integration_Node_Declares_Exponential_RetryPolicy_And_Only_The_TopLevel_Post_Is_Keyed(string fileName, string _id, string _version)
     {
         var def = JsonSerializer.Deserialize<WorkflowDefinition>(ReadWorkflowFile(fileName), JsonOpts)!;
         var integrationNodes = def.Nodes.Values.Where(n => n.Type == "integration").ToList();
@@ -111,9 +117,9 @@ public class WorkflowDefinitionValidityTests
 
             var config = JsonSerializer.Deserialize<IntegrationNodeConfig>(JsonSerializer.Serialize(node.Config, JsonOpts), JsonOpts)!;
             Assert.AreEqual("taskflow-api", config.ClientRef, $"{fileName}:{node.Id}");
-            var expectedHeader = string.Equals(config.Method, "POST", StringComparison.OrdinalIgnoreCase) ? "Idempotency-Key" : null;
+            var expectedHeader = KeyedPostNodes.Contains(node.Id) ? "Idempotency-Key" : null;
             Assert.AreEqual(expectedHeader, config.IdempotencyKeyHeader,
-                $"{fileName}:{node.Id} ({config.Method}): only the POST nodes, whose API routes deduplicate the header, send it");
+                $"{fileName}:{node.Id} ({config.Method}): only the top-level POST node sends the key; a loop-body node would send one key for every iteration");
             Assert.IsNull(config.RetryOnStatusCodes, $"{fileName}:{node.Id} must inherit the default status list");
         }
     }
@@ -231,10 +237,9 @@ public class WorkflowDefinitionValidityTests
     /// every create lands in - the exact cost GR-17 exists to avoid. The create endpoint answers 400 and
     /// the loop lands on <c>n-output-failed</c>.
     /// <para>
-    /// So the body sends no <c>Id</c>. Retry idempotency comes from the <c>Idempotency-Key</c> header instead
-    /// (D-074): the engine sends one generated key across an iteration's attempts, and the API maps it to a stored
-    /// UUIDv7, so every attempt creates or replays the same subtask. This test fails if someone re-adds the id
-    /// or drops the header.
+    /// So the body sends no <c>Id</c>, and no <c>Idempotency-Key</c> header either: EF.FlowEngine 1.0.199 generates the
+    /// same key for every iteration of a loop-body node, so the API (D-074) would replay the first subtask for the
+    /// second. This test fails if someone re-adds the id or the header before the package keys each iteration.
     /// </para>
     /// </summary>
     [TestMethod]
@@ -252,8 +257,8 @@ public class WorkflowDefinitionValidityTests
         Assert.IsFalse(
             body.GetProperty("body").GetProperty("item").TryGetProperty("Id", out _),
             "the created subtask must not carry the loop's per-iteration id while that id is a UUIDv5 (GR-17)");
-        Assert.AreEqual("Idempotency-Key", body.GetProperty("idempotencyKeyHeader").GetString(),
-            "retry idempotency for the create must come from the deduplicated Idempotency-Key header instead");
+        Assert.IsFalse(body.TryGetProperty("idempotencyKeyHeader", out _),
+            "a loop-body node sends one generated key for every iteration, so the API would merge the subtasks");
     }
 
     private static bool IsCamelCaseIdempotencyKeyFalsePositive(string warning, JsonElement nodes)

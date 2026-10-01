@@ -99,8 +99,8 @@ public sealed class AiWorkflowIntegrationTests
     /// runs as the only node of a probe workflow. Its first POST reaches the API and adds the comment, but the
     /// response is lost and the engine sees a 502. The node retries the ambiguous status with the same generated
     /// Idempotency-Key, the API maps the key to the stored comment id and replays it, so the task has one comment.
-    /// (The shipped loop-body POST nodes send the key too, but EF.FlowEngine 1.0.199 does not apply a node
-    /// retryPolicy inside a loop body, so their resend comes only from lease recovery.)
+    /// It is the only keyed shipped node: EF.FlowEngine 1.0.199 sends one key for every iteration of a loop-body
+    /// node and applies no retryPolicy there, so the loop-body POST nodes stay unkeyed.
     /// </summary>
     [TestMethod]
     public async Task KeyedCommentPost_RetriedOn502_AddsOneComment()

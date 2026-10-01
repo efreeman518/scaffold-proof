@@ -79,7 +79,6 @@
       "config": {
         "clientRef": "taskflow-api",
         "method": "POST",
-        "idempotencyKeyHeader": "Idempotency-Key",
         "path": "/api/v1/task-items",
         "body": {
           "item": {
