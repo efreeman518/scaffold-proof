@@ -22,8 +22,20 @@ internal static class CqrsHandlerSupport
     /// returned as a generic 400 instead of reaching the handler as a 412, and a cancellation would become
     /// a 400 instead of the host's 499/504.
     /// </summary>
-    public static async Task<Result> TrySaveAsync(
+    public static Task<Result> TrySaveAsync(
         IRepositoryBase repository,
+        ILogger logger,
+        string errorMessage,
+        CancellationToken ct,
+        params object?[] args) =>
+        TryWriteAsync(t => repository.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, t), logger, errorMessage, ct, args);
+
+    /// <summary>
+    /// Runs a repository write that ends in one <c>Throw</c> save (a unit the repository owns, such as a delete with
+    /// its set-based pre-step) and maps its failures like <see cref="TrySaveAsync"/>.
+    /// </summary>
+    public static async Task<Result> TryWriteAsync(
+        Func<CancellationToken, Task> write,
         ILogger logger,
         string errorMessage,
         CancellationToken ct,
@@ -31,7 +43,7 @@ internal static class CqrsHandlerSupport
     {
         try
         {
-            await repository.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
+            await write(ct);
             return Result.Success();
         }
         catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
