@@ -247,6 +247,53 @@ public class SchedulerTransactionRetryTests
             .Select(m => m.Id), expected: occurrenceIds.Count);
     }
 
+    /// <summary>
+    /// Stale cleanup, two overlapping runs: just before this run's first write in the tenant step, another run
+    /// removes two of the three stale tasks and queues their blob deletions. This run must queue blob work only for
+    /// the task it removed itself.
+    /// </summary>
+    [TestMethod]
+    [Timeout(180000, CooperativeCancellation = true)]
+    public async Task StaleTaskCleanup_CompetingRunRemovedSome_StagesBlobWorkOnlyForItsOwn()
+    {
+        await RunStaleCleanupAsync(null);
+        var tenantId = Guid.NewGuid();
+        var typedTenantId = TenantId.From(tenantId);
+        var taskIds = new List<Guid>();
+        await using (var seed = DbContainerFixture.CreateTrxnContext())
+        {
+            for (var i = 0; i < 3; i++)
+            {
+                var task = TaskItem.Create(typedTenantId, $"Cancelled {i}").Value!;
+                task.TransitionStatus(TaskItemStatus.Cancelled);
+                seed.TaskItems.Add(task);
+                seed.Attachments.Add(Attachment.Create(
+                    typedTenantId, $"spec-{i}.pdf", "application/pdf", 1024, $"https://example/spec-{i}.pdf",
+                    AttachmentOwnerType.TaskItem, task.Id.Value).Value!);
+                taskIds.Add(task.Id.Value);
+            }
+            await seed.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
+            var typedIds = taskIds.ConvertAll(TaskItemId.From);
+            await seed.Set<TaskItem>().IgnoreQueryFilters()
+                .Where(t => typedIds.Contains(t.Id))
+                .ExecuteUpdateAsync(s => s.SetProperty(t => t.TerminalAtUtc, Now.AddDays(-200)), TestContext.CancellationToken);
+        }
+
+        var competitor = new CompetingStaleRun(tenantId, taskIds.Take(2).ToList());
+        var reported = await RunStaleCleanupAsync(competitor);
+
+        Assert.IsTrue(competitor.Ran, "the other run removed its tasks inside this run's window");
+        Assert.AreEqual(1, reported, "this run reports only the task it removed");
+        await using var verify = DbContainerFixture.CreateTrxnContext();
+        Assert.AreEqual(0, await verify.Set<TaskItem>().IgnoreQueryFilters()
+            .CountAsync(t => t.TenantId == typedTenantId, TestContext.CancellationToken));
+        Assert.AreEqual(0, await verify.Set<Attachment>().IgnoreQueryFilters()
+            .CountAsync(a => a.TenantId == typedTenantId, TestContext.CancellationToken));
+        await AssertOneRowPerMessageIdAsync(verify.BlobDeleteWork
+            .Where(w => w.TenantId == tenantId)
+            .Select(w => w.Id), expected: 3);
+    }
+
     private async Task<List<Guid>> OccurrenceIdsAsync(Guid tenantId)
     {
         await using var verify = DbContainerFixture.CreateTrxnContext();
@@ -352,6 +399,50 @@ public class SchedulerTransactionRetryTests
             throw DbContainerFixture.Provider == TaskFlowDbProvider.PostgreSql
                 ? new PostgresException("injected serialization failure", "ERROR", "ERROR", PostgresErrorCodes.SerializationFailure)
                 : new TimeoutException("injected commit timeout");
+        }
+    }
+
+    /// <summary>
+    /// A second cleanup run that, just before this run's first write inside its tenant step, queues the blob
+    /// deletions for <paramref name="taskIds"/> through the same repository call this job uses, then deletes their
+    /// attachments and the tasks, each statement committing on its own. Runs once. The hook is the first write, not
+    /// the delete: a competitor blocked behind rows this run already wrote would wait on this run forever.
+    /// </summary>
+    private sealed class CompetingStaleRun(Guid tenantId, List<Guid> taskIds) : DbCommandInterceptor
+    {
+        public bool Ran { get; private set; }
+
+        public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            await RunBeforeFirstWriteAsync(command, cancellationToken);
+            return result;
+        }
+
+        public override async ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            await RunBeforeFirstWriteAsync(command, cancellationToken);
+            return result;
+        }
+
+        private async Task RunBeforeFirstWriteAsync(DbCommand command, CancellationToken ct)
+        {
+            if (Ran || command.Transaction is null
+                || command.CommandText.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)) return;
+            Ran = true;
+
+            await using var other = DbContainerFixture.CreateTrxnContext();
+            await new TaskItemSystemRepository(other).StageBlobDeletesAsync(tenantId, taskIds, ct);
+            var typedTenantId = TenantId.From(tenantId);
+            var typedIds = taskIds.ConvertAll(TaskItemId.From);
+            await other.Set<Attachment>().IgnoreQueryFilters()
+                .Where(a => a.TenantId == typedTenantId && a.OwnerType == AttachmentOwnerType.TaskItem && taskIds.Contains(a.OwnerId))
+                .ExecuteDeleteAsync(ct);
+            await other.Set<TaskItem>().IgnoreQueryFilters()
+                .Where(t => t.TenantId == typedTenantId && typedIds.Contains(t.Id))
+                .ExecuteDeleteAsync(ct);
         }
     }
 
