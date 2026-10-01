@@ -13,6 +13,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http.Resilience;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Infrastructure.Messaging.RabbitMq;
@@ -95,8 +96,8 @@ public static partial class RegisterServices
         // The If-Match: * trusted-automation override (D-032) travels in each PATCH node's own
         // "headers" config (EF.FlowEngine 1.0.173 forwards IntegrationNodeConfig.Headers), so this
         // client needs no message handler of its own.
-        services.AddHttpClient("taskflow-api", c => c.BaseAddress = new Uri(apiBaseUrl));
-        fe.AddResilientHttpClient("taskflow-api", namedClient: "taskflow-api");
+        AddTaskFlowApiHttpClient(services, apiBaseUrl);
+        fe.AddDirectHttpClient(TaskFlowApiClientName, namedClient: TaskFlowApiClientName);
 
         if (ResolveMessagingProvider(config) == MessagingProvider.RabbitMq)
         {
@@ -127,6 +128,32 @@ public static partial class RegisterServices
         fe.AddChatClientAgentClient(
             clientRef: "ai-agent",
             chatClientFactory: sp => sp.GetRequiredService<IChatClient>());
+    }
+
+    internal const string TaskFlowApiClientName = "taskflow-api";
+
+    /// <summary>
+    /// The workflow self-call client. The node <c>retryPolicy</c> is the only retry owner (EF.FlowEngine 1.0.199),
+    /// so this client sends once per node attempt for every method and keeps the standard timeouts and circuit
+    /// breaker. The inherited ServiceDefaults handler (D-063) still retries safe methods and shares one options
+    /// instance across clients, so it is replaced here, not reconfigured; <c>RemoveAllResilienceHandlers</c> is
+    /// experimental (the Blazor gRPC read client sets the precedent), so remove the suppression when it is not.
+    /// <para>
+    /// shortcut: <c>AddDirectHttpClient</c> over this handler instead of <c>AddResilientHttpClient</c>, because
+    /// 1.0.199 sets <c>HttpStandardResilienceOptions.Retry</c> to null there, and the name-agnostic options
+    /// validator any <c>AddStandardResilienceHandler</c> registers (ServiceDefaults) then fails host start
+    /// ("The taskflow-api.Retry field is required"). Return to <c>AddResilientHttpClient</c> once the package
+    /// coexists with that validator.
+    /// </para>
+    /// </summary>
+    internal static IHttpClientBuilder AddTaskFlowApiHttpClient(IServiceCollection services, string apiBaseUrl)
+    {
+        var client = services.AddHttpClient(TaskFlowApiClientName, c => c.BaseAddress = new Uri(apiBaseUrl));
+#pragma warning disable EXTEXP0001
+        client.RemoveAllResilienceHandlers();
+#pragma warning restore EXTEXP0001
+        client.AddStandardResilienceHandler(o => o.Retry.ShouldHandle = static _ => ValueTask.FromResult(false));
+        return client;
     }
 
     internal static string ResolveFlowEngineServiceBusTopic(IConfiguration config) =>
