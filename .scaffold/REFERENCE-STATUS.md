@@ -33,14 +33,14 @@ Release `--no-build`, run serially; Unit, Architecture and Endpoints 2026-10-01,
 
 | Project | Passed | Duration |
 |---|---:|---:|
-| Test.Unit | 655 | 16 s |
+| Test.Unit | 658 | 16 s |
 | Test.UI | 54 | 1 s |
-| Test.Architecture | 81 | 3 s |
+| Test.Architecture | 81 | 2 s |
 | Test.Endpoints | 199 | 8 s |
 | Test.Integration.FlowEngine | 18 | 0.2 s |
 | Test.Mutation | 27 | 0.1 s |
 | Test.PlaywrightUI (`TestCategory=Unit`) | 1 | 0.1 s |
-| **Total** | **1035** | |
+| **Total** | **1038** | |
 
 `Test.Unit` used the CI 15-second blame-hang timeout. `dotnet format analyzers TaskFlow.slnx --severity warn --verify-no-changes --no-restore` passed with no changes or diagnostics. Types the EF.* packages own are tested by the package suites, not here.
 
@@ -50,9 +50,9 @@ Release `--no-build`, Podman Docker-compatible context; Test.Integration 2026-10
 
 | Lane | Project | Passed | Skipped | Duration |
 |---|---|---:|---:|---:|
-| `TASKFLOW_LANE=NonAzure` / PostgreSqlJsonb | Test.Integration | 114 | 5 (Azure-only) | 126 s |
-| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 100 | 19 (NonAzure-only) | 179 s |
-| NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | Test.Integration | 92 | 3 | 106 s (before the 8 same-key and exhaustion race cases, which then passed under MongoDb with the rest of `ChildAddConcurrencyTests`, 14/14; before the 12 `WildcardWriteConcurrencyTests` and 4 `CategoryDeleteAtomicityTests` cases) |
+| `TASKFLOW_LANE=NonAzure` / PostgreSqlJsonb | Test.Integration | 123 | 5 (Azure-only) | 105 s |
+| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 109 | 19 (NonAzure-only) | 184 s |
+| NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | Test.Integration | 92 | 3 | 106 s (before the 8 same-key and exhaustion race cases, which then passed under MongoDb with the rest of `ChildAddConcurrencyTests`, 14/14; before the 12 `WildcardWriteConcurrencyTests` and 4 `CategoryDeleteAtomicityTests` cases and the 9 `SchedulerTransactionRetryTests` cases) |
 | unset (resolves NonAzure) | Test.E2E | 10 | 0 | 15 s |
 | `TASKFLOW_LANE=Azure` | Test.E2E | 10 | 0 | 33 s |
 
