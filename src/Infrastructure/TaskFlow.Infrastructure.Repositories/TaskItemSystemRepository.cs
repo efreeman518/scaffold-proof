@@ -51,7 +51,7 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
         // RETURNING is not portable through ExecuteUpdate on both providers.
         var affected = await OverdueCandidates(asOfUtc)
             .Where(e => e.TenantId == typedTenantId && e.Id == typedId)
-            .ExecuteUpdateAsync(s => s.SetProperty(e => e.OverdueNotifiedForDueDate, e => e.DueDate), ct)
+            .ExecuteUpdateAsync(s => s.SetProperty(e => e.OverdueNotifiedForDueDate, e => e.DueDate).StampModified(DB.Clock.GetUtcNow()), ct)
             .ConfigureAwait(ConfigureAwaitOptions.None);
         return affected > 0;
     }
@@ -72,11 +72,15 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
     // IX_TaskItem_TenantId_RecurrenceTemplateId_OccurrenceUtc. A null whenMatched is the package's
     // insert-if-absent arm, so a template that already produced this occurrence is left untouched and the
     // statement affects no row.
-    public async Task<bool> InsertOccurrenceIfAbsentAsync(TaskItem occurrence, CancellationToken ct = default) =>
-        await UpsertAsync(
+    // The upsert bypasses the save pipeline, so the occurrence is stamped as a tracked insert would be (D-073).
+    public async Task<bool> InsertOccurrenceIfAbsentAsync(TaskItem occurrence, CancellationToken ct = default)
+    {
+        SetBasedWriteStamp.StampAdded(DB, occurrence, DB.Clock.GetUtcNow());
+        return await UpsertAsync(
             occurrence,
             e => new { e.TenantId, e.RecurrenceTemplateId, e.OccurrenceUtc },
             cancellationToken: ct).ConfigureAwait(ConfigureAwaitOptions.None) > 0;
+    }
 
     /// <inheritdoc />
     public async Task<bool> AdvanceNextOccurrenceAsync(
@@ -89,7 +93,7 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
             .IgnoreQueryFilters()
             .Where(e => e.TenantId == typedTenantId && e.Id == typedTemplateId
                 && e.NextOccurrenceAtUtc == expectedNextUtc)
-            .ExecuteUpdateAsync(s => s.SetProperty(e => e.NextOccurrenceAtUtc, newNextUtc), ct)
+            .ExecuteUpdateAsync(s => s.SetProperty(e => e.NextOccurrenceAtUtc, newNextUtc).StampModified(DB.Clock.GetUtcNow()), ct)
             .ConfigureAwait(ConfigureAwaitOptions.None);
 
         return affected > 0;
