@@ -194,10 +194,7 @@ internal sealed class DeleteCategoryHandler(
         return result;
     }
 
-    /// <summary>
-    /// One read, delete and save; <c>Deleted</c> is true when a row was removed. The task detach is a set-based
-    /// statement that commits on its own; running it again on a retry sets the same rows.
-    /// </summary>
+    /// <summary>One read, delete and save; <c>Deleted</c> is true when a row was removed.</summary>
     private async Task<(Result Result, bool Deleted)> DeleteOnceAsync(DeleteCategoryCommand command, CancellationToken ct)
     {
         var entity = await repoTrxn.GetCategoryAsync(CategoryId.From(command.Id), ct);
@@ -210,11 +207,10 @@ internal sealed class DeleteCategoryHandler(
 
         ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(Category), entity.Id.Value);
 
-        // Composite FK (TenantId, CategoryId) cannot cascade to SetNull; detach the tenant's tasks first (D-022).
-        await repoTrxn.ClearCategoryFromTaskItemsAsync(entity.Id, ct);
-        repoTrxn.Delete(entity);
-
-        var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error deleting Category {Id}", ct, command.Id);
+        // Composite FK (TenantId, CategoryId) cannot cascade to SetNull: the repository detaches the tenant's tasks
+        // and deletes the row in one unit with one Throw save (D-022), so a failed save detaches nothing.
+        var save = await CqrsHandlerSupport.TryWriteAsync(
+            t => repoTrxn.DeleteCategoryAsync(entity, t), logger, "Error deleting Category {Id}", ct, command.Id);
         return (save, save.IsSuccess);
     }
 }

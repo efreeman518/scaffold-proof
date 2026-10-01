@@ -253,8 +253,8 @@ internal sealed class DeleteAttachmentHandler(
         {
             try
             {
-                var blobName = $"{entity.TenantId.Value}/{entity.OwnerId}/{entity.FileName}";
-                await blobStorage.DeleteAsync("attachments", blobName, ct);
+                var blobName = AttachmentBlobs.BlobName(entity.TenantId.Value, entity.OwnerId, entity.FileName);
+                await blobStorage.DeleteAsync(AttachmentBlobs.ContainerName, blobName, ct);
             }
             catch (Exception ex)
             {

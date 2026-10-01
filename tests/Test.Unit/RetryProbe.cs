@@ -28,9 +28,16 @@ internal sealed class RetryProbe
                 It.IsAny<Func<CancellationToken, Task<It.IsAnyType>>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .Returns(new InvocationFunc(RunInside));
         repo.Setup(r => r.SaveChangesAsync(It.IsAny<OptimisticConcurrencyWinner>(), It.IsAny<CancellationToken>()))
-            .Callback(() => { if (_inside) SavesInside++; else SavesOutside++; })
+            .Callback(RecordSave)
             .ReturnsAsync(1);
         return this;
+    }
+
+    /// <summary>Counts one save, for a repository write whose save the mock does not route through SaveChanges.</summary>
+    public void RecordSave()
+    {
+        if (_inside) SavesInside++;
+        else SavesOutside++;
     }
 
     /// <summary>Makes a mocked retry run its work once, for tests that do not inspect the probe.</summary>

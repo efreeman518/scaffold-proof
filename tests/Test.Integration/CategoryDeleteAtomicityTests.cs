@@ -17,8 +17,9 @@ namespace Test.Integration;
 /// D-022/D-073: deleting a category first detaches the tenant's tasks (a set-based <c>ExecuteUpdate</c>, because the
 /// composite FK cannot cascade to SetNull), then deletes the row. Both are one unit of work: when the delete's save
 /// fails after the detach, the detach rolls back with it and the tasks keep their category. An interceptor fails the
-/// delete's save. Both the service and the CQRS handler are exercised, on the lane's relational provider (PostgreSQL
-/// on NonAzure, SQL Server on Azure); the in-memory provider has no set-based update to roll back.
+/// delete's save, and a competing category edit makes it lose a race. Both the service and the CQRS handler are
+/// exercised, on the lane's relational provider (PostgreSQL on NonAzure, SQL Server on Azure); the in-memory provider
+/// has no set-based update to roll back.
 /// Component tier: standalone SQL Testcontainer via <c>DbContainerFixture</c>.
 /// </summary>
 [TestClass]
@@ -74,6 +75,47 @@ public class CategoryDeleteAtomicityTests
         var stored = await verify.TaskItems.IgnoreQueryFilters().AsNoTracking()
             .Where(t => t.Id == TaskItemId.From(taskId)).Select(t => t.CategoryId).SingleAsync(ct);
         Assert.AreEqual(CategoryId.From(categoryId), stored, "the detach rolled back with the failed delete");
+    }
+
+    /// <summary>
+    /// A wildcard delete whose save loses to a competing category edit rolls its detach back with the lost save, then
+    /// re-reads and deletes in a second unit: the retry contract holds with the detach inside the attempt.
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Integration")]
+    [Timeout(120000, CooperativeCancellation = true)]
+    [DataRow(Service)]
+    [DataRow(Cqrs)]
+    public async Task Given_ConcurrentCategoryEdit_When_DeletedWithWildcard_Then_RetriesAndDeletes(string style)
+    {
+        var ct = TestContext.CancellationToken;
+        var (categoryId, taskId) = await SeedCategoryWithTaskAsync();
+        var race = new CompetingWrite(DbContainerFixture.ConnectionString, Guid.Empty, async (other, token) =>
+        {
+            var category = await other.Categories.IgnoreQueryFilters().SingleAsync(c => c.Id == CategoryId.From(categoryId), token);
+            Assert.IsTrue(category.Update(description: "competing edit").IsSuccess);
+        });
+
+        var connStr = DbContainerFixture.ConnectionString;
+        await using (var db = DbContainerFixture.CreateTrxnContext(connStr, race))
+        await using (var queryDb = DbContainerFixture.CreateQueryContext(connStr))
+        {
+            var repo = new CategoryRepositoryTrxn(db);
+            var result = style == Service
+                ? await new CategoryService(NullLogger<CategoryService>.Instance, RequestContext(), repo,
+                    new CategoryRepositoryQuery(queryDb), Boundary, Cache).DeleteAsync(categoryId, expectedVersion: null, ct)
+                : await new DeleteCategoryHandler(NullLogger<DeleteCategoryHandler>.Instance, RequestContext(), repo, Boundary, Cache)
+                    .HandleAsync(new DeleteCategoryCommand(categoryId, ExpectedVersion: null), ct);
+
+            Assert.IsTrue(result.IsSuccess, result.ErrorMessage);
+        }
+
+        Assert.AreEqual(2, race.Saves, "one lost save and one retried save");
+        await using var verify = DbContainerFixture.CreateTrxnContext();
+        Assert.IsFalse(await verify.Categories.IgnoreQueryFilters().AnyAsync(c => c.Id == CategoryId.From(categoryId), ct));
+        var stored = await verify.TaskItems.IgnoreQueryFilters().AsNoTracking()
+            .Where(t => t.Id == TaskItemId.From(taskId)).Select(t => t.CategoryId).SingleAsync(ct);
+        Assert.IsNull(stored, "the retried unit detached the task");
     }
 
     private async Task<(Guid CategoryId, Guid TaskId)> SeedCategoryWithTaskAsync()

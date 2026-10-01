@@ -186,10 +186,7 @@ internal class CategoryService(
         return result;
     }
 
-    /// <summary>
-    /// One read, delete and save of <see cref="DeleteAsync"/>; <c>Deleted</c> is true when a row was removed. The
-    /// task detach is a set-based statement that commits on its own; running it again on a retry sets the same rows.
-    /// </summary>
+    /// <summary>One read, delete and save of <see cref="DeleteAsync"/>; <c>Deleted</c> is true when a row was removed.</summary>
     private async Task<(Result Result, bool Deleted)> DeleteOnceAsync(Guid id, long? expectedVersion, CancellationToken ct)
     {
         var entity = await repoTrxn.GetCategoryAsync(CategoryId.From(id), ct);
@@ -204,10 +201,9 @@ internal class CategoryService(
 
         try
         {
-            // Composite FK (TenantId, CategoryId) cannot cascade to SetNull; detach the tenant's tasks first (D-022).
-            await repoTrxn.ClearCategoryFromTaskItemsAsync(entity.Id, ct);
-            repoTrxn.Delete(entity);
-            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
+            // Composite FK (TenantId, CategoryId) cannot cascade to SetNull: the repository detaches the tenant's
+            // tasks and deletes the row in one unit with one Throw save (D-022), so a failed save detaches nothing.
+            await repoTrxn.DeleteCategoryAsync(entity, ct);
         }
         catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {

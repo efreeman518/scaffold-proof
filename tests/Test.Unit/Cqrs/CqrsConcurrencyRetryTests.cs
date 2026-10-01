@@ -202,7 +202,11 @@ public sealed class CqrsConcurrencyRetryTests
                         .HandleAsync(new UpdateCategoryCommand(new DefaultRequest<CategoryDto> { Item = new CategoryDtoBuilder().WithId(category.Id.Value).Build() }, v), ct))
                     : v => new DeleteCategoryHandler(Log<DeleteCategoryHandler>(), _requestContext.Object, _categoryRepo.Object, _tenantBoundary.Object, _cache.Object)
                         .HandleAsync(new DeleteCategoryCommand(category.Id.Value, v), ct);
-                return new RetryProbe().Attach(_categoryRepo);
+                var categoryProbe = new RetryProbe().Attach(_categoryRepo);
+                // The delete's one save is the repository's detach-and-delete unit (D-022).
+                _categoryRepo.Setup(r => r.DeleteCategoryAsync(category, It.IsAny<CancellationToken>()))
+                    .Callback(categoryProbe.RecordSave).Returns(Task.CompletedTask);
+                return categoryProbe;
             case "UpdateTag":
             case "DeleteTag":
                 var tag = new TagBuilder().Build();
