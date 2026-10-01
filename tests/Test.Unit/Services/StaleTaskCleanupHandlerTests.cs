@@ -21,10 +21,10 @@ public class StaleTaskCleanupHandlerTests
 
     private readonly FakeTaskItemSystemRepository _repo = new();
 
-    /// <summary>Blob work is staged before the delete, inside the same transaction.</summary>
+    /// <summary>The guarded delete runs first; blob work and the attachment delete follow in the same transaction.</summary>
     [TestMethod]
     [TestCategory("Unit")]
-    public async Task HandleAsync_StagesBlobDeletes_BeforeDeletingTasks()
+    public async Task HandleAsync_DeletesTaskThenQueuesBlobWork_InsideOneTransaction()
     {
         _repo.StaleBatches.Enqueue([new StaleTaskRow(TenantA, Guid.CreateVersion7())]);
 
@@ -35,8 +35,9 @@ public class StaleTaskCleanupHandlerTests
             {
                 nameof(FakeTaskItemSystemRepository.GetStaleBatchAsync),
                 "BeginTransaction",
+                nameof(FakeTaskItemSystemRepository.DeleteStaleTaskAsync),
                 nameof(FakeTaskItemSystemRepository.StageBlobDeletesAsync),
-                nameof(FakeTaskItemSystemRepository.DeleteStaleBatchAsync),
+                nameof(FakeTaskItemSystemRepository.DeleteAttachmentsAsync),
                 "Commit"
             },
             _repo.Calls);
@@ -57,9 +58,34 @@ public class StaleTaskCleanupHandlerTests
         await Handler().HandleAsync(TestContext.CancellationToken);
 
         Assert.AreEqual(2, _repo.TransactionCount);
-        Assert.AreEqual(2, _repo.Deletes.Count);
-        Assert.AreEqual(2, _repo.Deletes[0].Ids.Count);
-        Assert.AreEqual(1, _repo.Deletes[1].Ids.Count);
+        Assert.AreEqual(3, _repo.Deletes.Count);
+        Assert.AreEqual(2, _repo.StagedBlobDeletes[0].Ids.Count);
+        Assert.AreEqual(1, _repo.StagedBlobDeletes[1].Ids.Count);
+    }
+
+    /// <summary>
+    /// Blob work is queued only for tasks this run's guarded delete removed: a task another run removed first
+    /// already has its work rows under the same deterministic ids. A step that removed nothing queues nothing.
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public async Task HandleAsync_TaskNotRemovedByThisRun_GetsNoBlobWork()
+    {
+        var lost = Guid.CreateVersion7();
+        var won = Guid.CreateVersion7();
+        var lostAlone = Guid.CreateVersion7();
+        _repo.StaleBatches.Enqueue(
+        [
+            new StaleTaskRow(TenantA, lost),
+            new StaleTaskRow(TenantA, won),
+            new StaleTaskRow(TenantB, lostAlone)
+        ]);
+        _repo.NotDeleted.UnionWith([lost, lostAlone]);
+
+        await Handler().HandleAsync(TestContext.CancellationToken);
+
+        Assert.HasCount(1, _repo.StagedBlobDeletes);
+        CollectionAssert.AreEqual(new[] { won }, _repo.StagedBlobDeletes[0].Ids.ToArray());
     }
 
     /// <summary>The configured retention window is what reaches the delete predicate.</summary>

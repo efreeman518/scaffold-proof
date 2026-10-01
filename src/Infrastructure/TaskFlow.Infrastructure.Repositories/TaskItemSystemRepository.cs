@@ -160,28 +160,35 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
     }
 
     /// <inheritdoc />
-    public async Task<int> DeleteStaleBatchAsync(
-        Guid tenantId, IReadOnlyCollection<Guid> taskIds, DateTimeOffset cutoffUtc, CancellationToken ct = default)
+    public async Task<bool> DeleteStaleTaskAsync(
+        Guid tenantId, Guid taskId, DateTimeOffset cutoffUtc, CancellationToken ct = default)
     {
-        if (taskIds.Count == 0) return 0;
+        var typedTenantId = TenantId.From(tenantId);
+        var typedId = TaskItemId.From(taskId);
+
+        // Predicate restated: a task reopened between the scan and this statement must survive. Per row, not one
+        // IN-list delete: a count cannot say which tasks another run removed first (RETURNING is not portable
+        // through ExecuteDelete on both providers), and only the remover may queue the task's blob work.
+        var affected = await StaleCandidates(cutoffUtc)
+            .Where(e => e.TenantId == typedTenantId && e.Id == typedId)
+            .ExecuteDeleteAsync(ct)
+            .ConfigureAwait(ConfigureAwaitOptions.None);
+        return affected > 0;
+    }
+
+    /// <inheritdoc />
+    public Task<int> DeleteAttachmentsAsync(Guid tenantId, IReadOnlyCollection<Guid> taskIds, CancellationToken ct = default)
+    {
+        if (taskIds.Count == 0) return Task.FromResult(0);
         var typedTenantId = TenantId.From(tenantId);
         var ids = taskIds.ToList();
-        var typedIds = taskIds.Select(TaskItemId.From).ToList();
 
-        // Attachments hang off a polymorphic owner, not a foreign key, so nothing cascades them.
-        await DB.Set<Attachment>()
+        return DB.Set<Attachment>()
             .IgnoreQueryFilters()
             .Where(a => a.TenantId == typedTenantId
                 && a.OwnerType == AttachmentOwnerType.TaskItem
                 && ids.Contains(a.OwnerId))
-            .ExecuteDeleteAsync(ct)
-            .ConfigureAwait(ConfigureAwaitOptions.None);
-
-        // Predicate restated: a task reopened between the scan and this statement must survive.
-        return await StaleCandidates(cutoffUtc)
-            .Where(e => e.TenantId == typedTenantId && typedIds.Contains(e.Id))
-            .ExecuteDeleteAsync(ct)
-            .ConfigureAwait(ConfigureAwaitOptions.None);
+            .ExecuteDeleteAsync(ct);
     }
 
     /// <inheritdoc />

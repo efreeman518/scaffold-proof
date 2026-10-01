@@ -4,9 +4,10 @@ using EF.BackgroundServices.Scheduling;
 namespace TaskFlow.Scheduler.Handlers;
 
 /// <summary>
-/// Removes cancelled tasks past their retention window. Per tenant batch, in one transaction: record the
-/// deferred blob deletions, delete the attachments, then delete the tasks (comments, checklist items, and tag
-/// links cascade). Blobs are never deleted inline - a storage outage would otherwise block the row deletion.
+/// Removes cancelled tasks past their retention window. Per tenant batch, in one transaction: delete each task
+/// under the stale guard (comments, checklist items, and tag links cascade), then, for the tasks that delete
+/// removed, record the deferred blob deletions and delete the attachment rows. Blobs are never deleted inline -
+/// a storage outage would otherwise block the row deletion.
 /// </summary>
 public sealed class StaleTaskCleanupHandler(
     ITaskItemSystemRepository systemRepository,
@@ -40,12 +41,22 @@ public sealed class StaleTaskCleanupHandler(
             foreach (var tenant in batch.GroupBy(r => r.TenantId))
             {
                 var ids = tenant.Select(r => r.Id).ToList();
-                // The committed attempt's count only. A retry after a commit that landed finds no attachment to
-                // queue and no task left to delete, so it stages no second blob-delete row.
+                // The committed attempt's count only. A retry after a commit that landed finds no task left to
+                // delete, so it stages no second blob-delete row.
                 deleted += await systemRepository.ExecuteInTransactionAsync(async token =>
                 {
-                    await systemRepository.StageBlobDeletesAsync(tenant.Key, ids, token);
-                    return await systemRepository.DeleteStaleBatchAsync(tenant.Key, ids, cutoffUtc, token);
+                    // Blob work only for tasks this attempt's own guarded delete removed: a task another run
+                    // removed first has its work rows already, under the same deterministic ids.
+                    var removed = new List<Guid>(ids.Count);
+                    foreach (var id in ids)
+                    {
+                        if (await systemRepository.DeleteStaleTaskAsync(tenant.Key, id, cutoffUtc, token)) removed.Add(id);
+                    }
+
+                    if (removed.Count == 0) return 0;
+                    await systemRepository.StageBlobDeletesAsync(tenant.Key, removed, token);
+                    await systemRepository.DeleteAttachmentsAsync(tenant.Key, removed, token);
+                    return removed.Count;
                 }, ct);
             }
 

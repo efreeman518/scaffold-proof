@@ -18,6 +18,9 @@ internal sealed class FakeTaskItemSystemRepository : ITaskItemSystemRepository
     /// <summary>Task ids the guarded overdue mark rejects (lost the race); every other id is marked.</summary>
     public HashSet<Guid> NotMarked { get; } = [];
 
+    /// <summary>Task ids the guarded stale delete finds gone or no longer stale; every other id is deleted.</summary>
+    public HashSet<Guid> NotDeleted { get; } = [];
+
     /// <summary>Occurrence ids already stored, so the insert-if-absent writes nothing for them.</summary>
     public HashSet<Guid> ExistingOccurrences { get; } = [];
 
@@ -29,7 +32,7 @@ internal sealed class FakeTaskItemSystemRepository : ITaskItemSystemRepository
     public List<TaskItem> UpsertedOccurrences { get; } = [];
     public List<(Guid TenantId, Guid TemplateId, DateTimeOffset Guard, DateTimeOffset? Next)> Advances { get; } = [];
     public List<(Guid TenantId, IReadOnlyCollection<Guid> Ids)> StagedBlobDeletes { get; } = [];
-    public List<(Guid TenantId, IReadOnlyCollection<Guid> Ids, DateTimeOffset Cutoff)> Deletes { get; } = [];
+    public List<(Guid TenantId, Guid Id, DateTimeOffset Cutoff)> Deletes { get; } = [];
     public int SaveCount { get; private set; }
     public int TransactionCount { get; private set; }
 
@@ -93,11 +96,16 @@ internal sealed class FakeTaskItemSystemRepository : ITaskItemSystemRepository
         return Task.FromResult(taskIds.Count);
     }
 
-    public Task<int> DeleteStaleBatchAsync(
-        Guid tenantId, IReadOnlyCollection<Guid> taskIds, DateTimeOffset cutoffUtc, CancellationToken ct = default)
+    public Task<bool> DeleteStaleTaskAsync(Guid tenantId, Guid taskId, DateTimeOffset cutoffUtc, CancellationToken ct = default)
     {
-        Calls.Add(nameof(DeleteStaleBatchAsync));
-        Deletes.Add((tenantId, taskIds, cutoffUtc));
+        Calls.Add(nameof(DeleteStaleTaskAsync));
+        Deletes.Add((tenantId, taskId, cutoffUtc));
+        return Task.FromResult(!NotDeleted.Contains(taskId));
+    }
+
+    public Task<int> DeleteAttachmentsAsync(Guid tenantId, IReadOnlyCollection<Guid> taskIds, CancellationToken ct = default)
+    {
+        Calls.Add(nameof(DeleteAttachmentsAsync));
         return Task.FromResult(taskIds.Count);
     }
 

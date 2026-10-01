@@ -68,15 +68,24 @@ public interface ITaskItemSystemRepository
     /// <summary>
     /// Records a deferred blob deletion for every attachment of the given tasks and commits those rows.
     /// The blob itself is deleted by the work drainer, so a storage outage cannot block the row deletion.
+    /// Pass only tasks this step's own <see cref="DeleteStaleTaskAsync"/> removed: the work ids are deterministic,
+    /// so a run that queued work for a task another run removed would collide with that run's rows.
     /// </summary>
     Task<int> StageBlobDeletesAsync(Guid tenantId, IReadOnlyCollection<Guid> taskIds, CancellationToken ct = default);
 
     /// <summary>
-    /// Deletes the tasks' attachments and then the tasks, re-asserting the stale predicate so a task that was
-    /// reopened between scan and delete survives. Comments, checklist items, and tag links cascade.
+    /// Deletes one task, re-asserting the stale predicate so a task that was reopened (or gained a subtask, or was
+    /// removed by another run) between scan and delete is left alone. Comments, checklist items, and tag links
+    /// cascade; attachments do not, see <see cref="DeleteAttachmentsAsync"/>.
     /// </summary>
-    Task<int> DeleteStaleBatchAsync(
-        Guid tenantId, IReadOnlyCollection<Guid> taskIds, DateTimeOffset cutoffUtc, CancellationToken ct = default);
+    /// <returns><c>true</c> when this call deleted the task.</returns>
+    Task<bool> DeleteStaleTaskAsync(Guid tenantId, Guid taskId, DateTimeOffset cutoffUtc, CancellationToken ct = default);
+
+    /// <summary>
+    /// Deletes the attachment rows of the given tasks. Attachments hang off a polymorphic owner, not a foreign key,
+    /// so nothing cascades them; pass only tasks <see cref="DeleteStaleTaskAsync"/> removed.
+    /// </summary>
+    Task<int> DeleteAttachmentsAsync(Guid tenantId, IReadOnlyCollection<Guid> taskIds, CancellationToken ct = default);
 
     /// <summary>
     /// Runs <paramref name="work"/> inside one transaction on the write context, through the provider's
