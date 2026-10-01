@@ -156,6 +156,33 @@ public sealed class IdempotencyKeyIntegrationTests
         CollectionAssert.AreEquivalent(new[] { "recent" }, left);
     }
 
+    /// <summary>
+    /// The purge deletes in bounded batches (like the inbox purge), so a large sweep is several short statements rather
+    /// than one that could escalate to a table lock and block create-path inserts.
+    /// </summary>
+    [TestMethod]
+    [Timeout(180000, CooperativeCancellation = true)]
+    public async Task Purge_DeletesInBatchesOfAtMostTheBatchSize()
+    {
+        var ct = TestContext.CancellationToken;
+        var tenant = Guid.CreateVersion7();
+        var old = DateTimeOffset.UtcNow.AddDays(-8);
+        await using (var seed = DbContainerFixture.CreateTrxnContext(_connectionString))
+        {
+            seed.IdempotencyKeys.AddRange(Enumerable.Range(0, (2 * IdempotencyKeyRepository.PurgeBatchSize) + 1)
+                .Select(i => Mapping(tenant, $"bulk-{i}", old)));
+            await seed.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct);
+        }
+        var deletes = new DeleteCounter();
+
+        var purged = await WithRepositoryAsync(r => r.PurgeAsync(old.AddDays(1), ct), deletes);
+
+        Assert.IsGreaterThanOrEqualTo((2 * IdempotencyKeyRepository.PurgeBatchSize) + 1, purged);
+        Assert.IsGreaterThanOrEqualTo(3, deletes.Statements, "2001 rows in batches of 1000 take at least three statements");
+        await using var verify = DbContainerFixture.CreateTrxnContext(_connectionString);
+        Assert.AreEqual(0, await verify.IdempotencyKeys.CountAsync(m => m.TenantId == tenant, ct));
+    }
+
     /// <summary>Through the API: the same key twice creates one task row and replays it; another key creates a second.</summary>
     [TestMethod]
     [Timeout(180000, CooperativeCancellation = true)]
@@ -266,6 +293,19 @@ public sealed class IdempotencyKeyIntegrationTests
         Assert.IsTrue(response.IsSuccessStatusCode, $"Create failed: {(int)response.StatusCode} {body}");
         using var payload = JsonDocument.Parse(body);
         return (response.StatusCode, payload.RootElement.GetProperty("item").GetProperty("id").GetGuid());
+    }
+
+    /// <summary>Counts the DELETE statements a context sends.</summary>
+    private sealed class DeleteCounter : DbCommandInterceptor
+    {
+        public int Statements { get; private set; }
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            System.Data.Common.DbCommand command, CommandEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("DELETE", StringComparison.OrdinalIgnoreCase)) Statements++;
+            return ValueTask.FromResult(result);
+        }
     }
 
     /// <summary>Scoped owner of the raced context, so the host's request scope disposes it.</summary>
