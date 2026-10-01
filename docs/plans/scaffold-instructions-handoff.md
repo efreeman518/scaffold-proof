@@ -243,9 +243,12 @@ and consumer-side inbox don't change.
 events, running as global admin regardless of tenant.
 
 **Shape**: `ITaskItemSystemRepository` (Trxn context, `IgnoreQueryFilters()` - cross-tenant system
-jobs by design): `StreamOverdueAsync`, `MarkOverdueNotifiedAsync`, `StreamDueTemplatesAsync`,
-`UpsertOccurrencesAsync`, `AdvanceNextOccurrenceAsync(tenantId, templateId, expectedNext, newNext)`,
-`GetStaleBatchAsync`, `StageBlobDeletesAsync`, `DeleteStaleBatchAsync`. Every staged event uses a
+jobs by design): `StreamOverdueAsync`, `MarkOverdueNotifiedAsync` (one task, returns bool),
+`StreamDueTemplatesAsync`, `InsertOccurrenceIfAbsentAsync` (one occurrence, returns bool),
+`AdvanceNextOccurrenceAsync(tenantId, templateId, expectedNext, newNext)`, `GetStaleBatchAsync`,
+`DeleteStaleTaskAsync` (one task, returns bool), `StageBlobDeletesAsync`, `DeleteAttachmentsAsync`, and
+`ExecuteInTransactionAsync<T>`. A job stages a deterministic id only for a row its own guarded write
+changed (D-009). Every staged event uses a
 deterministic id (`EF.Common.DeterministicGuid.Create(DomainConstants.DETERMINISTIC_ID_NAMESPACE,
 label, ...parts)`, real UUIDv5/SHA-1) so a re-run over the same data produces zero new rows: the
 `overdue` label keys on `(tenant, task, dueDate)`, `recurrence` on `(tenant, template,

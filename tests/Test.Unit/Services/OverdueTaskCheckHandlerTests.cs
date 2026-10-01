@@ -53,9 +53,9 @@ public class OverdueTaskCheckHandlerTests
         await _handler.HandleAsync(TestContext.CancellationToken);
 
         Assert.AreEqual(2, _repo.TransactionCount);
-        Assert.AreEqual(2, _repo.MarkedOverdue.Count);
-        CollectionAssert.AreEquivalent(new[] { a1, a2 }, _repo.MarkedOverdue[0].Ids.ToArray());
-        CollectionAssert.AreEquivalent(new[] { b1 }, _repo.MarkedOverdue[1].Ids.ToArray());
+        CollectionAssert.AreEqual(
+            new[] { (TenantA, a1), (TenantA, a2), (TenantB, b1) },
+            _repo.MarkedOverdue.ToArray());
         Assert.AreEqual(3, _outbox.Staged.Count);
         Assert.IsTrue(_outbox.Staged.TrueForAll(s => s.Envelope.Type == nameof(TaskItemOverdueSuspectedEvent)));
     }
@@ -75,7 +75,7 @@ public class OverdueTaskCheckHandlerTests
                 nameof(FakeTaskItemSystemRepository.StreamOverdueAsync),
                 "BeginTransaction",
                 nameof(FakeTaskItemSystemRepository.MarkOverdueNotifiedAsync),
-                nameof(FakeTaskItemSystemRepository.SaveChangesAsync),
+                nameof(FakeTaskItemSystemRepository.SaveWithThrowPolicyAsync),
                 "Commit"
             },
             _repo.Calls);
@@ -86,13 +86,40 @@ public class OverdueTaskCheckHandlerTests
     [TestCategory("Unit")]
     public async Task HandleAsync_WhenNothingMarked_StagesNoEvent()
     {
-        _repo.OverdueRows.Add(new OverdueTaskRow(TenantA, Guid.CreateVersion7(), Now.AddDays(-2)));
-        _repo.MarkedOverride = 0;
+        var taskId = Guid.CreateVersion7();
+        _repo.OverdueRows.Add(new OverdueTaskRow(TenantA, taskId, Now.AddDays(-2)));
+        _repo.NotMarked.Add(taskId);
 
         await _handler.HandleAsync(TestContext.CancellationToken);
 
         Assert.AreEqual(0, _outbox.Staged.Count);
         Assert.AreEqual(0, _repo.SaveCount);
+    }
+
+    /// <summary>
+    /// Only the rows this run marked are announced: a row another replica marked first already has its
+    /// deterministic id in the outbox, and staging it again would fail the tenant's transaction on the key.
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public async Task HandleAsync_WhenSomeRowsLostTheMark_StagesOnlyTheMarkedRows()
+    {
+        var lost = Guid.CreateVersion7();
+        var won = Guid.CreateVersion7();
+        _repo.OverdueRows.AddRange(
+        [
+            new OverdueTaskRow(TenantA, lost, Now.AddDays(-2)),
+            new OverdueTaskRow(TenantA, won, Now.AddDays(-3))
+        ]);
+        _repo.NotMarked.Add(lost);
+
+        await _handler.HandleAsync(TestContext.CancellationToken);
+
+        Assert.HasCount(1, _outbox.Staged);
+        Assert.AreEqual(
+            OverdueTaskCheckHandler.Announcement(new OverdueTaskRow(TenantA, won, Now.AddDays(-3)), Now).Envelope.Id,
+            _outbox.Staged[0].Envelope.Id);
+        Assert.AreEqual(1, _repo.SaveCount);
     }
 
     /// <summary>
