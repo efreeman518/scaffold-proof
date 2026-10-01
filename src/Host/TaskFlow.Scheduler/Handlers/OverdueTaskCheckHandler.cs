@@ -64,13 +64,17 @@ public sealed class OverdueTaskCheckHandler(
             // sees the stored marks), so it stages nothing and the deterministic ids stay single.
             notified += await systemRepository.ExecuteInTransactionAsync(async token =>
             {
-                var marked = await systemRepository.MarkOverdueNotifiedAsync(
-                    tenant.Key, rows.ConvertAll(r => r.Id), asOfUtc, token);
-                // Every row lost the race (completed or rescheduled since the scan): nothing to announce.
-                if (marked == 0) return 0;
+                var marked = 0;
+                foreach (var row in rows)
+                {
+                    // A row that lost the race (completed, rescheduled, or marked and announced by another
+                    // replica since the scan) is not announced here: its id may already be in the outbox.
+                    if (!await systemRepository.MarkOverdueNotifiedAsync(tenant.Key, row.Id, asOfUtc, token)) continue;
+                    Stage(row, asOfUtc);
+                    marked++;
+                }
 
-                foreach (var row in rows) Stage(row, asOfUtc);
-                await systemRepository.SaveChangesAsync(token);
+                if (marked > 0) await systemRepository.SaveChangesAsync(token);
                 return marked;
             }, ct);
         }
@@ -79,9 +83,9 @@ public sealed class OverdueTaskCheckHandler(
     }
 
     /// <summary>
-    /// Stages the announcement with a UUIDv5 message id over (tenant, task, due date). Two replicas that both
-    /// reach this point stage the same row rather than two, and the event is "suspected" precisely because the
-    /// consumer, not this job, confirms the task is still overdue when it handles the message.
+    /// Stages the announcement with a UUIDv5 message id over (tenant, task, due date), only for a row this run
+    /// marked, so the replica that wins a row's mark is the only one that stages its id. The event is "suspected"
+    /// precisely because the consumer, not this job, confirms the task is still overdue when it handles the message.
     /// </summary>
     private void Stage(OverdueTaskRow row, DateTimeOffset asOfUtc) => outbox.Stage(Announcement(row, asOfUtc));
 

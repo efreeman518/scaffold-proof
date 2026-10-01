@@ -27,10 +27,12 @@ public interface ITaskItemSystemRepository
     IAsyncEnumerable<OverdueTaskRow> StreamOverdueAsync(DateTimeOffset asOfUtc, int pageSize, CancellationToken ct = default);
 
     /// <summary>
-    /// Stamps <c>OverdueNotifiedForDueDate</c> for one tenant's batch, re-asserting the candidate predicate in
-    /// the WHERE so a task that changed between the scan and the update is not falsely marked. Returns rows affected.
+    /// Stamps <c>OverdueNotifiedForDueDate</c> on one task, re-asserting the candidate predicate in the WHERE so a
+    /// task that changed between the scan and the update is not falsely marked. One row per call, so the caller
+    /// knows exactly which rows it marked (and so must announce) when another replica marked the rest.
     /// </summary>
-    Task<int> MarkOverdueNotifiedAsync(Guid tenantId, IReadOnlyCollection<Guid> ids, DateTimeOffset asOfUtc, CancellationToken ct = default);
+    /// <returns><c>true</c> when this call marked the task.</returns>
+    Task<bool> MarkOverdueNotifiedAsync(Guid tenantId, Guid id, DateTimeOffset asOfUtc, CancellationToken ct = default);
 
     /// <summary>
     /// Streams recurrence templates whose next occurrence is due, keyset-paged by <c>(TenantId, Id)</c>.
@@ -40,10 +42,12 @@ public interface ITaskItemSystemRepository
     IAsyncEnumerable<TaskItem> StreamDueTemplatesAsync(DateTimeOffset asOfUtc, int pageSize, CancellationToken ct = default);
 
     /// <summary>
-    /// Inserts generated occurrences if absent, keyed on <c>(TenantId, RecurrenceTemplateId, OccurrenceUtc)</c>
-    /// (D-028: MERGE on SQL Server, ON CONFLICT on PostgreSQL). A replayed run is a no-op, not a duplicate.
+    /// Inserts one generated occurrence if absent, keyed on <c>(TenantId, RecurrenceTemplateId, OccurrenceUtc)</c>
+    /// (D-028: MERGE on SQL Server, ON CONFLICT on PostgreSQL). A replayed run is a no-op, not a duplicate. One row
+    /// per call, so the caller knows exactly which occurrences it inserted (and so must announce).
     /// </summary>
-    Task<int> UpsertOccurrencesAsync(IReadOnlyCollection<TaskItem> occurrences, CancellationToken ct = default);
+    /// <returns><c>true</c> when this call inserted the occurrence.</returns>
+    Task<bool> InsertOccurrenceIfAbsentAsync(TaskItem occurrence, CancellationToken ct = default);
 
     /// <summary>
     /// Moves a template forward only while it still sits on <paramref name="expectedNextUtc"/>. False means

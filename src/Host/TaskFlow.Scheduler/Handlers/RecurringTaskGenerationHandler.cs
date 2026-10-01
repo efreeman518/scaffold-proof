@@ -14,9 +14,9 @@ namespace TaskFlow.Scheduler.Handlers;
 
 /// <summary>
 /// Materializes the due occurrences of recurring templates. Per template, one transaction: advance the
-/// template's next-occurrence pointer under a guard, upsert the occurrences, stage a created event for each.
-/// Everything is keyed deterministically, so a re-run - or two replicas racing - produces the same rows, not
-/// a second set.
+/// template's next-occurrence pointer under a guard, insert each occurrence if absent, and stage a created
+/// event for each one inserted. Everything is keyed deterministically, so a re-run - or two replicas racing -
+/// produces the same rows, not a second set.
 /// </summary>
 public sealed class RecurringTaskGenerationHandler(
     ITaskItemSystemRepository systemRepository,
@@ -99,12 +99,18 @@ public sealed class RecurringTaskGenerationHandler(
             if (!await systemRepository.AdvanceNextOccurrenceAsync(tenantId, templateId, dueFrom, nextDue, token))
                 return 0;
 
-            if (occurrences.Count == 0) return 0;
+            var inserted = 0;
+            foreach (var occurrence in occurrences)
+            {
+                // An occurrence that already exists (the pointer was re-seeded over generated ones when the
+                // pattern was attached again) was announced when it was inserted; its id may still be in the outbox.
+                if (!await systemRepository.InsertOccurrenceIfAbsentAsync(occurrence, token)) continue;
+                Stage(occurrence, asOfUtc);
+                inserted++;
+            }
 
-            await systemRepository.UpsertOccurrencesAsync(occurrences, token);
-            foreach (var occurrence in occurrences) Stage(occurrence, asOfUtc);
-            await systemRepository.SaveChangesAsync(token);
-            return occurrences.Count;
+            if (inserted > 0) await systemRepository.SaveChangesAsync(token);
+            return inserted;
         }, ct);
     }
 
