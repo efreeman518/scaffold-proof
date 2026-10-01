@@ -91,6 +91,29 @@ public sealed class IdempotencyKeyIntegrationTests
     }
 
     /// <summary>
+    /// Keys are compared ordinally on both providers: "abc" and "ABC" map to two ids and store two rows. SQL Server's
+    /// default collation is case-insensitive, so without the binary key collation the second lookup found the first
+    /// row (and its insert would have failed on the unique index).
+    /// </summary>
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task GetOrAdd_KeysThatDifferOnlyByCase_AreDistinctKeys()
+    {
+        var ct = TestContext.CancellationToken;
+        var tenant = Guid.CreateVersion7();
+
+        var lower = await WithRepositoryAsync(r => r.GetOrAddEntityIdAsync(tenant, Scope, "abc", ct));
+        var upper = await WithRepositoryAsync(r => r.GetOrAddEntityIdAsync(tenant, Scope, "ABC", ct));
+        var scopeUpper = await WithRepositoryAsync(r => r.GetOrAddEntityIdAsync(tenant, Scope.ToUpperInvariant(), "abc", ct));
+
+        Assert.AreNotEqual(lower, upper, "a key that differs only by case is another key");
+        Assert.AreNotEqual(lower, scopeUpper, "a scope that differs only by case is another scope");
+        Assert.AreEqual(lower, await WithRepositoryAsync(r => r.GetOrAddEntityIdAsync(tenant, Scope, "abc", ct)));
+        await using var verify = DbContainerFixture.CreateTrxnContext(_connectionString);
+        Assert.AreEqual(3, await verify.IdempotencyKeys.CountAsync(m => m.TenantId == tenant, ct));
+    }
+
+    /// <summary>
     /// A concurrent duplicate stores the same key between this request's read and its insert. The insert loses on the
     /// unique index, the existence read finds the winner's row, and this request uses the winner's id.
     /// </summary>

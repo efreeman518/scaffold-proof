@@ -49,6 +49,8 @@ public abstract class TaskFlowDbContextBase(DbContextOptions options) : DbContex
         // TaskItemConfiguration has no parameterless constructor (the assembly scan skips it): it binds the
         // secure-column converters to the process encryptor carried by the options (D-023).
         modelBuilder.ApplyConfiguration(new TaskItemConfiguration(this.GetColumnEncryptor()));
+        // D-074: the key columns take a binary collation on SQL Server (D-030 forced branch, inside the configuration).
+        modelBuilder.ApplyConfiguration(new IdempotencyKeyConfiguration(Database.ProviderName));
         // D-039/D18: the relational audit sink is the EF.Audit.Data row, mapped into this context's schema so it
         // shares the one migration set; the package repository writes it with an idempotent upsert.
         modelBuilder.ApplyConfiguration(new AuditLogRecordConfiguration());
@@ -62,7 +64,8 @@ public abstract class TaskFlowDbContextBase(DbContextOptions options) : DbContex
     }
 
     /// <summary>
-    /// The one model-level provider branch the solution allows (D-030), and it is forced: <c>vector</c> is a
+    /// A model-level provider branch D-030 allows (the other is the SQL Server key collation in
+    /// <see cref="IdempotencyKeyConfiguration"/>), and it is forced: <c>vector</c> is a
     /// PostgreSQL extension type with no SQL Server equivalent that EF can map today, and the HNSW index needs
     /// an Npgsql-only <c>HasMethod</c>/<c>HasOperators</c> pair. Mapping it unconditionally would put a column
     /// SQL Server cannot create into the SQL Server migration snapshot.
