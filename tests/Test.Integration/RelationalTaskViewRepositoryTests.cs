@@ -1,8 +1,6 @@
 using Test.Support;
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Data;
@@ -35,30 +33,15 @@ public class RelationalTaskViewRepositoryTests
 
     [TestMethod]
     [Timeout(300000, CooperativeCancellation = true)]
-    public async Task PostgreSqlMigration_ConvertsExistingJsonText_AndPreservesScalarPagingIndex()
+    public async Task PostgreSqlSchema_StoresDocumentAsJsonb_AndKeepsScalarPagingIndex()
     {
         if (DbContainerFixture.Provider != TaskFlow.Infrastructure.Data.Provider.TaskFlowDbProvider.PostgreSql)
             Assert.Inconclusive("PostgreSql lane.");
 
         var ct = TestContext.CancellationToken;
         var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("taskviewjsonb", ct);
+        await MigrateAsync(connString, ct);
         await using var db = DbContainerFixture.CreateTrxnContext(connString);
-        var migrator = db.GetService<IMigrator>();
-        await migrator.MigrateAsync("20260908232538_AddTaskItemEmbedding", ct);
-
-        await db.Database.ExecuteSqlRawAsync(
-            """
-            INSERT INTO taskflow."TaskView"
-                ("TenantId", "Id", "Title", "Status", "Priority", "IsOverdue", "CommentCount",
-                 "ChecklistTotal", "ChecklistCompleted", "AttachmentCount", "SubTaskCount", "CreatedUtc",
-                 "LastModifiedUtc", "Document")
-            VALUES
-                ('legacy-tenant', 'legacy-id', 'legacy', 'Open', 'Normal', false, 0, 0, 0, 0, 0,
-                 '2026-09-12T12:00:00Z', '2026-09-12T12:00:00Z',
-                 '{{"description":"legacy body","tags":["legacy"]}}');
-            """, ct);
-
-        await migrator.MigrateAsync(null, ct);
 
         var columnType = await ExecuteScalarAsync(db,
             "SELECT data_type FROM information_schema.columns WHERE table_schema = 'taskflow' AND table_name = 'TaskView' AND column_name = 'Document'",
@@ -70,13 +53,6 @@ public class RelationalTaskViewRepositoryTests
             ct);
         StringAssert.Contains(indexDefinition, "\"TenantId\", \"LastModifiedUtc\" DESC, \"Id\" DESC");
         Assert.IsFalse(indexDefinition.Contains("gin", StringComparison.OrdinalIgnoreCase));
-
-        await using var read = DbContainerFixture.CreateQueryContext(connString);
-        var repository = new RelationalTaskViewRepository(db, read, TestCursorCodec.Instance);
-        var legacy = await repository.GetAsync("legacy-id", "legacy-tenant", ct);
-        Assert.IsNotNull(legacy);
-        Assert.AreEqual("legacy body", legacy.Description);
-        CollectionAssert.AreEqual(new[] { "legacy" }, legacy.Tags);
     }
 
     [TestMethod]

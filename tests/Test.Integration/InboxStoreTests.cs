@@ -2,8 +2,6 @@ using EF.Data.Outbox;
 using EF.IntegrationTesting.AspNetCore;
 using EF.Messaging;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using TaskFlow.Application.Contracts.Messaging;
@@ -169,40 +167,6 @@ public class InboxStoreTests
         Assert.AreEqual(2, purged);
         var remaining = await db.ConsumerInbox.AsNoTracking().Select(x => x.MessageId).ToListAsync(ct);
         CollectionAssert.AreEquivalent(new[] { recentCompleted, live }, remaining);
-    }
-
-    /// <summary>
-    /// The migration backfills claims written by the one-state inbox as completed, each with its own token, so a
-    /// redelivery of an already-processed message stays a duplicate after the upgrade.
-    /// </summary>
-    [TestMethod]
-    [Timeout(300000, CooperativeCancellation = true)]
-    public async Task Migration_BackfillsPreExistingClaimsAsCompleted()
-    {
-        var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("inboxbackfill", ct);
-        await using var db = DbContainerFixture.CreateTrxnContext(connString);
-        var migrations = db.Database.GetMigrations().ToList();
-        var twoState = migrations.FindIndex(m => m.EndsWith("_TwoStateInboxAndOutboxTraceContext", StringComparison.Ordinal));
-        Assert.IsGreaterThan(0, twoState, "the two-state inbox migration must exist and not be the first");
-
-        var migrator = db.GetService<IMigrator>();
-        await migrator.MigrateAsync(migrations[twoState - 1], cancellationToken: ct);
-        var first = Guid.CreateVersion7();
-        var second = Guid.CreateVersion7();
-        await db.Database.ExecuteSqlAsync(
-            $"""INSERT INTO taskflow."ConsumerInbox" ("Consumer", "MessageId", "ProcessedAtUtc") VALUES ({Consumer}, {first}, {DateTimeOffset.UtcNow})""", ct);
-        await db.Database.ExecuteSqlAsync(
-            $"""INSERT INTO taskflow."ConsumerInbox" ("Consumer", "MessageId", "ProcessedAtUtc") VALUES ({Consumer}, {second}, {DateTimeOffset.UtcNow})""", ct);
-
-        await migrator.MigrateAsync(cancellationToken: ct);
-
-        var rows = await db.ConsumerInbox.AsNoTracking().ToListAsync(ct);
-        Assert.HasCount(2, rows);
-        Assert.IsTrue(rows.All(r => r.CompletedAtUtc == r.ClaimedAtUtc), "every pre-existing claim is completed");
-        Assert.AreEqual(2, rows.Select(r => r.ClaimToken).Where(t => t != Guid.Empty).Distinct().Count(),
-            "each row needs its own token: retention batches on it");
-        Assert.AreEqual(InboxClaimStatus.Duplicate, (await Store(db, connString).TryClaimAsync(Consumer, first, Lease, ct)).Status);
     }
 
     /// <summary>

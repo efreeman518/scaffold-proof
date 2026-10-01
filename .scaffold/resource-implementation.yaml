@@ -49,7 +49,7 @@ includeAzd: false
 includeAiServices: true
 
 database: SQLServer            # scalar = the runtime default provider; databaseProviders below declares both arms (D-020)
-migrationLifecycle: unreleased-resettable   # scaffold schema value; the migration sets were reset as a fresh baseline (D-025) and nothing is released yet
+migrationLifecycle: unreleased-resettable   # scaffold schema value; permanent baseline (D-025): one initial migration per context and provider, regenerated on every schema change
 databaseProviders: [SqlServer, PostgreSql]
 caching: FusionCache+Redis
 includeKeyVault: true

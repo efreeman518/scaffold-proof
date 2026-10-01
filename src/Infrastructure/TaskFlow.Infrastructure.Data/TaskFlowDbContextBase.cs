@@ -101,6 +101,7 @@ public abstract class TaskFlowDbContextBase(DbContextOptions options) : DbContex
     public DbSet<OutboxMessage> OutboxMessages { get; set; } = null!;
     public DbSet<BlobDeleteWork> BlobDeleteWork { get; set; } = null!;
     public DbSet<InboxEntry> ConsumerInbox { get; set; } = null!;
+    public DbSet<IdempotencyKeyRecord> IdempotencyKeys { get; set; } = null!;
 
     // NonAzure PostgreSQL JSONB read model and relational audit sink (D-038, D-039):
     // same rules as the operational tables - not tenant entities, no query filter, no Version. Declared on the
