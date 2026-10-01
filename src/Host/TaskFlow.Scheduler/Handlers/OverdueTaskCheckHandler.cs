@@ -83,7 +83,10 @@ public sealed class OverdueTaskCheckHandler(
     /// reach this point stage the same row rather than two, and the event is "suspected" precisely because the
     /// consumer, not this job, confirms the task is still overdue when it handles the message.
     /// </summary>
-    private void Stage(OverdueTaskRow row, DateTimeOffset asOfUtc)
+    private void Stage(OverdueTaskRow row, DateTimeOffset asOfUtc) => outbox.Stage(Announcement(row, asOfUtc));
+
+    /// <summary>The outbox entry this job stages for <paramref name="row"/>; public so a test can play a second replica.</summary>
+    public static OutboxEntry Announcement(OverdueTaskRow row, DateTimeOffset asOfUtc)
     {
         var messageId = DeterministicGuid.Create(
             DomainConstants.DETERMINISTIC_ID_NAMESPACE,
@@ -98,6 +101,6 @@ public sealed class OverdueTaskCheckHandler(
             correlationId: null,
             id: messageId);
 
-        outbox.Stage(TaskFlowIntegrationEvents.Entry(envelope, row.TenantId));
+        return TaskFlowIntegrationEvents.Entry(envelope, row.TenantId);
     }
 }

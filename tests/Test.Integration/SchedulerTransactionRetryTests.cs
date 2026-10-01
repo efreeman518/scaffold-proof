@@ -12,6 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Model.ValueObjects;
 using TaskFlow.Domain.Shared;
@@ -34,7 +35,8 @@ namespace Test.Integration;
 /// committed attempt's: after a lost commit the retry redoes the work and reports it once; after a landed commit
 /// the retry is a no-op and reports 0, because the client cannot tell a landed commit from a lost one (D-009).
 /// Each run first drains candidates other classes left behind, because the jobs are cross-tenant and the
-/// reported count is job-wide.
+/// reported count is job-wide. The same class covers rows already written by someone else: a competing overdue
+/// replica, and a recurrence pointer re-seeded over occurrences that exist; each run stages only what it wrote.
 /// </summary>
 [TestClass]
 [TestCategory("Integration")]
@@ -62,7 +64,7 @@ public class SchedulerTransactionRetryTests
     [Timeout(180000, CooperativeCancellation = true)]
     public async Task OverdueTaskCheck_TransientCommitFailure_RetriesToOneAnnouncementPerTask(CommitFault mode)
     {
-        await RunOverdueAsync(fault: null);
+        await RunOverdueAsync(null);
         var tenantId = Guid.NewGuid();
         await using (var seed = DbContainerFixture.CreateTrxnContext())
         {
@@ -96,7 +98,7 @@ public class SchedulerTransactionRetryTests
     [Timeout(180000, CooperativeCancellation = true)]
     public async Task RecurringTaskGeneration_TransientCommitFailure_RetriesToOneEventPerOccurrence(CommitFault mode)
     {
-        await RunRecurrenceAsync(fault: null);
+        await RunRecurrenceAsync(null);
         var tenantId = Guid.NewGuid();
         await using (var seed = DbContainerFixture.CreateTrxnContext())
         {
@@ -131,7 +133,7 @@ public class SchedulerTransactionRetryTests
     [Timeout(180000, CooperativeCancellation = true)]
     public async Task StaleTaskCleanup_TransientCommitFailure_RetriesToOneBlobWorkRow(CommitFault mode)
     {
-        await RunStaleCleanupAsync(fault: null);
+        await RunStaleCleanupAsync(null);
         var tenantId = Guid.NewGuid();
         var typedTenantId = TenantId.From(tenantId);
         await using (var seed = DbContainerFixture.CreateTrxnContext())
@@ -162,6 +164,98 @@ public class SchedulerTransactionRetryTests
             .Select(w => w.Id), expected: 1);
     }
 
+    /// <summary>
+    /// Overdue, two replicas: between this run's scan and its mark another replica marks and announces two of the
+    /// three tasks. This run must announce only the task it marked itself, not re-stage the other replica's ids.
+    /// </summary>
+    [TestMethod]
+    [Timeout(180000, CooperativeCancellation = true)]
+    public async Task OverdueTaskCheck_CompetingReplicaMarkedSome_StagesOnlyTheRestOnce()
+    {
+        await RunOverdueAsync(null);
+        var tenantId = Guid.NewGuid();
+        var rows = new List<OverdueTaskRow>();
+        await using (var seed = DbContainerFixture.CreateTrxnContext())
+        {
+            for (var i = 0; i < 3; i++)
+            {
+                var task = TaskItem.Create(TenantId.From(tenantId), $"Raced {i}").Value!;
+                task.UpdateDateRange(null, Now.AddDays(-2 - i));
+                seed.TaskItems.Add(task);
+                rows.Add(new OverdueTaskRow(tenantId, task.Id.Value, task.DueDate!.Value));
+            }
+            await seed.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
+        }
+
+        var replica = new CompetingOverdueReplica(rows.Take(2).ToList());
+        var reported = await RunOverdueAsync(replica);
+
+        Assert.IsTrue(replica.Ran, "the other replica marked its rows inside this run's window");
+        Assert.AreEqual(1, reported, "this run reports only the task it marked");
+        await using var verify = DbContainerFixture.CreateTrxnContext();
+        Assert.AreEqual(3, await verify.Set<TaskItem>().IgnoreQueryFilters()
+            .CountAsync(t => t.TenantId == TenantId.From(tenantId) && t.OverdueNotifiedForDueDate != null,
+                TestContext.CancellationToken));
+        await AssertOneRowPerMessageIdAsync(verify.OutboxMessages
+            .Where(m => m.Headers!.Contains(tenantId.ToString()) && m.EventType == nameof(TaskItemOverdueSuspectedEvent))
+            .Select(m => m.Id), expected: 3);
+    }
+
+    /// <summary>
+    /// Recurrence, re-seeded pointer: a template's next-occurrence pointer moves back over occurrences it already
+    /// generated (the pattern was removed and attached again, which re-seeds it from the due date). The upsert keeps
+    /// the stored occurrences; the run must announce only the occurrences it inserted.
+    /// </summary>
+    [TestMethod]
+    [Timeout(180000, CooperativeCancellation = true)]
+    public async Task RecurringTaskGeneration_PointerReseededOverGeneratedOccurrences_StagesOnlyNewOnes()
+    {
+        // Drained at the later clock, so nothing another class left behind is due at either clock below.
+        await RunRecurrenceAsync(null);
+        var tenantId = Guid.NewGuid();
+        var dueFrom = Now.AddDays(-3);
+        TaskItemId templateId;
+        await using (var seed = DbContainerFixture.CreateTrxnContext())
+        {
+            var template = TaskItem.Create(TenantId.From(tenantId), "Daily standup").Value!;
+            template.Update(features: TaskFeatures.Recurring);
+            template.UpdateDateRange(null, dueFrom);
+            template.UpdateRecurrencePattern(new RecurrencePattern { Frequency = RecurrencePattern.Daily, Interval = 1 });
+            seed.TaskItems.Add(template);
+            await seed.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
+            templateId = template.Id;
+        }
+
+        await RunRecurrenceAsync(null, Now.AddDays(-1));
+        var firstCount = (await OccurrenceIdsAsync(tenantId)).Count;
+        Assert.IsGreaterThan(0, firstCount, "the first run generated occurrences");
+        await using (var reseed = DbContainerFixture.CreateTrxnContext())
+        {
+            await reseed.Set<TaskItem>().IgnoreQueryFilters()
+                .Where(t => t.Id == templateId)
+                .ExecuteUpdateAsync(s => s.SetProperty(t => t.NextOccurrenceAtUtc, dueFrom), TestContext.CancellationToken);
+        }
+
+        var reported = await RunRecurrenceAsync(null);
+
+        var occurrenceIds = await OccurrenceIdsAsync(tenantId);
+        Assert.IsGreaterThan(firstCount, occurrenceIds.Count, "the later clock adds occurrences past the first run");
+        Assert.AreEqual(occurrenceIds.Count - firstCount, reported, "only the occurrences this run inserted are reported");
+        await using var verify = DbContainerFixture.CreateTrxnContext();
+        await AssertOneRowPerMessageIdAsync(verify.OutboxMessages
+            .Where(m => m.Headers!.Contains(tenantId.ToString()) && occurrenceIds.Contains(m.Id))
+            .Select(m => m.Id), expected: occurrenceIds.Count);
+    }
+
+    private async Task<List<Guid>> OccurrenceIdsAsync(Guid tenantId)
+    {
+        await using var verify = DbContainerFixture.CreateTrxnContext();
+        return await verify.Set<TaskItem>().IgnoreQueryFilters()
+            .Where(t => t.TenantId == TenantId.From(tenantId) && t.RecurrenceTemplateId != null)
+            .Select(t => t.Id.Value)
+            .ToListAsync(TestContext.CancellationToken);
+    }
+
     /// <summary>What the job reports: the rows the retry changed, all of them after a lost commit, none after a landed one.</summary>
     private static long Reported(CommitFault mode, int changed) => mode == CommitFault.BeforeCommit ? changed : 0;
 
@@ -173,10 +267,10 @@ public class SchedulerTransactionRetryTests
         Assert.HasCount(expected, rows.Distinct().ToList(), "no message id is stored twice");
     }
 
-    private async Task<long> RunOverdueAsync(TransientCommitFault? fault)
+    private async Task<long> RunOverdueAsync(IInterceptor? interceptor)
     {
         using var telemetry = new RecordingTelemetry(OverdueTaskCheckHandler.JobName);
-        await using var db = CreateContext(fault);
+        await using var db = CreateContext(interceptor);
         await new OverdueTaskCheckHandler(
             new TaskItemSystemRepository(db),
             new OutboxStaging<TaskFlowDbContextTrxn>(db, TestOutbox.Options),
@@ -186,23 +280,23 @@ public class SchedulerTransactionRetryTests
         return telemetry.RowsAffected;
     }
 
-    private async Task<long> RunRecurrenceAsync(TransientCommitFault? fault)
+    private async Task<long> RunRecurrenceAsync(IInterceptor? interceptor, DateTimeOffset? asOfUtc = null)
     {
         using var telemetry = new RecordingTelemetry(RecurringTaskGenerationHandler.JobName);
-        await using var db = CreateContext(fault);
+        await using var db = CreateContext(interceptor);
         await new RecurringTaskGenerationHandler(
             new TaskItemSystemRepository(db),
             new OutboxStaging<TaskFlowDbContextTrxn>(db, TestOutbox.Options),
             telemetry.Telemetry,
-            new FixedTimeProvider(Now),
+            new FixedTimeProvider(asOfUtc ?? Now),
             NullLogger<RecurringTaskGenerationHandler>.Instance).HandleAsync(TestContext.CancellationToken);
         return telemetry.RowsAffected;
     }
 
-    private async Task<long> RunStaleCleanupAsync(TransientCommitFault? fault)
+    private async Task<long> RunStaleCleanupAsync(IInterceptor? interceptor)
     {
         using var telemetry = new RecordingTelemetry(StaleTaskCleanupHandler.JobName);
-        await using var db = CreateContext(fault);
+        await using var db = CreateContext(interceptor);
         await new StaleTaskCleanupHandler(
             new TaskItemSystemRepository(db),
             telemetry.Telemetry,
@@ -212,8 +306,8 @@ public class SchedulerTransactionRetryTests
         return telemetry.RowsAffected;
     }
 
-    private static TaskFlowDbContextTrxn CreateContext(TransientCommitFault? fault) =>
-        fault is null ? DbContainerFixture.CreateTrxnContext() : DbContainerFixture.CreateTrxnContext(null, fault);
+    private static TaskFlowDbContextTrxn CreateContext(IInterceptor? interceptor) =>
+        interceptor is null ? DbContainerFixture.CreateTrxnContext() : DbContainerFixture.CreateTrxnContext(null, interceptor);
 
     public TestContext TestContext { get; set; } = null!;
 
@@ -258,6 +352,32 @@ public class SchedulerTransactionRetryTests
             throw DbContainerFixture.Provider == TaskFlowDbProvider.PostgreSql
                 ? new PostgresException("injected serialization failure", "ERROR", "ERROR", PostgresErrorCodes.SerializationFailure)
                 : new TimeoutException("injected commit timeout");
+        }
+    }
+
+    /// <summary>
+    /// A second replica that, just before this run's first UPDATE (its overdue mark), marks <paramref name="rows"/> on
+    /// another connection and stages the same announcements this job would, then commits. Runs once.
+    /// </summary>
+    private sealed class CompetingOverdueReplica(IReadOnlyList<OverdueTaskRow> rows) : DbCommandInterceptor
+    {
+        public bool Ran { get; private set; }
+
+        public override async ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (Ran || !command.CommandText.TrimStart().StartsWith("UPDATE", StringComparison.OrdinalIgnoreCase)) return result;
+            Ran = true;
+
+            await using var other = DbContainerFixture.CreateTrxnContext();
+            var ids = rows.Select(r => TaskItemId.From(r.Id)).ToList();
+            await other.Set<TaskItem>().IgnoreQueryFilters()
+                .Where(t => ids.Contains(t.Id))
+                .ExecuteUpdateAsync(s => s.SetProperty(t => t.OverdueNotifiedForDueDate, t => t.DueDate), cancellationToken);
+            var outbox = new OutboxStaging<TaskFlowDbContextTrxn>(other, TestOutbox.Options);
+            foreach (var row in rows) outbox.Stage(OverdueTaskCheckHandler.Announcement(row, DateTimeOffset.UtcNow));
+            await other.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: cancellationToken);
+            return result;
         }
     }
 
