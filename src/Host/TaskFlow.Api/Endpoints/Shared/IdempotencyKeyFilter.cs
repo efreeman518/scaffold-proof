@@ -1,5 +1,6 @@
 using EF.AspNetCore;
 using EF.Common.Contracts;
+using Microsoft.OpenApi;
 using System.Globalization;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Repositories;
@@ -54,14 +55,28 @@ internal static class IdempotencyKeyFilter
         });
 
     /// <summary>
-    /// Applies the mapping to a route whose body is a <see cref="DefaultRequest{T}"/> of <typeparamref name="TDto"/>.
-    /// The routes already declare their 400 (ProducesValidationProblem).
+    /// Applies the mapping to a route whose body is a <see cref="DefaultRequest{T}"/> of <typeparamref name="TDto"/>, and
+    /// documents the optional header on the operation so generated clients can send it. The routes already declare
+    /// their 400 (ProducesValidationProblem).
     /// </summary>
     private static RouteHandlerBuilder WithKeyMapping<TDto>(
         this RouteHandlerBuilder builder,
         Func<IIdempotencyKeyRepository, Guid, HttpContext, string, CancellationToken, Task<Guid?>> map)
         where TDto : EntityBaseDto =>
         builder
+            .AddOpenApiOperationTransformer((operation, _, _) =>
+            {
+                operation.Parameters ??= [];
+                operation.Parameters.Add(new OpenApiParameter
+                {
+                    Name = HeaderName,
+                    In = ParameterLocation.Header,
+                    Required = false,
+                    Description = "Optional client key that makes a resent create or add replay its first result instead of writing again. Ignored when the body carries a non-empty id.",
+                    Schema = new OpenApiSchema { Type = JsonSchemaType.String, MinLength = 1, MaxLength = KeyMaxLength }
+                });
+                return Task.CompletedTask;
+            })
             .AddEndpointFilter(async (context, next) =>
             {
                 var item = context.Arguments.OfType<DefaultRequest<TDto>>().SingleOrDefault()?.Item;
