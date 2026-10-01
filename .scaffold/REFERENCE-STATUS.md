@@ -36,11 +36,11 @@ Release `--no-build` after a `--no-incremental` Release solution build (0 warnin
 | Test.Unit | 662 | 16 s |
 | Test.UI | 54 | 1 s |
 | Test.Architecture | 87 | 2 s |
-| Test.Endpoints | 230 | 8 s |
+| Test.Endpoints | 234 | 8 s |
 | Test.Integration.FlowEngine | 26 | 0.3 s |
 | Test.Mutation | 27 | 0.1 s |
 | Test.PlaywrightUI (`TestCategory=Unit`) | 1 | 0.1 s |
-| **Total** | **1087** | |
+| **Total** | **1091** | |
 
 `Test.Unit` used the CI 15-second blame-hang timeout. `dotnet format analyzers TaskFlow.slnx --severity warn --verify-no-changes --no-restore` passed with no changes or diagnostics. Types the EF.* packages own are tested by the package suites, not here.
 
