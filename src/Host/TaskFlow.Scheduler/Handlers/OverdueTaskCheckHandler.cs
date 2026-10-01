@@ -60,16 +60,18 @@ public sealed class OverdueTaskCheckHandler(
         foreach (var tenant in page.GroupBy(r => r.TenantId))
         {
             var rows = tenant.ToList();
-            await systemRepository.ExecuteInTransactionAsync(async token =>
+            // Counted from the committed attempt only. A retry after a commit that landed marks nothing (the guard
+            // sees the stored marks), so it stages nothing and the deterministic ids stay single.
+            notified += await systemRepository.ExecuteInTransactionAsync(async token =>
             {
                 var marked = await systemRepository.MarkOverdueNotifiedAsync(
                     tenant.Key, rows.ConvertAll(r => r.Id), asOfUtc, token);
                 // Every row lost the race (completed or rescheduled since the scan): nothing to announce.
-                if (marked == 0) return;
+                if (marked == 0) return 0;
 
                 foreach (var row in rows) Stage(row, asOfUtc);
                 await systemRepository.SaveChangesAsync(token);
-                notified += marked;
+                return marked;
             }, ct);
         }
 

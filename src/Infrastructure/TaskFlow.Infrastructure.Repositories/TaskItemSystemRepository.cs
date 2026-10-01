@@ -181,8 +181,26 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
     }
 
     /// <inheritdoc />
-    public Task ExecuteInTransactionAsync(Func<CancellationToken, Task> work, CancellationToken ct = default) =>
-        ResilientTransaction.New(DB).ExecuteAsync(work, ct);
+    // Saves inside work keep the default acceptAllChangesOnSuccess: true. EF.Data's alternative (accept after the
+    // commit, so a retry re-sends the same changes) does not fit: work re-stages its rows on every attempt, and they
+    // would collide with rows still tracked as Added. Clearing per attempt, as DbContextBase.RetryOnConcurrencyAsync
+    // does, re-runs the reads and guards against the database as it now is (D-009, D-073).
+    public async Task<T> ExecuteInTransactionAsync<T>(Func<CancellationToken, Task<T>> work, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(work);
+        DB.ChangeTracker.DetectChanges();
+        if (DB.ChangeTracker.HasChanges())
+            throw new InvalidOperationException(
+                "ExecuteInTransactionAsync clears the change tracker on each attempt; save or discard the pending changes first.");
+
+        T result = default!;
+        await ResilientTransaction.New(DB).ExecuteAsync(async token =>
+        {
+            DB.ChangeTracker.Clear();
+            result = await work(token).ConfigureAwait(ConfigureAwaitOptions.None);
+        }, ct).ConfigureAwait(ConfigureAwaitOptions.None);
+        return result;
+    }
 
     /// <inheritdoc />
     // Throw, not ClientWins: the rows saved here are operational (outbox, blob-delete work) and carry no

@@ -78,8 +78,17 @@ public interface ITaskItemSystemRepository
     /// Runs <paramref name="work"/> inside one transaction on the write context, through the provider's
     /// execution strategy. Both providers retry on transient failures and reject a user transaction opened
     /// outside the strategy, so every multi-statement job step goes through here.
+    /// <para>
+    /// The strategy may run <paramref name="work"/> more than once, including after a commit that landed but
+    /// reported a failure. Each attempt starts from a cleared change tracker, so <paramref name="work"/> re-reads
+    /// and re-guards what it changes and re-stages its rows, and its guards must make a re-run after a landed
+    /// commit a no-op. The caller sees only the committed attempt's result, so counts and other side effects
+    /// belong after this call, never inside <paramref name="work"/>.
+    /// </para>
     /// </summary>
-    Task ExecuteInTransactionAsync(Func<CancellationToken, Task> work, CancellationToken ct = default);
+    /// <returns>What the committed attempt of <paramref name="work"/> returned.</returns>
+    /// <exception cref="InvalidOperationException">The write context has pending changes when this is called.</exception>
+    Task<T> ExecuteInTransactionAsync<T>(Func<CancellationToken, Task<T>> work, CancellationToken ct = default);
 
     /// <summary>Commits rows staged on the shared write context (outbox rows, blob-delete work).</summary>
     Task<int> SaveChangesAsync(CancellationToken ct = default);

@@ -90,23 +90,22 @@ public sealed class RecurringTaskGenerationHandler(
             occurrences.Add(created.Value!);
         }
 
-        var written = 0;
-        await systemRepository.ExecuteInTransactionAsync(async token =>
+        // The committed attempt's count only. The guarded advance also covers a retry after a commit that landed:
+        // the pointer has already moved, so the retry writes and stages nothing.
+        return await systemRepository.ExecuteInTransactionAsync(async token =>
         {
             // The guarded advance runs first and is the lock: if another replica already moved this template,
             // its occurrences are the same rows this run would write, so this transaction commits nothing.
             if (!await systemRepository.AdvanceNextOccurrenceAsync(tenantId, templateId, dueFrom, nextDue, token))
-                return;
+                return 0;
 
-            if (occurrences.Count == 0) return;
+            if (occurrences.Count == 0) return 0;
 
             await systemRepository.UpsertOccurrencesAsync(occurrences, token);
             foreach (var occurrence in occurrences) Stage(occurrence, asOfUtc);
             await systemRepository.SaveChangesAsync(token);
-            written = occurrences.Count;
+            return occurrences.Count;
         }, ct);
-
-        return written;
     }
 
     /// <summary>

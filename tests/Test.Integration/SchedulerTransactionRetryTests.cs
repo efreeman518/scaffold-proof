@@ -30,9 +30,11 @@ namespace Test.Integration;
 /// The scheduler's transactional steps under a retried commit, on the selected provider lane. A transaction
 /// interceptor throws one exception the configured execution strategy treats as transient, either before the
 /// commit (it does not land) or after it (it landed, the caller sees a failure). Either way the strategy re-runs
-/// the step, and the job must still complete with one outbox row per message id and a reported count equal to
-/// the rows it actually changed. Each run first drains candidates other classes left behind, because the jobs are
-/// cross-tenant and the reported count is job-wide.
+/// the step, and the job must still complete with one outbox row per message id. The reported count is the
+/// committed attempt's: after a lost commit the retry redoes the work and reports it once; after a landed commit
+/// the retry is a no-op and reports 0, because the client cannot tell a landed commit from a lost one (D-009).
+/// Each run first drains candidates other classes left behind, because the jobs are cross-tenant and the
+/// reported count is job-wide.
 /// </summary>
 [TestClass]
 [TestCategory("Integration")]
@@ -53,7 +55,7 @@ public class SchedulerTransactionRetryTests
     [TestInitialize]
     public void TestSetup() => IntegrationTestSetup.AssertAvailable("database", DbContainerFixture.StartupError);
 
-    /// <summary>Overdue: the retried step marks and announces each task once and reports three.</summary>
+    /// <summary>Overdue: the retried step marks and announces each task once and reports them once.</summary>
     [TestMethod]
     [DataRow(CommitFault.BeforeCommit)]
     [DataRow(CommitFault.AfterCommit)]
@@ -77,7 +79,7 @@ public class SchedulerTransactionRetryTests
         var reported = await RunOverdueAsync(fault);
 
         Assert.AreEqual(1, fault.Faults, "the injected failure fired, so the step really was retried");
-        Assert.AreEqual(3, reported, "the job reports each task once, not once per attempt");
+        Assert.AreEqual(Reported(mode, 3), reported, "the committed attempt's count, never one per attempt");
         await using var verify = DbContainerFixture.CreateTrxnContext();
         Assert.AreEqual(3, await verify.Set<TaskItem>().IgnoreQueryFilters()
             .CountAsync(t => t.TenantId == TenantId.From(tenantId) && t.OverdueNotifiedForDueDate != null,
@@ -116,13 +118,13 @@ public class SchedulerTransactionRetryTests
             .Select(t => t.Id.Value)
             .ToListAsync(TestContext.CancellationToken);
         Assert.IsNotEmpty(occurrenceIds, "the due occurrences were materialized");
-        Assert.AreEqual(occurrenceIds.Count, reported, "the job reports each occurrence once, not once per attempt");
+        Assert.AreEqual(Reported(mode, occurrenceIds.Count), reported, "the committed attempt's count, never one per attempt");
         await AssertOneRowPerMessageIdAsync(verify.OutboxMessages
             .Where(m => m.Headers!.Contains(tenantId.ToString()) && occurrenceIds.Contains(m.Id))
             .Select(m => m.Id), expected: occurrenceIds.Count);
     }
 
-    /// <summary>Stale cleanup: the retried step queues the blob deletion once and reports one deleted task.</summary>
+    /// <summary>Stale cleanup: the retried step queues the blob deletion once .</summary>
     [TestMethod]
     [DataRow(CommitFault.BeforeCommit)]
     [DataRow(CommitFault.AfterCommit)]
@@ -151,7 +153,7 @@ public class SchedulerTransactionRetryTests
         var reported = await RunStaleCleanupAsync(fault);
 
         Assert.AreEqual(1, fault.Faults, "the injected failure fired, so the step really was retried");
-        Assert.AreEqual(1, reported, "the job reports the deleted task once, not once per attempt");
+        Assert.AreEqual(Reported(mode, 1), reported, "the committed attempt's count, never one per attempt");
         await using var verify = DbContainerFixture.CreateTrxnContext();
         Assert.AreEqual(0, await verify.Set<TaskItem>().IgnoreQueryFilters()
             .CountAsync(t => t.TenantId == typedTenantId, TestContext.CancellationToken));
@@ -159,6 +161,9 @@ public class SchedulerTransactionRetryTests
             .Where(w => w.TenantId == tenantId)
             .Select(w => w.Id), expected: 1);
     }
+
+    /// <summary>What the job reports: the rows the retry changed, all of them after a lost commit, none after a landed one.</summary>
+    private static long Reported(CommitFault mode, int changed) => mode == CommitFault.BeforeCommit ? changed : 0;
 
     /// <summary>Exactly <paramref name="expected"/> rows, and no id among them twice.</summary>
     private async Task AssertOneRowPerMessageIdAsync(IQueryable<Guid> ids, int expected)

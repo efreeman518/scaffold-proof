@@ -40,10 +40,12 @@ public sealed class StaleTaskCleanupHandler(
             foreach (var tenant in batch.GroupBy(r => r.TenantId))
             {
                 var ids = tenant.Select(r => r.Id).ToList();
-                await systemRepository.ExecuteInTransactionAsync(async token =>
+                // The committed attempt's count only. A retry after a commit that landed finds no attachment to
+                // queue and no task left to delete, so it stages no second blob-delete row.
+                deleted += await systemRepository.ExecuteInTransactionAsync(async token =>
                 {
                     await systemRepository.StageBlobDeletesAsync(tenant.Key, ids, token);
-                    deleted += await systemRepository.DeleteStaleBatchAsync(tenant.Key, ids, cutoffUtc, token);
+                    return await systemRepository.DeleteStaleBatchAsync(tenant.Key, ids, cutoffUtc, token);
                 }, ct);
             }
 

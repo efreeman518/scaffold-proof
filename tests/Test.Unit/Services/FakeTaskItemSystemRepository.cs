@@ -99,12 +99,13 @@ internal sealed class FakeTaskItemSystemRepository : ITaskItemSystemRepository
         return Task.FromResult(taskIds.Count);
     }
 
-    public async Task ExecuteInTransactionAsync(Func<CancellationToken, Task> work, CancellationToken ct = default)
+    public async Task<T> ExecuteInTransactionAsync<T>(Func<CancellationToken, Task<T>> work, CancellationToken ct = default)
     {
         TransactionCount++;
         Calls.Add("BeginTransaction");
-        await work(ct);
+        var result = await work(ct);
         Calls.Add("Commit");
+        return result;
     }
 
     public Task<int> SaveChangesAsync(CancellationToken ct = default)
