@@ -1,6 +1,7 @@
 using EF.FlowEngine.Definition;
 using EF.FlowEngine.Definition.NodeConfigs;
 using EF.FlowEngine.Impl;
+using EF.FlowEngine.Model;
 using System.Text.Json;
 
 namespace Test.Integration.FlowEngine;
@@ -56,6 +57,74 @@ public class WorkflowDefinitionValidityTests
         // ValidateAndThrow surfaces validator errors (unknown node types, dangling edges,
         // missing required fields, malformed JSON schemas) as a typed exception.
         WorkflowDefinitionValidator.ValidateAndThrow(def);
+    }
+
+    /// <summary>
+    /// Verifies the shipped definitions raise no advisory warning under the FlowEngine retry validation
+    /// (for example an unsafe node listing an ambiguous status without an idempotency header).
+    /// </summary>
+    [TestMethod]
+    [DynamicData(nameof(AllWorkflows))]
+    [TestCategory("Integration")]
+    public void Each_Workflow_Has_No_DefinitionValidator_Warnings(string fileName, string _id, string _version)
+    {
+        var def = JsonSerializer.Deserialize<WorkflowDefinition>(ReadWorkflowFile(fileName), JsonOpts)!;
+
+        using var document = JsonDocument.Parse(ReadWorkflowFile(fileName));
+        var nodes = document.RootElement.GetProperty("nodes");
+
+        // Package defect (EF.FlowEngine 1.0.197 and 1.0.199): GetWarnings looks the node's config key up as
+        // PascalCase "IdempotencyKey", so a camelCase "idempotencyKey" in canonical workflow JSON is reported
+        // as missing. Only that warning is excused, and only for a node whose config does carry a non-empty
+        // key, so a genuinely missing key still fails. Remove this when GetWarnings reads the camelCase key.
+        var warnings = WorkflowDefinitionValidator.GetWarnings(def)
+            .Where(w => !IsCamelCaseIdempotencyKeyFalsePositive(w, nodes))
+            .ToList();
+
+        Assert.IsEmpty(warnings, $"{fileName}: {string.Join(" | ", warnings)}");
+    }
+
+    /// <summary>
+    /// The node RetryPolicy is the only retry owner for the taskflow-api calls (the resilient HTTP adapter sends
+    /// once per attempt), so every integration node declares one with exponential backoff. No node sends an
+    /// idempotency header (the API does not deduplicate one yet), so the unsafe methods keep the engine's
+    /// 409/429/503 default: no node overrides the status list, and no list carries 412 (D-032: a stale
+    /// precondition is never resent).
+    /// </summary>
+    [TestMethod]
+    [DynamicData(nameof(AllWorkflows))]
+    [TestCategory("Integration")]
+    public void Each_Integration_Node_Declares_Exponential_RetryPolicy_With_Unsafe_Defaults(string fileName, string _id, string _version)
+    {
+        var def = JsonSerializer.Deserialize<WorkflowDefinition>(ReadWorkflowFile(fileName), JsonOpts)!;
+        var integrationNodes = def.Nodes.Values.Where(n => n.Type == "integration").ToList();
+        Assert.IsNotEmpty(integrationNodes, $"{fileName} has no integration node");
+
+        foreach (var node in integrationNodes)
+        {
+            var policy = node.RetryPolicy;
+            Assert.IsNotNull(policy, $"{fileName}:{node.Id} must declare a retryPolicy");
+            Assert.AreEqual(BackoffType.Exponential, policy.Backoff, $"{fileName}:{node.Id}");
+            Assert.AreEqual(3, policy.MaxAttempts, $"{fileName}:{node.Id}");
+            Assert.DoesNotContain(412, policy.RetryOnHttpStatus, $"{fileName}:{node.Id}");
+
+            var config = JsonSerializer.Deserialize<IntegrationNodeConfig>(JsonSerializer.Serialize(node.Config, JsonOpts), JsonOpts)!;
+            Assert.AreEqual("taskflow-api", config.ClientRef, $"{fileName}:{node.Id}");
+            Assert.IsNull(config.IdempotencyKeyHeader, $"{fileName}:{node.Id} sends an idempotency header the API does not deduplicate");
+            Assert.IsNull(config.RetryOnStatusCodes, $"{fileName}:{node.Id} must inherit the unsafe-method default status list");
+        }
+    }
+
+    /// <summary>Verifies the FlowEngine validation refuses a 412 retry status, so the D-032 rule cannot regress silently.</summary>
+    [TestMethod]
+    [TestCategory("Integration")]
+    public void DefinitionValidator_Rejects_412_In_A_Node_Retry_List()
+    {
+        var json = System.Text.Json.Nodes.JsonNode.Parse(ReadWorkflowFile("ai-task-triage.json"))!;
+        json["nodes"]!["n-apply-priority"]!["retryPolicy"]!["retryOnHttpStatus"] = new System.Text.Json.Nodes.JsonArray(409, 412);
+        var def = json.Deserialize<WorkflowDefinition>(JsonOpts)!;
+
+        Assert.IsNotEmpty(WorkflowDefinitionValidator.Validate(def), "a node retry list containing 412 must fail validation");
     }
 
     /// <summary>Verifies each workflow node has explicit config for SQL registry serialization behavior and protects the expected test contract.</summary>
@@ -182,6 +251,15 @@ public class WorkflowDefinitionValidityTests
         Assert.IsTrue(
             body.TryGetProperty("idempotencyKey", out var key) && !string.IsNullOrWhiteSpace(key.GetString()),
             "retry idempotency for the create must come from the integration node's idempotencyKey instead");
+    }
+
+    private static bool IsCamelCaseIdempotencyKeyFalsePositive(string warning, JsonElement nodes)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(warning, @"^Node '(?<id>[^']+)' \([a-z]+\): IdempotencyKey is not set\.");
+        return match.Success
+            && nodes.TryGetProperty(match.Groups["id"].Value, out var node)
+            && node.GetProperty("config").TryGetProperty("idempotencyKey", out var key)
+            && !string.IsNullOrWhiteSpace(key.GetString());
     }
 
     /// <summary>Verifies read workflow file behavior and protects the expected test contract.</summary>
