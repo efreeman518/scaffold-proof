@@ -143,11 +143,11 @@ internal sealed class UploadAttachmentHandler(
             return Result<DefaultResponse<AttachmentDto>>.Failure("Blob storage is not configured.");
 
         var tenantId = requestContext.TenantId ?? Guid.Empty;
-        var blobName = $"{tenantId}/{command.OwnerId}/{command.FileName}";
+        var blobName = AttachmentBlobs.BlobName(tenantId, command.OwnerId, command.FileName);
 
         try
         {
-            await blobStorage.UploadAsync("attachments", blobName, command.FileStream, command.ContentType, cancellationToken: ct);
+            await blobStorage.UploadAsync(AttachmentBlobs.ContainerName, blobName, command.FileStream, command.ContentType, cancellationToken: ct);
         }
         catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {

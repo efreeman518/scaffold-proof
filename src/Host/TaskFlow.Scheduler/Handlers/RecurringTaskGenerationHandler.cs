@@ -109,7 +109,7 @@ public sealed class RecurringTaskGenerationHandler(
                 inserted++;
             }
 
-            if (inserted > 0) await systemRepository.SaveChangesAsync(token);
+            if (inserted > 0) await systemRepository.SaveWithThrowPolicyAsync(token);
             return inserted;
         }, ct);
     }

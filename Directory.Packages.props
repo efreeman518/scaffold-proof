@@ -4,47 +4,47 @@
   </PropertyGroup>
   <ItemGroup Label="EF.Packages (Private Feed - github.com/efreeman518/EF.Packages)">
     <!-- Core packages - always available -->
-    <PackageVersion Include="EF.CQRS" Version="2.0.115" />
-    <PackageVersion Include="EF.Domain" Version="2.0.115" />
-    <PackageVersion Include="EF.Domain.Contracts" Version="2.0.115" />
-    <PackageVersion Include="EF.Data" Version="2.0.115" />
-    <PackageVersion Include="EF.Data.Contracts" Version="2.0.115" />
+    <PackageVersion Include="EF.CQRS" Version="2.0.116" />
+    <PackageVersion Include="EF.Domain" Version="2.0.116" />
+    <PackageVersion Include="EF.Domain.Contracts" Version="2.0.116" />
+    <PackageVersion Include="EF.Data" Version="2.0.116" />
+    <PackageVersion Include="EF.Data.Contracts" Version="2.0.116" />
     <!-- D-023 column encryption: provider-neutral AES-GCM converter, blind index, Key Vault DEK unwrap (package request 5). -->
-    <PackageVersion Include="EF.Data.Encryption" Version="2.0.115" />
-    <PackageVersion Include="EF.Data.PostgreSql" Version="2.0.115" />
-    <PackageVersion Include="EF.Data.SqlServer" Version="2.0.115" />
-    <PackageVersion Include="EF.Common" Version="2.0.115" />
-    <PackageVersion Include="EF.Common.Contracts" Version="2.0.115" />
-    <PackageVersion Include="EF.Tenancy" Version="2.0.115" />
-    <PackageVersion Include="EF.Host" Version="2.0.115" />
-    <PackageVersion Include="EF.AspNetCore" Version="2.0.115" />
-    <PackageVersion Include="EF.BackgroundServices" Version="2.0.115" />
-    <PackageVersion Include="EF.Cache" Version="2.0.115" />
-    <PackageVersion Include="EF.IntegrationTesting" Version="2.0.115" />
-    <PackageVersion Include="EF.IntegrationTesting.Aspire" Version="2.0.115" />
-    <PackageVersion Include="EF.IntegrationTesting.PostgreSql" Version="2.0.115" />
-    <PackageVersion Include="EF.IntegrationTesting.SqlServer" Version="2.0.115" />
-    <PackageVersion Include="EF.Testing" Version="2.0.115" />
-    <PackageVersion Include="EF.Testing.Architecture" Version="2.0.115" />
-    <PackageVersion Include="EF.AI.Testing" Version="2.0.115" />
-    <PackageVersion Include="EF.Messaging" Version="2.0.115" />
-    <PackageVersion Include="EF.Messaging.RabbitMq" Version="2.0.115" />
+    <PackageVersion Include="EF.Data.Encryption" Version="2.0.116" />
+    <PackageVersion Include="EF.Data.PostgreSql" Version="2.0.116" />
+    <PackageVersion Include="EF.Data.SqlServer" Version="2.0.116" />
+    <PackageVersion Include="EF.Common" Version="2.0.116" />
+    <PackageVersion Include="EF.Common.Contracts" Version="2.0.116" />
+    <PackageVersion Include="EF.Tenancy" Version="2.0.116" />
+    <PackageVersion Include="EF.Host" Version="2.0.116" />
+    <PackageVersion Include="EF.AspNetCore" Version="2.0.116" />
+    <PackageVersion Include="EF.BackgroundServices" Version="2.0.116" />
+    <PackageVersion Include="EF.Cache" Version="2.0.116" />
+    <PackageVersion Include="EF.IntegrationTesting" Version="2.0.116" />
+    <PackageVersion Include="EF.IntegrationTesting.Aspire" Version="2.0.116" />
+    <PackageVersion Include="EF.IntegrationTesting.PostgreSql" Version="2.0.116" />
+    <PackageVersion Include="EF.IntegrationTesting.SqlServer" Version="2.0.116" />
+    <PackageVersion Include="EF.Testing" Version="2.0.116" />
+    <PackageVersion Include="EF.Testing.Architecture" Version="2.0.116" />
+    <PackageVersion Include="EF.AI.Testing" Version="2.0.116" />
+    <PackageVersion Include="EF.Messaging" Version="2.0.116" />
+    <PackageVersion Include="EF.Messaging.RabbitMq" Version="2.0.116" />
     <!-- M1/M8/M16: transport-neutral messaging contracts, the EF Core outbox/inbox/leased-work tables, and the Functions Service Bus adapter. -->
-    <PackageVersion Include="EF.Messaging.Contracts" Version="2.0.115" />
-    <PackageVersion Include="EF.Data.Outbox" Version="2.0.115" />
-    <PackageVersion Include="EF.Messaging.Functions" Version="2.0.115" />
-    <PackageVersion Include="EF.Storage" Version="2.0.115" />
+    <PackageVersion Include="EF.Messaging.Contracts" Version="2.0.116" />
+    <PackageVersion Include="EF.Data.Outbox" Version="2.0.116" />
+    <PackageVersion Include="EF.Messaging.Functions" Version="2.0.116" />
+    <PackageVersion Include="EF.Storage" Version="2.0.116" />
     <!-- Provider-neutral object-storage contract both storage arms implement (D-037, package request 25). -->
-    <PackageVersion Include="EF.Storage.Contracts" Version="2.0.115" />
+    <PackageVersion Include="EF.Storage.Contracts" Version="2.0.116" />
     <!-- D-037 NonAzure object-storage arm: the published S3 repository, bucket provisioner, and DI wiring. -->
-    <PackageVersion Include="EF.Storage.S3" Version="2.0.115" />
-    <PackageVersion Include="EF.Table" Version="2.0.115" />
+    <PackageVersion Include="EF.Storage.S3" Version="2.0.116" />
+    <PackageVersion Include="EF.Table" Version="2.0.116" />
     <!-- Backend-neutral audit sink contract both audit arms implement (D-039, package request 26). -->
-    <PackageVersion Include="EF.Audit.Contracts" Version="2.0.115" />
-    <PackageVersion Include="EF.Audit.AzureTable" Version="2.0.115" />
-    <PackageVersion Include="EF.Audit.Data" Version="2.0.115" />
-    <PackageVersion Include="EF.Grpc" Version="2.0.115" />
-    <PackageVersion Include="EF.AI" Version="2.0.115" />
+    <PackageVersion Include="EF.Audit.Contracts" Version="2.0.116" />
+    <PackageVersion Include="EF.Audit.AzureTable" Version="2.0.116" />
+    <PackageVersion Include="EF.Audit.Data" Version="2.0.116" />
+    <PackageVersion Include="EF.Grpc" Version="2.0.116" />
+    <PackageVersion Include="EF.AI" Version="2.0.116" />
     <PackageVersion Include="Testcontainers.MsSql" Version="4.15.0" />
     <PackageVersion Include="Testcontainers.Azurite" Version="4.15.0" />
     <PackageVersion Include="Testcontainers.Redis" Version="4.15.0" />
@@ -52,18 +52,18 @@
     <PackageVersion Include="Testcontainers" Version="4.15.0" />
   </ItemGroup>
   <ItemGroup Label="EF.Packages hosting, web and UI client">
-    <PackageVersion Include="EF.AspNetCore.DataProtection" Version="2.0.115" />
-    <PackageVersion Include="EF.Http.Resilience" Version="2.0.115" />
-    <PackageVersion Include="EF.OpenTelemetry" Version="2.0.115" />
-    <PackageVersion Include="EF.UI.Client" Version="2.0.115" />
+    <PackageVersion Include="EF.AspNetCore.DataProtection" Version="2.0.116" />
+    <PackageVersion Include="EF.Http.Resilience" Version="2.0.116" />
+    <PackageVersion Include="EF.OpenTelemetry" Version="2.0.116" />
+    <PackageVersion Include="EF.UI.Client" Version="2.0.116" />
   </ItemGroup>
   <ItemGroup Label="EF.Packages auth, gateway, rate limiting, scheduler, storage">
-    <PackageVersion Include="EF.Auth" Version="2.0.115" />
-    <PackageVersion Include="EF.Gateway" Version="2.0.115" />
-    <PackageVersion Include="EF.RateLimiting" Version="2.0.115" />
-    <PackageVersion Include="EF.RateLimiting.Redis" Version="2.0.115" />
-    <PackageVersion Include="EF.BackgroundServices.TickerQ" Version="2.0.115" />
-    <PackageVersion Include="EF.CosmosDb" Version="2.0.115" />
+    <PackageVersion Include="EF.Auth" Version="2.0.116" />
+    <PackageVersion Include="EF.Gateway" Version="2.0.116" />
+    <PackageVersion Include="EF.RateLimiting" Version="2.0.116" />
+    <PackageVersion Include="EF.RateLimiting.Redis" Version="2.0.116" />
+    <PackageVersion Include="EF.BackgroundServices.TickerQ" Version="2.0.116" />
+    <PackageVersion Include="EF.CosmosDb" Version="2.0.116" />
   </ItemGroup>
   <ItemGroup Label="EF.Packages.Enterprise (Private Feed)">
     <PackageVersion Include="EF.FilterBuilder" Version="1.0.197" />

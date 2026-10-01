@@ -23,5 +23,6 @@ public abstract class BaseTest
     protected static readonly Assembly EfCqrsAssembly = typeof(IRequestHandler<,>).Assembly;
     protected static readonly Assembly InfrastructureDataAssembly = typeof(TaskFlowDbContextTrxn).Assembly;
     protected static readonly Assembly InfrastructureRepositoriesAssembly = typeof(CategoryRepositoryTrxn).Assembly;
+    protected static readonly Assembly SchedulerAssembly = Assembly.Load("TaskFlow.Scheduler");
     protected static readonly Assembly ApiAssembly = Assembly.Load("TaskFlow.Api");
 }

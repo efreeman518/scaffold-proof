@@ -216,9 +216,9 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
     /// <inheritdoc />
     // Throw, not ClientWins: the rows saved here are operational (outbox, blob-delete work) and carry no
     // concurrency token, so a conflict would mean the unit of work is not what this job thinks it is.
-    // `new` because RepositoryBase.SaveChangesAsync(ct) is the policy-free overload (plain
-    // DbContext.SaveChangesAsync); every save on this path has to carry the Throw policy (D-032).
-    public new Task<int> SaveChangesAsync(CancellationToken ct = default) =>
+    // Not named SaveChangesAsync: RepositoryBase.SaveChangesAsync(ct) is the policy-free overload (plain
+    // DbContext.SaveChangesAsync); every save on this path carries the Throw policy (D-032).
+    public Task<int> SaveWithThrowPolicyAsync(CancellationToken ct = default) =>
         DB.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct);
 
     /// <summary>Past due, still open, and not yet announced for this particular due date.</summary>
