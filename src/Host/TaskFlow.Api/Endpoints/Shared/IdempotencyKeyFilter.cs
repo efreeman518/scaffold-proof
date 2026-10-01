@@ -12,7 +12,7 @@ namespace TaskFlow.Api.Endpoints.Shared;
 /// D-074: an <c>Idempotency-Key</c> header on a create or child add, with no body id, is mapped to a stored UUIDv7
 /// before the handler runs, and the body id is set to it. A retried, concurrent or recovered request with the same
 /// key therefore sends the same id, and the existing replay paths (GR-17, D-073) return the stored row, or 409 for
-/// a divergent payload. A body id the caller supplied wins and the header is ignored.
+/// a divergent payload. A non-empty body id the caller supplied wins and the header is ignored.
 /// </summary>
 internal static class IdempotencyKeyFilter
 {
@@ -43,7 +43,8 @@ internal static class IdempotencyKeyFilter
             {
                 var item = context.Arguments.OfType<DefaultRequest<TDto>>().SingleOrDefault()?.Item;
                 var headers = context.HttpContext.Request.Headers[HeaderName];
-                if (item is null || item.Id is not null || headers.Count == 0) return await next(context);
+                // An empty id is no id to the services, so the header maps it the same as a missing one.
+                if (item is null || (item.Id is Guid id && id != Guid.Empty) || headers.Count == 0) return await next(context);
 
                 if (headers.Count > 1 || string.IsNullOrWhiteSpace(headers[0]) || headers[0]!.Length > KeyMaxLength)
                     return TypedResults.Problem(ProblemDetailsHelper.Create(

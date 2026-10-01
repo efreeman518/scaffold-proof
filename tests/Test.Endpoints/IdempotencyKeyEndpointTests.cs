@@ -95,6 +95,54 @@ public class IdempotencyKeyEndpointTests
     }
 
     /// <summary>
+    /// An empty body id (<see cref="Guid.Empty"/>) is no id, so the header still maps: the same key twice creates one
+    /// task. Before, the header was ignored and the create answered 400 (GR-17 rejects an empty caller id).
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_EmptyBodyId_When_CreateTaskItemWithKeyTwice_Then_TheKeyMapsAndCreatesOne(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = _fixture.CreateClient(style);
+        var key = NewKey();
+        var title = $"EmptyId-{Guid.NewGuid():N}";
+
+        using var first = await PostAsync(client, "/api/v1/task-items", new TaskItemDto { Id = Guid.Empty, Title = title }, key);
+        using var second = await PostAsync(client, "/api/v1/task-items", new TaskItemDto { Id = Guid.Empty, Title = title }, key);
+
+        Assert.AreEqual(HttpStatusCode.Created, first.StatusCode, await first.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        Assert.AreEqual(HttpStatusCode.OK, second.StatusCode, "the empty id is no id, so the key replays the first create");
+        Assert.AreEqual(
+            (await first.ItemAsync<TaskItemDto>(TestContext.CancellationToken))!.Id,
+            (await second.ItemAsync<TaskItemDto>(TestContext.CancellationToken))!.Id);
+    }
+
+    /// <summary>
+    /// The same rule on a child add: an empty body id is no id, so the key maps and the resend replays the first
+    /// comment. Before, the header was ignored and the add answered 400 (an empty caller id is not a UUIDv7).
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_EmptyBodyId_When_AddCommentWithKeyTwice_Then_AddsOne(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = _fixture.CreateClient(style);
+        var taskId = await CreateTaskAsync(client);
+        var key = NewKey();
+
+        using var first = await PostAsync(client, $"/api/v1/task-items/{taskId}/comments", new CommentDto { Id = Guid.Empty, Body = "keyed" }, key);
+        using var second = await PostAsync(client, $"/api/v1/task-items/{taskId}/comments", new CommentDto { Id = Guid.Empty, Body = "keyed" }, key);
+
+        Assert.AreEqual(HttpStatusCode.Created, first.StatusCode, await first.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        Assert.AreEqual(HttpStatusCode.OK, second.StatusCode, await second.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        Assert.AreEqual(1, await CountAsync(client, $"/api/v1/task-items/{taskId}", "comments"));
+    }
+
+    /// <summary>
     /// A blank, oversized or repeated key is refused with a 400 ProblemDetails. HttpClient drops a header whose value
     /// is empty, so the blank value stands for the empty one: both fail the same non-empty rule.
     /// </summary>
