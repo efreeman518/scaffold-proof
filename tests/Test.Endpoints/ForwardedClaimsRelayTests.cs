@@ -115,7 +115,8 @@ public sealed class ForwardedClaimsRelayTests
     /// <summary>
     /// The Gateway's aggregate health check calls the authorized <c>/health/full</c> with its own app-only token and no
     /// relay header. <c>ForwardedClaims:ServicePathPrefixes = ["/health"]</c> in the shipped Api settings keeps the
-    /// trusted caller's own principal on that path only, so the probe is answered instead of forbidden.
+    /// trusted caller's own principal on that path only, so the probe is answered instead of forbidden. Only the auth
+    /// outcome is asserted: an unhealthy dependency answers 503, which is not this test's concern.
     /// </summary>
     [TestMethod]
     public async Task TrustedAppOnlyCaller_WithoutRelayHeader_IsAnsweredOnTheServiceHealthPath()
@@ -125,7 +126,22 @@ public sealed class ForwardedClaimsRelayTests
 
         using var response = await client.GetAsync("/health/full", TestContext.CancellationToken);
 
-        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        Assert.AreNotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.AreNotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    /// <summary>The control for the test above: without the service path prefix the same probe is forbidden.</summary>
+    [TestMethod]
+    public async Task TrustedAppOnlyCaller_WithoutRelayHeader_NoServicePathPrefixes_Gets403OnHealth()
+    {
+        using var factory = TrustedGatewayCallerFactory().WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services =>
+                services.PostConfigure<ForwardedClaimsOptions>(options => options.ServicePathPrefixes = [])));
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/health/full", TestContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     public TestContext TestContext { get; set; } = null!;
