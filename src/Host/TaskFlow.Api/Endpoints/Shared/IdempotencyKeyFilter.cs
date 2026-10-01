@@ -81,7 +81,7 @@ internal static class IdempotencyKeyFilter
             {
                 var item = context.Arguments.OfType<DefaultRequest<TDto>>().SingleOrDefault()?.Item;
                 var headers = context.HttpContext.Request.Headers[HeaderName];
-                // An empty id is no id to the services, so the header maps it the same as a missing one.
+                // An empty id is treated as no id, so the header maps it the same as a missing one.
                 if (item is null || (item.Id is Guid id && id != Guid.Empty) || headers.Count == 0) return await next(context);
 
                 if (headers.Count > 1 || string.IsNullOrWhiteSpace(headers[0]) || headers[0]!.Length > KeyMaxLength)
