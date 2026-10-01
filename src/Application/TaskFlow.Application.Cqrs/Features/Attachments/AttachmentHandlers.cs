@@ -143,7 +143,7 @@ internal sealed class UploadAttachmentHandler(
             return Result<DefaultResponse<AttachmentDto>>.Failure("Blob storage is not configured.");
 
         var tenantId = requestContext.TenantId ?? Guid.Empty;
-        var blobName = $"{tenantId}/{command.OwnerId}/{command.FileName}";
+        var blobName = AttachmentBlobs.BlobName(tenantId, command.OwnerId, command.FileName);
 
         try
         {
