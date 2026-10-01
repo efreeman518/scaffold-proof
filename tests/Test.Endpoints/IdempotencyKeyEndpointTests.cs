@@ -166,6 +166,34 @@ public class IdempotencyKeyEndpointTests
         Assert.AreEqual(1, await CountAsync(client, $"/api/v1/task-items/{taskId}", "comments"));
     }
 
+    /// <summary>
+    /// The child-add scope names the root by its parsed id, so one key sent with the task id in another accepted
+    /// format (no hyphens, upper case, braces) is the same logical request and adds one comment.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_SameKeyWithTheTaskIdInOtherFormats_When_AddComment_Then_AddsOne(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = _fixture.CreateClient(style);
+        var taskId = await CreateTaskAsync(client);
+        var key = NewKey();
+
+        using var first = await PostAsync(client, $"/api/v1/task-items/{taskId:D}/comments", new CommentDto { Body = "keyed" }, key);
+        Assert.AreEqual(HttpStatusCode.Created, first.StatusCode, await first.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        var firstId = (await first.ItemAsync<CommentDto>(TestContext.CancellationToken))!.Id;
+        foreach (var format in new[] { taskId.ToString("N"), taskId.ToString("D").ToUpperInvariant(), taskId.ToString("B") })
+        {
+            using var resend = await PostAsync(client, $"/api/v1/task-items/{format}/comments", new CommentDto { Body = "keyed" }, key);
+            Assert.AreEqual(HttpStatusCode.OK, resend.StatusCode, $"{format}: {await resend.Content.ReadAsStringAsync(TestContext.CancellationToken)}");
+            Assert.AreEqual(firstId, (await resend.ItemAsync<CommentDto>(TestContext.CancellationToken))!.Id, format);
+        }
+
+        Assert.AreEqual(1, await CountAsync(client, $"/api/v1/task-items/{taskId}", "comments"));
+    }
+
     /// <summary>Different keys add two comments.</summary>
     [TestCategory("Endpoint")]
     [DataRow(EndpointStyles.Service)]

@@ -21,9 +21,16 @@ internal static class IdempotencyKeyFilter
 
     public const string TaskItemCreateScope = "task-item.create";
 
-    /// <summary>Child-add scopes carry the root id, so one key used on two tasks maps to two different children.</summary>
+    /// <summary>
+    /// Child-add scopes carry the root id, so one key used on two tasks maps to two different children. The id is the
+    /// parsed route value in "D" format, so the same task named in another accepted format is the same scope.
+    /// </summary>
     public static string TaskItemChildScope(HttpContext httpContext, string child) =>
-        $"task-item.{child}.add:{httpContext.GetRouteValue("id")}";
+        $"task-item.{child}.add:{RouteTaskItemId(httpContext).ToString("D", CultureInfo.InvariantCulture)}";
+
+    /// <summary>The <c>{id:guid}</c> route value; the route constraint has already accepted it as a Guid.</summary>
+    private static Guid RouteTaskItemId(HttpContext httpContext) =>
+        Guid.Parse(Convert.ToString(httpContext.GetRouteValue("id"), CultureInfo.InvariantCulture)!, CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Applies the mapping to a route whose body is a <see cref="DefaultRequest{T}"/> of <typeparamref name="TDto"/>.
