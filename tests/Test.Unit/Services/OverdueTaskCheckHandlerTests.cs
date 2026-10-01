@@ -75,7 +75,7 @@ public class OverdueTaskCheckHandlerTests
                 nameof(FakeTaskItemSystemRepository.StreamOverdueAsync),
                 "BeginTransaction",
                 nameof(FakeTaskItemSystemRepository.MarkOverdueNotifiedAsync),
-                nameof(FakeTaskItemSystemRepository.SaveChangesAsync),
+                nameof(FakeTaskItemSystemRepository.SaveWithThrowPolicyAsync),
                 "Commit"
             },
             _repo.Calls);
