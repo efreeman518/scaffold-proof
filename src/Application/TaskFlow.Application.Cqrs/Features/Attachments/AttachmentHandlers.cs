@@ -147,7 +147,7 @@ internal sealed class UploadAttachmentHandler(
 
         try
         {
-            await blobStorage.UploadAsync("attachments", blobName, command.FileStream, command.ContentType, cancellationToken: ct);
+            await blobStorage.UploadAsync(AttachmentBlobs.ContainerName, blobName, command.FileStream, command.ContentType, cancellationToken: ct);
         }
         catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
