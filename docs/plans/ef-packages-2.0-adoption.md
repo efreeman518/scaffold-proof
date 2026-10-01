@@ -34,18 +34,14 @@ the scaffold-ai PR, and the final integration/ef2-adoption -> main PR (gated on 
 
 ## Next action
 
-a7 runs on EF.Packages 2.0.115. Phases 1-3 are committed: the leftovers, the 2.0.112 adoption, and the parallel-build
-fix (ec6514a). Part A finishes 2.0.113's `ServicePathPrefixes` for the gateway health probe. Part B applies the
-EF.Data 2.0.115 concurrency changes: classify every `OptimisticConcurrencyWinner` site, use
-`RetryOnConcurrencyAsync` for decision-dependent writes, and add race tests on both providers. When a7 lands: an
-independent review, merge into integration, then merge scaffold-ai PR #14 (validate green), then the final PR
-integration/ef2-adoption -> main. Its CI run is the merge gate.
+All slices merged (#29-#37) on EF.Packages 2.0.115. scaffold-ai PR #14 merged (a6f1200). Open the final PR
+integration/ef2-adoption -> main. Its CI run, including "Validate against latest scaffold", is the merge gate.
 
-## Active agents: 2 (a7; scaffold-ai sa round 2)
+## Active agents: 0
 
 ## FIFO queue
 
-Empty (a7 phase 2 starts on the orchestrator's message after the 2.0.112 publish)
+Empty
 
 ## Slices
 
@@ -59,8 +55,8 @@ Empty (a7 phase 2 starts on the orchestrator's message after the 2.0.112 publish
 | a5 | Testing: T items' proof adoption (LoadRunner, fixtures, architecture rules, AI fakes) | a0 | opus | merged | #30 (43a39d7) | removed | ac9178d3 | released | removed |
 | a6 | Proof docs (DESIGN-DECISIONS, REFERENCE-STATUS, README, tech design where affected) and the full test matrix including Docker integration and the Aspire lanes | a1-a5 | opus | merged | #35 (74c9830) | removed | ad76e713 | released | - |
 | a6b | Root-cause Test.Load live-stack readiness (persistent-volume credentials suspected); run the load scenarios; npm ci for the browser tests and run Test.PlaywrightUI on both lanes | a6 | opus | merged | #36 (cf999eb) | removed | ad76e713 | released | removed |
-| a7 | Adopt the EF.Packages 2.0.x follow-up release: bump EF.*; role lists (`SystemRoles=[System]`, `CrossTenantRoles=[GlobalAdmin, System]`, delete the hand-built no-request identity); `StreamKeysetPagesAsync` resume for the stale-task batch (delete the private resume helper); relay `RequireHeaderFromTrustedCaller`; inbox `MaxClaimDuration`; leftovers: process-wide `PLAYWRIGHT_USE_SYSTEM_CHROME`, private context factories in InboxStoreTests/SqlHealthCheckTests, cancellation token on `CreateEmptyDatabaseConnectionStringAsync`, the stale audit entity name in migration snapshots, the credential tenant key (`AzureTenantId`), RabbitMQ quorum queues (M19) | a6, EF.Packages 2.0.x publish | opus | running (phases 1-3 done; A: 2.0.115 + ServicePathPrefixes; B: concurrency) | `refactor/adopt2-f8ca68-a7` | `.tmp/worktrees/adopt2-f8ca68-a7` | a9076f9a (was a457c5fa, which stopped at the spend limit) | e65364e7 | `.tmp/orchestrated-refactor/adopt2-f8ca68/a7` |
-| sa | scaffold-ai: support/ef-packages-reference.md, skills/package-dependencies.md, templates from "generate" to "reference EF.X", maintenance canaries | a6 | opus | done, PR after the 2.0.112 publish | scaffold-ai `docs/ef2-packages-305b93` (a39257e) | scaffold-ai `.tmp/worktrees/ef2-packages-305b93` | ab7a6437 | released | scaffold-ai `.tmp/ef2-packages-305b93` |
+| a7 | Adopt the EF.Packages 2.0.x follow-up release: bump EF.*; role lists (`SystemRoles=[System]`, `CrossTenantRoles=[GlobalAdmin, System]`, delete the hand-built no-request identity); `StreamKeysetPagesAsync` resume for the stale-task batch (delete the private resume helper); relay `RequireHeaderFromTrustedCaller`; inbox `MaxClaimDuration`; leftovers: process-wide `PLAYWRIGHT_USE_SYSTEM_CHROME`, private context factories in InboxStoreTests/SqlHealthCheckTests, cancellation token on `CreateEmptyDatabaseConnectionStringAsync`, the stale audit entity name in migration snapshots, the credential tenant key (`AzureTenantId`), RabbitMQ quorum queues (M19) | a6, EF.Packages 2.0.x publish | opus | merged | #37 (e48a0e0) | removed | a9076f9a | released | removed |
+| sa | scaffold-ai: support/ef-packages-reference.md, skills/package-dependencies.md, templates from "generate" to "reference EF.X", maintenance canaries | a6 | opus | merged | scaffold-ai #14 (a6f1200) | removed | ab7a6437 | released | removed |
 
 ## Slice notes
 
@@ -114,7 +110,22 @@ Empty (a7 phase 2 starts on the orchestrator's message after the 2.0.112 publish
   the dev-stack rate limit. The Uno host serves `uno-config.js` from disk (D-070). Load: search p95 20 ms, CRUD p95
   83 ms. Playwright 4/4 on both lanes.
 
+- a7 (#37): EF.* is on 2.0.115.
+  - Role lists replace the app-built system identity (D-067).
+  - ClaimTypes lists the full default set plus `tenant_id`. RequireHeaderFromTrustedCaller is true, and
+    ServicePathPrefixes=["/health"] covers the gateway health probe (D-068).
+  - StreamKeysetPagesAsync(after:) resumes the stale-task batch.
+  - EF.Data concurrency (D-073): inserts are left as they are, and If-Match edits stay bare Throw. AddComment,
+    AddChecklistItem and AssociateTag run inside RetryOnConcurrencyAsync. A same-key duplicate add replays the
+    stored row, and exhausted retries return 409. The race tests failed on the old code and pass on both providers.
+  - Leftovers done; RabbitMQ queues are quorum (D-046).
+  - The parallel-build race is fixed (SkipUnoWasmBuild no longer creates a second graph configuration).
+  - An independent subagent review's four findings were fixed.
+  - Follow-ups:
+    - Scheduler outbox rows on a retried transaction (reasoned, not reproduced).
+    - FlowEngine `If-Match: *` writes could use the retry.
+    - The Infrastructure save is outside the architecture test's Throw scan.
+
 ## Kept on disk
 
-- scaffold-ai worktree `.tmp/worktrees/ef2-packages-305b93` (branch `docs/ef2-packages-305b93`), until its PR merges.
 - The four `taskflow-*-data` Podman volumes of the persistent dev stack (in use, not stale).
