@@ -65,6 +65,21 @@ public class TaskItemRepositoryTrxn(TaskFlowDbContextTrxn db)
     /// <inheritdoc />
     public void DeleteChild<TChild>(TChild child) where TChild : class => DB.Remove(child);
 
+    /// <inheritdoc />
+    public async Task SaveChildAddAsync(Func<CancellationToken, Task<bool>>? callerKeyStored, CancellationToken ct = default)
+    {
+        try
+        {
+            await DB.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct).ConfigureAwait(ConfigureAwaitOptions.None);
+        }
+        catch (DbUpdateException ex) when (ex is not DbUpdateConcurrencyException && callerKeyStored is not null)
+        {
+            // Provider-neutral: the existence read decides, not the provider's error code, and only for the caller's key.
+            if (!await callerKeyStored(ct).ConfigureAwait(ConfigureAwaitOptions.None)) throw;
+            throw new DbUpdateConcurrencyException("Another request stored the caller-supplied child key first.", ex);
+        }
+    }
+
     /// <summary>
     /// Delegates DTO graph sync to the DbContext updater so EF change tracking and related deletes
     /// happen inside the same unit of work.

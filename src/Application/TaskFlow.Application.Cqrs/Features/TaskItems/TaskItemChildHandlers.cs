@@ -39,8 +39,9 @@ internal sealed class AddTaskItemCommentHandler(
         if (idCheck.IsFailure) return Result<DefaultResponse<CommentDto>>.Failure(idCheck.ErrorMessage!);
 
         // An add carries no If-Match, so the caller's intent wins a race with another write to the aggregate
-        // (D-031 bumps the root on every child write): a lost save re-reads and decides again (D-073).
-        return await repoTrxn.RetryOnConcurrencyAsync(async attemptCt =>
+        // (D-031 bumps the root on every child write) or with a same-key add: a lost save re-reads and decides
+        // again, and a race lost on every attempt is 409 (D-073).
+        return await ChildAddRetry.RunAsync(repoTrxn, nameof(Comment), command.TaskItemId, async attemptCt =>
         {
             var (entity, error) = await TaskItemChildLoader.LoadRootAsync(
                 repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
@@ -65,11 +66,16 @@ internal sealed class AddTaskItemCommentHandler(
             var addResult = entity.AddComment(command.Comment.Body, DomainId.FromNullable<CommentId>(command.Comment.Id));
             if (addResult.IsFailure) return Result<DefaultResponse<CommentDto>>.Failure(addResult.ErrorMessage!);
 
-            var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error adding Comment to TaskItem {Id}", attemptCt, command.TaskItemId);
+            var save = await CqrsHandlerSupport.TrySaveAddAsync(
+                repoTrxn,
+                command.Comment.Id is Guid id && id != Guid.Empty
+                    ? async t => await TaskItemChildLoader.LoadCommentAsync(repoTrxn, command.TaskItemId, id, t) is not null
+                    : null,
+                logger, "Error adding Comment to TaskItem {Id}", attemptCt, command.TaskItemId);
             if (save.IsFailure) return Result<DefaultResponse<CommentDto>>.Failure(save.ErrorMessage!);
 
             return HandlerHelpers.SuccessForChild(addResult.Value!.ToDto(), entity.Version);
-        }, cancellationToken: ct);
+        }, ct);
     }
 }
 
@@ -153,8 +159,9 @@ internal sealed class AddTaskItemChecklistItemHandler(
         if (idCheck.IsFailure) return Result<DefaultResponse<ChecklistItemDto>>.Failure(idCheck.ErrorMessage!);
 
         // An add carries no If-Match, so the caller's intent wins a race with another write to the aggregate
-        // (D-031 bumps the root on every child write): a lost save re-reads and decides again (D-073).
-        return await repoTrxn.RetryOnConcurrencyAsync(async attemptCt =>
+        // (D-031 bumps the root on every child write) or with a same-key add: a lost save re-reads and decides
+        // again, and a race lost on every attempt is 409 (D-073).
+        return await ChildAddRetry.RunAsync(repoTrxn, nameof(ChecklistItem), command.TaskItemId, async attemptCt =>
         {
             var (entity, error) = await TaskItemChildLoader.LoadRootAsync(
                 repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
@@ -185,11 +192,16 @@ internal sealed class AddTaskItemChecklistItemHandler(
             // pre-checked item is not silently dropped.
             if (command.ChecklistItem.IsCompleted) addResult.Value!.Update(isCompleted: true);
 
-            var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error adding ChecklistItem to TaskItem {Id}", attemptCt, command.TaskItemId);
+            var save = await CqrsHandlerSupport.TrySaveAddAsync(
+                repoTrxn,
+                command.ChecklistItem.Id is Guid id && id != Guid.Empty
+                    ? async t => await TaskItemChildLoader.LoadChecklistItemAsync(repoTrxn, command.TaskItemId, id, t) is not null
+                    : null,
+                logger, "Error adding ChecklistItem to TaskItem {Id}", attemptCt, command.TaskItemId);
             if (save.IsFailure) return Result<DefaultResponse<ChecklistItemDto>>.Failure(save.ErrorMessage!);
 
             return HandlerHelpers.SuccessForChild(addResult.Value!.ToDto(), entity.Version);
-        }, cancellationToken: ct);
+        }, ct);
     }
 }
 
@@ -268,8 +280,9 @@ internal sealed class AssociateTaskItemTagHandler(
     public async Task<Result<DefaultResponse<TaskItemTagDto>>> HandleAsync(AssociateTaskItemTagCommand command, CancellationToken ct = default)
     {
         // An add carries no If-Match, so the caller's intent wins a race with another write to the aggregate
-        // (D-031 bumps the root on every child write): a lost save re-reads and decides again (D-073).
-        return await repoTrxn.RetryOnConcurrencyAsync(async attemptCt =>
+        // (D-031 bumps the root on every child write) or with a same-key add: a lost save re-reads and decides
+        // again, and a race lost on every attempt is 409 (D-073).
+        return await ChildAddRetry.RunAsync(repoTrxn, nameof(TaskItemTag), command.TaskItemId, async attemptCt =>
         {
             var (entity, error) = await TaskItemChildLoader.LoadRootAsync(
                 repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
@@ -286,11 +299,14 @@ internal sealed class AssociateTaskItemTagHandler(
             var associateResult = entity.AssociateTag(TagId.From(command.TagId));
             if (associateResult.IsFailure) return Result<DefaultResponse<TaskItemTagDto>>.Failure(associateResult.ErrorMessage!);
 
-            var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error associating Tag {TagId} with TaskItem {Id}", attemptCt, command.TagId, command.TaskItemId);
+            var save = await CqrsHandlerSupport.TrySaveAddAsync(
+                repoTrxn,
+                async t => await TaskItemChildLoader.LoadTaskItemTagAsync(repoTrxn, command.TaskItemId, command.TagId, t) is not null,
+                logger, "Error associating Tag {TagId} with TaskItem {Id}", attemptCt, command.TagId, command.TaskItemId);
             if (save.IsFailure) return Result<DefaultResponse<TaskItemTagDto>>.Failure(save.ErrorMessage!);
 
             return HandlerHelpers.SuccessForChild(associateResult.Value!.ToDto(), entity.Version);
-        }, cancellationToken: ct);
+        }, ct);
     }
 }
 

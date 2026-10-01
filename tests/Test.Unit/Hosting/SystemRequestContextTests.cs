@@ -163,7 +163,7 @@ public sealed class SystemRequestContextTests
 
         Assert.IsTrue(result.IsSuccess, result.ErrorMessage);
         Assert.IsNotNull(result.Value!.Item);
-        repoTrxn.Verify(r => r.SaveChangesAsync(It.IsAny<EF.Data.Contracts.OptimisticConcurrencyWinner>(),
+        repoTrxn.Verify(r => r.SaveChildAddAsync(It.IsAny<Func<CancellationToken, Task<bool>>?>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
