@@ -182,6 +182,14 @@ internal class AttachmentService(
         var validation = AttachmentStructureValidator.ValidateUpdate(dto);
         if (validation.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(validation.Errors);
 
+        // If-Match: * re-reads and applies again when it loses a race (D-073); a concrete version keeps its 412.
+        return await ConcurrencyRetry.RunAsync(repoTrxn, expectedVersion, nameof(Attachment), dto.Id!.Value,
+            attemptCt => UpdateOnceAsync(dto, expectedVersion, attemptCt), ct);
+    }
+
+    /// <summary>One read, update and save of <see cref="UpdateAsync"/>; run again on a lost wildcard race.</summary>
+    private async Task<Result<DefaultResponse<AttachmentDto>>> UpdateOnceAsync(AttachmentDto dto, long? expectedVersion, CancellationToken ct)
+    {
         var entity = await repoTrxn.GetAttachmentAsync(AttachmentId.From(dto.Id!.Value), ct);
         if (entity == null)
             return Result<DefaultResponse<AttachmentDto>>.Success(new DefaultResponse<AttachmentDto> { Item = null });
@@ -216,27 +224,11 @@ internal class AttachmentService(
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
     public async Task<Result> DeleteAsync(Guid id, long? expectedVersion, CancellationToken ct = default)
     {
-        var entity = await repoTrxn.GetAttachmentAsync(AttachmentId.From(id), ct);
-        if (entity == null) return Result.Success();
-
-        var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            RequestTenantId, RequestRoles, entity.TenantId.Value,
-            "Attachment:Delete", nameof(Attachment), entity.Id.Value);
-        if (boundary.IsFailure) return Result.Failure(boundary.ErrorMessage!);
-
-        ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(Attachment), entity.Id.Value);
-
-        repoTrxn.Delete(entity);
-
-        try
-        {
-            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
-        }
-        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
-        {
-            logger.AttachmentDeleteFailed(ex, id);
-            return Result.Failure(ErrorConstants.ERROR_SAVE_FAILED);
-        }
+        // If-Match: * re-reads and deletes again when it loses a race (D-073); a concrete version keeps its 412. The
+        // blob delete is an outside effect, so it runs once, after the save that removed the row.
+        var (result, entity) = await ConcurrencyRetry.RunAsync(repoTrxn, expectedVersion, nameof(Attachment), id,
+            attemptCt => DeleteOnceAsync(id, expectedVersion, attemptCt), ct);
+        if (entity is null) return result;
 
         // Delete blob from storage if available
         if (blobStorage is not null && !string.IsNullOrEmpty(entity.StorageUri))
@@ -253,5 +245,33 @@ internal class AttachmentService(
         }
 
         return Result.Success();
+    }
+
+    /// <summary>One read, delete and save of <see cref="DeleteAsync"/>; <c>Deleted</c> is the removed row, if any.</summary>
+    private async Task<(Result Result, Attachment? Deleted)> DeleteOnceAsync(Guid id, long? expectedVersion, CancellationToken ct)
+    {
+        var entity = await repoTrxn.GetAttachmentAsync(AttachmentId.From(id), ct);
+        if (entity == null) return (Result.Success(), null);
+
+        var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
+            RequestTenantId, RequestRoles, entity.TenantId.Value,
+            "Attachment:Delete", nameof(Attachment), entity.Id.Value);
+        if (boundary.IsFailure) return (Result.Failure(boundary.ErrorMessage!), null);
+
+        ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(Attachment), entity.Id.Value);
+
+        repoTrxn.Delete(entity);
+
+        try
+        {
+            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
+        }
+        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
+        {
+            logger.AttachmentDeleteFailed(ex, id);
+            return (Result.Failure(ErrorConstants.ERROR_SAVE_FAILED), null);
+        }
+
+        return (Result.Success(), entity);
     }
 }
