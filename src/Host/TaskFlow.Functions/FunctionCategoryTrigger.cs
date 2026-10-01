@@ -4,7 +4,6 @@ using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
 using System.Globalization;
 using System.Net;
-using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models;
 
@@ -44,7 +43,7 @@ public class FunctionCategoryTrigger(
                 }
             }, ct);
         }
-        catch (IdempotentCreateConflictException)
+        catch (ConflictException)
         {
             // Caller-supplied id replayed with a different payload than the existing row (D-033).
             var conflict = req.CreateResponse(HttpStatusCode.Conflict);

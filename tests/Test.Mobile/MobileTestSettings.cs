@@ -1,3 +1,5 @@
+using EF.Testing.Environment;
+
 namespace Test.Mobile;
 
 /// <summary>Supports test execution for Test.mobile scenarios.</summary>
@@ -24,7 +26,7 @@ internal sealed record MobileTestSettings
     public static MobileTestSettings From(TestContext context)
     {
         var platform = ParsePlatform(GetValue(context, "TASKFLOW_MOBILE_PLATFORM") ?? "Android");
-        var repoRoot = FindRepoRoot();
+        var repoRoot = RepositoryRoot.Find(markers: "TaskFlow.slnx");
         var configuredAppPath = GetValue(context, PlatformAppPathKey(platform));
         var appPath = ResolveAppPath(repoRoot, configuredAppPath, platform);
         var screenshotDirectory = GetValue(context, "TASKFLOW_MOBILE_SCREENSHOT_DIR")
@@ -144,22 +146,4 @@ internal sealed record MobileTestSettings
                 "TaskFlow.Uno.app"),
             _ => throw new InvalidOperationException($"Unsupported platform '{platform}'.")
         };
-
-    /// <summary>Verifies find source root behavior and protects the expected test contract.</summary>
-    private static string FindRepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-
-        while (directory is not null)
-        {
-            if (File.Exists(Path.Combine(directory.FullName, "TaskFlow.slnx")))
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new InvalidOperationException("Could not locate TaskFlow.slnx from the test output directory.");
-    }
 }

@@ -17,7 +17,8 @@ namespace TaskFlow.Infrastructure.Repositories;
 /// <summary>
 /// Cross-tenant system access for the scheduler jobs, over the write context with
 /// <c>IgnoreQueryFilters()</c>. Every scan is keyset-paged by the clustered <c>(TenantId, Id)</c> key so a
-/// job's cost is bounded by the rows it actually touches, not by how far into the table it has walked.
+/// job's cost is bounded by the rows it actually touches, not by how far into the table it has walked. Whole walks
+/// use the package <c>StreamKeysetPagesAsync</c>; the stale batch resumes it from a caller-held <c>KeysetPosition</c>.
 /// </summary>
 public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvider? timeProvider = null)
     : RepositoryBase<TaskFlowDbContextTrxn, string, Guid?>(db), ITaskItemSystemRepository
@@ -28,19 +29,12 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
     public async IAsyncEnumerable<OverdueTaskRow> StreamOverdueAsync(
         DateTimeOffset asOfUtc, int pageSize, [EnumeratorCancellation] CancellationToken ct = default)
     {
-        (Guid TenantId, Guid Id)? after = null;
-        while (true)
+        var pages = OverdueCandidates(asOfUtc).AsNoTracking().StreamKeysetPagesAsync(
+            e => new OverdueTaskRow(e.TenantId.Value, e.Id.Value, e.DueDate!.Value),
+            e => e.TenantId, e => e.Id, pageSize, ct);
+        await foreach (var page in pages.ConfigureAwait(false))
         {
-            var page = await Keyset(OverdueCandidates(asOfUtc), after)
-                .Take(pageSize)
-                .Select(e => new OverdueTaskRow(e.TenantId.Value, e.Id.Value, e.DueDate!.Value))
-                .ToListAsync(ct)
-                .ConfigureAwait(ConfigureAwaitOptions.None);
-
             foreach (var row in page) yield return row;
-
-            if (page.Count < pageSize) yield break;
-            after = (page[^1].TenantId, page[^1].Id);
         }
     }
 
@@ -63,18 +57,10 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
     public async IAsyncEnumerable<TaskItem> StreamDueTemplatesAsync(
         DateTimeOffset asOfUtc, int pageSize, [EnumeratorCancellation] CancellationToken ct = default)
     {
-        (Guid TenantId, Guid Id)? after = null;
-        while (true)
+        var pages = DueTemplates(asOfUtc).AsNoTracking().StreamKeysetPagesAsync(e => e.TenantId, e => e.Id, pageSize, ct);
+        await foreach (var page in pages.ConfigureAwait(false))
         {
-            var page = await Keyset(DueTemplates(asOfUtc), after)
-                .Take(pageSize)
-                .ToListAsync(ct)
-                .ConfigureAwait(ConfigureAwaitOptions.None);
-
             foreach (var template in page) yield return template;
-
-            if (page.Count < pageSize) yield break;
-            after = (page[^1].TenantId.Value, page[^1].Id.Value);
         }
     }
 
@@ -109,12 +95,20 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
     public async Task<IReadOnlyList<StaleTaskRow>> GetStaleBatchAsync(
         DateTimeOffset cutoffUtc, StaleTaskRow? after, int pageSize, CancellationToken ct = default)
     {
-        var cursor = after is { } position ? (position.TenantId, position.Id) : ((Guid, Guid)?)null;
-        return await Keyset(StaleCandidates(cutoffUtc), cursor)
-            .Take(pageSize)
-            .Select(e => new StaleTaskRow(e.TenantId.Value, e.Id.Value))
-            .ToListAsync(ct)
-            .ConfigureAwait(ConfigureAwaitOptions.None);
+        // The caller holds the position across its delete batches, so each call is the first page of a walk
+        // resumed after the last row it processed; the deletes behind the position do not shift it.
+        var resume = after is { } position
+            ? new KeysetPosition<TenantId, TaskItemId>(TenantId.From(position.TenantId), TaskItemId.From(position.Id))
+            : (KeysetPosition<TenantId, TaskItemId>?)null;
+        var pages = StaleCandidates(cutoffUtc).AsNoTracking().StreamKeysetPagesAsync(
+            e => new StaleTaskRow(e.TenantId.Value, e.Id.Value),
+            e => e.TenantId, e => e.Id, resume, pageSize, ct);
+        await foreach (var page in pages.ConfigureAwait(false))
+        {
+            return page;
+        }
+
+        return [];
     }
 
     /// <inheritdoc />
@@ -188,12 +182,7 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
 
     /// <inheritdoc />
     public Task ExecuteInTransactionAsync(Func<CancellationToken, Task> work, CancellationToken ct = default) =>
-        DB.Database.CreateExecutionStrategy().ExecuteAsync(async token =>
-        {
-            await using var transaction = await DB.Database.BeginTransactionAsync(token).ConfigureAwait(false);
-            await work(token).ConfigureAwait(false);
-            await transaction.CommitAsync(token).ConfigureAwait(false);
-        }, ct);
+        ResilientTransaction.New(DB).ExecuteAsync(work, ct);
 
     /// <inheritdoc />
     // Throw, not ClientWins: the rows saved here are operational (outbox, blob-delete work) and carry no
@@ -233,17 +222,4 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
                 // The subtask FK is Restrict: a parent with children still present cannot be deleted, and
                 // becomes deletable on a later run once they are gone.
                 && !e.SubTasks.Any());
-
-    /// <summary>Orders by the clustered key and resumes after the last row of the previous page.</summary>
-    private static IQueryable<TaskItem> Keyset(IQueryable<TaskItem> source, (Guid TenantId, Guid Id)? after)
-    {
-        if (after is { } position)
-        {
-            var tenantId = TenantId.From(position.TenantId);
-            var id = TaskItemId.From(position.Id);
-            source = source.Where(e => e.TenantId > tenantId || (e.TenantId == tenantId && e.Id > id));
-        }
-
-        return source.AsNoTracking().OrderBy(e => e.TenantId).ThenBy(e => e.Id);
-    }
 }

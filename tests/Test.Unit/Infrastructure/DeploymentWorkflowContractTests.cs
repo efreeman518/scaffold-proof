@@ -865,12 +865,14 @@ public sealed class DeploymentWorkflowContractTests
     public void StaticUiDeployment_UsesOneRuntimeGatewayContract()
     {
         var reactConfig = File.ReadAllText(RepoRoot.Combine("src", "UI", "TaskFlow.React", "src", "api", "runtimeConfig.ts"));
-        var unoConfig = File.ReadAllText(RepoRoot.Combine("src", "UI", "TaskFlow.Uno.Core", "Client", "RuntimeGatewayConfiguration.cs"));
+        // The Uno head loads the same file through EF.UI.Client with its defaults (app-config.json, gatewayBaseUrl).
+        var unoProgram = File.ReadAllText(RepoRoot.Combine("src", "UI", "TaskFlow.Uno", "Program.cs"));
         var compose = File.ReadAllText(RepoRoot.Combine("deploy", "compose", "docker-compose.yml"));
         var caddy = File.ReadAllText(RepoRoot.Combine("deploy", "compose", "Caddyfile"));
 
         StringAssert.Contains(reactConfig, "/app-config.json");
-        StringAssert.Contains(unoConfig, "gatewayBaseUrl");
+        StringAssert.Contains(unoProgram, "RuntimeClientConfiguration.LoadBaseUrlAsync(http)");
+        StringAssert.Contains(File.ReadAllText(RepoRoot.Combine("deploy", "compose", "static", "app-config.json.template")), "\"gatewayBaseUrl\"");
         StringAssert.Contains(compose, "GATEWAY_BASE_URL");
         StringAssert.Contains(compose, "CorsSettings__AllowedOrigins__2");
         StringAssert.Contains(caddy, "reverse_proxy react:8080");

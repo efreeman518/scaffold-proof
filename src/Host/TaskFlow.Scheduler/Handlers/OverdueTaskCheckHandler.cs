@@ -1,11 +1,11 @@
 using EF.Common;
+using EF.Messaging.Outbox;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Domain.Shared;
 using TaskFlow.Domain.Shared.Constants;
 using TaskFlow.Domain.Shared.Events;
-using TaskFlow.Observability.Meters;
-using TaskFlow.Scheduler.Abstractions;
+using EF.BackgroundServices.Scheduling;
 using System.Globalization;
 
 namespace TaskFlow.Scheduler.Handlers;
@@ -19,7 +19,7 @@ namespace TaskFlow.Scheduler.Handlers;
 public sealed class OverdueTaskCheckHandler(
     ITaskItemSystemRepository systemRepository,
     IOutboxStaging outbox,
-    SchedulerJobMeter meter,
+    ScheduledJobTelemetry telemetry,
     TimeProvider timeProvider,
     ILogger<OverdueTaskCheckHandler> logger) : IScheduledJobHandler
 {
@@ -48,7 +48,7 @@ public sealed class OverdueTaskCheckHandler(
 
         if (page.Count > 0) notified += await FlushAsync(page, asOfUtc, ct);
 
-        meter.RecordWork(JobName, scanned, notified);
+        telemetry.RecordWork(JobName, scanned, notified);
         logger.OverdueTasksFound(notified);
     }
 
@@ -96,6 +96,6 @@ public sealed class OverdueTaskCheckHandler(
             correlationId: null,
             id: messageId);
 
-        outbox.Stage(envelope, row.TenantId, messageId);
+        outbox.Stage(TaskFlowIntegrationEvents.Entry(envelope, row.TenantId));
     }
 }

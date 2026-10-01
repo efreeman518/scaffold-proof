@@ -2,7 +2,6 @@ using TaskFlow.Application.Mappers;
 using TaskFlow.Application.Models;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
-using TaskFlow.Infrastructure.Data.Interceptors;
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Test.Support;
@@ -20,11 +19,10 @@ namespace Test.Unit.Mappers;
 [TestCategory("Unit")]
 public class MapperVersionProjectionTests
 {
-    /// <summary>Builds a throwaway in-memory write context wired with the version interceptor.</summary>
+    /// <summary>Builds a throwaway in-memory write context stamped by the EF.Data save pipeline.</summary>
     private static TaskFlow.Infrastructure.Data.TaskFlowDbContextTrxn CreateContext() =>
         new(new DbContextOptionsBuilder<TaskFlow.Infrastructure.Data.TaskFlowDbContextTrxn>()
             .UseInMemoryDatabase($"MapperVersion_{Guid.NewGuid()}")
-            .AddInterceptors(new VersionTimestampInterceptor())
             .Options)
         {
             AuditId = "mapper-version-test",

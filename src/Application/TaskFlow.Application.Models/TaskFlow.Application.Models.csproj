@@ -2,6 +2,8 @@
 
   <ItemGroup>
     <PackageReference Include="EF.Common.Contracts" />
+    <!-- DefaultSearchFilter is the ITenantScopedFilter EF.Tenancy enforces on every search (D14). -->
+    <PackageReference Include="EF.Tenancy" />
   </ItemGroup>
 
   <ItemGroup>

@@ -49,6 +49,11 @@ var usePgVector = string.Equals(lane.Search, "PgVector", StringComparison.Ordina
 // Infrastructure resources
 // In Testing mode: non-persistent, no named volume, random port - ensures fresh container with known password.
 // In dev/prod: persistent with named volume on fixed port.
+// Persistent containers are proxyless: the container runtime publishes each port on 127.0.0.1 only. Their
+// endpoints therefore target 127.0.0.1 (UseIpv4Loopback), so connection strings, service URLs and Aspire's own
+// health checks name that address. Left at "localhost", .NET clients try ::1 first, and under Podman with WSL
+// mirrored networking a ::1 connect to such a port hangs instead of being refused, so no persistent resource
+// ever turned healthy.
 IResourceBuilder<IResourceWithConnectionString> taskflowDb;
 if (usePostgres)
 {
@@ -57,9 +62,12 @@ if (usePostgres)
         .WithImage(ContainerImages.PostgreSqlRepository)
         .WithImageTag(ContainerImages.PostgreSqlTag)
         .WithEnvironment("POSTGRES_DB", "taskflowdb");
+    // PostgreSQL 18 images keep data under a major-version directory below /var/lib/postgresql and refuse to
+    // start when /var/lib/postgresql/data is a mount, which is where WithDataVolume puts it. Mount the parent
+    // instead, as deploy/compose does.
     if (!isTesting)
-        postgres = postgres.WithLifetime(ContainerLifetime.Persistent)
-                           .WithDataVolume("taskflow-postgres-data");
+        postgres = UseIpv4Loopback(postgres.WithLifetime(ContainerLifetime.Persistent)
+                           .WithVolume("taskflow-postgres-data", "/var/lib/postgresql"));
     taskflowDb = postgres.AddDatabase("taskflowdb");
 }
 else
@@ -70,8 +78,8 @@ else
         .WithImageRegistry(ContainerImages.MicrosoftContainerRegistry)
         .WithImageTag(ContainerImages.SqlServerTag);
     if (!isTesting)
-        sql = sql.WithLifetime(ContainerLifetime.Persistent)
-                 .WithDataVolume("taskflow-sql-data");
+        sql = UseIpv4Loopback(sql.WithLifetime(ContainerLifetime.Persistent)
+                 .WithDataVolume("taskflow-sql-data"));
     taskflowDb = sql.AddDatabase("taskflowdb");
 }
 
@@ -79,8 +87,8 @@ var redis = builder.AddRedis("redis")
     .WithImage(ContainerImages.RedisRepository)
     .WithImageTag(ContainerImages.RedisTag);
 if (!isTesting)
-    redis = redis.WithLifetime(ContainerLifetime.Persistent)
-                 .WithDataVolume("taskflow-redis-data");
+    redis = UseIpv4Loopback(redis.WithLifetime(ContainerLifetime.Persistent)
+                 .WithDataVolume("taskflow-redis-data"));
 
 // Object storage and the Table audit sink.
 // Azure lane: the Azure Storage emulator (Azurite) supplies both.
@@ -113,8 +121,8 @@ if (nonAzureLane)
         .WithHttpHealthCheck(path: "/cluster/status", endpointName: "master");
 
     if (!isTesting)
-        seaweedFs = seaweedFs.WithLifetime(ContainerLifetime.Persistent)
-                             .WithVolume("taskflow-seaweedfs-data", "/data");
+        seaweedFs = UseIpv4Loopback(seaweedFs.WithLifetime(ContainerLifetime.Persistent)
+                             .WithVolume("taskflow-seaweedfs-data", "/data"));
 }
 else
 {
@@ -141,8 +149,8 @@ if (useRabbitMq)
         .WithImage(ContainerImages.RabbitMqRepository)
         .WithImageTag(ContainerImages.RabbitMqTag);
     if (!isTesting)
-        rabbitMq = rabbitMq.WithLifetime(ContainerLifetime.Persistent)
-                           .WithDataVolume("taskflow-rabbitmq-data");
+        rabbitMq = UseIpv4Loopback(rabbitMq.WithLifetime(ContainerLifetime.Persistent)
+                           .WithDataVolume("taskflow-rabbitmq-data"));
 }
 else
 {
@@ -232,8 +240,8 @@ if (nonAzureLane && string.Equals(lane.ReadModel, "MongoDb", StringComparison.Or
         .WithImageTag(ContainerImages.MongoDbTag)
         .WithEndpoint(targetPort: 27017, name: "mongodb", scheme: "mongodb");
     if (!isTesting)
-        mongoDb = mongoDb.WithLifetime(ContainerLifetime.Persistent)
-                         .WithVolume("taskflow-mongodb-data", "/data/db");
+        mongoDb = UseIpv4Loopback(mongoDb.WithLifetime(ContainerLifetime.Persistent)
+                         .WithVolume("taskflow-mongodb-data", "/data/db"));
 }
 
 // Azure AI Foundry provisioning is external because its former hosting package also installed a native
@@ -345,12 +353,13 @@ else if (azureFoundryRequested)
 }
 
 if (isTesting)
-{
-    api = api
-        .WithEnvironment("Cors__AllowedOrigins__0", "http://localhost")
-        .WithEnvironment("RateLimiting__Tiers__standard__PermitLimit", "10000");
+    api = api.WithEnvironment("Cors__AllowedOrigins__0", "http://localhost");
 
-}
+// Test graphs and the manual Test.Load run (TASKFLOW_ASPIRE_LOAD_PROFILE=true on a dev stack) raise the scaffold
+// tenant's standard tier. Every request in both authenticates as the one scaffold tenant, so the shipped 100
+// requests/60 s budget would otherwise measure the limiter's 429s instead of the endpoints.
+if (isTesting || Environment.GetEnvironmentVariable("TASKFLOW_ASPIRE_LOAD_PROFILE") == "true")
+    api = api.WithEnvironment("RateLimiting__Tenants__Tiers__standard__PermitLimit", "10000");
 
 if (!string.IsNullOrWhiteSpace(applicationStyle))
 {
@@ -447,7 +456,7 @@ if (!nonAzureLane && (!isTesting || functionsAvailableInTesting || fullLaneAvail
         .WithHostStorage(storage!)
         // The Functions host process emits request telemetry itself; suppress the worker's ASP.NET Core
         // instrumentation so requests are not double-reported when the Azure Monitor distro is active.
-        .WithEnvironment("TASKFLOW_SUPPRESS_ASPNETCORE_INSTRUMENTATION", "true")
+        .WithEnvironment("OpenTelemetry__SuppressAspNetCoreInstrumentation", "true")
         .WithReference(taskflowDb, connectionName: "TaskFlowDbContextTrxn")
         .WithReference(taskflowDb, connectionName: "TaskFlowDbContextQuery")
         .WithReference(taskflowDb, connectionName: "TaskFlowFlowEngineDbContext")
@@ -601,6 +610,15 @@ static (Uri Endpoint, string Deployment) ValidateAzureChatEndpoint(
     }
 
     return (endpoint, deploymentValue.Trim());
+}
+
+// See the persistent-container note at the top of the infrastructure resources: point every endpoint of a
+// persistent (proxyless) container at the IPv4 loopback the runtime publishes on.
+static IResourceBuilder<T> UseIpv4Loopback<T>(IResourceBuilder<T> resource) where T : IResourceWithEndpoints
+{
+    foreach (var endpoint in resource.Resource.Annotations.OfType<EndpointAnnotation>())
+        endpoint.TargetHost = "127.0.0.1";
+    return resource;
 }
 
 await builder.Build().RunAsync();

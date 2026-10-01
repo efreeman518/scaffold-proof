@@ -1,10 +1,11 @@
-using EF.IntegrationTesting.Environment;
+using EF.Testing.Environment;
 
 namespace Test.Aspire;
 
 /// <summary>
-/// Fast check that the one opt-out parser shared by the Aspire host and its surface tests accepts every
-/// documented spelling, so a skipped surface is always reported as an opt-out rather than a failure.
+/// Fast check that the one opt-out parser shared by the Aspire host and its surface tests
+/// (<see cref="TestEnvironment.IsFalse"/>) accepts every documented spelling, so a skipped surface is always
+/// reported as an opt-out rather than a failure.
 /// </summary>
 [TestClass]
 [TestCategory("Aspire")]
@@ -25,7 +26,7 @@ public sealed class AspireTestHostOptOutTests
     {
         using var environment = new EnvironmentVariableScope().Set(VariableName, value);
 
-        Assert.AreEqual(expected, AspireTestHost.IsExplicitlyDisabled(VariableName));
+        Assert.AreEqual(expected, TestEnvironment.IsFalse(VariableName));
     }
 
     /// <summary>

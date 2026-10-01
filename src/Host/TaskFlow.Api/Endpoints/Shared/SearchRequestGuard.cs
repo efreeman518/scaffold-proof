@@ -15,9 +15,9 @@ internal static class SearchRequestGuard
     public static IResult? Validate(int pageSize) =>
         PageSizeLimits.IsValid(pageSize)
             ? null
-            : TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponse(
-                statusCodeOverride: StatusCodes.Status400BadRequest,
-                message: string.Format(
+            : TypedResults.Problem(ProblemDetailsHelper.Create(
+                StatusCodes.Status400BadRequest,
+                string.Format(
                     System.Globalization.CultureInfo.InvariantCulture,
                     ErrorConstants.ERROR_PAGE_SIZE_RANGE, PageSizeLimits.Min, PageSizeLimits.Max)));
 }

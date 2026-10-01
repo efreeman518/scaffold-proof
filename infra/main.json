@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "13208387980924068548"
+      "templateHash": "8805931452841738379"
     }
   },
   "parameters": {
@@ -2175,7 +2175,7 @@
             "value": "[parameters('gatewayProfile').concurrentRequests]"
           },
           "envVars": {
-            "value": "[union(union(createArray(createObject('name', 'Hosting__Lane', 'value', 'Azure'), createObject('name', 'Database__Provider', 'value', 'SqlServer'), createObject('name', 'Messaging__Provider', 'value', 'ServiceBus'), createObject('name', 'Storage__Provider', 'value', 'AzureBlob'), createObject('name', 'ReadModel__Provider', 'value', 'Cosmos'), createObject('name', 'Audit__Provider', 'value', 'AzureTable'), createObject('name', 'Search__Provider', 'value', parameters('searchProvider')), createObject('name', 'DataProtection__Persistence', 'value', 'AzureBlob'), createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value)), createArray(createObject('name', 'Hosting__DrainDelaySeconds', 'value', '5'))), createArray(createObject('name', 'ReverseProxy__Clusters__api-cluster__Destinations__api__Address', 'value', format('https://{0}', reference('api').outputs.fqdn.value)), createObject('name', 'AggregateHealthCheck__TaskFlowApiHealthUrl', 'value', format('https://{0}/health/full', reference('api').outputs.fqdn.value)), createObject('name', 'AggregateHealthCheck__TaskFlowApiClusterId', 'value', ''), createObject('name', 'CorsSettings__AllowedOrigins__0', 'value', format('https://{0}-blazor.{1}', variables('prefix'), reference('containerAppsEnv').outputs.defaultDomain.value)), createObject('name', 'CorsSettings__AllowedOrigins__1', 'value', format('https://{0}', reference('reactStaticWebApp').outputs.defaultHostname.value)), createObject('name', 'CorsSettings__AllowedOrigins__2', 'value', format('https://{0}', reference('unoStaticWebApp').outputs.defaultHostname.value)), createObject('name', 'Proxy__ForwardedHeaders__Enabled', 'value', 'true'), createObject('name', 'Proxy__ForwardedHeaders__TrustAllProxies', 'value', 'true'), createObject('name', 'Proxy__ForwardedHeaders__ForwardLimit', 'value', '1')))]"
+            "value": "[union(union(createArray(createObject('name', 'Hosting__Lane', 'value', 'Azure'), createObject('name', 'Database__Provider', 'value', 'SqlServer'), createObject('name', 'Messaging__Provider', 'value', 'ServiceBus'), createObject('name', 'Storage__Provider', 'value', 'AzureBlob'), createObject('name', 'ReadModel__Provider', 'value', 'Cosmos'), createObject('name', 'Audit__Provider', 'value', 'AzureTable'), createObject('name', 'Search__Provider', 'value', parameters('searchProvider')), createObject('name', 'DataProtection__Persistence', 'value', 'AzureBlob'), createObject('name', 'AppConfig__Endpoint', 'value', reference('appConfig').outputs.endpoint.value), createObject('name', 'KeyVault__Uri', 'value', reference('keyVault').outputs.uri.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference('appInsights').outputs.connectionString.value)), createArray(createObject('name', 'Hosting__DrainDelaySeconds', 'value', '5'))), createArray(createObject('name', 'ReverseProxy__Clusters__api-cluster__Destinations__api__Address', 'value', format('https://{0}', reference('api').outputs.fqdn.value)), createObject('name', 'AggregateHealthCheck__TaskFlowApiHealthUrl', 'value', format('https://{0}/health/full', reference('api').outputs.fqdn.value)), createObject('name', 'CorsSettings__AllowedOrigins__0', 'value', format('https://{0}-blazor.{1}', variables('prefix'), reference('containerAppsEnv').outputs.defaultDomain.value)), createObject('name', 'CorsSettings__AllowedOrigins__1', 'value', format('https://{0}', reference('reactStaticWebApp').outputs.defaultHostname.value)), createObject('name', 'CorsSettings__AllowedOrigins__2', 'value', format('https://{0}', reference('unoStaticWebApp').outputs.defaultHostname.value)), createObject('name', 'Proxy__ForwardedHeaders__Enabled', 'value', 'true'), createObject('name', 'Proxy__ForwardedHeaders__TrustAllProxies', 'value', 'true'), createObject('name', 'Proxy__ForwardedHeaders__ForwardLimit', 'value', '1')))]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -3749,7 +3749,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "7892619355790509469"
+              "templateHash": "6938222912404743864"
             }
           },
           "parameters": {
@@ -4003,7 +4003,7 @@
                       "value": "[parameters('appInsightsConnectionString')]"
                     },
                     {
-                      "name": "TASKFLOW_SUPPRESS_ASPNETCORE_INSTRUMENTATION",
+                      "name": "OpenTelemetry__SuppressAspNetCoreInstrumentation",
                       "value": "true"
                     }
                   ],

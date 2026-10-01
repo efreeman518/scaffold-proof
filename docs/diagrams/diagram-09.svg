@@ -23,7 +23,7 @@
 
 <rect class="d9-box" x="40" y="115" width="320" height="50" rx="6"/>
 <text x="200" y="135" class="d9-text">Scheduler jobs stage directly</text>
-<text x="200" y="152" class="d9-text-sm">overdue/recurrence/stale: IOutboxStaging.Stage(envelope, id)</text>
+<text x="200" y="152" class="d9-text-sm">overdue/recurrence/stale: IOutboxStaging.Stage(entry)</text>
 
 <rect class="d9-box" x="390" y="115" width="320" height="50" rx="6"/>
 <text x="550" y="135" class="d9-text">OutboxStagingInterceptor</text>

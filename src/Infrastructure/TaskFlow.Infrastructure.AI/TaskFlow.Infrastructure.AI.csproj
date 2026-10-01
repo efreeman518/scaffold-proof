@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <PackageReference Include="Azure.Identity" />
@@ -6,6 +6,8 @@
     <PackageReference Include="Microsoft.Agents.AI" />
     <PackageReference Include="Microsoft.Agents.AI.OpenAI" />
     <PackageReference Include="Microsoft.Extensions.AI" />
+    <!-- S21: the disabled chat client and IsDisabled() detection. -->
+    <PackageReference Include="EF.AI" />
     <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
     <!-- D-042: AiTaskReviewer checks the AiReview flag via IVariantFeatureManager. -->
     <PackageReference Include="Microsoft.FeatureManagement" />

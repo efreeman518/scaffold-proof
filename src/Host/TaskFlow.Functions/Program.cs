@@ -1,7 +1,6 @@
 using Azure.Core.Serialization;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Builder;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -15,25 +14,18 @@ var builder = FunctionsApplication.CreateBuilder(args);
 
 // Azure App Configuration (D-042) parity with the other hosts: dynamic config + feature flags, no-op
 // unless AppConfig:Endpoint (or ConnectionStrings:AppConfig) is set. Runs first so every later
-// configuration read sees values it overrides. The isolated worker needs its own refresh middleware
-// package (Microsoft.Azure.AppConfiguration.Functions.Worker) rather than the ASP.NET Core
-// UseAzureAppConfiguration(IApplicationBuilder) Api/Gateway use; guarded by the same condition
-// AddTaskFlowAppConfiguration checked, so registering it without the provider added cannot throw.
+// configuration read sees values it overrides; EF.Host refreshes it in the background, so the worker
+// needs no refresh middleware.
 builder.AddTaskFlowAppConfiguration();
-if (!string.IsNullOrWhiteSpace(builder.Configuration[RegisterServices.AppConfigEndpointConfigKey])
-    || !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("AppConfig")))
-{
-    builder.UseAzureAppConfiguration();
-}
 
 builder.ConfigureFunctionsWebApplication();
 // After the HTTP proxying middleware ConfigureFunctionsWebApplication registers: HTTP triggers resolve the
-// request context against their HttpContext (scaffold identity), everything else gets the system identity.
+// request context against their HttpContext (anonymous, no tenant), everything else gets the system identity.
 builder.UseMiddleware<HttpContextAccessorMiddleware>();
 
-// Service Bus triggers execute outside an HTTP request. HeaderPropagationMessageHandler throws in that
-// context and prevents explicit complete/dead-letter settlement through the worker's internal gRPC client.
-builder.AddServiceDefaults(addHeaderPropagation: false);
+// Service Bus triggers execute outside an HTTP request; the correlation handler sends no header there and
+// never throws, so explicit complete/dead-letter settlement through the worker's internal gRPC client is unaffected.
+builder.AddServiceDefaults();
 
 var startupLogger = LoggerFactory
     .Create(logging => logging.AddConsole())

@@ -54,6 +54,29 @@ Remove any legacy `OTEL_EXPORTER_OTLP_ENDPOINT=` line from `.env.base`. The stri
 `http://openobserve:5081`; operator overrides are rejected so an old `http://otel-lgtm:4317` value cannot
 silently route telemetry to the removed service.
 
+## Upgrade to quorum queues
+
+The Scheduler declares every TaskFlow queue (`taskflow.projection`, `taskflow.ai-review`, `taskflow.workflow`,
+`taskflow.embedding` on the PgVector arm, `taskflow.dead-letter`) as a quorum queue, so the retry bound holds across
+Scheduler replicas. A queue's type is fixed when it is created: on a broker whose `rabbitmq-data` volume still holds
+the classic queues, the new Scheduler fails its topology declaration with `PRECONDITION_FAILED` (inequivalent arg
+`x-queue-type`) until they are deleted. Deleting a queue discards its messages, so drain first:
+
+```bash
+cd ~/taskflow
+docker compose stop api                 # no new outbox rows from requests
+# let the old Scheduler dispatch the outbox and drain the queues; repeat until every TaskFlow queue shows 0
+docker compose exec rabbitmq rabbitmqctl list_queues name type messages
+docker compose stop scheduler
+# keep anything taskflow.dead-letter still holds before deleting it (for example with the management UI export)
+for q in taskflow.projection taskflow.ai-review taskflow.workflow taskflow.embedding taskflow.dead-letter; do
+  docker compose exec rabbitmq rabbitmqctl delete_queue "$q"
+done
+```
+
+Skip `taskflow.embedding` when `list_queues` does not show it (it exists only on the PgVector arm). Then deploy as
+usual; the new Scheduler redeclares the queues as quorum at startup.
+
 ## First deploy
 
 1. Point an A/AAAA record at the VPS. Caddy solves the ACME challenge itself, so DNS must resolve before

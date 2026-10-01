@@ -1,6 +1,5 @@
-using TaskFlow.Application.Contracts.Messaging;
-using TaskFlow.Observability.Meters;
-using TaskFlow.Scheduler.Abstractions;
+using EF.Messaging;
+using EF.BackgroundServices.Scheduling;
 
 namespace TaskFlow.Scheduler.Handlers.Retention;
 
@@ -10,7 +9,7 @@ namespace TaskFlow.Scheduler.Handlers.Retention;
 /// </summary>
 public sealed class ConsumerInboxRetentionHandler(
     IInboxStore inboxStore,
-    SchedulerJobMeter meter,
+    ScheduledJobTelemetry telemetry,
     TimeProvider timeProvider,
     IConfiguration config) : IScheduledJobHandler
 {
@@ -23,6 +22,6 @@ public sealed class ConsumerInboxRetentionHandler(
         var cutoffUtc = timeProvider.GetUtcNow()
             .AddDays(-config.GetValue("Scheduling:Retention:ConsumerInboxDays", DefaultRetentionDays));
 
-        meter.RecordRetention("consumerinbox", await inboxStore.PurgeAsync(cutoffUtc, ct));
+        telemetry.RecordRetention("consumerinbox", await inboxStore.PurgeAsync(cutoffUtc, ct));
     }
 }

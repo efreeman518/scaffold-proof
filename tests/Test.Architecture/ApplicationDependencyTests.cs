@@ -1,11 +1,11 @@
-using NetArchTest.Rules;
+using EF.Testing.Architecture;
 
 namespace Test.Architecture;
 
 /// <summary>
-/// NetArchTest rules guarding the Application layer's outbound dependencies - Application.Contracts and
+/// EF.Testing.Architecture dependency rules guarding the Application layer's outbound dependencies - Application.Contracts and
 /// Application.Services must not reference Infrastructure (EF, repositories) or any Host project.
-/// Pure-unit tier (NetArchTest only): runs on loaded <see cref="System.Reflection.Assembly"/> metadata
+/// Pure-unit tier (EF.Testing.Architecture only): runs on loaded <see cref="System.Reflection.Assembly"/> metadata
 /// with no DI, I/O, or test host. A heavier tier would not exercise more of the rule - these are static
 /// architectural invariants.
 /// </summary>
@@ -17,73 +17,63 @@ public class ApplicationDependencyTests : BaseTest
     [TestMethod]
     public void Given_ApplicationContractsAssembly_When_DependenciesChecked_Then_NoDependencyOnInfrastructure()
     {
-        var result = Types.InAssembly(ApplicationContractsAssembly)
-            .ShouldNot()
-            .HaveDependencyOnAny(
+        var result = DependencyRules.MustNotDependOn(ApplicationContractsAssembly,
+            [
                 "TaskFlow.Infrastructure.Data",
                 "TaskFlow.Infrastructure.Repositories",
-                "Microsoft.EntityFrameworkCore")
-            .GetResult();
+                "Microsoft.EntityFrameworkCore"
+            ]);
 
         Assert.IsTrue(result.IsSuccessful,
-            $"Application.Contracts has forbidden dependency on Infrastructure: {FormatFailingTypes(result)}");
+            $"Application.Contracts has forbidden dependency on Infrastructure: {result}");
     }
 
     /// <summary>Verifies that given application contracts assembly, when dependencies checked, then no dependency on hosts.</summary>
     [TestMethod]
     public void Given_ApplicationContractsAssembly_When_DependenciesChecked_Then_NoDependencyOnHosts()
     {
-        var result = Types.InAssembly(ApplicationContractsAssembly)
-            .ShouldNot()
-            .HaveDependencyOnAny(
+        var result = DependencyRules.MustNotDependOn(ApplicationContractsAssembly,
+            [
                 "TaskFlow.Api",
                 "TaskFlow.Gateway",
                 "TaskFlow.Scheduler",
                 "TaskFlow.Functions",
-                "TaskFlow.Bootstrapper")
-            .GetResult();
+                "TaskFlow.Bootstrapper"
+            ]);
 
         Assert.IsTrue(result.IsSuccessful,
-            $"Application.Contracts has forbidden dependency on Hosts: {FormatFailingTypes(result)}");
+            $"Application.Contracts has forbidden dependency on Hosts: {result}");
     }
 
     /// <summary>Verifies that given application services assembly, when dependencies checked, then no dependency on infrastructure.</summary>
     [TestMethod]
     public void Given_ApplicationServicesAssembly_When_DependenciesChecked_Then_NoDependencyOnInfrastructure()
     {
-        var result = Types.InAssembly(ApplicationServicesAssembly)
-            .ShouldNot()
-            .HaveDependencyOnAny(
+        var result = DependencyRules.MustNotDependOn(ApplicationServicesAssembly,
+            [
                 "TaskFlow.Infrastructure.Data",
                 "TaskFlow.Infrastructure.Repositories",
-                "Microsoft.EntityFrameworkCore")
-            .GetResult();
+                "Microsoft.EntityFrameworkCore"
+            ]);
 
         Assert.IsTrue(result.IsSuccessful,
-            $"Application.Services has forbidden dependency on Infrastructure: {FormatFailingTypes(result)}");
+            $"Application.Services has forbidden dependency on Infrastructure: {result}");
     }
 
     /// <summary>Verifies that given application services assembly, when dependencies checked, then no dependency on hosts.</summary>
     [TestMethod]
     public void Given_ApplicationServicesAssembly_When_DependenciesChecked_Then_NoDependencyOnHosts()
     {
-        var result = Types.InAssembly(ApplicationServicesAssembly)
-            .ShouldNot()
-            .HaveDependencyOnAny(
+        var result = DependencyRules.MustNotDependOn(ApplicationServicesAssembly,
+            [
                 "TaskFlow.Api",
                 "TaskFlow.Gateway",
                 "TaskFlow.Scheduler",
                 "TaskFlow.Functions",
-                "TaskFlow.Bootstrapper")
-            .GetResult();
+                "TaskFlow.Bootstrapper"
+            ]);
 
         Assert.IsTrue(result.IsSuccessful,
-            $"Application.Services has forbidden dependency on Hosts: {FormatFailingTypes(result)}");
+            $"Application.Services has forbidden dependency on Hosts: {result}");
     }
-
-    /// <summary>Verifies format failing types behavior and protects the expected test contract.</summary>
-    private static string FormatFailingTypes(NetArchTest.Rules.TestResult result) =>
-        result.FailingTypes != null
-            ? string.Join(", ", result.FailingTypes.Select(t => t.FullName))
-            : "none";
 }

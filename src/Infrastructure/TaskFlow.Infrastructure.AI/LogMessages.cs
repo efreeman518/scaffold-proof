@@ -82,14 +82,6 @@ internal static partial class LogMessages
     [LoggerMessage(EventId = LogEventIds.InfrastructureAiBase + 18, Level = LogLevel.Warning, Message = "TaskAssistant agent not configured - returning stub response")]
     public static partial void AssistantNotConfigured(this ILogger logger);
 
-    /// <summary>Logs a non-streaming call to the no-op chat client.</summary>
-    [LoggerMessage(EventId = LogEventIds.InfrastructureAiBase + 19, Level = LogLevel.Warning, Message = "NoOpChatClient invoked - no Foundry model configured.")]
-    public static partial void NoOpChatClientInvoked(this ILogger logger);
-
-    /// <summary>Logs a streaming call to the no-op chat client.</summary>
-    [LoggerMessage(EventId = LogEventIds.InfrastructureAiBase + 20, Level = LogLevel.Warning, Message = "NoOpChatClient streaming invoked - no Foundry model configured.")]
-    public static partial void NoOpChatClientStreamingInvoked(this ILogger logger);
-
     /// <summary>Logs that the AI task reviewer's readiness comment failed to post.</summary>
     [LoggerMessage(EventId = LogEventIds.InfrastructureAiBase + 21, Level = LogLevel.Warning, Message = "AiTaskReviewer failed to post comment on {TaskId}: {Error}")]
     public static partial void AiReviewerPostFailed(this ILogger logger, Guid taskId, string? error);

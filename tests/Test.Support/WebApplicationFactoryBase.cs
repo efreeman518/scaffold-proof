@@ -1,7 +1,9 @@
 using EF.Data;
 using EF.IntegrationTesting.AspNetCore;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Test.Support;
@@ -16,7 +18,8 @@ public abstract class WebApplicationFactoryBase<TProgram, TTrxnContext, TQueryCo
     where TTrxnContext : DbContextBase<string, Guid?>
     where TQueryContext : DbContextBase<string, Guid?>
 {
-    protected override string? StartupTaskServiceTypeFullName => "TaskFlow.Bootstrapper.IStartupTask";
+    // EF.Host keeps the registered startup task types in one registry; removing it makes RunStartupTasksAsync a no-op.
+    protected override string? StartupTaskServiceTypeFullName => "EF.Host.StartupTaskRegistry";
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -28,4 +31,35 @@ public abstract class WebApplicationFactoryBase<TProgram, TTrxnContext, TQueryCo
         });
     }
 
+    /// <summary>
+    /// The harness contexts carry no tenant, and EF.Data's tenant query filter reads nothing for a tenant-less
+    /// context unless it is marked all-tenants. Marking them keeps harness reads unfiltered, as a null tenant
+    /// read before EF.Data 2.0; tenant isolation is proven by the container-backed tests, not here.
+    /// </summary>
+    protected override void ConfigureAdditionalTestServices(IServiceCollection services)
+    {
+        AllTenants<TTrxnContext>(services);
+        AllTenants<TQueryContext>(services);
+    }
+
+    private static void AllTenants<TContext>(IServiceCollection services)
+        where TContext : DbContextBase<string, Guid?>
+    {
+        var scoped = services.Last(d => d.ServiceType == typeof(TContext)).ImplementationFactory!;
+        services.AddScoped(sp =>
+        {
+            var context = (TContext)scoped(sp);
+            context.AllTenants = true;
+            return context;
+        });
+
+        var factory = (IDbContextFactory<TContext>)services
+            .Last(d => d.ServiceType == typeof(IDbContextFactory<TContext>)).ImplementationInstance!;
+        services.AddSingleton<IDbContextFactory<TContext>>(new EfTestDbContextFactory<TContext>(() =>
+        {
+            var context = factory.CreateDbContext();
+            context.AllTenants = true;
+            return context;
+        }));
+    }
 }

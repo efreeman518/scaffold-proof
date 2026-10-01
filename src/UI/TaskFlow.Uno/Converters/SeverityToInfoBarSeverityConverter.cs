@@ -1,5 +1,5 @@
 using Microsoft.UI.Xaml.Data;
-using TaskFlow.Uno.Core.Business.Notifications;
+using EF.UI.Client.Notifications;
 
 namespace TaskFlow.Uno.Converters;
 

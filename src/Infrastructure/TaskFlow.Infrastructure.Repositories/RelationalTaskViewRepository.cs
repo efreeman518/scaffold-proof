@@ -1,3 +1,4 @@
+using EF.Data.Contracts;
 using EF.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
@@ -13,7 +14,8 @@ namespace TaskFlow.Infrastructure.Repositories;
 /// <c>TaskProjectionConsumer</c>) and <c>TaskViewEndpoints</c> cannot tell the two apart:
 /// <list type="bullet">
 /// <item>tenant is an explicit argument, never an ambient filter - the relational stand-in for the partition key;</item>
-/// <item>the continuation token is opaque to the caller (<see cref="TaskViewKeysetToken"/>);</item>
+/// <item>the continuation token is opaque to the caller: an EF.Data.Contracts <see cref="CursorCodec"/> cursor
+/// scoped to the tenant, so a token minted for another tenant or tampered with is rejected (400);</item>
 /// <item>counter patches are one server-side statement, so two concurrent delta events cannot overwrite
 /// each other the way a read-modify-write would;</item>
 /// <item>a missing row is a no-op for patch and delete, because the create projection rebuilds counters
@@ -24,7 +26,7 @@ namespace TaskFlow.Infrastructure.Repositories;
 /// read-replica connection - a read model is eventually consistent by construction, so replica lag adds
 /// nothing the projection delay has not already added.
 /// </summary>
-public sealed class RelationalTaskViewRepository(TaskFlowDbContextTrxn write, TaskFlowDbContextQuery read)
+public sealed class RelationalTaskViewRepository(TaskFlowDbContextTrxn write, TaskFlowDbContextQuery read, CursorCodec cursorCodec)
     : RepositoryBase<TaskFlowDbContextTrxn, string, Guid?>(write), ITaskViewRepository
 {
     // Counter names as the producer spells them: TaskViewProjectionService keys the delta dictionary on the
@@ -85,32 +87,15 @@ public sealed class RelationalTaskViewRepository(TaskFlowDbContextTrxn write, Ta
         ArgumentException.ThrowIfNullOrWhiteSpace(tenantId);
         ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
 
-        var query = read.TaskViews.AsNoTracking().Where(e => e.TenantId == tenantId);
-
-        if (!string.IsNullOrEmpty(continuationToken))
-        {
-            var after = TaskViewKeysetToken.Decode(continuationToken, tenantId);
-            // Keyset, not OFFSET: a row inserted between two requests shifts an offset and duplicates or
-            // skips a row. The tie-break on Id is what makes rows sharing a timestamp a total order.
-            query = query.Where(e => e.LastModifiedUtc < after.LastModifiedUtc
-                || (e.LastModifiedUtc == after.LastModifiedUtc && string.Compare(e.Id, after.Id) < 0));
-        }
-
-        // One row past the page: its existence, not a count query, is what says another page exists.
-        var rows = await query
-            .OrderByDescending(e => e.LastModifiedUtc).ThenByDescending(e => e.Id)
-            .Take(pageSize + 1)
-            .ToListAsync(ct)
+        // Keyset, not OFFSET (D21): a row inserted between two requests shifts an offset and duplicates or skips
+        // a row. Newest first; the ascending tie-break on Id makes rows sharing a timestamp a total order.
+        var page = await read.TaskViews.AsNoTracking()
+            .Where(e => e.TenantId == tenantId)
+            .KeysetPageAsync(e => e.LastModifiedUtc, e => e.Id, new KeysetCursor(cursorCodec, tenantId, continuationToken),
+                pageSize, descending: true, ct)
             .ConfigureAwait(ConfigureAwaitOptions.None);
 
-        var hasMore = rows.Count > pageSize;
-        if (hasMore) rows.RemoveAt(rows.Count - 1);
-
-        var token = hasMore
-            ? TaskViewKeysetToken.Encode(tenantId, rows[^1].LastModifiedUtc, rows[^1].Id)
-            : null;
-
-        return new TaskViewPage([.. rows.Select(MapToDto)], token);
+        return new TaskViewPage([.. page.Items.Select(MapToDto)], page.NextCursor);
     }
 
     /// <inheritdoc />

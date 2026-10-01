@@ -1,3 +1,4 @@
+using EF.Testing.Json;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -106,9 +107,11 @@ public sealed class OpenApiEndpointTests
         var committedDocument = JsonNode.Parse(await File.ReadAllTextAsync(committedPath, TestContext.CancellationToken));
         committedDocument?.AsObject().Remove("servers");
 
-        Assert.IsTrue(
-            JsonNode.DeepEquals(committedDocument, runtimeDocument),
-            "src/Host/TaskFlow.Api/openapi-doc/TaskFlow.Api.json is stale. Rebuild TaskFlow.Api " +
+        var difference = JsonNodeDiff.FindFirstDifference(committedDocument, runtimeDocument);
+        Assert.IsNull(
+            difference,
+            $"src/Host/TaskFlow.Api/openapi-doc/TaskFlow.Api.json is stale at {difference?.Path}: committed " +
+            $"{difference?.Expected}, runtime {difference?.Actual}. Rebuild TaskFlow.Api " +
             "(ASPNETCORE_ENVIRONMENT=Development, see docs/plans/client-generation.md) and commit the refreshed document.");
     }
 

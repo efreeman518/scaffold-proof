@@ -1,4 +1,5 @@
 using EF.Data.Migrations;
+using EF.IntegrationTesting.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Data;
@@ -29,7 +30,7 @@ public sealed class DatabaseMigratorIntegrationTests
     [Timeout(180000, CooperativeCancellation = true)]
     public async Task DatabaseMigrator_AppliesAllTargets_AndIsIdempotent()
     {
-        var connectionString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("TaskFlowMigrator");
+        var connectionString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("TaskFlowMigrator", TestContext.CancellationToken);
         var runner = CreateRunner(connectionString);
 
         await runner.RunAsync(TestContext.CancellationToken);
@@ -46,7 +47,7 @@ public sealed class DatabaseMigratorIntegrationTests
         Assert.IsTrue(await TableExistsAsync(flowEngine, TaskFlowFlowEngineDbContext.SchemaName, TaskFlowFlowEngineDbContext.MigrationHistoryTable));
 
         await using var tickerQ = DbContainerFixture.CreateTickerQContext(connectionString);
-        Assert.IsTrue(await TaskFlowTickerQSchemaValidator.SchemaExistsAsync(tickerQ, TestContext.CancellationToken));
+        Assert.IsEmpty(await tickerQ.GetMissingTablesAsync(TestContext.CancellationToken));
         Assert.IsTrue(await TableExistsAsync(tickerQ, TaskFlowTickerQDbContext.SchemaName, TaskFlowTickerQDbContext.MigrationHistoryTable));
 
         // The AfterSchema data step ran once per RunAsync and stayed idempotent (BeforeSchema clears, AfterSchema inserts).
@@ -59,11 +60,11 @@ public sealed class DatabaseMigratorIntegrationTests
     [Timeout(120000, CooperativeCancellation = true)]
     public async Task TickerQValidation_FailsWhenSchemaMissing()
     {
-        var connectionString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("TickerQMissing");
+        var connectionString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("TickerQMissing", TestContext.CancellationToken);
         await using var tickerQ = DbContainerFixture.CreateTickerQContext(connectionString);
 
         Assert.IsTrue(await tickerQ.Database.CanConnectAsync(TestContext.CancellationToken));
-        Assert.IsFalse(await TaskFlowTickerQSchemaValidator.SchemaExistsAsync(tickerQ, TestContext.CancellationToken));
+        Assert.IsNotEmpty(await tickerQ.GetMissingTablesAsync(TestContext.CancellationToken));
     }
 
     private static DatabaseMigrationRunner CreateRunner(string connectionString)
@@ -73,19 +74,19 @@ public sealed class DatabaseMigratorIntegrationTests
             new EntityFrameworkMigrationTarget<TaskFlowDbContextTrxn>(
                 "TaskFlowDbContextTrxn",
                 10,
-                new TestDbContextFactory<TaskFlowDbContextTrxn>(() => DbContainerFixture.CreateTrxnContext(connectionString)),
+                new EfTestDbContextFactory<TaskFlowDbContextTrxn>(() => DbContainerFixture.CreateTrxnContext(connectionString)),
                 [],
                 NullLogger<EntityFrameworkMigrationTarget<TaskFlowDbContextTrxn>>.Instance),
             new EntityFrameworkMigrationTarget<TaskFlowFlowEngineDbContext>(
                 "TaskFlowFlowEngineDbContext",
                 20,
-                new TestDbContextFactory<TaskFlowFlowEngineDbContext>(() => DbContainerFixture.CreateFlowEngineContext(connectionString)),
+                new EfTestDbContextFactory<TaskFlowFlowEngineDbContext>(() => DbContainerFixture.CreateFlowEngineContext(connectionString)),
                 [],
                 NullLogger<EntityFrameworkMigrationTarget<TaskFlowFlowEngineDbContext>>.Instance),
             new EntityFrameworkMigrationTarget<TaskFlowTickerQDbContext>(
                 "TaskFlowTickerQDbContext",
                 30,
-                new TestDbContextFactory<TaskFlowTickerQDbContext>(() => DbContainerFixture.CreateTickerQContext(connectionString)),
+                new EfTestDbContextFactory<TaskFlowTickerQDbContext>(() => DbContainerFixture.CreateTickerQContext(connectionString)),
                 CreateTickerQDataMigrationSteps(),
                 NullLogger<EntityFrameworkMigrationTarget<TaskFlowTickerQDbContext>>.Instance)
         ],
@@ -166,15 +167,6 @@ public sealed class DatabaseMigratorIntegrationTests
                 await db.Database.CloseConnectionAsync();
             }
         }
-    }
-
-    private sealed class TestDbContextFactory<TContext>(Func<TContext> create) : IDbContextFactory<TContext>
-        where TContext : DbContext
-    {
-        public TContext CreateDbContext() => create();
-
-        public Task<TContext> CreateDbContextAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(create());
     }
 
     public TestContext TestContext { get; set; } = null!;

@@ -1,12 +1,20 @@
+using EF.Audit.AzureTable;
 using EF.AspNetCore.HealthChecks;
 using EF.Audit.Contracts;
+using EF.Cache;
+using EF.CosmosDb;
+using EF.Host;
+using EF.Messaging.ServiceBus;
+using EF.Storage;
 using EF.Storage.Contracts;
+using EF.Storage.S3;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Storage;
-using TaskFlow.Infrastructure.Data.Messaging;
+using TaskFlow.Infrastructure.Caching;
 using TaskFlow.Infrastructure.Repositories.MongoDb;
 using TaskFlow.Infrastructure.Storage;
 using TaskFlow.Infrastructure.Storage.CosmosDb;
@@ -21,8 +29,7 @@ public static partial class RegisterServices
     /// </summary>
     private static void AddTableStorageServices(IServiceCollection services, IConfiguration config)
     {
-        var connection = ResolveConnectionString(
-            config,
+        var connection = config.ResolveConnection(
             "TableStorage1",
             "Values:TableStorage1",
             "Aspire:Azure:Data:Tables:TableStorage1:ConnectionString");
@@ -32,9 +39,9 @@ public static partial class RegisterServices
 
         services.AddAzureClients(builder =>
         {
-            if (TryGetServiceUri(connection, out var serviceUri))
+            if (ConnectionValue.TryGetServiceUri(connection, out var serviceUri))
             {
-                builder.UseCredential(CreateAzureCredential(config));
+                builder.UseCredential(AzureCredentialFactory.Create(config));
                 builder.AddTableServiceClient(serviceUri)
                     .WithName("TaskFlowTableClient");
             }
@@ -45,62 +52,14 @@ public static partial class RegisterServices
             }
         });
 
-        services.Configure<AuditLogStorageSettings>(
-            config.GetSection(AuditLogStorageSettings.ConfigSectionName));
-
-        services.AddScoped<IAuditLogRepository, AuditLogRepository>();
-    }
-
-    /// <summary>
-    /// Resolves Aspire, appsettings, and Functions-style connection keys in a stable order.
-    /// A real connection string wins over UseDevelopmentStorage=true, but the emulator value
-    /// is kept as a fallback when it is the only configured value.
-    /// </summary>
-    private static string? ResolveConnectionString(IConfiguration config, string connectionName, params string[] alternateKeys)
-    {
-        string? fallbackConnectionString = null;
-
-        foreach (var candidate in GetConnectionStringCandidates(config, connectionName, alternateKeys))
+        // D19: the EF.Audit.AzureTable singleton repository. It never creates the table on the request path;
+        // EnsureExternalResources provisions it once through EnsureTableAsync.
+        services.AddAzureTableAuditLog(options =>
         {
-            if (string.IsNullOrWhiteSpace(candidate))
-                continue;
-
-            fallbackConnectionString ??= candidate;
-
-            if (!string.Equals(candidate, "UseDevelopmentStorage=true", StringComparison.OrdinalIgnoreCase))
-                return candidate;
-        }
-
-        return fallbackConnectionString;
-    }
-
-    /// <summary>
-    /// Enumerates connection-string sources without assuming which host supplied them.
-    /// ASP.NET, Aspire, and Azure Functions use different key shapes for the same resource.
-    /// </summary>
-    private static IEnumerable<string?> GetConnectionStringCandidates(IConfiguration config, string connectionName, IEnumerable<string> alternateKeys)
-    {
-        yield return Environment.GetEnvironmentVariable($"ConnectionStrings__{connectionName}");
-        yield return config.GetConnectionString(connectionName);
-
-        foreach (var key in alternateKeys)
-        {
-            yield return Environment.GetEnvironmentVariable(key.Replace(":", "__"));
-            yield return config[key];
-        }
-    }
-
-    private static bool TryGetServiceUri(string value, out Uri serviceUri)
-    {
-        if (Uri.TryCreate(value, UriKind.Absolute, out var candidate)
-            && (candidate.Scheme == Uri.UriSchemeHttp || candidate.Scheme == Uri.UriSchemeHttps))
-        {
-            serviceUri = candidate;
-            return true;
-        }
-
-        serviceUri = null!;
-        return false;
+            options.TableName = "taskflowaudit";
+            options.TableServiceClientName = "TaskFlowTableClient";
+            config.GetSection(AzureTableAuditLogSettings.ConfigSectionName).Bind(options);
+        });
     }
 
     internal static string? ResolveServiceBusFullyQualifiedNamespace(IConfiguration config) =>
@@ -111,8 +70,7 @@ public static partial class RegisterServices
     /// </summary>
     private static void AddBlobStorageServices(IServiceCollection services, IConfiguration config)
     {
-        var connection = ResolveConnectionString(
-            config,
+        var connection = config.ResolveConnection(
             "BlobStorage1",
             "BlobStorage1",
             "BlobStorage1:blobServiceUri",
@@ -123,9 +81,9 @@ public static partial class RegisterServices
 
         services.AddAzureClients(builder =>
         {
-            if (TryGetServiceUri(connection, out var serviceUri))
+            if (ConnectionValue.TryGetServiceUri(connection, out var serviceUri))
             {
-                builder.UseCredential(CreateAzureCredential(config));
+                builder.UseCredential(AzureCredentialFactory.Create(config));
                 builder.AddBlobServiceClient(serviceUri)
                     .WithName("TaskFlowBlobClient");
             }
@@ -147,8 +105,7 @@ public static partial class RegisterServices
     /// </summary>
     private static void AddServiceBusServices(IServiceCollection services, IConfiguration config)
     {
-        var connStr = ResolveConnectionString(
-            config,
+        var connStr = config.ResolveConnection(
             "ServiceBus1",
             "ServiceBus1",
             "Values:ServiceBus1");
@@ -166,13 +123,18 @@ public static partial class RegisterServices
             }
             else
             {
-                builder.UseCredential(CreateAzureCredential(config));
+                builder.UseCredential(AzureCredentialFactory.Create(config));
                 builder.AddServiceBusClientWithNamespace(fullyQualifiedNamespace!)
                     .WithName("TaskFlowSBClient");
             }
         });
 
-        services.AddSingleton<IIntegrationEventTransport, ServiceBusEventTransport>();
+        // M14: the package transport packs per destination; an oversize message fails alone as permanent.
+        services.AddServiceBusOutboxTransport(o =>
+        {
+            o.ClientName = "TaskFlowSBClient";
+            o.Entities[TaskFlowIntegrationEvents.Destination] = config["DomainEventsTopic"] ?? TaskFlowIntegrationEvents.Destination;
+        });
     }
 
     /// <summary>
@@ -197,12 +159,16 @@ public static partial class RegisterServices
         var databaseName = config["Cosmos:TaskViews:DatabaseName"] ?? "taskflow-db";
         var containerName = config["Cosmos:TaskViews:ContainerName"] ?? "task-views";
 
-        services.AddSingleton(_ => TryGetServiceUri(connection, out var serviceUri)
+        // S20 / D-051: Cosmos:Client binds EF.CosmosDb CosmosClientSettings (PreferredRegions, HedgingEnabled - off by
+        // default, it multiplies request units against a slow region - HedgingThresholdMs, HedgingThresholdStepMs).
+        var clientOptions = CosmosClientOptionsFactory.Create(
+            config.GetSection("Cosmos:Client").Get<CosmosClientSettings>() ?? new CosmosClientSettings());
+        services.AddSingleton(_ => ConnectionValue.TryGetServiceUri(connection, out var serviceUri)
             ? new Microsoft.Azure.Cosmos.CosmosClient(
                 serviceUri.AbsoluteUri,
-                CreateAzureCredential(config),
-                BuildCosmosClientOptions(config))
-            : new Microsoft.Azure.Cosmos.CosmosClient(connection, BuildCosmosClientOptions(config)));
+                AzureCredentialFactory.Create(config),
+                clientOptions)
+            : new Microsoft.Azure.Cosmos.CosmosClient(connection, clientOptions));
         services.AddSingleton<ITaskViewRepository>(sp =>
             new CosmosTaskViewRepository(
                 sp.GetRequiredService<Microsoft.Azure.Cosmos.CosmosClient>(),
@@ -225,27 +191,6 @@ public static partial class RegisterServices
     }
 
     /// <summary>
-    /// D-051: cross-region read hedging, off by default. After <c>threshold</c> without an answer the SDK
-    /// issues the same read against the next preferred region and takes whichever replies first, then repeats
-    /// every <c>thresholdStep</c>. It only helps a multi-region account with preferred regions configured, and
-    /// it multiplies request units on a slow region, so it stays a deployment decision rather than a default.
-    /// </summary>
-    internal static Microsoft.Azure.Cosmos.CosmosClientOptions? BuildCosmosClientOptions(IConfiguration config)
-    {
-        if (!config.GetValue("Cosmos:Hedging:Enabled", false))
-            return null;
-
-        var threshold = TimeSpan.FromMilliseconds(config.GetValue("Cosmos:Hedging:ThresholdMs", 500));
-        var thresholdStep = TimeSpan.FromMilliseconds(config.GetValue("Cosmos:Hedging:ThresholdStepMs", 100));
-
-        return new Microsoft.Azure.Cosmos.CosmosClientOptions
-        {
-            AvailabilityStrategy =
-                Microsoft.Azure.Cosmos.AvailabilityStrategy.CrossRegionHedgingStrategy(threshold, thresholdStep)
-        };
-    }
-
-    /// <summary>
     /// Adds cheap always-on checks first and gates external-service checks behind config so
     /// readiness probes do not require every emulator in lightweight local or test runs.
     /// </summary>
@@ -260,24 +205,30 @@ public static partial class RegisterServices
         if (!config.GetValue<bool>("HealthChecks:EnableExternalServices", false))
             return;
 
-        if (!string.IsNullOrWhiteSpace(ResolveConnectionString(
-                config, "BlobStorage1", "BlobStorage1", "BlobStorage1:blobServiceUri", "Values:BlobStorage1")))
-            builder.AddCheck<HealthChecks.BlobStorageHealthCheck>("blob-storage", tags: ["full", "extservice"]);
+        // S19: the checks verify the resource the app uses - the attachment container or bucket (least privilege:
+        // container ExistsAsync, a scoped HeadBucket) - and the Cosmos account through the registered client.
+        if (!string.IsNullOrWhiteSpace(config.ResolveConnection(
+                "BlobStorage1", "BlobStorage1", "BlobStorage1:blobServiceUri", "Values:BlobStorage1")))
+            builder.AddBlobContainerHealthCheck(
+                "blob-storage", "TaskFlowBlobClient", AttachmentBlobs.ContainerName, tags: ["full", "extservice"]);
 
         if (ResolveStorageProvider(config) == StorageProvider.S3)
-            builder.AddCheck<HealthChecks.S3StorageHealthCheck>("s3-storage", tags: ["full", "extservice"]);
+            builder.AddS3BucketHealthCheck("s3-storage", AttachmentBlobs.ContainerName, tags: ["full", "extservice"]);
 
-        if (!string.IsNullOrWhiteSpace(ResolveConnectionString(config, "ServiceBus1", "ServiceBus1", "Values:ServiceBus1"))
+        if (!string.IsNullOrWhiteSpace(config.ResolveConnection("ServiceBus1", "ServiceBus1", "Values:ServiceBus1"))
             || !string.IsNullOrWhiteSpace(ResolveServiceBusFullyQualifiedNamespace(config)))
-            builder.AddCheck<HealthChecks.ServiceBusHealthCheck>("service-bus", tags: ["full", "extservice"]);
+            builder.AddServiceBusHealthCheck(
+                "TaskFlowSBClient", config["DomainEventsTopic"] ?? TaskFlowIntegrationEvents.Destination, "service-bus", "full", "extservice");
 
         if (!string.IsNullOrWhiteSpace(config.GetConnectionString("CosmosDb1")))
-            builder.AddCheck<HealthChecks.CosmosDbHealthCheck>("cosmos-db", tags: ["full", "extservice"]);
+            builder.AddCosmosDbHealthCheck("cosmos-db", tags: ["full", "extservice"]);
 
         if (ResolveReadModelProvider(config) == ReadModelProvider.MongoDb)
             builder.AddCheck<HealthChecks.MongoDbHealthCheck>("mongodb", tags: ["full", "extservice"]);
 
-        if (!string.IsNullOrWhiteSpace(config.GetConnectionString("Redis1")))
-            builder.AddCheck<HealthChecks.RedisCacheHealthCheck>("redis-cache", tags: ["full", "extservice"]);
+        // S9: a ping over the shared multiplexer, Degraded on failure - the cache falls back to L1 and the rate
+        // limiter fails open, so a dead Redis is a problem to page on, not a reason to leave rotation.
+        if (services.HasSharedRedis())
+            builder.AddRedisHealthCheck("redis-cache", tags: ["full", "extservice"]);
     }
 }

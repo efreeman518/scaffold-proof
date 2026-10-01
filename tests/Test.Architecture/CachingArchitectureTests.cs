@@ -1,4 +1,4 @@
-using System.Reflection;
+using EF.Testing.Architecture;
 using TaskFlow.Application.Contracts.Caching;
 using TaskFlow.Application.Models.Reads;
 
@@ -52,40 +52,20 @@ public class CachingArchitectureTests : BaseTest
     [TestMethod]
     public void Given_ApplicationAssemblies_When_ConstructorsScanned_Then_NoneInjectACacheImplementation()
     {
-        var offenders = new List<string>();
+        var result = ConstructorRules.MustNotInject(
+            [ApplicationContractsAssembly, ApplicationServicesAssembly, ApplicationCqrsAssembly], ForbiddenCacheTypes);
 
-        foreach (var assembly in new[]
-                 {
-                     ApplicationContractsAssembly, ApplicationServicesAssembly, ApplicationCqrsAssembly
-                 })
-        {
-            foreach (var type in assembly.GetTypes())
-            {
-                foreach (var parameter in type.GetConstructors(
-                             BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
-                             .SelectMany(c => c.GetParameters()))
-                {
-                    if (ForbiddenCacheTypes.Contains(parameter.ParameterType.Name, StringComparer.Ordinal))
-                        offenders.Add($"{type.FullName}.{parameter.Name}");
-                }
-            }
-        }
-
-        Assert.AreEqual(0, offenders.Count,
-            $"application types injecting a cache implementation instead of ITypedCache: {string.Join(", ", offenders)}");
+        Assert.IsTrue(result.IsSuccessful,
+            $"application types injecting a cache implementation instead of ITypedCache: {result}");
     }
 
     /// <summary>The application assemblies do not reference the FusionCache assembly at all.</summary>
     [TestMethod]
     public void Given_ApplicationAssemblies_When_ReferencesScanned_Then_NoneReferenceFusionCache()
     {
-        var offenders = new[] { ApplicationContractsAssembly, ApplicationServicesAssembly, ApplicationCqrsAssembly }
-            .Where(a => a.GetReferencedAssemblies()
-                .Any(r => r.Name?.StartsWith("ZiggyCreatures", StringComparison.Ordinal) == true))
-            .Select(a => a.GetName().Name)
-            .ToList();
+        var result = DependencyRules.MustNotReferenceAssemblies(
+            [ApplicationContractsAssembly, ApplicationServicesAssembly, ApplicationCqrsAssembly], ["ZiggyCreatures"]);
 
-        Assert.AreEqual(0, offenders.Count,
-            $"application assemblies referencing FusionCache: {string.Join(", ", offenders)}");
+        Assert.IsTrue(result.IsSuccessful, $"application assemblies referencing FusionCache: {result}");
     }
 }

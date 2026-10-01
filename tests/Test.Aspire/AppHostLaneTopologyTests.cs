@@ -2,7 +2,7 @@ using AppHost;
 using Aspire.Hosting;
 using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Testing;
-using EF.IntegrationTesting.Environment;
+using EF.Testing.Environment;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using TaskFlow.Hosting;
@@ -15,6 +15,9 @@ namespace Test.Aspire;
 [DoNotParallelize]
 public sealed class AppHostLaneTopologyTests
 {
+    /// <summary>MSTest-injected context; supplies the per-test cancellation token.</summary>
+    public TestContext TestContext { get; set; } = null!;
+
     private static readonly string[] LaneEnvironmentVariables =
     [
         HostingLaneResolver.LaneEnvironmentVariable,
@@ -36,6 +39,7 @@ public sealed class AppHostLaneTopologyTests
         "TASKFLOW_ASPIRE_FUNCTIONS_AVAILABLE",
         "TASKFLOW_ASPIRE_REACT_AVAILABLE",
         "TASKFLOW_ASPIRE_UNO_WASM_AVAILABLE",
+        "TASKFLOW_ASPIRE_LOAD_PROFILE",
         "ConnectionStrings__chat",
         "ConnectionStrings:chat",
         "AiServices__Provider",
@@ -150,8 +154,89 @@ public sealed class AppHostLaneTopologyTests
         StringAssert.Contains(source, "if (!isTesting || reactAvailableInTesting || fullLaneAvailableInTesting)");
         StringAssert.Contains(source, "if (!isTesting || unoWasmAvailableInTesting || fullLaneAvailableInTesting)");
         StringAssert.Contains(source,
-            ".WithEnvironment(\"RateLimiting__Tiers__standard__PermitLimit\", \"10000\")");
+            ".WithEnvironment(\"RateLimiting__Tenants__Tiers__standard__PermitLimit\", \"10000\")");
     }
+
+    /// <summary>
+    /// The persistent (non-test) NonAzure graph mounts the Postgres volume at /var/lib/postgresql: a PostgreSQL 18
+    /// image refuses to start with a mount at /var/lib/postgresql/data, so `dotnet run` of the AppHost failed.
+    /// </summary>
+    [TestMethod]
+    public async Task PersistentNonAzureGraph_MountsPostgresVolumeWherePostgres18KeepsData()
+    {
+        using var environment = new EnvironmentVariableScope();
+        foreach (var name in GraphEnvironmentVariables) environment.Set(name, null);
+
+        var programType = Type.GetType("Program, AppHost", throwOnError: true)!;
+        var builder = await DistributedApplicationTestingBuilder.CreateAsync(
+            programType,
+            args: [],
+            configureBuilder: (appOptions, _) => appOptions.DisableDashboard = true,
+            cancellationToken: TestContext.CancellationToken);
+
+        var postgres = builder.Resources.Single(resource => resource.Name == "postgres");
+        var mounts = postgres.Annotations.OfType<ContainerMountAnnotation>().ToList();
+        var volume = mounts.Single(mount => mount.Source == "taskflow-postgres-data");
+        Assert.AreEqual("/var/lib/postgresql", volume.Target);
+        Assert.IsFalse(mounts.Any(mount => mount.Target == "/var/lib/postgresql/data"));
+    }
+
+    /// <summary>
+    /// Persistent containers are proxyless and published on 127.0.0.1 only, so their endpoints must target that
+    /// address: left at "localhost", .NET clients (the hosts and Aspire's health checks) try ::1 first, which hangs
+    /// under Podman with WSL mirrored networking, and the dev stack never turned healthy.
+    /// </summary>
+    [TestMethod]
+    public async Task PersistentNonAzureGraph_ContainerEndpointsTargetTheIpv4Loopback()
+    {
+        using var environment = new EnvironmentVariableScope();
+        foreach (var name in GraphEnvironmentVariables) environment.Set(name, null);
+
+        var builder = await CreatePersistentGraphAsync();
+
+        foreach (var name in new[] { "postgres", "redis", "rabbitmq", "seaweedfs" })
+        {
+            var endpoints = builder.Resources.Single(resource => resource.Name == name)
+                .Annotations.OfType<EndpointAnnotation>().ToList();
+            Assert.IsNotEmpty(endpoints, name);
+            foreach (var endpoint in endpoints)
+                Assert.AreEqual("127.0.0.1", endpoint.TargetHost, $"{name}:{endpoint.Name}");
+        }
+    }
+
+    /// <summary>
+    /// The dev stack keeps the shipped tenant budget; TASKFLOW_ASPIRE_LOAD_PROFILE=true raises it for the manual
+    /// Test.Load run, whose CRUD scenario alone offers 360 requests a minute as the one scaffold tenant.
+    /// </summary>
+    [TestMethod]
+    [DataRow(null, null)]
+    [DataRow("true", "10000")]
+    public async Task PersistentNonAzureGraph_LoadProfileAloneRaisesTheTenantBudget(string? loadProfile, string? expected)
+    {
+        using var environment = new EnvironmentVariableScope();
+        foreach (var name in GraphEnvironmentVariables) environment.Set(name, null);
+        environment.Set("TASKFLOW_ASPIRE_LOAD_PROFILE", loadProfile);
+
+        var builder = await CreatePersistentGraphAsync();
+        var api = builder.Resources.OfType<IResourceWithEnvironment>().Single(resource => resource.Name == "taskflowapi");
+        var configuration = await ExecutionConfigurationBuilder.Create(api)
+            .WithEnvironmentVariablesConfig()
+            .BuildAsync(
+                new DistributedApplicationExecutionContext(DistributedApplicationOperation.Publish),
+                NullLogger.Instance,
+                TestContext.CancellationToken);
+        if (configuration.Exception is not null) throw configuration.Exception;
+
+        var variables = configuration.EnvironmentVariables.ToDictionary(pair => pair.Key, pair => pair.Value);
+        Assert.AreEqual(expected, variables.GetValueOrDefault("RateLimiting__Tenants__Tiers__standard__PermitLimit"));
+    }
+
+    private async Task<IDistributedApplicationTestingBuilder> CreatePersistentGraphAsync() =>
+        await DistributedApplicationTestingBuilder.CreateAsync(
+            Type.GetType("Program, AppHost", throwOnError: true)!,
+            args: [],
+            configureBuilder: (appOptions, _) => appOptions.DisableDashboard = true,
+            cancellationToken: TestContext.CancellationToken);
 
     [TestMethod]
     public void BothLanes_DeclareCommonHostsAndAllUserInterfaces()
@@ -476,15 +561,9 @@ public sealed class AppHostLaneTopologyTests
             .Build());
     }
 
-    private static string ReadAppHostSource()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "TaskFlow.slnx")))
-            directory = directory.Parent;
-
-        Assert.IsNotNull(directory, "Could not locate repository root containing TaskFlow.slnx.");
-        return File.ReadAllText(Path.Combine(directory.FullName, "src", "Host", "Aspire", "AppHost", "AppHost.cs"));
-    }
+    private static string ReadAppHostSource() =>
+        File.ReadAllText(Path.Combine(
+            RepositoryRoot.Find(markers: "TaskFlow.slnx"), "src", "Host", "Aspire", "AppHost", "AppHost.cs"));
 
     private static async Task<AppHostGraph> BuildResourceGraphAsync(
         string? lane,

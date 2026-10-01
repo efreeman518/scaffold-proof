@@ -1,4 +1,6 @@
 using EF.Cache;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Caching;
 using TaskFlow.Infrastructure.Caching;
@@ -10,7 +12,7 @@ namespace Test.Unit.Infrastructure;
 /// deployments sharing one Redis and retires entries when a snapshot's shape changes, and the tags are what
 /// a writer names when it invalidates without knowing which snapshots exist. A silent change to either is a
 /// cross-environment leak or a stale read that no other test would catch.
-/// Pure-unit tier: the package's static key renderer, no cache instance.
+/// Pure-unit tier: the package's static key renderer and the registered settings, no cache instance.
 /// </summary>
 [TestClass]
 [TestCategory("Unit")]
@@ -55,17 +57,16 @@ public class TaskFlowCacheKeyTests
     }
 
     /// <summary>
-    /// The registration stamps the deployment environment and the current schema version onto the settings the
-    /// cache renders keys from. Both are code decisions the CacheSettings section cannot express.
+    /// The registration's EF.Cache configure hook stamps the current schema version and the profile durations onto
+    /// the settings the cache renders keys from. Both are code decisions the CacheSettings section does not carry.
     /// </summary>
     [TestMethod]
-    public void ApplyTaskFlowDefaults_StampsEnvironmentSchemaVersionAndProfiles()
+    public void AddTaskFlowCaching_StampsSchemaVersionAndProfiles()
     {
-        var settings = RegisterCachingServices.ApplyTaskFlowDefaults(
-            new CacheSettings { Name = AppConstants.DEFAULT_CACHE }, "Production");
+        var settings = RegisteredSettings([]);
 
-        Assert.AreEqual("Production", settings.KeyNamespace);
         Assert.AreEqual(RegisterCachingServices.SchemaVersion, settings.SchemaVersion);
+        Assert.IsNull(settings.KeyNamespace, "null resolves to the host environment inside EF.Cache");
 
         // The summary is held for seconds: a dashboard count is visibly wrong when stale, and the instance
         // default of 30 minutes would serve one for the whole poll interval of every client.
@@ -77,14 +78,24 @@ public class TaskFlowCacheKeyTests
 
     /// <summary>A profile already configured for a deployment wins over the code default.</summary>
     [TestMethod]
-    public void ApplyTaskFlowDefaults_KeepsAConfiguredProfile()
+    public void AddTaskFlowCaching_KeepsAConfiguredProfile()
     {
-        var settings = new CacheSettings();
-        settings.Profiles[CacheProfiles.Summary] = new CacheProfileOptions { DurationSeconds = 30 };
-
-        RegisterCachingServices.ApplyTaskFlowDefaults(settings, "Production");
+        var settings = RegisteredSettings(new Dictionary<string, string?>
+        {
+            [$"CacheSettings:0:Profiles:{CacheProfiles.Summary}:DurationSeconds"] = "30"
+        });
 
         Assert.AreEqual(30, settings.Profiles[CacheProfiles.Summary].DurationSeconds);
+    }
+
+    private static CacheSettings RegisteredSettings(Dictionary<string, string?> values)
+    {
+        values["CacheSettings:0:Name"] = AppConstants.DEFAULT_CACHE;
+        values["OpenTelemetry:MetricsEnabled"] = "false";
+        var services = new ServiceCollection();
+        services.AddTaskFlowCaching(new ConfigurationBuilder().AddInMemoryCollection(values).Build());
+        using var provider = services.BuildServiceProvider();
+        return provider.GetRequiredService<CacheSettings>();
     }
 
     /// <summary>The summary depends on tasks; the metadata snapshot depends on categories and tags.</summary>

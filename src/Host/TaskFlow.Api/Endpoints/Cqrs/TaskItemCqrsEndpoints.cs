@@ -1,10 +1,10 @@
 using EF.AspNetCore;
+using EF.AspNetCore.Concurrency;
 using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using TaskFlow.Api.Endpoints.Shared;
-using TaskFlow.Api.Filters;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Cqrs.Features.TaskItems;
 using TaskFlow.Application.Models;
@@ -15,15 +15,11 @@ namespace TaskFlow.Api.Endpoints.Cqrs;
 /// <summary>Maps task item CQRS HTTP routes to CQRS handlers and API contract metadata.</summary>
 public static class TaskItemCqrsEndpoints
 {
-    private static bool _problemDetailsIncludeStackTrace;
-
     /// <summary>Registers task item CQRS routes, handlers, and response metadata.</summary>
-    public static IEndpointRouteBuilder MapTaskItemCqrsEndpoints(this IEndpointRouteBuilder group, bool problemDetailsIncludeStackTrace)
+    public static IEndpointRouteBuilder MapTaskItemCqrsEndpoints(this IEndpointRouteBuilder group)
     {
-        _problemDetailsIncludeStackTrace = problemDetailsIncludeStackTrace;
-
         var g = group.MapGroup("/task-items").WithTags("TaskItems")
-            .AddEndpointFilter<ETagEndpointFilter>();
+            .WithETag();
 
         g.MapPost("/search", Search)
             .WithName("SearchTaskItems")
@@ -162,8 +158,7 @@ public static class TaskItemCqrsEndpoints
         var result = await handler.HandleAsync(new GetTaskItemByIdQuery(id), ct);
         return result.Match<IResult>(
             response => TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest)),
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)),
             () => TypedResults.NotFound(id));
     }
 
@@ -179,12 +174,7 @@ public static class TaskItemCqrsEndpoints
             response => response.IsReplay
                 ? TypedResults.Ok(response)
                 : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response),
-            // Create rejections are caller-input failures (a bad payload, a non-v7 id): 400, not the
-            // 500 the untyped helper defaults to.
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
-                traceId: httpContext.TraceIdentifier,
-                includeStackTrace: _problemDetailsIncludeStackTrace)));
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
     }
 
     /// <summary>Updates existing data after validation and preserves domain invariants.</summary>
@@ -197,17 +187,14 @@ public static class TaskItemCqrsEndpoints
         CancellationToken ct)
     {
         if (request.Item.Id != null && request.Item.Id != id)
-            return TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponse(
-                statusCodeOverride: StatusCodes.Status400BadRequest,
-                message: $"{ErrorConstants.ERROR_URL_BODY_ID_MISMATCH}: {id} <> {request.Item.Id}"));
+            return TypedResults.Problem(ProblemDetailsHelper.Create(
+                StatusCodes.Status400BadRequest,
+                $"{ErrorConstants.ERROR_URL_BODY_ID_MISMATCH}: {id} <> {request.Item.Id}"));
 
         var result = await handler.HandleAsync(new UpdateTaskItemCommand(request, ifMatch.ExpectedVersion), ct);
         return result.Match(
             response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
-                traceId: httpContext.TraceIdentifier,
-                includeStackTrace: _problemDetailsIncludeStackTrace)));
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
     }
 
     /// <summary>Applies a sparse partial update (JSON merge patch) to a TaskItem through the aggregate root.</summary>
@@ -222,10 +209,7 @@ public static class TaskItemCqrsEndpoints
         var result = await handler.HandleAsync(new PatchTaskItemCommand(id, request.Item, ifMatch.ExpectedVersion), ct);
         return result.Match(
             response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
-                traceId: httpContext.TraceIdentifier,
-                includeStackTrace: _problemDetailsIncludeStackTrace)));
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
     }
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
@@ -239,10 +223,7 @@ public static class TaskItemCqrsEndpoints
         var result = await handler.HandleAsync(new DeleteTaskItemCommand(id, ifMatch.ExpectedVersion), ct);
         return result.Match<IResult>(
             () => TypedResults.NoContent(),
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
-                traceId: httpContext.TraceIdentifier,
-                includeStackTrace: _problemDetailsIncludeStackTrace)));
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
     }
 
     /// <summary>Adds a comment to the TaskItem aggregate through the root.</summary>
@@ -260,10 +241,7 @@ public static class TaskItemCqrsEndpoints
                 : response.IsReplay
                     ? TypedResults.Ok(response)
                     : TypedResults.Created($"{httpContext.Request.Path}/{response.Item.Id}", response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
-                traceId: httpContext.TraceIdentifier,
-                includeStackTrace: _problemDetailsIncludeStackTrace)));
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
     }
 
     /// <summary>Updates a comment owned by the TaskItem aggregate.</summary>
@@ -280,10 +258,7 @@ public static class TaskItemCqrsEndpoints
             new UpdateTaskItemCommentCommand(id, commentId, request.Item, ifMatch.ExpectedVersion), ct);
         return result.Match(
             response => response.Item is null ? Results.NotFound(commentId) : TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
-                traceId: httpContext.TraceIdentifier,
-                includeStackTrace: _problemDetailsIncludeStackTrace)));
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
     }
 
     /// <summary>Removes a comment from the TaskItem aggregate through the root.</summary>
@@ -299,10 +274,7 @@ public static class TaskItemCqrsEndpoints
             new RemoveTaskItemCommentCommand(id, commentId, ifMatch.ExpectedVersion), ct);
         return result.Match<IResult>(
             () => TypedResults.NoContent(),
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
-                traceId: httpContext.TraceIdentifier,
-                includeStackTrace: _problemDetailsIncludeStackTrace)));
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
     }
 
     /// <summary>Adds a checklist item to the TaskItem aggregate through the root.</summary>
@@ -320,10 +292,7 @@ public static class TaskItemCqrsEndpoints
                 : response.IsReplay
                     ? TypedResults.Ok(response)
                     : TypedResults.Created($"{httpContext.Request.Path}/{response.Item.Id}", response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
-                traceId: httpContext.TraceIdentifier,
-                includeStackTrace: _problemDetailsIncludeStackTrace)));
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
     }
 
     /// <summary>Updates a checklist item owned by the TaskItem aggregate.</summary>
@@ -340,10 +309,7 @@ public static class TaskItemCqrsEndpoints
             new UpdateTaskItemChecklistItemCommand(id, checklistItemId, request.Item, ifMatch.ExpectedVersion), ct);
         return result.Match(
             response => response.Item is null ? Results.NotFound(checklistItemId) : TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
-                traceId: httpContext.TraceIdentifier,
-                includeStackTrace: _problemDetailsIncludeStackTrace)));
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
     }
 
     /// <summary>Removes a checklist item from the TaskItem aggregate through the root.</summary>
@@ -359,10 +325,7 @@ public static class TaskItemCqrsEndpoints
             new RemoveTaskItemChecklistItemCommand(id, checklistItemId, ifMatch.ExpectedVersion), ct);
         return result.Match<IResult>(
             () => TypedResults.NoContent(),
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
-                traceId: httpContext.TraceIdentifier,
-                includeStackTrace: _problemDetailsIncludeStackTrace)));
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
     }
 
     /// <summary>Associates an existing Tag with the TaskItem aggregate through the root.</summary>
@@ -380,10 +343,7 @@ public static class TaskItemCqrsEndpoints
                 : response.IsReplay
                     ? TypedResults.Ok(response)
                     : TypedResults.Created($"{httpContext.Request.Path}", response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
-                traceId: httpContext.TraceIdentifier,
-                includeStackTrace: _problemDetailsIncludeStackTrace)));
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
     }
 
     /// <summary>Removes a Tag association from the TaskItem aggregate through the root.</summary>
@@ -398,9 +358,6 @@ public static class TaskItemCqrsEndpoints
         var result = await handler.HandleAsync(new RemoveTaskItemTagCommand(id, tagId, ifMatch.ExpectedVersion), ct);
         return result.Match<IResult>(
             () => TypedResults.NoContent(),
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
-                traceId: httpContext.TraceIdentifier,
-                includeStackTrace: _problemDetailsIncludeStackTrace)));
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
     }
 }

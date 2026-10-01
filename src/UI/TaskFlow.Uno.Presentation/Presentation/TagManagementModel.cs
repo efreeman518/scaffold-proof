@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.Messaging;
 using TaskFlow.Uno.Core.Business.Models;
-using TaskFlow.Uno.Core.Business.Notifications;
+using EF.UI.Client.Http;
+using System.Net;
 using TaskFlow.Uno.Core.Business.Services;
 
 namespace TaskFlow.Uno.Presentation.Presentation;
@@ -46,7 +47,7 @@ public partial record TagManagementModel(
         {
             await TagService.UpdateAsync(editing, editing.Version, ct);
         }
-        catch (ProblemDetailsException ex) when (ex.StatusCode == 412)
+        catch (ProblemDetailsException ex) when (ex.StatusCode == HttpStatusCode.PreconditionFailed)
         {
             // Notification already shown by ProblemDetailsDelegatingHandler; refresh either way.
         }
@@ -62,7 +63,7 @@ public partial record TagManagementModel(
         {
             await TagService.DeleteAsync(tag.Id.Value, tag.Version, ct);
         }
-        catch (ProblemDetailsException ex) when (ex.StatusCode == 412)
+        catch (ProblemDetailsException ex) when (ex.StatusCode == HttpStatusCode.PreconditionFailed)
         {
             // Notification already shown by ProblemDetailsDelegatingHandler; refresh either way.
         }

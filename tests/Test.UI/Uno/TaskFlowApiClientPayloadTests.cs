@@ -1,3 +1,4 @@
+using EF.Testing.Http;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -20,7 +21,7 @@ public class TaskFlowApiClientPayloadTests
     [TestMethod]
     public async Task TaskItemsPostAsync_AssignsUuidV7Id_WhenMissing()
     {
-        var handler = new CaptureRequestHandler();
+        var handler = CaptureRequestHandler();
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://localhost:7200") };
         var apiClient = new TaskFlowApiClient(httpClient);
 
@@ -28,8 +29,8 @@ public class TaskFlowApiClientPayloadTests
 
         await apiClient.Api.TaskItems.PostAsync(dto, TestContext.CancellationToken);
 
-        Assert.IsNotNull(handler.LastRequestBody);
-        using var doc = JsonDocument.Parse(handler.LastRequestBody!);
+        Assert.IsNotNull(handler.Requests[^1].Body);
+        using var doc = JsonDocument.Parse(handler.Requests[^1].Body!);
         var id = doc.RootElement.GetProperty("item").GetProperty("id").GetString();
         Assert.IsNotNull(id);
         var guid = Guid.Parse(id!);
@@ -40,7 +41,7 @@ public class TaskFlowApiClientPayloadTests
     [TestMethod]
     public async Task TaskItemsPutAsync_SendsIfMatchHeader()
     {
-        var handler = new CaptureRequestHandler();
+        var handler = CaptureRequestHandler();
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://localhost:7200") };
         var apiClient = new TaskFlowApiClient(httpClient);
 
@@ -49,58 +50,49 @@ public class TaskFlowApiClientPayloadTests
 
         await apiClient.Api.TaskItems[taskId].PutAsync(dto, "42", TestContext.CancellationToken);
 
-        Assert.IsNotNull(handler.LastIfMatch);
-        Assert.AreEqual("\"42\"", handler.LastIfMatch);
+        Assert.IsNotNull(LastIfMatch(handler));
+        Assert.AreEqual("\"42\"", LastIfMatch(handler));
     }
 
     /// <summary>Verifies TaskItems[id].Comments.DeleteAsync sends the root's Version as a quoted If-Match header.</summary>
     [TestMethod]
     public async Task CommentsDeleteAsync_SendsRootVersionAsIfMatchHeader()
     {
-        var handler = new CaptureRequestHandler();
+        var handler = CaptureRequestHandler();
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://localhost:7200") };
         var apiClient = new TaskFlowApiClient(httpClient);
 
         await apiClient.Api.TaskItems[Guid.NewGuid()].Comments.DeleteAsync(Guid.NewGuid(), "3", TestContext.CancellationToken);
 
-        Assert.IsNotNull(handler.LastIfMatch);
-        Assert.AreEqual("\"3\"", handler.LastIfMatch);
+        Assert.IsNotNull(LastIfMatch(handler));
+        Assert.AreEqual("\"3\"", LastIfMatch(handler));
     }
 
     /// <summary>Verifies the "*" trusted-automation wildcard is sent unquoted (D-032).</summary>
     [TestMethod]
     public async Task DeleteAsync_WithWildcard_SendsUnquotedAsterisk()
     {
-        var handler = new CaptureRequestHandler();
+        var handler = CaptureRequestHandler();
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://localhost:7200") };
         var apiClient = new TaskFlowApiClient(httpClient);
 
         await apiClient.Api.TaskItems[Guid.NewGuid()].DeleteAsync("*", TestContext.CancellationToken);
 
-        Assert.AreEqual("*", handler.LastIfMatch);
+        Assert.AreEqual("*", LastIfMatch(handler));
     }
 
-    /// <summary>Supports test execution for Test.unit Uno scenarios.</summary>
-    private sealed class CaptureRequestHandler : HttpMessageHandler
+    /// <summary>Records each request and answers with a fresh task item payload.</summary>
+    private static StubHttpMessageHandler CaptureRequestHandler() => new((_, _, _) =>
     {
-        public string? LastRequestBody { get; private set; }
-        public string? LastIfMatch { get; private set; }
-
-        /// <summary>Verifies send behavior and protects the expected test contract.</summary>
-        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        var responseJson = "{\"item\":{\"id\":\"" + Guid.NewGuid() + "\",\"title\":\"x\",\"priority\":\"Medium\",\"status\":\"Open\"}}";
+        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
         {
-            LastRequestBody = request.Content is null
-                ? null
-                : await request.Content.ReadAsStringAsync(cancellationToken);
-            LastIfMatch = request.Headers.IfMatch.Count > 0 ? request.Headers.IfMatch.First().Tag : null;
+            Content = new StringContent(responseJson, Encoding.UTF8, "application/json")
+        });
+    });
 
-            var responseJson = "{\"item\":{\"id\":\"" + Guid.NewGuid() + "\",\"title\":\"x\",\"priority\":\"Medium\",\"status\":\"Open\"}}";
-            return new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(responseJson, Encoding.UTF8, "application/json")
-            };
-        }
-    }
+    private static string? LastIfMatch(StubHttpMessageHandler handler) =>
+        handler.Requests[^1].Headers.TryGetValue("If-Match", out var values) ? values[0] : null;
 
     public TestContext TestContext { get; set; } = null!;
 }

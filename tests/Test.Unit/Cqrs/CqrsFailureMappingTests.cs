@@ -1,3 +1,4 @@
+using EF.Tenancy;
 using EF.Cache;
 using EF.Common.Contracts;
 using EF.Data.Contracts;
@@ -43,7 +44,7 @@ public sealed class CqrsFailureMappingTests
         _requestContext.SetupGet(x => x.TenantId).Returns(TestConstants.TenantId);
         _requestContext.SetupGet(x => x.Roles).Returns(new List<string>());
         _tenantBoundary
-            .Setup(x => x.EnsureTenantBoundary(It.IsAny<ILogger>(), It.IsAny<Guid?>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>()))
+            .Setup(x => x.EnsureTenantBoundary(It.IsAny<Guid?>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>()))
             .Returns(Result.Success());
     }
 
@@ -54,7 +55,7 @@ public sealed class CqrsFailureMappingTests
         var repoQuery = new Mock<ITaskItemRepositoryQuery>();
         repoQuery.Setup(r => r.SearchTaskItemsAsync(It.IsAny<TaskItemCursorSearchRequest>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new OperationCanceledException());
-        var handler = new SearchTaskItemsHandler(NullLogger<SearchTaskItemsHandler>.Instance, _requestContext.Object, repoQuery.Object);
+        var handler = new SearchTaskItemsHandler(_requestContext.Object, repoQuery.Object, _tenantBoundary.Object);
 
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
             handler.HandleAsync(new SearchTaskItemsQuery(new TaskItemCursorSearchRequest { PageSize = 10 }), TestContext.CancellationToken));
@@ -92,7 +93,7 @@ public sealed class CqrsFailureMappingTests
         _categoryQuery.Setup(r => r.GetCategoryAsync(It.IsAny<CategoryId>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CategoryBuilder().WithName("Someone else's category").Build());
 
-        await Assert.ThrowsExactlyAsync<IdempotentCreateConflictException>(() =>
+        await Assert.ThrowsExactlyAsync<ConflictException>(() =>
             CreateHandler().HandleAsync(command, TestContext.CancellationToken));
     }
 

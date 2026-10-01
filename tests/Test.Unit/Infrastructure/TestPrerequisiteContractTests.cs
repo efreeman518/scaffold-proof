@@ -1,3 +1,4 @@
+using EF.Testing.Processes;
 using System.Text.RegularExpressions;
 
 namespace Test.Unit.Infrastructure;
@@ -14,6 +15,9 @@ namespace Test.Unit.Infrastructure;
 [TestCategory("Unit")]
 public sealed class TestPrerequisiteContractTests
 {
+    /// <summary>MSTest-injected context; supplies the per-test cancellation token.</summary>
+    public TestContext TestContext { get; set; } = null!;
+
     private static readonly string[] HostBackedTiers =
         ["Test.Support", "Test.E2E", "Test.Integration", "Test.Aspire", "Test.PlaywrightUI", "Test.Mobile"];
 
@@ -36,16 +40,16 @@ public sealed class TestPrerequisiteContractTests
             Assert.IsFalse(StartupFailureAsInconclusive.IsMatch(File.ReadAllText(file)), file);
     }
 
+    /// <summary>A missing runtime is reported (never thrown) with the enabling step, so Inconclusive says how to run it.</summary>
     [TestMethod]
-    public void DockerPreflight_EveryUnavailableReasonNamesTheEnablingStep()
+    public async Task DockerPreflight_UnavailableReasonNamesTheEnablingStep()
     {
-        var source = File.ReadAllText(RepoRoot.Combine("tests", "Test.Support", "Hosting", "DockerRuntimePreflight.cs"));
+        var reason = await DockerRuntimePreflight.GetUnavailableReasonAsync(
+            TimeSpan.FromSeconds(10), TestContext.CancellationToken, executable: "taskflow-no-such-container-runtime");
 
-        var reasons = Regex.Matches(source, "\"Container runtime unavailable:[^;]*;", RegexOptions.Singleline);
-
-        Assert.IsNotEmpty(reasons);
-        foreach (Match reason in reasons)
-            StringAssert.Contains(reason.Value, "{EnablingStep}");
+        Assert.IsNotNull(reason);
+        StringAssert.Contains(reason, "Container runtime unavailable");
+        StringAssert.Contains(reason, "Start a Docker-compatible runtime");
     }
 
     private static bool IsBuildOutput(string file)

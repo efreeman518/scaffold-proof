@@ -1,13 +1,11 @@
 using EF.Data.Encryption;
-using EF.IntegrationTesting.Testcontainers;
-using Microsoft.Data.SqlClient;
+using EF.IntegrationTesting.PostgreSql;
+using EF.IntegrationTesting.SqlServer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
-using Npgsql;
 using System.ComponentModel;
 using TaskFlow.Hosting;
-using TaskFlow.Infrastructure.Data.Interceptors;
 using TaskFlow.Infrastructure.Data.Provider;
 
 namespace Test.Support.Hosting;
@@ -89,59 +87,29 @@ public sealed class TestDatabaseContainer(TaskFlowDbProvider provider) : IAsyncD
         ? new(ContainerImages.PostgreSql)
         : null;
 
-    /// <summary>
-    /// Longest prefix <see cref="CreateEmptyDatabaseAsync"/> accepts: PostgreSQL silently truncates identifiers
-    /// to 63 bytes, and the generated name adds 33 characters (an underscore and a 32-digit GUID).
-    /// </summary>
-    public const int MaxDatabasePrefixLength = 30;
-
     public TaskFlowDbProvider Provider { get; } = provider;
 
     public string ConnectionString => _sql?.ConnectionString ?? _postgres!.ConnectionString;
 
-    public Task StartAsync() => _sql?.StartAsync() ?? _postgres!.StartAsync();
+    /// <summary>Whether the container started and has not been disposed.</summary>
+    public bool IsStarted => _sql is not null ? _sql.IsStarted : _postgres!.IsStarted;
+
+    /// <summary>Why the start attempt failed, or <see langword="null"/>; recorded by the package fixture, never thrown.</summary>
+    public Exception? StartupError => _sql is not null ? _sql.StartupError : _postgres!.StartupError;
+
+    /// <summary>Starts the container once; a failure is recorded in <see cref="StartupError"/> and not retried.</summary>
+    public Task StartAsync(CancellationToken cancellationToken = default) =>
+        _sql?.StartAsync(cancellationToken) ?? _postgres!.StartAsync(cancellationToken);
 
     public ValueTask DisposeAsync() => _sql?.DisposeAsync() ?? _postgres!.DisposeAsync();
 
-    /// <summary>Creates an empty database on the running container and returns a connection string pointing at it.</summary>
-    public async Task<string> CreateEmptyDatabaseAsync(string prefix)
-    {
-        var databaseName = NewDatabaseName(prefix);
-        if (Provider == TaskFlowDbProvider.SqlServer)
-        {
-            var target = new SqlConnectionStringBuilder(ConnectionString) { InitialCatalog = databaseName };
-            var admin = new SqlConnectionStringBuilder(ConnectionString) { InitialCatalog = "master" };
-            await using var connection = new SqlConnection(admin.ConnectionString);
-            await connection.OpenAsync();
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"CREATE DATABASE [{databaseName}]";
-            await command.ExecuteNonQueryAsync();
-            return target.ConnectionString;
-        }
-        else
-        {
-            var target = new NpgsqlConnectionStringBuilder(ConnectionString) { Database = databaseName };
-            var admin = new NpgsqlConnectionStringBuilder(ConnectionString) { Database = "postgres" };
-            await using var connection = new NpgsqlConnection(admin.ConnectionString);
-            await connection.OpenAsync();
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"CREATE DATABASE \"{databaseName}\"";
-            await command.ExecuteNonQueryAsync();
-            return target.ConnectionString;
-        }
-    }
-
-    /// <summary>Builds a unique database name that fits the PostgreSQL identifier limit without truncation.</summary>
-    public static string NewDatabaseName(string prefix)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(prefix);
-        if (prefix.Length > MaxDatabasePrefixLength)
-            throw new ArgumentException(
-                $"Database prefix '{prefix}' is {prefix.Length} characters; the limit is {MaxDatabasePrefixLength}.",
-                nameof(prefix));
-
-        return $"{prefix}_{Guid.NewGuid():N}";
-    }
+    /// <summary>
+    /// Creates an empty database named <c>{prefix}_{guid}</c> on the running container and returns a connection
+    /// string pointing at it. The package fixture validates the prefix (1-30 characters, a letter then letters,
+    /// digits or underscores) so the name fits PostgreSQL's 63-character identifier limit and is safe in DDL.
+    /// </summary>
+    public Task<string> CreateEmptyDatabaseAsync(string prefix, CancellationToken cancellationToken = default) =>
+        _sql?.CreateDatabaseAsync(prefix, cancellationToken) ?? _postgres!.CreateDatabaseAsync(prefix, cancellationToken);
 
     /// <summary>
     /// Context options mirroring the Bootstrapper wiring for the selected provider.
@@ -163,10 +131,9 @@ public sealed class TestDatabaseContainer(TaskFlowDbProvider provider) : IAsyncD
                 migrationsHistorySchema))
             .UseColumnEncryption(TestColumnEncryption.Encryptor)
             .AddInterceptors(
-                new VersionTimestampInterceptor(),
                 // D-026: the same interceptor the hosts register, so integration tests exercise the real
                 // staging path rather than a hand-inserted outbox row.
-                new OutboxStagingInterceptor(),
+                TestOutbox.Interceptor(),
                 new BlindIndexInterceptor(TestColumnEncryption.Keys.BlindIndexKey))
             .AddInterceptors(extraInterceptors)
             .Options;

@@ -1,7 +1,6 @@
 using EF.Common.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
-using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models;
 using TaskFlow.Application.Models.Reads;
@@ -180,7 +179,7 @@ public class TaskItemToolsTests
             .ReturnsAsync(Result<DefaultResponse<TaskItemDto>>.Success(new DefaultResponse<TaskItemDto> { Item = dto }));
         _taskItemServiceMock
             .Setup(x => x.UpdateAsync(It.IsAny<DefaultRequest<TaskItemDto>>(), dto.Version, It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new ConcurrencyMismatchException("TaskItem", taskId, dto.Version, (dto.Version ?? 0) + 1));
+            .ThrowsAsync(new PreconditionFailedException("TaskItem", taskId.ToString(), dto.Version, (dto.Version ?? 0) + 1));
 
         var result = await _tools.UpdateTaskStatus(taskId.ToString(), "InProgress");
 

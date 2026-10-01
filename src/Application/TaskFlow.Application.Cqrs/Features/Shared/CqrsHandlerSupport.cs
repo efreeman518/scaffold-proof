@@ -4,6 +4,7 @@ using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Concurrency;
+using TaskFlow.Application.Contracts.Repositories;
 
 namespace TaskFlow.Application.Cqrs.Shared;
 
@@ -30,10 +31,34 @@ internal static class CqrsHandlerSupport
     {
         try
         {
-            await ConcurrencyGuard.SaveAsync(repository, ct);
+            await repository.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
             return Result.Success();
         }
-        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
+        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
+        {
+            logger.SaveFailed(ex, errorMessage, args);
+            return Result.Failure(ErrorConstants.ERROR_SAVE_FAILED);
+        }
+    }
+
+    /// <summary>
+    /// Saves a child add (D-073): a write failure after which <paramref name="callerKeyStored"/> finds the caller's key
+    /// stored is a lost race for the retry; any other failure maps to a Result like <see cref="TrySaveAsync"/>.
+    /// </summary>
+    public static async Task<Result> TrySaveAddAsync(
+        ITaskItemRepositoryTrxn repository,
+        Func<CancellationToken, Task<bool>>? callerKeyStored,
+        ILogger logger,
+        string errorMessage,
+        CancellationToken ct,
+        params object?[] args)
+    {
+        try
+        {
+            await repository.SaveChildAddAsync(callerKeyStored, ct);
+            return Result.Success();
+        }
+        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.SaveFailed(ex, errorMessage, args);
             return Result.Failure(ErrorConstants.ERROR_SAVE_FAILED);

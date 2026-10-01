@@ -1,4 +1,5 @@
 using EF.BackgroundServices.InternalMessageBus;
+using EF.Host;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using TaskFlow.Application.MessageHandlers;
@@ -11,57 +12,20 @@ namespace TaskFlow.Bootstrapper;
 public static class IHostExtensions
 {
     /// <summary>
-    /// Finds message handlers in the application handler assembly and registers the resolved
-    /// scoped instances with the singleton internal message bus. This keeps audit handlers
-    /// active without hard-coding every closed generic handler registration.
+    /// Registers every message handler in the application handler assembly with the singleton internal message
+    /// bus by type: each dispatch resolves the handler from its own DI scope, so a scoped dependency (the audit
+    /// sink's DbContext) lives exactly as long as that dispatch. A discovered handler missing from DI fails here.
     /// </summary>
-    public static void AutoRegisterMessageHandlers(this IHost host)
-    {
-        var msgBus = host.Services.GetRequiredService<IInternalMessageBus>();
-
-        var handlerAssembly = typeof(AuditHandler).Assembly;
-        var handlerInterfaceType = typeof(IMessageHandler<>);
-        var registerMethod = typeof(IInternalMessageBus)
-            .GetMethods()
-            .Single(method => method.Name == nameof(IInternalMessageBus.RegisterMessageHandler));
-
-        var handlerRegistrations = handlerAssembly
-            .GetTypes()
-            .Where(type => !type.IsAbstract && !type.IsInterface)
-            .SelectMany(type => type
-                .GetInterfaces()
-                .Where(@interface => @interface.IsGenericType &&
-                    @interface.GetGenericTypeDefinition() == handlerInterfaceType)
-                .Select(@interface => new { HandlerType = type, HandlerInterface = @interface }))
-            .GroupBy(item => new { item.HandlerType, item.HandlerInterface })
-            .Select(group => group.First())
-            .ToList();
-
-        using var scope = host.Services.CreateScope();
-
-        foreach (var registration in handlerRegistrations)
-        {
-            var handlers = scope.ServiceProvider.GetServices(registration.HandlerInterface);
-            var messageType = registration.HandlerInterface.GetGenericArguments()[0];
-            var closedRegisterMethod = registerMethod.MakeGenericMethod(messageType);
-
-            foreach (var handler in handlers)
-            {
-                closedRegisterMethod.Invoke(msgBus, [handler]);
-            }
-        }
-    }
+    public static void AutoRegisterMessageHandlers(this IHost host) =>
+        host.Services.GetRequiredService<IInternalMessageBus>().AutoRegisterHandlers(typeof(AuditHandler).Assembly);
 
     /// <summary>
-    /// Registers message handlers before running startup tasks so migration, warmup, and
+    /// Registers message handlers before running the EF.Host startup tasks so migration, warmup, and
     /// later request processing share the same internal event pipeline.
     /// </summary>
-    public static async Task RunStartupTasks(this IHost host)
+    public static async Task RunStartupTasks(this IHost host, CancellationToken cancellationToken = default)
     {
         host.AutoRegisterMessageHandlers();
-
-        using var scope = host.Services.CreateScope();
-        foreach (var task in scope.ServiceProvider.GetServices<IStartupTask>())
-            await task.ExecuteAsync();
+        await host.RunStartupTasksAsync(cancellationToken);
     }
 }

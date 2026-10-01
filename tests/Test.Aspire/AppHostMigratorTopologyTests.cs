@@ -1,4 +1,6 @@
-﻿namespace Test.Aspire;
+﻿using EF.Testing.Environment;
+
+namespace Test.Aspire;
 
 [TestClass]
 [TestCategory("Aspire")]
@@ -122,19 +124,5 @@ public sealed class AppHostMigratorTopologyTests
             "AppHost",
             "AppHost.cs"));
 
-    private static string FindRepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null)
-        {
-            if (File.Exists(Path.Combine(directory.FullName, "TaskFlow.slnx")))
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException("Could not locate repository root containing TaskFlow.slnx.");
-    }
+    private static string FindRepoRoot() => RepositoryRoot.Find(markers: "TaskFlow.slnx");
 }

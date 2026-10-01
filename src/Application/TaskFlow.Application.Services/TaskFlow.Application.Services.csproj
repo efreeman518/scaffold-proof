@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Test.Unit" />
+    <InternalsVisibleTo Include="Test.Integration" />
     <InternalsVisibleTo Include="TaskFlow.Bootstrapper" />
   </ItemGroup>
 

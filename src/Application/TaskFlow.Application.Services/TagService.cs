@@ -1,4 +1,5 @@
 ﻿using EF.Cache;
+using EF.Tenancy;
 using EF.Common.Contracts;
 using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
@@ -26,7 +27,6 @@ internal class TagService(
 {
     private Guid? RequestTenantId => requestContext.TenantId;
     private IReadOnlyCollection<string> RequestRoles => requestContext.Roles;
-    private bool IsGlobalAdmin => RequestRoles.Contains(AppConstants.ROLE_GLOBAL_ADMIN);
 
     #region Helpers
 
@@ -47,15 +47,7 @@ internal class TagService(
     public async Task<PagedResponse<TagDto>> SearchAsync(
         SearchRequest<TagSearchFilter> request, bool includeTotal = false, CancellationToken ct = default)
     {
-        if (!IsGlobalAdmin)
-        {
-            request.Filter ??= new();
-            if (request.Filter.TenantId is Guid supplied && supplied != RequestTenantId)
-            {
-                logger.LogTenantFilterManipulation("TagSearch", RequestTenantId, supplied);
-            }
-            request.Filter.TenantId = RequestTenantId;
-        }
+        request.Filter = tenantBoundaryValidator.EnforceTenantFilter(request.Filter, RequestTenantId, RequestRoles, "TagSearch");
         return await repoQuery.SearchTagsAsync(request, includeTotal, ct);
     }
 
@@ -66,7 +58,7 @@ internal class TagService(
         if (entity == null) return Result<DefaultResponse<TagDto>>.None();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, RequestTenantId, RequestRoles, entity.TenantId.Value,
+            RequestTenantId, RequestRoles, entity.TenantId.Value,
             "Tag:Get", nameof(Tag), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(boundary.ErrorMessage!);
 
@@ -84,7 +76,7 @@ internal class TagService(
         if (validation.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(validation.Errors);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, RequestTenantId, RequestRoles, dto.TenantId,
+            RequestTenantId, RequestRoles, dto.TenantId,
             "Tag:Create", nameof(Tag));
         if (boundary.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(boundary.ErrorMessage!);
 
@@ -107,9 +99,9 @@ internal class TagService(
 
         try
         {
-            await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
+            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
         }
-        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
+        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.TagCreateFailed(ex);
 
@@ -145,14 +137,14 @@ internal class TagService(
             return Result<DefaultResponse<TagDto>>.Success(new DefaultResponse<TagDto> { Item = null });
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, RequestTenantId, RequestRoles, entity.TenantId.Value,
+            RequestTenantId, RequestRoles, entity.TenantId.Value,
             "Tag:Update", nameof(Tag), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(boundary.ErrorMessage!);
 
         ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(Tag), entity.Id.Value);
 
         var tenantChangeCheck = tenantBoundaryValidator.PreventTenantChange(
-            logger, entity.TenantId.Value, dto.TenantId, nameof(Tag), entity.Id.Value);
+            entity.TenantId.Value, dto.TenantId, nameof(Tag), entity.Id.Value);
         if (tenantChangeCheck.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(tenantChangeCheck.ErrorMessage!);
 
         var updateResult = entity.Update(dto.Name, dto.Color);
@@ -160,9 +152,9 @@ internal class TagService(
 
         try
         {
-            await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
+            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
         }
-        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
+        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.TagUpdateFailed(ex, dto.Id);
             return Result<DefaultResponse<TagDto>>.Failure(ErrorConstants.ERROR_SAVE_FAILED);
@@ -179,7 +171,7 @@ internal class TagService(
         if (entity == null) return Result.Success();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, RequestTenantId, RequestRoles, entity.TenantId.Value,
+            RequestTenantId, RequestRoles, entity.TenantId.Value,
             "Tag:Delete", nameof(Tag), entity.Id.Value);
         if (boundary.IsFailure) return Result.Failure(boundary.ErrorMessage!);
 
@@ -189,9 +181,9 @@ internal class TagService(
 
         try
         {
-            await ConcurrencyGuard.SaveAsync(repoTrxn, ct);
+            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
         }
-        catch (Exception ex) when (ConcurrencyGuard.MapsToFailureResult(ex))
+        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.TagDeleteFailed(ex, id);
             return Result.Failure(ErrorConstants.ERROR_SAVE_FAILED);

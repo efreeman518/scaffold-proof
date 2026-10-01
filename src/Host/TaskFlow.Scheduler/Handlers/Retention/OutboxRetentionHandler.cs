@@ -1,6 +1,6 @@
+using EF.Data.Outbox;
 using TaskFlow.Infrastructure.Data.Operational;
-using TaskFlow.Observability.Meters;
-using TaskFlow.Scheduler.Abstractions;
+using EF.BackgroundServices.Scheduling;
 
 namespace TaskFlow.Scheduler.Handlers.Retention;
 
@@ -10,8 +10,8 @@ namespace TaskFlow.Scheduler.Handlers.Retention;
 /// deleting it would drop the only surviving copy of the event.
 /// </summary>
 public sealed class OutboxRetentionHandler(
-    IOperationalWorkRepository workRepository,
-    SchedulerJobMeter meter,
+    ILeasedWorkStore workRepository,
+    ScheduledJobTelemetry telemetry,
     TimeProvider timeProvider,
     IConfiguration config) : IScheduledJobHandler
 {
@@ -24,7 +24,7 @@ public sealed class OutboxRetentionHandler(
         var cutoffUtc = timeProvider.GetUtcNow()
             .AddDays(-config.GetValue("Scheduling:Retention:OutboxDays", DefaultRetentionDays));
 
-        meter.RecordRetention("outbox", await workRepository.PurgeDeadLetteredAsync<OutboxMessage>(cutoffUtc, ct));
-        meter.RecordRetention("blobdelete", await workRepository.PurgeDeadLetteredAsync<BlobDeleteWork>(cutoffUtc, ct));
+        telemetry.RecordRetention("outbox", await workRepository.PurgeDeadLetteredAsync<OutboxMessage>(cutoffUtc, ct));
+        telemetry.RecordRetention("blobdelete", await workRepository.PurgeDeadLetteredAsync<BlobDeleteWork>(cutoffUtc, ct));
     }
 }

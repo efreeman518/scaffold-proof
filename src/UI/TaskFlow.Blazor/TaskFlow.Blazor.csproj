@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <PackageReference Include="EF.FlowEngine.Dashboard" />
+    <PackageReference Include="EF.Http.Resilience" />
     <PackageReference Include="MudBlazor" />
     <PackageReference Include="Refit" />
     <PackageReference Include="Refit.HttpClientFactory" />

@@ -40,7 +40,7 @@ public class ScaleFixtureExportTests
     {
         if (IntegrationTestSetup.IsUnavailable(DbContainerFixture.StartupError)) return;
 
-        _connectionString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("scale");
+        _connectionString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("scale", context.CancellationToken);
         await using var db = DbContainerFixture.CreateTrxnContext(_connectionString);
         await db.Database.MigrateAsync(context.CancellationToken);
 

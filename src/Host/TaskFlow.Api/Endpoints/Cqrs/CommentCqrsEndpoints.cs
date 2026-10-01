@@ -1,10 +1,10 @@
 using EF.AspNetCore;
+using EF.AspNetCore.Concurrency;
 using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using TaskFlow.Api.Endpoints.Shared;
-using TaskFlow.Api.Filters;
 using TaskFlow.Application.Cqrs.Features.Comments;
 using TaskFlow.Application.Models;
 
@@ -13,15 +13,11 @@ namespace TaskFlow.Api.Endpoints.Cqrs;
 /// <summary>Maps comment CQRS HTTP routes to CQRS handlers and API contract metadata.</summary>
 public static class CommentCqrsEndpoints
 {
-    private static bool _problemDetailsIncludeStackTrace;
-
     /// <summary>Registers comment CQRS routes, handlers, and response metadata.</summary>
-    public static IEndpointRouteBuilder MapCommentCqrsEndpoints(this IEndpointRouteBuilder group, bool problemDetailsIncludeStackTrace)
+    public static IEndpointRouteBuilder MapCommentCqrsEndpoints(this IEndpointRouteBuilder group)
     {
-        _problemDetailsIncludeStackTrace = problemDetailsIncludeStackTrace;
-
         var g = group.MapGroup("/comments").WithTags("Comments")
-            .AddEndpointFilter<ETagEndpointFilter>();
+            .WithETag();
 
         g.MapPost("/search", Search)
             .Produces<PagedResponse<CommentDto>>(StatusCodes.Status200OK)
@@ -59,8 +55,7 @@ public static class CommentCqrsEndpoints
         var result = await handler.HandleAsync(new GetCommentByIdQuery(id), ct);
         return result.Match<IResult>(
             response => TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest)),
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)),
             () => TypedResults.NotFound(id));
     }
 }

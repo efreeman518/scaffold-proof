@@ -5,7 +5,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Hosting;
-using TaskFlow.Infrastructure.Data.Messaging;
 using TaskFlow.Infrastructure.Storage;
 using TaskFlow.Infrastructure.Storage.CosmosDb;
 
@@ -21,15 +20,14 @@ public static class InertNonAzureLane
 {
     private const string InertS3Endpoint = "http://127.0.0.1:1";
 
-    // The NonAzure Data Protection arm (D-043) opens its Redis connection while the host registers services, so it
-    // needs a connection string; abortConnect=false keeps that registration from failing, and the short connect timeout
-    // bounds how long every host boot blocks on it (250 ms doubled the endpoint suite's run time). The key ring it would
-    // back is replaced by the ephemeral provider below, so nothing ever reads or writes through it.
+    // The NonAzure Data Protection arm (D-043) requires the Redis1 connection string at registration; abortConnect=false
+    // and the short connect timeout keep any connection attempt from blocking a host boot. The key ring it would back is
+    // replaced by the ephemeral provider below, so nothing ever reads or writes through it.
     private const string InertRedisConnection = "127.0.0.1:1,abortConnect=false,connectTimeout=10";
     private const string InertRabbitMqConnection = "amqp://taskflow:taskflow@127.0.0.1:1/";
 
-    // Caching and the rate limiter would share Redis1; pointed at a name with no connection string they stay
-    // in-process.
+    // The cache would use Redis1 and the rate limiter follows the cache's shared connection; pointed at a name with
+    // no connection string, both stay in-process.
     private const string NoRedisConnectionName = "InertLaneNoRedis";
 
     /// <summary>
@@ -41,7 +39,6 @@ public static class InertNonAzureLane
         [HostingLaneResolver.LaneConfigurationKey] = nameof(HostingLane.NonAzure),
         ["ConnectionStrings:Redis1"] = InertRedisConnection,
         ["CacheSettings:0:RedisConnectionStringName"] = NoRedisConnectionName,
-        ["RateLimiting:RedisConnectionStringName"] = NoRedisConnectionName,
         ["Storage:S3:ServiceUrl"] = InertS3Endpoint,
         ["Storage:S3:PublicServiceUrl"] = InertS3Endpoint,
         ["Storage:S3:AccessKeyId"] = "taskflow-inert",
@@ -59,8 +56,6 @@ public static class InertNonAzureLane
         services.AddSingleton<IObjectStorageRepository, NoOpBlobStorageRepository>();
         services.RemoveAll<IAuditLogRepository>();
         services.AddSingleton<IAuditLogRepository, NoOpAuditLogRepository>();
-        services.RemoveAll<IIntegrationEventTransport>();
-        services.AddSingleton<IIntegrationEventTransport, NoOpEventTransport>();
         services.RemoveAll<ITaskViewRepository>();
         services.AddSingleton<ITaskViewRepository, NoOpTaskViewRepository>();
     }

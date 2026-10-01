@@ -1,3 +1,5 @@
+using EF.Data.Outbox;
+using EF.IntegrationTesting.AspNetCore;
 using EF.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -5,17 +7,15 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using TaskFlow.Application.Contracts.Messaging;
-using TaskFlow.Application.MessageHandlers.Consumers;
 using TaskFlow.Domain.Shared.Events;
 using TaskFlow.Infrastructure.Data;
-using TaskFlow.Infrastructure.Repositories;
-using TaskFlow.Observability.Meters;
 using Test.Integration.Infrastructure;
 
 namespace Test.Integration;
 
 /// <summary>
-/// D-029 two-state inbox against a real database, on whichever provider the lane selected. The claim decides
+/// D-029 two-state inbox (EF.Data.Outbox InboxStore over TaskFlow's context and migrations) against a real
+/// database, on whichever provider the lane selected. The claim decides
 /// whether a consumer's effect runs zero, one or two times, and it is expressed as provider-neutral single
 /// statements (upsert-if-absent, conditional takeover), so the race behavior has to be proven on both providers.
 /// Component tier: contexts directly against the standalone database Testcontainer.
@@ -180,7 +180,7 @@ public class InboxStoreTests
     public async Task Migration_BackfillsPreExistingClaimsAsCompleted()
     {
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("inboxbackfill");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("inboxbackfill", ct);
         await using var db = DbContainerFixture.CreateTrxnContext(connString);
         var migrations = db.Database.GetMigrations().ToList();
         var twoState = migrations.FindIndex(m => m.EndsWith("_TwoStateInboxAndOutboxTraceContext", StringComparison.Ordinal));
@@ -233,7 +233,7 @@ public class InboxStoreTests
 
     /// <summary>
     /// A holder whose handler runs well past the lease renews its claim on the real store, so a concurrent
-    /// redelivery waits the whole bound and is sent back for retry instead of taking the claim over and running
+    /// redelivery waits the whole bound and reports InProgress for a retry instead of taking the claim over and running
     /// the effect a second time.
     /// </summary>
     [TestMethod]
@@ -260,7 +260,7 @@ public class InboxStoreTests
         await using var waiterDb = DbContainerFixture.CreateTrxnContext(connString);
         var waiter = new ProbeConsumer(Store(waiterDb, connString));
 
-        await Assert.ThrowsExactlyAsync<InboxClaimInProgressException>(() => waiter.HandleAsync(envelope, ct));
+        Assert.AreEqual(ConsumeDisposition.InProgress, await waiter.HandleAsync(envelope, ct));
         await running;
 
         Assert.AreEqual(1, holder.Consumed);
@@ -275,7 +275,7 @@ public class InboxStoreTests
     private static readonly InboxClaimOptions ScaledClaim = new()
     {
         ClaimLease = TimeSpan.FromSeconds(1),
-        PollInterval = TimeSpan.FromMilliseconds(50),
+        WaitPollInterval = TimeSpan.FromMilliseconds(50),
         WaitMargin = TimeSpan.FromMilliseconds(250)
     };
 
@@ -283,7 +283,7 @@ public class InboxStoreTests
         new TaskItemCreatedEvent(Guid.CreateVersion7(), Guid.NewGuid(), "inbox"), DateTimeOffset.UtcNow, correlationId: null);
 
     private sealed class ProbeConsumer(IInboxStore inbox)
-        : IntegrationEventConsumer(inbox, new MessagingMetrics(), NullLogger.Instance, Options.Create(ScaledClaim))
+        : IntegrationEventConsumerBase(inbox, new MessagingMetrics(), NullLogger.Instance, Options.Create(ScaledClaim))
     {
         public const string Name = "probe";
 
@@ -306,20 +306,15 @@ public class InboxStoreTests
 
     private static async Task<string> MigratedDatabaseAsync(string prefix, CancellationToken ct)
     {
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync(prefix);
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync(prefix, ct);
         await using var db = DbContainerFixture.CreateTrxnContext(connString);
         await db.Database.MigrateAsync(ct);
         return connString;
     }
 
-    private static InboxStore Store(TaskFlowDbContextTrxn db, string connString, TimeProvider? clock = null) =>
-        new(db, new ContainerContextFactory(connString), clock);
-
-    /// <summary>Fresh contexts for renewal, the way the pooled factory hands them out in the hosts.</summary>
-    private sealed class ContainerContextFactory(string connString) : IDbContextFactory<TaskFlowDbContextTrxn>
-    {
-        public TaskFlowDbContextTrxn CreateDbContext() => DbContainerFixture.CreateTrxnContext(connString);
-    }
+    private static InboxStore<TaskFlowDbContextTrxn> Store(TaskFlowDbContextTrxn db, string connString, TimeProvider? clock = null) =>
+        // Fresh contexts for renewal, the way the pooled factory hands them out in the hosts.
+        new(db, new EfTestDbContextFactory<TaskFlowDbContextTrxn>(() => DbContainerFixture.CreateTrxnContext(connString)), clock);
 
     private sealed class MutableClock(DateTimeOffset start) : TimeProvider
     {

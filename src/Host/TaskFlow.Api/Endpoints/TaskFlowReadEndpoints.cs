@@ -1,4 +1,5 @@
 using EF.Common.Contracts;
+using EF.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 using System.Buffers;
 using System.Diagnostics;
@@ -41,10 +42,9 @@ public static class TaskFlowReadEndpoints
             .Produces<TaskItemExportDto>(StatusCodes.Status200OK, NdJsonContentType)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status404NotFound)
-            // Own budget: an export holds a connection for as long as the tenant has rows, so it must not
-            // spend the tenant's interactive allowance.
-            .WithMetadata(new ExportRateLimitPolicy())
-            .RequireRateLimiting(ExportRateLimitPolicy.PolicyName)
+            // Own budget (RateLimiting:Tenants:Budgets:export): an export holds a connection for as long as the
+            // tenant has rows, so it must not spend the tenant's interactive allowance; the global limiter skips it.
+            .RequireTenantBudget("export")
             .RequireFeature(TaskFlowFeatures.Export)
             // D-064: this holds the connection for as long as the tenant has rows, so it must not share
             // the host's default request timeout either.
@@ -137,14 +137,4 @@ public static class TaskFlowReadEndpoints
 
     /// <summary>NDJSON row separator. A static field, not a property that re-encodes on every row.</summary>
     private static readonly byte[] NewLine = [(byte)'\n'];
-}
-
-/// <summary>
-/// Reserves the "Export" rate-limit policy name on the streaming route. The policy is registered with
-/// the distributed limiter work; the metadata is declared here so the route it belongs to is the thing
-/// that names it.
-/// </summary>
-public sealed class ExportRateLimitPolicy
-{
-    public const string PolicyName = "Export";
 }

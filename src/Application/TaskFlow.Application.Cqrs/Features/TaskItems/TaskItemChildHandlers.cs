@@ -1,3 +1,6 @@
+using EF.Tenancy;
+using EF.Domain.Contracts;
+using EF.Data.Contracts;
 using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using Microsoft.Extensions.Logging;
@@ -35,33 +38,44 @@ internal sealed class AddTaskItemCommentHandler(
         var idCheck = UuidV7.ValidateCallerId(command.Comment.Id);
         if (idCheck.IsFailure) return Result<DefaultResponse<CommentDto>>.Failure(idCheck.ErrorMessage!);
 
-        var (entity, error) = await TaskItemChildLoader.LoadRootAsync(
-            repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
-            command.TaskItemId, "TaskItem:AddComment", ct);
-        if (error is not null) return Result<DefaultResponse<CommentDto>>.Failure(error);
-        if (entity is null) return HandlerHelpers.NotFoundResponse<CommentDto>();
-
-        if (command.Comment.Id is Guid callerId && callerId != Guid.Empty)
+        // An add carries no If-Match, so the caller's intent wins a race with another write to the aggregate
+        // (D-031 bumps the root on every child write) or with a same-key add: a lost save re-reads and decides
+        // again, and a race lost on every attempt is 409 (D-073).
+        return await ChildAddRetry.RunAsync(repoTrxn, nameof(Comment), command.TaskItemId, async attemptCt =>
         {
-            var existing = await TaskItemChildLoader.LoadCommentAsync(repoTrxn, command.TaskItemId, callerId, ct);
-            if (existing is not null)
+            var (entity, error) = await TaskItemChildLoader.LoadRootAsync(
+                repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
+                command.TaskItemId, "TaskItem:AddComment", attemptCt);
+            if (error is not null) return Result<DefaultResponse<CommentDto>>.Failure(error);
+            if (entity is null) return HandlerHelpers.NotFoundResponse<CommentDto>();
+
+            if (command.Comment.Id is Guid callerId && callerId != Guid.Empty)
             {
-                var existingDto = existing.ToDto();
-                if (!IdempotentCreateGuard.IsEquivalent(existingDto, command.Comment))
-                    throw new IdempotentCreateConflictException(nameof(Comment), callerId);
+                var existing = await TaskItemChildLoader.LoadCommentAsync(repoTrxn, command.TaskItemId, callerId, attemptCt);
+                if (existing is not null)
+                {
+                    var existingDto = existing.ToDto();
+                    if (!IdempotentCreateGuard.IsEquivalent(existingDto, command.Comment))
+                        throw new ConflictException(nameof(Comment), callerId.ToString());
 
-                return Result<DefaultResponse<CommentDto>>.Success(
-                    new DefaultResponse<CommentDto> { Item = existingDto, IsReplay = true, AggregateVersion = entity.Version });
+                    return Result<DefaultResponse<CommentDto>>.Success(
+                        new DefaultResponse<CommentDto> { Item = existingDto, IsReplay = true, AggregateVersion = entity.Version });
+                }
             }
-        }
 
-        var addResult = entity.AddComment(command.Comment.Body, DomainId.FromNullable<CommentId>(command.Comment.Id));
-        if (addResult.IsFailure) return Result<DefaultResponse<CommentDto>>.Failure(addResult.ErrorMessage!);
+            var addResult = entity.AddComment(command.Comment.Body, DomainId.FromNullable<CommentId>(command.Comment.Id));
+            if (addResult.IsFailure) return Result<DefaultResponse<CommentDto>>.Failure(addResult.ErrorMessage!);
 
-        var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error adding Comment to TaskItem {Id}", ct, command.TaskItemId);
-        if (save.IsFailure) return Result<DefaultResponse<CommentDto>>.Failure(save.ErrorMessage!);
+            var save = await CqrsHandlerSupport.TrySaveAddAsync(
+                repoTrxn,
+                command.Comment.Id is Guid id && id != Guid.Empty
+                    ? async t => await TaskItemChildLoader.LoadCommentAsync(repoTrxn, command.TaskItemId, id, t) is not null
+                    : null,
+                logger, "Error adding Comment to TaskItem {Id}", attemptCt, command.TaskItemId);
+            if (save.IsFailure) return Result<DefaultResponse<CommentDto>>.Failure(save.ErrorMessage!);
 
-        return HandlerHelpers.SuccessForChild(addResult.Value!.ToDto(), entity.Version);
+            return HandlerHelpers.SuccessForChild(addResult.Value!.ToDto(), entity.Version);
+        }, ct);
     }
 }
 
@@ -144,39 +158,50 @@ internal sealed class AddTaskItemChecklistItemHandler(
         var idCheck = UuidV7.ValidateCallerId(command.ChecklistItem.Id);
         if (idCheck.IsFailure) return Result<DefaultResponse<ChecklistItemDto>>.Failure(idCheck.ErrorMessage!);
 
-        var (entity, error) = await TaskItemChildLoader.LoadRootAsync(
-            repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
-            command.TaskItemId, "TaskItem:AddChecklistItem", ct);
-        if (error is not null) return Result<DefaultResponse<ChecklistItemDto>>.Failure(error);
-        if (entity is null) return HandlerHelpers.NotFoundResponse<ChecklistItemDto>();
-
-        if (command.ChecklistItem.Id is Guid callerId && callerId != Guid.Empty)
+        // An add carries no If-Match, so the caller's intent wins a race with another write to the aggregate
+        // (D-031 bumps the root on every child write) or with a same-key add: a lost save re-reads and decides
+        // again, and a race lost on every attempt is 409 (D-073).
+        return await ChildAddRetry.RunAsync(repoTrxn, nameof(ChecklistItem), command.TaskItemId, async attemptCt =>
         {
-            var existing = await TaskItemChildLoader.LoadChecklistItemAsync(repoTrxn, command.TaskItemId, callerId, ct);
-            if (existing is not null)
+            var (entity, error) = await TaskItemChildLoader.LoadRootAsync(
+                repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
+                command.TaskItemId, "TaskItem:AddChecklistItem", attemptCt);
+            if (error is not null) return Result<DefaultResponse<ChecklistItemDto>>.Failure(error);
+            if (entity is null) return HandlerHelpers.NotFoundResponse<ChecklistItemDto>();
+
+            if (command.ChecklistItem.Id is Guid callerId && callerId != Guid.Empty)
             {
-                var existingDto = existing.ToDto();
-                if (!IdempotentCreateGuard.IsEquivalent(existingDto, command.ChecklistItem))
-                    throw new IdempotentCreateConflictException(nameof(ChecklistItem), callerId);
+                var existing = await TaskItemChildLoader.LoadChecklistItemAsync(repoTrxn, command.TaskItemId, callerId, attemptCt);
+                if (existing is not null)
+                {
+                    var existingDto = existing.ToDto();
+                    if (!IdempotentCreateGuard.IsEquivalent(existingDto, command.ChecklistItem))
+                        throw new ConflictException(nameof(ChecklistItem), callerId.ToString());
 
-                return Result<DefaultResponse<ChecklistItemDto>>.Success(
-                    new DefaultResponse<ChecklistItemDto> { Item = existingDto, IsReplay = true, AggregateVersion = entity.Version });
+                    return Result<DefaultResponse<ChecklistItemDto>>.Success(
+                        new DefaultResponse<ChecklistItemDto> { Item = existingDto, IsReplay = true, AggregateVersion = entity.Version });
+                }
             }
-        }
 
-        var addResult = entity.AddChecklistItem(
-            command.ChecklistItem.Title, command.ChecklistItem.SortOrder,
-            DomainId.FromNullable<ChecklistItemId>(command.ChecklistItem.Id));
-        if (addResult.IsFailure) return Result<DefaultResponse<ChecklistItemDto>>.Failure(addResult.ErrorMessage!);
+            var addResult = entity.AddChecklistItem(
+                command.ChecklistItem.Title, command.ChecklistItem.SortOrder,
+                DomainId.FromNullable<ChecklistItemId>(command.ChecklistItem.Id));
+            if (addResult.IsFailure) return Result<DefaultResponse<ChecklistItemDto>>.Failure(addResult.ErrorMessage!);
 
-        // AddChecklistItem/Create does not take IsCompleted; apply it on the new child so a
-        // pre-checked item is not silently dropped.
-        if (command.ChecklistItem.IsCompleted) addResult.Value!.Update(isCompleted: true);
+            // AddChecklistItem/Create does not take IsCompleted; apply it on the new child so a
+            // pre-checked item is not silently dropped.
+            if (command.ChecklistItem.IsCompleted) addResult.Value!.Update(isCompleted: true);
 
-        var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error adding ChecklistItem to TaskItem {Id}", ct, command.TaskItemId);
-        if (save.IsFailure) return Result<DefaultResponse<ChecklistItemDto>>.Failure(save.ErrorMessage!);
+            var save = await CqrsHandlerSupport.TrySaveAddAsync(
+                repoTrxn,
+                command.ChecklistItem.Id is Guid id && id != Guid.Empty
+                    ? async t => await TaskItemChildLoader.LoadChecklistItemAsync(repoTrxn, command.TaskItemId, id, t) is not null
+                    : null,
+                logger, "Error adding ChecklistItem to TaskItem {Id}", attemptCt, command.TaskItemId);
+            if (save.IsFailure) return Result<DefaultResponse<ChecklistItemDto>>.Failure(save.ErrorMessage!);
 
-        return HandlerHelpers.SuccessForChild(addResult.Value!.ToDto(), entity.Version);
+            return HandlerHelpers.SuccessForChild(addResult.Value!.ToDto(), entity.Version);
+        }, ct);
     }
 }
 
@@ -254,25 +279,34 @@ internal sealed class AssociateTaskItemTagHandler(
     /// <summary>Handles associate tag requests and returns the application result.</summary>
     public async Task<Result<DefaultResponse<TaskItemTagDto>>> HandleAsync(AssociateTaskItemTagCommand command, CancellationToken ct = default)
     {
-        var (entity, error) = await TaskItemChildLoader.LoadRootAsync(
-            repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
-            command.TaskItemId, "TaskItem:AssociateTag", ct);
-        if (error is not null) return Result<DefaultResponse<TaskItemTagDto>>.Failure(error);
-        if (entity is null) return HandlerHelpers.NotFoundResponse<TaskItemTagDto>();
+        // An add carries no If-Match, so the caller's intent wins a race with another write to the aggregate
+        // (D-031 bumps the root on every child write) or with a same-key add: a lost save re-reads and decides
+        // again, and a race lost on every attempt is 409 (D-073).
+        return await ChildAddRetry.RunAsync(repoTrxn, nameof(TaskItemTag), command.TaskItemId, async attemptCt =>
+        {
+            var (entity, error) = await TaskItemChildLoader.LoadRootAsync(
+                repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
+                command.TaskItemId, "TaskItem:AssociateTag", attemptCt);
+            if (error is not null) return Result<DefaultResponse<TaskItemTagDto>>.Failure(error);
+            if (entity is null) return HandlerHelpers.NotFoundResponse<TaskItemTagDto>();
 
-        // Association is idempotent by tag id: an existing row is returned rather than duplicated.
-        var existing = await TaskItemChildLoader.LoadTaskItemTagAsync(repoTrxn, command.TaskItemId, command.TagId, ct);
-        if (existing is not null)
-            return Result<DefaultResponse<TaskItemTagDto>>.Success(
-                new DefaultResponse<TaskItemTagDto> { Item = existing.ToDto(), IsReplay = true, AggregateVersion = entity.Version });
+            // Association is idempotent by tag id: an existing row is returned rather than duplicated.
+            var existing = await TaskItemChildLoader.LoadTaskItemTagAsync(repoTrxn, command.TaskItemId, command.TagId, attemptCt);
+            if (existing is not null)
+                return Result<DefaultResponse<TaskItemTagDto>>.Success(
+                    new DefaultResponse<TaskItemTagDto> { Item = existing.ToDto(), IsReplay = true, AggregateVersion = entity.Version });
 
-        var associateResult = entity.AssociateTag(TagId.From(command.TagId));
-        if (associateResult.IsFailure) return Result<DefaultResponse<TaskItemTagDto>>.Failure(associateResult.ErrorMessage!);
+            var associateResult = entity.AssociateTag(TagId.From(command.TagId));
+            if (associateResult.IsFailure) return Result<DefaultResponse<TaskItemTagDto>>.Failure(associateResult.ErrorMessage!);
 
-        var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error associating Tag {TagId} with TaskItem {Id}", ct, command.TagId, command.TaskItemId);
-        if (save.IsFailure) return Result<DefaultResponse<TaskItemTagDto>>.Failure(save.ErrorMessage!);
+            var save = await CqrsHandlerSupport.TrySaveAddAsync(
+                repoTrxn,
+                async t => await TaskItemChildLoader.LoadTaskItemTagAsync(repoTrxn, command.TaskItemId, command.TagId, t) is not null,
+                logger, "Error associating Tag {TagId} with TaskItem {Id}", attemptCt, command.TagId, command.TaskItemId);
+            if (save.IsFailure) return Result<DefaultResponse<TaskItemTagDto>>.Failure(save.ErrorMessage!);
 
-        return HandlerHelpers.SuccessForChild(associateResult.Value!.ToDto(), entity.Version);
+            return HandlerHelpers.SuccessForChild(associateResult.Value!.ToDto(), entity.Version);
+        }, ct);
     }
 }
 

@@ -1,3 +1,5 @@
+using EF.Testing.Http;
+using EF.Testing.Processes;
 using System.Diagnostics;
 using System.Net.Http;
 
@@ -8,6 +10,8 @@ namespace Test.Mobile;
 /// </summary>
 internal static class MobileTestHost
 {
+    // A restore or Android build that has not finished by then is hung; ProcessRunner kills its tree on timeout.
+    private static readonly TimeSpan DotnetTimeout = TimeSpan.FromMinutes(30);
     private static readonly HttpClient HttpClient = new() { Timeout = TimeSpan.FromSeconds(2) };
     private static Process? _appiumProcess;
 
@@ -39,28 +43,24 @@ internal static class MobileTestHost
                 $"Appium server is unavailable at {settings.AppiumServerUri}. Only a loopback Appium endpoint is started automatically.");
         }
 
-        _appiumProcess = StartAppium(settings.AppiumServerUri);
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(45);
-        string? lastError = null;
-        while (DateTimeOffset.UtcNow < deadline)
+        var appium = _appiumProcess = StartAppium(settings.AppiumServerUri);
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            lastError = await IsAppiumReadyAsync(settings.AppiumServerUri, cancellationToken);
-            if (lastError is null)
-            {
-                return;
-            }
-
-            if (_appiumProcess.HasExited)
-            {
-                throw new InvalidOperationException(
-                    $"Appium exited during startup with exit code {_appiumProcess.ExitCode}.");
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken);
+            await HttpReadiness.WaitAsync(
+                new Uri(settings.AppiumServerUri, "status"),
+                new HttpReadinessOptions
+                {
+                    Timeout = TimeSpan.FromSeconds(45),
+                    PollInterval = TimeSpan.FromMilliseconds(250),
+                    RequestTimeout = TimeSpan.FromSeconds(2)
+                },
+                cancellationToken);
         }
-
-        throw new TimeoutException($"Appium did not become ready at {settings.AppiumServerUri}: {lastError}");
+        catch (TimeoutException ex) when (appium.HasExited)
+        {
+            // The status endpoint never answered because Appium itself died: report the exit, not the wait.
+            throw new InvalidOperationException($"Appium exited during startup with exit code {appium.ExitCode}.", ex);
+        }
     }
 
     internal static async Task StopAsync()
@@ -135,54 +135,31 @@ internal static class MobileTestHost
         IReadOnlyList<string> arguments,
         CancellationToken cancellationToken)
     {
-        var startInfo = new ProcessStartInfo(OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet")
-        {
-            CreateNoWindow = true,
-            RedirectStandardError = true,
-            RedirectStandardOutput = true,
-            UseShellExecute = false,
-            WorkingDirectory = workingDirectory
-        };
-        foreach (var argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-
-        startInfo.Environment["MSBUILDDISABLENODEREUSE"] = "1";
-        startInfo.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
-        startInfo.Environment["DOTNET_NOLOGO"] = "1";
-        using var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException($"Could not start dotnet for {projectPath}.");
-        var stdout = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderr = process.StandardError.ReadToEndAsync(cancellationToken);
-        await WaitForExitOrKillAsync(process, cancellationToken);
-        if (process.ExitCode != 0)
+        // On timeout or cancellation (for example an MSTest cooperative timeout) the whole process tree is killed:
+        // an orphaned dotnet restore/build holds obj/ locks that fail the next run.
+        var result = await ProcessRunner.RunAsync(
+            new ProcessRunOptions
+            {
+                FileName = OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet",
+                Arguments = arguments,
+                WorkingDirectory = workingDirectory,
+                Environment = new Dictionary<string, string?>
+                {
+                    ["MSBUILDDISABLENODEREUSE"] = "1",
+                    ["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1",
+                    ["DOTNET_NOLOGO"] = "1"
+                },
+                Timeout = DotnetTimeout
+            },
+            cancellationToken);
+        if (!result.Succeeded)
         {
             throw new InvalidOperationException(
-                $"dotnet {string.Join(' ', arguments)} failed with exit code {process.ExitCode}.{Environment.NewLine}"
-                + await ReadOutputAsync(stdout, stderr));
+                (result.TimedOut
+                    ? $"dotnet {string.Join(' ', arguments)} for {projectPath} exceeded {DotnetTimeout.TotalMinutes:0} minutes."
+                    : $"dotnet {string.Join(' ', arguments)} for {projectPath} failed with exit code {result.ExitCode}.")
+                + Environment.NewLine
+                + result.CombinedOutput);
         }
     }
-
-    /// <summary>
-    /// Waits for a child process to exit. On cancellation (for example an MSTest cooperative timeout) the whole
-    /// process tree is killed before the cancellation propagates: disposing the handle alone leaves the
-    /// dotnet restore/build running, holding <c>obj/</c> locks that fail the next run.
-    /// </summary>
-    internal static async Task WaitForExitOrKillAsync(Process process, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await process.WaitForExitAsync(cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            process.Kill(entireProcessTree: true);
-            await process.WaitForExitAsync(CancellationToken.None);
-            throw;
-        }
-    }
-
-    private static async Task<string> ReadOutputAsync(Task<string> stdout, Task<string> stderr) =>
-        string.Join(Environment.NewLine, (await Task.WhenAll(stdout, stderr)).Where(output => !string.IsNullOrWhiteSpace(output)));
 }

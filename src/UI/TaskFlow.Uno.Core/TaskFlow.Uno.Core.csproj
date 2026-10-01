@@ -13,4 +13,8 @@
     <Using Include="System.Net.Http.Json" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="EF.UI.Client" />
+  </ItemGroup>
+
 </Project>

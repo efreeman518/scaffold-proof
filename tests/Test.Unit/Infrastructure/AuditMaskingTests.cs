@@ -8,7 +8,6 @@ using Moq;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
 using TaskFlow.Infrastructure.Data;
-using TaskFlow.Infrastructure.Data.Interceptors;
 using Test.Support;
 
 namespace Test.Unit.Infrastructure;
@@ -83,7 +82,6 @@ public sealed class AuditMaskingTests
             .UseColumnEncryption(TestColumnEncryption.Encryptor)
             .AddInterceptors(
                 new AuditInterceptor<string, Guid?>(bus.Object, []),
-                new VersionTimestampInterceptor(),
                 new BlindIndexInterceptor(TestColumnEncryption.Keys.BlindIndexKey))
             .Options)
         {

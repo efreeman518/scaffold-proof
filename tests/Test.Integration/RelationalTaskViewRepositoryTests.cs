@@ -1,3 +1,5 @@
+using Test.Support;
+using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
@@ -39,7 +41,7 @@ public class RelationalTaskViewRepositoryTests
             Assert.Inconclusive("PostgreSql lane.");
 
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("taskviewjsonb");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("taskviewjsonb", ct);
         await using var db = DbContainerFixture.CreateTrxnContext(connString);
         var migrator = db.GetService<IMigrator>();
         await migrator.MigrateAsync("20260908232538_AddTaskItemEmbedding", ct);
@@ -70,7 +72,7 @@ public class RelationalTaskViewRepositoryTests
         Assert.IsFalse(indexDefinition.Contains("gin", StringComparison.OrdinalIgnoreCase));
 
         await using var read = DbContainerFixture.CreateQueryContext(connString);
-        var repository = new RelationalTaskViewRepository(db, read);
+        var repository = new RelationalTaskViewRepository(db, read, TestCursorCodec.Instance);
         var legacy = await repository.GetAsync("legacy-id", "legacy-tenant", ct);
         Assert.IsNotNull(legacy);
         Assert.AreEqual("legacy body", legacy.Description);
@@ -82,7 +84,7 @@ public class RelationalTaskViewRepositoryTests
     public async Task UpsertThenGet_RoundTripsEveryProjectedField_AndReplacesOnSecondUpsert()
     {
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("taskview");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("taskview", ct);
         await MigrateAsync(connString, ct);
 
         var tenantId = Guid.NewGuid().ToString();
@@ -156,7 +158,7 @@ public class RelationalTaskViewRepositoryTests
     public async Task ConcurrentPatchCounters_LoseNoDeltas_AndAMissingRowIsANoOp()
     {
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("taskviewpatch");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("taskviewpatch", ct);
         await MigrateAsync(connString, ct);
 
         var tenantId = Guid.NewGuid().ToString();
@@ -233,7 +235,7 @@ public class RelationalTaskViewRepositoryTests
         const int pageSize = 10;
 
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("taskviewpage");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("taskviewpage", ct);
         await MigrateAsync(connString, ct);
 
         var tenantId = Guid.NewGuid().ToString();
@@ -287,8 +289,9 @@ public class RelationalTaskViewRepositoryTests
             var otherPage = await repoScope.Repository.QueryByTenantAsync(otherTenantId, 1, null, ct);
             Assert.AreEqual(1, otherPage.Items.Count);
 
-            var foreignToken = TaskViewKeysetToken.Encode(otherTenantId, baseUtc, otherPage.Items[0].Id);
-            await Assert.ThrowsExactlyAsync<ArgumentException>(
+            var foreignToken = TestCursorCodec.Instance.Encode(otherTenantId, new CursorPosition(
+                baseUtc.UtcTicks.ToString(System.Globalization.CultureInfo.InvariantCulture), otherPage.Items[0].Id));
+            await Assert.ThrowsExactlyAsync<InvalidCursorException>(
                 () => repoScope.Repository.QueryByTenantAsync(tenantId, pageSize, foreignToken, ct));
         }
     }
@@ -310,7 +313,7 @@ public class RelationalTaskViewRepositoryTests
     {
         var write = DbContainerFixture.CreateTrxnContext(connString);
         var read = DbContainerFixture.CreateQueryContext(connString);
-        return new RepositoryScope(write, read, new RelationalTaskViewRepository(write, read));
+        return new RepositoryScope(write, read, new RelationalTaskViewRepository(write, read, TestCursorCodec.Instance));
     }
 
     private static async Task<string> ExecuteScalarAsync(DbContext context, string sql, CancellationToken ct)

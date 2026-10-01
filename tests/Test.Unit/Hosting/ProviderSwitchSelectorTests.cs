@@ -1,5 +1,8 @@
+using EF.AspNetCore.DataProtection;
+using Test.Support;
+using EF.Audit.Data;
 using EF.Audit.Contracts;
-using EF.IntegrationTesting.Environment;
+using EF.Testing.Environment;
 using EF.Storage.Contracts;
 using EF.Storage.S3;
 using Microsoft.Extensions.Configuration;
@@ -268,6 +271,8 @@ public class ProviderSwitchSelectorTests
                 (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
                 (RegisterServices.ReadModelProviderConfigKey, "MongoDb"),
                 ("ConnectionStrings:MongoDb1", "mongodb://localhost:27017")));
+        // The host registers the cursor codec with the application services; the Mongo arm signs its tokens with it.
+        services.AddSingleton(TestCursorCodec.Instance);
 
         using var provider = services.BuildServiceProvider();
         var repository = provider.GetRequiredService<ITaskViewRepository>();
@@ -323,11 +328,14 @@ public class ProviderSwitchSelectorTests
 
         var descriptor = services.Single(d => d.ServiceType == typeof(IAuditLogRepository));
         Assert.AreEqual(ServiceLifetime.Scoped, descriptor.Lifetime);
-        // The settings section carries the retention window the Scheduler job reads and the sentinel tenant
-        // for entries with no tenant; leaving it unbound in this arm would silently use the defaults.
+        // The shared audit settings carry the retention window the Scheduler job reads and the sentinel tenant
+        // for entries with no tenant; leaving them unbound in this arm would silently use the defaults.
         Assert.IsTrue(
-            services.Any(d => d.ServiceType == typeof(IConfigureOptions<AuditLogStorageSettings>)),
-            "the relational arm must bind AuditLogStorageSettings as well");
+            services.Any(d => d.ServiceType == typeof(IConfigureOptions<AuditSettings>)),
+            "the relational arm must bind the shared AuditSettings");
+        Assert.IsTrue(
+            services.Any(d => d.ServiceType == typeof(IConfigureOptions<RelationalAuditLogSettings>)),
+            "the relational sink must bind its sentinel and purge batch size");
     }
 
     // ----- Messaging (D-034 selector extended with the lane default and fail-fast in this slice) -----

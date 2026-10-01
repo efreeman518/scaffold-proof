@@ -1,4 +1,6 @@
 ﻿using EF.Common.Contracts;
+using EF.Tenancy;
+using EF.Domain.Contracts;
 using EF.Data.Contracts;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -36,10 +38,10 @@ public class AttachmentServiceTests
         _requestContextMock.Setup(x => x.TenantId).Returns(TestConstants.TenantId);
         _requestContextMock.Setup(x => x.Roles).Returns(new List<string>());
         _tenantBoundaryValidatorMock
-            .Setup(x => x.EnsureTenantBoundary(It.IsAny<ILogger>(), It.IsAny<Guid?>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>()))
+            .Setup(x => x.EnsureTenantBoundary(It.IsAny<Guid?>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>()))
             .Returns(Result.Success());
         _tenantBoundaryValidatorMock
-            .Setup(x => x.PreventTenantChange(It.IsAny<ILogger>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<Guid>()))
+            .Setup(x => x.PreventTenantChange(It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<Guid>()))
             .Returns(Result.Success());
     }
 

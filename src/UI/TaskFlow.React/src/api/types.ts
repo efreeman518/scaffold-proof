@@ -280,7 +280,7 @@ export interface paths {
                 /** @description OK */
                 200: {
                     headers: {
-                        /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                        /** @description Strong entity tag - the entity version to send back as If-Match. */
                         ETag?: string;
                         [name: string]: unknown;
                     };
@@ -327,7 +327,7 @@ export interface paths {
                 /** @description OK */
                 200: {
                     headers: {
-                        /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                        /** @description Strong entity tag - the entity version to send back as If-Match. */
                         ETag?: string;
                         [name: string]: unknown;
                     };
@@ -382,7 +382,7 @@ export interface paths {
                 /** @description OK */
                 200: {
                     headers: {
-                        /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                        /** @description Strong entity tag - the entity version to send back as If-Match. */
                         ETag?: string;
                         [name: string]: unknown;
                     };
@@ -429,7 +429,7 @@ export interface paths {
                 /** @description OK */
                 200: {
                     headers: {
-                        /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                        /** @description Strong entity tag - the entity version to send back as If-Match. */
                         ETag?: string;
                         [name: string]: unknown;
                     };
@@ -1225,7 +1225,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -1258,7 +1258,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -1281,7 +1281,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Aggregate version from the resource's ETag, or * to overwrite unconditionally. */
+                /** @description Entity version from the resource's ETag, or * to overwrite unconditionally. */
                 "If-Match": string;
             };
             path: {
@@ -1298,7 +1298,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -1348,7 +1348,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Aggregate version from the resource's ETag, or * to overwrite unconditionally. */
+                /** @description Entity version from the resource's ETag, or * to overwrite unconditionally. */
                 "If-Match": string;
             };
             path: {
@@ -1361,8 +1361,6 @@ export interface operations {
             /** @description No Content */
             204: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -1412,7 +1410,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -1423,7 +1421,7 @@ export interface operations {
             /** @description Created */
             201: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -1469,7 +1467,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -1502,7 +1500,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -1525,7 +1523,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Aggregate version from the resource's ETag, or * to overwrite unconditionally. */
+                /** @description Entity version from the resource's ETag, or * to overwrite unconditionally. */
                 "If-Match": string;
             };
             path: {
@@ -1542,7 +1540,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -1592,7 +1590,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Aggregate version from the resource's ETag, or * to overwrite unconditionally. */
+                /** @description Entity version from the resource's ETag, or * to overwrite unconditionally. */
                 "If-Match": string;
             };
             path: {
@@ -1605,8 +1603,6 @@ export interface operations {
             /** @description No Content */
             204: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -1656,7 +1652,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -1667,7 +1663,7 @@ export interface operations {
             /** @description Created */
             201: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -1711,7 +1707,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -1744,7 +1740,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -1767,7 +1763,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Aggregate version from the resource's ETag, or * to overwrite unconditionally. */
+                /** @description Entity version from the resource's ETag, or * to overwrite unconditionally. */
                 "If-Match": string;
             };
             path: {
@@ -1784,7 +1780,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -1834,7 +1830,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Aggregate version from the resource's ETag, or * to overwrite unconditionally. */
+                /** @description Entity version from the resource's ETag, or * to overwrite unconditionally. */
                 "If-Match": string;
             };
             path: {
@@ -1847,8 +1843,6 @@ export interface operations {
             /** @description No Content */
             204: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -1886,7 +1880,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Aggregate version from the resource's ETag, or * to overwrite unconditionally. */
+                /** @description Entity version from the resource's ETag, or * to overwrite unconditionally. */
                 "If-Match": string;
             };
             path: {
@@ -1903,7 +1897,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -1965,7 +1959,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -1976,7 +1970,7 @@ export interface operations {
             /** @description Created */
             201: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -2022,7 +2016,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -2033,7 +2027,7 @@ export interface operations {
             /** @description Created */
             201: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -2074,7 +2068,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Aggregate version from the resource's ETag, or * to overwrite unconditionally. */
+                /** @description Entity version from the resource's ETag, or * to overwrite unconditionally. */
                 "If-Match": string;
             };
             path: {
@@ -2092,7 +2086,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -2142,7 +2136,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Aggregate version from the resource's ETag, or * to overwrite unconditionally. */
+                /** @description Entity version from the resource's ETag, or * to overwrite unconditionally. */
                 "If-Match": string;
             };
             path: {
@@ -2156,8 +2150,6 @@ export interface operations {
             /** @description No Content */
             204: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -2209,7 +2201,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -2220,7 +2212,7 @@ export interface operations {
             /** @description Created */
             201: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -2261,7 +2253,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Aggregate version from the resource's ETag, or * to overwrite unconditionally. */
+                /** @description Entity version from the resource's ETag, or * to overwrite unconditionally. */
                 "If-Match": string;
             };
             path: {
@@ -2279,7 +2271,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -2329,7 +2321,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Aggregate version from the resource's ETag, or * to overwrite unconditionally. */
+                /** @description Entity version from the resource's ETag, or * to overwrite unconditionally. */
                 "If-Match": string;
             };
             path: {
@@ -2343,8 +2335,6 @@ export interface operations {
             /** @description No Content */
             204: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -2393,7 +2383,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -2404,7 +2394,7 @@ export interface operations {
             /** @description Created */
             201: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -2436,7 +2426,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Aggregate version from the resource's ETag, or * to overwrite unconditionally. */
+                /** @description Entity version from the resource's ETag, or * to overwrite unconditionally. */
                 "If-Match": string;
             };
             path: {
@@ -2450,8 +2440,6 @@ export interface operations {
             /** @description No Content */
             204: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -2503,7 +2491,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -2536,7 +2524,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -2559,7 +2547,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Aggregate version from the resource's ETag, or * to overwrite unconditionally. */
+                /** @description Entity version from the resource's ETag, or * to overwrite unconditionally. */
                 "If-Match": string;
             };
             path: {
@@ -2576,7 +2564,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -2626,7 +2614,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Aggregate version from the resource's ETag, or * to overwrite unconditionally. */
+                /** @description Entity version from the resource's ETag, or * to overwrite unconditionally. */
                 "If-Match": string;
             };
             path: {
@@ -2639,8 +2627,6 @@ export interface operations {
             /** @description No Content */
             204: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -2690,7 +2676,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -2701,7 +2687,7 @@ export interface operations {
             /** @description Created */
             201: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -2755,7 +2741,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -2766,7 +2752,7 @@ export interface operations {
             /** @description Created */
             201: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
+                    /** @description Strong entity tag - the entity version to send back as If-Match. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -2806,8 +2792,6 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -2831,8 +2815,6 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -2871,8 +2853,6 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -2897,8 +2877,6 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -2921,8 +2899,6 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -2945,8 +2921,6 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -2965,8 +2939,6 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -2989,8 +2961,6 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -3015,8 +2985,6 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -3039,8 +3007,6 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -3059,8 +3025,6 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -3083,8 +3047,6 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -3107,8 +3069,6 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -3129,8 +3089,6 @@ export interface operations {
             /** @description No Content */
             204: {
                 headers: {
-                    /** @description Strong entity tag - the aggregate version to send back as If-Match. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content?: never;

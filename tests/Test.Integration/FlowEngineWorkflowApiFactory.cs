@@ -1,7 +1,8 @@
+using EF.AI.Testing;
 using EF.FlowEngine.Abstractions;
 using EF.FlowEngine.Clients;
 using EF.FlowEngine.Model;
-using EF.IntegrationTesting.Environment;
+using EF.Testing.Environment;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Azure.Cosmos;
@@ -9,11 +10,9 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
-using System.Runtime.CompilerServices;
 
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Bootstrapper;
-using TaskFlow.Infrastructure.Data.Messaging;
 using TaskFlow.Infrastructure.Storage;
 using TaskFlow.Infrastructure.Storage.CosmosDb;
 using Test.Integration.Infrastructure;
@@ -64,7 +63,7 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
         _environment.Set("FlowEngine__TaskFlowApiBaseUrl", "http://localhost");
         // Polling the instance plus the workflow's own self-calls share the per-tenant budget; raise it so
         // the rate limiter never trips during a test (the production default stays 100/min via appsettings).
-        _environment.Set("RateLimiting__PerTenant__PermitLimit", "1000000");
+        _environment.Set("RateLimiting__Tenants__Tiers__standard__PermitLimit", "1000000");
         foreach (var (key, value) in TestColumnEncryption.EnvironmentVariables)
         {
             _environment.Set(key, value);
@@ -88,7 +87,7 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
         {
             // Deterministic chat: the agent node gets a fixed JSON reply instead of a real model.
             services.RemoveAll<IChatClient>();
-            services.AddSingleton<IChatClient>(new FixedChatClient(_chatReply));
+            services.AddSingleton<IChatClient>(new FakeChatClient(call => _chatReply(call.PromptText)));
 
             if (TestHostingLane.Current.Lane == TaskFlow.Hosting.HostingLane.Azure)
             {
@@ -97,8 +96,6 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
                 services.RemoveAll<CosmosClient>();
                 services.RemoveAll<ITaskViewRepository>();
                 services.AddSingleton<ITaskViewRepository, NoOpTaskViewRepository>();
-                services.RemoveAll<IIntegrationEventTransport>();
-                services.AddSingleton<IIntegrationEventTransport, NoOpEventTransport>();
             }
 
             // These workflow tests cover engine state and real API/database self-calls. Dedicated transport
@@ -166,30 +163,5 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
             if (disposing)
                 _environment.Dispose();
         }
-    }
-
-    // Minimal IChatClient returning a fixed reply (the workflow agent node only needs the text back).
-    private sealed class FixedChatClient(Func<string, string> reply) : IChatClient
-    {
-        public Task<ChatResponse> GetResponseAsync(
-            IEnumerable<ChatMessage> messages,
-            ChatOptions? options = null,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, reply(Prompt(messages)))));
-
-        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
-            IEnumerable<ChatMessage> messages,
-            ChatOptions? options = null,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            yield return new ChatResponseUpdate(ChatRole.Assistant, reply(Prompt(messages)));
-            await Task.CompletedTask;
-        }
-
-        public object? GetService(Type serviceType, object? serviceKey = null) => null;
-        public void Dispose() { }
-
-        private static string Prompt(IEnumerable<ChatMessage> messages) =>
-            string.Join("\n", messages.Select(m => m.Text));
     }
 }

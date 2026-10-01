@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using TaskFlow.Application.Contracts.Repositories;
-using TaskFlow.Observability.Meters;
 using TaskFlow.Scheduler.Handlers;
 using Test.Support;
 
@@ -100,7 +99,7 @@ public class StaleTaskCleanupHandlerTests
 
         return new StaleTaskCleanupHandler(
             _repo,
-            new SchedulerJobMeter(),
+            SchedulerTestTelemetry.Create(),
             new FixedTimeProvider(Now),
             config,
             NullLogger<StaleTaskCleanupHandler>.Instance);

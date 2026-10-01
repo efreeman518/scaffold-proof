@@ -6,6 +6,8 @@
     <PackageReference Include="EF.Data.Encryption" />
     <PackageReference Include="EF.Common.Contracts" />
     <PackageReference Include="EF.Domain.Contracts" />
+    <!-- M8-M12: the outbox, consumer inbox and leased work tables, their stores and the dispatcher. -->
+    <PackageReference Include="EF.Data.Outbox" />
     <PackageReference Include="EF.FlowEngine.StateStore.Sql" />
     <PackageReference Include="EF.FlowEngine.Outbox.Sql" />
     <PackageReference Include="EF.FlowEngine.WorkflowRegistry.Sql" />
@@ -14,6 +16,11 @@
     <!-- Both relational providers ship in the data assembly; UseTaskFlowProvider selects one at runtime (D-020). -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <!-- UseTaskFlowProvider maps the app settings onto the packaged provider wiring (D11/D12). -->
+    <PackageReference Include="EF.Data.PostgreSql" />
+    <PackageReference Include="EF.Data.SqlServer" />
+    <!-- The relational audit row and its mapping are the package types, mapped into the Trxn context (D18). -->
+    <PackageReference Include="EF.Audit.Data" />
     <!-- D-040: the TaskItemEmbedding row is mapped only on Npgsql, but the Vector type and UseVector()
          extension have to be compiled in for the branch to exist at all. -->
     <PackageReference Include="Pgvector" />

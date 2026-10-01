@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.Messaging;
 using TaskFlow.Uno.Core.Business.Models;
-using TaskFlow.Uno.Core.Business.Notifications;
+using EF.UI.Client.Http;
+using System.Net;
 using TaskFlow.Uno.Core.Business.Services;
 
 namespace TaskFlow.Uno.Presentation.Presentation;
@@ -121,7 +122,7 @@ public partial record TaskListModel
         {
             await TaskItemService.UpdateAsync(item with { Status = newStatus }, item.Version, ct);
         }
-        catch (ProblemDetailsException ex) when (ex.StatusCode == 412)
+        catch (ProblemDetailsException ex) when (ex.StatusCode == HttpStatusCode.PreconditionFailed)
         {
             // Notification already shown by ProblemDetailsDelegatingHandler; refresh so the row
             // reflects what changed elsewhere instead of staying stale.

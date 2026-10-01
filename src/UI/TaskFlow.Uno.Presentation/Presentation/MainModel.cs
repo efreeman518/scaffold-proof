@@ -1,4 +1,4 @@
-using TaskFlow.Uno.Core.Business.Notifications;
+using EF.UI.Client.Notifications;
 
 namespace TaskFlow.Uno.Presentation.Presentation;
 
@@ -15,6 +15,6 @@ public partial record MainModel
     public IBusyTracker Busy { get; }
     public INotificationService Notifications { get; }
 
-    /// <summary>Dismisses dismiss for the active view model.</summary>
-    public async ValueTask Dismiss(Guid id) => await Notifications.Dismiss(id);
+    /// <summary>Dismisses the notification with the given id.</summary>
+    public void Dismiss(Guid id) => Notifications.Dismiss(id);
 }

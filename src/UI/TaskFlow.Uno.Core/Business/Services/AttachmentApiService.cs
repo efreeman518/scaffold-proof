@@ -1,5 +1,5 @@
 using TaskFlow.Uno.Core.Business.Models;
-using TaskFlow.Uno.Core.Business.Notifications;
+using EF.UI.Client.Notifications;
 using TaskFlow.Uno.Core.Client;
 
 namespace TaskFlow.Uno.Core.Business.Services;
@@ -36,7 +36,7 @@ public class AttachmentApiService(
         var dto = MapToDto(model);
         var result = await client.Api.Attachments.PostAsync(dto, cancellationToken: ct);
         var created = MapToModel(result!);
-        await notifications.ShowSuccess($"Uploaded {created.FileName}.", ct: ct);
+        notifications.ShowSuccess($"Uploaded {created.FileName}.");
         return created;
     }
 
@@ -44,7 +44,7 @@ public class AttachmentApiService(
     public async Task DeleteAsync(Guid id, long? expectedVersion, CancellationToken ct = default)
     {
         await client.Api.Attachments[id].DeleteAsync(IfMatch(expectedVersion), cancellationToken: ct);
-        await notifications.ShowSuccess("Attachment deleted.", ct: ct);
+        notifications.ShowSuccess("Attachment deleted.");
     }
 
     /// <summary>Formats a Version as the If-Match header value; null means the caller trusts the current state ("*").</summary>

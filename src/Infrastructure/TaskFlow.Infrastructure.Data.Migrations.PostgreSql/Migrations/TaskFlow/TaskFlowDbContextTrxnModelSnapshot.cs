@@ -25,6 +25,166 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.TaskFlow
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "vector");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("EF.Audit.Data.AuditLogRecord", b =>
+                {
+                    b.Property<string>("TenantId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset>("RecordedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("AuditId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<long>("ElapsedTimeTicks")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("EntityKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Error")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Metadata")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("StartedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.HasKey("TenantId", "RecordedUtc", "Id");
+
+                    b.HasIndex("RecordedUtc")
+                        .HasDatabaseName("IX_AuditLog_RecordedUtc");
+
+                    b.ToTable("AuditLog", "taskflow");
+                });
+
+            modelBuilder.Entity("EF.Data.Outbox.InboxEntry", b =>
+                {
+                    b.Property<string>("Consumer")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ClaimToken")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("ClaimedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("LeaseExpiresUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Consumer", "MessageId");
+
+                    b.HasIndex("CompletedAtUtc", "LeaseExpiresUtc")
+                        .HasDatabaseName("IX_ConsumerInbox_Retention");
+
+                    b.ToTable("ConsumerInbox", "taskflow");
+                });
+
+            modelBuilder.Entity("EF.Data.Outbox.OutboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("AvailableAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTimeOffset?>("DeadLetteredAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Destination")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("EventVersion")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Headers")
+                        .HasColumnType("text");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<DateTimeOffset?>("LeaseExpiresUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LeaseOwner")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<Guid?>("LeaseToken")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("TraceParent")
+                        .HasMaxLength(55)
+                        .HasColumnType("character varying(55)");
+
+                    b.Property<string>("TraceState")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LeaseToken")
+                        .HasDatabaseName("IX_OutboxMessage_LeaseToken");
+
+                    b.HasIndex("DeadLetteredAtUtc", "AvailableAtUtc", "LeaseExpiresUtc")
+                        .HasDatabaseName("IX_OutboxMessage_Dispatch");
+
+                    b.ToTable("OutboxMessage", "taskflow");
+                });
+
             modelBuilder.Entity("TaskFlow.Domain.Model.Attachment", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -294,15 +454,18 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.TaskFlow
                     b.Property<byte[]>("SecureDeterministic")
                         .HasMaxLength(256)
                         .HasColumnType("bytea")
+                        .HasAnnotation("EF:Sensitive", true)
                         .HasAnnotation("EF.Data.Encryption:BlindIndex", "SecureDeterministicBlindIndex");
 
                     b.Property<byte[]>("SecureDeterministicBlindIndex")
                         .HasMaxLength(32)
-                        .HasColumnType("bytea");
+                        .HasColumnType("bytea")
+                        .HasAnnotation("EF:Sensitive", true);
 
                     b.Property<byte[]>("SecureRandom")
                         .HasMaxLength(256)
-                        .HasColumnType("bytea");
+                        .HasColumnType("bytea")
+                        .HasAnnotation("EF:Sensitive", true);
 
                     b.Property<DateTimeOffset?>("StartDate")
                         .HasColumnType("timestamp with time zone");
@@ -395,63 +558,6 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.TaskFlow
                     b.ToTable("TaskItemTag", "taskflow");
                 });
 
-            modelBuilder.Entity("TaskFlow.Infrastructure.Data.Operational.AuditLogRecord", b =>
-                {
-                    b.Property<string>("TenantId")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<DateTimeOffset>("RecordedUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Action")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<string>("AuditId")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.Property<long>("ElapsedTimeTicks")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("EntityKey")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("EntityType")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("Error")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Metadata")
-                        .HasColumnType("text");
-
-                    b.Property<long>("StartTimeTicks")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.HasKey("TenantId", "RecordedUtc", "Id");
-
-                    b.HasIndex("RecordedUtc")
-                        .HasDatabaseName("IX_AuditLog_RecordedUtc");
-
-                    b.ToTable("AuditLog", "taskflow");
-                });
-
             modelBuilder.Entity("TaskFlow.Infrastructure.Data.Operational.BlobDeleteWork", b =>
                 {
                     b.Property<Guid>("Id")
@@ -502,109 +608,6 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.TaskFlow
                         .HasDatabaseName("IX_BlobDeleteWork_Dispatch");
 
                     b.ToTable("BlobDeleteWork", "taskflow");
-                });
-
-            modelBuilder.Entity("TaskFlow.Infrastructure.Data.Operational.ConsumerInbox", b =>
-                {
-                    b.Property<string>("Consumer")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<Guid>("MessageId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ClaimToken")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("ClaimedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset?>("CompletedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset?>("LeaseExpiresUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Consumer", "MessageId");
-
-                    b.HasIndex("CompletedAtUtc", "LeaseExpiresUtc")
-                        .HasDatabaseName("IX_ConsumerInbox_Retention");
-
-                    b.ToTable("ConsumerInbox", "taskflow");
-                });
-
-            modelBuilder.Entity("TaskFlow.Infrastructure.Data.Operational.OutboxMessage", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("AttemptCount")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTimeOffset>("AvailableAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("CorrelationId")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.Property<DateTimeOffset?>("DeadLetteredAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Destination")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("EventType")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<int>("EventVersion")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("LastError")
-                        .HasMaxLength(1024)
-                        .HasColumnType("character varying(1024)");
-
-                    b.Property<DateTimeOffset?>("LeaseExpiresUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("LeaseOwner")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.Property<Guid?>("LeaseToken")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("OccurredAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Payload")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("TraceParent")
-                        .HasMaxLength(55)
-                        .HasColumnType("character varying(55)");
-
-                    b.Property<string>("TraceState")
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("LeaseToken")
-                        .HasDatabaseName("IX_OutboxMessage_LeaseToken");
-
-                    b.HasIndex("DeadLetteredAtUtc", "AvailableAtUtc", "LeaseExpiresUtc")
-                        .HasDatabaseName("IX_OutboxMessage_Dispatch");
-
-                    b.ToTable("OutboxMessage", "taskflow");
                 });
 
             modelBuilder.Entity("TaskFlow.Infrastructure.Data.ReadModel.TaskItemEmbedding", b =>

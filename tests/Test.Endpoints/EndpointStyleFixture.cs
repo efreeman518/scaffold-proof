@@ -1,9 +1,7 @@
-using System.Globalization;
 using System.Net.Http.Json;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Models;
+using Test.Support;
 
 namespace Test.Endpoints;
 
@@ -70,59 +68,14 @@ public sealed class EndpointStyleFixture : IDisposable
     }
 }
 
-/// <summary>HTTP helpers for the concurrency contract, so tests read as intent rather than plumbing.</summary>
-public static class ConcurrencyHttpExtensions
+/// <summary>
+/// Reads the API response envelope. The If-Match / ETag request helpers come from
+/// <see cref="EF.Testing.Http.ConcurrencyHttpExtensions"/>, given <see cref="JsonTestOptions.Default"/> so request
+/// bodies serialize enums as strings like the API does.
+/// </summary>
+public static class ResponseEnvelopeExtensions
 {
-    /// <summary>The strong entity tag value ("12") without quotes, or null when the response carries none.</summary>
-    public static string? ETagValue(this HttpResponseMessage response) =>
-        response.Headers.ETag?.Tag?.Trim('"');
-
-    /// <summary>Formats an aggregate version as the strong entity tag the API expects.</summary>
-    public static string IfMatch(long version) => $"\"{version.ToString(CultureInfo.InvariantCulture)}\"";
-
-    /// <summary>PUT with an explicit If-Match header value (pass "*" for the wildcard override).</summary>
-    public static Task<HttpResponseMessage> PutWithIfMatchAsync<T>(
-        this HttpClient client, string url, T body, string? ifMatch, CancellationToken ct)
-    {
-        var request = new HttpRequestMessage(HttpMethod.Put, url) { Content = JsonContent.Create(body) };
-        AddIfMatch(request, ifMatch);
-        return client.SendAsync(request, ct);
-    }
-
-    /// <summary>PATCH with an explicit If-Match header value.</summary>
-    public static Task<HttpResponseMessage> PatchWithIfMatchAsync<T>(
-        this HttpClient client, string url, T body, string? ifMatch, CancellationToken ct)
-    {
-        var request = new HttpRequestMessage(HttpMethod.Patch, url) { Content = JsonContent.Create(body) };
-        AddIfMatch(request, ifMatch);
-        return client.SendAsync(request, ct);
-    }
-
-    /// <summary>DELETE with an explicit If-Match header value.</summary>
-    public static Task<HttpResponseMessage> DeleteWithIfMatchAsync(
-        this HttpClient client, string url, string? ifMatch, CancellationToken ct)
-    {
-        var request = new HttpRequestMessage(HttpMethod.Delete, url);
-        AddIfMatch(request, ifMatch);
-        return client.SendAsync(request, ct);
-    }
-
-    // The API serializes enums as strings (ConfigureHttpJsonOptions), so the test client must too.
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
-    {
-        Converters = { new JsonStringEnumConverter() }
-    };
-
     /// <summary>Reads the entity envelope out of a successful response.</summary>
     public static async Task<T?> ItemAsync<T>(this HttpResponseMessage response, CancellationToken ct) =>
-        (await response.Content.ReadFromJsonAsync<DefaultResponse<T>>(JsonOptions, ct))!.Item;
-
-    private static void AddIfMatch(HttpRequestMessage request, string? ifMatch)
-    {
-        if (ifMatch is null) return;
-
-        // TryAddWithoutValidation: the malformed cases (W/"1", "banana") are exactly what the filter
-        // must reject, and typed header parsing would refuse to send them.
-        request.Headers.TryAddWithoutValidation("If-Match", ifMatch);
-    }
+        (await response.Content.ReadFromJsonAsync<DefaultResponse<T>>(JsonTestOptions.Default, ct))!.Item;
 }

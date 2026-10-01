@@ -1,3 +1,4 @@
+using EF.AI;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -30,7 +31,7 @@ public sealed class NextActionAdvisor(
     /// <inheritdoc />
     public async Task<NextActionResponse> RecommendAsync(CancellationToken ct = default)
     {
-        if (chatClient is NoOpChatClient)
+        if (chatClient.IsDisabled())
             return new NextActionResponse("AI model not configured.", false);
 
         // Only read-only tools are exposed - the advisor cannot mutate state.

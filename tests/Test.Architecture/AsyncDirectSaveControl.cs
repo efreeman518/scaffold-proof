@@ -3,11 +3,17 @@ using EF.Data.Contracts;
 namespace Test.Architecture;
 
 /// <summary>
-/// Positive control for <c>ConcurrencyArchitectureTests</c>: an async method that saves directly, the shape
-/// the concurrency rule must flag. Never called; it exists only to be scanned.
+/// Controls for <c>ConcurrencyArchitectureTests</c>: async saves in the shapes the throw-policy rule must flag
+/// (policy-free, ClientWins) and the one shape it must accept (Throw). Never called; they exist only to be scanned.
 /// </summary>
 internal static class AsyncDirectSaveControl
 {
-    internal static async Task<int> SaveDirectlyAsync(IRepositoryBase repository, CancellationToken ct) =>
+    internal static async Task<int> SavePolicyFreeAsync(IRepositoryBase repository, CancellationToken ct) =>
+        await repository.SaveChangesAsync(ct);
+
+    internal static async Task<int> SaveClientWinsAsync(IRepositoryBase repository, CancellationToken ct) =>
+        await repository.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, ct);
+
+    internal static async Task<int> SaveThrowAsync(IRepositoryBase repository, CancellationToken ct) =>
         await repository.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
 }

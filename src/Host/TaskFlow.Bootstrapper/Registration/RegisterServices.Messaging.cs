@@ -1,7 +1,8 @@
+using EF.Common;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using EF.Messaging.Outbox;
 using TaskFlow.Application.Contracts;
-using TaskFlow.Infrastructure.Data.Messaging;
 using TaskFlow.Infrastructure.Messaging.RabbitMq;
 
 namespace TaskFlow.Bootstrapper;
@@ -38,7 +39,7 @@ public static partial class RegisterServices
         StrictEnum.Parse<MessagingProvider>(value, "messaging provider");
 
     /// <summary>Registers the outbox transport for the selected provider. Consumers are hosted separately.</summary>
-    [ProviderSwitch(typeof(IIntegrationEventTransport))]
+    [ProviderSwitch(typeof(IOutboxTransport))]
     private static void AddMessagingServices(IServiceCollection services, IConfiguration config)
     {
         if (ResolveMessagingProvider(config) == MessagingProvider.RabbitMq)

@@ -1,3 +1,4 @@
+using EF.Testing.Http;
 using Microsoft.Playwright;
 using Test.PlaywrightUI.PageObjects;
 
@@ -13,8 +14,9 @@ internal static class GatewayBlazorSmokeRunner
     /// </summary>
     public static async Task RunAsync(string gatewayBaseUrl, string blazorBaseUrl, CancellationToken cancellationToken)
     {
-        await EndpointProbe.EnsureReachableAsync($"{gatewayBaseUrl.TrimEnd('/')}/healthz/ready", "Gateway", cancellationToken);
-        await EndpointProbe.EnsureReachableAsync($"{blazorBaseUrl.TrimEnd('/')}/healthz/ready", "Blazor", cancellationToken);
+        // Probe HTTP readiness before browser startup so failures point to hosting when the app is down.
+        await HttpReadiness.WaitAsync(new Uri($"{gatewayBaseUrl.TrimEnd('/')}/healthz/ready"), cancellationToken: cancellationToken);
+        await HttpReadiness.WaitAsync(new Uri($"{blazorBaseUrl.TrimEnd('/')}/healthz/ready"), cancellationToken: cancellationToken);
 
         using var playwright = await Playwright.CreateAsync().WaitAsync(cancellationToken);
         await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
@@ -35,40 +37,5 @@ internal static class GatewayBlazorSmokeRunner
 
         var tasks = new BlazorTaskListPageObject(page);
         await tasks.NavigateAndAssertReadyAsync(blazorBaseUrl);
-    }
-}
-
-/// <summary>
-/// Probes HTTP endpoints before browser startup so failures point to hosting when the app is down.
-/// </summary>
-internal static class EndpointProbe
-{
-    internal static async Task EnsureReachableAsync(string url, string name, CancellationToken cancellationToken)
-    {
-        using var handler = new HttpClientHandler { AllowAutoRedirect = false };
-        using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
-
-        var deadline = DateTimeOffset.UtcNow.AddMinutes(2);
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            try
-            {
-                using var response = await http.GetAsync(url, cancellationToken);
-                if ((int)response.StatusCode < 500)
-                {
-                    return;
-                }
-            }
-            catch (Exception ex) when (
-                ex is HttpRequestException
-                || ex is TaskCanceledException && !cancellationToken.IsCancellationRequested)
-            {
-                // Aspire can bind the endpoint before the child app finishes booting.
-            }
-
-            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
-        }
-
-        throw new InvalidOperationException($"{name} endpoint not reachable at {url}.");
     }
 }

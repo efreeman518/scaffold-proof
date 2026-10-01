@@ -5,4 +5,13 @@
   <PropertyGroup>
     <VSTestResultsDirectory>$(MSBuildThisFileDirectory)TestResults</VSTestResultsDirectory>
   </PropertyGroup>
+
+  <!-- AdditionalProperties for the test projects' references to AppHost and the Uno WASM host: a direct test-project
+       build skips the Uno WASM publish (TaskFlow.Uno.WasmHost.csproj). A solution build passes nothing, because the
+       WASM host already skips that publish when SolutionDir is set, and a global property there would give AppHost,
+       the WASM host and everything below them a second configuration that builds and cleans into the obj folders of
+       the solution's own configuration. -->
+  <PropertyGroup Condition="'$(SolutionDir)' == '' or '$(SolutionDir)' == '*Undefined*'">
+    <TaskFlowSkipUnoWasmBuildProperties>SkipUnoWasmBuild=true</TaskFlowSkipUnoWasmBuildProperties>
+  </PropertyGroup>
 </Project>

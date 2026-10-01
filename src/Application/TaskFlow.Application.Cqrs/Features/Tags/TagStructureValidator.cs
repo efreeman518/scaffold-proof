@@ -12,8 +12,8 @@ internal static class TagStructureValidator
     /// <summary>Validates validate create rules and returns failures before work continues.</summary>
     public static Result<TagDto> ValidateCreate(TagDto dto)
     {
-        var common = StructureValidators.ValidateCreate(dto);
-        if (common.IsFailure) return Result<TagDto>.Failure(common.ErrorMessage!);
+        var common = EntityDtoRules.ValidateCreate(dto);
+        if (common.IsFailure) return Result<TagDto>.Failure(common.Errors);
 
         var errors = new List<DomainError>();
         if (string.IsNullOrWhiteSpace(dto.Name)) errors.Add(DomainError.Create("Tag name is required."));
@@ -25,8 +25,8 @@ internal static class TagStructureValidator
     /// <summary>Validates validate update rules and returns failures before work continues.</summary>
     public static Result<TagDto> ValidateUpdate(TagDto dto)
     {
-        var common = StructureValidators.ValidateUpdate(dto);
-        if (common.IsFailure) return Result<TagDto>.Failure(common.ErrorMessage!);
+        var common = EntityDtoRules.ValidateUpdate(dto);
+        if (common.IsFailure) return Result<TagDto>.Failure(common.Errors);
 
         var errors = new List<DomainError>();
         if (string.IsNullOrWhiteSpace(dto.Name)) errors.Add(DomainError.Create("Tag name is required."));

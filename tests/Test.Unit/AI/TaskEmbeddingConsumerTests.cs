@@ -1,3 +1,4 @@
+using EF.AI.Testing;
 using EF.Messaging;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -5,7 +6,6 @@ using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Application.MessageHandlers.Consumers;
 using TaskFlow.Domain.Shared.Events;
-using TaskFlow.Observability.Meters;
 using Test.Support;
 
 namespace Test.Unit.AI;
@@ -20,6 +20,9 @@ namespace Test.Unit.AI;
 [TestCategory("Unit")]
 public sealed class TaskEmbeddingConsumerTests
 {
+    private const string EmbeddingModel = "fake-embed-3";
+    private const int EmbeddingDimensions = 8;
+
     [TestMethod]
     public async Task Consume_EmbedsTitleAndDescription_ThenUpsertsWithTheModelThatProducedIt()
     {
@@ -29,20 +32,20 @@ public sealed class TaskEmbeddingConsumerTests
         {
             Source = new TaskEmbeddingSource("Ship the release", "Cut a tag and publish the notes")
         };
-        var generator = new FakeEmbeddingGenerator();
+        var generator = new FakeEmbeddingGenerator(EmbeddingDimensions, EmbeddingModel);
         var consumer = NewConsumer(repo, generator);
 
         await consumer.HandleAsync(Envelope(new TaskItemCreatedEvent(taskItemId, TestConstants.TenantId, "Ship the release")), ct);
 
-        Assert.AreEqual(1, generator.Requests.Count);
-        StringAssert.Contains(generator.Requests[0], "Ship the release");
-        StringAssert.Contains(generator.Requests[0], "Cut a tag and publish the notes");
+        Assert.AreEqual(1, generator.Inputs.Count);
+        StringAssert.Contains(generator.Inputs[0], "Ship the release");
+        StringAssert.Contains(generator.Inputs[0], "Cut a tag and publish the notes");
 
         Assert.IsNotNull(repo.Upserted);
         Assert.AreEqual(taskItemId, repo.Upserted.Value.TaskItemId);
         Assert.AreEqual(TestConstants.TenantId, repo.Upserted.Value.TenantId);
-        Assert.AreEqual(FakeEmbeddingGenerator.ModelName, repo.Upserted.Value.ModelId);
-        Assert.AreEqual(FakeEmbeddingGenerator.Dimensions, repo.Upserted.Value.Length);
+        Assert.AreEqual(EmbeddingModel, repo.Upserted.Value.ModelId);
+        Assert.AreEqual(EmbeddingDimensions, repo.Upserted.Value.Length);
         Assert.IsNull(repo.Deleted);
     }
 
@@ -52,13 +55,13 @@ public sealed class TaskEmbeddingConsumerTests
         var ct = TestContext.CancellationToken;
         var taskItemId = Guid.CreateVersion7();
         var repo = new FakeEmbeddingRepository { Source = null };
-        var generator = new FakeEmbeddingGenerator();
+        var generator = new FakeEmbeddingGenerator(EmbeddingDimensions, EmbeddingModel);
         var consumer = NewConsumer(repo, generator);
 
         await consumer.HandleAsync(
             Envelope(new TaskItemContentChangedEvent(taskItemId, TestConstants.TenantId, DateTimeOffset.UtcNow)), ct);
 
-        Assert.AreEqual(0, generator.Requests.Count, "a task that no longer exists must not cost a model call");
+        Assert.AreEqual(0, generator.Inputs.Count, "a task that no longer exists must not cost a model call");
         Assert.IsNull(repo.Upserted);
         Assert.AreEqual((TestConstants.TenantId, taskItemId), repo.Deleted);
     }
@@ -67,7 +70,7 @@ public sealed class TaskEmbeddingConsumerTests
     [TestMethod]
     public void Handles_OnlyTheTwoContentEvents()
     {
-        var consumer = NewConsumer(new FakeEmbeddingRepository(), new FakeEmbeddingGenerator());
+        var consumer = NewConsumer(new FakeEmbeddingRepository(), new FakeEmbeddingGenerator(EmbeddingDimensions, EmbeddingModel));
 
         Assert.IsTrue(consumer.Handles(nameof(TaskItemCreatedEvent)));
         Assert.IsTrue(consumer.Handles(nameof(TaskItemContentChangedEvent)));
@@ -83,7 +86,7 @@ public sealed class TaskEmbeddingConsumerTests
         new(new FakeInboxStore(), repo, generator, new MessagingMetrics(),
             NullLogger<TaskEmbeddingConsumer>.Instance);
 
-    private static IntegrationEventEnvelope Envelope(TaskFlow.Domain.Shared.IDomainEvent domainEvent) =>
+    private static IntegrationEventEnvelope Envelope(TaskFlow.Domain.Shared.ITenantDomainEvent domainEvent) =>
         TaskFlowIntegrationEvents.Envelope(domainEvent, DateTimeOffset.UtcNow, correlationId: null);
 
     private sealed class FakeInboxStore : IInboxStore
@@ -136,36 +139,5 @@ public sealed class TaskEmbeddingConsumerTests
         public Task<IReadOnlyList<TaskEmbeddingMatch>> SearchNearestAsync(
             Guid tenantId, ReadOnlyMemory<float> query, int take, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<TaskEmbeddingMatch>>([]);
-    }
-
-    /// <summary>Deterministic stand-in: the vector is a hash of the input, so equal text embeds equally.</summary>
-    private sealed class FakeEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<float>>
-    {
-        public const string ModelName = "fake-embed-3";
-        public const int Dimensions = 8;
-
-        public List<string> Requests { get; } = [];
-
-        public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
-            IEnumerable<string> values,
-            EmbeddingGenerationOptions? options = null,
-            CancellationToken cancellationToken = default)
-        {
-            var results = new List<Embedding<float>>();
-            foreach (var value in values)
-            {
-                Requests.Add(value);
-                var seed = value.Aggregate(17, (acc, c) => acc * 31 + c);
-                var vector = new float[Dimensions];
-                for (var i = 0; i < Dimensions; i++) vector[i] = ((seed >> i) & 1) == 1 ? 1f : 0f;
-                results.Add(new Embedding<float>(vector) { ModelId = ModelName });
-            }
-
-            return Task.FromResult(new GeneratedEmbeddings<Embedding<float>>(results));
-        }
-
-        public object? GetService(Type serviceType, object? serviceKey = null) => null;
-
-        public void Dispose() { }
     }
 }

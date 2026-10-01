@@ -1,3 +1,4 @@
+using EF.IntegrationTesting.Testcontainers;
 using Testcontainers.RabbitMq;
 using TaskFlow.Hosting;
 
@@ -14,51 +15,20 @@ internal static class RabbitMqBrokerFixture
     private const string Username = "taskflow";
     private const string Password = "taskflow-password";
 
-    private static readonly SemaphoreSlim Gate = new(1, 1);
-    private static RabbitMqContainer? _container;
+    private static readonly ContainerFixture<RabbitMqContainer> Broker = new(() => new RabbitMqBuilder(Image)
+        .WithUsername(Username)
+        .WithPassword(Password)
+        .Build());
 
-    internal static Exception? StartupError { get; private set; }
+    internal static Exception? StartupError => Broker.StartupError;
 
-    internal static RabbitMqContainer Container => _container
-        ?? throw new InvalidOperationException("RabbitMQ container has not started.");
+    internal static RabbitMqContainer Container => Broker.Container;
 
-    internal static string ConnectionString => _container?.GetConnectionString()
-        ?? throw new InvalidOperationException("RabbitMQ container has not started.");
+    internal static string ConnectionString => Broker.Container.GetConnectionString();
 
-    /// <summary>Starts the shared broker once and captures a post-preflight startup failure for dependent tests.</summary>
-    internal static async Task StartAsync(CancellationToken ct)
-    {
-        if (_container is not null || StartupError is not null) return;
-
-        await Gate.WaitAsync(ct);
-        try
-        {
-            if (_container is not null || StartupError is not null) return;
-
-            var container = new RabbitMqBuilder(Image)
-                .WithUsername(Username)
-                .WithPassword(Password)
-                .Build();
-            try
-            {
-                await container.StartAsync(ct);
-                _container = container;
-            }
-            catch (Exception ex)
-            {
-                StartupError = ex;
-                await container.DisposeAsync();
-            }
-        }
-        finally
-        {
-            Gate.Release();
-        }
-    }
+    /// <summary>Starts the shared broker once; a post-preflight startup failure is kept for dependent tests.</summary>
+    internal static Task StartAsync(CancellationToken ct) => Broker.StartAsync(ct);
 
     /// <summary>Disposes the broker; called from the assembly cleanup that owns every container here.</summary>
-    internal static async Task StopAsync()
-    {
-        if (_container is not null) await _container.DisposeAsync();
-    }
+    internal static Task StopAsync() => Broker.DisposeAsync().AsTask();
 }

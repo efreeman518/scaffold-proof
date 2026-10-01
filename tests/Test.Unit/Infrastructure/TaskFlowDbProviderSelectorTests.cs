@@ -1,4 +1,5 @@
-using EF.IntegrationTesting.Environment;
+using EF.Data.PostgreSql;
+using EF.Testing.Environment;
 using Microsoft.Extensions.Configuration;
 using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Data.Provider;
@@ -70,12 +71,12 @@ public class TaskFlowDbProviderSelectorTests
 
     [TestMethod]
     public void PoolerModeSelector_Unset_DefaultsToNone() =>
-        Assert.AreEqual(PoolerMode.None, PoolerModeSelector.Resolve(Config()));
+        Assert.AreEqual(PgBouncerMode.None, PoolerModeSelector.Resolve(Config()));
 
     [TestMethod]
     public void PoolerModeSelector_Configured_ReturnsTransaction() =>
         Assert.AreEqual(
-            PoolerMode.Transaction,
+            PgBouncerMode.Transaction,
             PoolerModeSelector.Resolve(Config((PoolerModeSelector.ConfigurationKey, "Transaction"))));
 
     [TestMethod]
@@ -83,7 +84,7 @@ public class TaskFlowDbProviderSelectorTests
         Assert.ThrowsExactly<ArgumentException>(() =>
             PoolerModeSelector.Resolve(Config((PoolerModeSelector.ConfigurationKey, "Session"))));
 
-    // Enum.TryParse accepted "2" as an undefined PoolerMode that compared unequal to Transaction, so the
+    // Enum.TryParse accepted "2" as an undefined pooler mode that compared unequal to Transaction, so the
     // PgBouncer flags were silently skipped; numbers and combinations must fail like any unknown name.
     [TestMethod]
     [DataRow("1")]
@@ -100,7 +101,7 @@ public class TaskFlowDbProviderSelectorTests
     [TestMethod]
     public void PoolerModeSelector_NameAnyCaseWithWhitespace_Resolves() =>
         Assert.AreEqual(
-            PoolerMode.Transaction,
+            PgBouncerMode.Transaction,
             PoolerModeSelector.Resolve(Config((PoolerModeSelector.ConfigurationKey, " transaction "))));
 
     [TestMethod]
@@ -112,7 +113,7 @@ public class TaskFlowDbProviderSelectorTests
             "Host=localhost;Database=TaskFlowPooler;Username=postgres;Password=NotARealPassword1!",
             "__EFMigrationsHistory",
             "taskflow",
-            PoolerMode: PoolerMode.Transaction);
+            PoolerMode: PgBouncerMode.Transaction);
 
         options.UseTaskFlowProvider(providerOptions);
         var connectionString = ExtractConnectionString(options);

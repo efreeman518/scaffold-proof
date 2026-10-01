@@ -1,3 +1,4 @@
+using EF.Common;
 using EF.AI.Chat;
 using EF.AI.Embeddings;
 using Microsoft.Extensions.AI;
@@ -19,7 +20,7 @@ public enum AiProvider
     /// <summary>OpenAI SDK client against a configurable endpoint (OpenAI, OpenRouter, Ollama, vLLM).</summary>
     OpenAICompatible,
 
-    /// <summary>No live chat client; NoOpChatClient answers every call.</summary>
+    /// <summary>No live chat client; the EF.AI disabled client is registered and every consumer reports "not configured".</summary>
     None
 }
 
@@ -68,7 +69,7 @@ public static partial class RegisterServices
 
         var explicitProvider = ResolveAiProvider(config);
         if (explicitProvider == AiProvider.None)
-            return Task.CompletedTask; // AddAiServices registers the no-op client and provider metadata.
+            return Task.CompletedTask; // AddAiServices registers the EF.AI disabled client and provider metadata.
 
         if (explicitProvider == AiProvider.OpenAICompatible)
         {

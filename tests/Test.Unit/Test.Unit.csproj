@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="MSTest" />
+    <PackageReference Include="EF.AI.Testing" />
     <PackageReference Include="Moq" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <PackageReference Include="Newtonsoft.Json" />
@@ -14,6 +15,7 @@
     <PackageReference Include="EF.Data" />
     <PackageReference Include="EF.BackgroundServices" />
     <PackageReference Include="EF.Cache" />
+    <PackageReference Include="EF.RateLimiting.Redis" />
     <PackageReference Include="EF.Common" />
     <PackageReference Include="EF.Audit.Contracts" />
     <PackageReference Include="EF.Storage.Contracts" />

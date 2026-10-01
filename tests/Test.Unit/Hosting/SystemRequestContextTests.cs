@@ -1,5 +1,6 @@
 using EF.Cache;
 using EF.Common.Contracts;
+using EF.Tenancy;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,12 +18,12 @@ using Test.Support.Builders;
 namespace Test.Unit.Hosting;
 
 /// <summary>
-/// The request context outside an HTTP request is an explicit system identity (no tenant, the system user,
-/// only the system role), never the scaffold admin; the scaffold identity is for HTTP requests in scaffold
-/// auth mode only. Background writes that relied on the scaffold admin's GlobalAdmin bypass - the AI
-/// reviewer loading a task and adding a comment through the tenant boundary - keep working through the
-/// system role, and a token cannot claim that role.
-/// Pure-unit tier: the real registration and the real tenant-boundary validator; repositories are mocked.
+/// The request context outside an HTTP request is the package system context (no tenant, the system user, the
+/// system role), never the scaffold admin; an unauthenticated HTTP request is anonymous (EF.AspNetCore 2.0 invents no
+/// identity for it). Background writes that relied on the scaffold admin's GlobalAdmin bypass - the AI reviewer
+/// loading a task and adding a comment through the tenant boundary - keep working because the system role is one of
+/// EF.Tenancy's cross-tenant roles (D-067), and a token cannot claim the system role.
+/// Pure-unit tier: the real registrations and the real tenant-boundary validator; repositories are mocked.
 /// </summary>
 [TestClass]
 [TestCategory("Unit")]
@@ -58,7 +59,7 @@ public sealed class SystemRequestContextTests
     }
 
     [TestMethod]
-    public void HttpRequestWithoutUser_InScaffoldMode_ResolvesTheScaffoldIdentity()
+    public void HttpRequestWithoutUser_ResolvesAnAnonymousContext()
     {
         using var provider = BuildProvider();
         provider.GetRequiredService<IHttpContextAccessor>().HttpContext = new DefaultHttpContext();
@@ -66,9 +67,9 @@ public sealed class SystemRequestContextTests
 
         var context = scope.ServiceProvider.GetRequiredService<IRequestContext<string, Guid?>>();
 
-        Assert.AreEqual("scaffold-user", context.AuditId);
-        Assert.AreEqual(Guid.Parse("00000000-0000-0000-0000-000000000001"), context.TenantId);
-        Assert.Contains(AppConstants.ROLE_GLOBAL_ADMIN, context.Roles);
+        Assert.AreEqual("anonymous", context.AuditId);
+        Assert.IsNull(context.TenantId, "an unauthenticated request must not be given the scaffold tenant");
+        Assert.IsEmpty(context.Roles);
     }
 
     [TestMethod]
@@ -92,18 +93,44 @@ public sealed class SystemRequestContextTests
         CollectionAssert.AreEqual(new[] { AppConstants.ROLE_TENANT_MEMBER }, context.Roles.ToArray());
     }
 
+    /// <summary>Only the system role is stripped from a token: a real global-admin claim keeps its role and tenant.</summary>
     [TestMethod]
-    public void TenantBoundary_SystemRole_ActsForTheTenantTheDataNames()
+    public void AuthenticatedGlobalAdmin_KeepsTheGlobalAdminRole()
     {
-        var validator = new TenantBoundaryValidator();
+        using var provider = BuildProvider();
+        provider.GetRequiredService<IHttpContextAccessor>().HttpContext = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim("oid", "admin-1"),
+                new Claim("tenant_id", SomeTenant.ToString()),
+                new Claim(ClaimTypes.Role, AppConstants.ROLE_GLOBAL_ADMIN)
+            ], "Test"))
+        };
+        using var scope = provider.CreateScope();
 
-        var system = validator.EnsureTenantBoundary(NullLogger.Instance, null, [AppConstants.ROLE_SYSTEM],
+        var context = scope.ServiceProvider.GetRequiredService<IRequestContext<string, Guid?>>();
+
+        Assert.AreEqual("admin-1", context.AuditId);
+        Assert.AreEqual(SomeTenant, context.TenantId);
+        CollectionAssert.AreEqual(new[] { AppConstants.ROLE_GLOBAL_ADMIN }, context.Roles.ToArray());
+    }
+
+    [TestMethod]
+    public void TenantBoundary_SystemIdentity_ActsForTheTenantTheDataNames()
+    {
+        using var provider = BuildProvider();
+        using var scope = provider.CreateScope();
+        var systemContext = scope.ServiceProvider.GetRequiredService<IRequestContext<string, Guid?>>();
+        var validator = scope.ServiceProvider.GetRequiredService<ITenantBoundaryValidator>();
+
+        var system = validator.EnsureTenantBoundary(systemContext.TenantId, systemContext.Roles,
             SomeTenant, "TaskItem:Get", nameof(TaskItem));
-        var tenantlessMember = validator.EnsureTenantBoundary(NullLogger.Instance, null, [AppConstants.ROLE_TENANT_MEMBER],
+        var tenantlessMember = validator.EnsureTenantBoundary(null, [AppConstants.ROLE_TENANT_MEMBER],
             SomeTenant, "TaskItem:Get", nameof(TaskItem));
 
-        Assert.IsTrue(system.IsSuccess);
-        Assert.IsTrue(tenantlessMember.IsFailure, "only the system role is exempt; a tenantless caller is not");
+        Assert.IsTrue(system.IsSuccess, "the system role is one of the cross-tenant roles EF.Tenancy lets through");
+        Assert.IsTrue(tenantlessMember.IsFailure, "only the system identity is exempt; a tenantless caller is not");
     }
 
     /// <summary>
@@ -119,12 +146,16 @@ public sealed class SystemRequestContextTests
         var task = new TaskItemBuilder().WithTenantId(SomeTenant).Build();
         var repoTrxn = new Mock<ITaskItemRepositoryTrxn>();
         repoTrxn.Setup(r => r.GetTaskItemAsync(task.Id, false, It.IsAny<CancellationToken>())).ReturnsAsync(task);
+        // The add runs inside the repository's fresh-read retry (D-073); one run, as when no race is lost.
+        repoTrxn.Setup(r => r.RetryOnConcurrencyAsync(
+                It.IsAny<Func<CancellationToken, Task<Result<DefaultResponse<CommentDto>>>>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Returns((Func<CancellationToken, Task<Result<DefaultResponse<CommentDto>>>> work, int _, CancellationToken token) => work(token));
         var service = new TaskItemService(
             NullLogger<TaskItemService>.Instance,
             systemContext,
             repoTrxn.Object,
             Mock.Of<ITaskItemRepositoryQuery>(),
-            new TenantBoundaryValidator(),
+            scope.ServiceProvider.GetRequiredService<ITenantBoundaryValidator>(),
             Mock.Of<ITypedCache>());
 
         var result = await service.AddCommentAsync(task.Id.Value, new CommentDto { Body = "AI readiness review" },
@@ -132,7 +163,7 @@ public sealed class SystemRequestContextTests
 
         Assert.IsTrue(result.IsSuccess, result.ErrorMessage);
         Assert.IsNotNull(result.Value!.Item);
-        repoTrxn.Verify(r => r.SaveChangesAsync(It.IsAny<EF.Data.Contracts.OptimisticConcurrencyWinner>(),
+        repoTrxn.Verify(r => r.SaveChildAddAsync(It.IsAny<Func<CancellationToken, Task<bool>>?>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -140,7 +171,9 @@ public sealed class SystemRequestContextTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddLogging();
         RegisterServices.AddRequestContext(services);
+        RegisterServices.AddTenantBoundary(services);
         return services.BuildServiceProvider();
     }
 }

@@ -1,10 +1,10 @@
 using EF.AspNetCore;
+using EF.AspNetCore.Concurrency;
 using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using TaskFlow.Api.Endpoints.Shared;
-using TaskFlow.Api.Filters;
 using TaskFlow.Application.Cqrs.Features.ChecklistItems;
 using TaskFlow.Application.Models;
 
@@ -13,15 +13,11 @@ namespace TaskFlow.Api.Endpoints.Cqrs;
 /// <summary>Maps checklist item CQRS HTTP routes to CQRS handlers and API contract metadata.</summary>
 public static class ChecklistItemCqrsEndpoints
 {
-    private static bool _problemDetailsIncludeStackTrace;
-
     /// <summary>Registers checklist item CQRS routes, handlers, and response metadata.</summary>
-    public static IEndpointRouteBuilder MapChecklistItemCqrsEndpoints(this IEndpointRouteBuilder group, bool problemDetailsIncludeStackTrace)
+    public static IEndpointRouteBuilder MapChecklistItemCqrsEndpoints(this IEndpointRouteBuilder group)
     {
-        _problemDetailsIncludeStackTrace = problemDetailsIncludeStackTrace;
-
         var g = group.MapGroup("/checklist-items").WithTags("ChecklistItems")
-            .AddEndpointFilter<ETagEndpointFilter>();
+            .WithETag();
 
         g.MapPost("/search", Search)
             .Produces<PagedResponse<ChecklistItemDto>>(StatusCodes.Status200OK)
@@ -59,8 +55,7 @@ public static class ChecklistItemCqrsEndpoints
         var result = await handler.HandleAsync(new GetChecklistItemByIdQuery(id), ct);
         return result.Match<IResult>(
             response => TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest)),
+            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)),
             () => TypedResults.NotFound(id));
     }
 }

@@ -1,9 +1,10 @@
-using Test.Support.Aspire;
+using EF.IntegrationTesting.Aspire;
 
 namespace Test.Unit;
 
 /// <summary>
-/// Verifies the shared Aspire test-host startup budget without starting Docker or an AppHost.
+/// Verifies the startup-budget contract Test.Aspire and Test.PlaywrightUI rely on from the package
+/// <see cref="AspireTestHostContext"/>, without starting Docker or an AppHost.
 /// Unit tier: the cumulative deadline policy is pure process orchestration logic.
 /// </summary>
 [TestClass]
@@ -16,7 +17,7 @@ public sealed class AspireTestHostContextTests
     [TestMethod]
     public async Task Given_OneGlobalBudget_When_AStartupStepExceedsIt_Then_TimeoutNamesTheStep()
     {
-        var host = new AspireTestHostContext(TimeSpan.FromMilliseconds(25), "TASKFLOW_TEST_RESOURCE_LOGGING");
+        var host = new AspireTestHostContext(TimeSpan.FromMilliseconds(25));
 
         var exception = await Assert.ThrowsExactlyAsync<TimeoutException>(() =>
             host.RunStartupStepAsync(
@@ -31,7 +32,7 @@ public sealed class AspireTestHostContextTests
     [TestMethod]
     public async Task Given_A_SubordinateStepTimeout_When_GlobalBudgetRemains_Then_OriginalFailurePropagates()
     {
-        var host = new AspireTestHostContext(TimeSpan.FromSeconds(10), "TASKFLOW_TEST_RESOURCE_LOGGING");
+        var host = new AspireTestHostContext(TimeSpan.FromSeconds(10));
 
         var exception = await Assert.ThrowsExactlyAsync<TimeoutException>(() =>
             host.RunStartupStepAsync(
@@ -45,7 +46,7 @@ public sealed class AspireTestHostContextTests
     [TestMethod]
     public async Task Given_TwoStartupSteps_When_TheirCombinedTimeExceedsBudget_Then_SecondStepUsesOnlyRemainingTime()
     {
-        var host = new AspireTestHostContext(TimeSpan.FromMilliseconds(500), "TASKFLOW_TEST_RESOURCE_LOGGING");
+        var host = new AspireTestHostContext(TimeSpan.FromMilliseconds(500));
 
         await host.RunStartupStepAsync(
             "build host",

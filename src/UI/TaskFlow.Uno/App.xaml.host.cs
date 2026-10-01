@@ -1,14 +1,14 @@
 using CommunityToolkit.Mvvm.Messaging;
+using EF.UI.Client;
+using EF.UI.Client.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
 using TaskFlow.Uno.Core.Business.Models;
-using TaskFlow.Uno.Core.Business.Notifications;
 using TaskFlow.Uno.Core.Business.Services;
 using TaskFlow.Uno.Core.Client;
-using TaskFlow.Uno.Core.Client.Http;
 using TaskFlow.Uno.Infrastructure;
 using TaskFlow.Uno.Presentation.Presentation;
 using TaskFlow.Uno.Views;
@@ -28,8 +28,6 @@ public partial class App : Application
                 {
                     var gatewayUrl = ResolveGatewayUrl(context.Configuration);
                     services.AddSingleton<MockHttpMessageHandler>();
-                    services.AddTransient<BusyDelegatingHandler>();
-                    services.AddTransient<ProblemDetailsDelegatingHandler>();
                     services
                         .AddHttpClient<TaskFlowApiClient>(client =>
                             client.BaseAddress = new Uri(gatewayUrl))
@@ -37,8 +35,8 @@ public partial class App : Application
                         // the inner problem+json parse. ProblemDetails is
                         // innermost so it sees the raw non-2xx response before
                         // anything else translates it.
-                        .AddHttpMessageHandler<BusyDelegatingHandler>()
-                        .AddHttpMessageHandler<ProblemDetailsDelegatingHandler>()
+                        .AddBusyTracking()
+                        .AddProblemDetailsNotifications()
 #if USE_MOCKS
                         .ConfigurePrimaryHttpMessageHandler<MockHttpMessageHandler>()
 #endif
@@ -73,8 +71,7 @@ public partial class App : Application
                         // messages (TaskItemsChangedMessage) silently drop.
                         .AddSingleton<IMessenger, StrongReferenceMessenger>()
                         .AddSingleton<IUiDispatcher>(uiDispatcher)
-                        .AddSingleton<IBusyTracker, BusyTracker>()
-                        .AddSingleton<INotificationService, NotificationService>()
+                        .AddUiClient()
                         .AddSingleton<IFormGuard, FormGuard>()
                         .AddSingleton<ITaskItemApiService, TaskItemApiService>()
                         .AddSingleton<ICategoryApiService, CategoryApiService>()

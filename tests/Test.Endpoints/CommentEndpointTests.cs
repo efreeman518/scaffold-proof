@@ -1,9 +1,11 @@
+using EF.Testing.Http;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using TaskFlow.Application.Models;
 using TaskFlow.Domain.Shared.Enums;
+using Test.Support;
 
 namespace Test.Endpoints;
 
@@ -102,16 +104,16 @@ public class CommentEndpointTests
         var commentId = (await addResp.Content.ReadFromJsonAsync<DefaultResponse<CommentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item!.Id!.Value;
 
         // Child writes carry the ROOT ETag (D-031); the add response already returns the bumped root version.
-        var rootETag = addResp.ETagValue();
+        var rootETag = addResp.GetETagValue();
         Assert.IsNotNull(rootETag, "A child add must return the new root aggregate ETag.");
 
-        var updResp = await client.PutWithIfMatchAsync($"/api/v1/task-items/{taskId}/comments/{commentId}",
-            new DefaultRequest<CommentDto> { Item = new CommentDto { Body = "Edited", TaskItemId = taskId } }, $"\"{rootETag}\"", TestContext.CancellationToken);
+        var updResp = await client.PutAsJsonWithIfMatchAsync($"/api/v1/task-items/{taskId}/comments/{commentId}",
+            new DefaultRequest<CommentDto> { Item = new CommentDto { Body = "Edited", TaskItemId = taskId } }, $"\"{rootETag}\"", JsonTestOptions.Default, TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.OK, updResp.StatusCode);
         var updated = (await updResp.Content.ReadFromJsonAsync<DefaultResponse<CommentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item;
         Assert.AreEqual("Edited", updated!.Body);
 
-        var delResp = await client.DeleteWithIfMatchAsync($"/api/v1/task-items/{taskId}/comments/{commentId}", $"\"{updResp.ETagValue()}\"", TestContext.CancellationToken);
+        var delResp = await client.DeleteWithIfMatchAsync($"/api/v1/task-items/{taskId}/comments/{commentId}", $"\"{updResp.GetETagValue()}\"", TestContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.NoContent, delResp.StatusCode);
 
         var getResp = await client.GetAsync($"/api/v1/comments/{commentId}", TestContext.CancellationToken);

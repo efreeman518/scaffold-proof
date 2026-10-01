@@ -1,35 +1,17 @@
-using Azure.Identity;
-using Azure.Storage.Blobs;
+using EF.AspNetCore.DataProtection;
+using EF.Host;
+using EF.Common;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using StackExchange.Redis;
 using TaskFlow.Application.Contracts;
 
 namespace TaskFlow.Bootstrapper;
 
-/// <summary>Data Protection key-ring persistence selected for this deployment (D-043).</summary>
-public enum DataProtectionPersistence
-{
-    /// <summary>Azure Blob Storage (today's only persistence option).</summary>
-    AzureBlob,
-
-    /// <summary>StackExchange.Redis over the existing <c>Redis1</c> connection (NonAzure lane).</summary>
-    Redis,
-
-    /// <summary>No persistence: the ephemeral in-memory ring. Cursor tokens do not survive a restart or reach other replicas.</summary>
-    None
-}
-
 public static partial class RegisterServices
 {
-    internal const string DataProtectionBlobContainerConfigKey = "DataProtection:AzureBlob:ContainerName";
-    internal const string DataProtectionBlobNameConfigKey = "DataProtection:AzureBlob:BlobName";
-    internal const string DefaultDataProtectionBlobContainerName = "data-protection";
-    internal const string DefaultDataProtectionBlobName = "keys.xml";
-
     public const string DataProtectionPersistenceConfigKey = HostingLaneResolver.DataProtectionConfigurationKey;
     public const string DataProtectionPersistenceEnvVar = HostingLaneResolver.DataProtectionEnvironmentVariable;
 
@@ -39,130 +21,61 @@ public static partial class RegisterServices
     public static DataProtectionPersistence ResolveDataProtectionPersistence(IConfiguration config)
     {
         ArgumentNullException.ThrowIfNull(config);
-        return ParseDataProtectionPersistence(HostingLaneResolver.Resolve(config).DataProtection);
+        return StrictEnum.Parse<DataProtectionPersistence>(
+            HostingLaneResolver.Resolve(config).DataProtection, "Data Protection persistence");
     }
 
-    private static DataProtectionPersistence ParseDataProtectionPersistence(string value) =>
-        StrictEnum.Parse<DataProtectionPersistence>(value, "Data Protection persistence");
-
     /// <summary>
-    /// Configures the Data Protection key ring: persistence (AzureBlob/Redis/None, D-043) plus key
-    /// encryption via Azure Key Vault whenever <c>DataProtectionEncryptionKeyUrl</c> is set, independent of
-    /// the chosen persistence arm. Lifted out of TaskFlow.Api's <c>Program.cs</c> (together with
-    /// <see cref="CreateAzureCredential"/>) so Gateway and Scheduler can share the same wiring instead of
-    /// duplicating it.
+    /// Configures the Data Protection key ring through <c>EF.AspNetCore.DataProtection</c> (D-043): the lane picks
+    /// the persistence (AzureBlob, Redis or None), and Azure Key Vault encrypts the keys whenever
+    /// <c>DataProtectionEncryptionKeyUrl</c> is set, whatever the arm. <c>DataProtection:AzureBlob:ContainerName</c> /
+    /// <c>BlobName</c> bind from the package section; the key ring location comes from <c>DataProtectionKeysFileUrl</c>
+    /// (full blob URI) or the <c>BlobStorage1</c> endpoint or connection string. The Redis arm (S7) keeps the key
+    /// ring on the one <c>IConnectionMultiplexer</c> EF.Cache registers for the default cache over <c>Redis1</c>,
+    /// resolved on first key access, instead of opening a connection of its own.
+    /// The framework's implicit application discriminator is kept, so payloads protected before this change still
+    /// unprotect.
     /// </summary>
     [ProviderSwitch(typeof(IDataProtectionProvider))]
     public static IServiceCollection AddTaskFlowDataProtection(this IHostApplicationBuilder builder, ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(builder);
         var config = builder.Configuration;
-        var services = builder.Services;
         var appName = config.GetValue<string>("AppName") ?? builder.Environment.ApplicationName;
         var env = builder.Environment.EnvironmentName;
 
-        var keysFileUrl = config.GetValue<string?>("DataProtectionKeysFileUrl", null);
-        var encryptionKeyUrl = config.GetValue<string?>(
-            HostingLaneResolver.DataProtectionEncryptionKeyUrlConfigurationKey, null);
-
-        var persistence = ResolveDataProtectionPersistence(config);
-
-        // Keep the framework's implicit application discriminator. Changing it here would invalidate
-        // cookies and antiforgery payloads protected before this persistence-only change.
-        var dpBuilder = services.AddDataProtection();
-
-        switch (persistence)
+        var settings = config.GetSection(DataProtectionSettings.ConfigSectionName).Get<DataProtectionSettings>()
+            ?? new DataProtectionSettings();
+        settings.Persistence = ResolveDataProtectionPersistence(config);
+        settings.KeyVaultKeyUri = config[HostingLaneResolver.DataProtectionEncryptionKeyUrlConfigurationKey];
+        switch (settings.Persistence)
         {
             case DataProtectionPersistence.AzureBlob:
-                var credential = CreateAzureCredential(config);
-                if (!string.IsNullOrWhiteSpace(keysFileUrl))
-                {
-                    var keysFileUri = new Uri(keysFileUrl);
-                    // Preserve the deployed full-blob URI plus DefaultAzureCredential path. Infrastructure
-                    // owns its container; the connection-string arm below provisions its local container.
-                    dpBuilder.PersistKeysToAzureBlobStorage(keysFileUri, credential);
-                    logger.ConfigureDataProtectionPersistence(appName, env, nameof(DataProtectionPersistence.AzureBlob));
-                    break;
-                }
-
-                var blobStorage = ResolveConnectionString(
-                    config,
-                    "BlobStorage1",
-                    "BlobStorage1",
-                    "BlobStorage1:blobServiceUri",
-                    "Values:BlobStorage1");
-                if (string.IsNullOrWhiteSpace(blobStorage))
+                settings.AzureBlob.BlobUri = config["DataProtectionKeysFileUrl"];
+                settings.AzureBlob.Connection = config.ResolveConnection(
+                    "BlobStorage1", "BlobStorage1", "BlobStorage1:blobServiceUri", "Values:BlobStorage1");
+                // Named in TaskFlow's keys; the package's own message names its settings properties instead.
+                if (string.IsNullOrWhiteSpace(settings.AzureBlob.BlobUri) && string.IsNullOrWhiteSpace(settings.AzureBlob.Connection))
                     throw new InvalidOperationException(
                         $"{DataProtectionPersistenceConfigKey}=AzureBlob requires DataProtectionKeysFileUrl or the BlobStorage1 endpoint or connection string.");
-
-                var containerName = config[DataProtectionBlobContainerConfigKey] ?? DefaultDataProtectionBlobContainerName;
-                var blobName = config[DataProtectionBlobNameConfigKey] ?? DefaultDataProtectionBlobName;
-                ArgumentException.ThrowIfNullOrWhiteSpace(containerName, DataProtectionBlobContainerConfigKey);
-                ArgumentException.ThrowIfNullOrWhiteSpace(blobName, DataProtectionBlobNameConfigKey);
-
-                BlobServiceClient blobServiceClient;
-                if (Uri.TryCreate(blobStorage, UriKind.Absolute, out var blobServiceUri)
-                    && (blobServiceUri.Scheme == Uri.UriSchemeHttp || blobServiceUri.Scheme == Uri.UriSchemeHttps))
-                {
-                    // Azure deployments can provide the passwordless service endpoint in the same key that
-                    // Azurite supplies as a connection string. Infrastructure pre-provisions the deployed
-                    // container, so endpoint-auth registration must remain network-free.
-                    blobServiceClient = new BlobServiceClient(blobServiceUri, credential);
-                }
-                else
-                {
-                    blobServiceClient = new BlobServiceClient(blobStorage);
-                }
-
-                var container = blobServiceClient.GetBlobContainerClient(containerName);
-                // Local Azurite has no deployment phase to create the key container. Keep this synchronous
-                // compatibility path scoped to the emulator; real endpoint-auth and production connection
-                // registrations perform no network I/O and require infrastructure-owned provisioning.
-                if (IsAzuriteConnectionString(blobStorage))
-                    container.CreateIfNotExists();
-                dpBuilder.PersistKeysToAzureBlobStorage(container.GetBlobClient(blobName));
-                logger.ConfigureDataProtectionPersistence(appName, env, nameof(DataProtectionPersistence.AzureBlob));
                 break;
-
             case DataProtectionPersistence.Redis:
-                var redisConnStr = config.GetConnectionString("Redis1")
-                    ?? throw new InvalidOperationException(
+                // Null ConnectionString: the package resolves the shared multiplexer from DI. The Redis1 check stays,
+                // so a lane without Redis fails at registration rather than at the first key access.
+                if (string.IsNullOrWhiteSpace(config.GetConnectionString("Redis1")))
+                    throw new InvalidOperationException(
                         $"{DataProtectionPersistenceConfigKey}=Redis requires the Redis1 connection string.");
-                logger.ConfigureDataProtectionPersistence(appName, env, nameof(DataProtectionPersistence.Redis));
-                // shortcut: dedicated eager connection (the package only overloads IConnectionMultiplexer
-                // directly or Func<IDatabase>, no Func<IConnectionMultiplexer>). RegisterCachingServices
-                // (TaskFlow.Infrastructure.Caching/RegisterCachingServices.cs:70-84) builds its own Redis
-                // connections internally via FusionCache's RedisCache/RedisBackplane wrappers and never
-                // exposes a shared IConnectionMultiplexer in DI, so there is nothing to reuse today. Upgrade
-                // to sharing one multiplexer if/when caching registers IConnectionMultiplexer itself.
-                dpBuilder.PersistKeysToStackExchangeRedis(ConnectionMultiplexer.Connect(redisConnStr));
-                break;
-
-            case DataProtectionPersistence.None:
-                logger.DataProtectionPersistenceNone(appName, env);
+                settings.Redis.ConnectionString = null;
                 break;
         }
 
-        if (!string.IsNullOrEmpty(encryptionKeyUrl))
-            dpBuilder.ProtectKeysWithAzureKeyVault(new Uri(encryptionKeyUrl), CreateAzureCredential(config));
+        builder.Services.AddEfDataProtection(settings, AzureCredentialFactory.Create(config));
 
-        return services;
-    }
+        if (settings.Persistence == DataProtectionPersistence.None)
+            logger.DataProtectionPersistenceNone(appName, env);
+        else
+            logger.ConfigureDataProtectionPersistence(appName, env, settings.Persistence.ToString());
 
-    private static bool IsAzuriteConnectionString(string value) =>
-        value.Equals("UseDevelopmentStorage=true", StringComparison.OrdinalIgnoreCase)
-        || value.Contains("AccountName=devstoreaccount1", StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>Builds the Azure credential shared by Data Protection and any other Azure-identity consumer.</summary>
-    public static DefaultAzureCredential CreateAzureCredential(IConfiguration config)
-    {
-        var options = new DefaultAzureCredentialOptions();
-        var managedIdentityClientId = config.GetValue<string?>("ManagedIdentityClientId", null);
-        if (managedIdentityClientId is not null)
-            options.ManagedIdentityClientId = managedIdentityClientId;
-        var sharedTokenCacheTenantId = config.GetValue<string?>("SharedTokenCacheTenantId", null);
-        if (sharedTokenCacheTenantId is not null)
-            options.SharedTokenCacheTenantId = sharedTokenCacheTenantId;
-        return new DefaultAzureCredential(options);
+        return builder.Services;
     }
 }

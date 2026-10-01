@@ -1,3 +1,5 @@
+using EF.Data.Contracts;
+using EF.Data.Configurations;
 using EF.Data.Encryption;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -10,7 +12,7 @@ namespace TaskFlow.Infrastructure.Data.Configurations;
 /// TaskItem mapping. Takes the process <see cref="IColumnEncryptor"/> so the secure-column converters are bound
 /// at model-build time; <c>TaskFlowDbContextBase.OnModelCreating</c> applies it explicitly for that reason.
 /// </summary>
-public class TaskItemConfiguration(IColumnEncryptor encryptor) : EntityBaseConfiguration<TaskItem, TaskItemId>
+public class TaskItemConfiguration(IColumnEncryptor encryptor) : TenantEntityTypeConfiguration<TaskItem, TaskItemId, TenantId>
 {
     public const string SecureDeterministicBlindIndex = nameof(SecureDeterministicBlindIndex);
 
@@ -31,7 +33,9 @@ public class TaskItemConfiguration(IColumnEncryptor encryptor) : EntityBaseConfi
         // D-023: application-layer AES-256-GCM on both providers. Ciphertext = nonce 12 + plaintext (<= 200) + tag 16,
         // stored as varbinary(256) / bytea. Both columns are randomized; SecureDeterministic is equality-queryable
         // through the keyed HMAC blind-index shadow column, which BlindIndexInterceptor maintains and
-        // ITaskItemRepositoryQuery.FindBySecureTokenAsync queries.
+        // ITaskItemRepositoryQuery.FindBySecureTokenAsync queries. The converter encrypts only the stored value, so
+        // all three are IsSensitive(): EF.Data's AuditInterceptor writes "***" for them on the Added and Modified
+        // payload paths instead of the plaintext CLR value (and the blind-index bytes).
         //
         // SQL Server-only alternative (superseded D-019): Always Encrypted with a Key Vault CMK, DETERMINISTIC for
         // the equality column and RANDOMIZED for the other, applied by raw ALTER TABLE ... ENCRYPTED WITH in a
@@ -40,11 +44,13 @@ public class TaskItemConfiguration(IColumnEncryptor encryptor) : EntityBaseConfi
         builder.Property(e => e.SecureDeterministic)
             .HasConversion(encryptor.StringConverter)
             .HasMaxLength(256)
-            .HasBlindIndex(SecureDeterministicBlindIndex);
+            .HasBlindIndex(SecureDeterministicBlindIndex)
+            .IsSensitive();
         builder.Property(e => e.SecureRandom)
             .HasConversion(encryptor.StringConverter)
-            .HasMaxLength(256);
-        builder.Property<byte[]>(SecureDeterministicBlindIndex).HasMaxLength(BlindIndex.SizeBytes);
+            .HasMaxLength(256)
+            .IsSensitive();
+        builder.Property<byte[]>(SecureDeterministicBlindIndex).HasMaxLength(BlindIndex.SizeBytes).IsSensitive();
 
         // DateRange is a domain value object composed from the two first-class columns; never mapped.
         builder.Ignore(e => e.DateRange);

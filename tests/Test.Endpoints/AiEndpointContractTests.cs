@@ -1,3 +1,4 @@
+using EF.AI.Testing;
 using EF.Common.Contracts;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.AI;
@@ -6,7 +7,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Net;
 using System.Net.Http.Json;
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using TaskFlow.Application.Models;
@@ -42,6 +42,34 @@ public sealed class AiEndpointContractTests
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
         Assert.IsTrue(payload.RootElement.GetProperty("isConfigured").GetBoolean());
         Assert.AreEqual("Fake Foundry response.", payload.RootElement.GetProperty("message").GetString());
+    }
+
+    /// <summary>
+    /// S21: with no model wired the host registers the EF.AI disabled client, which throws on every call; the demo
+    /// routes detect it with IsDisabled() and answer "not configured" (200, not a 500 or a 503) without calling it.
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Endpoint")]
+    public async Task Given_NoModelWired_When_ChatOrStatusCalled_Then_NotConfiguredWithoutCallingTheClient()
+    {
+        using var factory = new CustomApiFactory();
+        using var client = factory.CreateClient();
+
+        using var chat = await client.PostAsJsonAsync("/api/v1/ai/chat", new { message = "hello" }, cancellationToken: TestContext.CancellationToken);
+        using var chatPayload = await ReadJsonAsync(chat);
+        using var status = await client.GetAsync("/api/v1/ai/status", TestContext.CancellationToken);
+        using var statusPayload = await ReadJsonAsync(status);
+        using var stream = await client.PostAsJsonAsync("/api/v1/ai/chat/stream", new { message = "stream" }, cancellationToken: TestContext.CancellationToken);
+        var streamBody = await stream.Content.ReadAsStringAsync(TestContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.OK, chat.StatusCode);
+        Assert.IsFalse(chatPayload.RootElement.GetProperty("isConfigured").GetBoolean());
+        Assert.Contains("not configured", chatPayload.RootElement.GetProperty("message").GetString()!);
+        Assert.AreEqual(HttpStatusCode.OK, status.StatusCode);
+        Assert.AreEqual("none", statusPayload.RootElement.GetProperty("provider").GetString());
+        Assert.IsFalse(statusPayload.RootElement.GetProperty("isConfigured").GetBoolean());
+        Assert.AreEqual(HttpStatusCode.OK, stream.StatusCode);
+        Assert.Contains("not configured", streamBody);
     }
 
     [TestMethod]
@@ -182,7 +210,7 @@ public sealed class AiEndpointContractTests
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IChatClient>();
-                services.AddSingleton<IChatClient>(new RoutingChatClient(reply));
+                services.AddSingleton<IChatClient>(new FakeChatClient(call => reply(call.PromptText)));
 
                 if (agent is not null)
                 {
@@ -239,33 +267,6 @@ public sealed class AiEndpointContractTests
             Assert.Fail($"Expected success, got {(int)response.StatusCode} {response.ReasonPhrase}. Body: {body}");
 
         return JsonDocument.Parse(body);
-    }
-
-    private sealed class RoutingChatClient(Func<string, string> reply) : IChatClient
-    {
-        public Task<ChatResponse> GetResponseAsync(
-            IEnumerable<ChatMessage> messages,
-            ChatOptions? options = null,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, reply(GetPrompt(messages)))));
-
-        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
-            IEnumerable<ChatMessage> messages,
-            ChatOptions? options = null,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            yield return new ChatResponseUpdate(ChatRole.Assistant, reply(GetPrompt(messages)));
-            await Task.CompletedTask;
-        }
-
-        public object? GetService(Type serviceType, object? serviceKey = null) => null;
-
-        public void Dispose()
-        {
-        }
-
-        private static string GetPrompt(IEnumerable<ChatMessage> messages) =>
-            string.Join("\n", messages.Select(message => message.Text));
     }
 
     private sealed class FakeTaskAssistantAgent : ITaskAssistantAgent

@@ -1,9 +1,9 @@
 using Aspire.Hosting;
 using Aspire.Hosting.Testing;
-using EF.IntegrationTesting.Environment;
+using EF.IntegrationTesting.Aspire;
+using EF.Testing.Environment;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Test.Support.Aspire;
 
 namespace Test.PlaywrightUI.Hosting;
 
@@ -73,8 +73,8 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
             ? "TASKFLOW_WASM_STARTUP_TIMEOUT_SECONDS"
             : "TASKFLOW_ASPIRE_STARTUP_TIMEOUT_SECONDS";
         var hostContext = new AspireTestHostContext(
-            AspireTestHostContext.ReadPositiveSeconds(startupTimeoutVariable, wantsUno ? 1_800 : 900),
-            ResourceLoggingEnvironmentVariable);
+            TestEnvironment.GetPositiveSeconds(startupTimeoutVariable, TimeSpan.FromSeconds(wantsUno ? 1_800 : 900)),
+            new AspireTestHostOptions { IncludeResourceLogs = TestEnvironment.IsTrue(ResourceLoggingEnvironmentVariable) });
 
         // Every variable this host (and WasmAppHost) writes goes through this one scope, which restores the
         // originals when the host is disposed or its startup fails.
@@ -107,7 +107,7 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
                     configureBuilder: (appOptions, _) =>
                     {
                         appOptions.DisableDashboard = true;
-                        appOptions.EnableResourceLogging = hostContext.ResourceLoggingEnabled;
+                        appOptions.EnableResourceLogging = hostContext.IncludeResourceLogs;
                     },
                     cancellationToken: token),
                 ct);
@@ -155,7 +155,7 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
                 typeScriptProjects.Add("blazor");
             }
 
-            if (wantsReact && (HasValue("PLAYWRIGHT_REACT_URL") || HasValue("TASKFLOW_REACT_BASE_URL")))
+            if (wantsReact && (TestEnvironment.HasValue("PLAYWRIGHT_REACT_URL") || TestEnvironment.HasValue("TASKFLOW_REACT_BASE_URL")))
             {
                 var reactBaseUrl = Environment.GetEnvironmentVariable("PLAYWRIGHT_REACT_URL")
                     ?? Environment.GetEnvironmentVariable("TASKFLOW_REACT_BASE_URL");
@@ -208,10 +208,7 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
 
             if (app is not null)
             {
-                foreach (var resourceName in DiagnosticResourceNames)
-                {
-                    await hostContext.DumpResourceDiagnosticsAsync(resourceName, CancellationToken.None);
-                }
+                await hostContext.DumpResourceDiagnosticsAsync(DiagnosticResourceNames, CancellationToken.None);
 
                 try
                 {
@@ -275,13 +272,8 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
         }
     }
 
-    internal async Task DumpDiagnosticsAsync(CancellationToken cancellationToken)
-    {
-        foreach (var resourceName in DiagnosticResourceNames)
-        {
-            await _hostContext.DumpResourceDiagnosticsAsync(resourceName, cancellationToken);
-        }
-    }
+    internal Task DumpDiagnosticsAsync(CancellationToken cancellationToken) =>
+        _hostContext.DumpResourceDiagnosticsAsync(DiagnosticResourceNames, cancellationToken);
 
     private static async Task<string> ResolveEndpointAsync(
         DistributedApplication app,
@@ -304,9 +296,6 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
         return endpoint;
     }
 
-    private static bool HasValue(string variableName) =>
-        !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(variableName));
-
     private static bool ResourcesFailedBeforeLaunch(DistributedApplication app)
     {
         var observed = DiagnosticResourceNames
@@ -324,12 +313,7 @@ internal sealed class PlaywrightAspireHost : IAsyncDisposable
 
     private static bool IsReactRunnable()
     {
-        var reactRoot = Path.GetFullPath(Path.Combine(
-            AppContext.BaseDirectory,
-            "..", "..", "..", "..", "..",
-            "src",
-            "UI",
-            "TaskFlow.React"));
+        var reactRoot = Path.Combine(RepositoryRoot.Find(), "src", "UI", "TaskFlow.React");
         var viteShim = OperatingSystem.IsWindows()
             ? Path.Combine(reactRoot, "node_modules", ".bin", "vite.cmd")
             : Path.Combine(reactRoot, "node_modules", ".bin", "vite");

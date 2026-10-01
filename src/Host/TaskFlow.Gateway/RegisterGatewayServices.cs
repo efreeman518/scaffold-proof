@@ -1,16 +1,12 @@
-using Azure.Core;
-using Azure.Identity;
-using Microsoft.AspNetCore.Authentication;
+using EF.AspNetCore.Cors;
+using EF.AspNetCore.ExceptionHandling;
+using EF.Auth.Fixed;
+using EF.Auth.Tokens;
+using EF.Gateway;
+using EF.Host;
+using EF.RateLimiting;
 using Microsoft.AspNetCore.Http.Timeouts;
-using Microsoft.AspNetCore.RateLimiting;
-using System.Globalization;
-using System.Net.Http.Headers;
-using System.Security.Claims;
-using System.Text.Json;
-using System.Threading.RateLimiting;
-using TaskFlow.Gateway.HealthChecks;
 using TaskFlow.Application.Contracts;
-using Yarp.ReverseProxy.Transforms;
 
 namespace TaskFlow.Gateway;
 
@@ -20,7 +16,8 @@ namespace TaskFlow.Gateway;
 /// </summary>
 public static class RegisterGatewayServices
 {
-    private const string OriginalUserClaimsHeaderName = "X-Orig-Request";
+    /// <summary>Configuration section of the downstream Api health probe.</summary>
+    public const string ApiHealthSectionName = "AggregateHealthCheck";
 
     /// <summary>
     /// Registers gateway-only services. The API remains the authorization and business boundary;
@@ -29,12 +26,15 @@ public static class RegisterGatewayServices
     public static IServiceCollection AddGatewayServices(
         this IServiceCollection services, IConfiguration config)
     {
-        services.AddSingleton<TokenCredential>(_ => new DefaultAzureCredential());
-        services.AddSingleton<TokenService>();
-        services.AddHeaderPropagation(options => options.Headers.Add("X-Correlation-Id"));
+        // One credential for downstream token exchange, honoring ManagedIdentityClientId / AzureTenantId;
+        // AccessTokenCache (EF.Auth) uses it because it is registered first.
+        services.AddAzureTokenCredential(config);
+        services.AddAccessTokenCache();
+        services.AddEfProblemDetails();
         AddAuthentication(services, config);
         AddReverseProxy(services, config);
-        AddCors(services, config);
+        // Origins validated at registration; CorsSettings:AllowCredentials (appsettings.json) allows the Uno client's credentials.
+        services.AddCorsPolicyFromConfiguration("UnoUI", config.GetSection("CorsSettings"));
         AddHealthChecks(services, config);
         AddRateLimiting(services, config);
         AddRequestTimeouts(services, config);
@@ -59,210 +59,72 @@ public static class RegisterGatewayServices
         });
     }
 
-    /// <summary>Registers authentication dependencies in the service container.</summary>
+    /// <summary>
+    /// Registers the EF.Auth fixed-principal scheme with <see cref="ScaffoldPrincipal"/>; the host fails to start
+    /// outside <see cref="ScaffoldPrincipal.AllowedEnvironments"/>.
+    /// </summary>
     private static void AddAuthentication(IServiceCollection services, IConfiguration config)
     {
         _ = AuthModeResolver.Resolve(config[AuthModeResolver.ConfigKey]);
 
-        services.AddAuthentication(ScaffoldAuthHandler.SchemeName)
-            .AddScheme<AuthenticationSchemeOptions, ScaffoldAuthHandler>(
-                ScaffoldAuthHandler.SchemeName, _ => { });
+        services.AddAuthentication(ScaffoldPrincipal.SchemeName)
+            .AddFixedPrincipal(ScaffoldPrincipal.SchemeName, options =>
+            {
+                options.Claims = [.. ScaffoldPrincipal.Claims.Select(c => new FixedClaim(c.Type, c.Value))];
+                options.AllowedEnvironments = [.. ScaffoldPrincipal.AllowedEnvironments];
+            });
     }
 
-    /// <summary>Registers reverse proxy dependencies in the service container.</summary>
+    /// <summary>
+    /// YARP with the EF.Gateway downstream auth transforms: every route strips any inbound relay header, a cluster
+    /// with <c>Metadata:RelayUserClaims</c> gets the authenticated user's claims in it, and a cluster with
+    /// <c>Metadata:TokenScope</c> gets a bearer token from <see cref="AccessTokenCache"/>. The relay options bind the
+    /// same <c>ForwardedClaims</c> section the Api binds, so both hosts agree on the header name and allowlist.
+    /// </summary>
     private static void AddReverseProxy(IServiceCollection services, IConfiguration config)
     {
         services.AddReverseProxy()
             .LoadFromConfig(config.GetSection("ReverseProxy"))
             .AddServiceDiscoveryDestinationResolver()
-            .AddTransforms(context =>
-            {
-                context.AddRequestTransform(async ctx =>
-                {
-                    var tokenService = ctx.HttpContext.RequestServices.GetRequiredService<TokenService>();
-                    var clusterId = context.Cluster?.ClusterId ?? "api-cluster";
-
-                    // Forward original user claims as X-Orig-Request header for the API
-                    // claims transformer after the API validates the gateway service token.
-                    AddOriginalUserClaimsHeader(ctx);
-
-                    // Acquire service token for downstream API
-                    var token = await tokenService.GetAccessTokenAsync(clusterId, ctx.HttpContext.RequestAborted);
-                    ctx.ProxyRequest!.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                });
-            });
+            .AddDownstreamAuthTransforms(config);
     }
 
-    /// <summary>Registers original user claims header dependencies in the service container.</summary>
-    private static void AddOriginalUserClaimsHeader(RequestTransformContext ctx)
-    {
-        ReplaceOriginalUserClaimsHeader(ctx.ProxyRequest!, ctx.HttpContext.User);
-    }
-
-    /// <summary>Removes untrusted inbound claim data before writing the authenticated gateway identity.</summary>
-    internal static void ReplaceOriginalUserClaimsHeader(
-        HttpRequestMessage proxyRequest,
-        ClaimsPrincipal user)
-    {
-        proxyRequest.Headers.Remove(OriginalUserClaimsHeaderName);
-        if (user.Identity?.IsAuthenticated != true) return;
-
-        var claimsPayload = new
-        {
-            sub = user.FindFirst("oid")?.Value
-               ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
-               ?? user.FindFirst("sub")?.Value,
-            tenant_id = user.FindFirst("tenant_id")?.Value,
-            name = user.FindFirst(ClaimTypes.Name)?.Value,
-            roles = user.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray()
-        };
-
-        var json = JsonSerializer.Serialize(claimsPayload);
-        var encoded = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json));
-        proxyRequest.Headers.TryAddWithoutValidation(OriginalUserClaimsHeaderName, encoded);
-    }
-
-    /// <summary>Registers cors dependencies in the service container.</summary>
-    private static void AddCors(IServiceCollection services, IConfiguration config)
-    {
-        var origins = config.GetSection("CorsSettings:AllowedOrigins").Get<string[]>();
-        if (origins is null || origins.Length == 0)
-        {
-            throw new InvalidOperationException("CORS is not configured. Set CorsSettings:AllowedOrigins in configuration.");
-        }
-
-        services.AddCors(options =>
-        {
-            options.AddPolicy("UnoUI", policy =>
-            {
-                policy.WithOrigins(origins)
-                    .AllowAnyMethod()
-                    .AllowAnyHeader()
-                    .AllowCredentials();
-            });
-        });
-    }
-
-    /// <summary>Registers health checks dependencies in the service container.</summary>
+    /// <summary>
+    /// Probes the Api's full health endpoint (EF.Gateway <see cref="DownstreamHealthCheck"/>). A missing or relative
+    /// <c>AggregateHealthCheck:TaskFlowApiHealthUrl</c> fails startup; <c>TokenScope</c> is empty in Scaffold mode.
+    /// </summary>
     private static void AddHealthChecks(IServiceCollection services, IConfiguration config)
     {
-        services.Configure<AggregateHealthCheckSettings>(
-            config.GetSection(AggregateHealthCheckSettings.ConfigSectionName));
-
-        services.AddHttpClient(nameof(AggregateGatewayHealthCheck));
-
+        var section = config.GetSection(ApiHealthSectionName);
         services.AddHealthChecks()
-            .AddCheck<AggregateGatewayHealthCheck>("taskflow-api", tags: ["full", "extservice"]);
+            .AddDownstreamHealthCheck("taskflow-api", options =>
+            {
+                options.Url = Uri.TryCreate(section["TaskFlowApiHealthUrl"], UriKind.Absolute, out var url) ? url : null;
+                options.TokenScope = section["TokenScope"];
+                options.TimeoutSeconds = section.GetValue("TimeoutSeconds", options.TimeoutSeconds);
+            }, tags: ["full", "extservice"]);
     }
 
-    /// <summary>Registers rate limiting dependencies in the service container.</summary>
+    /// <summary>
+    /// D-050 edge limiter (EF.RateLimiting <c>UseEdgeLimiter</c>, section <c>RateLimiting:Edge</c>): a token bucket per
+    /// client IP chained with one process-wide concurrency limiter, 429 with Retry-After. The client IP is the real one
+    /// only because <c>UseProxyForwarding</c> runs before <c>UseRateLimiter</c> in <c>Program.cs</c>. Health and probe
+    /// paths skip the bucket but stay inside the concurrency backstop; the per-IP health policies bound them.
+    /// An out-of-range budget throws when the rate limiter middleware first reads the options, at host start.
+    /// </summary>
     private static void AddRateLimiting(IServiceCollection services, IConfiguration config)
     {
         var memoryPermitLimit = config.GetValue<int?>("RateLimiting:Health:MemoryPermitLimit") ?? 30;
         var fullPermitLimit = config.GetValue<int?>("RateLimiting:Health:FullPermitLimit") ?? 3;
         var edge = config.GetSection(EdgeRateLimitSettings.ConfigSectionName).Get<EdgeRateLimitSettings>()
             ?? new EdgeRateLimitSettings();
-        if (edge.Enabled)
-            edge.Validate();
 
         services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-
-            if (edge.Enabled)
-            {
-                options.GlobalLimiter = BuildEdgeLimiter(edge);
-                options.OnRejected = WriteRetryAfter(edge);
-            }
-
-            options.AddPolicy("HealthMemory", context =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-                    _ => new FixedWindowRateLimiterOptions
-                    {
-                        PermitLimit = memoryPermitLimit,
-                        Window = TimeSpan.FromSeconds(10),
-                        QueueLimit = 5,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst
-                    }));
-
-            options.AddPolicy("HealthFull", context =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-                    _ => new FixedWindowRateLimiterOptions
-                    {
-                        PermitLimit = fullPermitLimit,
-                        Window = TimeSpan.FromSeconds(30),
-                        QueueLimit = 1,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst
-                    }));
+            options.UseEdgeLimiter(edge);
+            options.AddPerClientIpFixedWindowPolicy("HealthMemory", memoryPermitLimit, TimeSpan.FromSeconds(10), queueLimit: 5);
+            options.AddPerClientIpFixedWindowPolicy("HealthFull", fullPermitLimit, TimeSpan.FromSeconds(30), queueLimit: 1);
         });
     }
-
-    /// <summary>
-    /// The global limiter for proxied traffic (D-050): a token bucket per client IP chained with one process-wide
-    /// concurrency limiter. Two limiters because they answer different questions - the bucket caps how fast one
-    /// caller may arrive, the concurrency limiter caps how many requests this replica may have in flight when the
-    /// downstream slows down, which no per-caller budget can bound.
-    /// <para>
-    /// The client IP comes from <c>Connection.RemoteIpAddress</c>, which is the real client only because
-    /// <c>UseProxyForwarding</c> runs before <c>UseRateLimiter</c> in <c>Program.cs</c> and rewrites it from the
-    /// trusted <c>X-Forwarded-For</c> chain. Moving the limiter above that middleware would silently partition
-    /// every request into the edge proxy's single address.
-    /// </para>
-    /// Health and liveness routes get no limiter: they exist to report this instance's state, and shedding a
-    /// probe is how a healthy replica gets restarted or pulled out of rotation.
-    /// </summary>
-    private static PartitionedRateLimiter<HttpContext> BuildEdgeLimiter(EdgeRateLimitSettings edge) =>
-        PartitionedRateLimiter.CreateChained(
-            PartitionedRateLimiter.Create<HttpContext, string>(context =>
-            {
-                if (IsProbe(context.Request.Path))
-                    return RateLimitPartition.GetNoLimiter("probe");
-
-                return RateLimitPartition.GetTokenBucketLimiter(
-                    context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-                    _ => new TokenBucketRateLimiterOptions
-                    {
-                        TokenLimit = edge.TokensPerPeriod,
-                        TokensPerPeriod = edge.TokensPerPeriod,
-                        ReplenishmentPeriod = TimeSpan.FromSeconds(edge.ReplenishmentSeconds),
-                        QueueLimit = edge.QueueLimit,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                        AutoReplenishment = true
-                    });
-            }),
-            PartitionedRateLimiter.Create<HttpContext, string>(context =>
-                IsProbe(context.Request.Path)
-                    ? RateLimitPartition.GetNoLimiter("probe")
-                    : RateLimitPartition.GetConcurrencyLimiter(
-                        "edge",
-                        _ => new ConcurrencyLimiterOptions
-                        {
-                            PermitLimit = edge.MaxConcurrentRequests,
-                            QueueLimit = edge.QueueLimit,
-                            QueueProcessingOrder = QueueProcessingOrder.OldestFirst
-                        })));
-
-    /// <summary>
-    /// Adds Retry-After to the 429 so a client backs off by the limiter's own replenishment rather than
-    /// guessing. The token bucket reports the wait when it knows it; the period is the floor otherwise.
-    /// </summary>
-    private static Func<OnRejectedContext, CancellationToken, ValueTask> WriteRetryAfter(EdgeRateLimitSettings edge) =>
-        (context, _) =>
-        {
-            var retryAfter = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var wait)
-                ? wait
-                : TimeSpan.FromSeconds(edge.ReplenishmentSeconds);
-
-            context.HttpContext.Response.Headers.RetryAfter =
-                ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
-
-            return ValueTask.CompletedTask;
-        };
-
-    private static bool IsProbe(PathString path) =>
-        path.StartsWithSegments("/healthz")
-        || path.StartsWithSegments("/health")
-        || path.StartsWithSegments("/alive");
 }

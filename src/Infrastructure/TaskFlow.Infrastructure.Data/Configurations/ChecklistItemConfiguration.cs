@@ -1,3 +1,4 @@
+using EF.Data.Configurations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using TaskFlow.Domain.Model;
@@ -6,7 +7,7 @@ using TaskFlow.Domain.Shared;
 namespace TaskFlow.Infrastructure.Data.Configurations;
 
 /// <summary>Provides checklist item behavior for the Infrastructure Configurations layer.</summary>
-public class ChecklistItemConfiguration : EntityBaseConfiguration<ChecklistItem, ChecklistItemId>
+public class ChecklistItemConfiguration : TenantEntityTypeConfiguration<ChecklistItem, ChecklistItemId, TenantId>
 {
     /// <summary>Configures runtime behavior for this component.</summary>
     public override void Configure(EntityTypeBuilder<ChecklistItem> builder)

@@ -37,7 +37,7 @@ public class AuditHandlerTests
             EntityKey = Guid.NewGuid().ToString(),
             Status = AuditStatus.Success,
             Action = "Create",
-            StartTime = TimeSpan.FromMilliseconds(10),
+            StartedAtUtc = new DateTimeOffset(2026, 9, 29, 12, 0, 0, 10, TimeSpan.Zero),
             ElapsedTime = TimeSpan.FromMilliseconds(4),
             Metadata = "{}"
         };
@@ -68,7 +68,7 @@ public class AuditHandlerTests
             EntityKey = Guid.NewGuid().ToString(),
             Status = AuditStatus.Success,
             Action = "Update",
-            StartTime = TimeSpan.FromMilliseconds(12),
+            StartedAtUtc = new DateTimeOffset(2026, 9, 29, 12, 0, 0, 12, TimeSpan.Zero),
             ElapsedTime = TimeSpan.FromMilliseconds(6),
             Metadata = "{\"changed\":true}"
         };

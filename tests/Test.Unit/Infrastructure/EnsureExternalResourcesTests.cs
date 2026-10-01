@@ -62,7 +62,6 @@ public sealed class EnsureExternalResourcesTests
             new ConfigurationBuilder().Build(),
             new ProductionEnvironment(),
             Options.Create(new BlobStorageSettings()),
-            Options.Create(new AuditLogStorageSettings()),
             distributedLock,
             NullLogger<EnsureExternalResources>.Instance);
     }
@@ -79,7 +78,7 @@ public sealed class EnsureExternalResourcesTests
             return Task.CompletedTask;
         }
 
-        public Task CheckConnectivityAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task CheckBucketAsync(string bucketName, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class ProductionEnvironment : IHostEnvironment

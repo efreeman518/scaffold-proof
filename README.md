@@ -23,7 +23,9 @@ Reference implementation for [Scaffold AI](https://github.com/efreeman518/scaffo
 
 **Workflow orchestration:** EF.FlowEngine - three AI-driven workflows (`ai-task-triage`, `ai-task-decomposer`, `compliance-check`) with human-in-the-loop, saga compensation, atomic outbox, and agent nodes backed by the Aspire `IChatClient`; Blazor-hosted Dashboard + Designer; admin REST at `/api/flowengine/*`. See [Tech Design Section 14](docs/tech-design.html#14-workflow-orchestration-flowengine).
 
-Multi-tenant (row-level tenancy). Event-driven async via Service Bus. IaC via Bicep (`infra/`).
+Multi-tenant (row-level tenancy, fail-closed tenant filter). Event-driven async through a transactional outbox and consumer inbox over the lane broker (RabbitMQ or Service Bus). IaC via Bicep (`infra/`).
+
+**Platform packages:** cross-cutting runtime and test support comes from the `EF.*` packages, not app code - data, tenancy and audit (`EF.Data`, `EF.Tenancy`, `EF.Audit.*`), outbox, inbox and transports (`EF.Data.Outbox`, `EF.Messaging.*`), hosting, problem details and concurrency (`EF.Host`, `EF.AspNetCore`, `EF.OpenTelemetry`, `EF.Http.Resilience`), auth, gateway relay, cache and rate limiting (`EF.Auth`, `EF.Gateway`, `EF.Cache`, `EF.RateLimiting`), scheduling (`EF.BackgroundServices.TickerQ`), storage, AI and the Uno client pipeline (`EF.Storage.*`, `EF.CosmosDb`, `EF.AI`, `EF.UI.Client`), and tests (`EF.Testing`, `EF.Testing.Architecture`, `EF.IntegrationTesting.*`). TaskFlow keeps only the app-specific composition.
 
 **Detailed docs:** [Tech Design](docs/tech-design.html) - [Tech Design Maintenance](docs/TECH-DESIGN-MAINTENANCE.md) - [DESIGN-DECISIONS.md](.scaffold/DESIGN-DECISIONS.md) - [UBIQUITOUS-LANGUAGE.md](.scaffold/UBIQUITOUS-LANGUAGE.md)
 
@@ -34,7 +36,7 @@ Multi-tenant (row-level tenancy). Event-driven async via Service Bus. IaC via Bi
 - **.NET 10 SDK** - the exact version is pinned by [`global.json`](global.json).
 - **Workloads:** `dotnet workload install wasm-tools aspire` (required for the Uno WASM host and the Aspire AppHost).
 - **Docker-compatible container runtime** (Docker Desktop, headless Docker Engine, or Podman) - no desktop UI is required. Aspire starts only the selected lane: PostgreSQL/RabbitMQ/SeaweedFS with optional MongoDB by default, or the Azure emulators with `TASKFLOW_LANE=Azure`, plus common Redis and application services.
-- **Private NuGet feed access:** the `EF.*` (FlowEngine) packages restore from GitHub Packages via the `efreeman518-github` source in [`nuget.config`](nuget.config). Supply a `NUGET_PAT` (a GitHub token with `read:packages`) before restoring.
+- **Private NuGet feed access:** the `EF.*` packages (platform and FlowEngine) restore from GitHub Packages via the `efreeman518-github` source in [`nuget.config`](nuget.config). Supply a `NUGET_PAT` (a GitHub token with `read:packages`) before restoring.
 - **Local tools:** `dotnet tool restore` restores Stryker.NET and the other tools declared in the tool manifest.
 
 ### Run
@@ -68,6 +70,12 @@ networkingMode=mirrored
 
 Apply it with `podman machine stop`, `podman machine set --user-mode-networking=false`, `wsl --shutdown`, then `podman machine start`. With mirrored networking, do not set `TESTCONTAINERS_HOST_OVERRIDE`. Under legacy WSL NAT, the component Testcontainers lanes can instead use a run-scoped `TESTCONTAINERS_HOST_OVERRIDE=<podman machine ip>`, but Aspire and full-stack Playwright remain unavailable because DCP publishes container ports to VM loopback.
 
+Under mirrored networking a connect to `::1` on a port the container runtime published on `127.0.0.1` hangs instead of being refused. The persistent `dotnet run` stack is proxyless, so the AppHost points every persistent container endpoint at `127.0.0.1`; custom tooling against those ports should use `127.0.0.1` rather than `localhost` as well.
+
+The persistent NonAzure dev broker (volume `taskflow-rabbitmq-data`) keeps the queues an earlier run declared. TaskFlow now declares them as quorum queues, and RabbitMQ fixes a queue's type at creation, so a volume that still holds the classic queues makes the Scheduler fail its topology declaration with `PRECONDITION_FAILED`. Delete them once with the AppHost stopped and only the RabbitMQ container running (`podman start` it; its name starts with `rabbitmq-`), then start the AppHost again: `foreach ($q in 'taskflow.projection','taskflow.ai-review','taskflow.workflow','taskflow.embedding','taskflow.dead-letter') { podman exec <rabbitmq container> rabbitmqctl delete_queue $q }`. `taskflow.embedding` exists only on the PgVector arm. Removing the `taskflow-rabbitmq-data` volume instead also works and discards every message and definition on the broker.
+
+For the manual `Test.Load` lane, start the AppHost with `$env:TASKFLOW_ASPIRE_LOAD_PROFILE = "true"` (it raises the scaffold tenant's rate-limit tier) and follow the steps on `tests/Test.Load/TaskItemLoadTests.cs`.
+
 Generated API clients (Blazor Refit, React `openapi-typescript`) regenerate per [`docs/plans/client-generation.md`](docs/plans/client-generation.md).
 
 ### Hosting lanes: Azure vs NonAzure
@@ -86,7 +94,7 @@ Every independent provider switch (object storage, read model, audit sink, searc
 
 ### Authentication
 
-The reference app runs with `AuthMode: Scaffold`. The API supplies a fixed authenticated scaffold principal, UI heads do not require or show a login, and anonymous `GET /auth/mode` reports the public mode without exposing provider configuration. This is the executable scaffold proof, not a production security boundary.
+The reference app runs with `AuthMode: Scaffold`, its only auth mode. The Api and the Gateway each register the EF.Auth fixed principal (`ScaffoldPrincipal`), allowed only in the `Development`, `Testing` and `Production` environments (fixed in code, D-072; any other environment fails host start). UI heads do not require or show a login, and anonymous `GET /auth/mode` reports the public mode without exposing provider configuration. This is the executable scaffold proof, not a production security boundary.
 
 Live Entra ID or Entra External ID remains deployment-only. Before public use, implement the chosen client flow, disable scaffold auth, provision registrations/roles/consent, and complete the published-`Release` acceptance steps in [`infra/README.md`](infra/README.md#optional-live-interactive-identity).
 
@@ -226,7 +234,7 @@ Unfiltered CI acceptance uses explicit false opt-outs for unavailable Functions,
 
 `dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj -m:1` boots the AppHost through `Aspire.Hosting.Testing`, runs the C# Gateway/Blazor happy-path smoke with `Microsoft.Playwright`, and invokes the installed TypeScript Playwright projects for Blazor, React, and Uno.
 
-The C# page objects stay intentionally narrow: Gateway root/`/alive` plus Blazor `/tasks`. React coverage remains DOM/ARIA based. Uno coverage is canvas-first: wait for painted canvas, click stable app chrome, compare visual fingerprints. Do not assert Uno Skia text through DOM selectors. `PLAYWRIGHT_GATEWAY_URL`, `PLAYWRIGHT_BLAZOR_URL`, `PLAYWRIGHT_REACT_URL`, and `PLAYWRIGHT_UNO_URL` are target overrides, not test opt-ins. `AspireTestHostContext` is shared by mesh and Playwright/WASM fixtures and owns Docker preflight, one cumulative startup deadline, named waits, default state/health/exit/timestamp diagnostics, and bounded stop/dispose. `TASKFLOW_ASPIRE_STARTUP_TIMEOUT_SECONDS` or `TASKFLOW_WASM_STARTUP_TIMEOUT_SECONDS` sets the one wall-clock budget; project/test timeouts are shorter caps only. Explicit `TASKFLOW_PLAYWRIGHT_TESTS_ENABLED=false` / `TASKFLOW_WASM_TESTS_ENABLED=false` is inconclusive. On a default run (lane switch unset) a failed Docker preflight or a missing optional prerequisite (Playwright npm dependencies, browser, Node.js, `wasm-tools` workload) is inconclusive and the message names the enabling command or opt-out variable; with the lane switch explicitly `true` the same gap is red. Once Docker succeeds, AppHost/resource/browser startup failures and test failures are red.
+The C# page objects stay intentionally narrow: Gateway root/`/alive` plus Blazor `/tasks`. React coverage remains DOM/ARIA based. Uno coverage is canvas-first: wait for painted canvas, click stable app chrome, compare visual fingerprints. Do not assert Uno Skia text through DOM selectors. `PLAYWRIGHT_GATEWAY_URL`, `PLAYWRIGHT_BLAZOR_URL`, `PLAYWRIGHT_REACT_URL`, and `PLAYWRIGHT_UNO_URL` are target overrides, not test opt-ins. The `EF.IntegrationTesting.Aspire` `AspireTestHostContext` is shared by mesh and Playwright/WASM fixtures and owns Docker preflight, one cumulative startup deadline, named waits, default state/health/exit/timestamp diagnostics, and bounded stop/dispose. `TASKFLOW_ASPIRE_STARTUP_TIMEOUT_SECONDS` or `TASKFLOW_WASM_STARTUP_TIMEOUT_SECONDS` sets the one wall-clock budget; project/test timeouts are shorter caps only. Explicit `TASKFLOW_PLAYWRIGHT_TESTS_ENABLED=false` / `TASKFLOW_WASM_TESTS_ENABLED=false` is inconclusive. On a default run (lane switch unset) a failed Docker preflight or a missing optional prerequisite (Playwright npm dependencies, browser, Node.js, `wasm-tools` workload) is inconclusive and the message names the enabling command or opt-out variable; with the lane switch explicitly `true` the same gap is red. Once Docker succeeds, AppHost/resource/browser startup failures and test failures are red.
 
 ### Projects and agents (opt-in, Azure-only)
 

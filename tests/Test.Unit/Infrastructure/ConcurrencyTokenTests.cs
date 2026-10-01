@@ -1,7 +1,7 @@
+using EF.Common.Contracts;
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Infrastructure.Data;
-using TaskFlow.Infrastructure.Data.Interceptors;
 using Test.Support;
 using Test.Support.Builders;
 
@@ -48,7 +48,7 @@ public sealed class ConcurrencyTokenTests
     }
 
     [TestMethod]
-    public async Task Save_WithStaleVersion_ThrowsDbUpdateConcurrencyException()
+    public async Task Save_WithStaleVersion_ThrowsPreconditionFailedException()
     {
         var ct = TestContext.CancellationToken;
         var dbName = Guid.NewGuid().ToString();
@@ -72,8 +72,9 @@ public sealed class ConcurrencyTokenTests
         // The stale copy still carries original Version 1; EF's WHERE Version = 1 matches nothing.
         // Throw (not the package ClientWins retry) so the conflict surfaces to the caller.
         secondCopy.Update(name: "second loses");
-        await Assert.ThrowsExactlyAsync<DbUpdateConcurrencyException>(
+        var failure = await Assert.ThrowsExactlyAsync<PreconditionFailedException>(
             () => second.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct));
+        Assert.IsInstanceOfType<DbUpdateConcurrencyException>(failure.InnerException);
     }
 
     public TestContext TestContext { get; set; } = null!;
@@ -81,9 +82,9 @@ public sealed class ConcurrencyTokenTests
     private static TaskFlowDbContextTrxn Create(string dbName, TimeProvider? clock = null) =>
         new(new DbContextOptionsBuilder<TaskFlowDbContextTrxn>()
             .UseInMemoryDatabase(dbName)
-            .AddInterceptors(new VersionTimestampInterceptor(clock))
             .Options)
         {
+            Clock = clock ?? TimeProvider.System,
             AuditId = "concurrency-test",
             TenantId = TestConstants.TenantId
         };

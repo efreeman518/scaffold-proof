@@ -11,8 +11,8 @@ internal static class AttachmentStructureValidator
     /// <summary>Validates validate create rules and returns failures before work continues.</summary>
     public static Result<AttachmentDto> ValidateCreate(AttachmentDto dto)
     {
-        var common = StructureValidators.ValidateCreate(dto);
-        if (common.IsFailure) return Result<AttachmentDto>.Failure(common.ErrorMessage!);
+        var common = EntityDtoRules.ValidateCreate(dto);
+        if (common.IsFailure) return Result<AttachmentDto>.Failure(common.Errors);
 
         var errors = new List<DomainError>();
         if (string.IsNullOrWhiteSpace(dto.FileName)) errors.Add(DomainError.Create("FileName is required."));
@@ -29,8 +29,8 @@ internal static class AttachmentStructureValidator
     /// <summary>Validates validate update rules and returns failures before work continues.</summary>
     public static Result<AttachmentDto> ValidateUpdate(AttachmentDto dto)
     {
-        var common = StructureValidators.ValidateUpdate(dto);
-        if (common.IsFailure) return Result<AttachmentDto>.Failure(common.ErrorMessage!);
+        var common = EntityDtoRules.ValidateUpdate(dto);
+        if (common.IsFailure) return Result<AttachmentDto>.Failure(common.Errors);
 
         var errors = new List<DomainError>();
         if (string.IsNullOrWhiteSpace(dto.FileName)) errors.Add(DomainError.Create("FileName is required."));

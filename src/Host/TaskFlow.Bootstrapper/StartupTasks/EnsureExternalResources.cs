@@ -1,6 +1,7 @@
+using EF.Audit.AzureTable;
 using EF.Common.Contracts;
-using Azure.Data.Tables;
 using Azure.Storage.Blobs;
+using EF.Host;
 using EF.Storage.S3;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Azure;
@@ -27,7 +28,6 @@ public sealed class EnsureExternalResources(
     IConfiguration config,
     IHostEnvironment environment,
     IOptions<BlobStorageSettings> blobSettings,
-    IOptions<AuditLogStorageSettings> auditSettings,
     IDistributedLock distributedLock,
     ILogger<EnsureExternalResources> logger) : IStartupTask
 {
@@ -42,8 +42,6 @@ public sealed class EnsureExternalResources(
 
     /// <summary>How long a losing replica waits for the lock before provisioning without it.</summary>
     private static readonly TimeSpan WaitBudget = TimeSpan.FromSeconds(90);
-
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
 
     /// <summary>
     /// Ensures the attachment container or S3 bucket, the audit table, and (in development) the Cosmos view
@@ -63,17 +61,9 @@ public sealed class EnsureExternalResources(
     /// </summary>
     public async Task ExecuteAsync(CancellationToken ct = default)
     {
-        var lease = await distributedLock.TryAcquireAsync(ProvisionLockKey, LockTtl, ct).ConfigureAwait(false);
-        if (lease is not null)
-        {
-            logger.ProvisioningAcquired(ProvisionLockKey);
-        }
-        else
-        {
-            logger.ProvisioningDeferred(ProvisionLockKey);
-            lease = await WaitForLockAsync(ct).ConfigureAwait(false);
-        }
-
+        // D5: an immediate attempt, then polls until the budget is spent; null means the budget ran out.
+        var lease = await distributedLock.AcquireWithinAsync(ProvisionLockKey, LockTtl, WaitBudget, ct: ct)
+            .ConfigureAwait(false);
         if (lease is null)
         {
             logger.ProvisioningWaitTimedOut(ProvisionLockKey, (int)WaitBudget.TotalSeconds);
@@ -83,27 +73,9 @@ public sealed class EnsureExternalResources(
 
         await using (lease.ConfigureAwait(false))
         {
+            logger.ProvisioningAcquired(ProvisionLockKey);
             await ProvisionAsync(ct).ConfigureAwait(false);
         }
-    }
-
-    /// <summary>Polls until the lock is free and returns it held, or null once the wait budget is spent.</summary>
-    private async Task<IAsyncDisposable?> WaitForLockAsync(CancellationToken ct)
-    {
-        var deadline = DateTimeOffset.UtcNow + WaitBudget;
-
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            await Task.Delay(PollInterval, ct).ConfigureAwait(false);
-
-            var lease = await distributedLock.TryAcquireAsync(ProvisionLockKey, LockTtl, ct).ConfigureAwait(false);
-            if (lease is null) continue;
-
-            logger.ProvisioningAcquiredAfterWait(ProvisionLockKey);
-            return lease;
-        }
-
-        return null;
     }
 
     /// <summary>Runs every idempotent ensure step; each is a no-op when its provider is not configured.</summary>
@@ -140,17 +112,16 @@ public sealed class EnsureExternalResources(
         logger.ExternalResourceReady("s3 bucket", AttachmentBlobs.ContainerName);
     }
 
-    /// <summary>Creates the audit table named by configuration.</summary>
+    /// <summary>Creates the audit table when the Azure Table audit arm is active (D19).</summary>
     private async Task EnsureAuditTableAsync(CancellationToken ct)
     {
-        var factory = services.GetService<IAzureClientFactory<TableServiceClient>>();
-        if (factory is null) return;
+        var auditLog = services.GetService<AzureTableAuditLogRepository>();
+        if (auditLog is null) return;
 
-        var table = factory.CreateClient(auditSettings.Value.TableServiceClientName)
-            .GetTableClient(auditSettings.Value.TableName);
-        await table.CreateIfNotExistsAsync(ct).ConfigureAwait(false);
+        await auditLog.EnsureTableAsync(ct).ConfigureAwait(false);
 
-        logger.ExternalResourceReady("audit table", auditSettings.Value.TableName);
+        logger.ExternalResourceReady("audit table",
+            services.GetRequiredService<IOptions<AzureTableAuditLogSettings>>().Value.TableName);
     }
 
     /// <summary>

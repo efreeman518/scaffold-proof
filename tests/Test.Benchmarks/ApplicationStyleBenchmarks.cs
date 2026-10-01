@@ -1,7 +1,7 @@
 using BenchmarkDotNet.Attributes;
 using EF.Common.Contracts;
 using EF.IntegrationTesting.EntityFramework;
-using EF.IntegrationTesting.Environment;
+using EF.Testing.Environment;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -31,8 +31,8 @@ namespace Test.Benchmarks;
 public class ApplicationStyleBenchmarks
 {
     // The scaffold tenant gets the default tier; a measurement runs far more requests than its 100 per minute.
-    private const string RateLimitPermitEnvironmentVariable = "RateLimiting__Tiers__standard__PermitLimit";
-    private const string RateLimitWindowEnvironmentVariable = "RateLimiting__Tiers__standard__WindowSeconds";
+    private const string RateLimitPermitEnvironmentVariable = "RateLimiting__Tenants__Tiers__standard__PermitLimit";
+    private const string RateLimitWindowEnvironmentVariable = "RateLimiting__Tenants__Tiers__standard__WindowSeconds";
 
     private ApplicationStyleBenchmarkApiFactory _factory = null!;
     private HttpClient _client = null!;

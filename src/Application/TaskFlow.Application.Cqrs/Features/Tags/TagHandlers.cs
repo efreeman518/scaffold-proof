@@ -1,4 +1,5 @@
 ﻿using EF.Cache;
+using EF.Tenancy;
 using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using EF.Data.Contracts;
@@ -17,23 +18,22 @@ namespace TaskFlow.Application.Cqrs.Features.Tags;
 
 /// <summary>Handles search tags work by coordinating validation, tenant boundaries, persistence, and response mapping.</summary>
 internal sealed class SearchTagsHandler(
-    ILogger<SearchTagsHandler> logger,
     IRequestContext<string, Guid?> requestContext,
-    ITagRepositoryQuery repoQuery)
+    ITagRepositoryQuery repoQuery,
+    ITenantBoundaryValidator tenantBoundaryValidator)
     : IRequestHandler<SearchTagsQuery, PagedResponse<TagDto>>
 {
     /// <summary>Handles search tags requests and returns the application result.</summary>
     public async Task<PagedResponse<TagDto>> HandleAsync(SearchTagsQuery query, CancellationToken ct = default)
     {
         var request = query.Request;
-        HandlerHelpers.EnforceTenantFilter(request, requestContext.TenantId, requestContext.Roles, logger, "TagSearch");
+        request.Filter = tenantBoundaryValidator.EnforceTenantFilter(request.Filter, requestContext.TenantId, requestContext.Roles, "TagSearch");
         return await repoQuery.SearchTagsAsync(request, query.IncludeTotal, ct);
     }
 }
 
 /// <summary>Handles get tag by ID work by coordinating validation, tenant boundaries, persistence, and response mapping.</summary>
 internal sealed class GetTagByIdHandler(
-    ILogger<GetTagByIdHandler> logger,
     IRequestContext<string, Guid?> requestContext,
     ITagRepositoryQuery repoQuery,
     ITenantBoundaryValidator tenantBoundaryValidator)
@@ -46,7 +46,7 @@ internal sealed class GetTagByIdHandler(
         if (entity is null) return Result<DefaultResponse<TagDto>>.None();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
+            requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "Tag:Get", nameof(Tag), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(boundary.ErrorMessage!);
 
@@ -74,7 +74,7 @@ internal sealed class CreateTagHandler(
         if (validation.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(validation.Errors);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, requestContext.TenantId, requestContext.Roles, dto.TenantId,
+            requestContext.TenantId, requestContext.Roles, dto.TenantId,
             "Tag:Create", nameof(Tag));
         if (boundary.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(boundary.ErrorMessage!);
 
@@ -141,14 +141,14 @@ internal sealed class UpdateTagHandler(
         }
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
+            requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "Tag:Update", nameof(Tag), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(boundary.ErrorMessage!);
 
         ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(Tag), entity.Id.Value);
 
         var tenantChangeCheck = tenantBoundaryValidator.PreventTenantChange(
-            logger, entity.TenantId.Value, dto.TenantId, nameof(Tag), entity.Id.Value);
+            entity.TenantId.Value, dto.TenantId, nameof(Tag), entity.Id.Value);
         if (tenantChangeCheck.IsFailure) return Result<DefaultResponse<TagDto>>.Failure(tenantChangeCheck.ErrorMessage!);
 
         var updateResult = entity.Update(dto.Name, dto.Color);
@@ -178,7 +178,7 @@ internal sealed class DeleteTagHandler(
         if (entity is null) return Result.Success();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
+            requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "Tag:Delete", nameof(Tag), entity.Id.Value);
         if (boundary.IsFailure) return Result.Failure(boundary.ErrorMessage!);
 

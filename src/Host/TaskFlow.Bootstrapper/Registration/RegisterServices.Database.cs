@@ -2,15 +2,17 @@
 using EF.Data.Contracts;
 using EF.Data.Encryption;
 using EF.Data.Interceptors;
+using EF.Data.Outbox;
 using EF.BackgroundServices.InternalMessageBus;
+using EF.Common.Contracts;
+using EF.Messaging.Outbox;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Infrastructure.Data;
-using TaskFlow.Infrastructure.Data.Interceptors;
-using TaskFlow.Infrastructure.Data.Operational;
 using TaskFlow.Infrastructure.Data.Provider;
 using TaskFlow.Infrastructure.Repositories;
 
@@ -19,6 +21,17 @@ namespace TaskFlow.Bootstrapper;
 /// <summary>Configures database services for TaskFlow runtime hosts.</summary>
 public static partial class RegisterServices
 {
+    /// <summary>
+    /// The EF.Data tenant query filter fails closed: a context with no tenant reads no tenant rows unless its
+    /// scope is marked all-tenants. A caller with no tenant reads every tenant only when it is the system
+    /// identity (message consumers, scheduled jobs and other no-request work) or a global admin. A caller that
+    /// carries a tenant stays pinned to it, global admin included; a tenant-less caller with neither role reads
+    /// nothing.
+    /// </summary>
+    internal static bool AllowsAllTenants(IRequestContext<string, Guid?> requestContext) =>
+        requestContext.TenantId is null
+        && (requestContext.RoleExists(AppConstants.ROLE_SYSTEM) || requestContext.RoleExists(AppConstants.ROLE_GLOBAL_ADMIN));
+
     /// <summary>
     /// Registers write DbContext, read DbContext, FlowEngine DbContext, and repositories.
     /// Provider selection (SQL Server / PostgreSQL) happens once in <see cref="TaskFlowDbProviderExtensions.UseTaskFlowProvider"/>.
@@ -30,9 +43,15 @@ public static partial class RegisterServices
         // context and would recurse while the pooled factory builds its options.
         services.AddTransient(sp => new AuditInterceptor<string, Guid?>(
             sp.GetRequiredService<IInternalMessageBus>(), []));
-        services.AddSingleton<VersionTimestampInterceptor>();
-        // D-026: stages raised domain events as outbox rows in the same SaveChanges as the domain write.
-        services.AddSingleton<OutboxStagingInterceptor>();
+        // D-026/M10: EF.Data.Outbox stages raised domain events as outbox rows in the same SaveChanges as the domain
+        // write (its singleton OutboxStagingInterceptor), through TaskFlow's mapper (envelope + TenantId header);
+        // IOutboxStaging covers the jobs that have no tracked aggregate, and the leased work store claims both tables.
+        services.AddSingleton<IOutboxEventMapper, TaskFlowOutboxEventMapper>();
+        services.AddOutbox<TaskFlowDbContextTrxn>(o =>
+        {
+            o.DefaultDestination = TaskFlowIntegrationEvents.Destination;
+            o.SerializerOptions = TaskFlowMessagingJsonContext.Default.Options;
+        });
         // No ConnectionNoLockInterceptor registration: nothing ever added it to a context (D-004 keeps the
         // read isolation default on both providers), and EF.Data 1.1.100 marks it [Obsolete] in favor of
         // EF.Data.SqlServer (package request 3), so the dead line was the only obsolete usage in the tree.
@@ -54,11 +73,14 @@ public static partial class RegisterServices
             options.UseColumnEncryption(sp.GetRequiredService<IColumnEncryptor>());
             options.AddInterceptors(
                 sp.GetRequiredService<AuditInterceptor<string, Guid?>>(),
-                sp.GetRequiredService<VersionTimestampInterceptor>(),
                 sp.GetRequiredService<OutboxStagingInterceptor>(),
                 sp.GetRequiredService<BlindIndexInterceptor>());
         });
-        services.AddScoped<DbContextScopedFactory<TaskFlowDbContextTrxn, string, Guid?>>();
+        services.AddScoped(sp => new DbContextScopedFactory<TaskFlowDbContextTrxn, string, Guid?>(
+            sp.GetRequiredService<IDbContextFactory<TaskFlowDbContextTrxn>>(),
+            sp.GetRequiredService<IRequestContext<string, Guid?>>(),
+            sp.GetService<TimeProvider>(),
+            AllowsAllTenants));
         services.AddScoped(sp => sp.GetRequiredService<DbContextScopedFactory<TaskFlowDbContextTrxn, string, Guid?>>()
             .CreateDbContext());
 
@@ -69,7 +91,11 @@ public static partial class RegisterServices
                 TaskFlowDbContextBase.MigrationHistoryTable, TaskFlowDbContextBase.SchemaName);
             options.UseColumnEncryption(sp.GetRequiredService<IColumnEncryptor>());
         });
-        services.AddScoped<DbContextScopedFactory<TaskFlowDbContextQuery, string, Guid?>>();
+        services.AddScoped(sp => new DbContextScopedFactory<TaskFlowDbContextQuery, string, Guid?>(
+            sp.GetRequiredService<IDbContextFactory<TaskFlowDbContextQuery>>(),
+            sp.GetRequiredService<IRequestContext<string, Guid?>>(),
+            sp.GetService<TimeProvider>(),
+            AllowsAllTenants));
         services.AddScoped(sp => sp.GetRequiredService<DbContextScopedFactory<TaskFlowDbContextQuery, string, Guid?>>()
             .CreateDbContext());
 
@@ -91,9 +117,8 @@ public static partial class RegisterServices
         services.AddScoped<ICommentRepositoryQuery, CommentRepositoryQuery>();
         services.AddScoped<IChecklistItemRepositoryQuery, ChecklistItemRepositoryQuery>();
 
-        services.AddScoped<IInboxStore, InboxStore>();
-        services.AddScoped<IOutboxStaging, OutboxStaging>();
-        services.AddScoped<IOperationalWorkRepository, OperationalWorkRepository>();
+        // M12: two-state inbox; renewal takes short-lived contexts from the pooled factory registered above.
+        services.AddInbox<TaskFlowDbContextTrxn>();
         // Cross-tenant system access for the scheduler jobs (IgnoreQueryFilters), so background work no
         // longer leans on the request context defaulting to global admin.
         services.AddScoped<ITaskItemSystemRepository, TaskItemSystemRepository>();

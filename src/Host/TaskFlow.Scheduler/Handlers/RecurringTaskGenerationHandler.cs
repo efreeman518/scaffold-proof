@@ -1,5 +1,6 @@
 using EF.Common;
 using System.Globalization;
+using EF.Messaging.Outbox;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Domain.Model;
@@ -7,8 +8,7 @@ using TaskFlow.Domain.Model.ValueObjects;
 using TaskFlow.Domain.Shared;
 using TaskFlow.Domain.Shared.Constants;
 using TaskFlow.Domain.Shared.Events;
-using TaskFlow.Observability.Meters;
-using TaskFlow.Scheduler.Abstractions;
+using EF.BackgroundServices.Scheduling;
 
 namespace TaskFlow.Scheduler.Handlers;
 
@@ -21,7 +21,7 @@ namespace TaskFlow.Scheduler.Handlers;
 public sealed class RecurringTaskGenerationHandler(
     ITaskItemSystemRepository systemRepository,
     IOutboxStaging outbox,
-    SchedulerJobMeter meter,
+    ScheduledJobTelemetry telemetry,
     TimeProvider timeProvider,
     ILogger<RecurringTaskGenerationHandler> logger) : IScheduledJobHandler
 {
@@ -43,7 +43,7 @@ public sealed class RecurringTaskGenerationHandler(
             generated += await GenerateAsync(template, asOfUtc, ct);
         }
 
-        meter.RecordWork(JobName, scanned, generated);
+        telemetry.RecordWork(JobName, scanned, generated);
         logger.RecurringTemplatesFound(scanned);
     }
 
@@ -122,7 +122,7 @@ public sealed class RecurringTaskGenerationHandler(
             correlationId: null,
             id: messageId);
 
-        outbox.Stage(envelope, occurrence.TenantId.Value, messageId);
+        outbox.Stage(TaskFlowIntegrationEvents.Entry(envelope, occurrence.TenantId.Value));
     }
 
     /// <summary>UUIDv5 over (tenant, template, occurrence): the same occurrence always gets the same id.</summary>

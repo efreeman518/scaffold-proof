@@ -1,3 +1,4 @@
+using EF.Tenancy;
 using EF.Cache;
 using EF.Common.Contracts;
 using EF.Data.Contracts;
@@ -41,10 +42,10 @@ public class CategoryServiceTests
         _requestContextMock.Setup(x => x.TenantId).Returns(TestConstants.TenantId);
         _requestContextMock.Setup(x => x.Roles).Returns(new List<string>());
         _tenantBoundaryValidatorMock
-            .Setup(x => x.EnsureTenantBoundary(It.IsAny<ILogger>(), It.IsAny<Guid?>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>()))
+            .Setup(x => x.EnsureTenantBoundary(It.IsAny<Guid?>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>()))
             .Returns(Result.Success());
         _tenantBoundaryValidatorMock
-            .Setup(x => x.PreventTenantChange(It.IsAny<ILogger>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<Guid>()))
+            .Setup(x => x.PreventTenantChange(It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<Guid>()))
             .Returns(Result.Success());
     }
 
@@ -232,7 +233,7 @@ public class CategoryServiceTests
         _repoQueryMock.Setup(r => r.GetCategoryAsync(It.IsAny<CategoryId>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CategoryBuilder().WithName("Someone else's category").Build());
 
-        await Assert.ThrowsExactlyAsync<IdempotentCreateConflictException>(() =>
+        await Assert.ThrowsExactlyAsync<ConflictException>(() =>
             CreateService().CreateAsync(new DefaultRequest<CategoryDto> { Item = dto }, TestContext.CancellationToken));
     }
 

@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="MSTest" />
+    <PackageReference Include="EF.AI.Testing" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <PackageReference Include="Newtonsoft.Json" />

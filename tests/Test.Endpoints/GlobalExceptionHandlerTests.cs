@@ -1,15 +1,25 @@
 using System.Diagnostics;
 using System.Text.Json;
+using EF.AspNetCore.ExceptionHandling;
+using EF.Common.Contracts;
+using EF.Common.Exceptions;
+using EF.Data.Contracts;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging.Abstractions;
-using TaskFlow.Api.Middleware;
-using TaskFlow.Application.Contracts.Concurrency;
+using TaskFlow.Api;
+using TaskFlow.Application.Contracts;
+using TaskFlow.Infrastructure.Data.Provider;
 
 namespace Test.Endpoints;
 
-/// <summary>Guards the exception-to-status contract and the correlation identifiers emitted in ProblemDetails.</summary>
+/// <summary>
+/// Guards the exception-to-status contract and the correlation identifiers emitted in ProblemDetails, as the Api
+/// registers them: the EF.AspNetCore problem-details handler plus TaskFlow's exception classifier mappings.
+/// </summary>
 [TestClass]
 [TestCategory("Endpoint")]
 public sealed class GlobalExceptionHandlerTests
@@ -20,32 +30,18 @@ public sealed class GlobalExceptionHandlerTests
         using var activity = new Activity("exception-test")
             .SetIdFormat(ActivityIdFormat.W3C)
             .Start();
-        var context = new DefaultHttpContext
-        {
-            TraceIdentifier = "request-123"
-        };
-        context.Request.Method = HttpMethods.Get;
-        context.Request.Path = "/failure";
-        context.Response.Body = new MemoryStream();
-        var handler = new DefaultExceptionHandler(
-            NullLogger<DefaultExceptionHandler>.Instance,
-            new TestHostEnvironment());
+        using var provider = BuildProvider();
+        var context = NewContext(provider);
+        context.TraceIdentifier = "request-123";
 
-        var handled = await handler.TryHandleAsync(
-            context,
-            new Exception("failure"),
-            CancellationToken.None);
+        var handled = await Handler(provider).TryHandleAsync(context, new Exception("failure"), CancellationToken.None);
 
-        context.Response.Body.Position = 0;
-        using var response = await JsonDocument.ParseAsync(
-            context.Response.Body,
-            cancellationToken: CancellationToken.None);
-        var root = response.RootElement;
-
+        var root = await ReadBodyAsync(context);
         Assert.IsTrue(handled);
         Assert.AreEqual(activity.TraceId.ToHexString(), root.GetProperty("traceId").GetString());
         Assert.AreEqual(activity.SpanId.ToHexString(), root.GetProperty("spanId").GetString());
         Assert.AreEqual("request-123", root.GetProperty("requestId").GetString());
+        Assert.AreEqual("GET /failure", root.GetProperty("instance").GetString());
         Assert.IsFalse(root.TryGetProperty("activityId", out _));
     }
 
@@ -55,37 +51,37 @@ public sealed class GlobalExceptionHandlerTests
     {
         using var aborted = new CancellationTokenSource();
         await aborted.CancelAsync();
-        var context = NewContext();
+        using var provider = BuildProvider();
+        var context = NewContext(provider);
         context.RequestAborted = aborted.Token;
 
-        await NewHandler().TryHandleAsync(context, new OperationCanceledException(aborted.Token), CancellationToken.None);
+        await Handler(provider).TryHandleAsync(context, new OperationCanceledException(aborted.Token), CancellationToken.None);
 
         Assert.AreEqual(499, context.Response.StatusCode);
         Assert.AreEqual(0, context.Response.Body.Length);
     }
 
-    /// <summary>A cancellation the caller did not cause is a server fault, not a client disconnect.</summary>
+    /// <summary>
+    /// A cancellation the caller did not cause is a server-side timeout (EF.AspNetCore 2.0: 504, was 500), and an
+    /// HttpClient timeout (TaskCanceledException over TimeoutException) is the same 504.
+    /// </summary>
     [TestMethod]
-    public async Task TryHandleAsync_NonClientCancellation_Returns500()
+    public async Task TryHandleAsync_NonClientCancellationOrHttpClientTimeout_Returns504()
     {
-        var context = NewContext();
+        Exception[] timeouts =
+        [
+            new OperationCanceledException(),
+            new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout.",
+                new TimeoutException("The operation was canceled."))
+        ];
 
-        await NewHandler().TryHandleAsync(context, new OperationCanceledException(), CancellationToken.None);
-
-        Assert.AreEqual(StatusCodes.Status500InternalServerError, context.Response.StatusCode);
-    }
-
-    /// <summary>An HttpClient timeout (TaskCanceledException over TimeoutException) is a 504.</summary>
-    [TestMethod]
-    public async Task TryHandleAsync_HttpClientTimeout_Returns504()
-    {
-        var context = NewContext();
-        var timeout = new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout.",
-            new TimeoutException("The operation was canceled."));
-
-        await NewHandler().TryHandleAsync(context, timeout, CancellationToken.None);
-
-        Assert.AreEqual(StatusCodes.Status504GatewayTimeout, context.Response.StatusCode);
+        using var provider = BuildProvider();
+        foreach (var timeout in timeouts)
+        {
+            var context = NewContext(provider);
+            await Handler(provider).TryHandleAsync(context, timeout, CancellationToken.None);
+            Assert.AreEqual(StatusCodes.Status504GatewayTimeout, context.Response.StatusCode, timeout.GetType().Name);
+        }
     }
 
     /// <summary>Outside Development a 5xx carries no exception text; Staging included.</summary>
@@ -94,9 +90,10 @@ public sealed class GlobalExceptionHandlerTests
     [DataRow("Staging")]
     public async Task TryHandleAsync_ServerFaultOutsideDevelopment_HasNoDetail(string environmentName)
     {
-        var context = NewContext();
+        using var provider = BuildProvider(environmentName);
+        var context = NewContext(provider);
 
-        await NewHandler(environmentName).TryHandleAsync(
+        await Handler(provider).TryHandleAsync(
             context, new Exception("Login failed for user 'sa' on server sql-internal"), CancellationToken.None);
 
         var root = await ReadBodyAsync(context);
@@ -105,14 +102,19 @@ public sealed class GlobalExceptionHandlerTests
             "A 5xx must not carry exception text outside Development.");
     }
 
-    /// <summary>An ArgumentException the app throws for caller input stays a 400 with its message.</summary>
+    /// <summary>
+    /// The app's validation path for caller input - InvalidRequestException, as the task-item search throws for an
+    /// out-of-range page size (end to end in CursorPagingEndpointTests) - is a 400 carrying the app's message.
+    /// </summary>
     [TestMethod]
-    public async Task TryHandleAsync_AppThrownArgumentException_Returns400()
+    public async Task TryHandleAsync_AppValidationOfCallerInput_Returns400WithMessage()
     {
-        var context = NewContext();
-        var exception = Capture(() => UuidV7.TimestampOf(Guid.NewGuid()));
+        using var provider = BuildProvider();
+        var context = NewContext(provider);
+        var exception = new InvalidRequestException(
+            string.Format(System.Globalization.CultureInfo.InvariantCulture, ErrorConstants.ERROR_PAGE_SIZE_RANGE, 1, 100));
 
-        await NewHandler().TryHandleAsync(context, exception, CancellationToken.None);
+        await Handler(provider).TryHandleAsync(context, exception, CancellationToken.None);
 
         var root = await ReadBodyAsync(context);
         Assert.AreEqual(StatusCodes.Status400BadRequest, context.Response.StatusCode);
@@ -120,8 +122,35 @@ public sealed class GlobalExceptionHandlerTests
     }
 
     /// <summary>
-    /// Framework faults are server bugs, not caller mistakes: an ArgumentException from the BCL, a
-    /// KeyNotFoundException, FormatException or InvalidOperationException all stay 500.
+    /// The TaskFlow mappings on the shared classifier: a stale If-Match and a lost update are 412, a conflicting
+    /// idempotent create is 409, a rejected cursor is 400, and a missing key is 404 (EF.AspNetCore 2.0 default;
+    /// was 500).
+    /// </summary>
+    [TestMethod]
+    public async Task TryHandleAsync_MappedExceptions_ReturnTheirStatus()
+    {
+        (Exception Exception, int Status)[] cases =
+        [
+            (new PreconditionFailedException("TaskItem", Guid.CreateVersion7().ToString(), 1, 2), StatusCodes.Status412PreconditionFailed),
+            (new DbUpdateConcurrencyException(), StatusCodes.Status412PreconditionFailed),
+            (new ConflictException("TaskItem", Guid.CreateVersion7().ToString()), StatusCodes.Status409Conflict),
+            (new InvalidCursorException("tampered"), StatusCodes.Status400BadRequest),
+            (Capture(() => _ = new Dictionary<int, int>()[1]), StatusCodes.Status404NotFound)
+        ];
+
+        using var provider = BuildProvider();
+        foreach (var (exception, status) in cases)
+        {
+            var context = NewContext(provider);
+            await Handler(provider).TryHandleAsync(context, exception, CancellationToken.None);
+            Assert.AreEqual(status, context.Response.StatusCode, exception.GetType().Name);
+        }
+    }
+
+    /// <summary>
+    /// A framework ArgumentException (a BCL guard, or an internal one such as an unknown database provider),
+    /// FormatException and InvalidOperationException are server bugs, not caller mistakes: they stay 500, with no
+    /// exception text on the wire.
     /// </summary>
     [TestMethod]
     public async Task TryHandleAsync_FrameworkFaults_Return500()
@@ -129,25 +158,38 @@ public sealed class GlobalExceptionHandlerTests
         Exception[] faults =
         [
             Capture(() => new Dictionary<int, int> { [1] = 1 }.Add(1, 1)),
-            Capture(() => _ = new Dictionary<int, int>()[1]),
+            Capture(() => ArgumentOutOfRangeException.ThrowIfLessThan(0, 1)),
+            Capture(() => TaskFlowDbProviderSelector.MigrationsAssembly((TaskFlowDbProvider)99)),
             Capture(() => int.Parse("x", System.Globalization.CultureInfo.InvariantCulture)),
             Capture(() => Array.Empty<int>().First())
         ];
 
+        using var provider = BuildProvider();
         foreach (var fault in faults)
         {
-            var context = NewContext();
-            await NewHandler().TryHandleAsync(context, fault, CancellationToken.None);
+            var context = NewContext(provider);
+            await Handler(provider).TryHandleAsync(context, fault, CancellationToken.None);
             Assert.AreEqual(StatusCodes.Status500InternalServerError, context.Response.StatusCode, fault.GetType().Name);
         }
     }
 
-    private static DefaultExceptionHandler NewHandler(string environmentName = "Production") =>
-        new(NullLogger<DefaultExceptionHandler>.Instance, new TestHostEnvironment { EnvironmentName = environmentName });
-
-    private static DefaultHttpContext NewContext()
+    /// <summary>The Api's exception-handling registration, without the rest of the host.</summary>
+    private static ServiceProvider BuildProvider(string environmentName = "Production")
     {
-        var context = new DefaultHttpContext();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IHostEnvironment>(new TestHostEnvironment { EnvironmentName = environmentName });
+        services.AddEfProblemDetails();
+        services.AddExceptionClassifier(RegisterApiServices.MapExceptions);
+        return services.BuildServiceProvider();
+    }
+
+    private static IExceptionHandler Handler(IServiceProvider provider) =>
+        provider.GetServices<IExceptionHandler>().OfType<ProblemDetailsExceptionHandler>().Single();
+
+    private static DefaultHttpContext NewContext(IServiceProvider provider)
+    {
+        var context = new DefaultHttpContext { RequestServices = provider };
         context.Request.Method = HttpMethods.Get;
         context.Request.Path = "/failure";
         context.Response.Body = new MemoryStream();

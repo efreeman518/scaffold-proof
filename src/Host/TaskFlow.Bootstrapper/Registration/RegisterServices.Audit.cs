@@ -1,11 +1,11 @@
+using EF.Audit.Data;
+using EF.Audit.AzureTable;
+using EF.Common;
 using EF.Audit.Contracts;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Infrastructure.Data;
-using TaskFlow.Infrastructure.Repositories;
-using TaskFlow.Infrastructure.Storage;
 
 namespace TaskFlow.Bootstrapper;
 
@@ -36,10 +36,21 @@ public static partial class RegisterServices
     private static AuditProvider ParseAuditProvider(string value) =>
         StrictEnum.Parse<AuditProvider>(value, "audit provider");
 
-    /// <summary>Dispatches to the selected audit-sink backend.</summary>
+    /// <summary>
+    /// Section both arms read the shared audit settings (system-tenant sentinel, retention window, purge batch
+    /// size) from, so switching arms changes no configuration.
+    /// </summary>
+    public const string AuditSettingsSection = AzureTableAuditLogSettings.ConfigSectionName + ":Audit";
+
+    /// <summary>
+    /// Dispatches to the selected audit-sink backend. The shared <see cref="AuditSettings"/> are bound for either
+    /// arm: the Scheduler's retention job reads the window from them.
+    /// </summary>
     [ProviderSwitch(typeof(IAuditLogRepository))]
     internal static void AddAuditServices(IServiceCollection services, IConfiguration config)
     {
+        services.Configure<AuditSettings>(config.GetSection(AuditSettingsSection));
+
         switch (ResolveAuditProvider(config))
         {
             case AuditProvider.AzureTable:
@@ -52,19 +63,11 @@ public static partial class RegisterServices
     }
 
     /// <summary>
-    /// Relational audit sink (D-039). The settings section is bound here as well as in the Table arm: it
-    /// carries the retention window the Scheduler job reads and the sentinel tenant for entries with no
-    /// tenant, neither of which is Table-specific. No extra health check: the always-on <c>sql</c> readiness
-    /// check already covers this sink.
+    /// Relational audit sink (D-039/D18): the EF.Audit.Data repository over the write context, which maps the
+    /// audit row. It reads the same shared audit settings as the Table arm. No extra health check: the always-on
+    /// <c>sql</c> readiness check already covers this sink.
     /// </summary>
-    private static void AddRelationalAuditServices(IServiceCollection services, IConfiguration config)
-    {
-        services.Configure<AuditLogStorageSettings>(
-            config.GetSection(AuditLogStorageSettings.ConfigSectionName));
-
-        services.AddScoped<IAuditLogRepository>(sp => new RelationalAuditLogRepository(
-            sp.GetRequiredService<TaskFlowDbContextTrxn>(),
-            sp.GetRequiredService<IOptions<AuditLogStorageSettings>>().Value.Audit.SystemTenantId,
-            sp.GetRequiredService<IOptions<AuditLogStorageSettings>>().Value.Audit.PurgeBatchSize));
-    }
+    private static void AddRelationalAuditServices(IServiceCollection services, IConfiguration config) =>
+        services.AddRelationalAuditLog<TaskFlowDbContextTrxn>(
+            options => config.GetSection(AuditSettingsSection).Bind(options.Audit));
 }

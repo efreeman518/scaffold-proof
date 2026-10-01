@@ -1,3 +1,4 @@
+using EF.AI.Testing;
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
@@ -60,7 +61,7 @@ public class PgVectorSearchTests
         if (DbContainerFixture.Provider != TaskFlowDbProvider.PostgreSql) Assert.Inconclusive("SqlServer lane.");
 
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("pgvector");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("pgvector", ct);
         await MigrateAsync(connString, ct);
 
         await using var db = DbContainerFixture.CreateQueryContext(connString);
@@ -91,24 +92,24 @@ public class PgVectorSearchTests
         if (DbContainerFixture.Provider != TaskFlowDbProvider.PostgreSql) Assert.Inconclusive("SqlServer lane.");
 
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("pgvector");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("pgvector", ct);
         await MigrateAsync(connString, ct);
 
         var databaseTaskId = await SeedTaskAsync(connString, "Migrate the database", ct);
         var designTaskId = await SeedTaskAsync(connString, "Redesign the marketing page", ct);
 
-        var generator = new StubEmbeddingGenerator();
+        var generator = StubEmbeddings.Generator();
         await using (var scope = NewScope(connString))
         {
             await scope.Repository.UpsertAsync(
-                TenantId, databaseTaskId, StubEmbeddingGenerator.DatabaseVector, StubEmbeddingGenerator.ModelName,
+                TenantId, databaseTaskId, StubEmbeddings.DatabaseVector, StubEmbeddings.ModelName,
                 DateTimeOffset.UtcNow, ct);
             await scope.Repository.UpsertAsync(
-                TenantId, designTaskId, StubEmbeddingGenerator.DesignVector, StubEmbeddingGenerator.ModelName,
+                TenantId, designTaskId, StubEmbeddings.DesignVector, StubEmbeddings.ModelName,
                 DateTimeOffset.UtcNow, ct);
             // Replay: ON CONFLICT DO UPDATE, not a duplicate-key failure.
             await scope.Repository.UpsertAsync(
-                TenantId, databaseTaskId, StubEmbeddingGenerator.DatabaseVector, StubEmbeddingGenerator.ModelName,
+                TenantId, databaseTaskId, StubEmbeddings.DatabaseVector, StubEmbeddings.ModelName,
                 DateTimeOffset.UtcNow, ct);
         }
 
@@ -117,8 +118,8 @@ public class PgVectorSearchTests
             var rows = await scope.Read.Set<TaskItemEmbedding>().AsNoTracking()
                 .Where(e => e.TenantId == TenantId).ToListAsync(ct);
             Assert.AreEqual(2, rows.Count, "the replayed upsert must replace, not duplicate");
-            Assert.IsTrue(rows.All(r => r.Dimensions == StubEmbeddingGenerator.Dimensions));
-            Assert.IsTrue(rows.All(r => r.ModelId == StubEmbeddingGenerator.ModelName));
+            Assert.IsTrue(rows.All(r => r.Dimensions == StubEmbeddings.Dimensions));
+            Assert.IsTrue(rows.All(r => r.ModelId == StubEmbeddings.ModelName));
 
             var search = new PgVectorSearchService(
                 scope.Repository,
@@ -126,7 +127,7 @@ public class PgVectorSearchTests
                 new NoOpSearchService(null!, NullLogger<NoOpSearchService>.Instance));
 
             var results = await search.SearchTaskItemsAsync(
-                StubEmbeddingGenerator.DatabaseQuery, SearchMode.Semantic, TenantId, maxResults: 10, ct);
+                StubEmbeddings.DatabaseQuery, SearchMode.Semantic, TenantId, maxResults: 10, ct);
 
             Assert.AreEqual(2, results.Count);
             Assert.AreEqual(databaseTaskId.ToString(), results[0].Id, "the nearer vector must rank first");
@@ -138,7 +139,7 @@ public class PgVectorSearchTests
         await using (var scope = NewScope(connString))
         {
             var others = await scope.Repository.SearchNearestAsync(
-                Guid.CreateVersion7(), StubEmbeddingGenerator.DatabaseVector, 10, ct);
+                Guid.CreateVersion7(), StubEmbeddings.DatabaseVector, 10, ct);
             Assert.AreEqual(0, others.Count);
         }
     }
@@ -151,13 +152,13 @@ public class PgVectorSearchTests
         if (DbContainerFixture.Provider != TaskFlowDbProvider.PostgreSql) Assert.Inconclusive("SqlServer lane.");
 
         var ct = TestContext.CancellationToken;
-        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("pgvector");
+        var connString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("pgvector", ct);
         await MigrateAsync(connString, ct);
         var taskId = await SeedTaskAsync(connString, "Temporary task", ct);
 
         await using var scope = NewScope(connString);
         await scope.Repository.UpsertAsync(
-            TenantId, taskId, StubEmbeddingGenerator.DatabaseVector, StubEmbeddingGenerator.ModelName,
+            TenantId, taskId, StubEmbeddings.DatabaseVector, StubEmbeddings.ModelName,
             DateTimeOffset.UtcNow, ct);
 
         await scope.Repository.DeleteAsync(TenantId, taskId, ct);
@@ -177,6 +178,7 @@ public class PgVectorSearchTests
     private static async Task<Guid> SeedTaskAsync(string connString, string title, CancellationToken ct)
     {
         await using var db = DbContainerFixture.CreateTrxnContext(connString);
+        db.AllTenants = false;
         db.TenantId = TenantId;
         var task = TaskItem.Create(TaskFlow.Domain.Shared.TenantId.From(TenantId), title).Value!;
         db.Add(task);
@@ -204,10 +206,10 @@ public class PgVectorSearchTests
     }
 
     /// <summary>
-    /// Deterministic generator: the assertion is about cosine ordering, not about a model. The query vector is
-    /// deliberately closer to <see cref="DatabaseVector"/> than to <see cref="DesignVector"/>.
+    /// Deterministic embeddings: the assertion is about cosine ordering, not about a model. Every query embeds to
+    /// the query vector, deliberately closer to <see cref="DatabaseVector"/> than to <see cref="DesignVector"/>.
     /// </summary>
-    private sealed class StubEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<float>>
+    private static class StubEmbeddings
     {
         public const string ModelName = "stub-embed";
 
@@ -230,15 +232,6 @@ public class PgVectorSearchTests
             return vector;
         }
 
-        public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
-            IEnumerable<string> values,
-            EmbeddingGenerationOptions? options = null,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(new GeneratedEmbeddings<Embedding<float>>(
-                [.. values.Select(_ => new Embedding<float>(QueryVector) { ModelId = ModelName })]));
-
-        public object? GetService(Type serviceType, object? serviceKey = null) => null;
-
-        public void Dispose() { }
+        public static FakeEmbeddingGenerator Generator() => new(_ => QueryVector, ModelName);
     }
 }

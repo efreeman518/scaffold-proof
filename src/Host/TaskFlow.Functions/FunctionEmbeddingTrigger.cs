@@ -1,6 +1,9 @@
 using Azure.Messaging.ServiceBus;
+using EF.Messaging;
+using EF.Messaging.Functions;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using TaskFlow.Application.MessageHandlers.Consumers;
 
 namespace TaskFlow.Functions;
@@ -13,7 +16,8 @@ namespace TaskFlow.Functions;
 /// </summary>
 public class FunctionEmbeddingTrigger(
     ILogger<FunctionEmbeddingTrigger> logger,
-    TaskEmbeddingConsumer consumer)
+    TaskEmbeddingConsumer consumer,
+    IOptions<IntegrationEnvelopeReaderOptions> readerOptions)
 {
     /// <summary>Generates or refreshes the embedding for a created or content-changed task.</summary>
     [Function(nameof(ProcessTaskEmbedding))]
@@ -22,5 +26,5 @@ public class FunctionEmbeddingTrigger(
         ServiceBusReceivedMessage message,
         ServiceBusMessageActions actions,
         CancellationToken ct)
-        => ServiceBusEnvelopeReader.DispatchAsync(message, actions, consumer, logger, ct);
+        => ServiceBusIntegrationEventDispatcher.DispatchAsync(message, actions, consumer, readerOptions.Value, logger, ct);
 }

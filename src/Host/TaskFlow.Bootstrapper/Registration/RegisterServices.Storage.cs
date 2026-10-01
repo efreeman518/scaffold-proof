@@ -1,3 +1,4 @@
+using EF.Common;
 using EF.Storage.Contracts;
 using EF.Storage.S3;
 using Microsoft.Extensions.Configuration;

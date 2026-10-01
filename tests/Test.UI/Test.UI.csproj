@@ -7,6 +7,7 @@
   <ItemGroup>
     <PackageReference Include="MSTest" />
     <PackageReference Include="Moq" />
+    <PackageReference Include="EF.Testing" />
     <PackageReference Include="Microsoft.Extensions.Configuration" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
   </ItemGroup>
@@ -35,7 +36,7 @@
     <ProjectReference Include="..\..\src\UI\TaskFlow.Uno.Core\TaskFlow.Uno.Core.csproj" />
     <ProjectReference Include="..\..\src\UI\TaskFlow.Uno.Presentation\TaskFlow.Uno.Presentation.csproj" />
     <!-- WasmHostHttpContractTests boots the static host in-process against a fixture; the fixture replaces the Uno build. -->
-    <ProjectReference Include="..\..\src\Host\TaskFlow.Uno.WasmHost\TaskFlow.Uno.WasmHost.csproj" AdditionalProperties="SkipUnoWasmBuild=true" />
+    <ProjectReference Include="..\..\src\Host\TaskFlow.Uno.WasmHost\TaskFlow.Uno.WasmHost.csproj" AdditionalProperties="$(TaskFlowSkipUnoWasmBuildProperties)" />
   </ItemGroup>
 
 </Project>

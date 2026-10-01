@@ -1,4 +1,7 @@
-﻿using Azure.Identity;
+using Azure.Identity;
+using EF.AI;
+using EF.AI.Chat;
+using EF.Common;
 using Azure.Search.Documents;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
@@ -148,11 +151,14 @@ public static class AiServiceCollectionExtensions
             services.AddScoped<ITaskAssistantAgent, NoOpTaskAssistantAgent>();
         }
 
-        // IChatClient fallback - if the host wired no Foundry model, register a no-op so the AI demo
-        // endpoints and any IChatClient consumers resolve and the app boots without a model.
+        // IChatClient fallback (S21) - if the host wired no model, register EF.AI's disabled client so the AI demo
+        // endpoints and every IChatClient consumer resolve and the app boots without a model. Each call on it throws
+        // EFAIDisabledException (mapped to 503); consumers check IsDisabled() first and answer "not configured".
+        // Provider is forced Disabled so an EF:AI:ChatClient section can never turn a None lane live.
         if (!hasChatClient)
         {
-            services.AddSingleton<IChatClient, NoOpChatClient>();
+            services.AddEFChatClient(config.GetSection(EFChatClientSettings.SectionName));
+            services.PostConfigure<EFChatClientSettings>(settings => settings.Provider = EFChatClientProvider.Disabled);
         }
 
         services.TryAddSingleton(new AiProviderInfo("none"));

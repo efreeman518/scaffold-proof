@@ -1,5 +1,4 @@
-﻿using EF.Data.Contracts;
-using Microsoft.EntityFrameworkCore;
+﻿using EF.IntegrationTesting.EntityFramework;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Model.ValueObjects;
 using TaskFlow.Domain.Shared;
@@ -31,7 +30,7 @@ public sealed class MillionRowTaskFixture
     public const double StaleCancelledShare = 0.05;
 
     /// <summary>Rows per SaveChanges. Large enough to amortize round trips, small enough to bound memory.</summary>
-    public const int DefaultBatchSize = 5_000;
+    public const int DefaultBatchSize = DbContextSeedingExtensions.DefaultBatchSize;
 
     private readonly Random _random;
     private readonly DateTimeOffset _now;
@@ -51,49 +50,18 @@ public sealed class MillionRowTaskFixture
     }
 
     /// <summary>
-    /// Writes <paramref name="rowCount"/> tasks and returns how many were written. The caller owns the
-    /// context and its transaction scope: at these volumes the right unit of recovery is the batch, not the run.
+    /// Writes <paramref name="rowCount"/> tasks in batches and returns the rows SaveChanges reported (the tasks plus
+    /// the rows saved with them, such as staged outbox messages). The caller owns the context and its transaction
+    /// scope: at these volumes the right unit of recovery is the batch, not the run. Tasks are generated lazily,
+    /// so a million-row run never materializes the whole set.
     /// </summary>
-    public async Task<int> SeedAsync(
+    public Task<int> SeedAsync(
         TaskFlowDbContextTrxn db, int rowCount, int batchSize = DefaultBatchSize, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(db);
         ArgumentOutOfRangeException.ThrowIfLessThan(rowCount, 1);
 
-        var autoDetect = db.ChangeTracker.AutoDetectChangesEnabled;
-        db.ChangeTracker.AutoDetectChangesEnabled = false;
-        try
-        {
-            var written = 0;
-            var batch = new List<TaskItem>(batchSize);
-
-            for (var i = 0; i < rowCount; i++)
-            {
-                batch.Add(Build(i));
-                if (batch.Count < batchSize) continue;
-
-                written += await FlushAsync(db, batch, ct);
-            }
-
-            if (batch.Count > 0) written += await FlushAsync(db, batch, ct);
-            return written;
-        }
-        finally
-        {
-            db.ChangeTracker.AutoDetectChangesEnabled = autoDetect;
-        }
-    }
-
-    /// <summary>Saves one batch and clears the tracker so memory does not grow with the row count.</summary>
-    private static async Task<int> FlushAsync(TaskFlowDbContextTrxn db, List<TaskItem> batch, CancellationToken ct)
-    {
-        db.AddRange(batch);
-        await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: ct);
-        db.ChangeTracker.Clear();
-
-        var written = batch.Count;
-        batch.Clear();
-        return written;
+        return db.InsertInBatchesAsync(Enumerable.Range(0, rowCount).Select(Build), batchSize, ct);
     }
 
     /// <summary>Builds one task in the documented mix.</summary>

@@ -5,8 +5,8 @@
     <PackageReference Include="EF.Storage.Contracts" />
     <PackageReference Include="EF.Table" />
     <PackageReference Include="EF.Audit.Contracts" />
-    <PackageReference Include="EF.Messaging" />
-    <PackageReference Include="Azure.Messaging.ServiceBus" />
+    <!-- The Azure Table audit arm is the package repository (D19); the app only registers and provisions it. -->
+    <PackageReference Include="EF.Audit.AzureTable" />
     <PackageReference Include="Microsoft.Azure.Cosmos" />
     <PackageReference Include="Newtonsoft.Json" />
     <PackageReference Include="Microsoft.Extensions.Azure" />
@@ -14,8 +14,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Application\TaskFlow.Application.Contracts\TaskFlow.Application.Contracts.csproj" />
-    <!-- D-026: the outbox transport sends persisted OutboxMessage rows, which the data assembly owns. -->
-    <ProjectReference Include="..\TaskFlow.Infrastructure.Data\TaskFlow.Infrastructure.Data.csproj" />
     <ProjectReference Include="..\..\Shared\TaskFlow.Observability\TaskFlow.Observability.csproj" />
   </ItemGroup>
 

@@ -1,3 +1,4 @@
+using EF.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,7 +42,7 @@ public class AiServiceRegistrationTests
     }
 
     [TestMethod]
-    public async Task RegisterAiChatClientAsync_WithDefaultNone_AllowsNoOpFallback()
+    public async Task RegisterAiChatClientAsync_WithDefaultNone_RegistersTheDisabledClient()
     {
         var builder = CreateHostBuilder(new Dictionary<string, string?>
         {
@@ -51,13 +52,13 @@ public class AiServiceRegistrationTests
         builder.Services.AddAiServices(builder.Configuration);
 
         var provider = builder.Services.BuildServiceProvider();
-        Assert.IsInstanceOfType<NoOpChatClient>(provider.GetRequiredService<IChatClient>());
+        Assert.IsTrue(provider.GetRequiredService<IChatClient>().IsDisabled(), "None registers the EF.AI disabled client");
         Assert.AreEqual("none", provider.GetRequiredService<AiProviderInfo>().Name);
     }
 
     /// <summary>Verifies add AI services with no config registers no op services behavior and protects the expected test contract.</summary>
     [TestMethod]
-    public void AddAiServices_WithNoConfig_RegistersNoOpServices()
+    public async Task AddAiServices_WithNoConfig_RegistersNoOpServices()
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -82,7 +83,8 @@ public class AiServiceRegistrationTests
 
         Assert.IsInstanceOfType<NoOpSearchService>(searchService);
         Assert.IsInstanceOfType<NoOpTaskAssistantAgent>(agentService);
-        Assert.IsInstanceOfType<NoOpChatClient>(chatClient);
+        Assert.IsTrue(chatClient.IsDisabled(), "no host-wired model registers the EF.AI disabled client");
+        _ = await Assert.ThrowsExactlyAsync<EFAIDisabledException>(() => chatClient.GetResponseAsync("ping", cancellationToken: TestContext.CancellationToken));
         Assert.AreEqual("none", providerInfo.Name);
     }
 
@@ -112,8 +114,8 @@ public class AiServiceRegistrationTests
         var descriptor = services.Single(d => d.ServiceType == typeof(ITaskAssistantAgent));
         Assert.AreEqual(typeof(TaskAssistantAgentService), descriptor.ImplementationType);
 
-        // The real IChatClient must be left in place (no NoOpChatClient added on top).
-        Assert.DoesNotContain(d => d.ImplementationType == typeof(NoOpChatClient), services);
+        // The real IChatClient must be left in place (no disabled client added on top).
+        Assert.HasCount(1, services.Where(d => d.ServiceType == typeof(IChatClient)));
 
         var provider = services.BuildServiceProvider();
         Assert.AreEqual("azure", provider.GetRequiredService<AiProviderInfo>().Name);

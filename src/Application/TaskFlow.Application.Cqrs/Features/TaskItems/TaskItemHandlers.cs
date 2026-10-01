@@ -1,4 +1,6 @@
 ﻿using EF.Cache;
+using EF.Tenancy;
+using EF.Domain.Contracts;
 using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using EF.Data.Contracts;
@@ -21,9 +23,9 @@ namespace TaskFlow.Application.Cqrs.Features.TaskItems;
 
 /// <summary>Handles search task items work by coordinating validation, tenant boundaries, persistence, and response mapping.</summary>
 internal sealed class SearchTaskItemsHandler(
-    ILogger<SearchTaskItemsHandler> logger,
     IRequestContext<string, Guid?> requestContext,
-    ITaskItemRepositoryQuery repoQuery)
+    ITaskItemRepositoryQuery repoQuery,
+    ITenantBoundaryValidator tenantBoundaryValidator)
     : IRequestHandler<SearchTaskItemsQuery, CursorPage<TaskItemDto>>
 {
     /// <summary>Handles search task items requests and returns the application result.</summary>
@@ -35,10 +37,10 @@ internal sealed class SearchTaskItemsHandler(
         // or silently reset to page one - a reset would re-serve rows the caller already read. The cursor
         // half is enforced by the repository, which owns the codec (ERROR_CURSOR_INVALID).
         if (!PageSizeLimits.IsValid(request.PageSize))
-            throw new ArgumentException(
-                string.Format(ErrorConstants.ERROR_PAGE_SIZE_RANGE, PageSizeLimits.Min, PageSizeLimits.Max), nameof(query));
+            throw new InvalidRequestException(
+                string.Format(ErrorConstants.ERROR_PAGE_SIZE_RANGE, PageSizeLimits.Min, PageSizeLimits.Max));
 
-        HandlerHelpers.EnforceCursorTenantFilter(request, requestContext.TenantId, requestContext.Roles, logger, "TaskItemSearch");
+        request.Filter = tenantBoundaryValidator.EnforceTenantFilter(request.Filter, requestContext.TenantId, requestContext.Roles, "TaskItemSearch");
         var tenantId = request.Filter?.TenantId ?? requestContext.TenantId ?? Guid.Empty;
 
         return await repoQuery.SearchTaskItemsAsync(request, tenantId, ct);
@@ -47,7 +49,6 @@ internal sealed class SearchTaskItemsHandler(
 
 /// <summary>Handles get task item by ID work by coordinating validation, tenant boundaries, persistence, and response mapping.</summary>
 internal sealed class GetTaskItemByIdHandler(
-    ILogger<GetTaskItemByIdHandler> logger,
     IRequestContext<string, Guid?> requestContext,
     ITaskItemRepositoryQuery repoQuery,
     ITenantBoundaryValidator tenantBoundaryValidator)
@@ -60,7 +61,7 @@ internal sealed class GetTaskItemByIdHandler(
         if (entity is null) return Result<DefaultResponse<TaskItemDto>>.None();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
+            requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "TaskItem:Get", nameof(TaskItem), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(boundary.ErrorMessage!);
 
@@ -88,7 +89,7 @@ internal sealed class CreateTaskItemHandler(
         if (validation.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(validation.Errors);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, requestContext.TenantId, requestContext.Roles, dto.TenantId,
+            requestContext.TenantId, requestContext.Roles, dto.TenantId,
             "TaskItem:Create", nameof(TaskItem));
         if (boundary.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(boundary.ErrorMessage!);
 
@@ -156,7 +157,7 @@ internal sealed class UpdateTaskItemHandler(
         }
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
+            requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "TaskItem:Update", nameof(TaskItem), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(boundary.ErrorMessage!);
 
@@ -164,7 +165,7 @@ internal sealed class UpdateTaskItemHandler(
         ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
 
         var tenantChangeCheck = tenantBoundaryValidator.PreventTenantChange(
-            logger, entity.TenantId.Value, dto.TenantId, nameof(TaskItem), entity.Id.Value);
+            entity.TenantId.Value, dto.TenantId, nameof(TaskItem), entity.Id.Value);
         if (tenantChangeCheck.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(tenantChangeCheck.ErrorMessage!);
 
         // The aggregate raises the status/completed events; the staging interceptor writes them (D-026).
@@ -224,7 +225,7 @@ internal sealed class DeleteTaskItemHandler(
         if (entity is null) return Result.Success();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
+            requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "TaskItem:Delete", nameof(TaskItem), entity.Id.Value);
         if (boundary.IsFailure) return Result.Failure(boundary.ErrorMessage!);
 
@@ -260,7 +261,7 @@ internal sealed class PatchTaskItemHandler(
         if (entity is null) return HandlerHelpers.NotFoundResponse<TaskItemDto>();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
+            requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "TaskItem:Patch", nameof(TaskItem), entity.Id.Value);
         if (boundary.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(boundary.ErrorMessage!);
 

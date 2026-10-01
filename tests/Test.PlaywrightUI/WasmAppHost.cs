@@ -1,11 +1,11 @@
 using Aspire.Hosting;
 using Aspire.Hosting.Testing;
-using EF.IntegrationTesting.Environment;
+using EF.IntegrationTesting.Aspire;
+using EF.Testing.Environment;
+using EF.Testing.Processes;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Text;
 using TaskFlow.Uno.WasmHost;
-using Test.Support.Aspire;
 
 namespace Test.PlaywrightUI.Hosting;
 
@@ -21,19 +21,23 @@ internal static class WasmAppHost
     private const string StampFileName = ".taskflow-wasm-test-build.stamp";
     private const string PublishedDistPathVariable = "TASKFLOW_UNO_WASM_DIST_PATH";
 
-    private static readonly string[] ProfilerVariables =
-    [
-        "COR_ENABLE_PROFILING",
-        "COR_PROFILER",
-        "COR_PROFILER_PATH",
-        "COR_PROFILER_PATH_32",
-        "COR_PROFILER_PATH_64",
-        "CORECLR_ENABLE_PROFILING",
-        "CORECLR_PROFILER",
-        "CORECLR_PROFILER_PATH",
-        "CORECLR_PROFILER_PATH_32",
-        "CORECLR_PROFILER_PATH_64"
-    ];
+    // Child dotnet builds run without an attached profiler (a null value removes the variable), node reuse, or telemetry.
+    private static readonly Dictionary<string, string?> DotnetEnvironment = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["COR_ENABLE_PROFILING"] = "0",
+        ["COR_PROFILER"] = null,
+        ["COR_PROFILER_PATH"] = null,
+        ["COR_PROFILER_PATH_32"] = null,
+        ["COR_PROFILER_PATH_64"] = null,
+        ["CORECLR_ENABLE_PROFILING"] = "0",
+        ["CORECLR_PROFILER"] = null,
+        ["CORECLR_PROFILER_PATH"] = null,
+        ["CORECLR_PROFILER_PATH_32"] = null,
+        ["CORECLR_PROFILER_PATH_64"] = null,
+        ["MSBUILDDISABLENODEREUSE"] = "1",
+        ["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1",
+        ["DOTNET_NOLOGO"] = "1"
+    };
 
     internal static async Task<WasmHostTarget> PrepareAsync(
         AspireTestHostContext host,
@@ -41,7 +45,7 @@ internal static class WasmAppHost
         bool publishRelease,
         CancellationToken ct)
     {
-        if (IsExplicitlyDisabled(Environment.GetEnvironmentVariable(TestsEnabledVariable)))
+        if (TestEnvironment.IsFalse(TestsEnabledVariable))
         {
             return new WasmHostTarget(
                 RunTypeScriptProject: false,
@@ -59,8 +63,7 @@ internal static class WasmAppHost
                 Message: $"Uno WASM uses configured PLAYWRIGHT_UNO_URL={configuredUrl.TrimEnd('/')}.");
         }
 
-        var repoRoot = FindRepoRoot()
-            ?? throw new InvalidOperationException("Could not find repo root from Test.PlaywrightUI output path.");
+        var repoRoot = RepositoryRoot.Find(markers: "TaskFlow.slnx");
         var unoProject = Path.Combine(repoRoot, "src", "UI", "TaskFlow.Uno", "TaskFlow.Uno.csproj");
         if (!File.Exists(unoProject))
         {
@@ -155,27 +158,6 @@ internal static class WasmAppHost
         return endpoint;
     }
 
-    private static bool IsExplicitlyDisabled(string? value) =>
-        string.Equals(value, "false", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(value, "0", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(value, "no", StringComparison.OrdinalIgnoreCase);
-
-    private static string? FindRepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null)
-        {
-            if (File.Exists(Path.Combine(directory.FullName, "TaskFlow.slnx")))
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        return null;
-    }
-
     private static string GetCurrentConfiguration()
     {
         var outputDirectory = new DirectoryInfo(AppContext.BaseDirectory.TrimEnd(
@@ -219,86 +201,49 @@ internal static class WasmAppHost
 
         async Task RunAsync(CancellationToken stepToken)
         {
-            var fileName = OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet";
-            var startInfo = new ProcessStartInfo(fileName)
-            {
-                CreateNoWindow = true,
-                RedirectStandardError = true,
-                RedirectStandardOutput = true,
-                UseShellExecute = false,
-                WorkingDirectory = workingDirectory
-            };
-
-            foreach (var argument in arguments)
-            {
-                startInfo.ArgumentList.Add(argument);
-            }
-
-            foreach (var variable in ProfilerVariables)
-            {
-                startInfo.Environment.Remove(variable);
-            }
-
-            startInfo.Environment["CORECLR_ENABLE_PROFILING"] = "0";
-            startInfo.Environment["COR_ENABLE_PROFILING"] = "0";
-            startInfo.Environment["MSBUILDDISABLENODEREUSE"] = "1";
-            startInfo.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
-            startInfo.Environment["DOTNET_NOLOGO"] = "1";
-
-            using var process = StartProcess(startInfo, stepName);
-            var stdout = process.StandardOutput.ReadToEndAsync();
-            var stderr = process.StandardError.ReadToEndAsync();
-
+            ProcessResult result;
             try
             {
-                await process.WaitForExitAsync(stepToken);
+                // The step token enforces the global startup deadline; the timeout is the same bound as a backstop.
+                result = await ProcessRunner.RunAsync(
+                    new ProcessRunOptions
+                    {
+                        FileName = OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet",
+                        Arguments = arguments,
+                        WorkingDirectory = workingDirectory,
+                        Environment = DotnetEnvironment,
+                        Timeout = host.RemainingStartupBudget
+                    },
+                    stepToken);
             }
-            catch (OperationCanceledException)
+            catch (Win32Exception ex)
             {
-                TryKill(process);
-                await process.WaitForExitAsync(CancellationToken.None);
-                var timedOutOutput = await ReadOutputAsync(stdout, stderr);
-                Console.Error.WriteLine($"{stepName} cancelled by the global startup deadline.{Environment.NewLine}{timedOutOutput}");
-                throw;
+                throw new WasmPrerequisiteException("dotnet CLI is not available on PATH.", ex.Message);
             }
 
-            var output = await ReadOutputAsync(stdout, stderr);
-            if (process.ExitCode == 0)
+            if (result.TimedOut)
+            {
+                throw new TimeoutException(
+                    $"{stepName} exceeded the global startup deadline.{Environment.NewLine}{result.CombinedOutput}");
+            }
+
+            if (result.ExitCode == 0)
             {
                 return;
             }
 
-            if (LooksLikeMissingWasmWorkload(output))
+            if (LooksLikeMissingWasmWorkload(result.CombinedOutput))
             {
                 throw new WasmPrerequisiteException(
                     "Uno WASM workload missing. Run: dotnet workload install wasm-tools",
-                    output);
+                    result.CombinedOutput);
             }
 
             throw new InvalidOperationException(
-                $"{stepName} failed with exit code {process.ExitCode}. Command: dotnet {FormatArguments(arguments)}"
+                $"{stepName} failed with exit code {result.ExitCode}. Command: dotnet {FormatArguments(arguments)}"
                 + Environment.NewLine
-                + output);
+                + result.CombinedOutput);
         }
-    }
-
-    private static Process StartProcess(ProcessStartInfo startInfo, string stepName)
-    {
-        try
-        {
-            return Process.Start(startInfo)
-                ?? throw new InvalidOperationException($"Failed to start {stepName}.");
-        }
-        catch (Win32Exception ex)
-        {
-            throw new WasmPrerequisiteException("dotnet CLI is not available on PATH.", ex.Message);
-        }
-    }
-
-    private static async Task<string> ReadOutputAsync(Task<string> stdout, Task<string> stderr)
-    {
-        var outputs = await Task.WhenAll(stdout, stderr);
-        return string.Join(Environment.NewLine, outputs.Where(output => !string.IsNullOrWhiteSpace(output)));
     }
 
     private static bool LooksLikeMissingWasmWorkload(string output) =>
@@ -310,17 +255,6 @@ internal static class WasmAppHost
             argument.Contains(' ', StringComparison.Ordinal)
                 ? $"\"{argument}\""
                 : argument));
-
-    private static void TryKill(Process process)
-    {
-        try
-        {
-            process.Kill(entireProcessTree: true);
-        }
-        catch (InvalidOperationException)
-        {
-        }
-    }
 }
 
 internal sealed record WasmHostTarget(

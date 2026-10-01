@@ -5,18 +5,16 @@ using Microsoft.Extensions.Options;
 using System.Text;
 using System.Text.Json;
 using TaskFlow.Application.Contracts.Messaging;
-using TaskFlow.Application.MessageHandlers.Consumers;
 using TaskFlow.Domain.Shared.Events;
-using TaskFlow.Infrastructure.Repositories;
-using TaskFlow.Observability.Meters;
 using Test.Support;
 
 namespace Test.Unit.Infrastructure;
 
 /// <summary>
-/// D-029 two-state inbox guard and the release backoff. Both are pure decision logic that an integration test
-/// would only reach through a container, so they are asserted here directly; the store's own SQL is proven
-/// against both providers in Test.Integration InboxStoreTests.
+/// D-029 two-state inbox guard, run through EF.Messaging's IntegrationEventConsumerBase exactly as TaskFlow's
+/// consumers derive from it, and TaskFlow's envelope reader configuration. Both are pure decision logic that an
+/// integration test would only reach through a container, so they are asserted here directly; the store's own SQL
+/// is proven against both providers in Test.Integration InboxStoreTests.
 /// <para>
 /// The claim timings are scaled down (200 ms lease) and run on the real clock: the renewal loop and the wait are
 /// driven by the consumer's own timers, and every assertion waits on an observed event (a poll, a renewal),
@@ -31,9 +29,11 @@ public sealed class MessagingConsumerTests
     private static readonly InboxClaimOptions Fast = new()
     {
         ClaimLease = TimeSpan.FromMilliseconds(200),
-        PollInterval = TimeSpan.FromMilliseconds(10),
+        WaitPollInterval = TimeSpan.FromMilliseconds(10),
         WaitMargin = TimeSpan.FromMilliseconds(50)
     };
+
+    private static readonly IntegrationEnvelopeReaderOptions Reader = ReaderOptions();
 
     [TestMethod]
     [TestCategory("Unit")]
@@ -44,8 +44,8 @@ public sealed class MessagingConsumerTests
         var consumer = new CountingConsumer(inbox);
         var envelope = Envelope();
 
-        await consumer.HandleAsync(envelope, ct);
-        await consumer.HandleAsync(envelope, ct);
+        Assert.AreEqual(ConsumeDisposition.Consumed, await consumer.HandleAsync(envelope, ct));
+        Assert.AreEqual(ConsumeDisposition.Duplicate, await consumer.HandleAsync(envelope, ct));
 
         Assert.AreEqual(1, consumer.Consumed, "the second delivery of the same MessageId must be skipped");
         Assert.AreEqual(FakeInboxStore.State.Completed, inbox.StateOf("test", envelope.Id));
@@ -88,7 +88,7 @@ public sealed class MessagingConsumerTests
         var redelivery = new CountingConsumer(inbox, options: new InboxClaimOptions
         {
             ClaimLease = TimeSpan.FromMinutes(5),
-            PollInterval = Fast.PollInterval,
+            WaitPollInterval = Fast.WaitPollInterval,
             WaitMargin = Fast.WaitMargin
         });
         await redelivery.HandleAsync(envelope, ct);
@@ -152,11 +152,12 @@ public sealed class MessagingConsumerTests
 
     /// <summary>
     /// A claim that stays live for the whole wait belongs to a holder that is alive and renewing: the waiter
-    /// gives up after one lease plus the margin and throws for a transport retry, without running the effect.
+    /// gives up after one lease plus the margin and reports InProgress, which every transport retries (RabbitMQ
+    /// requeue, Service Bus abandon), without running the effect.
     /// </summary>
     [TestMethod]
     [TestCategory("Unit")]
-    public async Task Consumer_WhenTheClaimStaysLivePastTheWaitBound_ThrowsInProgress()
+    public async Task Consumer_WhenTheClaimStaysLivePastTheWaitBound_ReportsInProgress()
     {
         var ct = TestContext.CancellationToken;
         var inbox = new FakeInboxStore();
@@ -165,12 +166,12 @@ public sealed class MessagingConsumerTests
         var waiter = new CountingConsumer(inbox);
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
 
-        var thrown = await Assert.ThrowsExactlyAsync<InboxClaimInProgressException>(() => waiter.HandleAsync(envelope, ct));
+        var disposition = await waiter.HandleAsync(envelope, ct);
 
-        Assert.AreEqual(envelope.Id, thrown.MessageId);
+        Assert.AreEqual(ConsumeDisposition.InProgress, disposition);
         Assert.AreEqual(0, waiter.Consumed);
         Assert.IsGreaterThanOrEqualTo(Fast.WaitBound, System.Diagnostics.Stopwatch.GetElapsedTime(started),
-            "the waiter must hold the delivery for the whole bound before throwing");
+            "the waiter must hold the delivery for the whole bound before giving up");
     }
 
     /// <summary>Renewal ends before the claim is completed, and nothing renews it afterwards.</summary>
@@ -273,8 +274,9 @@ public sealed class MessagingConsumerTests
         var inbox = new FakeInboxStore();
         var consumer = new CountingConsumer(inbox);
 
-        await consumer.HandleAsync(Envelope() with { Type = nameof(TaskItemCompletedEvent) }, TestContext.CancellationToken);
+        var disposition = await consumer.HandleAsync(Envelope() with { Type = nameof(TaskItemCompletedEvent) }, TestContext.CancellationToken);
 
+        Assert.AreEqual(ConsumeDisposition.NotHandled, disposition);
         Assert.IsEmpty(inbox.Events);
         Assert.AreEqual(0, consumer.Consumed);
     }
@@ -287,25 +289,26 @@ public sealed class MessagingConsumerTests
 
         Assert.AreEqual(TimeSpan.FromSeconds(60), defaults.ClaimLease);
         Assert.AreEqual(TimeSpan.FromSeconds(20), defaults.RenewalInterval);
-        Assert.AreEqual(TimeSpan.FromSeconds(1), defaults.PollInterval);
+        Assert.AreEqual(TimeSpan.FromSeconds(1), defaults.WaitPollInterval);
         Assert.AreEqual(TimeSpan.FromSeconds(65), defaults.WaitBound);
         Assert.IsTrue(defaults.IsValid());
-        Assert.IsFalse(new InboxClaimOptions { PollInterval = TimeSpan.FromSeconds(60) }.IsValid());
+        Assert.IsFalse(new InboxClaimOptions { WaitPollInterval = defaults.WaitBound }.IsValid(),
+            "a poll no shorter than the whole wait bound never re-reads the claim");
     }
 
     [TestMethod]
     [TestCategory("Unit")]
     public void EnvelopeReader_DeadLettersMalformedAndUnsupportedBodies()
     {
-        Assert.IsFalse(IntegrationEnvelopeReader.TryRead("not json"u8, out _, out var malformed));
+        Assert.IsFalse(IntegrationEnvelopeReader.TryRead("not json"u8, Reader, out _, out var malformed));
         Assert.AreEqual(IntegrationEnvelopeReader.MalformedReason, malformed);
 
         var unknown = JsonSerializer.Serialize(Envelope() with { Type = "SomeFutureEvent" });
-        Assert.IsFalse(IntegrationEnvelopeReader.TryRead(Encoding.UTF8.GetBytes(unknown), out _, out var unsupported));
+        Assert.IsFalse(IntegrationEnvelopeReader.TryRead(Encoding.UTF8.GetBytes(unknown), Reader, out _, out var unsupported));
         Assert.AreEqual(IntegrationEnvelopeReader.UnsupportedReason, unsupported);
 
         var good = JsonSerializer.Serialize(Envelope());
-        Assert.IsTrue(IntegrationEnvelopeReader.TryRead(Encoding.UTF8.GetBytes(good), out var envelope, out var failure));
+        Assert.IsTrue(IntegrationEnvelopeReader.TryRead(Encoding.UTF8.GetBytes(good), Reader, out var envelope, out var failure));
         Assert.IsNull(failure);
         Assert.AreEqual(nameof(TaskItemCreatedEvent), envelope!.Type);
     }
@@ -319,7 +322,7 @@ public sealed class MessagingConsumerTests
     {
         var invalid = JsonSerializer.Serialize(Envelope() with { Type = type! });
 
-        Assert.IsFalse(IntegrationEnvelopeReader.TryRead(Encoding.UTF8.GetBytes(invalid), out _, out var failure));
+        Assert.IsFalse(IntegrationEnvelopeReader.TryRead(Encoding.UTF8.GetBytes(invalid), Reader, out _, out var failure));
         Assert.AreEqual(IntegrationEnvelopeReader.MalformedReason, failure);
     }
 
@@ -329,28 +332,18 @@ public sealed class MessagingConsumerTests
     {
         var invalid = JsonSerializer.Serialize(Envelope() with { Id = Guid.Empty });
 
-        Assert.IsFalse(IntegrationEnvelopeReader.TryRead(Encoding.UTF8.GetBytes(invalid), out _, out var failure));
+        Assert.IsFalse(IntegrationEnvelopeReader.TryRead(Encoding.UTF8.GetBytes(invalid), Reader, out _, out var failure));
         Assert.AreEqual(IntegrationEnvelopeReader.MalformedReason, failure);
     }
 
-    [TestMethod]
-    [TestCategory("Unit")]
-    public void ReleaseBackoff_GrowsExponentially_AndIsCappedWithJitter()
-    {
-        // 2s * 2^(n-1) plus up to 20% jitter, capped at five minutes.
-        var first = OperationalWorkRepository.Backoff(1);
-        Assert.IsTrue(first >= TimeSpan.FromSeconds(2) && first <= TimeSpan.FromSeconds(2.4), $"was {first}");
-
-        var fourth = OperationalWorkRepository.Backoff(4);
-        Assert.IsTrue(fourth >= TimeSpan.FromSeconds(16) && fourth <= TimeSpan.FromSeconds(19.2), $"was {fourth}");
-
-        var capped = OperationalWorkRepository.Backoff(20);
-        Assert.IsTrue(capped >= TimeSpan.FromMinutes(5) && capped <= TimeSpan.FromMinutes(6), $"was {capped}");
-
-        Assert.AreEqual(1024, OperationalWorkRepository.Truncate(new string('x', 5000)).Length);
-    }
-
     public TestContext TestContext { get; set; } = null!;
+
+    private static IntegrationEnvelopeReaderOptions ReaderOptions()
+    {
+        var options = new IntegrationEnvelopeReaderOptions();
+        TaskFlowIntegrationEvents.ConfigureReader(options);
+        return options;
+    }
 
     private static IntegrationEventEnvelope Envelope() => TaskFlowIntegrationEvents.Envelope(
         new TaskItemCreatedEvent(Guid.CreateVersion7(), TestConstants.TenantId, "guarded"),
@@ -509,7 +502,7 @@ public sealed class MessagingConsumerTests
     }
 
     private sealed class CountingConsumer(IInboxStore inbox, ILogger? logger = null, InboxClaimOptions? options = null)
-        : IntegrationEventConsumer(inbox, new MessagingMetrics(), logger ?? NullLogger.Instance, Options.Create(options ?? Fast))
+        : IntegrationEventConsumerBase(inbox, new MessagingMetrics(), logger ?? NullLogger.Instance, Options.Create(options ?? Fast))
     {
         public int Consumed { get; private set; }
 

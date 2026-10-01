@@ -1,8 +1,6 @@
 using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using Grpc.Core;
-using Microsoft.EntityFrameworkCore;
-using TaskFlow.Application.Contracts.Concurrency;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Cqrs.Features.TaskItems;
 using TaskFlow.Application.Models;
@@ -20,17 +18,17 @@ namespace TaskFlow.Api.Grpc;
 /// IRequestContext is built from IHttpContextAccessor.HttpContext.User exactly as it is for a REST
 /// call. The tenant a caller sees over gRPC is therefore the tenant it would see over REST.
 ///
-/// Failures are translated by <c>EF.Grpc.ServiceErrorInterceptor</c>, registered in RegisterApiServices
-/// with <see cref="StatusFor"/> as its <c>StatusCodeMapper</c>. The mapping mirrors
-/// DefaultExceptionHandler's HTTP status choices one for one, so a client that understands the REST
-/// failure modes understands these:
+/// Failures are translated by <c>EF.Grpc.ServiceErrorInterceptor</c> through the same
+/// <c>ExceptionClassifier</c> the HTTP problem-details handler uses (TaskFlow's additions are
+/// <c>RegisterApiServices.MapExceptions</c>), so a client that understands the REST failure modes understands
+/// these:
 /// <list type="table">
-/// <item><term>ConcurrencyMismatchException / DbUpdateConcurrencyException</term><description>412 -> FailedPrecondition</description></item>
-/// <item><term>IdempotentCreateConflictException</term><description>409 -> Aborted</description></item>
+/// <item><term>PreconditionFailedException / DbUpdateConcurrencyException</term><description>412 -> FailedPrecondition</description></item>
+/// <item><term>ConflictException</term><description>409 -> Aborted</description></item>
 /// <item><term>UnauthorizedAccessException</term><description>403 -> PermissionDenied</description></item>
 /// <item><term>KeyNotFoundException</term><description>404 -> NotFound</description></item>
-/// <item><term>OperationCanceledException</term><description>499 -> Cancelled</description></item>
-/// <item><term>ArgumentException / FormatException / InvalidOperationException</term><description>400 -> InvalidArgument</description></item>
+/// <item><term>OperationCanceledException</term><description>499 -> Cancelled (DeadlineExceeded when the caller did not cancel)</description></item>
+/// <item><term>InvalidRequestException / InvalidCursorException (caller input)</term><description>400 -> InvalidArgument</description></item>
 /// <item><term>anything else</term><description>500 -> Internal</description></item>
 /// </list>
 /// A missing task is not an exception on either transport: REST answers 404 from the Result's None
@@ -73,25 +71,6 @@ internal sealed class TaskFlowReadGrpcService(
                 StatusCode.InvalidArgument, string.Join("; ", errors.Select(e => e.Message)))),
             () => throw new RpcException(new Status(StatusCode.NotFound, $"Task item {id} was not found.")));
     }
-
-    /// <summary>
-    /// The gRPC equivalent of DefaultExceptionHandler's HTTP status selection, handed to
-    /// <c>EF.Grpc.ErrorInterceptorSettings.StatusCodeMapper</c>. An <see cref="RpcException"/> a handler
-    /// raised deliberately keeps the status it chose; the interceptor re-wraps it with a generic detail so
-    /// no exception text reaches the wire.
-    /// </summary>
-    internal static StatusCode StatusFor(Exception exception) => exception switch
-    {
-        RpcException rpcException => rpcException.StatusCode,
-        ConcurrencyMismatchException => StatusCode.FailedPrecondition,
-        DbUpdateConcurrencyException => StatusCode.FailedPrecondition,
-        IdempotentCreateConflictException => StatusCode.Aborted,
-        UnauthorizedAccessException => StatusCode.PermissionDenied,
-        KeyNotFoundException => StatusCode.NotFound,
-        OperationCanceledException => StatusCode.Cancelled,
-        ArgumentException or FormatException or InvalidOperationException => StatusCode.InvalidArgument,
-        _ => StatusCode.Internal
-    };
 
     /// <summary>Routes the by-id read to whichever application style this host was configured with.</summary>
     private Task<Result<DefaultResponse<TaskItemDto>>> GetTaskItemResultAsync(Guid id, CancellationToken ct)

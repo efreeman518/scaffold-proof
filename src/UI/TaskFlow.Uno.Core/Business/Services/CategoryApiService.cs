@@ -1,5 +1,5 @@
 using TaskFlow.Uno.Core.Business.Models;
-using TaskFlow.Uno.Core.Business.Notifications;
+using EF.UI.Client.Notifications;
 using TaskFlow.Uno.Core.Client;
 
 namespace TaskFlow.Uno.Core.Business.Services;
@@ -36,7 +36,7 @@ public class CategoryApiService(
         var dto = MapToDto(model);
         var result = await client.Api.Categories.PostAsync(dto, cancellationToken: ct);
         var created = MapToModel(result!);
-        await notifications.ShowSuccess($"Created category \"{created.Name}\".", ct: ct);
+        notifications.ShowSuccess($"Created category \"{created.Name}\".");
         return created;
     }
 
@@ -46,7 +46,7 @@ public class CategoryApiService(
         var dto = MapToDto(model);
         var result = await client.Api.Categories[model.Id!.Value].PutAsync(dto, IfMatch(expectedVersion), cancellationToken: ct);
         var updated = MapToModel(result!);
-        await notifications.ShowSuccess($"Updated category \"{updated.Name}\".", ct: ct);
+        notifications.ShowSuccess($"Updated category \"{updated.Name}\".");
         return updated;
     }
 
@@ -54,7 +54,7 @@ public class CategoryApiService(
     public async Task DeleteAsync(Guid id, long? expectedVersion, CancellationToken ct = default)
     {
         await client.Api.Categories[id].DeleteAsync(IfMatch(expectedVersion), cancellationToken: ct);
-        await notifications.ShowSuccess("Category deleted.", ct: ct);
+        notifications.ShowSuccess("Category deleted.");
     }
 
     /// <summary>Formats a Version as the If-Match header value; null means the caller trusts the current state ("*").</summary>
