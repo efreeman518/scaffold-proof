@@ -46,13 +46,13 @@ A Debug restore of the Uno project followed by a Release `--no-restore` build fa
 
 ### Component containers
 
-2026-09-29, Release `--no-build`, Podman Docker-compatible context:
+Release `--no-build`, Podman Docker-compatible context; Test.Integration 2026-09-30 (EF.* 2.0.115), Test.E2E 2026-09-29:
 
 | Lane | Project | Passed | Skipped | Duration |
 |---|---|---:|---:|---:|
-| unset (resolves NonAzure) / PostgreSqlJsonb | Test.Integration | 84 | 5 (Azure-only) | 104 s |
-| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 70 | 19 (NonAzure-only) | 170 s |
-| NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | Test.Integration | 86 | 3 | 100 s |
+| unset (resolves NonAzure) / PostgreSqlJsonb | Test.Integration | 90 | 5 (Azure-only) | 102 s |
+| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 76 | 19 (NonAzure-only) | 171 s |
+| NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | Test.Integration | 92 | 3 | 106 s |
 | unset (resolves NonAzure) | Test.E2E | 10 | 0 | 15 s |
 | `TASKFLOW_LANE=Azure` | Test.E2E | 10 | 0 | 33 s |
 
