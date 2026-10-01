@@ -29,18 +29,18 @@ A Debug restore of the Uno project followed by a Release `--no-restore` build fa
 
 ### Fast matrix
 
-2026-09-29, Release `--no-build`, run serially. No failed, skipped, or inconclusive tests:
+Release `--no-build`, run serially; Unit, UI, Architecture and Endpoints 2026-09-30 (EF.* 2.0.115), the rest 2026-09-29. No failed, skipped, or inconclusive tests:
 
 | Project | Passed | Duration |
 |---|---:|---:|
-| Test.Unit | 624 | 16 s |
+| Test.Unit | 627 | 16 s |
 | Test.UI | 54 | 1 s |
 | Test.Architecture | 81 | 2 s |
-| Test.Endpoints | 198 | 8 s |
+| Test.Endpoints | 199 | 8 s |
 | Test.Integration.FlowEngine | 18 | 0.2 s |
 | Test.Mutation | 27 | 0.1 s |
 | Test.PlaywrightUI (`TestCategory=Unit`) | 1 | 0.1 s |
-| **Total** | **1003** | |
+| **Total** | **1007** | |
 
 `Test.Unit` used the CI 15-second blame-hang timeout. `dotnet format analyzers TaskFlow.slnx --severity warn --verify-no-changes --no-restore` passed with no changes or diagnostics. Types the EF.* packages own are tested by the package suites, not here.
 
@@ -50,9 +50,9 @@ Release `--no-build`, Podman Docker-compatible context; Test.Integration 2026-09
 
 | Lane | Project | Passed | Skipped | Duration |
 |---|---|---:|---:|---:|
-| unset (resolves NonAzure) / PostgreSqlJsonb | Test.Integration | 90 | 5 (Azure-only) | 102 s |
-| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 76 | 19 (NonAzure-only) | 171 s |
-| NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | Test.Integration | 92 | 3 | 106 s |
+| unset (resolves NonAzure) / PostgreSqlJsonb | Test.Integration | 98 | 5 (Azure-only) | 97 s |
+| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 84 | 19 (NonAzure-only) | 163 s |
+| NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | Test.Integration | 92 | 3 | 106 s (before the 8 same-key and exhaustion race cases, which then passed under MongoDb with the rest of `ChildAddConcurrencyTests`, 14/14) |
 | unset (resolves NonAzure) | Test.E2E | 10 | 0 | 15 s |
 | `TASKFLOW_LANE=Azure` | Test.E2E | 10 | 0 | 33 s |
 
