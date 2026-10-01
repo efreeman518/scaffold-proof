@@ -149,12 +149,13 @@ public class CategoryServiceTests
     {
         var entity = new CategoryBuilder().Build();
         _repoTrxnMock.Setup(r => r.GetCategoryAsync(entity.Id, It.IsAny<CancellationToken>())).ReturnsAsync(entity);
-        _repoTrxnMock.Setup(r => r.SaveChangesAsync(It.IsAny<OptimisticConcurrencyWinner>(), It.IsAny<CancellationToken>())).ReturnsAsync(0);
+        _repoTrxnMock.Setup(r => r.DeleteCategoryAsync(entity, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         var result = await CreateService().DeleteAsync(entity.Id, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
-        _repoTrxnMock.Verify(r => r.Delete(entity), Times.Once);
+        // The task detach, the delete and its save are one repository unit (D-022).
+        _repoTrxnMock.Verify(r => r.DeleteCategoryAsync(entity, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     /// <summary>Verifies that given non existent ID, when delete, then returns success idempotent.</summary>
