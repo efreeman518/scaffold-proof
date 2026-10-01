@@ -4,7 +4,7 @@ Canonical current evidence for the TaskFlow reference application. Historical ph
 
 > Update this file only from observed results. TaskFlow CI records the scaffold checkout commit used for cross-repository validation so failures remain diagnosable without creating a compatibility pin.
 
-TaskFlow runs on the EF.Packages 2.0 platform packages (every `EF.*` platform id at 2.0.112; the EF.FilterBuilder and EF.FlowEngine ids keep their own versions). Results below distinguish passed, blocked, and not-run evidence; each table names its run date.
+TaskFlow runs on the EF.Packages 2.0 platform packages (every `EF.*` platform id at 2.0.115; the EF.FilterBuilder and EF.FlowEngine ids keep their own versions). Results below distinguish passed, blocked, and not-run evidence; each table names its run date.
 
 ## Build Status
 
@@ -36,11 +36,11 @@ A Debug restore of the Uno project followed by a Release `--no-restore` build fa
 | Test.Unit | 624 | 16 s |
 | Test.UI | 54 | 1 s |
 | Test.Architecture | 81 | 2 s |
-| Test.Endpoints | 197 | 7 s |
+| Test.Endpoints | 198 | 8 s |
 | Test.Integration.FlowEngine | 18 | 0.2 s |
 | Test.Mutation | 27 | 0.1 s |
 | Test.PlaywrightUI (`TestCategory=Unit`) | 1 | 0.1 s |
-| **Total** | **1002** | |
+| **Total** | **1003** | |
 
 `Test.Unit` used the CI 15-second blame-hang timeout. `dotnet format analyzers TaskFlow.slnx --severity warn --verify-no-changes --no-restore` passed with no changes or diagnostics. Types the EF.* packages own are tested by the package suites, not here.
 
@@ -197,7 +197,7 @@ Status meanings:
 | No unsafe-method retry (D-063) | proven | `Test.Unit/Hosting/ServiceDefaultsScaleTests.cs` (transient 503: POST sent once, GET retried three times); Blazor clients inherit the ServiceDefaults handler with header propagation off, the read-only gRPC client keeps retries |
 | Api error mapping (D-066) | proven | `Test.Endpoints/GlobalExceptionHandlerTests.cs` (client abort 499, uncaused cancellation or timeout 504, framework faults 500, `InvalidRequestException`/`InvalidCursorException` 400, mapped exceptions their status, no 5xx detail outside Development); `TaskItemEndpointTests.Given_InvalidPayload_When_PutUpdate_Then_Returns400`; `CategoryServiceTests`/`CqrsFailureMappingTests` (fixed save message, cancellation propagates, create race replays or 409) |
 | System request context (D-067) | proven | `Test.Unit/Hosting/SystemRequestContextTests.cs` (no request resolves the system identity, anonymous HTTP request, a token claiming `System` does not get it, a real GlobalAdmin keeps its role, the package system context carries only `System`, which passes the real `AddTenantBoundary` registration (`CrossTenantRoles = [GlobalAdmin, System]`) for the tenant the data names, background comment write saves); `TenantTargetingContextAccessorTests.GetContextAsync_SequentialRequestsFromDifferentTenants_TargetsEachTenant` |
-| Gateway identity relay and token acquisition (D-068) | proven | `Test.Endpoints/ForwardedClaimsRelayTests.cs` (trusted app-only token yields only the relayed user, delegated or unlisted callers are not trusted, shipped settings trust nobody, Gateway and Api `ForwardedClaims` settings agree, a trusted app-only caller without a relay header gets 403); `Test.Unit/Gateway/GatewayAuthModeTests.cs` (every route's cluster relays user claims, and the forged inbound header is replaced through the Gateway's YARP transforms); `Test.Unit/Gateway/GatewayAccessTokenCacheTests.cs` (single-flight, first caller cancelling, faulted acquisition not cached, refresh before expiry) |
+| Gateway identity relay and token acquisition (D-068) | proven | `Test.Endpoints/ForwardedClaimsRelayTests.cs` (trusted app-only token yields only the relayed user, delegated or unlisted callers are not trusted, shipped settings trust nobody, Gateway and Api `ForwardedClaims` settings agree, a trusted app-only caller without a relay header gets 403 on a data route and 200 on `/health/full`); `Test.Unit/Gateway/GatewayAuthModeTests.cs` (every route's cluster relays user claims, and the forged inbound header is replaced through the Gateway's YARP transforms); `Test.Unit/Gateway/GatewayAccessTokenCacheTests.cs` (single-flight, first caller cancelling, faulted acquisition not cached, refresh before expiry) |
 | Tenant rate limiting and edge limits (D-050) | proven | `TenantRateLimitEndpointTests` (tenant tier applied after auth, export counted once); `TenantRateLimitingCompositionTests` (unreachable Redis fails open, no Redis stays in process); `GatewayEdgeRateLimitTests.AddGatewayServices_InvalidEdgeBudget_FailsWhenTheLimiterIsBuilt`; `BicepInfrastructureContractTests.MainBicep_GatewayAppliesExactlyOneForwardedHop` |
 | Two-state inbox and outbox settlement (D-026, D-029, D-053) | proven | `Test.Unit/Infrastructure/MessagingConsumerTests.cs` (TaskFlow consumers on the package base); `Test.Integration/InboxStoreTests.cs` and `OutboxClaimTests.cs` on both providers; `Test.Aspire/OutboxMeshTests.cs` (every consumer records the event exactly once); `BrokerTracePropagationTests.OutboxHop_ConsumerContinuesTheRequestTrace_NotTheDrain`; settlement and transports are proven by the `EF.Data.Outbox` and `EF.Messaging` suites |
 | Scheduler cron seeding and health (D-009) | proven | `SchedulerCronRegistrationTests`; `Test.Integration/SchedulerCronSeedingTests.HostStart_SeedsEveryDeclaredCronJob_AndARestartAddsNone` (plus a due ticker run through `ScheduledJobRunner`); `SchedulerHealthCheckTests` (package check with the shipped threshold) |

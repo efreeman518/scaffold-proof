@@ -102,14 +102,7 @@ public sealed class ForwardedClaimsRelayTests
     [TestMethod]
     public async Task TrustedAppOnlyCaller_WithoutRelayHeader_Gets403()
     {
-        using var factory = CreateFactory(GatewayAppId).WithWebHostBuilder(builder =>
-            builder.ConfigureTestServices(services =>
-                services.PostConfigure<FixedPrincipalOptions>(ScaffoldPrincipal.SchemeName, options => options.Claims =
-                [
-                    new FixedClaim("oid", "gateway-service-principal"),
-                    new FixedClaim("azp", GatewayAppId),
-                    new FixedClaim(ClaimTypes.Role, "GatewayServiceRole")
-                ])));
+        using var factory = TrustedGatewayCallerFactory();
         using var client = factory.CreateClient();
 
         // A real route, not the fallback policy: with RequireHeaderFromTrustedCaller=false the same request runs as the
@@ -117,6 +110,22 @@ public sealed class ForwardedClaimsRelayTests
         using var response = await client.GetAsync($"/api/v1/task-items/{Guid.CreateVersion7()}", TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    /// <summary>
+    /// The Gateway's aggregate health check calls the authorized <c>/health/full</c> with its own app-only token and no
+    /// relay header. <c>ForwardedClaims:ServicePathPrefixes = ["/health"]</c> in the shipped Api settings keeps the
+    /// trusted caller's own principal on that path only, so the probe is answered instead of forbidden.
+    /// </summary>
+    [TestMethod]
+    public async Task TrustedAppOnlyCaller_WithoutRelayHeader_IsAnsweredOnTheServiceHealthPath()
+    {
+        using var factory = TrustedGatewayCallerFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/health/full", TestContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
     }
 
     public TestContext TestContext { get; set; } = null!;
@@ -167,6 +176,17 @@ public sealed class ForwardedClaimsRelayTests
 
         return services.GetRequiredService<IClaimsTransformation>().TransformAsync(principal);
     }
+
+    /// <summary>The Api with the gateway trusted, every request authenticated as the gateway's app-only identity.</summary>
+    private static WebApplicationFactory<Program> TrustedGatewayCallerFactory() =>
+        CreateFactory(GatewayAppId).WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services =>
+                services.PostConfigure<FixedPrincipalOptions>(ScaffoldPrincipal.SchemeName, options => options.Claims =
+                [
+                    new FixedClaim("oid", "gateway-service-principal"),
+                    new FixedClaim("azp", GatewayAppId),
+                    new FixedClaim(ClaimTypes.Role, "GatewayServiceRole")
+                ])));
 
     private static WebApplicationFactory<Program> CreateFactory(string? trustedCallerId) =>
         new CustomApiFactory().WithWebHostBuilder(builder =>
