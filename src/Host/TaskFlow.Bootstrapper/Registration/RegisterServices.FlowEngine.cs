@@ -97,7 +97,7 @@ public static partial class RegisterServices
         // "headers" config (EF.FlowEngine 1.0.173 forwards IntegrationNodeConfig.Headers), so this
         // client needs no message handler of its own.
         AddTaskFlowApiHttpClient(services, apiBaseUrl);
-        fe.AddDirectHttpClient(TaskFlowApiClientName, namedClient: TaskFlowApiClientName);
+        fe.AddClient(CreateTaskFlowApiFlowClient);
 
         if (ResolveMessagingProvider(config) == MessagingProvider.RabbitMq)
         {
@@ -139,11 +139,12 @@ public static partial class RegisterServices
     /// instance across clients, so it is replaced here, not reconfigured; <c>RemoveAllResilienceHandlers</c> is
     /// experimental (the Blazor gRPC read client sets the precedent), so remove the suppression when it is not.
     /// <para>
-    /// shortcut: <c>AddDirectHttpClient</c> over this handler instead of <c>AddResilientHttpClient</c>, because
-    /// 1.0.199 sets <c>HttpStandardResilienceOptions.Retry</c> to null there, and the name-agnostic options
-    /// validator any <c>AddStandardResilienceHandler</c> registers (ServiceDefaults) then fails host start
-    /// ("The taskflow-api.Retry field is required"). Return to <c>AddResilientHttpClient</c> once the package
-    /// coexists with that validator.
+    /// shortcut: the <c>ResilientHttpFlowClient</c> adapter is registered over this handler instead of through
+    /// <c>AddResilientHttpClient</c>, because 1.0.199 sets <c>HttpStandardResilienceOptions.Retry</c> to null
+    /// there, and the name-agnostic options validator any <c>AddStandardResilienceHandler</c> registers
+    /// (ServiceDefaults) then fails host start ("The taskflow-api.Retry field is required").
+    /// <c>AddDirectHttpClient</c> is no substitute: it captures one HttpClient when the engine resolves its
+    /// clients. Return to <c>AddResilientHttpClient</c> once the package coexists with that validator.
     /// </para>
     /// </summary>
     internal static IHttpClientBuilder AddTaskFlowApiHttpClient(IServiceCollection services, string apiBaseUrl)
@@ -155,6 +156,10 @@ public static partial class RegisterServices
         client.AddStandardResilienceHandler(o => o.Retry.ShouldHandle = static _ => ValueTask.FromResult(false));
         return client;
     }
+
+    /// <summary>Per-call HttpClient from the factory, so handler rotation and the lazy test-server handler both hold.</summary>
+    private static EF.FlowEngine.Abstractions.IFlowClient CreateTaskFlowApiFlowClient(IServiceProvider sp) =>
+        new ResilientHttpFlowClient(TaskFlowApiClientName, sp.GetRequiredService<IHttpClientFactory>(), TaskFlowApiClientName);
 
     internal static string ResolveFlowEngineServiceBusTopic(IConfiguration config) =>
         config["FlowEngine:ServiceBusTopic"]
