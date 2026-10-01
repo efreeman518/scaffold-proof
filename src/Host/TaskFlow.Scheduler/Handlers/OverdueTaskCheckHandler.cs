@@ -60,16 +60,22 @@ public sealed class OverdueTaskCheckHandler(
         foreach (var tenant in page.GroupBy(r => r.TenantId))
         {
             var rows = tenant.ToList();
-            await systemRepository.ExecuteInTransactionAsync(async token =>
+            // Counted from the committed attempt only. A retry after a commit that landed marks nothing (the guard
+            // sees the stored marks), so it stages nothing and the deterministic ids stay single.
+            notified += await systemRepository.ExecuteInTransactionAsync(async token =>
             {
-                var marked = await systemRepository.MarkOverdueNotifiedAsync(
-                    tenant.Key, rows.ConvertAll(r => r.Id), asOfUtc, token);
-                // Every row lost the race (completed or rescheduled since the scan): nothing to announce.
-                if (marked == 0) return;
+                var marked = 0;
+                foreach (var row in rows)
+                {
+                    // A row that lost the race (completed, rescheduled, or marked and announced by another
+                    // replica since the scan) is not announced here: its id may already be in the outbox.
+                    if (!await systemRepository.MarkOverdueNotifiedAsync(tenant.Key, row.Id, asOfUtc, token)) continue;
+                    Stage(row, asOfUtc);
+                    marked++;
+                }
 
-                foreach (var row in rows) Stage(row, asOfUtc);
-                await systemRepository.SaveChangesAsync(token);
-                notified += marked;
+                if (marked > 0) await systemRepository.SaveChangesAsync(token);
+                return marked;
             }, ct);
         }
 
@@ -77,11 +83,14 @@ public sealed class OverdueTaskCheckHandler(
     }
 
     /// <summary>
-    /// Stages the announcement with a UUIDv5 message id over (tenant, task, due date). Two replicas that both
-    /// reach this point stage the same row rather than two, and the event is "suspected" precisely because the
-    /// consumer, not this job, confirms the task is still overdue when it handles the message.
+    /// Stages the announcement with a UUIDv5 message id over (tenant, task, due date), only for a row this run
+    /// marked, so the replica that wins a row's mark is the only one that stages its id. The event is "suspected"
+    /// precisely because the consumer, not this job, confirms the task is still overdue when it handles the message.
     /// </summary>
-    private void Stage(OverdueTaskRow row, DateTimeOffset asOfUtc)
+    private void Stage(OverdueTaskRow row, DateTimeOffset asOfUtc) => outbox.Stage(Announcement(row, asOfUtc));
+
+    /// <summary>The outbox entry this job stages for <paramref name="row"/>; public so a test can play a second replica.</summary>
+    public static OutboxEntry Announcement(OverdueTaskRow row, DateTimeOffset asOfUtc)
     {
         var messageId = DeterministicGuid.Create(
             DomainConstants.DETERMINISTIC_ID_NAMESPACE,
@@ -96,6 +105,6 @@ public sealed class OverdueTaskCheckHandler(
             correlationId: null,
             id: messageId);
 
-        outbox.Stage(TaskFlowIntegrationEvents.Entry(envelope, row.TenantId));
+        return TaskFlowIntegrationEvents.Entry(envelope, row.TenantId);
     }
 }
