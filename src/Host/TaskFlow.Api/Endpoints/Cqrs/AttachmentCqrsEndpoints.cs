@@ -39,7 +39,8 @@ public static class AttachmentCqrsEndpoints
             .Produces<DefaultResponse<AttachmentDto>>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status409Conflict)
-            .WithSummary("Create a new Attachment");
+            .WithSummary("Create a new Attachment")
+            .WithIdempotencyKey<AttachmentDto>(IdempotencyKeyFilter.AttachmentCreateScope);
 
         g.MapPost("/upload", Upload)
             .WithName("UploadAttachment")

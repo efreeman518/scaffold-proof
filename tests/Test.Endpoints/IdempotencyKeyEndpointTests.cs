@@ -50,6 +50,55 @@ public class IdempotencyKeyEndpointTests
         Assert.AreEqual(created.Version, replayed.Version, "a replay must not bump the stored version");
     }
 
+    /// <summary>
+    /// Category, Tag and Attachment creates honor the key the same way as a task create: the same key twice creates one
+    /// row (201, then a 200 replay of it), and the key is scoped to its entity type. Before, the header was ignored and
+    /// the resend created a second row.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service, "categories")]
+    [DataRow(EndpointStyles.Cqrs, "categories")]
+    [DataRow(EndpointStyles.Service, "tags")]
+    [DataRow(EndpointStyles.Cqrs, "tags")]
+    [DataRow(EndpointStyles.Service, "attachments")]
+    [DataRow(EndpointStyles.Cqrs, "attachments")]
+    [TestMethod]
+    public async Task Given_SameKeyTwice_When_CreateCategoryTagOrAttachment_Then_CreatesOneAndReplaysIt(string style, string resource)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = _fixture.CreateClient(style);
+        var key = NewKey();
+        var suffix = Guid.NewGuid().ToString("N")[..12];
+        var ownerId = resource == "attachments" ? await CreateTaskAsync(client) : Guid.Empty;
+        // IsActive = true: a category create always stores it, and the D-033 replay compares it (an omitted value is a 409).
+
+        async Task<HttpResponseMessage> CreateAsync() => resource switch
+        {
+            "categories" => await PostAsync(client, "/api/v1/categories", new CategoryDto { Name = $"Cat-{suffix}", IsActive = true }, key),
+            "tags" => await PostAsync(client, "/api/v1/tags", new TagDto { Name = $"Tag-{suffix}", Color = "#123456" }, key),
+            _ => await PostAsync(client, "/api/v1/attachments", new AttachmentDto
+            {
+                FileName = $"{suffix}.pdf",
+                ContentType = "application/pdf",
+                FileSizeBytes = 1024,
+                StorageUri = $"https://storage.example.com/{suffix}.pdf",
+                OwnerType = TaskFlow.Domain.Shared.Enums.AttachmentOwnerType.TaskItem,
+                OwnerId = ownerId
+            }, key)
+        };
+
+        using var first = await CreateAsync();
+        using var second = await CreateAsync();
+
+        Assert.AreEqual(HttpStatusCode.Created, first.StatusCode, await first.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        Assert.AreEqual(HttpStatusCode.OK, second.StatusCode, await second.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        using var created = System.Text.Json.JsonDocument.Parse(await first.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        using var replayed = System.Text.Json.JsonDocument.Parse(await second.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        Assert.AreEqual(
+            created.RootElement.GetProperty("item").GetProperty("id").GetGuid(),
+            replayed.RootElement.GetProperty("item").GetProperty("id").GetGuid());
+    }
+
     /// <summary>A different key is a different logical request, so it creates a second task.</summary>
     [TestCategory("Endpoint")]
     [DataRow(EndpointStyles.Service)]

@@ -20,6 +20,9 @@ internal static class IdempotencyKeyFilter
     public const int KeyMaxLength = 200;
 
     public const string TaskItemCreateScope = "task-item.create";
+    public const string CategoryCreateScope = "category.create";
+    public const string TagCreateScope = "tag.create";
+    public const string AttachmentCreateScope = "attachment.create";
 
     /// <summary>
     /// Child-add scopes carry the root id, so one key used on two tasks maps to two different children. The id is the
