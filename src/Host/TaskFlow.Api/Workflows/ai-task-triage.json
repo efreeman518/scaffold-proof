@@ -64,6 +64,7 @@
       "label": "PATCH task priority",
       "intent": "Apply the suggested priority to the TaskItem via the public API.",
       "compensationNodeId": "n-revert-priority",
+      "retryPolicy": { "maxAttempts": 3, "backoff": "Exponential" },
       "config": {
         "clientRef": "taskflow-api",
         "method": "PATCH",
@@ -97,9 +98,11 @@
       "type": "integration",
       "label": "Compensation: post rejection comment",
       "intent": "On quorum rejection, post a comment explaining why the priority was not elevated.",
+      "retryPolicy": { "maxAttempts": 3, "backoff": "Exponential" },
       "config": {
         "clientRef": "taskflow-api",
         "method": "POST",
+        "idempotencyKeyHeader": "Idempotency-Key",
         "path": "/api/v1/task-items/{{$.params.taskId}}/comments",
         "body": { "item": { "Body": "Critical-priority elevation rejected by quorum reviewers." } },
         "idempotencyKey": "$.params.taskId + '-reject-comment'"
@@ -114,6 +117,7 @@
       "type": "integration",
       "label": "Compensation: revert priority",
       "intent": "Compensation step invoked by the saga walker when downstream nodes fault after apply-priority succeeded.",
+      "retryPolicy": { "maxAttempts": 3, "backoff": "Exponential" },
       "config": {
         "clientRef": "taskflow-api",
         "method": "PATCH",

@@ -1,7 +1,11 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using EF.FlowEngine.Abstractions;
+using EF.FlowEngine.Definition;
 using Test.Integration.Infrastructure;
 
 namespace Test.Integration;
@@ -88,6 +92,111 @@ public sealed class AiWorkflowIntegrationTests
         Assert.AreEqual("n-output-ok", node, $"Decomposer should reach the decomposed terminal after creating child tasks. Instance: {Truncate(body)}");
         var childCount = await CountChildrenAsync(client, parentId, ct);
         Assert.AreEqual(2, childCount, "Workflow should have created one child TaskItem per proposed subtask via POST self-calls.");
+    }
+
+    /// <summary>
+    /// D-074 end to end through the engine: the shipped keyed POST comment node (triage <c>n-compensate-reject</c>)
+    /// runs as the only node of a probe workflow. Its first POST reaches the API and adds the comment, but the
+    /// response is lost and the engine sees a 502. The node retries the ambiguous status with the same generated
+    /// Idempotency-Key, the API maps the key to the stored comment id and replays it, so the task has one comment.
+    /// It is the only keyed shipped node: EF.FlowEngine 1.0.199 sends one key for every iteration of a loop-body
+    /// node and applies no retryPolicy there, so the loop-body POST nodes stay unkeyed.
+    /// </summary>
+    [TestMethod]
+    public async Task KeyedCommentPost_RetriedOn502_AddsOneComment()
+    {
+        SkipIfNoSql();
+        var ct = TestContext.CancellationToken;
+        var connectionString = await IsolatedMigratedConnectionStringAsync(ct);
+        var lostResponse = new LostResponseState();
+
+        using var factory = new FlowEngineWorkflowApiFactory(
+            connectionString,
+            _ => "{}",
+            selfCall => selfCall.AddHttpMessageHandler(() => new LoseFirstCommentResponse(lostResponse)));
+        using var client = factory.CreateClient();
+
+        var taskId = await CreateTaskAsync(client, "Keyed comment retry task", priority: 2 /* Medium */, ct);
+        await factory.Services.GetRequiredService<IWorkflowRegistry>().SaveAsync(KeyedCommentProbe(), ct);
+        var instanceId = await StartWorkflowAsync(client, KeyedCommentProbeId, new Dictionary<string, object?>
+        {
+            ["tenantId"] = TenantId,
+            ["taskId"] = taskId.ToString()
+        }, ct);
+
+        var (node, body) = await WaitForTerminalAsync(client, instanceId, ct);
+
+        Assert.AreEqual("n-output-ok", node, $"The 502 must be retried, not fault the node. Instance: {Truncate(body)}");
+        Assert.AreEqual(2, lostResponse.CommentPosts, "one lost attempt plus one resend");
+        Assert.IsFalse(string.IsNullOrWhiteSpace(lostResponse.FirstKey), "the keyed node must send the generated key");
+        Assert.AreEqual(lostResponse.FirstKey, lostResponse.RetryKey, "the resend must carry the same Idempotency-Key");
+        Assert.AreEqual(1, await CountCommentsAsync(client, taskId, ct), "the resend must replay the comment, not add a second");
+    }
+
+    private const string KeyedCommentProbeId = "idempotency-key-probe";
+
+    // A one-node workflow whose node is the shipped triage reject-comment node, unchanged except for its edges.
+    private static WorkflowDefinition KeyedCommentProbe()
+    {
+        var triage = JsonNode.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Workflows", "ai-task-triage.json")))!;
+        var post = triage["nodes"]!["n-compensate-reject"]!.DeepClone();
+        post["edges"] = JsonNode.Parse("""[{ "on": ["Match"], "nextNodeId": "n-output-ok" }, { "on": ["Error"], "nextNodeId": "n-faulted" }]""");
+        var probe = new JsonObject
+        {
+            ["id"] = KeyedCommentProbeId,
+            ["version"] = "1.0.0",
+            ["status"] = "Active",
+            ["entryNodeId"] = "n-compensate-reject",
+            ["nodes"] = new JsonObject
+            {
+                ["n-compensate-reject"] = post,
+                ["n-output-ok"] = JsonNode.Parse("""{ "id": "n-output-ok", "type": "output", "config": {} }"""),
+                ["n-faulted"] = JsonNode.Parse("""{ "id": "n-faulted", "type": "output", "config": {} }""")
+            }
+        };
+        return WorkflowDefinitionBuilder.FromJson(probe.ToJsonString()).Build();
+    }
+
+    private static async Task<int> CountCommentsAsync(HttpClient client, Guid taskId, CancellationToken ct)
+    {
+        using var response = await client.GetAsync($"/api/v1/task-items/{taskId}", ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, $"Get task failed: {Truncate(body)}");
+        using var payload = JsonDocument.Parse(body);
+        return payload.RootElement.GetProperty("item").GetProperty("comments").GetArrayLength();
+    }
+
+    private sealed class LostResponseState
+    {
+        public int CommentPosts;
+        public string? FirstKey;
+        public string? RetryKey;
+    }
+
+    // Forwards the first keyed comment POST to the API (which commits it), then answers the engine with a 502 as if
+    // the response had been lost; later requests pass through unchanged. State is shared because the client factory
+    // may build more than one handler chain.
+    private sealed class LoseFirstCommentResponse(LostResponseState state) : DelegatingHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var isComment = request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath.EndsWith("/comments", StringComparison.Ordinal);
+            if (!isComment) return await base.SendAsync(request, cancellationToken);
+
+            var key = request.Headers.TryGetValues("Idempotency-Key", out var values) ? values.Single() : null;
+            var count = Interlocked.Increment(ref state.CommentPosts);
+            var response = await base.SendAsync(request, cancellationToken);
+            if (count == 1)
+            {
+                state.FirstKey = key;
+                Assert.AreEqual(HttpStatusCode.Created, response.StatusCode, "the lost attempt must have added the comment");
+                response.Dispose();
+                return new HttpResponseMessage(HttpStatusCode.BadGateway) { RequestMessage = request };
+            }
+
+            if (count == 2) state.RetryKey = key;
+            return response;
+        }
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────────

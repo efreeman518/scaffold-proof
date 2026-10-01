@@ -535,10 +535,10 @@ than clobber each other; zero rows affected is a no-op matching the Cosmos 404 a
 names: `RelationalTaskViewRepository` (constructor takes both `TaskFlowDbContextTrxn` for writes/patches
 and `TaskFlowDbContextQuery` - the read-replica connection - for gets/pages) and
 `RelationalAuditLogRepository` (append is a FlexLabs `Upsert(...).On(...).NoUpdate()` insert-only
-upsert on `(TenantId, RecordedUtc, Id)`; purge is `ExecuteDeleteBatchedAsync` keyed on `Id`). Migrations:
-`20260908222032_AddRelationalReadModelAndAudit` (`TaskFlow.Infrastructure.Data.Migrations.SqlServer`)
-and `20260908222051_AddRelationalReadModelAndAudit`
-(`TaskFlow.Infrastructure.Data.Migrations.PostgreSql`), both under `Migrations/TaskFlow/`.
+upsert on `(TenantId, RecordedUtc, Id)`; purge is `ExecuteDeleteBatchedAsync` keyed on `Id`). Schema: the
+`TaskFlow` context's single `InitialCreate` migration in each provider assembly
+(`TaskFlow.Infrastructure.Data.Migrations.SqlServer`, `...Migrations.PostgreSql`, under `Migrations/TaskFlow/`);
+D-025 regenerates it for every schema change.
 
 **Proof**: `tests/Test.Integration/RelationalTaskViewRepositoryTests.cs` and
 `RelationalAuditLogRepositoryTests.cs` (per the orchestration session log, 50 tests passed on each of

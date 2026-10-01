@@ -64,7 +64,7 @@ Empty
   behind file-level `using` aliases until their area slice deletes them. Fixed a surfaced bug: internal-bus handlers
   were registered from a disposed scope, so relational audit writes failed; registration now uses
   `AutoRegisterHandlers`. Tenant rule `AllowsAllTenants` = no tenant plus the System or GlobalAdmin role (fail-closed
-  otherwise). Migration `AuditLogStartedAtUtc` (both providers, backfilled from `RecordedUtc`). Behavior change: a
+  otherwise). Migration `AuditLogStartedAtUtc` (both providers, backfilled from `RecordedUtc`; since squashed into `InitialCreate` per D-025, with its backfill test removed). Behavior change: a
   tenant-less, non-admin caller now reads nothing. ProblemDetails now use the 2.0 defaults (a3 reviews the wire
   contract). Baseline after a0: Unit 689, Architecture 80, Endpoints 189, Integration NonAzure 81 passed / 6 skipped,
   Azure 68 passed / 19 skipped.
@@ -87,7 +87,8 @@ Empty
   DESIGN-DECISIONS D-053 still describe the old messaging trace source.
 
 - a2 (#33): migrations `PackageInboxEntry` (Consumer widened to 128) and `PackageOutboxMessage` (TenantId moved into a
-  Headers JSON, with the data backfilled and the move tested). Metric names changed from `taskflow.*` to `ef.*`
+  Headers JSON, with the data backfilled and the move tested; both since squashed into `InitialCreate` per D-025, and
+  the backfill tests removed). Metric names changed from `taskflow.*` to `ef.*`
   (nothing in infra referenced the old names). Config key `Messaging:Inbox:PollInterval` renamed to `WaitPollInterval`.
   A live foreign claim now returns `InProgress` (RabbitMQ retries with reason `InboxInProgress`). Integration baseline
   after a2: NonAzure 81 passed / 5 skipped, Azure 68 passed / 18 skipped.

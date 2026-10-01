@@ -41,6 +41,9 @@
     <ProjectReference Include="..\..\src\Host\TaskFlow.Api\TaskFlow.Api.csproj" />
     <!-- The Scheduler host saves through the system repository; the throw-policy rule scans it too. -->
     <ProjectReference Include="..\..\src\Host\TaskFlow.Scheduler\TaskFlow.Scheduler.csproj" />
+    <!-- D-025: MigrationBaselineArchitectureTests counts the Migration classes per DbContext in each provider assembly. -->
+    <ProjectReference Include="..\..\src\Infrastructure\TaskFlow.Infrastructure.Data.Migrations.SqlServer\TaskFlow.Infrastructure.Data.Migrations.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\Infrastructure\TaskFlow.Infrastructure.Data.Migrations.PostgreSql\TaskFlow.Infrastructure.Data.Migrations.PostgreSql.csproj" />
   </ItemGroup>
 
 </Project>

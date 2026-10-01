@@ -1,14 +1,17 @@
 using EF.Messaging;
 using EF.BackgroundServices.Scheduling;
+using TaskFlow.Application.Contracts.Repositories;
 
 namespace TaskFlow.Scheduler.Handlers.Retention;
 
 /// <summary>
-/// Trims the consumer inbox (D-029). The window must stay longer than any broker's maximum redelivery age -
-/// a claim deleted too early lets a late redelivery through and the consumer runs its effect twice.
+/// Trims the two deduplication records: the consumer inbox (D-029) and the Idempotency-Key mappings (D-074). Each
+/// window must stay longer than its sender's retry horizon - a claim deleted too early lets a late redelivery
+/// through, and a mapping deleted too early lets a late FlowEngine retry or lease recovery create a second row.
 /// </summary>
 public sealed class ConsumerInboxRetentionHandler(
     IInboxStore inboxStore,
+    IIdempotencyKeyRepository idempotencyKeys,
     ScheduledJobTelemetry telemetry,
     TimeProvider timeProvider,
     IConfiguration config) : IScheduledJobHandler
@@ -16,12 +19,14 @@ public sealed class ConsumerInboxRetentionHandler(
     public const string JobName = "ConsumerInboxRetention";
     private const int DefaultRetentionDays = 7;
 
-    /// <summary>Handles consumer inbox retention requests.</summary>
+    /// <summary>Handles consumer inbox and idempotency-key retention requests.</summary>
     public async Task HandleAsync(CancellationToken ct)
     {
-        var cutoffUtc = timeProvider.GetUtcNow()
-            .AddDays(-config.GetValue("Scheduling:Retention:ConsumerInboxDays", DefaultRetentionDays));
+        var now = timeProvider.GetUtcNow();
 
-        telemetry.RecordRetention("consumerinbox", await inboxStore.PurgeAsync(cutoffUtc, ct));
+        telemetry.RecordRetention("consumerinbox", await inboxStore.PurgeAsync(
+            now.AddDays(-config.GetValue("Scheduling:Retention:ConsumerInboxDays", DefaultRetentionDays)), ct));
+        telemetry.RecordRetention("idempotencykey", await idempotencyKeys.PurgeAsync(
+            now.AddDays(-config.GetValue("Scheduling:Retention:IdempotencyKeyDays", DefaultRetentionDays)), ct));
     }
 }

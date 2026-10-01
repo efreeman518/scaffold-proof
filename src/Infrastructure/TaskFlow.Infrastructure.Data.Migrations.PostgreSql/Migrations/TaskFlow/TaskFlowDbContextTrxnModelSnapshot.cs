@@ -610,6 +610,39 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.TaskFlow
                     b.ToTable("BlobDeleteWork", "taskflow");
                 });
 
+            modelBuilder.Entity("TaskFlow.Infrastructure.Data.Operational.IdempotencyKeyRecord", b =>
+                {
+                    b.Property<Guid>("EntityId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("EntityId");
+
+                    b.HasIndex("CreatedUtc")
+                        .HasDatabaseName("IX_IdempotencyKey_CreatedUtc");
+
+                    b.HasIndex("TenantId", "Scope", "Key")
+                        .IsUnique()
+                        .HasDatabaseName("UX_IdempotencyKey_TenantId_Scope_Key");
+
+                    b.ToTable("IdempotencyKey", "taskflow");
+                });
+
             modelBuilder.Entity("TaskFlow.Infrastructure.Data.ReadModel.TaskItemEmbedding", b =>
                 {
                     b.Property<Guid>("TenantId")
