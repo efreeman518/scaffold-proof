@@ -76,7 +76,7 @@ public class WorkflowDefinitionValidityTests
 
         var warnings = WorkflowDefinitionValidator.GetWarnings(def);
 
-        Assert.IsEmpty(warnings, $"{fileName}: {string.Join(" | ", warnings)}");
+        Assert.IsEmpty(warnings, $"{fileName}: {string.Join(" | ", warnings.Select(w => $"{w.Code} {w.NodeId}: {w.Message}"))}");
     }
 
     /// <summary>

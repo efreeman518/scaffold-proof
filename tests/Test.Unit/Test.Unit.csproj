@@ -27,6 +27,7 @@
   <ItemGroup>
     <Content Include="..\..\src\Host\TaskFlow.Api\Workflows\ai-task-triage.json" Link="Workflows\ai-task-triage.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\src\Host\TaskFlow.Api\Workflows\ai-task-decomposer.json" Link="Workflows\ai-task-decomposer.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\src\Host\TaskFlow.Api\Workflows\compliance-check.json" Link="Workflows\compliance-check.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

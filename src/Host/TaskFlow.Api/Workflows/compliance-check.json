@@ -3,28 +3,24 @@
   "version": "1.0.0",
   "label": "Recurring Compliance Check",
   "status": "Active",
-  "intent": "Find tasks tagged 'compliance' that are due within 7 days; for each, fetch evidence, summarize via agent, route to human review when expired.",
+  "intent": "Find tasks due before params.dueBefore; for each, fetch evidence, summarize via agent, route to human review when expired.",
   "entryNodeId": "n-query-due",
-  "paramsSchema": "{\"required\":[\"tenantId\"],\"properties\":{\"tenantId\":{\"type\":\"string\"},\"windowDays\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":90}}}",
+  "paramsSchema": "{\"required\":[\"tenantId\",\"dueBefore\"],\"properties\":{\"tenantId\":{\"type\":\"string\"},\"dueBefore\":{\"type\":\"string\",\"format\":\"date-time\"}}}",
   "nodes": {
     "n-query-due": {
       "id": "n-query-due",
-      "type": "query",
-      "label": "Query compliance tasks due soon",
-      "intent": "FilterBuilder query against TaskItem for tag=compliance AND DueDate < now+windowDays AND Status != Completed.",
+      "type": "integration",
+      "label": "Search tasks due soon",
+      "intent": "Search the tenant's tasks due before params.dueBefore, earliest first, through the public API (auth, tenant isolation, validation). The search has no tag filter, so every due task is processed.",
+      "retryPolicy": { "maxAttempts": 3, "backoff": "Exponential" },
       "config": {
-        "clientRef": "taskflow-query",
-        "set": "TaskItem",
-        "filterSet": {
-          "operator": "AND",
-          "filters": [
-            { "propertyPath": "Tags", "operation": "contains", "testValue": "compliance" },
-            { "propertyPath": "Status", "operation": "ne", "testValue": "Completed" }
-          ]
-        },
-        "take": 50
+        "clientRef": "taskflow-api",
+        "method": "POST",
+        "path": "/api/v1/task-items/search",
+        "body": { "filter": { "dueBefore": "$.params.dueBefore" }, "sortMode": "DueDateAsc", "pageSize": 50 },
+        "responseMapping": { "dueTasks": "$.items" },
+        "idempotencyKey": "$.engine.instanceId + '-compliance-search'"
       },
-      "storeAs": "dueTasks",
       "edges": [
         { "on": ["Match"], "nextNodeId": "n-loop-each" },
         { "on": ["Error"], "nextNodeId": "n-output-failed" }
@@ -50,13 +46,12 @@
       "id": "n-fetch-evidence",
       "type": "document",
       "label": "Fetch evidence blob",
-      "intent": "Read the most recent attachment for the current task from blob storage.",
+      "intent": "Read the evidence document the current item references from the registered IDocumentStore. TaskFlow registers no document store and its task items carry no evidence reference, so this node takes its Error edge.",
       "config": {
-        "clientRef": "blob-docs",
         "operation": "read",
-        "key": "compliance/{{$.context._loopItem.Id}}/latest.pdf"
+        "contentKey": "$.context.currentItem.evidenceRef",
+        "resultKey": "evidence"
       },
-      "storeAs": "evidence",
       "edges": [
         { "on": ["Match"],   "nextNodeId": "n-extract" },
         { "on": ["NoMatch"], "nextNodeId": "n-decide" },
@@ -70,10 +65,10 @@
       "intent": "Ask the agent to extract an expiration date and produce a compact classification.",
       "config": {
         "clientRef": "ai-agent",
-        "promptTemplate": "Read the evidence for task {{$.context._loopItem.Title}}. Return JSON: {\"status\":\"expired|expiringSoon|ok\",\"summary\":\"<text>\"}. Evidence excerpt: {{$.context.evidence.summary}}",
+        "promptTemplate": "Read the evidence for task {{$.context.currentItem.title}}. Return JSON: {\"status\":\"expired|expiringSoon|ok\",\"summary\":\"<text>\"}. Evidence excerpt: {{$.context.evidence.summary}}",
         "promptVersion": "compliance-extract-v1",
         "outputSchema": "{\"type\":\"object\",\"required\":[\"status\"],\"properties\":{\"status\":{\"type\":\"string\",\"enum\":[\"expired\",\"expiringSoon\",\"ok\"]},\"summary\":{\"type\":\"string\"}}}",
-        "idempotencyKey": "$.context._loopItem.Id + '-compliance-extract'"
+        "idempotencyKey": "$.context.currentItem.id + '-compliance-extract'"
       },
       "storeAs": "complianceFinding",
       "edges": [
@@ -99,12 +94,12 @@
       "label": "Human review of expired evidence",
       "intent": "Compliance officer reviews and signs off; 48h SLA with escalation.",
       "config": {
-        "title": "Expired compliance evidence: {{$.context._loopItem.Title}}",
+        "title": "Expired compliance evidence: {{$.context.currentItem.title}}",
         "assignedTo": "role:compliance-officer",
         "channel": "Internal",
         "quorum": 1,
         "formSchema": "{\"properties\":{\"decision\":{\"type\":\"string\",\"enum\":[\"resolved\",\"escalate\"]},\"notes\":{\"type\":\"string\"}},\"required\":[\"decision\"]}",
-        "visibleContext": ["$.context._loopItem", "$.context.complianceFinding"],
+        "visibleContext": ["$.context.currentItem", "$.context.complianceFinding"],
         "dueIn": "P2D",
         "escalation": { "after": "P1D", "reassignTo": "role:compliance-lead" }
       },
@@ -120,9 +115,9 @@
       "config": {
         "clientRef": "taskflow-api",
         "method": "POST",
-        "path": "/api/v1/task-items/{{$.context._loopItem.Id}}/comments",
+        "path": "/api/v1/task-items/{{$.context.currentItem.id}}/comments",
         "body": { "item": { "Body": "Compliance review complete: {{$.context._humanTaskResponse.notes}}" } },
-        "idempotencyKey": "$.context._loopItem.Id + '-compliance-resolved'"
+        "idempotencyKey": "$.context.currentItem.id + '-compliance-resolved'"
       },
       "edges": [ { "on": ["Match"], "nextNodeId": "n-ok" }, { "on": ["Error"], "nextNodeId": "n-ok" } ]
     },
@@ -134,9 +129,9 @@
       "config": {
         "clientRef": "taskflow-api",
         "method": "POST",
-        "path": "/api/v1/task-items/{{$.context._loopItem.Id}}/comments",
+        "path": "/api/v1/task-items/{{$.context.currentItem.id}}/comments",
         "body": { "item": { "Body": "Compliance evidence is expiring soon - please refresh." } },
-        "idempotencyKey": "$.context._loopItem.Id + '-compliance-reminder'"
+        "idempotencyKey": "$.context.currentItem.id + '-compliance-reminder'"
       },
       "edges": [ { "on": ["Match"], "nextNodeId": "n-ok" }, { "on": ["Error"], "nextNodeId": "n-ok" } ]
     },
