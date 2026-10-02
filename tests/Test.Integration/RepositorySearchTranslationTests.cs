@@ -388,25 +388,27 @@ public class RepositorySearchTranslationTests
     }
 
     /// <summary>
-    /// The id tie-break follows the sort direction: for rows stamped with the same CreatedAtUtc (one save), a
-    /// descending sort returns the later UUIDv7 id first, so "newest first, page size 1" picks the newest attachment.
+    /// The id tie-break follows the sort direction: for rows stamped with the same CreatedAtUtc (one save), a descending
+    /// sort returns the row whose id is greatest in the provider's own uniqueidentifier/uuid ordering.
     /// </summary>
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
-    public async Task AttachmentSearch_DescendingSort_BreaksTiesByDescendingId_AgainstRealSql()
+    public async Task AttachmentSearch_SortDirection_AlsoOrdersTheIdTieBreak_AgainstRealSql()
     {
         var ownerId = Guid.NewGuid();
-        var older = new AttachmentBuilder().WithTenantId(TenantId).WithOwnerId(ownerId).WithFileName("older.txt").Build();
-        var newer = new AttachmentBuilder().WithTenantId(TenantId).WithOwnerId(ownerId).WithFileName("newer.txt").Build();
+        var first = new AttachmentBuilder().WithTenantId(TenantId).WithOwnerId(ownerId).WithFileName("first.txt").Build();
+        var second = new AttachmentBuilder().WithTenantId(TenantId).WithOwnerId(ownerId).WithFileName("second.txt").Build();
         await using (var db = DbContainerFixture.CreateTrxnContext())
         {
-            db.Attachments.AddRange(older, newer);
+            db.Attachments.AddRange(first, second);
             await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
         }
 
-        Assert.AreEqual(older.CreatedAtUtc, newer.CreatedAtUtc, "precondition: one save stamps one CreatedAtUtc");
-        Assert.IsLessThan(0, older.Id.Value.CompareTo(newer.Id.Value), "precondition: the later UUIDv7 sorts after");
+        Assert.AreEqual(first.CreatedAtUtc, second.CreatedAtUtc, "precondition: one save stamps one CreatedAtUtc");
         await using var queryDb = DbContainerFixture.CreateQueryContext();
+        var ownerFilter = queryDb.Attachments.IgnoreQueryFilters().Where(a => a.OwnerId == ownerId);
+        var greatestId = await ownerFilter.OrderByDescending(a => a.Id).Select(a => a.FileName).FirstAsync(TestContext.CancellationToken);
+        var leastId = await ownerFilter.OrderBy(a => a.Id).Select(a => a.FileName).FirstAsync(TestContext.CancellationToken);
         var page = await new AttachmentRepositoryQuery(queryDb).SearchAttachmentsAsync(new SearchRequest<AttachmentSearchFilter>
         {
             PageIndex = 1,
@@ -414,8 +416,16 @@ public class RepositorySearchTranslationTests
             Sorts = [new Sort("CreatedAtUtc", SortOrder.Descending)],
             Filter = new AttachmentSearchFilter { TenantId = TenantId, OwnerId = ownerId }
         }, includeTotal: false, TestContext.CancellationToken);
+        var ascending = await new AttachmentRepositoryQuery(queryDb).SearchAttachmentsAsync(new SearchRequest<AttachmentSearchFilter>
+        {
+            PageIndex = 1,
+            PageSize = 1,
+            Sorts = [new Sort("CreatedAtUtc", SortOrder.Ascending)],
+            Filter = new AttachmentSearchFilter { TenantId = TenantId, OwnerId = ownerId }
+        }, includeTotal: false, TestContext.CancellationToken);
 
-        Assert.AreEqual("newer.txt", page.Data.Single().FileName);
+        Assert.AreEqual(greatestId, page.Data.Single().FileName, "a descending sort breaks the tie by descending id");
+        Assert.AreEqual(leastId, ascending.Data.Single().FileName, "an ascending sort breaks the tie by ascending id");
     }
 
     public TestContext TestContext { get; set; } = null!;

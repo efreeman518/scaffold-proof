@@ -35,8 +35,9 @@ public class AttachmentRepositoryQuery(TaskFlowDbContextQuery db)
         // ordering
         if (request.Sorts?.Any() ?? false)
         {
-            // The UUIDv7 id tie-break follows the last sort's direction, so "CreatedAtUtc descending" stays newest
-            // first for rows that share a timestamp.
+            // The id tie-break follows the last sort's direction, so a descending sort is a descending total order.
+            // It decides ties deterministically, not by recency: SQL Server orders uniqueidentifier by its last bytes,
+            // and two UUIDv7 ids minted in the same millisecond carry random bits there.
             var ordered = (IOrderedQueryable<Attachment>)q.OrderBy(request.Sorts);
             q = request.Sorts.Last().SortOrder == SortOrder.Descending
                 ? ordered.ThenByDescending(e => e.Id)
