@@ -33,7 +33,7 @@ Release `--no-build` after a `--no-incremental` Release solution build (0 warnin
 
 | Project | Passed | Duration |
 |---|---:|---:|
-| Test.Unit | 674 | 17 s |
+| Test.Unit | 674 | 11 s |
 | Test.UI | 54 | 1 s |
 | Test.Architecture | 87 | 2 s |
 | Test.Endpoints | 236 | 8 s |
@@ -42,17 +42,17 @@ Release `--no-build` after a `--no-incremental` Release solution build (0 warnin
 | Test.PlaywrightUI (`TestCategory=Unit`) | 1 | 0.1 s |
 | **Total** | **1113** | |
 
-`Test.Unit` used the CI 15-second blame-hang timeout. `dotnet format analyzers TaskFlow.slnx --severity warn --verify-no-changes --no-restore` passed with no changes or diagnostics. Types the EF.* packages own are tested by the package suites, not here.
+`Test.Unit` used the CI 15-second blame-hang timeout. Its duration is the median of three 2026-10-02 runs (10-13 s) after the test-speed changes, from a project-scoped Release build. `dotnet format analyzers TaskFlow.slnx --severity warn --verify-no-changes --no-restore` passed with no changes or diagnostics. Types the EF.* packages own are tested by the package suites, not here.
 
 ### Component containers
 
-Release `--no-build`, Podman Docker-compatible context; Test.Integration 2026-10-02 (EF.* 2.0.116, EF.FlowEngine 1.0.202), Test.E2E 2026-09-29:
+Release `--no-build`, Podman Docker-compatible context; Test.Integration 2026-10-02 (EF.* 2.0.116, EF.FlowEngine 1.0.202; NonAzure three identical runs), Test.E2E 2026-09-29. The Redis fail-open limiter test moved out of Test.Integration (it needed no container; Test.Unit pins it), so each lane has one test fewer:
 
 | Lane | Project | Passed | Skipped | Duration |
 |---|---|---:|---:|---:|
-| `TASKFLOW_LANE=NonAzure` / PostgreSqlJsonb | Test.Integration | 145 | 5 (Azure-only) | 107 s |
-| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 131 | 19 (NonAzure-only) | 176 s |
-| NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | Test.Integration | 147 | 3 | 106 s |
+| `TASKFLOW_LANE=NonAzure` / PostgreSqlJsonb | Test.Integration | 144 | 5 (Azure-only) | 98 s |
+| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 130 | 19 (NonAzure-only) | 169 s |
+| NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | Test.Integration | 146 | 3 | 100 s |
 | unset (resolves NonAzure) | Test.E2E | 10 | 0 | 15 s |
 | `TASKFLOW_LANE=Azure` | Test.E2E | 10 | 0 | 33 s |
 

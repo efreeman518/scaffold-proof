@@ -30,9 +30,9 @@ public sealed class AiWorkflowIntegrationTests
     // Scaffold auth identity (ScaffoldPrincipal, EF.Auth fixed principal) the in-process host authenticates every request as.
     private const string TenantId = "00000000-0000-0000-0000-000000000001";
     private static readonly TimeSpan PollTimeout = TimeSpan.FromSeconds(60);
-    // The engine drives the workflow in the background and it terminates within a second or two, so a
-    // calm poll cadence reaches the terminal in a handful of requests and stays under the API rate limit.
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
+    // The engine drives the workflow in the background and terminates within a second or two. A short cadence
+    // notices the terminal node promptly; FlowEngineWorkflowApiFactory raises the tenant budget so polling never trips it.
+    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(200);
 
     private static readonly string[] TerminalNodes =
         ["n-output-ok", "n-output-rejected", "n-output-failed", "n-faulted"];

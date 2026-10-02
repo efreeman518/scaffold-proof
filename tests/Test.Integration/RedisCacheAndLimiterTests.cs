@@ -14,10 +14,9 @@ namespace Test.Integration;
 /// <summary>
 /// Validates the two behaviors that only exist across processes and therefore cannot be proven by any
 /// in-process test: a tag invalidation that reaches another replica's L1 through the backplane, and a rate
-/// limit that is one budget shared by every replica rather than one budget each. The third test pins the
-/// failure policy - with Redis unreachable the limiter admits the request rather than rejecting it, which is
-/// deliberate and must not regress into failing closed. The limiter is EF.RateLimiting.Redis over the cache's shared
-/// multiplexer, composed the way the Api composes it.
+/// limit that is one budget shared by every replica rather than one budget each. The fail-open policy with Redis
+/// unreachable needs no container and is pinned in process by Test.Unit's TenantRateLimitingCompositionTests.
+/// The limiter is EF.RateLimiting.Redis over the cache's shared multiplexer, composed the way the Api composes it.
 /// Component tier: a real Redis Testcontainer; two service providers stand in for two replicas.
 /// </summary>
 [TestClass]
@@ -94,23 +93,6 @@ public class RedisCacheAndLimiterTests
 
         Assert.AreEqual(4, acquired,
             "six attempts against a shared budget of four: two replicas do not get four permits each");
-    }
-
-    /// <summary>With Redis unreachable the limiter admits the request and counts the backend failure.</summary>
-    [TestMethod]
-    [Timeout(120000, CooperativeCancellation = true)]
-    public async Task RedisUnreachable_LimiterFailsOpen()
-    {
-        // A port nothing is listening on, with a short connect timeout so the test is not the retry policy.
-        // No abortConnect=false: the composition must survive the default (throwing) string Aspire and compose emit.
-        using var replica = BuildLimiterReplica("127.0.0.1:6399,connectTimeout=250,connectRetry=1");
-        using var limiter = replica.GetRequiredService<ISlidingWindowLimiterFactory>().Create(
-            $"rl:IntegrationTest:default:tenant:{{{Guid.NewGuid()}}}", new RateLimitAllowance { PermitLimit = 1 });
-
-        // Two acquisitions against a budget of one: both are admitted because the budget cannot be read.
-        Assert.IsTrue((await limiter.AcquireAsync(1, TestContext.CancellationToken)).IsAcquired);
-        Assert.IsTrue((await limiter.AcquireAsync(1, TestContext.CancellationToken)).IsAcquired,
-            "the limiter fails open rather than rejecting traffic a healthy API could serve");
     }
 
     /// <summary>Builds one cache "replica" over the shared Redis.</summary>
