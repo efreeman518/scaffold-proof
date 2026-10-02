@@ -240,6 +240,45 @@ public class RepositorySearchTranslationTests
     }
 
     /// <summary>
+    /// The tag name filter translates to an EXISTS over TaskItemTag and Tag on both providers and matches the trimmed name
+    /// case-insensitively (PostgreSQL's default collation is case-sensitive, SQL Server's is not): only the task carrying
+    /// the tag is returned, not an untagged task or one carrying another tag.
+    /// </summary>
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task TaskItemSearch_FiltersByTagNameCaseInsensitively_AgainstRealSql()
+    {
+        var marker = $"SearchTagged-{Guid.NewGuid():N}";
+        var tagName = $"Compliance-{marker[^12..]}";
+
+        await using (var db = DbContainerFixture.CreateTrxnContext())
+        {
+            var tag = new TagBuilder().WithTenantId(TenantId).WithName(tagName).Build();
+            var otherTag = new TagBuilder().WithTenantId(TenantId).WithName($"Other-{marker[^12..]}").Build();
+            var tagged = new TaskItemBuilder().WithTenantId(TenantId).WithTitle($"{marker}-Tagged").Build();
+            var otherTagged = new TaskItemBuilder().WithTenantId(TenantId).WithTitle($"{marker}-OtherTagged").Build();
+            var untagged = new TaskItemBuilder().WithTenantId(TenantId).WithTitle($"{marker}-Untagged").Build();
+            tagged.AssociateTag(tag.Id);
+            otherTagged.AssociateTag(otherTag.Id);
+
+            db.Tags.AddRange(tag, otherTag);
+            db.TaskItems.AddRange(tagged, otherTagged, untagged);
+            await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
+        }
+
+        await using var queryDb = DbContainerFixture.CreateQueryContext();
+        var repo = new TaskItemRepositoryQuery(queryDb, TestColumnEncryption.Keys, TestCursorCodec.Instance);
+        var page = await repo.SearchTaskItemsAsync(new TaskItemCursorSearchRequest
+        {
+            PageSize = 10,
+            Filter = new TaskItemSearchFilter { SearchTerm = marker, TenantId = TenantId, TagName = $" {tagName.ToLowerInvariant()} " }
+        }, TenantId, TestContext.CancellationToken);
+
+        Assert.HasCount(1, page.Items);
+        Assert.AreEqual($"{marker}-Tagged", page.Items[0].Title);
+    }
+
+    /// <summary>
     /// D-024: a caller-supplied DueBefore with a non-zero offset must translate on both providers (Npgsql rejects
     /// non-UTC DateTimeOffset parameters unless the UTC converter normalizes them) and compare by instant.
     /// </summary>

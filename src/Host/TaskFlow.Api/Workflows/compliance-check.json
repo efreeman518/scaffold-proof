@@ -3,21 +3,21 @@
   "version": "1.0.0",
   "label": "Recurring Compliance Check",
   "status": "Active",
-  "intent": "Find params.tenantId's tasks due before params.dueBefore and run compliance-check-item for each: fetch evidence, classify it via agent, route to human review when expired and post a reminder when expiring soon.",
+  "intent": "Find params.tenantId's tasks tagged \"compliance\" and due before params.dueBefore, and run compliance-check-item for each: find the task's latest attachment, read it as evidence text, classify it via agent, route to human review when expired and post a reminder when expiring soon.",
   "entryNodeId": "n-query-due",
   "paramsSchema": "{\"required\":[\"tenantId\",\"dueBefore\"],\"properties\":{\"tenantId\":{\"type\":\"string\"},\"dueBefore\":{\"type\":\"string\",\"format\":\"date-time\"}}}",
   "nodes": {
     "n-query-due": {
       "id": "n-query-due",
       "type": "integration",
-      "label": "Search tasks due soon",
-      "intent": "Search params.tenantId's tasks due before params.dueBefore, earliest first, through the public API (auth, validation). The filter names params.tenantId; the API's tenant query filter also pins every read to the caller's tenant, global admin included, so another tenant's tasks are never returned. One page of at most 50 tasks is processed; the cursor is not followed. The search has no tag filter and filters status by equality only, so completed tasks are included.",
+      "label": "Search compliance tasks due soon",
+      "intent": "Search params.tenantId's tasks tagged \"compliance\" (tag name, case-insensitive) and due before params.dueBefore, earliest first, through the public API (auth, validation). The filter names params.tenantId; the API's tenant query filter also pins every read to the caller's tenant, global admin included, so another tenant's tasks are never returned. One page of at most 50 tasks is processed; the cursor is not followed. The search filters status by equality only, so completed tasks are included.",
       "retryPolicy": { "maxAttempts": 3, "backoff": "Exponential" },
       "config": {
         "clientRef": "taskflow-api",
         "method": "POST",
         "path": "/api/v1/task-items/search",
-        "body": { "filter": { "tenantId": "$.params.tenantId", "dueBefore": "$.params.dueBefore" }, "sortMode": "DueDateAsc", "pageSize": 50 },
+        "body": { "filter": { "tenantId": "$.params.tenantId", "dueBefore": "$.params.dueBefore", "tagName": "compliance" }, "sortMode": "DueDateAsc", "pageSize": 50 },
         "responseMapping": { "dueTasks": "$.items" },
         "idempotencyKey": "$.engine.instanceId + '-compliance-search'"
       },

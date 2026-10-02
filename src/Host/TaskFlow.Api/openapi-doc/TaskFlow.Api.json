@@ -4718,6 +4718,12 @@
               "boolean"
             ]
           },
+          "tagName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "searchTerm": {
             "type": [
               "null",

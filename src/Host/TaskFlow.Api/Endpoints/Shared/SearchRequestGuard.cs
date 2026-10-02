@@ -1,6 +1,7 @@
 using EF.AspNetCore;
 using EF.Common.Contracts;
 using TaskFlow.Application.Contracts;
+using TaskFlow.Domain.Shared.Constants;
 
 namespace TaskFlow.Api.Endpoints.Shared;
 
@@ -20,4 +21,17 @@ internal static class SearchRequestGuard
                 string.Format(
                     System.Globalization.CultureInfo.InvariantCulture,
                     ErrorConstants.ERROR_PAGE_SIZE_RANGE, PageSizeLimits.Min, PageSizeLimits.Max)));
+
+    /// <summary>
+    /// Returns a 400 problem result when a task search tag name filter is blank or longer than a tag name can be
+    /// (<see cref="DomainConstants.RULE_TAG_NAME_LENGTH_MAX"/>), otherwise null. Such a filter could match no tag.
+    /// </summary>
+    public static IResult? ValidateTagName(string? tagName) =>
+        tagName is null || (!string.IsNullOrWhiteSpace(tagName) && tagName.Trim().Length <= DomainConstants.RULE_TAG_NAME_LENGTH_MAX)
+            ? null
+            : TypedResults.Problem(ProblemDetailsHelper.Create(
+                StatusCodes.Status400BadRequest,
+                string.Format(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    ErrorConstants.ERROR_TAG_NAME_FILTER_INVALID, DomainConstants.RULE_TAG_NAME_LENGTH_MAX)));
 }

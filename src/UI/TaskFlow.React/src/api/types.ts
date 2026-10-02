@@ -1153,6 +1153,7 @@ export interface components {
             /** Format: date-time */
             dueAfter?: null | string;
             isOverdue?: null | boolean;
+            tagName?: null | string;
             searchTerm?: null | string;
             /** Format: uuid */
             tenantId?: null | string;

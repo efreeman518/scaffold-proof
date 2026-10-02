@@ -201,6 +201,72 @@ public class TaskItemEndpointTests
         Assert.Contains(e => e.GetProperty("title").GetString()!.Contains("SearchTarget"), items.EnumerateArray());
     }
 
+    /// <summary>The tag name filter returns only tasks associated with that tag, matching the name case-insensitively.</summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_TaggedAndUntaggedTasks_When_SearchByTagName_Then_ReturnsOnlyTaggedTasks(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
+        var ct = TestContext.CancellationToken;
+        var marker = $"TagFilter{Guid.NewGuid():N}";
+        var tagName = $"Compliance-{marker[..20]}";
+
+        var tagResponse = await client.PostAsJsonAsync("/api/v1/tags",
+            new DefaultRequest<TagDto> { Item = new TagDto { Name = tagName } }, cancellationToken: ct);
+        Assert.AreEqual(HttpStatusCode.Created, tagResponse.StatusCode, await tagResponse.Content.ReadAsStringAsync(ct));
+        var tagId = (await tagResponse.Content.ReadFromJsonAsync<DefaultResponse<TagDto>>(_jsonOptions, ct))!.Item!.Id!.Value;
+        var tagged = await CreateTaskAsync(client, $"{marker} tagged", ct);
+        await CreateTaskAsync(client, $"{marker} untagged", ct);
+        var associate = await client.PostAsync($"/api/v1/task-items/{tagged}/tags/{tagId}", null, ct);
+        Assert.IsTrue(associate.IsSuccessStatusCode, await associate.Content.ReadAsStringAsync(ct));
+
+        var response = await client.PostAsJsonAsync("/api/v1/task-items/search", new TaskItemCursorSearchRequest
+        {
+            PageSize = 10,
+            Filter = new TaskItemSearchFilter { SearchTerm = marker, TagName = $" {tagName.ToLowerInvariant()} " }
+        }, cancellationToken: ct);
+
+        var body = await response.Content.ReadAsStringAsync(ct);
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, body);
+        var page = JsonSerializer.Deserialize<CursorPage<TaskItemDto>>(body, _jsonOptions)!;
+        Assert.AreEqual(tagged, page.Items.Single().Id, "only the tagged task matches, by trimmed case-insensitive tag name");
+    }
+
+    // One character over DomainConstants.RULE_TAG_NAME_LENGTH_MAX (50).
+    private const string TooLongTagName = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+
+    /// <summary>A blank tag name filter, or one longer than a tag name can be, is a 400 rather than an empty page.</summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service, " ")]
+    [DataRow(EndpointStyles.Cqrs, " ")]
+    [DataRow(EndpointStyles.Service, "")]
+    [DataRow(EndpointStyles.Service, TooLongTagName)]
+    [DataRow(EndpointStyles.Cqrs, TooLongTagName)]
+    [TestMethod]
+    public async Task Given_InvalidTagNameFilter_When_Search_Then_Returns400(string style, string tagName)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
+        var response = await client.PostAsJsonAsync("/api/v1/task-items/search", new TaskItemCursorSearchRequest
+        {
+            PageSize = 10,
+            Filter = new TaskItemSearchFilter { TagName = tagName }
+        }, cancellationToken: TestContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode, await response.Content.ReadAsStringAsync(TestContext.CancellationToken));
+    }
+
+    private static async Task<Guid> CreateTaskAsync(HttpClient client, string title, CancellationToken ct)
+    {
+        var response = await client.PostAsJsonAsync("/api/v1/task-items",
+            new DefaultRequest<TaskItemDto> { Item = new TaskItemDto { Title = title, Priority = Priority.Medium } }, cancellationToken: ct);
+        Assert.AreEqual(HttpStatusCode.Created, response.StatusCode, await response.Content.ReadAsStringAsync(ct));
+        return (await response.Content.ReadFromJsonAsync<DefaultResponse<TaskItemDto>>(_jsonOptions, ct))!.Item!.Id!.Value;
+    }
+
     /// <summary>Verifies that given empty database, when search, then returns empty page.</summary>
     [TestCategory("Endpoint")]
     [DataRow(EndpointStyles.Service)]

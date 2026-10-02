@@ -144,7 +144,7 @@ public static class TaskItemEndpoints
         CancellationToken ct)
     {
         var search = request ?? new TaskItemCursorSearchRequest();
-        var guard = SearchRequestGuard.Validate(search.PageSize);
+        var guard = SearchRequestGuard.Validate(search.PageSize) ?? SearchRequestGuard.ValidateTagName(search.Filter?.TagName);
         if (guard is not null) return guard;
 
         return TypedResults.Ok(await service.SearchAsync(search, ct));
