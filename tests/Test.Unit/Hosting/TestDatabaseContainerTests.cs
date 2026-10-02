@@ -26,6 +26,18 @@ public sealed class TestDatabaseContainerTests
             fixture.CreateDatabaseAsync(new string('p', MaxDatabasePrefixLength), TestContext.CancellationToken));
     }
 
+    /// <summary>A throwaway PostgreSQL database string is unpooled and otherwise unchanged (53300 "too many clients").</summary>
+    [TestMethod]
+    public void Given_AThrowawayPostgreSqlDatabase_When_ItsConnectionStringIsBuilt_Then_PoolingIsOff()
+    {
+        var unpooled = new Npgsql.NpgsqlConnectionStringBuilder(
+            Test.Support.Hosting.TestDatabaseContainer.UnpooledPostgreSql("Host=localhost;Port=5432;Database=TaskFlow_x;Username=u;Password=p"));
+
+        Assert.IsFalse(unpooled.Pooling);
+        Assert.AreEqual("TaskFlow_x", unpooled.Database);
+        Assert.AreEqual(5432, unpooled.Port);
+    }
+
     [TestMethod]
     public async Task Given_APrefixOverTheLimit_When_NamingADatabase_Then_Throws()
     {

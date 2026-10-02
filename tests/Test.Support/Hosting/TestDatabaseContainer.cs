@@ -4,6 +4,7 @@ using EF.IntegrationTesting.SqlServer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
+using Npgsql;
 using System.ComponentModel;
 using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Data.Provider;
@@ -107,9 +108,23 @@ public sealed class TestDatabaseContainer(TaskFlowDbProvider provider) : IAsyncD
     /// Creates an empty database named <c>{prefix}_{guid}</c> on the running container and returns a connection
     /// string pointing at it. The package fixture validates the prefix (1-30 characters, a letter then letters,
     /// digits or underscores) so the name fits PostgreSQL's 63-character identifier limit and is safe in DDL.
+    /// On PostgreSQL the string is unpooled (<see cref="UnpooledPostgreSql"/>).
     /// </summary>
-    public Task<string> CreateEmptyDatabaseAsync(string prefix, CancellationToken cancellationToken = default) =>
-        _sql?.CreateDatabaseAsync(prefix, cancellationToken) ?? _postgres!.CreateDatabaseAsync(prefix, cancellationToken);
+    public async Task<string> CreateEmptyDatabaseAsync(string prefix, CancellationToken cancellationToken = default) =>
+        _sql is not null
+            ? await _sql.CreateDatabaseAsync(prefix, cancellationToken).ConfigureAwait(false)
+            : UnpooledPostgreSql(await _postgres!.CreateDatabaseAsync(prefix, cancellationToken).ConfigureAwait(false));
+
+    /// <summary>
+    /// A throwaway database is never used again after its test, so a pooled connection to it keeps one of the
+    /// container's <c>max_connections</c> (100) slots idle until Npgsql prunes it (Connection Idle Lifetime, 300 s).
+    /// Across a serial run those idle connections add up, and a later test fails with 53300 "too many clients".
+    /// Unpooled, a connection holds a slot only while it is open; every context, factory and in-process host built
+    /// on the string inherits it. SQL Server's connection limit (32767) is not reachable this way, so its string
+    /// keeps the default pool.
+    /// </summary>
+    public static string UnpooledPostgreSql(string connectionString) =>
+        new NpgsqlConnectionStringBuilder(connectionString) { Pooling = false }.ConnectionString;
 
     /// <summary>
     /// Context options mirroring the Bootstrapper wiring for the selected provider.
