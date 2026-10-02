@@ -74,16 +74,7 @@ public class WorkflowDefinitionValidityTests
     {
         var def = JsonSerializer.Deserialize<WorkflowDefinition>(ReadWorkflowFile(fileName), JsonOpts)!;
 
-        using var document = JsonDocument.Parse(ReadWorkflowFile(fileName));
-        var nodes = document.RootElement.GetProperty("nodes");
-
-        // Package defect (EF.FlowEngine 1.0.197 and 1.0.199): GetWarnings looks the node's config key up as
-        // PascalCase "IdempotencyKey", so a camelCase "idempotencyKey" in canonical workflow JSON is reported
-        // as missing. Only that warning is excused, and only for a node whose config does carry a non-empty
-        // key, so a genuinely missing key still fails. Remove this when GetWarnings reads the camelCase key.
-        var warnings = WorkflowDefinitionValidator.GetWarnings(def)
-            .Where(w => !IsCamelCaseIdempotencyKeyFalsePositive(w, nodes))
-            .ToList();
+        var warnings = WorkflowDefinitionValidator.GetWarnings(def);
 
         Assert.IsEmpty(warnings, $"{fileName}: {string.Join(" | ", warnings)}");
     }
@@ -314,15 +305,6 @@ public class WorkflowDefinitionValidityTests
     {
         using var document = JsonDocument.Parse(ReadWorkflowFile(fileName));
         return document.RootElement.GetProperty("nodes").GetProperty(nodeId).GetProperty("type").GetString() == "integration";
-    }
-
-    private static bool IsCamelCaseIdempotencyKeyFalsePositive(string warning, JsonElement nodes)
-    {
-        var match = System.Text.RegularExpressions.Regex.Match(warning, @"^Node '(?<id>[^']+)' \([a-z]+\): IdempotencyKey is not set\.");
-        return match.Success
-            && nodes.TryGetProperty(match.Groups["id"].Value, out var node)
-            && node.GetProperty("config").TryGetProperty("idempotencyKey", out var key)
-            && !string.IsNullOrWhiteSpace(key.GetString());
     }
 
     /// <summary>Verifies read workflow file behavior and protects the expected test contract.</summary>
