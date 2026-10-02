@@ -75,9 +75,11 @@
       "type": "integration",
       "label": "POST /api/v1/task-items",
       "intent": "Create a single child TaskItem for the current loop iteration.",
+      "retryPolicy": { "maxAttempts": 3, "backoff": "Exponential" },
       "config": {
         "clientRef": "taskflow-api",
         "method": "POST",
+        "idempotencyKeyHeader": "Idempotency-Key",
         "path": "/api/v1/task-items",
         "body": {
           "item": {

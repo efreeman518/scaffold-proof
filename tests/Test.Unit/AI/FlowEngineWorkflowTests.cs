@@ -146,6 +146,39 @@ public sealed class FlowEngineWorkflowTests
         Assert.AreEqual(2, postHits, "expected one POST per subtask");
     }
 
+    /// <summary>
+    /// The loop-body create POST is keyed per iteration: each of three iterations is answered 502 once and resent by
+    /// the node retryPolicy with the same Idempotency-Key, and the three iterations send three distinct keys.
+    /// </summary>
+    [TestMethod]
+    public async Task DecomposerWorkflow_LoopBodyPost502ThenCreated_ResendsEachIterationWithItsOwnKey()
+    {
+        var taskId = Guid.NewGuid();
+        var keys = new List<string>();
+
+        using var provider = BuildProvider(
+            chatReply: """{"subtasks":[{"title":"Sub A","estimateHours":1},{"title":"Sub B","estimateHours":2},{"title":"Sub C","estimateHours":3}]}""",
+            apiHandler: (req, _) =>
+            {
+                if (!string.Equals(req.Method, "POST", StringComparison.OrdinalIgnoreCase)) return Task.FromResult(OkResponse());
+                string? key = null;
+                Assert.IsTrue(req.Headers?.TryGetValue("Idempotency-Key", out key) == true && !string.IsNullOrEmpty(key),
+                    "the loop-body POST must send the generated Idempotency-Key header");
+                var firstAttempt = !keys.Contains(key);
+                keys.Add(key);
+                return Task.FromResult(firstAttempt ? ErrorResponse(502) : CreatedResponse());
+            });
+
+        var instance = await StartAsync(provider, "ai-task-decomposer", taskId);
+
+        Assert.AreEqual(ExecStatus.Completed, instance.Status, instance.Error?.Message);
+        Assert.AreEqual("n-output-ok", instance.CurrentNodeId, $"Unexpected node. Error: {instance.Error?.Message}");
+        Assert.HasCount(6, keys, "each iteration: one 502 plus one resend");
+        Assert.HasCount(3, keys.Distinct(StringComparer.Ordinal).ToList(), "each iteration sends its own key");
+        CollectionAssert.AreEqual(new[] { keys[0], keys[0], keys[2], keys[2], keys[4], keys[4] }, keys,
+            "a resend carries its iteration's key");
+    }
+
     [TestMethod]
     public async Task DecomposerWorkflow_BadModelOutput_RoutesToFailedNode()
     {

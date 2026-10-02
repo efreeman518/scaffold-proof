@@ -112,9 +112,11 @@
       "type": "integration",
       "label": "Mark task resolved",
       "intent": "Post a follow-up comment and tag the task as compliance-reviewed.",
+      "retryPolicy": { "maxAttempts": 3, "backoff": "Exponential" },
       "config": {
         "clientRef": "taskflow-api",
         "method": "POST",
+        "idempotencyKeyHeader": "Idempotency-Key",
         "path": "/api/v1/task-items/{{$.context.currentItem.id}}/comments",
         "body": { "item": { "Body": "Compliance review complete: {{$.context._humanTaskResponse.notes}}" } },
         "idempotencyKey": "$.context.currentItem.id + '-compliance-resolved'"
@@ -126,9 +128,11 @@
       "type": "integration",
       "label": "Post reminder comment",
       "intent": "For tasks expiring soon, attach a reminder comment via the public API.",
+      "retryPolicy": { "maxAttempts": 3, "backoff": "Exponential" },
       "config": {
         "clientRef": "taskflow-api",
         "method": "POST",
+        "idempotencyKeyHeader": "Idempotency-Key",
         "path": "/api/v1/task-items/{{$.context.currentItem.id}}/comments",
         "body": { "item": { "Body": "Compliance evidence is expiring soon - please refresh." } },
         "idempotencyKey": "$.context.currentItem.id + '-compliance-reminder'"

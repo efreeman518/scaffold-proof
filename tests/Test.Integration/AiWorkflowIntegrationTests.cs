@@ -99,8 +99,6 @@ public sealed class AiWorkflowIntegrationTests
     /// runs as the only node of a probe workflow. Its first POST reaches the API and adds the comment, but the
     /// response is lost and the engine sees a 502. The node retries the ambiguous status with the same generated
     /// Idempotency-Key, the API maps the key to the stored comment id and replays it, so the task has one comment.
-    /// It is the only keyed shipped node: EF.FlowEngine 1.0.199 sends one key for every iteration of a loop-body
-    /// node and applies no retryPolicy there, so the loop-body POST nodes stay unkeyed.
     /// </summary>
     [TestMethod]
     public async Task KeyedCommentPost_RetriedOn502_AddsOneComment()
@@ -131,6 +129,87 @@ public sealed class AiWorkflowIntegrationTests
         Assert.IsFalse(string.IsNullOrWhiteSpace(lostResponse.FirstKey), "the keyed node must send the generated key");
         Assert.AreEqual(lostResponse.FirstKey, lostResponse.RetryKey, "the resend must carry the same Idempotency-Key");
         Assert.AreEqual(1, await CountCommentsAsync(client, taskId, ct), "the resend must replay the comment, not add a second");
+    }
+
+    /// <summary>
+    /// D-074 through a loop body: the shipped decomposer creates one subtask per iteration with the engine's
+    /// per-iteration Idempotency-Key. Each iteration's first POST reaches the API and creates the subtask, but the
+    /// response is lost and the engine sees a 502; the node retryPolicy resends it with the same key and the API
+    /// replays the stored row. Three iterations send three keys and leave three distinct subtasks.
+    /// </summary>
+    [TestMethod]
+    public async Task DecomposerLoopBodyPost_RetriedOn502_CreatesOneSubtaskPerIteration()
+    {
+        SkipIfNoSql();
+        var ct = TestContext.CancellationToken;
+        var connectionString = await IsolatedMigratedConnectionStringAsync(ct);
+        var lostResponses = new LostCreateResponses();
+
+        using var factory = new FlowEngineWorkflowApiFactory(
+            connectionString,
+            _ => """{"subtasks":[{"title":"Sub A","estimateHours":1},{"title":"Sub B","estimateHours":2},{"title":"Sub C","estimateHours":3}]}""",
+            selfCall => selfCall.AddHttpMessageHandler(() => new LoseFirstCreateResponsePerKey(lostResponses)));
+        using var client = factory.CreateClient();
+
+        var parentId = await CreateTaskAsync(client, "Keyed loop-body retry task", priority: 2 /* Medium */, ct);
+        var instanceId = await StartWorkflowAsync(client, "ai-task-decomposer", new Dictionary<string, object?>
+        {
+            ["tenantId"] = TenantId,
+            ["taskId"] = parentId.ToString(),
+            ["description"] = "Build a login page with validation and password reset."
+        }, ct);
+
+        var (node, body) = await WaitForTerminalAsync(client, instanceId, ct);
+
+        Assert.AreEqual("n-output-ok", node, $"Each 502 must be retried, not fail the loop. Instance: {Truncate(body)}");
+        var keys = lostResponses.Keys.ToArray();
+        Assert.HasCount(6, keys, "each iteration: one lost attempt plus one resend");
+        Assert.HasCount(3, keys.Distinct(StringComparer.Ordinal).ToList(), "each iteration sends its own key");
+        CollectionAssert.AreEqual(new[] { "Sub A", "Sub B", "Sub C" }, await ChildTitlesAsync(client, parentId, ct),
+            "each resend must replay its iteration's subtask, and each iteration must create its own");
+    }
+
+    private sealed class LostCreateResponses
+    {
+        public readonly System.Collections.Concurrent.ConcurrentQueue<string> Keys = new();
+    }
+
+    // Forwards each keyed task create to the API (which commits it); on the first request carrying a key it answers
+    // the engine with a 502 as if the response had been lost. State is shared because the client factory may build
+    // more than one handler chain.
+    private sealed class LoseFirstCreateResponsePerKey(LostCreateResponses state) : DelegatingHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var isCreate = request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath.TrimEnd('/') == "/api/v1/task-items";
+            if (!isCreate) return await base.SendAsync(request, cancellationToken);
+
+            var key = request.Headers.TryGetValues("Idempotency-Key", out var values) ? values.Single() : null;
+            Assert.IsFalse(string.IsNullOrWhiteSpace(key), "the loop-body create must send the generated key");
+            var firstAttempt = !state.Keys.Contains(key);
+            state.Keys.Enqueue(key!);
+            var response = await base.SendAsync(request, cancellationToken);
+            if (!firstAttempt) return response;
+
+            Assert.AreEqual(HttpStatusCode.Created, response.StatusCode, "the lost attempt must have created the subtask");
+            response.Dispose();
+            return new HttpResponseMessage(HttpStatusCode.BadGateway) { RequestMessage = request };
+        }
+    }
+
+    private static async Task<string[]> ChildTitlesAsync(HttpClient client, Guid parentId, CancellationToken ct)
+    {
+        using var response = await client.PostAsJsonAsync(
+            "/api/v1/task-items/search",
+            new { pageSize = 50, filter = new { parentTaskItemId = parentId.ToString() } },
+            ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, $"Search failed: {Truncate(body)}");
+        using var payload = JsonDocument.Parse(body);
+        return payload.RootElement.GetProperty("items").EnumerateArray()
+            .Select(item => item.GetProperty("title").GetString()!)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
     }
 
     private const string KeyedCommentProbeId = "idempotency-key-probe";
