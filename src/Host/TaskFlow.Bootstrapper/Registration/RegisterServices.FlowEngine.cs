@@ -16,6 +16,7 @@ using Microsoft.Extensions.DependencyInjection;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Infrastructure.Messaging.RabbitMq;
+using TaskFlow.Infrastructure.Repositories;
 
 namespace TaskFlow.Bootstrapper;
 
@@ -45,7 +46,9 @@ public static partial class RegisterServices
             .UseWorkflowRegistrySql<TaskFlowFlowEngineDbContext>()
             .UseHumanTaskStoreSql<TaskFlowFlowEngineDbContext>()
             .UseOutboxSql<TaskFlowFlowEngineDbContext>()
-            .UseCircuitBreakerSql<TaskFlowFlowEngineDbContext>();
+            .UseCircuitBreakerSql<TaskFlowFlowEngineDbContext>()
+            // D-075: document nodes read attachment evidence from the lane's object storage (Azure Blob or S3).
+            .UseDocumentStore<AttachmentDocumentStore>();
 
         // Retention removes terminal workflow instances so the FlowEngine state store stays bounded.
         // UseRetentionPolicy registers a hosted service, and every host loading this assembly would run its
