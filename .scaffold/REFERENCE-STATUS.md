@@ -23,7 +23,7 @@ TaskFlow runs on the EF.Packages 2.0 platform packages (every `EF.*` platform id
 
 A Debug restore of the Uno project followed by a Release `--no-restore` build fails with `UNOB0019` (the DevServer targets are imported for a Debug restore); restore in the configuration you build, as CI does.
 
-`dotnet ef migrations has-pending-model-changes` is clean for all 6 context/provider pairs (TaskFlow, FlowEngine and TickerQ, each against SqlServer and PostgreSql; `MigrationModelContractTests` in Test.Unit, 2026-10-05 against EF.FlowEngine 1.0.204). Each pair has exactly one initial migration (D-025, `MigrationBaselineArchitectureTests`); the TaskFlow context's `InitialCreate` was regenerated on 2026-10-01 (again the same day, for the SQL Server binary collation on the D-074 key columns) and `DatabaseMigratorIntegrationTests` applies all targets to an empty database on PostgreSQL and SQL Server.
+`dotnet ef migrations has-pending-model-changes` is clean for all 6 context/provider pairs (TaskFlow, FlowEngine and TickerQ, each against SqlServer and PostgreSql; `MigrationModelContractTests` in Test.Unit, 2026-10-05 against EF.FlowEngine 1.0.204). Each pair has exactly one initial migration (D-025, `MigrationBaselineArchitectureTests`); the TaskFlow context's `InitialCreate` was regenerated on 2026-10-02 for the `Attachment.StorageKey` column (D-075) and `DatabaseMigratorIntegrationTests` applies all targets to an empty database on PostgreSQL and SQL Server.
 
 ## Test Status
 
@@ -55,6 +55,8 @@ Release `--no-build`, Podman Docker-compatible context; Test.Integration 2026-10
 | NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | Test.Integration | 146 | 3 | 99 s |
 | unset (resolves NonAzure) | Test.E2E | 10 | 0 | 15 s |
 | `TASKFLOW_LANE=Azure` | Test.E2E | 10 | 0 | 33 s |
+
+Isolated PostgreSQL test databases are unpooled (`TestDatabaseContainer.UnpooledPostgreSql`): with pooling, idle connections to finished tests' databases reached 86 of the container's 100 `max_connections` and a MongoDB-lane run failed with 53300 "too many clients"; unpooled, a sampled MongoDB-lane run peaked at 5 client connections.
 
 ### Aspire graphs
 
