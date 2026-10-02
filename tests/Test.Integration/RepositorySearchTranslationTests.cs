@@ -357,5 +357,66 @@ public class RepositorySearchTranslationTests
         Assert.AreEqual($"{marker}.txt", page.Data[0].FileName);
     }
 
+    /// <summary>
+    /// The content type filter translates on both providers and compares media types only: case-insensitive, parameters
+    /// such as charset ignored, so "text/plain; charset=utf-8" and "TEXT/MARKDOWN" match and "application/pdf" does not.
+    /// </summary>
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task AttachmentSearch_FiltersByMediaTypeIgnoringCaseAndParameters_AgainstRealSql()
+    {
+        var ownerId = Guid.NewGuid();
+        await using (var db = DbContainerFixture.CreateTrxnContext())
+        {
+            db.Attachments.AddRange(
+                new AttachmentBuilder().WithTenantId(TenantId).WithOwnerId(ownerId).WithFileName("a.txt").WithContentType("text/plain; charset=utf-8").Build(),
+                new AttachmentBuilder().WithTenantId(TenantId).WithOwnerId(ownerId).WithFileName("b.md").WithContentType("TEXT/MARKDOWN").Build(),
+                new AttachmentBuilder().WithTenantId(TenantId).WithOwnerId(ownerId).WithFileName("c.pdf").WithContentType("application/pdf").Build());
+            await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
+        }
+
+        await using var queryDb = DbContainerFixture.CreateQueryContext();
+        var page = await new AttachmentRepositoryQuery(queryDb).SearchAttachmentsAsync(new SearchRequest<AttachmentSearchFilter>
+        {
+            PageIndex = 1,
+            PageSize = 10,
+            Filter = new AttachmentSearchFilter { TenantId = TenantId, OwnerId = ownerId, ContentTypes = ["Text/Plain", "text/markdown; charset=utf-8"] }
+        }, includeTotal: true, TestContext.CancellationToken);
+
+        Assert.AreEqual(2, page.Total);
+        CollectionAssert.AreEquivalent(new[] { "a.txt", "b.md" }, page.Data.Select(a => a.FileName).ToArray());
+    }
+
+    /// <summary>
+    /// The id tie-break follows the sort direction: for rows stamped with the same CreatedAtUtc (one save), a
+    /// descending sort returns the later UUIDv7 id first, so "newest first, page size 1" picks the newest attachment.
+    /// </summary>
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task AttachmentSearch_DescendingSort_BreaksTiesByDescendingId_AgainstRealSql()
+    {
+        var ownerId = Guid.NewGuid();
+        var older = new AttachmentBuilder().WithTenantId(TenantId).WithOwnerId(ownerId).WithFileName("older.txt").Build();
+        var newer = new AttachmentBuilder().WithTenantId(TenantId).WithOwnerId(ownerId).WithFileName("newer.txt").Build();
+        await using (var db = DbContainerFixture.CreateTrxnContext())
+        {
+            db.Attachments.AddRange(older, newer);
+            await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
+        }
+
+        Assert.AreEqual(older.CreatedAtUtc, newer.CreatedAtUtc, "precondition: one save stamps one CreatedAtUtc");
+        Assert.IsLessThan(0, older.Id.Value.CompareTo(newer.Id.Value), "precondition: the later UUIDv7 sorts after");
+        await using var queryDb = DbContainerFixture.CreateQueryContext();
+        var page = await new AttachmentRepositoryQuery(queryDb).SearchAttachmentsAsync(new SearchRequest<AttachmentSearchFilter>
+        {
+            PageIndex = 1,
+            PageSize = 1,
+            Sorts = [new Sort("CreatedAtUtc", SortOrder.Descending)],
+            Filter = new AttachmentSearchFilter { TenantId = TenantId, OwnerId = ownerId }
+        }, includeTotal: false, TestContext.CancellationToken);
+
+        Assert.AreEqual("newer.txt", page.Data.Single().FileName);
+    }
+
     public TestContext TestContext { get; set; } = null!;
 }

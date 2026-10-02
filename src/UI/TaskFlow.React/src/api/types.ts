@@ -788,6 +788,7 @@ export interface components {
             ownerType?: null | components["schemas"]["AttachmentOwnerType"];
             /** Format: uuid */
             ownerId?: null | string;
+            contentTypes?: null | string[];
             searchTerm?: null | string;
             /** Format: uuid */
             tenantId?: null | string;

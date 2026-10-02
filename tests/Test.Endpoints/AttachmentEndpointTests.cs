@@ -1,3 +1,4 @@
+using EF.Common.Contracts;
 using EF.Storage.Contracts;
 using EF.Testing.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -317,6 +318,62 @@ public class AttachmentEndpointTests
     }
 
     // The derived factory owns the host; the base CustomApiFactory it came from never builds one of its own.
+    /// <summary>An attachment content type filter that is empty, too long, a wildcard or not a media type is a 400.</summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service, "")]
+    [DataRow(EndpointStyles.Cqrs, "")]
+    [DataRow(EndpointStyles.Service, "text/*")]
+    [DataRow(EndpointStyles.Cqrs, "not a media type")]
+    [DataRow(EndpointStyles.Service, "eleven")]
+    [DataRow(EndpointStyles.Service, "none")]
+    [TestMethod]
+    public async Task Given_InvalidContentTypeFilter_When_SearchAttachments_Then_Returns400(string style, string contentType)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
+        List<string> contentTypes = contentType switch
+        {
+            "eleven" => Enumerable.Repeat("text/plain", 11).ToList(),
+            "none" => [],
+            _ => [contentType]
+        };
+
+        var response = await client.PostAsJsonAsync("/api/v1/attachments/search",
+            new SearchRequest<AttachmentSearchFilter> { PageIndex = 1, PageSize = 10, Filter = new AttachmentSearchFilter { ContentTypes = contentTypes } },
+            cancellationToken: TestContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode, await response.Content.ReadAsStringAsync(TestContext.CancellationToken));
+    }
+
+    /// <summary>The content type filter returns the matching media types only, through both endpoint styles.</summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_TextAndBinaryAttachments_When_SearchByContentType_Then_ReturnsTextOnly(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
+        var taskId = await CreateParentTaskItem(client);
+        foreach (var (name, type) in new[] { ("a.txt", "text/plain; charset=utf-8"), ("b.pdf", "application/pdf") })
+        {
+            var created = await client.PostAsJsonAsync("/api/v1/attachments", new DefaultRequest<AttachmentDto>
+            {
+                Item = new AttachmentDto { FileName = name, ContentType = type, FileSizeBytes = 8, StorageUri = "https://storage.example.com/" + name, OwnerType = AttachmentOwnerType.TaskItem, OwnerId = taskId }
+            }, cancellationToken: TestContext.CancellationToken);
+            Assert.AreEqual(HttpStatusCode.Created, created.StatusCode);
+        }
+
+        var response = await client.PostAsJsonAsync("/api/v1/attachments/search",
+            new SearchRequest<AttachmentSearchFilter> { PageIndex = 1, PageSize = 10, Filter = new AttachmentSearchFilter { OwnerId = taskId, ContentTypes = ["text/plain"] } },
+            cancellationToken: TestContext.CancellationToken);
+
+        var body = await response.Content.ReadAsStringAsync(TestContext.CancellationToken);
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, body);
+        var page = JsonSerializer.Deserialize<PagedResponse<AttachmentDto>>(body, _jsonOptions)!;
+        Assert.AreEqual("a.txt", page.Data.Single().FileName);
+    }
+
     private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> UploadFactory(string style, InMemoryBlobStorageRepository blobs) =>
         new CustomApiFactory(style).WithWebHostBuilder(builder =>
             builder.ConfigureServices(services => services.AddSingleton<IObjectStorageRepository>(blobs)));

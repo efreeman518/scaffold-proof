@@ -76,7 +76,7 @@ public static class AttachmentEndpoints
         [FromQuery] bool includeTotal = false)
     {
         var search = request ?? new SearchRequest<AttachmentSearchFilter>();
-        var guard = SearchRequestGuard.Validate(search.PageSize);
+        var guard = SearchRequestGuard.Validate(search.PageSize) ?? SearchRequestGuard.ValidateContentTypes(search.Filter?.ContentTypes);
         if (guard is not null) return guard;
 
         return TypedResults.Ok(await service.SearchAsync(search, includeTotal, ct));

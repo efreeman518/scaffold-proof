@@ -221,12 +221,13 @@ public sealed class AiWorkflowIntegrationTests
 
     /// <summary>
     /// compliance-check end to end on the shipped definitions over the attachment-backed document store (D-075) and the lane's
-    /// real object storage. Tenant A has three tasks due soon: one tagged "Compliance" with two uploaded text attachments, one
+    /// real object storage. Tenant A has three tasks due soon: one tagged "Compliance" with two uploaded text attachments and a
+    /// newer PDF, one
     /// untagged with an uploaded attachment, and one tagged without an attachment; tenant B has a tagged task with its own
     /// attachment. The task search is bound to the started tenant (filter tenantId and the API's tenant query filter) and to
     /// the "compliance" tag name (case-insensitive), so the loop visits A's two tagged tasks; each child finds its task's
-    /// newest attachment through the attachment search and reads it through the store. The tagged task with evidence is
-    /// classified expiring soon from its newest attachment and gets one reminder comment; the tagged task without an
+    /// newest text attachment through the attachment search and reads it through the store. The tagged task with evidence is
+    /// classified expiring soon from its newest text attachment, not the PDF, and gets one reminder comment; the tagged task without an
     /// attachment takes the no-finding path with no document read; the untagged task and tenant B's task are never read and
     /// get no comment.
     /// </summary>
@@ -270,6 +271,8 @@ public sealed class AiWorkflowIntegrationTests
             "certificate renewed, valid for two years", ct);
         var latestEvidence = await UploadAttachmentAsync(client, taggedWithEvidence.Id.Value, "evidence-2026.md", "text/markdown",
             "certificate expires next week", ct);
+        // The newest attachment is binary; the search asks for text/plain and text/markdown, so the text above is still read.
+        await UploadAttachmentAsync(client, taggedWithEvidence.Id.Value, "scan-2026.pdf", "application/pdf", "%PDF-1.7 binary", ct);
         await UploadAttachmentAsync(client, untaggedWithEvidence.Id.Value, "evidence.txt", "text/plain",
             "certificate expires next week", ct);
 
