@@ -29,7 +29,9 @@ public sealed class TenantRateLimitingCompositionTests
     [Timeout(60000, CooperativeCancellation = true)]
     public async Task RedisConfiguredButUnreachable_LimiterFailsOpen()
     {
-        using var provider = Build("127.0.0.1:1,connectTimeout=250,connectRetry=1");
+        // asyncTimeout bounds each command queued behind the dead connection; at the 5 s default the two
+        // acquisitions cost about 12 s. The limiter's fail-open path is the same at either timeout.
+        using var provider = Build("127.0.0.1:1,connectTimeout=250,connectRetry=1,asyncTimeout=250,syncTimeout=250");
 
         var factory = provider.GetRequiredService<ISlidingWindowLimiterFactory>();
         using var limiter = factory.Create($"rl:test:default:tenant:{{{Guid.NewGuid()}}}", new RateLimitAllowance { PermitLimit = 1 });

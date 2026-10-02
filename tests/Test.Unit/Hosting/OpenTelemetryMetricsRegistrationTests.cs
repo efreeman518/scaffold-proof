@@ -13,8 +13,13 @@ using TaskFlow.Scheduler.Telemetry;
 namespace Test.Unit.Hosting;
 
 /// <summary>Guards D-061's low-volume metrics switch at every registration site.</summary>
+/// <remarks>
+/// Serial: a <c>Meter</c> instrument reports <c>Enabled</c>, and an ActivitySource <c>HasListeners</c>, when any
+/// provider or listener in the process subscribes, so a concurrent test's provider could pass these probes.
+/// </remarks>
 [TestClass]
 [TestCategory("Unit")]
+[DoNotParallelize]
 public sealed class OpenTelemetryMetricsRegistrationTests
 {
     [TestMethod]
@@ -39,10 +44,10 @@ public sealed class OpenTelemetryMetricsRegistrationTests
     [TestMethod]
     public void ServiceDefaults_SuppressedAspNetCoreInstrumentation_SkipsTheDistroAndKeepsEverySignal()
     {
-        var suppressed = CreateBuilder(metricsEnabled: true);
+        var suppressed = CreateBuilder(metricsEnabled: true, azureMonitor: true);
         suppressed.Configuration["OpenTelemetry:SuppressAspNetCoreInstrumentation"] = "true";
         suppressed.ConfigureOpenTelemetry();
-        var distro = CreateBuilder(metricsEnabled: true);
+        var distro = CreateBuilder(metricsEnabled: true, azureMonitor: true);
         distro.ConfigureOpenTelemetry();
 
         Assert.IsFalse(RegistersAzureMonitorDistro(suppressed.Services), "the distro re-adds ASP.NET Core instrumentation");
@@ -173,7 +178,13 @@ public sealed class OpenTelemetryMetricsRegistrationTests
         return services.BuildServiceProvider();
     }
 
-    private static HostApplicationBuilder CreateBuilder(bool metricsEnabled)
+    /// <summary>
+    /// OTLP to a dead endpoint with a 100 ms export timeout: disposing the MeterProvider flushes once, and the
+    /// default 10 s timeout cost about 2 s per provider. The Azure Monitor exporter has no such setting and its
+    /// shutdown flush costs about 2 s, so only the distro tests add it; the meter subscriptions are identical
+    /// with either exporter.
+    /// </summary>
+    private static HostApplicationBuilder CreateBuilder(bool metricsEnabled, bool azureMonitor = false)
     {
         var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
         {
@@ -183,8 +194,10 @@ public sealed class OpenTelemetryMetricsRegistrationTests
         {
             ["OpenTelemetry:MetricsEnabled"] = metricsEnabled.ToString(),
             ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://localhost:4317",
-            ["APPLICATIONINSIGHTS_CONNECTION_STRING"] =
-                "InstrumentationKey=00000000-0000-0000-0000-000000000000;IngestionEndpoint=https://localhost/"
+            ["OTEL_EXPORTER_OTLP_TIMEOUT"] = "100",
+            ["APPLICATIONINSIGHTS_CONNECTION_STRING"] = azureMonitor
+                ? "InstrumentationKey=00000000-0000-0000-0000-000000000000;IngestionEndpoint=https://localhost/"
+                : null
         });
         return builder;
     }

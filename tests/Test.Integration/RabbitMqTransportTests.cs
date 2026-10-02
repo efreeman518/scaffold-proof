@@ -141,13 +141,14 @@ public sealed class RabbitMqTransportTests
             correlationId: null);
         var entry = TaskFlowIntegrationEvents.Entry(envelope, TestConstants.TenantId);
 
-        await provider.GetRequiredService<IOutboxTransport>()
+        var sent = await provider.GetRequiredService<IOutboxTransport>()
             .SendAsync(entry.Destination, [Item(entry)], ct);
+        Assert.IsEmpty(sent.Failures, "the absence checks below rely on a confirmed publish");
 
         Assert.IsNotNull(await GetAsync(broker, TaskFlowRabbitMqTopology.ProjectionQueue, ct));
-        Assert.IsNull(await GetAsync(broker, TaskFlowRabbitMqTopology.AiReviewQueue, ct),
+        Assert.IsNull(await GetAsync(broker, TaskFlowRabbitMqTopology.AiReviewQueue, ct, attempts: 1),
             "ai-review is bound to created only; a status change must not wake the model");
-        Assert.IsNull(await GetAsync(broker, TaskFlowRabbitMqTopology.WorkflowQueue, ct));
+        Assert.IsNull(await GetAsync(broker, TaskFlowRabbitMqTopology.WorkflowQueue, ct, attempts: 1));
     }
 
     [TestMethod]
@@ -283,18 +284,22 @@ public sealed class RabbitMqTransportTests
         return services.BuildServiceProvider();
     }
 
-    private static async Task<BasicGetResult?> GetAsync(RabbitMqContainer broker, string queue, CancellationToken ct)
+    /// <summary>
+    /// Polls briefly for a delivery. An absence check after a confirmed publish needs one read (attempts: 1):
+    /// RabbitMQ confirms a routable message only once every queue it routes to has accepted it.
+    /// </summary>
+    private static async Task<BasicGetResult?> GetAsync(
+        RabbitMqContainer broker, string queue, CancellationToken ct, int attempts = 40)
     {
         var factory = new ConnectionFactory { Uri = new Uri(broker.GetConnectionString()) };
         await using var connection = await factory.CreateConnectionAsync(ct);
         await using var channel = await connection.CreateChannelAsync(cancellationToken: ct);
 
-        // Poll briefly: publisher confirms mean the broker has the message, not that it has been routed yet.
-        for (var attempt = 0; attempt < 40; attempt++)
+        for (var attempt = 0; attempt < attempts; attempt++)
         {
             var result = await channel.BasicGetAsync(queue, autoAck: true, ct);
             if (result is not null) return result;
-            await Task.Delay(100, ct);
+            if (attempt + 1 < attempts) await Task.Delay(100, ct);
         }
 
         return null;
