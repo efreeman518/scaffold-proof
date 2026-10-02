@@ -155,6 +155,23 @@ public class WorkflowDefinitionValidityTests
         Assert.IsNotEmpty(WorkflowDefinitionValidator.Validate(def), "a node retry list containing 412 must fail validation");
     }
 
+    /// <summary>
+    /// The ambiguous-retry rule is reported as a structured warning: an unkeyed PATCH that lists 502 yields
+    /// <c>UNSAFE_RETRY_WITHOUT_IDEMPOTENCY_HEADER</c> for that node, so the no-warnings check above has teeth.
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Integration")]
+    public void GetWarnings_Reports_An_Unkeyed_Unsafe_Node_Listing_An_Ambiguous_Status()
+    {
+        var json = System.Text.Json.Nodes.JsonNode.Parse(ReadWorkflowFile("ai-task-triage.json"))!;
+        json["nodes"]!["n-apply-priority"]!["config"]!["retryOnStatusCodes"] = new System.Text.Json.Nodes.JsonArray(409, 502);
+        var def = json.Deserialize<WorkflowDefinition>(JsonOpts)!;
+
+        var warning = WorkflowDefinitionValidator.GetWarnings(def)
+            .Single(w => w.Code == WorkflowDefinitionWarning.UnsafeRetryWithoutIdempotencyHeader);
+        Assert.AreEqual("n-apply-priority", warning.NodeId);
+    }
+
     /// <summary>Verifies each workflow node has explicit config for SQL registry serialization behavior and protects the expected test contract.</summary>
     [TestMethod]
     [DynamicData(nameof(AllWorkflows))]
