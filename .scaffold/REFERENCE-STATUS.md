@@ -33,14 +33,14 @@ Release `--no-build` after a `--no-incremental` Release solution build (0 warnin
 
 | Project | Passed | Duration |
 |---|---:|---:|
-| Test.Unit | 672 | 17 s |
+| Test.Unit | 674 | 17 s |
 | Test.UI | 54 | 1 s |
 | Test.Architecture | 87 | 2 s |
 | Test.Endpoints | 236 | 8 s |
-| Test.Integration.FlowEngine | 26 | 0.3 s |
+| Test.Integration.FlowEngine | 34 | 0.3 s |
 | Test.Mutation | 27 | 0.1 s |
 | Test.PlaywrightUI (`TestCategory=Unit`) | 1 | 0.1 s |
-| **Total** | **1103** | |
+| **Total** | **1113** | |
 
 `Test.Unit` used the CI 15-second blame-hang timeout. `dotnet format analyzers TaskFlow.slnx --severity warn --verify-no-changes --no-restore` passed with no changes or diagnostics. Types the EF.* packages own are tested by the package suites, not here.
 
@@ -50,9 +50,9 @@ Release `--no-build`, Podman Docker-compatible context; Test.Integration 2026-10
 
 | Lane | Project | Passed | Skipped | Duration |
 |---|---|---:|---:|---:|
-| `TASKFLOW_LANE=NonAzure` / PostgreSqlJsonb | Test.Integration | 144 | 5 (Azure-only) | 106 s |
-| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 130 | 19 (NonAzure-only) | 168 s |
-| NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | Test.Integration | 146 | 3 | 106 s |
+| `TASKFLOW_LANE=NonAzure` / PostgreSqlJsonb | Test.Integration | 145 | 5 (Azure-only) | 107 s |
+| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 131 | 19 (NonAzure-only) | 176 s |
+| NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | Test.Integration | 147 | 3 | 106 s |
 | unset (resolves NonAzure) | Test.E2E | 10 | 0 | 15 s |
 | `TASKFLOW_LANE=Azure` | Test.E2E | 10 | 0 | 33 s |
 
@@ -147,7 +147,7 @@ Status meanings:
 | Generated API clients (Refitter, openapi-typescript) | proven | `src/UI/TaskFlow.ApiClient` and React `types.ts` regenerate from the committed OpenAPI document |
 | Aspire, Gateway, Scheduler, Functions | proven except blocked Azure full graph | Build, topology, unit, endpoint and Compose evidence; core-lane meshes pass on both lanes and the NonAzure full-lane filter passes 5 with 2 by-design skips (2026-09-29); the Azure full graph (Functions on) was last observed blocked by the Aspire SQL child-health ordering defect (2026-09-16) |
 | Uno, Blazor, React | proven | Build, Test.UI, Compose smoke, and Test.PlaywrightUI 4/4 on both lanes including the published Release Uno cold start (2026-09-29) |
-| FlowEngine | proven | Runtime wiring, separate-schema migration, definition/integration cases including the If-Match:* connector override (D-032); node retry ownership: every `taskflow-api` node, loop-body nodes included, declares an exponential `retryPolicy` with no 412 and the definitions raise no structured `GetWarnings` warning (`WorkflowDefinitionValidityTests`), every shipped clientRef resolves against the application's registrations (`FlowEngineClientRegistrationTests`), a 503 PATCH is resent and a 412 PATCH is not (`FlowEngineWorkflowTests`) |
+| FlowEngine | proven | Runtime wiring, separate-schema migration, definition/integration cases including the If-Match:* connector override (D-032); node retry ownership: every `taskflow-api` node, loop-body nodes included, declares an exponential `retryPolicy` with no 412 and the definitions raise no structured `GetWarnings` warning (`WorkflowDefinitionValidityTests`), every shipped clientRef resolves against the application's registrations on both lanes and an unregistered one is reported (`FlowEngineClientRegistrationTests`), compliance-check runs end to end for one tenant only (`AiWorkflowIntegrationTests`), a 503 PATCH is resent and a 412 PATCH is not (`FlowEngineWorkflowTests`) |
 | GitHub Actions and deployment workflow shape | proven | Workflow contract tests and CI execution |
 | Bicep module shape (SQL Server, Service Bus, Storage, Cosmos, Redis, Container Apps/Functions, scale rules) | proven | `main`, foundation, and all three parameter files compile; Bicep contract tests |
 | Live Entra or CIAM sign-in | deployment-only | Scaffold auth is the local proof |

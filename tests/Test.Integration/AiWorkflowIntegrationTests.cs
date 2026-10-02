@@ -1,11 +1,15 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EF.FlowEngine.Abstractions;
 using EF.FlowEngine.Definition;
+using EF.FlowEngine.Model;
+using EF.Data.Contracts;
+using Test.Support.Builders;
 using Test.Integration.Infrastructure;
 
 namespace Test.Integration;
@@ -210,6 +214,95 @@ public sealed class AiWorkflowIntegrationTests
             .Select(item => item.GetProperty("title").GetString()!)
             .Order(StringComparer.Ordinal)
             .ToArray();
+    }
+
+    /// <summary>
+    /// compliance-check end to end on the shipped definitions. Tenant A has two tasks due soon, one with evidence and one
+    /// without; tenant B has one. The search is bound to the started tenant (filter tenantId and the API's tenant query filter),
+    /// its <c>$.items</c> response feeds the loop, and each compliance-check-item child binds <c>params.currentItem.id</c>
+    /// (evidence lookup and the reminder path) and <c>params.currentItem.title</c> (the agent prompt). The task with evidence
+    /// is classified expiring soon and gets one reminder comment; the task without evidence has no finding, so the
+    /// decision takes its default edge; tenant B's task is never read and gets no comment.
+    /// </summary>
+    [TestMethod]
+    public async Task ComplianceCheck_ScansOnlyTheStartedTenant_AndRemindsTheTaskWithExpiringEvidence()
+    {
+        SkipIfNoSql();
+        var ct = TestContext.CancellationToken;
+        var connectionString = await IsolatedMigratedConnectionStringAsync(ct);
+        var dueDate = DateTimeOffset.UtcNow.AddDays(1);
+        var withEvidence = DueTask(Guid.Parse(TenantId), "Compliance A with evidence", dueDate);
+        var withoutEvidence = DueTask(Guid.Parse(TenantId), "Compliance A without evidence", dueDate);
+        var otherTenant = DueTask(Guid.CreateVersion7(), "Compliance B other tenant", dueDate);
+        await using (var seed = DbContainerFixture.CreateTrxnContext(connectionString))
+        {
+            seed.TaskItems.AddRange(withEvidence, withoutEvidence, otherTenant);
+            await seed.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct);
+        }
+
+        var evidence = new EvidenceStore(withEvidence.Id.Value.ToString(), "certificate expires next week");
+        var prompts = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        using var factory = new FlowEngineWorkflowApiFactory(
+            connectionString,
+            prompt =>
+            {
+                prompts.Enqueue(prompt);
+                return """{"status":"expiringSoon","summary":"expires next week"}""";
+            },
+            configureServices: services =>
+            {
+                services.RemoveAll<IDocumentStore>();
+                services.AddSingleton<IDocumentStore>(evidence);
+            });
+        using var client = factory.CreateClient();
+
+        var instanceId = await StartWorkflowAsync(client, "compliance-check", new Dictionary<string, object?>
+        {
+            ["tenantId"] = TenantId,
+            ["dueBefore"] = DateTimeOffset.UtcNow.AddDays(7).ToString("O")
+        }, ct);
+        var (node, body) = await WaitForTerminalAsync(client, instanceId, ct);
+
+        Assert.AreEqual("n-output-ok", node, $"Instance: {Truncate(body)}");
+        CollectionAssert.AreEquivalent(
+            new[] { withEvidence.Id.Value.ToString(), withoutEvidence.Id.Value.ToString() },
+            evidence.Requested.ToArray(),
+            "the loop must visit exactly the started tenant's due tasks, keyed by params.currentItem.id");
+        var prompt = prompts.Single();
+        StringAssert.Contains(prompt, "Compliance A with evidence", "the prompt binds params.currentItem.title");
+        StringAssert.Contains(prompt, "certificate expires next week", "the prompt carries the evidence text");
+        Assert.AreEqual(1, await CountCommentsAsync(client, withEvidence.Id.Value, ct), "the expiring task gets one reminder");
+        Assert.AreEqual(0, await CountCommentsAsync(client, withoutEvidence.Id.Value, ct), "no finding takes the decision's default edge");
+        await using var verify = DbContainerFixture.CreateTrxnContext(connectionString);
+        var otherTenantComments = await verify.TaskItems.IgnoreQueryFilters()
+            .Where(t => t.Id == otherTenant.Id)
+            .SelectMany(t => t.Comments)
+            .CountAsync(ct);
+        Assert.AreEqual(0, otherTenantComments, "another tenant's task is never touched");
+    }
+
+    private static TaskFlow.Domain.Model.TaskItem DueTask(Guid tenantId, string title, DateTimeOffset dueDate)
+    {
+        var task = new TaskItemBuilder().WithTenantId(tenantId).WithTitle(title).Build();
+        task.UpdateDateRange(null, dueDate);
+        return task;
+    }
+
+    // Serves one task's evidence text by task id and fails every other lookup, as a store with no evidence would.
+    private sealed class EvidenceStore(string taskId, string text) : IDocumentStore
+    {
+        public System.Collections.Concurrent.ConcurrentQueue<string> Requested { get; } = new();
+
+        public Task<Stream> OpenReadAsync(string storeRef, CancellationToken ct = default)
+        {
+            Requested.Enqueue(storeRef);
+            return storeRef == taskId
+                ? Task.FromResult<Stream>(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(text)))
+                : throw new FileNotFoundException($"No evidence for task {storeRef}.");
+        }
+
+        public Task<DocumentContextValue> StoreAsync(Stream content, string fileName, string contentType, CancellationToken ct = default) =>
+            throw new NotSupportedException("The compliance workflow only reads evidence.");
     }
 
     private const string KeyedCommentProbeId = "idempotency-key-probe";

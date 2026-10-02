@@ -1849,11 +1849,11 @@ cd tests/Test.PlaywrightUI &amp;&amp; npm run test
 <tr>
 <td><strong>compliance-check</strong></td>
 <td>Manual / dashboard / future cron via TickerQ</td>
-<td><code>tenantId</code>, <code>windowDays</code> (default 7)</td>
-<td>Parallel <code>loop</code> with bounded concurrency (max 5), <code>query</code> node using FilterBuilder, <code>document</code> node for evidence retrieval</td>
+<td><code>tenantId</code>, <code>dueBefore</code> (date-time)</td>
+<td><code>integration</code> node searching one page of at most 50 of the tenant&#39;s due tasks through <code>POST /api/v1/task-items/search</code>; parallel <code>loop</code> (max 5) starting one <code>compliance-check-item</code> child workflow per task, which reads evidence through a <code>document</code> node (no <code>IDocumentStore</code> is registered, so it finds none), classifies it with an <code>agent</code> node, and routes to human review or a keyed reminder comment</td>
 </tr>
 </tbody></table>
-<p>All three are validated at every build by <code>Test.Integration.FlowEngine</code> (see Section 12.2).</p>
+<p>The four definitions (three workflows plus the <code>compliance-check-item</code> child) are validated at every build by <code>Test.Integration.FlowEngine</code> (see Section 12.2).</p>
 <h3 id="144-state-isolation-and-atomic-outbox">14.4 State Isolation &amp; Atomic Outbox</h3>
 <p>FlowEngine state lives in a <strong>separate <code>flowengine</code> schema on the same database connection</strong> (SQL Server or PostgreSQL - <a href="#55-dual-provider-data-layer">Section 5.5</a>), owned by <code>TaskFlowFlowEngineDbContext</code> (sealed, in <code>Infrastructure.Data</code>). This is <strong>Variant A</strong> of the deployment-layout decision (same DB, separate schema):</p>
 <figure class="diagram-container">
@@ -1947,7 +1947,7 @@ dotnet run --project src/Host/Aspire/AppHost
 <ol>
 <li><strong>Service Bus subscriber in <code>TaskFlow.Functions</code></strong> - current D9 path; deserialize <code>TaskItemCreatedEvent</code>, call <code>IWorkflowTrigger.OnTaskItemCreatedAsync</code>. Preserves the existing event-driven architecture and keeps the API host free of workflow start latency.</li>
 <li><strong>Inline call in the active create-task use case</strong> - DI-resolve <code>IWorkflowTrigger</code>, call after <code>eventPublisher.PublishAsync</code> in <code>TaskItemService</code> or <code>CreateTaskItemCommandHandler</code>. Simpler but ties the request thread to engine startup.</li>
-<li><strong>TickerQ job for <code>compliance-check</code></strong> - a cron-triggered scheduler job that calls <code>engine.StartBackgroundAsync</code> with the <code>compliance-check</code> workflow id and a fresh <code>windowDays</code> param.</li>
+<li><strong>TickerQ job for <code>compliance-check</code></strong> - a cron-triggered scheduler job that calls <code>engine.StartBackgroundAsync</code> with the <code>compliance-check</code> workflow id, the tenant, and a <code>dueBefore</code> param computed from the run time.</li>
 </ol>
 <h3 id="147-admin-api-and-auth">14.7 Admin API and Auth</h3>
 <p><code>MapFlowEngineAdmin(prefix: &quot;/api/flowengine&quot;)</code> (called in <code>WebApplicationBuilderExtensions.cs</code>) mounts the REST surface from <code>EF.FlowEngine.AdminApi</code>:</p>

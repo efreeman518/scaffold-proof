@@ -29,6 +29,7 @@ public class WorkflowDefinitionValidityTests
         ["ai-task-triage.json",      TriageId,      "1.0.0"],
         ["ai-task-decomposer.json",  DecomposerId,  "1.0.0"],
         ["compliance-check.json",    ComplianceId,  "1.0.0"],
+        ["compliance-check-item.json", "compliance-check-item", "1.0.0"],
     ];
 
     // Canonical options for FlowEngine workflow JSON - camelCase, string-named enums with
@@ -144,6 +145,18 @@ public class WorkflowDefinitionValidityTests
         Assert.AreEqual("n-apply-priority", warning.NodeId);
     }
 
+    /// <summary>Validation rejects a node config key the node type does not define, so a misspelled key fails at build time.</summary>
+    [TestMethod]
+    [TestCategory("Integration")]
+    public void DefinitionValidator_Rejects_An_Unknown_Node_Config_Key()
+    {
+        var json = System.Text.Json.Nodes.JsonNode.Parse(ReadWorkflowFile("ai-task-triage.json"))!;
+        json["nodes"]!["n-apply-priority"]!["config"]!["over"] = "$.context.items";
+        var def = json.Deserialize<WorkflowDefinition>(JsonOpts)!;
+
+        Assert.IsNotEmpty(WorkflowDefinitionValidator.Validate(def), "an unknown integration config key must fail validation");
+    }
+
     /// <summary>Verifies each workflow node has explicit config for SQL registry serialization behavior and protects the expected test contract.</summary>
     [TestMethod]
     [DynamicData(nameof(AllWorkflows))]
@@ -202,24 +215,24 @@ public class WorkflowDefinitionValidityTests
         Assert.IsNotEmpty(def.Nodes, "Builder.FromJson should now hydrate Nodes");
     }
 
-    /// <summary>Verifies all three workflows are present in output behavior and protects the expected test contract.</summary>
+    /// <summary>Verifies every shipped workflow file is present in the test output.</summary>
     [TestMethod]
     [TestCategory("Integration")]
-    public void All_Three_Workflows_Are_Present_In_Output()
+    public void All_Shipped_Workflows_Are_Present_In_Output()
     {
         // Guard against the copy-on-build glob in the csproj silently dropping files.
         var dir = Path.Combine(AppContext.BaseDirectory, "Workflows");
         Assert.IsTrue(Directory.Exists(dir), $"Workflows directory missing at {dir}");
 
-        string[] expected = ["ai-task-triage.json", "ai-task-decomposer.json", "compliance-check.json"];
+        string[] expected = ["ai-task-triage.json", "ai-task-decomposer.json", "compliance-check.json", "compliance-check-item.json"];
         foreach (var f in expected)
             Assert.IsTrue(File.Exists(Path.Combine(dir, f)), $"Missing workflow file: {f}");
     }
 
     /// <summary>
-    /// The PATCH nodes carry the "headers" config key that EF.FlowEngine 1.0.173 now forwards
-    /// (package request 18 shipped: IntegrationNodeConfig.Headers -> IntegrationNodeExecutor ->
-    /// ClientRequest.Headers), so If-Match travels through node config with no JSON change.
+    /// The PATCH nodes carry the "headers" config key that FlowEngine forwards
+    /// (IntegrationNodeConfig.Headers -> IntegrationNodeExecutor -> ClientRequest.Headers),
+    /// so If-Match travels through node config.
     /// </summary>
     [TestMethod]
     [TestCategory("Integration")]

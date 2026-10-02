@@ -3,7 +3,6 @@ using EF.FlowEngine;
 using EF.FlowEngine.Abstractions;
 using EF.FlowEngine.Clients;
 using EF.FlowEngine.Clients.AI;
-using EF.FlowEngine.Definition;
 using EF.FlowEngine.Impl;
 using EF.FlowEngine.Model;
 using Microsoft.Extensions.AI;
@@ -25,8 +24,6 @@ public sealed class FlowEngineWorkflowTests
 
     private static readonly JsonSerializerOptions WebJsonOptions = new(JsonSerializerDefaults.Web);
 
-    /// <summary>MSTest-injected context; supplies the per-test cancellation token.</summary>
-    public TestContext TestContext { get; set; } = null!;
 
     // ── ai-task-triage ─────────────────────────────────────────────────────────
 
@@ -71,10 +68,10 @@ public sealed class FlowEngineWorkflowTests
 
     /// <summary>
     /// The node retryPolicy is the only retry owner: a PATCH answered 503 is resent by the engine and the instance
-    /// completes, and the definition carries no ambiguous unsafe-retry warning.
+    /// completes (WorkflowDefinitionValidityTests asserts the definitions raise no warning).
     /// </summary>
     [TestMethod]
-    public async Task TriageWorkflow_Patch503ThenOk_NodeRetryPolicyResendsWithoutDefinitionWarnings()
+    public async Task TriageWorkflow_Patch503ThenOk_NodeRetryPolicyResends()
     {
         var taskId = Guid.NewGuid();
         int patchHits = 0;
@@ -92,11 +89,6 @@ public sealed class FlowEngineWorkflowTests
         Assert.AreEqual(ExecStatus.Completed, instance.Status, instance.Error?.Message);
         Assert.AreEqual("n-output-ok", instance.CurrentNodeId, $"Unexpected node. Error: {instance.Error?.Message}");
         Assert.AreEqual(2, patchHits, "the 503 must be resent once by the node retryPolicy");
-        var definition = await new JsonFileWorkflowRegistry("Workflows").GetAsync("ai-task-triage", version: null, TestContext.CancellationToken);
-        var unsafeRetries = WorkflowDefinitionValidator.GetWarnings(definition!)
-            .Where(w => w.Code == WorkflowDefinitionWarning.UnsafeRetryWithoutIdempotencyHeader)
-            .ToList();
-        Assert.IsEmpty(unsafeRetries, string.Join(" | ", unsafeRetries.Select(w => $"{w.NodeId}: {w.Message}")));
     }
 
     /// <summary>D-032: a 412 means the precondition is stale, so the engine never resends the PATCH.</summary>

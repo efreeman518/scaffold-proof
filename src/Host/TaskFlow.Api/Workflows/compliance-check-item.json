@@ -1,0 +1,109 @@
+{
+  "id": "compliance-check-item",
+  "version": "1.0.0",
+  "label": "Compliance Check Item",
+  "status": "Active",
+  "intent": "Child of compliance-check for one task (params.currentItem, set by the parent loop): fetch its evidence, classify it via agent, route to human review when expired and post a reminder when expiring soon.",
+  "entryNodeId": "n-fetch-evidence",
+  "nodes": {
+    "n-fetch-evidence": {
+      "id": "n-fetch-evidence",
+      "type": "document",
+      "label": "Fetch evidence blob",
+      "intent": "Read the current task's evidence from the registered IDocumentStore, which resolves a task id to its latest evidence text. A task without evidence has no finding and gets no action; TaskFlow registers no document store, so in the shipped hosts every task takes the Error edge.",
+      "config": {
+        "operation": "read",
+        "contentKey": "$.params.currentItem.id",
+        "resultKey": "evidence"
+      },
+      "edges": [
+        { "on": ["Match"],   "nextNodeId": "n-extract" },
+        { "on": ["NoMatch"], "nextNodeId": "n-decide" },
+        { "on": ["Error"],   "nextNodeId": "n-decide" }
+      ]
+    },
+    "n-extract": {
+      "id": "n-extract",
+      "type": "agent",
+      "label": "Agent extracts expiration",
+      "intent": "Ask the agent to extract an expiration date and produce a compact classification.",
+      "config": {
+        "clientRef": "ai-agent",
+        "promptTemplate": "Read the evidence for task {{$.params.currentItem.title}}. Return JSON: {\"status\":\"expired|expiringSoon|ok\",\"summary\":\"<text>\"}. Evidence excerpt: {{$.context.evidence}}",
+        "promptVersion": "compliance-extract-v1",
+        "outputSchema": "{\"type\":\"object\",\"required\":[\"status\"],\"properties\":{\"status\":{\"type\":\"string\",\"enum\":[\"expired\",\"expiringSoon\",\"ok\"]},\"summary\":{\"type\":\"string\"}}}",
+        "idempotencyKey": "$.params.currentItem.id + '-compliance-extract'"
+      },
+      "storeAs": "complianceFinding",
+      "edges": [
+        { "on": ["Match"], "nextNodeId": "n-decide" },
+        { "on": ["Error"], "nextNodeId": "n-decide" }
+      ]
+    },
+    "n-decide": {
+      "id": "n-decide",
+      "type": "decision",
+      "label": "Route by compliance status",
+      "intent": "Expired -> escalate to human review. Expiring soon -> reminder comment. OK or no finding -> no action.",
+      "config": { "target": "$.context.complianceFinding.status" },
+      "edges": [
+        { "label": "Expired",       "on": ["Match"], "when": "Context.ContainsKey(\"complianceFinding\") && Context[\"complianceFinding\"][\"status\"].ToString() == \"expired\"",       "nextNodeId": "n-escalate" },
+        { "label": "ExpiringSoon",  "on": ["Match"], "when": "Context.ContainsKey(\"complianceFinding\") && Context[\"complianceFinding\"][\"status\"].ToString() == \"expiringSoon\"", "nextNodeId": "n-remind" },
+        { "label": "Default",       "on": ["Match", "NoMatch", "Unknown"], "nextNodeId": "n-done" }
+      ]
+    },
+    "n-escalate": {
+      "id": "n-escalate",
+      "type": "human",
+      "label": "Human review of expired evidence",
+      "intent": "Compliance officer reviews and signs off; 48h SLA with escalation.",
+      "config": {
+        "title": "Expired compliance evidence: {{$.params.currentItem.title}}",
+        "assignedTo": "role:compliance-officer",
+        "channel": "Internal",
+        "quorum": 1,
+        "formSchema": "{\"properties\":{\"decision\":{\"type\":\"string\",\"enum\":[\"resolved\",\"escalate\"]},\"notes\":{\"type\":\"string\"}},\"required\":[\"decision\"]}",
+        "visibleContext": ["$.params.currentItem", "$.context.complianceFinding"],
+        "dueIn": "P2D",
+        "escalation": { "after": "P1D", "reassignTo": "role:compliance-lead" }
+      },
+      "edges": [
+        { "on": ["Match"], "nextNodeId": "n-mark-resolved" }
+      ]
+    },
+    "n-mark-resolved": {
+      "id": "n-mark-resolved",
+      "type": "integration",
+      "label": "Mark task resolved",
+      "intent": "Post a follow-up comment and tag the task as compliance-reviewed.",
+      "retryPolicy": { "maxAttempts": 3, "backoff": "Exponential" },
+      "config": {
+        "clientRef": "taskflow-api",
+        "method": "POST",
+        "idempotencyKeyHeader": "Idempotency-Key",
+        "path": "/api/v1/task-items/{{$.params.currentItem.id}}/comments",
+        "body": { "item": { "Body": "Compliance review complete: {{$.context._humanTaskResponse.notes}}" } },
+        "idempotencyKey": "$.params.currentItem.id + '-compliance-resolved'"
+      },
+      "edges": [ { "on": ["Match"], "nextNodeId": "n-done" }, { "on": ["Error"], "nextNodeId": "n-failed" } ]
+    },
+    "n-remind": {
+      "id": "n-remind",
+      "type": "integration",
+      "label": "Post reminder comment",
+      "intent": "For tasks expiring soon, attach a reminder comment via the public API.",
+      "retryPolicy": { "maxAttempts": 3, "backoff": "Exponential" },
+      "config": {
+        "clientRef": "taskflow-api",
+        "method": "POST",
+        "idempotencyKeyHeader": "Idempotency-Key",
+        "path": "/api/v1/task-items/{{$.params.currentItem.id}}/comments",
+        "body": { "item": { "Body": "Compliance evidence is expiring soon - please refresh." } },
+        "idempotencyKey": "$.params.currentItem.id + '-compliance-reminder'"
+      },
+      "edges": [ { "on": ["Match"], "nextNodeId": "n-done" }, { "on": ["Error"], "nextNodeId": "n-failed" } ]
+    },
+    "n-done":   { "id": "n-done",   "type": "output", "label": "Done",   "config": { "outputMapping": { "taskId": "$.params.currentItem.id", "decision": "reviewed" } } },
+    "n-failed": { "id": "n-failed", "type": "output", "label": "Failed", "config": { "outputMapping": { "taskId": "$.params.currentItem.id", "decision": "failed" } } }
+  }
+}

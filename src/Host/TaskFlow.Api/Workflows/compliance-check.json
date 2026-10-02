@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "label": "Recurring Compliance Check",
   "status": "Active",
-  "intent": "Find tasks due before params.dueBefore; for each, fetch evidence, summarize via agent, route to human review when expired.",
+  "intent": "Find params.tenantId's tasks due before params.dueBefore and run compliance-check-item for each: fetch evidence, classify it via agent, route to human review when expired and post a reminder when expiring soon.",
   "entryNodeId": "n-query-due",
   "paramsSchema": "{\"required\":[\"tenantId\",\"dueBefore\"],\"properties\":{\"tenantId\":{\"type\":\"string\"},\"dueBefore\":{\"type\":\"string\",\"format\":\"date-time\"}}}",
   "nodes": {
@@ -11,13 +11,13 @@
       "id": "n-query-due",
       "type": "integration",
       "label": "Search tasks due soon",
-      "intent": "Search the tenant's tasks due before params.dueBefore, earliest first, through the public API (auth, tenant isolation, validation). The search has no tag filter, so every due task is processed.",
+      "intent": "Search params.tenantId's tasks due before params.dueBefore, earliest first, through the public API (auth, validation). The filter names params.tenantId; the API's tenant query filter also pins every read to the caller's tenant, global admin included, so another tenant's tasks are never returned. One page of at most 50 tasks is processed; the cursor is not followed. The search has no tag filter and filters status by equality only, so completed tasks are included.",
       "retryPolicy": { "maxAttempts": 3, "backoff": "Exponential" },
       "config": {
         "clientRef": "taskflow-api",
         "method": "POST",
         "path": "/api/v1/task-items/search",
-        "body": { "filter": { "dueBefore": "$.params.dueBefore" }, "sortMode": "DueDateAsc", "pageSize": 50 },
+        "body": { "filter": { "tenantId": "$.params.tenantId", "dueBefore": "$.params.dueBefore" }, "sortMode": "DueDateAsc", "pageSize": 50 },
         "responseMapping": { "dueTasks": "$.items" },
         "idempotencyKey": "$.engine.instanceId + '-compliance-search'"
       },
@@ -30,121 +30,23 @@
       "id": "n-loop-each",
       "type": "loop",
       "label": "Process each due task",
-      "intent": "Parallel fan-out over the query results with bounded concurrency.",
+      "intent": "Start one compliance-check-item child workflow per searched task, at most 5 at a time; each child has its own context and suspends independently at its human review.",
       "config": {
         "items": "$.context.dueTasks",
         "mode": "parallel",
         "maxConcurrency": 5,
-        "bodyEntryNodeId": "n-fetch-evidence"
+        "subWorkflowId": "compliance-check-item"
       },
       "edges": [
         { "on": ["Match"], "nextNodeId": "n-summary-event" },
         { "on": ["Error"], "nextNodeId": "n-output-failed" }
       ]
     },
-    "n-fetch-evidence": {
-      "id": "n-fetch-evidence",
-      "type": "document",
-      "label": "Fetch evidence blob",
-      "intent": "Read the evidence document the current item references from the registered IDocumentStore. TaskFlow registers no document store and its task items carry no evidence reference, so this node takes its Error edge.",
-      "config": {
-        "operation": "read",
-        "contentKey": "$.context.currentItem.evidenceRef",
-        "resultKey": "evidence"
-      },
-      "edges": [
-        { "on": ["Match"],   "nextNodeId": "n-extract" },
-        { "on": ["NoMatch"], "nextNodeId": "n-decide" },
-        { "on": ["Error"],   "nextNodeId": "n-decide" }
-      ]
-    },
-    "n-extract": {
-      "id": "n-extract",
-      "type": "agent",
-      "label": "Agent extracts expiration",
-      "intent": "Ask the agent to extract an expiration date and produce a compact classification.",
-      "config": {
-        "clientRef": "ai-agent",
-        "promptTemplate": "Read the evidence for task {{$.context.currentItem.title}}. Return JSON: {\"status\":\"expired|expiringSoon|ok\",\"summary\":\"<text>\"}. Evidence excerpt: {{$.context.evidence.summary}}",
-        "promptVersion": "compliance-extract-v1",
-        "outputSchema": "{\"type\":\"object\",\"required\":[\"status\"],\"properties\":{\"status\":{\"type\":\"string\",\"enum\":[\"expired\",\"expiringSoon\",\"ok\"]},\"summary\":{\"type\":\"string\"}}}",
-        "idempotencyKey": "$.context.currentItem.id + '-compliance-extract'"
-      },
-      "storeAs": "complianceFinding",
-      "edges": [
-        { "on": ["Match"], "nextNodeId": "n-decide" },
-        { "on": ["Error"], "nextNodeId": "n-decide" }
-      ]
-    },
-    "n-decide": {
-      "id": "n-decide",
-      "type": "decision",
-      "label": "Route by compliance status",
-      "intent": "Expired -> escalate to human review. Expiring soon -> reminder comment. OK -> no action.",
-      "config": { "target": "$.context.complianceFinding.status" },
-      "edges": [
-        { "label": "Expired",       "on": ["Match"], "when": "Context.ContainsKey(\"complianceFinding\") && Context[\"complianceFinding\"][\"status\"].ToString() == \"expired\"",       "nextNodeId": "n-escalate" },
-        { "label": "ExpiringSoon",  "on": ["Match"], "when": "Context.ContainsKey(\"complianceFinding\") && Context[\"complianceFinding\"][\"status\"].ToString() == \"expiringSoon\"", "nextNodeId": "n-remind" },
-        { "label": "Default",       "on": ["Match"], "nextNodeId": "n-ok" }
-      ]
-    },
-    "n-escalate": {
-      "id": "n-escalate",
-      "type": "human",
-      "label": "Human review of expired evidence",
-      "intent": "Compliance officer reviews and signs off; 48h SLA with escalation.",
-      "config": {
-        "title": "Expired compliance evidence: {{$.context.currentItem.title}}",
-        "assignedTo": "role:compliance-officer",
-        "channel": "Internal",
-        "quorum": 1,
-        "formSchema": "{\"properties\":{\"decision\":{\"type\":\"string\",\"enum\":[\"resolved\",\"escalate\"]},\"notes\":{\"type\":\"string\"}},\"required\":[\"decision\"]}",
-        "visibleContext": ["$.context.currentItem", "$.context.complianceFinding"],
-        "dueIn": "P2D",
-        "escalation": { "after": "P1D", "reassignTo": "role:compliance-lead" }
-      },
-      "edges": [
-        { "on": ["Match"], "nextNodeId": "n-mark-resolved" }
-      ]
-    },
-    "n-mark-resolved": {
-      "id": "n-mark-resolved",
-      "type": "integration",
-      "label": "Mark task resolved",
-      "intent": "Post a follow-up comment and tag the task as compliance-reviewed.",
-      "retryPolicy": { "maxAttempts": 3, "backoff": "Exponential" },
-      "config": {
-        "clientRef": "taskflow-api",
-        "method": "POST",
-        "idempotencyKeyHeader": "Idempotency-Key",
-        "path": "/api/v1/task-items/{{$.context.currentItem.id}}/comments",
-        "body": { "item": { "Body": "Compliance review complete: {{$.context._humanTaskResponse.notes}}" } },
-        "idempotencyKey": "$.context.currentItem.id + '-compliance-resolved'"
-      },
-      "edges": [ { "on": ["Match"], "nextNodeId": "n-ok" }, { "on": ["Error"], "nextNodeId": "n-ok" } ]
-    },
-    "n-remind": {
-      "id": "n-remind",
-      "type": "integration",
-      "label": "Post reminder comment",
-      "intent": "For tasks expiring soon, attach a reminder comment via the public API.",
-      "retryPolicy": { "maxAttempts": 3, "backoff": "Exponential" },
-      "config": {
-        "clientRef": "taskflow-api",
-        "method": "POST",
-        "idempotencyKeyHeader": "Idempotency-Key",
-        "path": "/api/v1/task-items/{{$.context.currentItem.id}}/comments",
-        "body": { "item": { "Body": "Compliance evidence is expiring soon - please refresh." } },
-        "idempotencyKey": "$.context.currentItem.id + '-compliance-reminder'"
-      },
-      "edges": [ { "on": ["Match"], "nextNodeId": "n-ok" }, { "on": ["Error"], "nextNodeId": "n-ok" } ]
-    },
-    "n-ok": { "id": "n-ok", "type": "checkpoint", "label": "Loop iteration done", "config": {} },
     "n-summary-event": {
       "id": "n-summary-event",
       "type": "message",
       "label": "Publish compliance summary",
-      "intent": "Emit an aggregate summary event after the parallel loop finishes.",
+      "intent": "Emit an aggregate summary event after every child workflow finishes.",
       "config": {
         "clientRef": "integration-events",
         "subject": "compliance.swept",
