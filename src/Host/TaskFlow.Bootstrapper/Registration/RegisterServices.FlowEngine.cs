@@ -23,7 +23,7 @@ namespace TaskFlow.Bootstrapper;
 public static partial class RegisterServices
 {
     // FlowEngine wiring - engine runtime + connector clients + JSON workflow seeding.
-    // The 19 built-in node executors are auto-registered by AddFlowEngine() in this version.
+    // The 19 built-in node executors are auto-registered by AddFlowEngine().
     // Engine state + outbox live in TaskFlowFlowEngineDbContext (separate schema, shared SQL connection).
     // The Dashboard + Designer live in TaskFlow.Blazor and call into MapFlowEngineAdmin via the gateway.
     /// <summary>
@@ -47,7 +47,7 @@ public static partial class RegisterServices
             .UseOutboxSql<TaskFlowFlowEngineDbContext>()
             .UseCircuitBreakerSql<TaskFlowFlowEngineDbContext>();
 
-        // Terminal workflow instances were never removed, so the FlowEngine state store grew forever.
+        // Retention removes terminal workflow instances so the FlowEngine state store stays bounded.
         // UseRetentionPolicy registers a hosted service, and every host loading this assembly would run its
         // own copy against the same tables; Scheduling:OwnsRetention makes the Scheduler the single owner.
         if (config.GetValue("Scheduling:OwnsRetention", false))
@@ -223,7 +223,6 @@ public static partial class RegisterServices
     // JSON workflow definitions live in TaskFlow.Api/Workflows/. The seeding service is a
     // hosted service that runs once at startup, skipping the directory if it does not exist
     // (e.g. when this assembly is loaded by TaskFlow.Functions or TaskFlow.Scheduler).
-    // Replaces the bespoke WorkflowSeedStartupTask used by older local wiring.
     /// <summary>
     /// Seeds workflow definitions from TaskFlow.Api/Workflows when that directory is present in
     /// the running host output. Other hosts can load this assembly without requiring workflow files.
