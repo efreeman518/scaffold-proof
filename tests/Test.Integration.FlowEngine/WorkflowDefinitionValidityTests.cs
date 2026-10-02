@@ -118,6 +118,56 @@ public class WorkflowDefinitionValidityTests
         }
     }
 
+    /// <summary>
+    /// D-075: the attachment-backed document store reads with a system read and the engine passes it no tenant, so the
+    /// attachment id a document read node takes must come from a tenant-scoped API response in the same definition:
+    /// its <c>contentKey</c> is <c>$.context.{key}...</c>, and <c>{key}</c> is written by the <c>responseMapping</c> of
+    /// an integration node that POSTs <c>/api/v1/attachments/search</c>. Never params, a message body or agent output.
+    /// </summary>
+    [TestMethod]
+    [DynamicData(nameof(AllWorkflows))]
+    [TestCategory("Integration")]
+    public void Each_Document_Read_Takes_Its_Key_From_An_Attachment_Search_Response(string fileName, string _id, string _version)
+    {
+        using var document = JsonDocument.Parse(ReadWorkflowFile(fileName));
+        var nodes = document.RootElement.GetProperty("nodes").EnumerateObject().Select(n => n.Value).ToList();
+        var searchKeys = nodes
+            .Where(n => n.GetProperty("type").GetString() == "integration")
+            .Select(n => n.GetProperty("config"))
+            .Where(c => string.Equals(c.GetProperty("method").GetString(), "POST", StringComparison.OrdinalIgnoreCase)
+                && c.GetProperty("path").GetString() == "/api/v1/attachments/search"
+                && c.TryGetProperty("responseMapping", out _))
+            .SelectMany(c => c.GetProperty("responseMapping").EnumerateObject().Select(m => m.Name))
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var node in nodes.Where(n => n.GetProperty("type").GetString() == "document"))
+        {
+            var config = node.GetProperty("config");
+            var id = node.GetProperty("id").GetString();
+            if (config.TryGetProperty("operation", out var operation)
+                && string.Equals(operation.GetString(), "write", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var contentKey = config.GetProperty("contentKey").GetString() ?? string.Empty;
+            const string prefix = "$.context.";
+            Assert.IsTrue(contentKey.StartsWith(prefix, StringComparison.Ordinal),
+                $"{fileName}:{id} contentKey '{contentKey}' must read a context key (D-075)");
+            var key = contentKey[prefix.Length..].Split('.')[0];
+            Assert.Contains(key, searchKeys,
+                $"{fileName}:{id} contentKey '{contentKey}' must come from an attachments/search responseMapping in the same definition (D-075)");
+        }
+    }
+
+    /// <summary>The D-075 rule above has a subject: compliance-check-item reads its evidence through a document node.</summary>
+    [TestMethod]
+    [TestCategory("Integration")]
+    public void ComplianceCheckItem_Reads_Evidence_Through_A_Document_Node()
+    {
+        using var document = JsonDocument.Parse(ReadWorkflowFile("compliance-check-item.json"));
+        Assert.IsTrue(document.RootElement.GetProperty("nodes").EnumerateObject()
+            .Any(n => n.Value.GetProperty("type").GetString() == "document"));
+    }
+
     /// <summary>Verifies the FlowEngine validation refuses a 412 retry status, so the D-032 rule cannot regress silently.</summary>
     [TestMethod]
     [TestCategory("Integration")]

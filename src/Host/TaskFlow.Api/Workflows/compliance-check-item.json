@@ -10,7 +10,7 @@
       "id": "n-find-evidence",
       "type": "integration",
       "label": "Find latest evidence attachment",
-      "intent": "Search the task's attachments through the public API (auth, validation, tenant query filter), newest first, one result. The filter names the task's own tenant (params.currentItem.tenantId), so the attachment id the document node reads always comes from a tenant-scoped API response (D-075).",
+      "intent": "Search the task's attachments through the public API (auth, validation, tenant query filter), newest first, one result. The self-call principal carries a tenant, so the tenant query filter pins the search to it; the filter's tenantId (params.currentItem.tenantId, from the tenant-scoped task search) must match as well and is the only scope for a tenant-less GlobalAdmin or System caller. The document node reads only an id this response returns: evidence reads are system reads, so workflow authoring is GlobalAdmin-only (D-075). A read-only POST sends no idempotency header, so 409, 429 and 503 retry and any other 5xx ends the task on n-failed.",
       "retryPolicy": { "maxAttempts": 3, "backoff": "Exponential" },
       "config": {
         "clientRef": "taskflow-api",

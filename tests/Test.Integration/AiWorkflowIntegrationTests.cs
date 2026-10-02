@@ -298,7 +298,9 @@ public sealed class AiWorkflowIntegrationTests
     /// D-075: the attachment id a document node reads comes from the tenant-scoped attachment search. A compliance-check-item
     /// run started by tenant A for tenant B's task, with B's task id and tenant in <c>params.currentItem</c>, finds no
     /// attachment because the API's tenant query filter pins the search to the caller, so the store is never asked for B's
-    /// attachment, the run ends on the no-finding path and B's task gets no comment.
+    /// attachment, the run ends on the no-finding path and B's task gets no comment. A run for tenant A's own task that names
+    /// tenant B in <c>params.currentItem.tenantId</c> finds nothing either: the search filter's tenantId must match too, and it
+    /// is the only scope for a tenant-less caller, so this case fails if the workflow stops sending it.
     /// </summary>
     [TestMethod]
     public async Task ComplianceCheckItem_ForAnotherTenantsTask_NeverReadsItsAttachment()
@@ -332,6 +334,16 @@ public sealed class AiWorkflowIntegrationTests
 
         Assert.AreEqual("n-done", node, $"Instance: {Truncate(body)}");
         Assert.IsEmpty(reads, "another tenant's attachment id never reaches the document store");
+
+        var ownTask = await CreateTaskAsync(client, "Compliance A task", priority: 2 /* Medium */, ct);
+        await UploadAttachmentAsync(client, ownTask, "evidence.txt", "text/plain", "certificate expires next week", ct);
+        var mislabelled = await StartWorkflowAsync(client, "compliance-check-item", new Dictionary<string, object?>
+        {
+            ["currentItem"] = new { id = ownTask, tenantId = tenantB, title = "Compliance A task" }
+        }, ct);
+        var (mislabelledNode, mislabelledBody) = await WaitForTerminalAsync(client, mislabelled, ct);
+        Assert.AreEqual("n-done", mislabelledNode, $"Instance: {Truncate(mislabelledBody)}");
+        Assert.IsEmpty(reads, "the search filter's tenantId scopes the search: a task labelled with another tenant is not read");
         Assert.AreEqual(0, await CountCommentsIgnoringTenantAsync(connectionString, otherTenant.Id, ct), "another tenant's task is never touched");
     }
 
