@@ -1850,7 +1850,7 @@ cd tests/Test.PlaywrightUI &amp;&amp; npm run test
 <td><strong>compliance-check</strong></td>
 <td>Manual / dashboard / future cron via TickerQ</td>
 <td><code>tenantId</code>, <code>dueBefore</code> (date-time)</td>
-<td><code>integration</code> node searching one page of at most 50 of the tenant&#39;s due tasks through <code>POST /api/v1/task-items/search</code>; parallel <code>loop</code> (max 5) starting one <code>compliance-check-item</code> child workflow per task, which reads evidence through a <code>document</code> node (no <code>IDocumentStore</code> is registered, so it finds none), classifies it with an <code>agent</code> node, and routes to human review or a keyed reminder comment</td>
+<td><code>integration</code> node searching one page of at most 50 of the tenant&#39;s due tasks through <code>POST /api/v1/task-items/search</code>; parallel <code>loop</code> (max 5) starting one <code>compliance-check-item</code> child workflow per task, which finds the task&#39;s latest attachment through <code>POST /api/v1/attachments/search</code>, reads it as text evidence through a <code>document</code> node over the attachment-backed <code>IDocumentStore</code> (D-075; a task without an attachment gets no action), classifies it with an <code>agent</code> node, and routes to human review or a keyed reminder comment</td>
 </tr>
 </tbody></table>
 <p>The four definitions (three workflows plus the <code>compliance-check-item</code> child) are validated at every build by <code>Test.Integration.FlowEngine</code> (see Section 12.2).</p>

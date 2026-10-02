@@ -3,23 +3,57 @@
   "version": "1.0.0",
   "label": "Compliance Check Item",
   "status": "Active",
-  "intent": "Child of compliance-check for one task (params.currentItem, set by the parent loop): fetch its evidence, classify it via agent, route to human review when expired and post a reminder when expiring soon.",
-  "entryNodeId": "n-fetch-evidence",
+  "intent": "Child of compliance-check for one task (params.currentItem, a tenant-scoped task search result set by the parent loop): find the task's latest attachment through the public API, read it as evidence text, classify it via agent, route to human review when expired and post a reminder when expiring soon. A task without an attachment has no finding and gets no action.",
+  "entryNodeId": "n-find-evidence",
   "nodes": {
+    "n-find-evidence": {
+      "id": "n-find-evidence",
+      "type": "integration",
+      "label": "Find latest evidence attachment",
+      "intent": "Search the task's attachments through the public API (auth, validation, tenant query filter), newest first, one result. The filter names the task's own tenant (params.currentItem.tenantId), so the attachment id the document node reads always comes from a tenant-scoped API response (D-075).",
+      "retryPolicy": { "maxAttempts": 3, "backoff": "Exponential" },
+      "config": {
+        "clientRef": "taskflow-api",
+        "method": "POST",
+        "path": "/api/v1/attachments/search",
+        "body": {
+          "filter": { "tenantId": "$.params.currentItem.tenantId", "ownerType": "TaskItem", "ownerId": "$.params.currentItem.id" },
+          "sorts": [ { "propertyName": "CreatedAtUtc", "sortOrder": "Descending" } ],
+          "pageIndex": 1,
+          "pageSize": 1
+        },
+        "responseMapping": { "evidenceAttachments": "$.data" },
+        "idempotencyKey": "$.engine.instanceId + '-compliance-evidence-search'"
+      },
+      "edges": [
+        { "on": ["Match"], "nextNodeId": "n-has-evidence" },
+        { "on": ["Error"], "nextNodeId": "n-failed" }
+      ]
+    },
+    "n-has-evidence": {
+      "id": "n-has-evidence",
+      "type": "decision",
+      "label": "Task has an attachment?",
+      "intent": "An attachment id in the search page reads it as evidence; an empty page has no evidence and takes the no-finding path.",
+      "config": { "target": "$.context.evidenceAttachments.0.id" },
+      "edges": [
+        { "on": ["Match"],              "nextNodeId": "n-fetch-evidence" },
+        { "on": ["NoMatch", "Unknown"], "nextNodeId": "n-decide" }
+      ]
+    },
     "n-fetch-evidence": {
       "id": "n-fetch-evidence",
       "type": "document",
-      "label": "Fetch evidence blob",
-      "intent": "Read the current task's evidence from the registered IDocumentStore, which resolves a task id to its latest evidence text. A task without evidence has no finding and gets no action; TaskFlow registers no document store, so in the shipped hosts every task takes the Error edge.",
+      "label": "Fetch evidence text",
+      "intent": "Read the latest attachment's bytes through the attachment-backed IDocumentStore (D-075) as UTF-8 text. Evidence must be text/plain or text/markdown; the store refuses any other content type, a missing attachment or an unreachable blob, and the task ends on n-failed.",
       "config": {
         "operation": "read",
-        "contentKey": "$.params.currentItem.id",
+        "contentKey": "$.context.evidenceAttachments.0.id",
         "resultKey": "evidence"
       },
       "edges": [
-        { "on": ["Match"],   "nextNodeId": "n-extract" },
-        { "on": ["NoMatch"], "nextNodeId": "n-decide" },
-        { "on": ["Error"],   "nextNodeId": "n-decide" }
+        { "on": ["Match"], "nextNodeId": "n-extract" },
+        { "on": ["Error"], "nextNodeId": "n-failed" }
       ]
     },
     "n-extract": {

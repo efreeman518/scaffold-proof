@@ -20,8 +20,9 @@ public class WorkflowDefinitionValidityTests
     private const string DecomposerId = "ai-task-decomposer";
     private const string ComplianceId = "compliance-check";
 
-    // The POST nodes that create or add a row, top-level and loop-body alike. The search POST (compliance n-query-due)
-    // reads, and its route does not honor the header (D-074 lists the keyed routes), so it sends none.
+    // The POST nodes that create or add a row, top-level and loop-body alike. The search POSTs (compliance n-query-due,
+    // compliance-check-item n-find-evidence) read, and their routes do not honor the header (D-074 lists the keyed
+    // routes), so they send none.
     private static readonly HashSet<string> KeyedPostNodes = ["n-compensate-reject", "n-loop-create-one", "n-mark-resolved", "n-remind"];
 
     /// <summary>Verifies all workflows behavior and protects the expected test contract.</summary>
@@ -87,7 +88,7 @@ public class WorkflowDefinitionValidityTests
     /// included: FlowEngine applies a body node's own policy (else the nearest enclosing loop's, else the workflow
     /// default) and keys each iteration separately. Every create or child-add POST sends the engine-generated key in
     /// the <c>Idempotency-Key</c> header the API deduplicates (D-074), which opts it into the full inherited status
-    /// list (408, 409, 429, 500, 502, 503, 504) and transport retries. The If-Match: * PATCH nodes and the search POST
+    /// list (408, 409, 429, 500, 502, 503, 504) and transport retries. The If-Match: * PATCH nodes and the search POSTs
     /// send no key and keep the engine's 409/429/503 unsafe-method default. No node overrides the inherited list, and
     /// no list carries 412 (D-032: a stale precondition is never resent).
     /// </summary>
