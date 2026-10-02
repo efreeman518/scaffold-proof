@@ -185,15 +185,6 @@ public class WorkflowDefinitionValidityTests
         var registry = new InMemoryWorkflowRegistry();
         await registry.SaveAsync(def, TestContext.CancellationToken);
 
-        // Our JSON ships with status=Active, so the explicit transition is a no-op; mirror
-        // the seeding service's idempotent pattern (swallow Active->Active) so the test is
-        // robust if we ever flip the JSON to ship as Draft.
-        try
-        {
-            await registry.TransitionStatusAsync(id, version, DefinitionStatus.Active, TestContext.CancellationToken);
-        }
-        catch (InvalidOperationException) { /* already Active */ }
-
         var loaded = await registry.GetAsync(id, version, TestContext.CancellationToken);
         Assert.IsNotNull(loaded, "Registry returned null for the version just saved");
         Assert.AreEqual(DefinitionStatus.Active, loaded!.Status, "Definition should be Active after save");
@@ -206,13 +197,12 @@ public class WorkflowDefinitionValidityTests
     [TestCategory("Integration")]
     public void WorkflowDefinitionBuilder_FromJson_Round_Trips(string fileName, string expectedId, string expectedVersion)
     {
-        // WorkflowDefinitionBuilder.FromJson uses WorkflowDefinitionJsonOptions.Default.
-        // and fails fast on shape mismatch. The blank-shell bug previously documented here is fixed.
+        // WorkflowDefinitionBuilder.FromJson uses WorkflowDefinitionJsonOptions.Default and fails fast on shape mismatch.
         var def = WorkflowDefinitionBuilder.FromJson(ReadWorkflowFile(fileName)).Build();
 
-        Assert.AreEqual(expectedId, def.Id, "Builder.FromJson should now hydrate Id");
-        Assert.AreEqual(expectedVersion, def.Version, "Builder.FromJson should now hydrate Version");
-        Assert.IsNotEmpty(def.Nodes, "Builder.FromJson should now hydrate Nodes");
+        Assert.AreEqual(expectedId, def.Id, "Builder.FromJson hydrates Id");
+        Assert.AreEqual(expectedVersion, def.Version, "Builder.FromJson hydrates Version");
+        Assert.IsNotEmpty(def.Nodes, "Builder.FromJson hydrates Nodes");
     }
 
     /// <summary>Verifies every shipped workflow file is present in the test output.</summary>
