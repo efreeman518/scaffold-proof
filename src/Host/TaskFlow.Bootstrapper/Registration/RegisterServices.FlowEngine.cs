@@ -93,7 +93,7 @@ public static partial class RegisterServices
             ?? config["Gateway:BaseUrl"]
             ?? "https://localhost";
         // The If-Match: * trusted-automation override (D-032) travels in each PATCH node's own
-        // "headers" config (EF.FlowEngine 1.0.173 forwards IntegrationNodeConfig.Headers), so this
+        // "headers" config (FlowEngine forwards IntegrationNodeConfig.Headers), so this
         // client needs no message handler of its own.
         AddTaskFlowApiHttpClient(fe, services, apiBaseUrl);
 
