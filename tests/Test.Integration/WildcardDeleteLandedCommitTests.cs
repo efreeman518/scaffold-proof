@@ -97,7 +97,8 @@ public sealed class WildcardDeleteLandedCommitTests
     public async Task Given_AttachmentDeleteCommitLandsButFails_When_DeletedWithWildcard_Then_TheBlobIsDeleted(string style)
     {
         var ct = TestContext.CancellationToken;
-        var attachment = new AttachmentBuilder().WithTenantId(TenantGuid).WithFileName($"landed-{Guid.NewGuid():N}.pdf").Build();
+        var attachment = new AttachmentBuilder().WithTenantId(TenantGuid).WithFileName($"landed-{Guid.NewGuid():N}.pdf")
+            .WithStorageKey(AttachmentBlobs.NewObjectKey(TenantGuid, Guid.NewGuid())).Build();
         await using (var seed = DbContainerFixture.CreateTrxnContext())
         {
             seed.Attachments.Add(attachment);
@@ -113,7 +114,7 @@ public sealed class WildcardDeleteLandedCommitTests
         await using (var verify = DbContainerFixture.CreateTrxnContext())
             Assert.IsFalse(await verify.Attachments.IgnoreQueryFilters().AnyAsync(a => a.Id == attachment.Id, ct));
         CollectionAssert.AreEqual(
-            new[] { $"{AttachmentBlobs.ContainerName}/{AttachmentBlobs.BlobName(TenantGuid, attachment.OwnerId, attachment.FileName)}" },
+            new[] { $"{AttachmentBlobs.ContainerName}/{attachment.StorageKey}" },
             blobs.Deleted,
             "the landed delete removes its blob once; the absent row removes none");
     }

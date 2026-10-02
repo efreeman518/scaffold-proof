@@ -132,8 +132,10 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
             .AsNoTracking()
             .Where(a => a.TenantId == typedTenantId
                 && a.OwnerType == AttachmentOwnerType.TaskItem
-                && ids.Contains(a.OwnerId))
-            .Select(a => new { AttachmentId = a.Id.Value, a.OwnerId, a.FileName })
+                && ids.Contains(a.OwnerId)
+                // Only uploaded content has a stored key; a metadata-only attachment wrote no blob.
+                && a.StorageKey != null)
+            .Select(a => new { AttachmentId = a.Id.Value, StorageKey = a.StorageKey! })
             .ToListAsync(ct)
             .ConfigureAwait(ConfigureAwaitOptions.None);
 
@@ -154,7 +156,7 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
                 TenantId = tenantId,
                 AvailableAtUtc = now,
                 ContainerName = AttachmentBlobs.ContainerName,
-                BlobName = AttachmentBlobs.BlobName(tenantId, attachment.OwnerId, attachment.FileName)
+                BlobName = attachment.StorageKey
             });
         }
 

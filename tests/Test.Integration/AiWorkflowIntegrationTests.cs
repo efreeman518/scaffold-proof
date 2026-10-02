@@ -337,7 +337,8 @@ public sealed class AiWorkflowIntegrationTests
 
     /// <summary>
     /// D-075 store contract on the lane's real object storage (S3 on NonAzure, Azure Blob on Azure), through the store the
-    /// host registers: a text attachment uploaded through the API reads back as its text; a binary attachment, one larger
+    /// host registers: a text attachment uploaded through the API reads back as its text, also after a rename (the read
+    /// uses the stored object key, not the file name); a binary attachment, one larger
     /// than <see cref="AttachmentDocumentStore.MaxEvidenceBytes"/>, an unknown attachment id and a reference that is not an
     /// id are refused; writing is not supported.
     /// </summary>
@@ -355,6 +356,7 @@ public sealed class AiWorkflowIntegrationTests
         var oversized = await UploadAttachmentAsync(client, taskId, "evidence-large.txt", "text/plain",
             new string('x', AttachmentDocumentStore.MaxEvidenceBytes + 1), ct);
         var store = factory.Services.GetRequiredService<IDocumentStore>();
+        await RenameAttachmentAsync(client, text, "renamed.txt", ct);
 
         Assert.IsInstanceOfType<AttachmentDocumentStore>(store, "the host registers the attachment-backed store");
         await using (var stream = await store.OpenReadAsync(text.ToString(), ct))
@@ -403,6 +405,7 @@ public sealed class AiWorkflowIntegrationTests
             .WithContentType("text/plain")
             .WithFileSizeBytes(content.Length)
             .WithStorageUri($"seeded:{fileName}")
+            .WithStorageKey(AttachmentBlobs.NewObjectKey(tenantId, taskId))
             .Build();
         return new SeededAttachment(row, content);
     }
@@ -415,7 +418,7 @@ public sealed class AiWorkflowIntegrationTests
         using var content = new MemoryStream(attachment.Content);
         await blobs.UploadAsync(
             AttachmentBlobs.ContainerName,
-            AttachmentBlobs.BlobName(attachment.Row.TenantId.Value, attachment.Row.OwnerId, attachment.Row.FileName),
+            attachment.Row.StorageKey!,
             content, attachment.Row.ContentType, cancellationToken: ct);
     }
 
@@ -433,6 +436,20 @@ public sealed class AiWorkflowIntegrationTests
         Assert.AreEqual(HttpStatusCode.Created, response.StatusCode, $"Upload failed: {Truncate(body)}");
         using var payload = JsonDocument.Parse(body);
         return payload.RootElement.GetProperty("item").GetProperty("id").GetGuid();
+    }
+
+    private static async Task RenameAttachmentAsync(HttpClient client, Guid attachmentId, string fileName, CancellationToken ct)
+    {
+        var current = await client.GetFromJsonAsync<JsonObject>($"/api/v1/attachments/{attachmentId}", ct);
+        var item = current!["item"]!.AsObject();
+        item["fileName"] = fileName;
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/attachments/{attachmentId}")
+        {
+            Content = JsonContent.Create(new JsonObject { ["item"] = item.DeepClone() })
+        };
+        request.Headers.TryAddWithoutValidation("If-Match", "*");
+        using var response = await client.SendAsync(request, ct);
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, $"Rename failed: {Truncate(await response.Content.ReadAsStringAsync(ct))}");
     }
 
     // Keeps the host's own IDocumentStore registration (asserted to be the attachment-backed store) and records each

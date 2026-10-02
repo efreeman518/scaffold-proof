@@ -12,7 +12,8 @@ namespace TaskFlow.Infrastructure.Repositories;
 
 /// <summary>
 /// FlowEngine <see cref="IDocumentStore"/> over TaskFlow attachments (D-075). The store reference is an attachment
-/// id; a read returns that attachment's stored bytes from the lane's object storage (Azure Blob or S3).
+/// id; a read returns the content stored under that attachment's <c>StorageKey</c> in the lane's object storage
+/// (Azure Blob or S3), never a name derived from its renamable file name.
 /// <para>
 /// The read is a system read (<c>IgnoreQueryFilters</c>): the engine passes the store no tenant, so the workflow
 /// guarantees the id comes from a tenant-scoped public-API response in the same workflow. Only UTF-8 text evidence
@@ -32,7 +33,7 @@ public sealed class AttachmentDocumentStore(IServiceScopeFactory scopeFactory) :
 
     /// <summary>Opens the stored bytes of the attachment whose id is <paramref name="storeRef"/>.</summary>
     /// <exception cref="ArgumentException">The reference is not an attachment id.</exception>
-    /// <exception cref="FileNotFoundException">No attachment has that id.</exception>
+    /// <exception cref="FileNotFoundException">No attachment has that id, or it has no uploaded content.</exception>
     /// <exception cref="NotSupportedException">The attachment is not UTF-8 text.</exception>
     /// <exception cref="InvalidDataException">The attachment is larger than <see cref="MaxEvidenceBytes"/>.</exception>
     public async Task<Stream> OpenReadAsync(string storeRef, CancellationToken ct = default)
@@ -56,7 +57,8 @@ public sealed class AttachmentDocumentStore(IServiceScopeFactory scopeFactory) :
             throw TooLarge(id, attachment.FileSizeBytes.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
         var blobs = scope.ServiceProvider.GetRequiredService<IObjectStorageRepository>();
-        var blobName = AttachmentBlobs.BlobName(attachment.TenantId.Value, attachment.OwnerId, attachment.FileName);
+        var blobName = attachment.StorageKey
+            ?? throw new FileNotFoundException($"Attachment {id} is metadata only; it has no uploaded content.");
         // Buffered: the document node reads the whole text anyway, and the stream must not outlive this scope. The
         // copy is bounded as well, because the stored size is row metadata and the blob is what reaches the prompt.
         var buffer = new MemoryStream();

@@ -147,7 +147,7 @@ public class SchedulerTransactionRetryTests
                 .ExecuteUpdateAsync(s => s.SetProperty(t => t.TerminalAtUtc, Now.AddDays(-200)), TestContext.CancellationToken);
             seed.Attachments.Add(Attachment.Create(
                 typedTenantId, "spec.pdf", "application/pdf", 1024, "https://example/spec.pdf",
-                AttachmentOwnerType.TaskItem, task.Id.Value).Value!);
+                AttachmentOwnerType.TaskItem, task.Id.Value, storageKey: $"{tenantId}/{task.Id.Value}/spec").Value!);
             await seed.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
         }
 
@@ -269,7 +269,7 @@ public class SchedulerTransactionRetryTests
                 seed.TaskItems.Add(task);
                 seed.Attachments.Add(Attachment.Create(
                     typedTenantId, $"spec-{i}.pdf", "application/pdf", 1024, $"https://example/spec-{i}.pdf",
-                    AttachmentOwnerType.TaskItem, task.Id.Value).Value!);
+                    AttachmentOwnerType.TaskItem, task.Id.Value, storageKey: $"{tenantId}/{task.Id.Value}/spec-{i}").Value!);
                 taskIds.Add(task.Id.Value);
             }
             await seed.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);

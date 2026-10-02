@@ -42,6 +42,34 @@ public class AttachmentTests
         Assert.IsTrue(result.IsFailure);
     }
 
+    /// <summary>D-075: a file name is display metadata, so a path separator, a ".." segment or a control character fails.</summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    [DataRow("../../tenant/task/x.txt")]
+    [DataRow("a/b.txt")]
+    [DataRow("a\\b.txt")]
+    [DataRow("..")]
+    [DataRow("report..txt")]
+    [DataRow("line\nbreak.txt")]
+    public void Given_UnsafeFileName_When_AttachmentCreatedOrRenamed_Then_ReturnsDomainFailure(string fileName)
+    {
+        Assert.IsTrue(Attachment.Create(TenantId, fileName, "text/plain", 1, "https://storage/x", AttachmentOwnerType.TaskItem, Guid.NewGuid()).IsFailure);
+        var attachment = Attachment.Create(TenantId, "file.txt", "text/plain", 1, "https://storage/x", AttachmentOwnerType.TaskItem, Guid.NewGuid()).Value!;
+        Assert.IsTrue(attachment.Update(fileName: fileName).IsFailure);
+    }
+
+    /// <summary>D-075: a rename never changes the stored object key, so reads and deletes keep targeting the uploaded content.</summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public void Given_UploadedAttachment_When_Renamed_Then_StorageKeyIsUnchanged()
+    {
+        var attachment = Attachment.Create(TenantId, "file.txt", "text/plain", 1, "https://storage/x", AttachmentOwnerType.TaskItem,
+            Guid.NewGuid(), storageKey: "tenant/owner/key").Value!;
+
+        Assert.IsTrue(attachment.Update(fileName: "renamed.txt").IsSuccess);
+        Assert.AreEqual("tenant/owner/key", attachment.StorageKey);
+    }
+
     /// <summary>Verifies that given zero file size, when attachment created, then returns domain failure.</summary>
     [TestMethod]
     [TestCategory("Unit")]

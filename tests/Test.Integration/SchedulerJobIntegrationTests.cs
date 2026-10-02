@@ -128,7 +128,7 @@ public class SchedulerJobIntegrationTests
 
             var attachment = Attachment.Create(
                 typedTenantId, "spec.pdf", "application/pdf", 1024, "https://example/spec.pdf",
-                AttachmentOwnerType.TaskItem, taskId).Value!;
+                AttachmentOwnerType.TaskItem, taskId, storageKey: $"{tenantId}/{taskId}/spec").Value!;
             seed.Attachments.Add(attachment);
             await seed.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
         }
