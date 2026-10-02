@@ -1,3 +1,4 @@
+using EF.FlowEngine;
 using EF.Testing.Http;
 using System.Net;
 using Microsoft.Extensions.Configuration;
@@ -46,15 +47,16 @@ public sealed class ServiceDefaultsScaleTests
     }
 
     /// <summary>
-    /// The FlowEngine self-call client sends even a GET once: the workflow node retryPolicy is the only retry owner
-    /// (EF.FlowEngine 1.0.199), so the inherited standard handler must not multiply node attempts.
+    /// The FlowEngine self-call client sends even a GET once: the workflow node retryPolicy is the only retry owner,
+    /// so the inherited standard handler must not multiply node attempts. Building the client under ServiceDefaults
+    /// also runs the standard handler's options validation over the package pipeline.
     /// </summary>
     [TestMethod]
     public async Task TaskFlowApiClient_TransientFailureOnGet_IsSentOnce()
     {
         var handler = StubHttpMessageHandler.Returns(HttpStatusCode.ServiceUnavailable);
         using var client = BuildDefaultsClient(handler, RegisterServices.TaskFlowApiClientName,
-            services => RegisterServices.AddTaskFlowApiHttpClient(services, "http://localhost"));
+            services => RegisterServices.AddTaskFlowApiHttpClient(services.AddFlowEngine(), services, "http://localhost"));
 
         using var response = await client.GetAsync(new Uri("http://localhost/tasks"), TestContext.CancellationToken);
 

@@ -1,11 +1,15 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EF.FlowEngine.Abstractions;
 using EF.FlowEngine.Definition;
+using EF.FlowEngine.Model;
+using EF.Data.Contracts;
+using Test.Support.Builders;
 using Test.Integration.Infrastructure;
 
 namespace Test.Integration;
@@ -99,8 +103,6 @@ public sealed class AiWorkflowIntegrationTests
     /// runs as the only node of a probe workflow. Its first POST reaches the API and adds the comment, but the
     /// response is lost and the engine sees a 502. The node retries the ambiguous status with the same generated
     /// Idempotency-Key, the API maps the key to the stored comment id and replays it, so the task has one comment.
-    /// It is the only keyed shipped node: EF.FlowEngine 1.0.199 sends one key for every iteration of a loop-body
-    /// node and applies no retryPolicy there, so the loop-body POST nodes stay unkeyed.
     /// </summary>
     [TestMethod]
     public async Task KeyedCommentPost_RetriedOn502_AddsOneComment()
@@ -131,6 +133,176 @@ public sealed class AiWorkflowIntegrationTests
         Assert.IsFalse(string.IsNullOrWhiteSpace(lostResponse.FirstKey), "the keyed node must send the generated key");
         Assert.AreEqual(lostResponse.FirstKey, lostResponse.RetryKey, "the resend must carry the same Idempotency-Key");
         Assert.AreEqual(1, await CountCommentsAsync(client, taskId, ct), "the resend must replay the comment, not add a second");
+    }
+
+    /// <summary>
+    /// D-074 through a loop body: the shipped decomposer creates one subtask per iteration with the engine's
+    /// per-iteration Idempotency-Key. Each iteration's first POST reaches the API and creates the subtask, but the
+    /// response is lost and the engine sees a 502; the node retryPolicy resends it with the same key and the API
+    /// replays the stored row. Three iterations send three keys and leave three distinct subtasks.
+    /// </summary>
+    [TestMethod]
+    public async Task DecomposerLoopBodyPost_RetriedOn502_CreatesOneSubtaskPerIteration()
+    {
+        SkipIfNoSql();
+        var ct = TestContext.CancellationToken;
+        var connectionString = await IsolatedMigratedConnectionStringAsync(ct);
+        var lostResponses = new LostCreateResponses();
+
+        using var factory = new FlowEngineWorkflowApiFactory(
+            connectionString,
+            _ => """{"subtasks":[{"title":"Sub A","estimateHours":1},{"title":"Sub B","estimateHours":2},{"title":"Sub C","estimateHours":3}]}""",
+            selfCall => selfCall.AddHttpMessageHandler(() => new LoseFirstCreateResponsePerKey(lostResponses)));
+        using var client = factory.CreateClient();
+
+        var parentId = await CreateTaskAsync(client, "Keyed loop-body retry task", priority: 2 /* Medium */, ct);
+        var instanceId = await StartWorkflowAsync(client, "ai-task-decomposer", new Dictionary<string, object?>
+        {
+            ["tenantId"] = TenantId,
+            ["taskId"] = parentId.ToString(),
+            ["description"] = "Build a login page with validation and password reset."
+        }, ct);
+
+        var (node, body) = await WaitForTerminalAsync(client, instanceId, ct);
+
+        Assert.AreEqual("n-output-ok", node, $"Each 502 must be retried, not fail the loop. Instance: {Truncate(body)}");
+        var keys = lostResponses.Keys.ToArray();
+        Assert.HasCount(6, keys, "each iteration: one lost attempt plus one resend");
+        Assert.HasCount(3, keys.Distinct(StringComparer.Ordinal).ToList(), "each iteration sends its own key");
+        CollectionAssert.AreEqual(new[] { "Sub A", "Sub B", "Sub C" }, await ChildTitlesAsync(client, parentId, ct),
+            "each resend must replay its iteration's subtask, and each iteration must create its own");
+    }
+
+    private sealed class LostCreateResponses
+    {
+        public readonly System.Collections.Concurrent.ConcurrentQueue<string> Keys = new();
+    }
+
+    // Forwards each keyed task create to the API (which commits it); on the first request carrying a key it answers
+    // the engine with a 502 as if the response had been lost. State is shared because the client factory may build
+    // more than one handler chain.
+    private sealed class LoseFirstCreateResponsePerKey(LostCreateResponses state) : DelegatingHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var isCreate = request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath.TrimEnd('/') == "/api/v1/task-items";
+            if (!isCreate) return await base.SendAsync(request, cancellationToken);
+
+            var key = request.Headers.TryGetValues("Idempotency-Key", out var values) ? values.Single() : null;
+            Assert.IsFalse(string.IsNullOrWhiteSpace(key), "the loop-body create must send the generated key");
+            var firstAttempt = !state.Keys.Contains(key);
+            state.Keys.Enqueue(key!);
+            var response = await base.SendAsync(request, cancellationToken);
+            if (!firstAttempt) return response;
+
+            Assert.AreEqual(HttpStatusCode.Created, response.StatusCode, "the lost attempt must have created the subtask");
+            response.Dispose();
+            return new HttpResponseMessage(HttpStatusCode.BadGateway) { RequestMessage = request };
+        }
+    }
+
+    private static async Task<string[]> ChildTitlesAsync(HttpClient client, Guid parentId, CancellationToken ct)
+    {
+        using var response = await client.PostAsJsonAsync(
+            "/api/v1/task-items/search",
+            new { pageSize = 50, filter = new { parentTaskItemId = parentId.ToString() } },
+            ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, $"Search failed: {Truncate(body)}");
+        using var payload = JsonDocument.Parse(body);
+        return payload.RootElement.GetProperty("items").EnumerateArray()
+            .Select(item => item.GetProperty("title").GetString()!)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    /// <summary>
+    /// compliance-check end to end on the shipped definitions. Tenant A has two tasks due soon, one with evidence and one
+    /// without; tenant B has one. The search is bound to the started tenant (filter tenantId and the API's tenant query filter),
+    /// its <c>$.items</c> response feeds the loop, and each compliance-check-item child binds <c>params.currentItem.id</c>
+    /// (evidence lookup and the reminder path) and <c>params.currentItem.title</c> (the agent prompt). The task with evidence
+    /// is classified expiring soon and gets one reminder comment; the task without evidence has no finding, so the
+    /// decision takes its default edge; tenant B's task is never read and gets no comment.
+    /// </summary>
+    [TestMethod]
+    public async Task ComplianceCheck_ScansOnlyTheStartedTenant_AndRemindsTheTaskWithExpiringEvidence()
+    {
+        SkipIfNoSql();
+        var ct = TestContext.CancellationToken;
+        var connectionString = await IsolatedMigratedConnectionStringAsync(ct);
+        var dueDate = DateTimeOffset.UtcNow.AddDays(1);
+        var withEvidence = DueTask(Guid.Parse(TenantId), "Compliance A with evidence", dueDate);
+        var withoutEvidence = DueTask(Guid.Parse(TenantId), "Compliance A without evidence", dueDate);
+        var otherTenant = DueTask(Guid.CreateVersion7(), "Compliance B other tenant", dueDate);
+        await using (var seed = DbContainerFixture.CreateTrxnContext(connectionString))
+        {
+            seed.TaskItems.AddRange(withEvidence, withoutEvidence, otherTenant);
+            await seed.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct);
+        }
+
+        var evidence = new EvidenceStore(withEvidence.Id.Value.ToString(), "certificate expires next week");
+        var prompts = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        using var factory = new FlowEngineWorkflowApiFactory(
+            connectionString,
+            prompt =>
+            {
+                prompts.Enqueue(prompt);
+                return """{"status":"expiringSoon","summary":"expires next week"}""";
+            },
+            configureServices: services =>
+            {
+                services.RemoveAll<IDocumentStore>();
+                services.AddSingleton<IDocumentStore>(evidence);
+            });
+        using var client = factory.CreateClient();
+
+        var instanceId = await StartWorkflowAsync(client, "compliance-check", new Dictionary<string, object?>
+        {
+            ["tenantId"] = TenantId,
+            ["dueBefore"] = DateTimeOffset.UtcNow.AddDays(7).ToString("O")
+        }, ct);
+        var (node, body) = await WaitForTerminalAsync(client, instanceId, ct);
+
+        Assert.AreEqual("n-output-ok", node, $"Instance: {Truncate(body)}");
+        CollectionAssert.AreEquivalent(
+            new[] { withEvidence.Id.Value.ToString(), withoutEvidence.Id.Value.ToString() },
+            evidence.Requested.ToArray(),
+            "the loop must visit exactly the started tenant's due tasks, keyed by params.currentItem.id");
+        var prompt = prompts.Single();
+        StringAssert.Contains(prompt, "Compliance A with evidence", "the prompt binds params.currentItem.title");
+        StringAssert.Contains(prompt, "certificate expires next week", "the prompt carries the evidence text");
+        Assert.AreEqual(1, await CountCommentsAsync(client, withEvidence.Id.Value, ct), "the expiring task gets one reminder");
+        Assert.AreEqual(0, await CountCommentsAsync(client, withoutEvidence.Id.Value, ct), "no finding takes the decision's default edge");
+        await using var verify = DbContainerFixture.CreateTrxnContext(connectionString);
+        var otherTenantComments = await verify.TaskItems.IgnoreQueryFilters()
+            .Where(t => t.Id == otherTenant.Id)
+            .SelectMany(t => t.Comments)
+            .CountAsync(ct);
+        Assert.AreEqual(0, otherTenantComments, "another tenant's task is never touched");
+    }
+
+    private static TaskFlow.Domain.Model.TaskItem DueTask(Guid tenantId, string title, DateTimeOffset dueDate)
+    {
+        var task = new TaskItemBuilder().WithTenantId(tenantId).WithTitle(title).Build();
+        task.UpdateDateRange(null, dueDate);
+        return task;
+    }
+
+    // Serves one task's evidence text by task id and fails every other lookup, as a store with no evidence would.
+    private sealed class EvidenceStore(string taskId, string text) : IDocumentStore
+    {
+        public System.Collections.Concurrent.ConcurrentQueue<string> Requested { get; } = new();
+
+        public Task<Stream> OpenReadAsync(string storeRef, CancellationToken ct = default)
+        {
+            Requested.Enqueue(storeRef);
+            return storeRef == taskId
+                ? Task.FromResult<Stream>(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(text)))
+                : throw new FileNotFoundException($"No evidence for task {storeRef}.");
+        }
+
+        public Task<DocumentContextValue> StoreAsync(Stream content, string fileName, string contentType, CancellationToken ct = default) =>
+            throw new NotSupportedException("The compliance workflow only reads evidence.");
     }
 
     private const string KeyedCommentProbeId = "idempotency-key-probe";

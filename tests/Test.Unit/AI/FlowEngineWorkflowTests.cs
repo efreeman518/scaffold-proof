@@ -24,6 +24,7 @@ public sealed class FlowEngineWorkflowTests
 
     private static readonly JsonSerializerOptions WebJsonOptions = new(JsonSerializerDefaults.Web);
 
+
     // ── ai-task-triage ─────────────────────────────────────────────────────────
 
     [TestMethod]
@@ -66,15 +67,14 @@ public sealed class FlowEngineWorkflowTests
     }
 
     /// <summary>
-    /// The node retryPolicy is the only retry owner (FlowEngine 1.0.199): a PATCH answered 503 is resent by the
-    /// engine and the instance completes, and loading the definitions logs no ambiguous unsafe-retry warning.
+    /// The node retryPolicy is the only retry owner: a PATCH answered 503 is resent by the engine and the instance
+    /// completes (WorkflowDefinitionValidityTests asserts the definitions raise no warning).
     /// </summary>
     [TestMethod]
-    public async Task TriageWorkflow_Patch503ThenOk_NodeRetryPolicyResendsWithoutLoadWarnings()
+    public async Task TriageWorkflow_Patch503ThenOk_NodeRetryPolicyResends()
     {
         var taskId = Guid.NewGuid();
         int patchHits = 0;
-        var warnings = new WarningCollector();
 
         using var provider = BuildProvider(
             chatReply: """{"suggestedPriority":"High","suggestedCategory":"Bug","confidence":0.9}""",
@@ -82,17 +82,13 @@ public sealed class FlowEngineWorkflowTests
             {
                 if (!string.Equals(req.Method, "PATCH", StringComparison.OrdinalIgnoreCase)) return Task.FromResult(OkResponse());
                 return Task.FromResult(++patchHits == 1 ? ErrorResponse(503) : OkResponse());
-            },
-            warnings);
+            });
 
         var instance = await StartAsync(provider, "ai-task-triage", taskId);
 
         Assert.AreEqual(ExecStatus.Completed, instance.Status, instance.Error?.Message);
         Assert.AreEqual("n-output-ok", instance.CurrentNodeId, $"Unexpected node. Error: {instance.Error?.Message}");
         Assert.AreEqual(2, patchHits, "the 503 must be resent once by the node retryPolicy");
-        Assert.IsFalse(
-            warnings.Messages.Any(m => m.Contains("idempotencyKeyHeader", StringComparison.Ordinal)),
-            string.Join(" | ", warnings.Messages));
     }
 
     /// <summary>D-032: a 412 means the precondition is stale, so the engine never resends the PATCH.</summary>
@@ -142,6 +138,39 @@ public sealed class FlowEngineWorkflowTests
         Assert.AreEqual(2, postHits, "expected one POST per subtask");
     }
 
+    /// <summary>
+    /// The loop-body create POST is keyed per iteration: each of three iterations is answered 502 once and resent by
+    /// the node retryPolicy with the same Idempotency-Key, and the three iterations send three distinct keys.
+    /// </summary>
+    [TestMethod]
+    public async Task DecomposerWorkflow_LoopBodyPost502ThenCreated_ResendsEachIterationWithItsOwnKey()
+    {
+        var taskId = Guid.NewGuid();
+        var keys = new List<string>();
+
+        using var provider = BuildProvider(
+            chatReply: """{"subtasks":[{"title":"Sub A","estimateHours":1},{"title":"Sub B","estimateHours":2},{"title":"Sub C","estimateHours":3}]}""",
+            apiHandler: (req, _) =>
+            {
+                if (!string.Equals(req.Method, "POST", StringComparison.OrdinalIgnoreCase)) return Task.FromResult(OkResponse());
+                string? key = null;
+                Assert.IsTrue(req.Headers?.TryGetValue("Idempotency-Key", out key) == true && !string.IsNullOrEmpty(key),
+                    "the loop-body POST must send the generated Idempotency-Key header");
+                var firstAttempt = !keys.Contains(key);
+                keys.Add(key);
+                return Task.FromResult(firstAttempt ? ErrorResponse(502) : CreatedResponse());
+            });
+
+        var instance = await StartAsync(provider, "ai-task-decomposer", taskId);
+
+        Assert.AreEqual(ExecStatus.Completed, instance.Status, instance.Error?.Message);
+        Assert.AreEqual("n-output-ok", instance.CurrentNodeId, $"Unexpected node. Error: {instance.Error?.Message}");
+        Assert.HasCount(6, keys, "each iteration: one 502 plus one resend");
+        Assert.HasCount(3, keys.Distinct(StringComparer.Ordinal).ToList(), "each iteration sends its own key");
+        CollectionAssert.AreEqual(new[] { keys[0], keys[0], keys[2], keys[2], keys[4], keys[4] }, keys,
+            "a resend carries its iteration's key");
+    }
+
     [TestMethod]
     public async Task DecomposerWorkflow_BadModelOutput_RoutesToFailedNode()
     {
@@ -176,15 +205,10 @@ public sealed class FlowEngineWorkflowTests
 
     private static ServiceProvider BuildProvider(
         string chatReply,
-        Func<ClientRequest, CancellationToken, Task<ClientResponse>> apiHandler,
-        WarningCollector? warnings = null)
+        Func<ClientRequest, CancellationToken, Task<ClientResponse>> apiHandler)
     {
         var services = new ServiceCollection();
-        services.AddLogging(b =>
-        {
-            b.SetMinimumLevel(LogLevel.Warning);
-            if (warnings is not null) b.AddProvider(warnings);
-        });
+        services.AddLogging(b => b.SetMinimumLevel(LogLevel.Warning));
 
         var fe = services.AddFlowEngine()
             .UseAllInMemoryProviders();
@@ -258,21 +282,6 @@ public sealed class FlowEngineWorkflowTests
         Body = JsonSerializer.SerializeToElement(new { }),
         Headers = new Dictionary<string, string>()
     };
-
-    // Collects warning-or-higher log messages so a test can assert what the engine logged.
-    private sealed class WarningCollector : ILoggerProvider, ILogger
-    {
-        private readonly System.Collections.Concurrent.ConcurrentQueue<string> _messages = new();
-        public IReadOnlyCollection<string> Messages => _messages;
-        public ILogger CreateLogger(string categoryName) => this;
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-        public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
-        {
-            if (IsEnabled(logLevel)) _messages.Enqueue(formatter(state, exception));
-        }
-        public void Dispose() { }
-    }
 
     // Stub IRequestResponseClient used in place of the resilience-wrapped HttpClient.
     private sealed class FakeApiClient(

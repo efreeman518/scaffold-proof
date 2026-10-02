@@ -13,7 +13,6 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Http.Resilience;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Infrastructure.Messaging.RabbitMq;
@@ -24,7 +23,7 @@ namespace TaskFlow.Bootstrapper;
 public static partial class RegisterServices
 {
     // FlowEngine wiring - engine runtime + connector clients + JSON workflow seeding.
-    // The 19 built-in node executors are auto-registered by AddFlowEngine() in this version.
+    // The 19 built-in node executors are auto-registered by AddFlowEngine().
     // Engine state + outbox live in TaskFlowFlowEngineDbContext (separate schema, shared SQL connection).
     // The Dashboard + Designer live in TaskFlow.Blazor and call into MapFlowEngineAdmin via the gateway.
     /// <summary>
@@ -48,7 +47,7 @@ public static partial class RegisterServices
             .UseOutboxSql<TaskFlowFlowEngineDbContext>()
             .UseCircuitBreakerSql<TaskFlowFlowEngineDbContext>();
 
-        // Terminal workflow instances were never removed, so the FlowEngine state store grew forever.
+        // Retention removes terminal workflow instances so the FlowEngine state store stays bounded.
         // UseRetentionPolicy registers a hosted service, and every host loading this assembly would run its
         // own copy against the same tables; Scheduling:OwnsRetention makes the Scheduler the single owner.
         if (config.GetValue("Scheduling:OwnsRetention", false))
@@ -94,10 +93,9 @@ public static partial class RegisterServices
             ?? config["Gateway:BaseUrl"]
             ?? "https://localhost";
         // The If-Match: * trusted-automation override (D-032) travels in each PATCH node's own
-        // "headers" config (EF.FlowEngine 1.0.173 forwards IntegrationNodeConfig.Headers), so this
+        // "headers" config (FlowEngine forwards IntegrationNodeConfig.Headers), so this
         // client needs no message handler of its own.
-        AddTaskFlowApiHttpClient(services, apiBaseUrl);
-        fe.AddClient(CreateTaskFlowApiFlowClient);
+        AddTaskFlowApiHttpClient(fe, services, apiBaseUrl);
 
         if (ResolveMessagingProvider(config) == MessagingProvider.RabbitMq)
         {
@@ -133,33 +131,18 @@ public static partial class RegisterServices
     internal const string TaskFlowApiClientName = "taskflow-api";
 
     /// <summary>
-    /// The workflow self-call client. The node <c>retryPolicy</c> is the only retry owner (EF.FlowEngine 1.0.199),
-    /// so this client sends once per node attempt for every method and keeps the standard timeouts and circuit
-    /// breaker. The inherited ServiceDefaults handler (D-063) still retries safe methods and shares one options
-    /// instance across clients, so it is replaced here, not reconfigured; <c>RemoveAllResilienceHandlers</c> is
-    /// experimental (the Blazor gRPC read client sets the precedent), so remove the suppression when it is not.
-    /// <para>
-    /// shortcut: the <c>ResilientHttpFlowClient</c> adapter is registered over this handler instead of through
-    /// <c>AddResilientHttpClient</c>, because 1.0.199 sets <c>HttpStandardResilienceOptions.Retry</c> to null
-    /// there, and the name-agnostic options validator any <c>AddStandardResilienceHandler</c> registers
-    /// (ServiceDefaults) then fails host start ("The taskflow-api.Retry field is required").
-    /// <c>AddDirectHttpClient</c> is no substitute: it captures one HttpClient when the engine resolves its
-    /// clients. Return to <c>AddResilientHttpClient</c> once the package coexists with that validator.
-    /// </para>
+    /// The workflow self-call client. The node <c>retryPolicy</c> is the only retry owner, so
+    /// <c>AddResilientHttpClient</c> replaces the inherited ServiceDefaults handler (D-063) on this dedicated named
+    /// client with the package pipeline: one send per node attempt for every method, with the timeouts and circuit
+    /// breaker kept. The adapter creates the named client from the factory per request, so a workflow can call the
+    /// host that runs it.
     /// </summary>
-    internal static IHttpClientBuilder AddTaskFlowApiHttpClient(IServiceCollection services, string apiBaseUrl)
+    internal static IHttpClientBuilder AddTaskFlowApiHttpClient(FlowEngineBuilder fe, IServiceCollection services, string apiBaseUrl)
     {
         var client = services.AddHttpClient(TaskFlowApiClientName, c => c.BaseAddress = new Uri(apiBaseUrl));
-#pragma warning disable EXTEXP0001
-        client.RemoveAllResilienceHandlers();
-#pragma warning restore EXTEXP0001
-        client.AddStandardResilienceHandler(o => o.Retry.ShouldHandle = static _ => ValueTask.FromResult(false));
+        fe.AddResilientHttpClient(TaskFlowApiClientName, TaskFlowApiClientName);
         return client;
     }
-
-    /// <summary>Per-call HttpClient from the factory, so handler rotation and the lazy test-server handler both hold.</summary>
-    private static EF.FlowEngine.Abstractions.IFlowClient CreateTaskFlowApiFlowClient(IServiceProvider sp) =>
-        new ResilientHttpFlowClient(TaskFlowApiClientName, sp.GetRequiredService<IHttpClientFactory>(), TaskFlowApiClientName);
 
     internal static string ResolveFlowEngineServiceBusTopic(IConfiguration config) =>
         config["FlowEngine:ServiceBusTopic"]
@@ -240,7 +223,6 @@ public static partial class RegisterServices
     // JSON workflow definitions live in TaskFlow.Api/Workflows/. The seeding service is a
     // hosted service that runs once at startup, skipping the directory if it does not exist
     // (e.g. when this assembly is loaded by TaskFlow.Functions or TaskFlow.Scheduler).
-    // Replaces the bespoke WorkflowSeedStartupTask used by older local wiring.
     /// <summary>
     /// Seeds workflow definitions from TaskFlow.Api/Workflows when that directory is present in
     /// the running host output. Other hosts can load this assembly without requiring workflow files.
