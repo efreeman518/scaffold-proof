@@ -337,11 +337,12 @@ public sealed class AiWorkflowIntegrationTests
 
     /// <summary>
     /// D-075 store contract on the lane's real object storage (S3 on NonAzure, Azure Blob on Azure), through the store the
-    /// host registers: a text attachment uploaded through the API reads back as its text; a binary attachment, an unknown
-    /// attachment id and a reference that is not an id are refused; writing is not supported.
+    /// host registers: a text attachment uploaded through the API reads back as its text; a binary attachment, one larger
+    /// than <see cref="AttachmentDocumentStore.MaxEvidenceBytes"/>, an unknown attachment id and a reference that is not an
+    /// id are refused; writing is not supported.
     /// </summary>
     [TestMethod]
-    public async Task AttachmentDocumentStore_ReadsTextEvidence_AndRefusesBinaryUnknownOrWrites()
+    public async Task AttachmentDocumentStore_ReadsTextEvidence_AndRefusesBinaryOversizedUnknownOrWrites()
     {
         SkipIfNoSql();
         var ct = TestContext.CancellationToken;
@@ -351,6 +352,8 @@ public sealed class AiWorkflowIntegrationTests
         var taskId = await CreateTaskAsync(client, "Evidence store task", priority: 2 /* Medium */, ct);
         var text = await UploadAttachmentAsync(client, taskId, "evidence.txt", "text/plain; charset=utf-8", "certificate expires next week", ct);
         var binary = await UploadAttachmentAsync(client, taskId, "evidence.pdf", "application/pdf", "%PDF-1.7 binary", ct);
+        var oversized = await UploadAttachmentAsync(client, taskId, "evidence-large.txt", "text/plain",
+            new string('x', AttachmentDocumentStore.MaxEvidenceBytes + 1), ct);
         var store = factory.Services.GetRequiredService<IDocumentStore>();
 
         Assert.IsInstanceOfType<AttachmentDocumentStore>(store, "the host registers the attachment-backed store");
@@ -360,6 +363,7 @@ public sealed class AiWorkflowIntegrationTests
             Assert.AreEqual("certificate expires next week", await reader.ReadToEndAsync(ct));
         }
         await Assert.ThrowsExactlyAsync<NotSupportedException>(() => store.OpenReadAsync(binary.ToString(), ct));
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => store.OpenReadAsync(oversized.ToString(), ct));
         await Assert.ThrowsExactlyAsync<FileNotFoundException>(() => store.OpenReadAsync(Guid.CreateVersion7().ToString(), ct));
         await Assert.ThrowsExactlyAsync<ArgumentException>(() => store.OpenReadAsync("not-an-attachment-id", ct));
         await Assert.ThrowsExactlyAsync<NotSupportedException>(() =>

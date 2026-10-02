@@ -17,12 +17,16 @@ namespace TaskFlow.Infrastructure.Repositories;
 /// The read is a system read (<c>IgnoreQueryFilters</c>): the engine passes the store no tenant, so the workflow
 /// guarantees the id comes from a tenant-scoped public-API response in the same workflow. Only UTF-8 text evidence
 /// (<c>text/plain</c>, <c>text/markdown</c>) is served, because the document node decodes every read as UTF-8 text;
-/// any other content type is refused rather than handed to the agent as garbled text.
+/// any other content type is refused rather than handed to the agent as garbled text. Evidence larger than
+/// <see cref="MaxEvidenceBytes"/> is refused too: the whole text goes into the agent prompt.
 /// </para>
 /// <c>UseDocumentStore</c> registers it as a singleton, so each read opens its own DI scope.
 /// </summary>
 public sealed class AttachmentDocumentStore(IServiceScopeFactory scopeFactory) : IDocumentStore
 {
+    /// <summary>Largest evidence read, in bytes (64 KiB); a larger attachment is refused before it is downloaded.</summary>
+    public const int MaxEvidenceBytes = 64 * 1024;
+
     private static readonly string[] TextMediaTypes = ["text/plain", "text/markdown"];
     private static readonly string[] Utf8Charsets = ["utf-8", "us-ascii"];
 
@@ -30,6 +34,7 @@ public sealed class AttachmentDocumentStore(IServiceScopeFactory scopeFactory) :
     /// <exception cref="ArgumentException">The reference is not an attachment id.</exception>
     /// <exception cref="FileNotFoundException">No attachment has that id.</exception>
     /// <exception cref="NotSupportedException">The attachment is not UTF-8 text.</exception>
+    /// <exception cref="InvalidDataException">The attachment is larger than <see cref="MaxEvidenceBytes"/>.</exception>
     public async Task<Stream> OpenReadAsync(string storeRef, CancellationToken ct = default)
     {
         if (!Guid.TryParse(storeRef, out var id))
@@ -47,18 +52,31 @@ public sealed class AttachmentDocumentStore(IServiceScopeFactory scopeFactory) :
             throw new NotSupportedException(
                 $"Attachment {id} has content type '{attachment.ContentType}'; workflow evidence must be UTF-8 text/plain or text/markdown.");
 
+        if (attachment.FileSizeBytes > MaxEvidenceBytes)
+            throw TooLarge(id, attachment.FileSizeBytes.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
         var blobs = scope.ServiceProvider.GetRequiredService<IObjectStorageRepository>();
         var blobName = AttachmentBlobs.BlobName(attachment.TenantId.Value, attachment.OwnerId, attachment.FileName);
-        // Buffered: the document node reads the whole text anyway, and the stream must not outlive this scope.
+        // Buffered: the document node reads the whole text anyway, and the stream must not outlive this scope. The
+        // copy is bounded as well, because the stored size is row metadata and the blob is what reaches the prompt.
         var buffer = new MemoryStream();
         await using (var content = await blobs.DownloadAsync(AttachmentBlobs.ContainerName, blobName, ct).ConfigureAwait(false))
         {
-            await content.CopyToAsync(buffer, ct).ConfigureAwait(false);
+            var chunk = new byte[16 * 1024];
+            int read;
+            while ((read = await content.ReadAsync(chunk, ct).ConfigureAwait(false)) > 0)
+            {
+                if (buffer.Length + read > MaxEvidenceBytes) throw TooLarge(id, $"more than {MaxEvidenceBytes}");
+                buffer.Write(chunk, 0, read);
+            }
         }
 
         buffer.Position = 0;
         return buffer;
     }
+
+    private static InvalidDataException TooLarge(Guid id, string size) =>
+        new($"Attachment {id} is {size} bytes; workflow evidence is limited to {MaxEvidenceBytes} bytes.");
 
     /// <summary>Not supported: workflows only read evidence; attachments are written through the public API.</summary>
     public Task<DocumentContextValue> StoreAsync(Stream content, string fileName, string contentType, CancellationToken ct = default) =>
