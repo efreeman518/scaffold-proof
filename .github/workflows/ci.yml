@@ -126,10 +126,10 @@ jobs:
       - name: Build
         # Also the analyzer gate: TreatWarningsAsErrors (Directory.Build.props) fails the build on any
         # warning-severity analyzer diagnostic, so a separate `dotnet format analyzers` pass repeated it.
-        # Parallel: the static web assets race that once forced -m:1 came from building a web project twice
-        # into the same obj folder. AppHost's GlobalPropertiesToRemove keeps one configuration per project; a
-        # 2026-10-03 binlog showed every project built as exactly one instance.
-        run: dotnet build TaskFlow.slnx --no-restore --configuration Release
+        # -m:1 first guarded a static web assets race (a web project built twice into one obj folder). AppHost's
+        # GlobalPropertiesToRemove has since removed the duplicate instances (2026-10-03 binlog), but a parallel
+        # build measured no faster on the hosted runner (2 min 38 s vs 2 min 5-40 s serial), so it stays serial.
+        run: dotnet build TaskFlow.slnx --no-restore --configuration Release -m:1
 
       - name: Unit Tests
         # The project boundary intentionally includes untagged provider, migration, deployment, and deprecated
