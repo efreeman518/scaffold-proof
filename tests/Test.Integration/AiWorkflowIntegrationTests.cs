@@ -282,12 +282,16 @@ public sealed class AiWorkflowIntegrationTests
             ["dueBefore"] = DateTimeOffset.UtcNow.AddDays(7).ToString("O")
         }, ct);
         var (node, body) = await WaitForTerminalAsync(client, instanceId, ct);
+        var diagnostics = $"Reads: [{string.Join(", ", reads)}]; newest text {latestEvidence}, older text {olderEvidence}; "
+            + $"prompts: {prompts.Count}; reminder comments: {await CountCommentsAsync(client, taggedWithEvidence.Id.Value, ct)}. "
+            + $"Parents: {await ChildInstancesAsync(client, "compliance-check", ct)}. "
+            + $"Children: {await ChildInstancesAsync(client, "compliance-check-item", ct)}.";
+        TestContext.WriteLine(diagnostics);
 
-        Assert.AreEqual("n-output-ok", node, $"Instance: {Truncate(body)}");
+        Assert.AreEqual("n-output-ok", node, diagnostics);
         Assert.AreNotEqual(olderEvidence, latestEvidence);
         CollectionAssert.AreEqual(new[] { latestEvidence.ToString() }, reads.ToArray(),
-            "only the tagged task with evidence is read, by its newest attachment id; the untagged task and tenant B are never read. "
-            + $"Read: [{string.Join(", ", reads)}]; newest text {latestEvidence}, older text {olderEvidence}. Instance: {Truncate(body)}");
+            "only the tagged task with evidence is read, by its newest attachment id; the untagged task and tenant B are never read. " + diagnostics);
         var prompt = prompts.Single();
         StringAssert.Contains(prompt, "Compliance A tagged with evidence", "the prompt binds params.currentItem.title");
         StringAssert.Contains(prompt, "certificate expires next week", "the prompt carries the newest attachment's text");
@@ -386,6 +390,32 @@ public sealed class AiWorkflowIntegrationTests
         await Assert.ThrowsExactlyAsync<ArgumentException>(() => store.OpenReadAsync("not-an-attachment-id", ct));
         await Assert.ThrowsExactlyAsync<NotSupportedException>(() =>
             store.StoreAsync(new MemoryStream([1]), "evidence.txt", "text/plain", ct));
+    }
+
+    // One line per instance of the workflow: id, status, terminal node, the nodes it visited and any error, so a failed
+    // assertion shows which child took which path.
+    private static async Task<string> ChildInstancesAsync(HttpClient client, string workflowId, CancellationToken ct)
+    {
+        using var response = await client.GetAsync($"/api/flowengine/instances?workflowId={workflowId}&take=50", ct);
+        var text = await response.Content.ReadAsStringAsync(ct);
+        if (!response.IsSuccessStatusCode) return $"instance list failed: {(int)response.StatusCode} {Truncate(text)}";
+        using var json = JsonDocument.Parse(text);
+        var items = json.RootElement.ValueKind == JsonValueKind.Array
+            ? json.RootElement
+            : json.RootElement.EnumerateObject().First(p => p.Value.ValueKind == JsonValueKind.Array).Value;
+        return string.Join(" | ", items.EnumerateArray().Select(i =>
+        {
+            string? Field(string name) => i.EnumerateObject()
+                .FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)).Value is { ValueKind: not JsonValueKind.Undefined } v
+                ? v.ToString() : null;
+            var history = i.EnumerateObject().FirstOrDefault(p => string.Equals(p.Name, "history", StringComparison.OrdinalIgnoreCase)).Value;
+            var visited = history.ValueKind == JsonValueKind.Array
+                ? string.Join(">", history.EnumerateArray().Select(h => FindStringProperty(h, "nodeId") + ":" + FindStringProperty(h, "outcome")))
+                : "?";
+            var title = i.TryGetProperty("context", out var context) ? FindStringProperty(context, "title") : null;
+            return $"{Field("instanceId")} created={Field("createdAt")} parentNode={Field("parentNodeId")} item={title} status={Field("status")} "
+                + $"at={Field("currentNodeId")} visits={Field("nodeVisitCounts")} path={visited} error={Field("error")}";
+        }));
     }
 
     private static TaskFlow.Domain.Model.TaskItem DueTask(
