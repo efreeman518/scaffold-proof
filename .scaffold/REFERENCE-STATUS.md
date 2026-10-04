@@ -15,7 +15,7 @@ TaskFlow runs on the EF.Packages 2.0 platform packages (every `EF.*` platform id
 | Target framework | .NET 10 |
 | Configuration | Release |
 | Release restore (`dotnet restore TaskFlow.slnx -p:Configuration=Release`) | 47 projects in 10.3 s |
-| Solution build (`dotnet build TaskFlow.slnx -c Release --no-restore -m:1`) | 2 min 13.89 s |
+| Solution build (`dotnet build TaskFlow.slnx -c Release --no-restore`, parallel as CI runs it since 2026-10-03) | 1 min 27 s (clean worktree); `--no-incremental` 1 min 30-38 s on an idle host |
 | Errors | 0 |
 | Warnings | 0 |
 

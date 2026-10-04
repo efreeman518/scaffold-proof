@@ -124,15 +124,12 @@ jobs:
         run: dotnet restore TaskFlow.slnx -p:Configuration=Release
 
       - name: Build
-        # Static web assets writes shared obj caches and can race when the same web project is in
-        # the solution and referenced by AppHost.
-        run: dotnet build TaskFlow.slnx --no-restore --configuration Release -m:1
-
-      - name: Analyzer cleanliness
-        # Gate at warn: errors and warnings must be clean. Info-level advisories (e.g. CA1873
-        # logging guards) stay visible in the IDE without blocking CI. Raise to --severity info
-        # once those advisories are remediated at source.
-        run: dotnet format analyzers TaskFlow.slnx --severity warn --verify-no-changes --no-restore
+        # Also the analyzer gate: TreatWarningsAsErrors (Directory.Build.props) fails the build on any
+        # warning-severity analyzer diagnostic, so a separate `dotnet format analyzers` pass repeated it.
+        # Parallel: the static web assets race that once forced -m:1 came from building a web project twice
+        # into the same obj folder. AppHost's GlobalPropertiesToRemove keeps one configuration per project; a
+        # 2026-10-03 binlog showed every project built as exactly one instance.
+        run: dotnet build TaskFlow.slnx --no-restore --configuration Release
 
       - name: Unit Tests
         # The project boundary intentionally includes untagged provider, migration, deployment, and deprecated

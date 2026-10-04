@@ -142,8 +142,8 @@ The repository is kept clean at the **error and warning** severities, and CI enf
 
 - **Build enforcement:** [`Directory.Build.props`](Directory.Build.props) sets `TreatWarningsAsErrors=true` with `Nullable=enable`, so any warning fails the build for every project in the solution.
 - **`src/` logging gate:** [`src/.editorconfig`](src/.editorconfig) (inherits the repo root; does not set `root = true`) sets `dotnet_diagnostic.CA1848.severity = error` for every `.cs` file under `src/`, so a raw `ILogger.Log*()` call fails the build instead of the analyzer-default advisory. `tests/` stays at the default severity so fixtures and test doubles are not forced through source-generated logging.
-- **CI analyzer gate:** the `Analyzer cleanliness` step runs `dotnet format analyzers TaskFlow.slnx --severity warn --verify-no-changes --no-restore` on every push and pull request, failing the build if analyzer or code-style diagnostics at `warn` or higher remain.
-- **Info-level advisories:** info-severity advisories (for example the CA1873 logging guards) surface in the IDE but do not block CI. The `[LoggerMessage]` strategy above keeps them low; once the source is verified clean at `--severity info`, raise the CI gate to match.
+- **CI analyzer gate:** the CI Release build is the gate. Because of `TreatWarningsAsErrors`, any analyzer diagnostic at `warning` or higher fails it; a separate `dotnet format analyzers --severity warn` pass reported nothing the build does not.
+- **Info-level advisories:** info-severity advisories (for example the CA1873 logging guards) surface in the IDE but do not block CI. The `[LoggerMessage]` strategy above keeps them low; to gate one, raise its severity to `warning` in `.editorconfig` once the source is clean.
 
 Keep the tree green: prefer fixing the root cause over suppressing a diagnostic, and add a scoped, commented `#pragma`/`.editorconfig` entry only when a suppression is genuinely warranted.
 
