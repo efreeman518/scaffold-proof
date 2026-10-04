@@ -97,8 +97,9 @@ public sealed class WildcardDeleteLandedCommitTests
     public async Task Given_AttachmentDeleteCommitLandsButFails_When_DeletedWithWildcard_Then_TheBlobIsDeleted(string style)
     {
         var ct = TestContext.CancellationToken;
-        var attachment = new AttachmentBuilder().WithTenantId(TenantGuid).WithFileName($"landed-{Guid.NewGuid():N}.pdf")
-            .WithStorageKey(AttachmentBlobs.NewObjectKey(TenantGuid, Guid.NewGuid())).Build();
+        var fileName = $"landed-{Guid.NewGuid():N}.pdf";
+        var attachment = new AttachmentBuilder().WithTenantId(TenantGuid).WithFileName(fileName)
+            .WithStorageKey(AttachmentBlobs.NewObjectKey(TenantGuid, Guid.NewGuid(), fileName)).Build();
         await using (var seed = DbContainerFixture.CreateTrxnContext())
         {
             seed.Attachments.Add(attachment);

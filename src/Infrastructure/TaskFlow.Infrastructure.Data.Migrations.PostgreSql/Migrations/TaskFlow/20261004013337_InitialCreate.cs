@@ -29,7 +29,7 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.TaskFlow
                     ContentType = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     FileSizeBytes = table.Column<long>(type: "bigint", nullable: false),
                     StorageUri = table.Column<string>(type: "character varying(2000)", maxLength: 2000, nullable: false),
-                    StorageKey = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: true),
+                    StorageKey = table.Column<string>(type: "character varying(400)", maxLength: 400, nullable: true),
                     OwnerType = table.Column<int>(type: "integer", nullable: false),
                     OwnerId = table.Column<Guid>(type: "uuid", nullable: false),
                     Version = table.Column<long>(type: "bigint", nullable: false),

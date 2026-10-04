@@ -286,7 +286,8 @@ public sealed class AiWorkflowIntegrationTests
         Assert.AreEqual("n-output-ok", node, $"Instance: {Truncate(body)}");
         Assert.AreNotEqual(olderEvidence, latestEvidence);
         CollectionAssert.AreEqual(new[] { latestEvidence.ToString() }, reads.ToArray(),
-            "only the tagged task with evidence is read, by its newest attachment id; the untagged task and tenant B are never read");
+            "only the tagged task with evidence is read, by its newest attachment id; the untagged task and tenant B are never read. "
+            + $"Read: [{string.Join(", ", reads)}]; newest text {latestEvidence}, older text {olderEvidence}. Instance: {Truncate(body)}");
         var prompt = prompts.Single();
         StringAssert.Contains(prompt, "Compliance A tagged with evidence", "the prompt binds params.currentItem.title");
         StringAssert.Contains(prompt, "certificate expires next week", "the prompt carries the newest attachment's text");
@@ -420,7 +421,7 @@ public sealed class AiWorkflowIntegrationTests
             .WithContentType("text/plain")
             .WithFileSizeBytes(content.Length)
             .WithStorageUri($"seeded:{fileName}")
-            .WithStorageKey(AttachmentBlobs.NewObjectKey(tenantId, taskId))
+            .WithStorageKey(AttachmentBlobs.NewObjectKey(tenantId, taskId, fileName))
             .Build();
         return new SeededAttachment(row, content);
     }

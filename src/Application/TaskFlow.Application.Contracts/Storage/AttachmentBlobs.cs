@@ -22,10 +22,12 @@ public static class AttachmentBlobs
     public static readonly TimeSpan DownloadUrlLifetime = TimeSpan.FromHours(1);
 
     /// <summary>
-    /// A new object key for one uploaded attachment: tenant, owner, then a server-generated UUIDv7. No part comes
-    /// from the caller's file name, so a name can neither reach another tenant's prefix nor move the content (D-075).
-    /// The key is stored on the row (<c>Attachment.StorageKey</c>) and every read and delete uses the stored key.
+    /// A new object key for one uploaded attachment: tenant, owner, a server-generated UUIDv7, then the file name as
+    /// uploaded, so a downloaded blob keeps its name and extension (D-075). The caller validates the name with
+    /// <c>Attachment.FileNameError</c> first (no '/', '\', "..", or control characters), so it stays one final segment
+    /// under the UUIDv7 and cannot reach another prefix. The key is stored once on the row (<c>Attachment.StorageKey</c>)
+    /// and every read and delete uses the stored key; a later rename never changes it.
     /// </summary>
-    public static string NewObjectKey(Guid tenantId, Guid ownerId) =>
-        $"{tenantId}/{ownerId}/{Guid.CreateVersion7()}";
+    public static string NewObjectKey(Guid tenantId, Guid ownerId, string fileName) =>
+        $"{tenantId}/{ownerId}/{Guid.CreateVersion7()}/{fileName}";
 }

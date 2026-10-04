@@ -25,7 +25,7 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TaskFlow
                     ContentType = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
                     FileSizeBytes = table.Column<long>(type: "bigint", nullable: false),
                     StorageUri = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: false),
-                    StorageKey = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true),
+                    StorageKey = table.Column<string>(type: "nvarchar(400)", maxLength: 400, nullable: true),
                     OwnerType = table.Column<int>(type: "int", nullable: false),
                     OwnerId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Version = table.Column<long>(type: "bigint", nullable: false),

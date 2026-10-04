@@ -140,7 +140,7 @@ internal class AttachmentService(
             return Result<DefaultResponse<AttachmentDto>>.Failure("Blob storage is not configured.");
 
         var tenantId = RequestTenantId ?? Guid.Empty;
-        var blobName = AttachmentBlobs.NewObjectKey(tenantId, ownerId);
+        var blobName = AttachmentBlobs.NewObjectKey(tenantId, ownerId, fileName);
 
         try
         {

@@ -224,9 +224,9 @@ public class AttachmentEndpointTests
         var created = (await response.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item;
         Assert.IsNotNull(created);
         Assert.AreEqual("upload-test.txt", created.FileName);
-        // D-075: the object key is tenant, owner and a server-generated id; the file name is not part of it.
-        StringAssert.StartsWith(created.StorageUri, $"https://inmemory.blob.local/{AttachmentBlobs.ContainerName}/{created.TenantId}/{taskId}/");
-        Assert.DoesNotContain("upload-test.txt", created.StorageUri);
+        // D-075: the object key is tenant, owner, a server-generated UUIDv7 and the file name, so a download keeps the name.
+        StringAssert.Matches(created.StorageUri, new System.Text.RegularExpressions.Regex(
+            $"^https://inmemory\\.blob\\.local/{AttachmentBlobs.ContainerName}/{created.TenantId}/{taskId}/[0-9a-f-]{{36}}/upload-test\\.txt$"));
         Assert.AreEqual(fileBytes.Length, created.FileSizeBytes);
     }
 
@@ -308,6 +308,7 @@ public class AttachmentEndpointTests
         var renamed = (await rename.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item!;
         Assert.IsTrue(await blobs.ExistsAsync(AttachmentBlobs.ContainerName, storedKeys[0], TestContext.CancellationToken),
             "a rename leaves the uploaded content where it was stored");
+        StringAssert.EndsWith(storedKeys[0], "/original.txt", "the key keeps the name it was uploaded with");
 
         var delete = await client.DeleteWithIfMatchAsync($"/api/v1/attachments/{created.Id}",
             ConcurrencyHttpExtensions.FormatStrongETag(renamed.Version!.Value), TestContext.CancellationToken);

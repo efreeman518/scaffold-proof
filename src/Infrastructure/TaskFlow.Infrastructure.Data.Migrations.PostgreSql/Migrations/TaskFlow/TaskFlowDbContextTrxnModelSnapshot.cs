@@ -219,8 +219,8 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.TaskFlow
                         .HasColumnType("integer");
 
                     b.Property<string>("StorageKey")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)");
 
                     b.Property<string>("StorageUri")
                         .IsRequired()
