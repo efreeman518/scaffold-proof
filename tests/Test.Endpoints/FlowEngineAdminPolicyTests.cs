@@ -6,9 +6,10 @@ using TaskFlow.Application.Contracts;
 namespace Test.Endpoints;
 
 /// <summary>
-/// D-075: a FlowEngine document node reads attachment content with a system read, so whoever may save and start a
-/// workflow definition can name any attachment id. Workflow authoring (the <c>FlowEngine.Admin</c> policy on
-/// <c>MapFlowEngineAdmin</c>) must therefore stay GlobalAdmin-only, a role that already reads every tenant. The policy
+/// D-075: whoever may save a workflow definition decides which API calls and document reads it makes for every tenant
+/// a trigger later runs it for, and the admin start route starts instances with no tenant. Workflow authoring (the
+/// <c>FlowEngine.Admin</c> policy on <c>MapFlowEngineAdmin</c>) therefore stays GlobalAdmin-only, a role that already
+/// reads every tenant; the attachment-backed store bounds each evidence read to the instance's tenant on top. The policy
 /// is checked as the API host composes it: TaskFlow's role policy and the package's scope-claim default share the name.
 /// Endpoint tier: the real host's authorization services, synthetic principals, no requests.
 /// </summary>
@@ -17,7 +18,7 @@ public sealed class FlowEngineAdminPolicyTests
 {
     private const string Policy = "FlowEngine.Admin";
     private const string Why =
-        "D-075: evidence reads are system reads, so workflow authoring (FlowEngine.Admin) must require GlobalAdmin and nothing narrower.";
+        "D-075: workflow authoring (FlowEngine.Admin) acts for every tenant, so it must require GlobalAdmin and nothing narrower.";
 
     [TestMethod]
     [TestCategory("Endpoint")]

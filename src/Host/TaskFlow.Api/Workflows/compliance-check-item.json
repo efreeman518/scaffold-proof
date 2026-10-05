@@ -10,7 +10,7 @@
       "id": "n-find-evidence",
       "type": "integration",
       "label": "Find latest evidence attachment",
-      "intent": "Search the task's text/plain and text/markdown attachments (media type, charset ignored) through the public API (auth, validation, tenant query filter), newest first, one result, so a newer binary attachment does not hide older text evidence. The self-call principal carries a tenant, so the tenant query filter pins the search to it; the filter's tenantId (params.currentItem.tenantId, from the tenant-scoped task search) must match as well and is the only scope for a tenant-less GlobalAdmin or System caller. The document node reads only an id this response returns: evidence reads are system reads, so workflow authoring is GlobalAdmin-only (D-075). A read-only POST sends no idempotency header, so 409, 429 and 503 retry and any other 5xx ends the task on n-failed.",
+      "intent": "Search the task's text/plain and text/markdown attachments (media type, charset ignored) through the public API (auth, validation, tenant query filter), newest first, one result, so a newer binary attachment does not hide older text evidence. The self-call principal carries a tenant, so the tenant query filter pins the search to it; the filter's tenantId (params.currentItem.tenantId, from the tenant-scoped task search) must match as well and is the only scope for a tenant-less GlobalAdmin or System caller. The document node reads only an id this response returns, and the store serves it only to an instance of the attachment's tenant (D-075). A read-only POST sends no idempotency header, so 409, 429 and 503 retry and any other 5xx ends the task on n-failed.",
       "retryPolicy": { "maxAttempts": 3, "backoff": "Exponential" },
       "config": {
         "clientRef": "taskflow-api",
@@ -45,7 +45,7 @@
       "id": "n-fetch-evidence",
       "type": "document",
       "label": "Fetch evidence text",
-      "intent": "Read the latest attachment's bytes through the attachment-backed IDocumentStore (D-075) as UTF-8 text. Evidence must be text/plain or text/markdown; the store refuses any other content type, a missing attachment or an unreachable blob, and the task ends on n-failed.",
+      "intent": "Read the latest attachment's bytes through the attachment-backed IDocumentStore (D-075) as UTF-8 text. Evidence must be text/plain or text/markdown; the store refuses any other content type, an instance with no tenant, an attachment of another tenant, a missing attachment or an unreachable blob, and the task ends on n-failed.",
       "config": {
         "operation": "read",
         "contentKey": "$.context.evidenceAttachments.0.id",

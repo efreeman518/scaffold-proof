@@ -15,10 +15,16 @@ namespace TaskFlow.Infrastructure.Repositories;
 /// id; a read returns the content stored under that attachment's <c>StorageKey</c> in the lane's object storage
 /// (Azure Blob or S3), never a name derived from its renamable file name.
 /// <para>
-/// The read is a system read (<c>IgnoreQueryFilters</c>): the engine passes the store no tenant, so the workflow
-/// guarantees the id comes from a tenant-scoped public-API response in the same workflow. Only UTF-8 text evidence
-/// (<c>text/plain</c>, <c>text/markdown</c>) is served, because the document node decodes every read as UTF-8 text;
-/// any other content type is refused rather than handed to the agent as garbled text. Evidence larger than
+/// The store enforces the tenant: the engine passes the executing instance's tenant, and a read without one, or of an
+/// attachment that belongs to another tenant, is refused. The row is loaded with <c>IgnoreQueryFilters</c> and its
+/// tenant compared with the instance's: the tenant query filter follows the ambient request context of the store's DI
+/// scope (the system identity, which reads every tenant, when the engine runs in the background; the HTTP caller when a
+/// resume runs inside a request), not the instance, and the explicit comparison also tells a foreign attachment apart
+/// from a missing one.
+/// </para>
+/// <para>
+/// Only UTF-8 text evidence (<c>text/plain</c>, <c>text/markdown</c>) is served, because the document node decodes every
+/// read as UTF-8 text; any other content type is refused rather than handed to the agent as garbled text. Evidence larger than
 /// <see cref="MaxEvidenceBytes"/> is refused too: the whole text goes into the agent prompt.
 /// </para>
 /// <c>UseDocumentStore</c> registers it as a singleton, so each read opens its own DI scope.
@@ -31,8 +37,14 @@ public sealed class AttachmentDocumentStore(IServiceScopeFactory scopeFactory) :
     private static readonly string[] TextMediaTypes = ["text/plain", "text/markdown"];
     private static readonly string[] Utf8Charsets = ["utf-8", "us-ascii"];
 
-    /// <summary>Opens the stored bytes of the attachment whose id is <paramref name="storeRef"/>.</summary>
-    /// <exception cref="ArgumentException">The reference is not an attachment id.</exception>
+    /// <summary>
+    /// Opens the stored bytes of the attachment whose id is <paramref name="storeRef"/>, for a workflow instance of
+    /// tenant <paramref name="tenantId"/>.
+    /// </summary>
+    /// <exception cref="ArgumentException">The reference is not an attachment id, or the tenant is not a tenant id.</exception>
+    /// <exception cref="UnauthorizedAccessException">
+    /// The instance has no tenant, or the attachment belongs to another tenant.
+    /// </exception>
     /// <exception cref="FileNotFoundException">No attachment has that id, or it has no uploaded content.</exception>
     /// <exception cref="NotSupportedException">The attachment is not UTF-8 text.</exception>
     /// <exception cref="InvalidDataException">The attachment is larger than <see cref="MaxEvidenceBytes"/>.</exception>
@@ -40,6 +52,11 @@ public sealed class AttachmentDocumentStore(IServiceScopeFactory scopeFactory) :
     {
         if (!Guid.TryParse(storeRef, out var id))
             throw new ArgumentException($"Document reference '{storeRef}' is not an attachment id.", nameof(storeRef));
+        if (tenantId is null)
+            throw new UnauthorizedAccessException(
+                $"Attachment {id} was requested by a workflow instance with no tenant; TaskFlow serves evidence only to an instance started for a tenant.");
+        if (!Guid.TryParse(tenantId, out var tenant))
+            throw new ArgumentException($"Workflow instance tenant '{tenantId}' is not a tenant id.", nameof(tenantId));
 
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<TaskFlowDbContextQuery>();
@@ -48,6 +65,10 @@ public sealed class AttachmentDocumentStore(IServiceScopeFactory scopeFactory) :
             .FirstOrDefaultAsync(a => a.Id == attachmentId, ct)
             .ConfigureAwait(ConfigureAwaitOptions.None)
             ?? throw new FileNotFoundException($"Attachment {id} does not exist.");
+
+        if (attachment.TenantId.Value != tenant)
+            throw new UnauthorizedAccessException(
+                $"Attachment {id} belongs to another tenant than the workflow instance's tenant {tenant}; a workflow reads only its own tenant's evidence.");
 
         if (!IsUtf8Text(attachment.ContentType))
             throw new NotSupportedException(

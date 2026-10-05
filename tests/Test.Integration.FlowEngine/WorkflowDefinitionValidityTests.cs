@@ -119,10 +119,11 @@ public class WorkflowDefinitionValidityTests
     }
 
     /// <summary>
-    /// D-075: the attachment-backed document store reads with a system read and the engine passes it no tenant, so the
-    /// attachment id a document read node takes must come from a tenant-scoped API response in the same definition:
-    /// its <c>contentKey</c> is <c>$.context.{key}...</c>, and <c>{key}</c> is written by the <c>responseMapping</c> of
-    /// an integration node that POSTs <c>/api/v1/attachments/search</c>. Never params, a message body or agent output.
+    /// D-075, defense in depth: the attachment-backed document store bounds every read to the instance's tenant, and this
+    /// rule keeps the choice of attachment inside that tenant with the API search, so the attachment id a document read
+    /// node takes comes from a tenant-scoped API response in the same definition: its <c>contentKey</c> is
+    /// <c>$.context.{key}...</c>, and <c>{key}</c> is written by the <c>responseMapping</c> of an integration node that
+    /// POSTs <c>/api/v1/attachments/search</c>. Never params, a message body or agent output.
     /// </summary>
     [TestMethod]
     [DynamicData(nameof(AllWorkflows))]

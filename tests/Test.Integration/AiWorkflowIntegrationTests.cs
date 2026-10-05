@@ -229,7 +229,8 @@ public sealed class AiWorkflowIntegrationTests
     /// newest text attachment through the attachment search and reads it through the store. The tagged task with evidence is
     /// classified expiring soon from its newest text attachment, not the PDF, and gets one reminder comment; the tagged task without an
     /// attachment takes the no-finding path with no document read; the untagged task and tenant B's task are never read and
-    /// get no comment.
+    /// get no comment. The parent is started for tenant A as a trigger starts it, and the store serves evidence only to an
+    /// instance of the attachment's tenant, so the one read also shows that each loop child inherits the parent's tenant.
     /// </summary>
     [TestMethod]
     public async Task ComplianceCheck_ScansOnlyTheStartedTenant_AndRemindsTheTaskWithExpiringEvidence()
@@ -276,7 +277,7 @@ public sealed class AiWorkflowIntegrationTests
         await UploadAttachmentAsync(client, untaggedWithEvidence.Id.Value, "evidence.txt", "text/plain",
             "certificate expires next week", ct);
 
-        var instanceId = await StartWorkflowAsync(client, "compliance-check", new Dictionary<string, object?>
+        var instanceId = await StartForTenantAsync(factory, "compliance-check", new Dictionary<string, object?>
         {
             ["tenantId"] = TenantId,
             ["dueBefore"] = DateTimeOffset.UtcNow.AddDays(7).ToString("O")
@@ -289,6 +290,10 @@ public sealed class AiWorkflowIntegrationTests
         TestContext.WriteLine(diagnostics);
 
         Assert.AreEqual("n-output-ok", node, diagnostics);
+        // The parent waits on its children and is resumed by their completion signals. A lease is exclusive, even for the
+        // claimant that holds it, so a resume that met a lease still held would be skipped and the sweep would pick the
+        // parent up only after the 30 s lease expired.
+        Assert.IsLessThan(WellInsideOneLease, ElapsedSinceCreated(body), "the child-signal resumes finish well inside one lease. " + diagnostics);
         Assert.AreNotEqual(olderEvidence, latestEvidence);
         CollectionAssert.AreEqual(new[] { latestEvidence.ToString() }, reads.ToArray(),
             "only the tagged task with evidence is read, by its newest attachment id; the untagged task and tenant B are never read. " + diagnostics);
@@ -334,7 +339,7 @@ public sealed class AiWorkflowIntegrationTests
         using var client = factory.CreateClient();
         await StoreBlobAsync(factory, otherTenantEvidence, ct);
 
-        var instanceId = await StartWorkflowAsync(client, "compliance-check-item", new Dictionary<string, object?>
+        var instanceId = await StartForTenantAsync(factory, "compliance-check-item", new Dictionary<string, object?>
         {
             ["currentItem"] = new { id = otherTenant.Id.Value, tenantId = tenantB, title = "Compliance B task" }
         }, ct);
@@ -345,7 +350,7 @@ public sealed class AiWorkflowIntegrationTests
 
         var ownTask = await CreateTaskAsync(client, "Compliance A task", priority: 2 /* Medium */, ct);
         await UploadAttachmentAsync(client, ownTask, "evidence.txt", "text/plain", "certificate expires next week", ct);
-        var mislabelled = await StartWorkflowAsync(client, "compliance-check-item", new Dictionary<string, object?>
+        var mislabelled = await StartForTenantAsync(factory, "compliance-check-item", new Dictionary<string, object?>
         {
             ["currentItem"] = new { id = ownTask, tenantId = tenantB, title = "Compliance A task" }
         }, ct);
@@ -356,11 +361,49 @@ public sealed class AiWorkflowIntegrationTests
     }
 
     /// <summary>
+    /// D-075: the admin start route has no tenant field, so an instance it starts has no tenant. A compliance-check-item
+    /// run started there for the scaffold tenant's own task with text evidence finds the attachment, and the store refuses
+    /// the read: the run ends on n-failed with no agent call and no comment.
+    /// </summary>
+    [TestMethod]
+    public async Task ComplianceCheckItem_StartedWithoutATenant_IsRefusedItsEvidence()
+    {
+        SkipIfNoSql();
+        var ct = TestContext.CancellationToken;
+        var connectionString = await IsolatedMigratedConnectionStringAsync(ct);
+        var reads = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var prompts = 0;
+        using var factory = new FlowEngineWorkflowApiFactory(
+            connectionString,
+            _ =>
+            {
+                Interlocked.Increment(ref prompts);
+                return """{"status":"expiringSoon","summary":"expires next week"}""";
+            },
+            configureServices: services => RecordDocumentReads(services, reads));
+        using var client = factory.CreateClient();
+        var task = await CreateTaskAsync(client, "Compliance task", priority: 2 /* Medium */, ct);
+        var evidence = await UploadAttachmentAsync(client, task, "evidence.txt", "text/plain", "certificate expires next week", ct);
+
+        var instanceId = await StartWorkflowAsync(client, "compliance-check-item", new Dictionary<string, object?>
+        {
+            ["currentItem"] = new { id = task, tenantId = TenantId, title = "Compliance task" }
+        }, ct);
+        var (node, body) = await WaitForTerminalAsync(client, instanceId, ct);
+
+        Assert.AreEqual("n-failed", node, $"Instance: {Truncate(body)}");
+        CollectionAssert.AreEqual(new[] { evidence.ToString() }, reads.ToArray(), "the search found the evidence and the read was attempted");
+        StringAssert.Contains(body, "no tenant", "the store's refusal is the instance error");
+        Assert.AreEqual(0, prompts, "no evidence reaches the agent");
+        Assert.AreEqual(0, await CountCommentsAsync(client, task, ct), "the task gets no comment");
+    }
+
+    /// <summary>
     /// D-075 store contract on the lane's real object storage (S3 on NonAzure, Azure Blob on Azure), through the store the
     /// host registers: a text attachment uploaded through the API reads back as its text, also after a rename (the read
     /// uses the stored object key, not the file name); a binary attachment, one larger
     /// than <see cref="AttachmentDocumentStore.MaxEvidenceBytes"/>, an unknown attachment id and a reference that is not an
-    /// id are refused; writing is not supported.
+    /// id are refused; writing is not supported. Every call carries the scaffold tenant that uploaded the attachments.
     /// </summary>
     [TestMethod]
     public async Task AttachmentDocumentStore_ReadsTextEvidence_AndRefusesBinaryOversizedUnknownOrWrites()
@@ -379,17 +422,56 @@ public sealed class AiWorkflowIntegrationTests
         await RenameAttachmentAsync(client, text, "renamed.txt", ct);
 
         Assert.IsInstanceOfType<AttachmentDocumentStore>(store, "the host registers the attachment-backed store");
-        await using (var stream = await store.OpenReadAsync(text.ToString(), null, ct))
+        await using (var stream = await store.OpenReadAsync(text.ToString(), TenantId, ct))
         using (var reader = new StreamReader(stream))
         {
             Assert.AreEqual("certificate expires next week", await reader.ReadToEndAsync(ct));
         }
-        await Assert.ThrowsExactlyAsync<NotSupportedException>(() => store.OpenReadAsync(binary.ToString(), null, ct));
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => store.OpenReadAsync(oversized.ToString(), null, ct));
-        await Assert.ThrowsExactlyAsync<FileNotFoundException>(() => store.OpenReadAsync(Guid.CreateVersion7().ToString(), null, ct));
-        await Assert.ThrowsExactlyAsync<ArgumentException>(() => store.OpenReadAsync("not-an-attachment-id", null, ct));
+        await Assert.ThrowsExactlyAsync<NotSupportedException>(() => store.OpenReadAsync(binary.ToString(), TenantId, ct));
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => store.OpenReadAsync(oversized.ToString(), TenantId, ct));
+        await Assert.ThrowsExactlyAsync<FileNotFoundException>(() => store.OpenReadAsync(Guid.CreateVersion7().ToString(), TenantId, ct));
+        await Assert.ThrowsExactlyAsync<ArgumentException>(() => store.OpenReadAsync("not-an-attachment-id", TenantId, ct));
         await Assert.ThrowsExactlyAsync<NotSupportedException>(() =>
-            store.StoreAsync(new MemoryStream([1]), "evidence.txt", "text/plain", null, ct));
+            store.StoreAsync(new MemoryStream([1]), "evidence.txt", "text/plain", TenantId, ct));
+    }
+
+    /// <summary>
+    /// D-075: the store itself enforces the tenant, whatever reference a workflow hands it. Tenant B's text attachment
+    /// reads back for an instance of tenant B, and is refused for an instance of tenant A, and for an instance with no
+    /// tenant, before any content is served.
+    /// </summary>
+    [TestMethod]
+    public async Task AttachmentDocumentStore_RefusesAnotherTenantsAttachment_AndAnInstanceWithNoTenant()
+    {
+        SkipIfNoSql();
+        var ct = TestContext.CancellationToken;
+        var connectionString = await IsolatedMigratedConnectionStringAsync(ct);
+        var tenantB = Guid.CreateVersion7();
+        var taskB = DueTask(tenantB, "Compliance B task", DateTimeOffset.UtcNow.AddDays(1));
+        var evidenceB = TextAttachment(tenantB, taskB.Id.Value, "evidence-b.txt", "certificate expires next week");
+        await using (var seed = DbContainerFixture.CreateTrxnContext(connectionString))
+        {
+            seed.TaskItems.Add(taskB);
+            seed.Attachments.Add(evidenceB.Row);
+            await seed.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct);
+        }
+
+        using var factory = new FlowEngineWorkflowApiFactory(connectionString, _ => "{}");
+        using var client = factory.CreateClient();
+        await StoreBlobAsync(factory, evidenceB, ct);
+        var store = factory.Services.GetRequiredService<IDocumentStore>();
+        var reference = evidenceB.Row.Id.Value.ToString();
+
+        await using (var stream = await store.OpenReadAsync(reference, tenantB.ToString(), ct))
+        using (var reader = new StreamReader(stream))
+        {
+            Assert.AreEqual("certificate expires next week", await reader.ReadToEndAsync(ct), "the owning tenant reads it");
+        }
+        var foreign = await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(() => store.OpenReadAsync(reference, TenantId, ct));
+        StringAssert.Contains(foreign.Message, "another tenant");
+        var tenantless = await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(() => store.OpenReadAsync(reference, null, ct));
+        StringAssert.Contains(tenantless.Message, "no tenant");
+        await Assert.ThrowsExactlyAsync<ArgumentException>(() => store.OpenReadAsync(reference, "not-a-tenant-id", ct));
     }
 
     // One line per instance of the workflow: id, status, terminal node, the nodes it visited and any error, so a failed
@@ -519,6 +601,112 @@ public sealed class AiWorkflowIntegrationTests
         public Task<DocumentContextValue> StoreAsync(Stream content, string fileName, string contentType, string? tenantId, CancellationToken ct = default) =>
             inner.StoreAsync(content, fileName, contentType, tenantId, ct);
     }
+
+    // The FlowEngine lease is 30 s (AddFlowEngineServices); a resume skipped because a lease was still held waits it out.
+    private static readonly TimeSpan WellInsideOneLease = TimeSpan.FromSeconds(15);
+    private const string SuspendResumeProbeId = "suspend-resume-probe";
+
+    /// <summary>
+    /// An instance that suspends clears its claim and releases its lease before anything resumes it. The lock provider
+    /// refuses every acquire while a lease is unexpired, the holder's own included, so a suspension that kept its lease
+    /// would make each resume be skipped until the sweep took the instance after the 30 s lease. A probe workflow suspends at a human node, is resumed by the task response, suspends at a wait
+    /// node, is resumed through the admin resume route, and completes. At each suspension the instance carries no
+    /// claim, and each resume reaches the next node well inside one 30 s lease.
+    /// </summary>
+    [TestMethod]
+    public async Task SuspendedInstance_ResumedByHumanResponseAndWaitSignal_CompletesWithoutWaitingOutALease()
+    {
+        SkipIfNoSql();
+        var ct = TestContext.CancellationToken;
+        var connectionString = await IsolatedMigratedConnectionStringAsync(ct);
+        using var factory = new FlowEngineWorkflowApiFactory(connectionString, _ => "{}");
+        using var client = factory.CreateClient();
+        await factory.Services.GetRequiredService<IWorkflowRegistry>().SaveAsync(SuspendResumeProbe(), ct);
+
+        var instanceId = await StartWorkflowAsync(client, SuspendResumeProbeId, new Dictionary<string, object?> { ["key"] = "probe" }, ct);
+        var atHuman = await WaitForSuspendedAtAsync(client, instanceId, "n-approve", ct);
+        AssertNoClaim(atHuman);
+
+        using var tasks = await client.GetAsync($"/api/flowengine/human-tasks/instance/{instanceId}", ct);
+        var tasksBody = await tasks.Content.ReadAsStringAsync(ct);
+        Assert.AreEqual(HttpStatusCode.OK, tasks.StatusCode, Truncate(tasksBody));
+        var taskId = FindStringProperty(JsonDocument.Parse(tasksBody).RootElement, "taskId");
+        var responded = System.Diagnostics.Stopwatch.StartNew();
+        using (var respond = await client.PostAsJsonAsync($"/api/flowengine/human-tasks/{taskId}/respond",
+                   new { formValues = new { decision = "approve" }, respondedBy = "scaffold-user" }, ct))
+        {
+            Assert.IsTrue(respond.IsSuccessStatusCode, $"Respond failed: {(int)respond.StatusCode} {Truncate(await respond.Content.ReadAsStringAsync(ct))}");
+        }
+        var atWait = await WaitForSuspendedAtAsync(client, instanceId, "n-wait", ct);
+        Assert.IsLessThan(WellInsideOneLease, responded.Elapsed, "the human response resumes the instance well inside one lease");
+        AssertNoClaim(atWait);
+
+        var signalled = System.Diagnostics.Stopwatch.StartNew();
+        using (var resume = await client.PostAsJsonAsync($"/api/flowengine/instances/{instanceId}/resume", new { payload = new { go = true } }, ct))
+        {
+            Assert.IsTrue(resume.IsSuccessStatusCode, $"Resume failed: {(int)resume.StatusCode} {Truncate(await resume.Content.ReadAsStringAsync(ct))}");
+        }
+        var (node, body) = await WaitForTerminalAsync(client, instanceId, ct);
+
+        Assert.AreEqual("n-output-ok", node, Truncate(body));
+        Assert.IsLessThan(WellInsideOneLease, signalled.Elapsed, "the wait signal resumes the instance well inside one lease");
+    }
+
+    // Polls quickly (the measured resumes take well under a second) until the instance is suspended at the node.
+    private static async Task<JsonElement> WaitForSuspendedAtAsync(HttpClient client, string instanceId, string nodeId, CancellationToken ct)
+    {
+        var deadline = DateTimeOffset.UtcNow.Add(PollTimeout);
+        var last = string.Empty;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            using var response = await client.GetAsync($"/api/flowengine/instances/{instanceId}", ct);
+            last = await response.Content.ReadAsStringAsync(ct);
+            Assert.IsTrue(response.IsSuccessStatusCode, $"Instance read failed: {(int)response.StatusCode}. {Truncate(last)}");
+            var root = JsonDocument.Parse(last).RootElement;
+            if (FindStringProperty(root, "currentNodeId") == nodeId && FindStringProperty(root, "status") == "Suspended")
+                return root.Clone();
+            await Task.Delay(TimeSpan.FromMilliseconds(200), ct);
+        }
+
+        Assert.Fail($"Timed out waiting for {nodeId}. Last instance body: {Truncate(last)}");
+        throw new InvalidOperationException("Unreachable");
+    }
+
+    // The instance body carries the claim fields; a suspended instance has them cleared.
+    private static void AssertNoClaim(JsonElement instance) =>
+        Assert.IsTrue(instance.TryGetProperty("claimedBy", out var claim) && claim.ValueKind == JsonValueKind.Null,
+            $"a suspended instance holds no claim: {Truncate(instance.GetRawText())}");
+
+    private static TimeSpan ElapsedSinceCreated(string instanceBody)
+    {
+        var root = JsonDocument.Parse(instanceBody).RootElement;
+        return root.GetProperty("completedAt").GetDateTimeOffset() - root.GetProperty("createdAt").GetDateTimeOffset();
+    }
+
+    private static WorkflowDefinition SuspendResumeProbe() => WorkflowDefinitionBuilder.FromJson("""
+        {
+          "id": "suspend-resume-probe",
+          "version": "1.0.0",
+          "status": "Active",
+          "entryNodeId": "n-approve",
+          "nodes": {
+            "n-approve": {
+              "id": "n-approve", "type": "human",
+              "config": {
+                "title": "Approve the probe", "assignedTo": "role:probe", "channel": "Internal", "quorum": 1,
+                "formSchema": "{\"properties\":{\"decision\":{\"type\":\"string\"}},\"required\":[\"decision\"]}"
+              },
+              "edges": [ { "on": ["Match"], "nextNodeId": "n-wait" } ]
+            },
+            "n-wait": {
+              "id": "n-wait", "type": "wait",
+              "config": { "eventName": "probe-go", "correlationKeyPath": "$.params.key" },
+              "edges": [ { "on": ["Match"], "nextNodeId": "n-output-ok" } ]
+            },
+            "n-output-ok": { "id": "n-output-ok", "type": "output", "config": {} }
+          }
+        }
+        """).Build();
 
     private const string KeyedCommentProbeId = "idempotency-key-probe";
 
@@ -650,7 +838,6 @@ public sealed class AiWorkflowIntegrationTests
             new Dictionary<string, object?>
             {
                 ["workflowId"] = workflowId,
-                ["tenantId"] = TenantId,
                 ["correlationId"] = Guid.NewGuid().ToString("N"),
                 ["params"] = parameters
             },
@@ -663,6 +850,23 @@ public sealed class AiWorkflowIntegrationTests
         var instanceId = FindStringProperty(payload.RootElement, "instanceId");
         Assert.IsFalse(string.IsNullOrWhiteSpace(instanceId), $"No instanceId in start response: {Truncate(body)}");
         return instanceId!;
+    }
+
+    // Starts the workflow as a trigger does (WorkflowTriggerHandler): through IFlowEngine with the instance tenant set, so
+    // the instance and its loop children read evidence as that tenant. The admin start route has no tenant field, so an
+    // instance it starts has no tenant, and the attachment-backed store refuses its evidence reads.
+    private static async Task<string> StartForTenantAsync(
+        FlowEngineWorkflowApiFactory factory, string workflowId, Dictionary<string, object?> parameters, CancellationToken ct)
+    {
+        var instance = await factory.Services.GetRequiredService<IFlowEngine>().StartBackgroundAsync(new StartRequest
+        {
+            WorkflowId = workflowId,
+            TenantId = TenantId,
+            CorrelationId = Guid.NewGuid().ToString("N"),
+            Params = parameters.ToDictionary(
+                p => p.Key, ContextValue (p) => new JsonContextValue { Value = JsonSerializer.SerializeToElement(p.Value) }),
+        }, ct);
+        return instance.InstanceId;
     }
 
     // Polls the instance until the engine parks it on one of the workflow's terminal output nodes.
