@@ -10,7 +10,7 @@ TaskFlow runs on the EF.Packages 2.0 platform packages (every `EF.*` platform id
 
 | Field | Value |
 |---|---|
-| Last verified | 2026-10-05 (Release build, Uno build, vulnerability audit, fast matrix, Aspire topology contracts, NonAzure component containers, on EF.* 2.0.118 and EF.FlowEngine 1.0.204); 2026-09-29 (Azure and MongoDB component containers, Aspire topology and core-lane meshes on both lanes, NonAzure full-lane graph, Test.PlaywrightUI on both lanes, Test.Load on the NonAzure dev stack); 2026-09-16 (mobile, images, deployment lanes) |
+| Last verified | 2026-10-05 (Release build, Uno build, vulnerability audit, fast matrix, Aspire topology contracts, component containers on all three lanes, on EF.* 2.0.118 and EF.FlowEngine 1.0.204); 2026-09-29 (Aspire topology and core-lane meshes on both lanes, NonAzure full-lane graph, Test.PlaywrightUI on both lanes, Test.Load on the NonAzure dev stack); 2026-09-16 (mobile, images, deployment lanes) |
 | Solution | `TaskFlow.slnx` (47 projects) |
 | Target framework | .NET 10 |
 | Configuration | Release |
@@ -46,13 +46,13 @@ Release `--no-build` after a `--no-incremental` Release solution build (0 warnin
 
 ### Component containers
 
-Release `--no-build`, Podman Docker-compatible context; Test.Integration NonAzure 2026-10-05 (EF.* 2.0.118, EF.FlowEngine 1.0.204), Azure and MongoDb 2026-10-02 (EF.* 2.0.116, EF.FlowEngine 1.0.202), Test.E2E 2026-09-29:
+Release `--no-build`, Podman Docker-compatible context; Test.Integration 2026-10-05 on all three lanes (EF.* 2.0.118, EF.FlowEngine 1.0.204), Test.E2E 2026-09-29:
 
 | Lane | Project | Passed | Skipped | Duration |
 |---|---|---:|---:|---:|
 | `TASKFLOW_LANE=NonAzure` / PostgreSqlJsonb | Test.Integration | 144 | 5 (Azure-only) | 101 s |
-| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 130 | 19 (NonAzure-only) | 169 s |
-| NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | Test.Integration | 146 | 3 | 100 s |
+| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 130 | 19 (NonAzure-only) | 170 s |
+| NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | Test.Integration | 146 | 3 | 99 s |
 | unset (resolves NonAzure) | Test.E2E | 10 | 0 | 15 s |
 | `TASKFLOW_LANE=Azure` | Test.E2E | 10 | 0 | 33 s |
 
@@ -81,7 +81,7 @@ The Azure full-lane acceptance filter (Functions on) and the Azure Foundry live 
 
 Five live Azure AI Foundry tests are not run without an external endpoint and credentials: three `AiFoundryLiveSmokeTests` cases and two `FlowEngineFoundryWorkflowTests` cases.
 
-`EF.Messaging.RabbitMq` is a published package with its own unit and Testcontainers.RabbitMq suites outside this repo (see `docs/plans/ef-messaging-rabbitmq-package-spec.md`). The same holds for every capability the EF.* packages own: their behavior is proven by the package suites, and TaskFlow's tests prove the app composition.
+`EF.Messaging.RabbitMq` is a published package with its own unit and Testcontainers.RabbitMq suites in the EF.Packages repository. The same holds for every capability the EF.* packages own: their behavior is proven by the package suites, and TaskFlow's tests prove the app composition.
 
 ### Compose and application images
 
@@ -217,7 +217,7 @@ The declared flags and matrix must agree with `.scaffold/resource-implementation
 
 ## Phase Completion
 
-Phases 1 through 5e and the FlowEngine extension are complete. Root `HANDOFF.md` records `workflowStatus: complete`, `currentPhase: 5`, and `currentSubPhase: complete`. The strict NonAzure-lane + scale-guidance-alignment refactor (P1-P7, G1-G4) is an ordinary-maintenance addition on top of that completed baseline, not a phase re-open.
+Phases 1 through 5e and the FlowEngine extension are complete. Root `HANDOFF.md` records `workflowStatus: complete`, `currentPhase: 5`, and `currentSubPhase: complete`. Later work is ordinary maintenance on that completed baseline, not a phase re-open.
 
 ## Infrastructure as Code
 
