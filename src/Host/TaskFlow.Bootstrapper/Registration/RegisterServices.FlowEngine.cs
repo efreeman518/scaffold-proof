@@ -44,12 +44,6 @@ public static partial class RegisterServices
         })
             .UseStateStoreSql<TaskFlowFlowEngineDbContext>()
             .UseLockProviderSql<TaskFlowFlowEngineDbContext>()
-            // One process must not execute an instance twice at once; see ExclusiveInProcessLockProvider for the
-            // FlowEngine 1.0.202 behavior it corrects and when to remove it.
-            .UseLockProvider(sp => new ExclusiveInProcessLockProvider(
-                sp.GetRequiredService<SqlDistributedLockProvider<TaskFlowFlowEngineDbContext>>(),
-                sp.GetRequiredService<FlowEngineOptions>().ClaimantId,
-                sp.GetService<TimeProvider>() ?? TimeProvider.System))
             .UseWorkflowRegistrySql<TaskFlowFlowEngineDbContext>()
             .UseHumanTaskStoreSql<TaskFlowFlowEngineDbContext>()
             .UseOutboxSql<TaskFlowFlowEngineDbContext>()
