@@ -4,13 +4,13 @@ Canonical current evidence for the TaskFlow reference application. Historical ph
 
 > Update this file only from observed results. TaskFlow CI records the scaffold checkout commit used for cross-repository validation so failures remain diagnosable without creating a compatibility pin.
 
-TaskFlow runs on the EF.Packages 2.0 platform packages (every `EF.*` platform id at 2.0.118; EF.FilterBuilder and the EF.FlowEngine ids at 1.0.204). Results below distinguish passed, blocked, and not-run evidence; each table names its run date.
+TaskFlow runs on the EF.Packages 2.0 platform packages (every `EF.*` platform id at 2.0.118; EF.FilterBuilder and the EF.FlowEngine ids at 1.0.207). Results below distinguish passed, blocked, and not-run evidence; each table names its run date.
 
 ## Build Status
 
 | Field | Value |
 |---|---|
-| Last verified | 2026-10-05 (Release build, Uno build, vulnerability audit, fast matrix, Aspire topology contracts, component containers on all three lanes, on EF.* 2.0.118 and EF.FlowEngine 1.0.204); 2026-09-29 (Aspire topology and core-lane meshes on both lanes, NonAzure full-lane graph, Test.PlaywrightUI on both lanes, Test.Load on the NonAzure dev stack); 2026-09-16 (mobile, images, deployment lanes) |
+| Last verified | 2026-10-05 (Release build, vulnerability audit, fast matrix, Test.Integration on all three lanes, on EF.* 2.0.118 and EF.FlowEngine 1.0.207; Uno build and Aspire topology contracts on EF.FlowEngine 1.0.204); 2026-09-29 (Aspire topology and core-lane meshes on both lanes, NonAzure full-lane graph, Test.PlaywrightUI on both lanes, Test.Load on the NonAzure dev stack); 2026-09-16 (mobile, images, deployment lanes) |
 | Solution | `TaskFlow.slnx` (47 projects) |
 | Target framework | .NET 10 |
 | Configuration | Release |
@@ -23,40 +23,42 @@ TaskFlow runs on the EF.Packages 2.0 platform packages (every `EF.*` platform id
 
 A Debug restore of the Uno project followed by a Release `--no-restore` build fails with `UNOB0019` (the DevServer targets are imported for a Debug restore); restore in the configuration you build, as CI does.
 
-`dotnet ef migrations has-pending-model-changes` is clean for all 6 context/provider pairs (TaskFlow, FlowEngine and TickerQ, each against SqlServer and PostgreSql; `MigrationModelContractTests` in Test.Unit, 2026-10-05 against EF.FlowEngine 1.0.204). Each pair has exactly one initial migration (D-025, `MigrationBaselineArchitectureTests`); the TaskFlow context's `InitialCreate` was regenerated on 2026-10-03 for the `Attachment.StorageKey` column (D-075, max 400) and `DatabaseMigratorIntegrationTests` applies all targets to an empty database on PostgreSQL and SQL Server.
+`dotnet ef migrations has-pending-model-changes` is clean for all 6 context/provider pairs (TaskFlow, FlowEngine and TickerQ, each against SqlServer and PostgreSql; `MigrationModelContractTests` in Test.Unit, 2026-10-05 against EF.FlowEngine 1.0.207). Each pair has exactly one initial migration (D-025, `MigrationBaselineArchitectureTests`); the TaskFlow context's `InitialCreate` was regenerated on 2026-10-03 for the `Attachment.StorageKey` column (D-075, max 400) and `DatabaseMigratorIntegrationTests` applies all targets to an empty database on PostgreSQL and SQL Server.
 
 ## Test Status
 
 ### Fast matrix
 
-Release `--no-build` after a `--no-incremental` Release solution build (0 warnings, 0 errors), run serially; 2026-10-05 (EF.* 2.0.118, EF.FlowEngine and EF.FilterBuilder 1.0.204) except Test.PlaywrightUI (2026-09-29). No failed, skipped, or inconclusive tests:
+Release `--no-build` after a `--no-incremental` Release solution build (0 warnings, 0 errors), run serially; 2026-10-05 (EF.* 2.0.118, EF.FlowEngine and EF.FilterBuilder 1.0.207) except Test.PlaywrightUI (2026-09-29). No failed, skipped, or inconclusive tests:
 
 | Project | Passed | Duration |
 |---|---:|---:|
-| Test.Unit | 674 | 11 s |
+| Test.Unit | 682 | 11 s |
 | Test.UI | 54 | 1 s |
 | Test.Architecture | 87 | 2 s |
-| Test.Endpoints | 236 | 9 s |
-| Test.Integration.FlowEngine | 35 | 0.3 s |
+| Test.Endpoints | 259 | 9 s |
+| Test.Integration.FlowEngine | 40 | 0.3 s |
 | Test.Mutation | 27 | 0.1 s |
 | Test.PlaywrightUI (`TestCategory=Unit`) | 1 | 0.1 s |
-| **Total** | **1114** | |
+| **Total** | **1150** | |
 
-`Test.Unit` used the CI 15-second blame-hang timeout. The Release build is the analyzer gate: `TreatWarningsAsErrors` fails it on any warning-severity diagnostic. `RedisConfiguredButUnreachable_LimiterFailsOpen` bounds fail-open latency with a production-shaped connection string (373 ms). Types the EF.* packages own are tested by the package suites, not here.
+The Release build is the analyzer gate: `TreatWarningsAsErrors` fails it on any warning-severity diagnostic. `RedisConfiguredButUnreachable_LimiterFailsOpen` bounds fail-open latency with a production-shaped connection string (373 ms). Types the EF.* packages own are tested by the package suites, not here.
 
 ### Component containers
 
-Release `--no-build`, Podman Docker-compatible context; Test.Integration 2026-10-05 on all three lanes (EF.* 2.0.118, EF.FlowEngine 1.0.204), Test.E2E 2026-09-29:
+Release `--no-build`, Podman Docker-compatible context; Test.Integration 2026-10-05 on all three lanes (EF.* 2.0.118, EF.FlowEngine 1.0.207), Test.E2E 2026-09-29:
 
 | Lane | Project | Passed | Skipped | Duration |
 |---|---|---:|---:|---:|
-| `TASKFLOW_LANE=NonAzure` / PostgreSqlJsonb | Test.Integration | 144 | 5 (Azure-only) | 101 s |
-| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 130 | 19 (NonAzure-only) | 170 s |
-| NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | Test.Integration | 146 | 3 | 99 s |
+| `TASKFLOW_LANE=NonAzure` / PostgreSqlJsonb | Test.Integration | 152 | 5 (Azure-only) | 106 s |
+| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 138 | 19 (NonAzure-only) | 174 s |
+| NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | Test.Integration | 154 | 3 | 104 s |
 | unset (resolves NonAzure) | Test.E2E | 10 | 0 | 15 s |
 | `TASKFLOW_LANE=Azure` | Test.E2E | 10 | 0 | 33 s |
 
 Isolated PostgreSQL test databases are unpooled (`TestDatabaseContainer.UnpooledPostgreSql`): with pooling, idle connections to finished tests' databases reached 86 of the container's 100 `max_connections` and a MongoDB-lane run failed with 53300 "too many clients"; unpooled, a sampled MongoDB-lane run peaked at 5 client connections.
+
+Under CPU saturation (one busy loop per logical core, 16 cores, 2026-10-05, EF.FlowEngine 1.0.207), `AiWorkflowIntegrationTests.ComplianceCheck_ScansOnlyTheStartedTenant_AndRemindsTheTaskWithExpiringEvidence` passes 10 of 10 runs on the PostgreSQL lane, each with exactly one evidence read, one agent prompt and one reminder comment: the engine saves a new instance already claimed and refuses a second acquire of an unexpired lease from any claimant, so the sweep and a start or resume path never execute one instance at once.
 
 ### Aspire graphs
 
@@ -116,7 +118,7 @@ Machine-level updates still blocked outside the repository: installed workloads 
 
 Run `dotnet list package --vulnerable --include-transitive` and capture findings here. Severity policy: [scaffold execution gates](https://github.com/efreeman518/scaffold-ai/blob/main/support/execution-gates.md#vulnerability-audit).
 
-Last audit (2026-10-05, EF.* 2.0.118, EF.FlowEngine and EF.FilterBuilder 1.0.204): `dotnet list TaskFlow.slnx package --vulnerable --include-transitive` against nuget.org and the private feed reported no vulnerable packages for all 47 solution projects, the 3 Uno projects included. The React `npm` audit was not rerun (its last result, 2026-09-16, was 0 vulnerabilities).
+Last audit (2026-10-05, EF.* 2.0.118, EF.FlowEngine and EF.FilterBuilder 1.0.207): `dotnet list TaskFlow.slnx package --vulnerable --include-transitive` against nuget.org and the private feed reported no vulnerable packages for all 47 solution projects, the 3 Uno projects included. The React `npm` audit was not rerun (its last result, 2026-09-16, was 0 vulnerabilities).
 
 | Package | Severity | Direct/Transitive | Advisory | Notes |
 |---|---|---|---|---|
@@ -149,7 +151,7 @@ Status meanings:
 | Generated API clients (Refitter, openapi-typescript) | proven | `src/UI/TaskFlow.ApiClient` and React `types.ts` regenerate from the committed OpenAPI document |
 | Aspire, Gateway, Scheduler, Functions | proven except blocked Azure full graph | Build, topology, unit, endpoint and Compose evidence; core-lane meshes pass on both lanes and the NonAzure full-lane filter passes 5 with 2 by-design skips (2026-09-29); the Azure full graph (Functions on) was last observed blocked by the Aspire SQL child-health ordering defect (2026-09-16) |
 | Uno, Blazor, React | proven | Build, Test.UI, Compose smoke, and Test.PlaywrightUI 4/4 on both lanes including the published Release Uno cold start (2026-09-29) |
-| FlowEngine | proven | Runtime wiring, separate-schema migration, definition/integration cases including the If-Match:* connector override (D-032); node retry ownership: every `taskflow-api` node, loop-body nodes included, declares an exponential `retryPolicy` with no 412 and the definitions raise no structured `GetWarnings` warning (`WorkflowDefinitionValidityTests`), every shipped clientRef resolves against the application's registrations on both lanes and an unregistered one is reported (`FlowEngineClientRegistrationTests`), compliance-check runs end to end for one tenant only (`AiWorkflowIntegrationTests`), a 503 PATCH is resent and a 412 PATCH is not (`FlowEngineWorkflowTests`) |
+| FlowEngine | proven | Runtime wiring, separate-schema migration, definition/integration cases including the If-Match:* connector override (D-032); node retry ownership: every `taskflow-api` node, loop-body nodes included, declares an exponential `retryPolicy` with no 412 and the definitions raise no structured `GetWarnings` warning (`WorkflowDefinitionValidityTests`), every shipped clientRef resolves against the application's registrations on both lanes and an unregistered one is reported (`FlowEngineClientRegistrationTests`), compliance-check runs end to end for one tenant only, the attachment document store serves evidence only to an instance of the attachment's tenant (it refuses another tenant's attachment and an instance with no tenant, so an admin-route start, which carries no tenant, is refused its evidence), and a suspended instance holds no claim and resumes well inside one 30 s lease (`AiWorkflowIntegrationTests`), a 503 PATCH is resent and a 412 PATCH is not (`FlowEngineWorkflowTests`) |
 | GitHub Actions and deployment workflow shape | proven | Workflow contract tests and CI execution |
 | Bicep module shape (SQL Server, Service Bus, Storage, Cosmos, Redis, Container Apps/Functions, scale rules) | proven | `main`, foundation, and all three parameter files compile; Bicep contract tests |
 | Live Entra or CIAM sign-in | deployment-only | Scaffold auth is the local proof |
