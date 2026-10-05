@@ -2,6 +2,7 @@ using EF.FlowEngine.Definition;
 using EF.FlowEngine.Definition.NodeConfigs;
 using EF.FlowEngine.Impl;
 using EF.FlowEngine.Model;
+using System.Reflection;
 using System.Text.Json;
 
 namespace Test.Integration.FlowEngine;
@@ -268,6 +269,29 @@ public class WorkflowDefinitionValidityTests
             body.GetProperty("body").GetProperty("item").TryGetProperty("Id", out _),
             "the created subtask must not carry the loop's per-iteration id while that id is a UUIDv5 (GR-17)");
         Assert.AreEqual("Idempotency-Key", body.GetProperty("idempotencyKeyHeader").GetString());
+    }
+
+    /// <summary>
+    /// Pins the package behavior the test above depends on: <c>LoopNodeExecutor.IterationId</c> still mints a version 5
+    /// UUID. It is internal, so this reaches it by reflection on purpose: a FlowEngine release that moves it to UUIDv7,
+    /// renames it or changes its signature fails here, which is the prompt to revisit package request 19 and send the
+    /// iteration id as the create id.
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Integration")]
+    public void LoopIterationId_IsStillAVersion5Uuid_PackageRequest19()
+    {
+        var iterationId = typeof(LoopNodeConfig).Assembly
+            .GetType("EF.FlowEngine.Executors.LoopNodeExecutor")?
+            .GetMethod("IterationId", BindingFlags.NonPublic | BindingFlags.Static,
+                [typeof(ExecutionInstance), typeof(NodeDefinition), typeof(int), typeof(string)]);
+        Assert.IsNotNull(iterationId, "LoopNodeExecutor.IterationId changed shape: re-verify package request 19");
+
+        var value = (JsonContextValue)iterationId.Invoke(null,
+            [new ExecutionInstance { InstanceId = Guid.CreateVersion7().ToString() }, new NodeDefinition { Id = "n-loop" }, 0, null])!;
+
+        Assert.AreEqual(5, Guid.Parse(value.Value.GetString()!).Version,
+            "the loop iteration id is no longer a UUIDv5: revisit package request 19 (GR-17 accepts UUIDv7 create ids)");
     }
 
     /// <summary>Verifies read workflow file behavior and protects the expected test contract.</summary>

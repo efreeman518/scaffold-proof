@@ -10,7 +10,7 @@ TaskFlow runs on the EF.Packages 2.0 platform packages (every `EF.*` platform id
 
 | Field | Value |
 |---|---|
-| Last verified | 2026-10-05 (Release build, Uno build, fast matrix, Aspire topology contracts, NonAzure component containers, on EF.* 2.0.118 and EF.FlowEngine 1.0.204); 2026-09-29 (vulnerability audit, Azure and MongoDB component containers, Aspire topology and core-lane meshes on both lanes, NonAzure full-lane graph, Test.PlaywrightUI on both lanes, Test.Load on the NonAzure dev stack); 2026-09-16 (mobile, images, deployment lanes) |
+| Last verified | 2026-10-05 (Release build, Uno build, vulnerability audit, fast matrix, Aspire topology contracts, NonAzure component containers, on EF.* 2.0.118 and EF.FlowEngine 1.0.204); 2026-09-29 (Azure and MongoDB component containers, Aspire topology and core-lane meshes on both lanes, NonAzure full-lane graph, Test.PlaywrightUI on both lanes, Test.Load on the NonAzure dev stack); 2026-09-16 (mobile, images, deployment lanes) |
 | Solution | `TaskFlow.slnx` (47 projects) |
 | Target framework | .NET 10 |
 | Configuration | Release |
@@ -37,10 +37,10 @@ Release `--no-build` after a `--no-incremental` Release solution build (0 warnin
 | Test.UI | 54 | 1 s |
 | Test.Architecture | 87 | 2 s |
 | Test.Endpoints | 236 | 9 s |
-| Test.Integration.FlowEngine | 34 | 0.3 s |
+| Test.Integration.FlowEngine | 35 | 0.3 s |
 | Test.Mutation | 27 | 0.1 s |
 | Test.PlaywrightUI (`TestCategory=Unit`) | 1 | 0.1 s |
-| **Total** | **1113** | |
+| **Total** | **1114** | |
 
 `Test.Unit` used the CI 15-second blame-hang timeout. The Release build is the analyzer gate: `TreatWarningsAsErrors` fails it on any warning-severity diagnostic. `RedisConfiguredButUnreachable_LimiterFailsOpen` bounds fail-open latency with a production-shaped connection string (373 ms). Types the EF.* packages own are tested by the package suites, not here.
 
@@ -106,7 +106,7 @@ Browser WASM Release sets `PublishTrimmed=false` because current Uno Navigation,
 | Global Uno.Check / Uno templates | 1.34.1 / 6.7.22 (2026-09-16) |
 | Azure Functions Core Tools | 4.12.0-preview.1 |
 | Bicep CLI (via `az bicep`) | 0.42.1; `az bicep build --file infra/main.bicep` reproduces the committed `infra/main.json` byte for byte apart from line endings |
-| Repository tools | ILSpy 11.0.0.9375; Stryker 5.0.0; dotnet-ef 10.0.12; Refitter 2.2.0 |
+| Repository tools | ILSpy 11.1.0.9782; Stryker 5.0.0; dotnet-ef 10.0.12; Refitter 2.2.0 |
 
 Machine-level updates still blocked outside the repository: installed workloads remain at manifest set 10.0.400.1 after the updater stalled twice, although required workload IDs are installed; Node.js 24.16.0 cannot move to 24.21.0 without an administrator MSI; Android updates require Google license acceptance; Functions tooling resolves 4.12.0-preview.1 because the npm 4.14 bootstrap failed with `ENOENT`; Uno.Check reports the prohibited MAUI meta-workload and a registry false positive even though required individual workloads and long paths are present.
 
@@ -114,7 +114,7 @@ Machine-level updates still blocked outside the repository: installed workloads 
 
 Run `dotnet list package --vulnerable --include-transitive` and capture findings here. Severity policy: [scaffold execution gates](https://github.com/efreeman518/scaffold-ai/blob/main/support/execution-gates.md#vulnerability-audit).
 
-Last audit (2026-09-29): `dotnet list TaskFlow.slnx package --vulnerable --include-transitive` against nuget.org and the private feed reported no vulnerable packages for all 47 solution projects, the 3 Uno projects included. The React `npm` audit was not rerun (its last result, 2026-09-16, was 0 vulnerabilities).
+Last audit (2026-10-05, EF.* 2.0.118, EF.FlowEngine and EF.FilterBuilder 1.0.204): `dotnet list TaskFlow.slnx package --vulnerable --include-transitive` against nuget.org and the private feed reported no vulnerable packages for all 47 solution projects, the 3 Uno projects included. The React `npm` audit was not rerun (its last result, 2026-09-16, was 0 vulnerabilities).
 
 | Package | Severity | Direct/Transitive | Advisory | Notes |
 |---|---|---|---|---|
