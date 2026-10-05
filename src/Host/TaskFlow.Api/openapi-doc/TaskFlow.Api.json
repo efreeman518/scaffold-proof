@@ -3137,6 +3137,15 @@
             ],
             "format": "uuid"
           },
+          "contentTypes": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
           "searchTerm": {
             "type": [
               "null",
@@ -4716,6 +4725,12 @@
             "type": [
               "null",
               "boolean"
+            ]
+          },
+          "tagName": {
+            "type": [
+              "null",
+              "string"
             ]
           },
           "searchTerm": {

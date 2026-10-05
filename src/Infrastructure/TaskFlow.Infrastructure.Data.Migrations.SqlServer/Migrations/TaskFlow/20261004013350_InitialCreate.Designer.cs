@@ -12,7 +12,7 @@ using TaskFlow.Infrastructure.Data;
 namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TaskFlow
 {
     [DbContext(typeof(TaskFlowDbContextTrxn))]
-    [Migration("20261001210637_InitialCreate")]
+    [Migration("20261004013350_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -218,6 +218,10 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TaskFlow
 
                     b.Property<int>("OwnerType")
                         .HasColumnType("int");
+
+                    b.Property<string>("StorageKey")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
 
                     b.Property<string>("StorageUri")
                         .IsRequired()

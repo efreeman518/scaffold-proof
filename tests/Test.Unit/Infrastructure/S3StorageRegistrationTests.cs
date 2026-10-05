@@ -56,16 +56,23 @@ public class S3StorageRegistrationTests
     }
 
     [TestMethod]
-    public void AttachmentBlobs_BlobName_UsedDirectlyAsTheS3ObjectKey()
+    public void AttachmentBlobs_NewObjectKey_UsedDirectlyAsTheS3ObjectKey()
     {
         // S3ObjectStorageRepository applies no transformation of its own: the blobName argument it
         // receives becomes the S3 object Key verbatim, so the shared naming convention IS the S3 key
-        // convention. This pins that convention so a change here is a deliberate, visible decision.
+        // convention. This pins that convention so a change here is a deliberate, visible decision:
+        // tenant, owner, a server-generated UUIDv7 and the validated file name as the last segment (D-075).
         var tenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
         var ownerId = Guid.Parse("22222222-2222-2222-2222-222222222222");
 
-        Assert.AreEqual(
-            $"{tenantId}/{ownerId}/report.pdf",
-            AttachmentBlobs.BlobName(tenantId, ownerId, "report.pdf"));
+        var key = AttachmentBlobs.NewObjectKey(tenantId, ownerId, "report.pdf");
+        var parts = key.Split('/');
+
+        Assert.HasCount(4, parts, key);
+        Assert.AreEqual(tenantId.ToString(), parts[0]);
+        Assert.AreEqual(ownerId.ToString(), parts[1]);
+        Assert.AreEqual(7, Guid.Parse(parts[2]).Version, "the third segment is a server-generated UUIDv7");
+        Assert.AreEqual("report.pdf", parts[3], "the file name is the last segment, so a download keeps it");
+        Assert.AreNotEqual(key, AttachmentBlobs.NewObjectKey(tenantId, ownerId, "report.pdf"), "every upload gets its own key");
     }
 }

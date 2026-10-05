@@ -139,11 +139,14 @@ internal sealed class UploadAttachmentHandler(
             "Attachment:Upload", nameof(Attachment));
         if (boundary.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(boundary.ErrorMessage!);
 
+        if (Attachment.FileNameError(command.FileName) is { } fileNameError)
+            return Result<DefaultResponse<AttachmentDto>>.Failure(fileNameError);
+
         if (blobStorage is null)
             return Result<DefaultResponse<AttachmentDto>>.Failure("Blob storage is not configured.");
 
         var tenantId = requestContext.TenantId ?? Guid.Empty;
-        var blobName = AttachmentBlobs.BlobName(tenantId, command.OwnerId, command.FileName);
+        var blobName = AttachmentBlobs.NewObjectKey(tenantId, command.OwnerId, command.FileName);
 
         try
         {
@@ -165,7 +168,8 @@ internal sealed class UploadAttachmentHandler(
             storageUri,
             command.OwnerType,
             command.OwnerId,
-            DomainId.FromNullable<AttachmentId>(command.Id));
+            DomainId.FromNullable<AttachmentId>(command.Id),
+            blobName);
         if (entityResult.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(entityResult.ErrorMessage!);
 
         var entity = entityResult.Value!;
@@ -250,12 +254,12 @@ internal sealed class DeleteAttachmentHandler(
             attemptCt => DeleteOnceAsync(command, sent, e => sent = e, attemptCt), ct);
         if (entity is null) return result;
 
-        if (blobStorage is not null && !string.IsNullOrEmpty(entity.StorageUri))
+        // The content the upload wrote, by its stored key; a metadata-only attachment has none.
+        if (blobStorage is not null && entity.StorageKey is { } storageKey)
         {
             try
             {
-                var blobName = AttachmentBlobs.BlobName(entity.TenantId.Value, entity.OwnerId, entity.FileName);
-                await blobStorage.DeleteAsync(AttachmentBlobs.ContainerName, blobName, ct);
+                await blobStorage.DeleteAsync(AttachmentBlobs.ContainerName, storageKey, ct);
             }
             catch (Exception ex)
             {

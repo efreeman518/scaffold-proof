@@ -1,8 +1,8 @@
 namespace TaskFlow.Application.Contracts.Storage;
 
 /// <summary>
-/// Container and object naming shared by the attachment write path and the deferred blob-delete work the
-/// stale-task job stages. Both must agree on the name or a delete silently targets nothing.
+/// Container and object naming for attachment content. The upload path mints the key once and stores it on the
+/// attachment row; the delete paths and the deferred blob-delete work the stale-task job stages read it back.
 /// <para>
 /// The storage port itself is <c>EF.Storage.Contracts.IObjectStorageRepository</c> (D-037): Azure Blob via
 /// <c>EF.Storage.BlobRepositoryBase</c>, S3-compatible via <c>EF.Storage.S3</c>, and a no-op arm when no
@@ -21,7 +21,14 @@ public static class AttachmentBlobs
     /// </summary>
     public static readonly TimeSpan DownloadUrlLifetime = TimeSpan.FromHours(1);
 
-    /// <summary>Object name for one attachment: tenant, owner, file name.</summary>
-    public static string BlobName(Guid tenantId, Guid ownerId, string fileName) =>
-        $"{tenantId}/{ownerId}/{fileName}";
+    /// <summary>
+    /// A new object key for one uploaded attachment: tenant, owner, a server-generated UUIDv7, then the file name as
+    /// uploaded, so a downloaded blob keeps its name and extension (D-075). The caller validates the name with
+    /// <c>Attachment.FileNameError</c> first (required, at most 255 characters, no '/', '\', "..", control or format
+    /// characters or line or paragraph separators, no trailing '.' or whitespace), so it stays one final segment
+    /// under the UUIDv7 and cannot reach another prefix. The key is stored once on the row (<c>Attachment.StorageKey</c>)
+    /// and every read and delete uses the stored key; a later rename never changes it.
+    /// </summary>
+    public static string NewObjectKey(Guid tenantId, Guid ownerId, string fileName) =>
+        $"{tenantId}/{ownerId}/{Guid.CreateVersion7()}/{fileName}";
 }

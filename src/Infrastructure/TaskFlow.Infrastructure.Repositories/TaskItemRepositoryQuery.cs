@@ -273,6 +273,16 @@ public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryption
         if (filter.IsOverdue.HasValue && filter.IsOverdue.Value)
             q = q.Where(e => e.DueDate != null && e.DueDate < DateTimeOffset.UtcNow && e.CompletedDate == null);
 
+        var tagName = filter.TagName?.Trim();
+        if (!string.IsNullOrEmpty(tagName))
+        {
+            // Trimmed and case-insensitive on both providers, as Tag equality is (SQL Server's default collation already
+            // ignores case, PostgreSQL's does not). The EXISTS joins TaskItemTag on IX_TaskItemTag_TenantId_TaskItemId_TagId
+            // and Tag on its (TenantId, Id) key, both tenant-scoped, so the per-task cost is one tag lookup.
+            var upperTagName = tagName.ToUpperInvariant();
+            q = q.Where(e => e.TaskItemTags.Any(tt => tt.Tag.Name.Trim().ToUpper() == upperTagName));
+        }
+
         return q;
     }
 }

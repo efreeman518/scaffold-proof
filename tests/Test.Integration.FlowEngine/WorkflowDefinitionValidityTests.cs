@@ -20,8 +20,9 @@ public class WorkflowDefinitionValidityTests
     private const string DecomposerId = "ai-task-decomposer";
     private const string ComplianceId = "compliance-check";
 
-    // The POST nodes that create or add a row, top-level and loop-body alike. The search POST (compliance n-query-due)
-    // reads, and its route does not honor the header (D-074 lists the keyed routes), so it sends none.
+    // The POST nodes that create or add a row, top-level and loop-body alike. The search POSTs (compliance n-query-due,
+    // compliance-check-item n-find-evidence) read, and their routes do not honor the header (D-074 lists the keyed
+    // routes), so they send none.
     private static readonly HashSet<string> KeyedPostNodes = ["n-compensate-reject", "n-loop-create-one", "n-mark-resolved", "n-remind"];
 
     /// <summary>Verifies all workflows behavior and protects the expected test contract.</summary>
@@ -87,7 +88,7 @@ public class WorkflowDefinitionValidityTests
     /// included: FlowEngine applies a body node's own policy (else the nearest enclosing loop's, else the workflow
     /// default) and keys each iteration separately. Every create or child-add POST sends the engine-generated key in
     /// the <c>Idempotency-Key</c> header the API deduplicates (D-074), which opts it into the full inherited status
-    /// list (408, 409, 429, 500, 502, 503, 504) and transport retries. The If-Match: * PATCH nodes and the search POST
+    /// list (408, 409, 429, 500, 502, 503, 504) and transport retries. The If-Match: * PATCH nodes and the search POSTs
     /// send no key and keep the engine's 409/429/503 unsafe-method default. No node overrides the inherited list, and
     /// no list carries 412 (D-032: a stale precondition is never resent).
     /// </summary>
@@ -115,6 +116,57 @@ public class WorkflowDefinitionValidityTests
             Assert.AreEqual(expectedHeader, config.IdempotencyKeyHeader,
                 $"{fileName}:{node.Id} ({config.Method}): exactly the create and child-add POST nodes send the key");
         }
+    }
+
+    /// <summary>
+    /// D-075, defense in depth: the attachment-backed document store bounds every read to the instance's tenant, and this
+    /// rule keeps the choice of attachment inside that tenant with the API search, so the attachment id a document read
+    /// node takes comes from a tenant-scoped API response in the same definition: its <c>contentKey</c> is
+    /// <c>$.context.{key}...</c>, and <c>{key}</c> is written by the <c>responseMapping</c> of an integration node that
+    /// POSTs <c>/api/v1/attachments/search</c>. Never params, a message body or agent output.
+    /// </summary>
+    [TestMethod]
+    [DynamicData(nameof(AllWorkflows))]
+    [TestCategory("Integration")]
+    public void Each_Document_Read_Takes_Its_Key_From_An_Attachment_Search_Response(string fileName, string _id, string _version)
+    {
+        using var document = JsonDocument.Parse(ReadWorkflowFile(fileName));
+        var nodes = document.RootElement.GetProperty("nodes").EnumerateObject().Select(n => n.Value).ToList();
+        var searchKeys = nodes
+            .Where(n => n.GetProperty("type").GetString() == "integration")
+            .Select(n => n.GetProperty("config"))
+            .Where(c => string.Equals(c.GetProperty("method").GetString(), "POST", StringComparison.OrdinalIgnoreCase)
+                && c.GetProperty("path").GetString() == "/api/v1/attachments/search"
+                && c.TryGetProperty("responseMapping", out _))
+            .SelectMany(c => c.GetProperty("responseMapping").EnumerateObject().Select(m => m.Name))
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var node in nodes.Where(n => n.GetProperty("type").GetString() == "document"))
+        {
+            var config = node.GetProperty("config");
+            var id = node.GetProperty("id").GetString();
+            if (config.TryGetProperty("operation", out var operation)
+                && string.Equals(operation.GetString(), "write", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var contentKey = config.GetProperty("contentKey").GetString() ?? string.Empty;
+            const string prefix = "$.context.";
+            Assert.IsTrue(contentKey.StartsWith(prefix, StringComparison.Ordinal),
+                $"{fileName}:{id} contentKey '{contentKey}' must read a context key (D-075)");
+            var key = contentKey[prefix.Length..].Split('.')[0];
+            Assert.Contains(key, searchKeys,
+                $"{fileName}:{id} contentKey '{contentKey}' must come from an attachments/search responseMapping in the same definition (D-075)");
+        }
+    }
+
+    /// <summary>The D-075 rule above has a subject: compliance-check-item reads its evidence through a document node.</summary>
+    [TestMethod]
+    [TestCategory("Integration")]
+    public void ComplianceCheckItem_Reads_Evidence_Through_A_Document_Node()
+    {
+        using var document = JsonDocument.Parse(ReadWorkflowFile("compliance-check-item.json"));
+        Assert.IsTrue(document.RootElement.GetProperty("nodes").EnumerateObject()
+            .Any(n => n.Value.GetProperty("type").GetString() == "document"));
     }
 
     /// <summary>Verifies the FlowEngine validation refuses a 412 retry status, so the D-032 rule cannot regress silently.</summary>

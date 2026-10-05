@@ -7,4 +7,7 @@ public record AttachmentSearchFilter : DefaultSearchFilter
 {
     public AttachmentOwnerType? OwnerType { get; set; }
     public Guid? OwnerId { get; set; }
+
+    /// <summary>Only attachments whose media type (type/subtype, case-insensitive, parameters ignored) is one of these.</summary>
+    public List<string>? ContentTypes { get; set; }
 }

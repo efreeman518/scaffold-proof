@@ -18,6 +18,8 @@ public class AttachmentConfiguration : TenantEntityTypeConfiguration<Attachment,
         builder.Property(e => e.FileName).HasMaxLength(255).IsRequired();
         builder.Property(e => e.ContentType).HasMaxLength(100).IsRequired();
         builder.Property(e => e.StorageUri).HasMaxLength(2000).IsRequired();
+        // D-075: "{tenant}/{owner}/{uuidv7}/{file name}": 111 characters plus a file name of at most 255; set once at upload.
+        builder.Property(e => e.StorageKey).HasMaxLength(400);
         builder.Property(e => e.OwnerType).HasConversion<int>();
 
         // Polymorphic owner lookup, tenant-first (D-022).

@@ -240,6 +240,45 @@ public class RepositorySearchTranslationTests
     }
 
     /// <summary>
+    /// The tag name filter translates to an EXISTS over TaskItemTag and Tag on both providers and matches the trimmed name
+    /// case-insensitively (PostgreSQL's default collation is case-sensitive, SQL Server's is not): only the task carrying
+    /// the tag is returned, not an untagged task or one carrying another tag.
+    /// </summary>
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task TaskItemSearch_FiltersByTagNameCaseInsensitively_AgainstRealSql()
+    {
+        var marker = $"SearchTagged-{Guid.NewGuid():N}";
+        var tagName = $"Compliance-{marker[^12..]}";
+
+        await using (var db = DbContainerFixture.CreateTrxnContext())
+        {
+            var tag = new TagBuilder().WithTenantId(TenantId).WithName(tagName).Build();
+            var otherTag = new TagBuilder().WithTenantId(TenantId).WithName($"Other-{marker[^12..]}").Build();
+            var tagged = new TaskItemBuilder().WithTenantId(TenantId).WithTitle($"{marker}-Tagged").Build();
+            var otherTagged = new TaskItemBuilder().WithTenantId(TenantId).WithTitle($"{marker}-OtherTagged").Build();
+            var untagged = new TaskItemBuilder().WithTenantId(TenantId).WithTitle($"{marker}-Untagged").Build();
+            tagged.AssociateTag(tag.Id);
+            otherTagged.AssociateTag(otherTag.Id);
+
+            db.Tags.AddRange(tag, otherTag);
+            db.TaskItems.AddRange(tagged, otherTagged, untagged);
+            await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
+        }
+
+        await using var queryDb = DbContainerFixture.CreateQueryContext();
+        var repo = new TaskItemRepositoryQuery(queryDb, TestColumnEncryption.Keys, TestCursorCodec.Instance);
+        var page = await repo.SearchTaskItemsAsync(new TaskItemCursorSearchRequest
+        {
+            PageSize = 10,
+            Filter = new TaskItemSearchFilter { SearchTerm = marker, TenantId = TenantId, TagName = $" {tagName.ToLowerInvariant()} " }
+        }, TenantId, TestContext.CancellationToken);
+
+        Assert.HasCount(1, page.Items);
+        Assert.AreEqual($"{marker}-Tagged", page.Items[0].Title);
+    }
+
+    /// <summary>
     /// D-024: a caller-supplied DueBefore with a non-zero offset must translate on both providers (Npgsql rejects
     /// non-UTC DateTimeOffset parameters unless the UTC converter normalizes them) and compare by instant.
     /// </summary>
@@ -316,6 +355,77 @@ public class RepositorySearchTranslationTests
         Assert.HasCount(1, page.Data);
         Assert.AreEqual(1, page.Total);
         Assert.AreEqual($"{marker}.txt", page.Data[0].FileName);
+    }
+
+    /// <summary>
+    /// The content type filter translates on both providers and compares media types only: case-insensitive, parameters
+    /// such as charset ignored, so "text/plain; charset=utf-8" and "TEXT/MARKDOWN" match and "application/pdf" does not.
+    /// </summary>
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task AttachmentSearch_FiltersByMediaTypeIgnoringCaseAndParameters_AgainstRealSql()
+    {
+        var ownerId = Guid.NewGuid();
+        await using (var db = DbContainerFixture.CreateTrxnContext())
+        {
+            db.Attachments.AddRange(
+                new AttachmentBuilder().WithTenantId(TenantId).WithOwnerId(ownerId).WithFileName("a.txt").WithContentType("text/plain; charset=utf-8").Build(),
+                new AttachmentBuilder().WithTenantId(TenantId).WithOwnerId(ownerId).WithFileName("b.md").WithContentType("TEXT/MARKDOWN").Build(),
+                new AttachmentBuilder().WithTenantId(TenantId).WithOwnerId(ownerId).WithFileName("c.pdf").WithContentType("application/pdf").Build());
+            await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
+        }
+
+        await using var queryDb = DbContainerFixture.CreateQueryContext();
+        var page = await new AttachmentRepositoryQuery(queryDb).SearchAttachmentsAsync(new SearchRequest<AttachmentSearchFilter>
+        {
+            PageIndex = 1,
+            PageSize = 10,
+            Filter = new AttachmentSearchFilter { TenantId = TenantId, OwnerId = ownerId, ContentTypes = ["Text/Plain", "text/markdown; charset=utf-8"] }
+        }, includeTotal: true, TestContext.CancellationToken);
+
+        Assert.AreEqual(2, page.Total);
+        CollectionAssert.AreEquivalent(new[] { "a.txt", "b.md" }, page.Data.Select(a => a.FileName).ToArray());
+    }
+
+    /// <summary>
+    /// The id tie-break follows the sort direction: for rows stamped with the same CreatedAtUtc (one save), a descending
+    /// sort returns the row whose id is greatest in the provider's own uniqueidentifier/uuid ordering.
+    /// </summary>
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task AttachmentSearch_SortDirection_AlsoOrdersTheIdTieBreak_AgainstRealSql()
+    {
+        var ownerId = Guid.NewGuid();
+        var first = new AttachmentBuilder().WithTenantId(TenantId).WithOwnerId(ownerId).WithFileName("first.txt").Build();
+        var second = new AttachmentBuilder().WithTenantId(TenantId).WithOwnerId(ownerId).WithFileName("second.txt").Build();
+        await using (var db = DbContainerFixture.CreateTrxnContext())
+        {
+            db.Attachments.AddRange(first, second);
+            await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
+        }
+
+        Assert.AreEqual(first.CreatedAtUtc, second.CreatedAtUtc, "precondition: one save stamps one CreatedAtUtc");
+        await using var queryDb = DbContainerFixture.CreateQueryContext();
+        var ownerFilter = queryDb.Attachments.IgnoreQueryFilters().Where(a => a.OwnerId == ownerId);
+        var greatestId = await ownerFilter.OrderByDescending(a => a.Id).Select(a => a.FileName).FirstAsync(TestContext.CancellationToken);
+        var leastId = await ownerFilter.OrderBy(a => a.Id).Select(a => a.FileName).FirstAsync(TestContext.CancellationToken);
+        var page = await new AttachmentRepositoryQuery(queryDb).SearchAttachmentsAsync(new SearchRequest<AttachmentSearchFilter>
+        {
+            PageIndex = 1,
+            PageSize = 1,
+            Sorts = [new Sort("CreatedAtUtc", SortOrder.Descending)],
+            Filter = new AttachmentSearchFilter { TenantId = TenantId, OwnerId = ownerId }
+        }, includeTotal: false, TestContext.CancellationToken);
+        var ascending = await new AttachmentRepositoryQuery(queryDb).SearchAttachmentsAsync(new SearchRequest<AttachmentSearchFilter>
+        {
+            PageIndex = 1,
+            PageSize = 1,
+            Sorts = [new Sort("CreatedAtUtc", SortOrder.Ascending)],
+            Filter = new AttachmentSearchFilter { TenantId = TenantId, OwnerId = ownerId }
+        }, includeTotal: false, TestContext.CancellationToken);
+
+        Assert.AreEqual(greatestId, page.Data.Single().FileName, "a descending sort breaks the tie by descending id");
+        Assert.AreEqual(leastId, ascending.Data.Single().FileName, "an ascending sort breaks the tie by ascending id");
     }
 
     public TestContext TestContext { get; set; } = null!;

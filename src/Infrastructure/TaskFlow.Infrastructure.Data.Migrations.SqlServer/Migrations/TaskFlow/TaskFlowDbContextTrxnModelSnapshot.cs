@@ -216,6 +216,10 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.TaskFlow
                     b.Property<int>("OwnerType")
                         .HasColumnType("int");
 
+                    b.Property<string>("StorageKey")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
                     b.Property<string>("StorageUri")
                         .IsRequired()
                         .HasMaxLength(2000)

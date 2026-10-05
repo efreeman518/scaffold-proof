@@ -218,6 +218,10 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.TaskFlow
                     b.Property<int>("OwnerType")
                         .HasColumnType("integer");
 
+                    b.Property<string>("StorageKey")
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)");
+
                     b.Property<string>("StorageUri")
                         .IsRequired()
                         .HasMaxLength(2000)

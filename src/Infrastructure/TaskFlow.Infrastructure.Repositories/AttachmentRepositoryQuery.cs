@@ -3,6 +3,7 @@ using EF.Data;
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Application.Contracts.Repositories;
+using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Application.Mappers;
 using TaskFlow.Application.Models;
 using TaskFlow.Domain.Model;
@@ -34,7 +35,13 @@ public class AttachmentRepositoryQuery(TaskFlowDbContextQuery db)
         // ordering
         if (request.Sorts?.Any() ?? false)
         {
-            q = ((IOrderedQueryable<Attachment>)q.OrderBy(request.Sorts)).ThenBy(e => e.Id);
+            // The id tie-break follows the last sort's direction, so a descending sort is a descending total order.
+            // It decides ties deterministically, not by recency: SQL Server orders uniqueidentifier by its last bytes,
+            // and two UUIDv7 ids minted in the same millisecond carry random bits there.
+            var ordered = (IOrderedQueryable<Attachment>)q.OrderBy(request.Sorts);
+            q = request.Sorts.Last().SortOrder == SortOrder.Descending
+                ? ordered.ThenByDescending(e => e.Id)
+                : ordered.ThenBy(e => e.Id);
         }
         else
         {
@@ -59,6 +66,16 @@ public class AttachmentRepositoryQuery(TaskFlowDbContextQuery db)
             {
                 var ownerId = filter.OwnerId.Value;
                 q = q.Where(e => e.OwnerId == ownerId);
+            }
+
+            if (filter.ContentTypes is { Count: > 0 })
+            {
+                // AttachmentMediaType.Normalize on both sides: the column keeps the uploader's raw value, so its
+                // parameters are cut at the first ';' and it is trimmed and lower-cased in SQL as well.
+                var mediaTypes = filter.ContentTypes.Select(AttachmentMediaType.Normalize).Distinct().ToList();
+                q = q.Where(e => mediaTypes.Contains(
+                    (e.ContentType.Contains(";") ? e.ContentType.Substring(0, e.ContentType.IndexOf(";")) : e.ContentType)
+                        .Trim().ToLower()));
             }
 
             if (filter.TenantId.HasValue)

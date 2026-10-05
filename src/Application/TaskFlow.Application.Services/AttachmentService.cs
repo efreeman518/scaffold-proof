@@ -133,11 +133,14 @@ internal class AttachmentService(
             "Attachment:Upload", nameof(Attachment));
         if (boundary.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(boundary.ErrorMessage!);
 
+        if (Domain.Model.Attachment.FileNameError(fileName) is { } fileNameError)
+            return Result<DefaultResponse<AttachmentDto>>.Failure(fileNameError);
+
         if (blobStorage is null)
             return Result<DefaultResponse<AttachmentDto>>.Failure("Blob storage is not configured.");
 
         var tenantId = RequestTenantId ?? Guid.Empty;
-        var blobName = AttachmentBlobs.BlobName(tenantId, ownerId, fileName);
+        var blobName = AttachmentBlobs.NewObjectKey(tenantId, ownerId, fileName);
 
         try
         {
@@ -153,7 +156,7 @@ internal class AttachmentService(
             AttachmentBlobs.ContainerName, blobName, AttachmentBlobs.DownloadUrlLifetime, cancellationToken: ct)).ToString();
         var entityResult = Domain.Model.Attachment.Create(
             TenantId.From(tenantId), fileName, contentType, fileSizeBytes, storageUri, ownerType, ownerId,
-            DomainId.FromNullable<AttachmentId>(id));
+            DomainId.FromNullable<AttachmentId>(id), blobName);
         if (entityResult.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(entityResult.ErrorMessage!);
 
         var entity = entityResult.Value!;
@@ -231,13 +234,12 @@ internal class AttachmentService(
             attemptCt => DeleteOnceAsync(id, expectedVersion, sent, e => sent = e, attemptCt), ct);
         if (entity is null) return result;
 
-        // Delete blob from storage if available
-        if (blobStorage is not null && !string.IsNullOrEmpty(entity.StorageUri))
+        // Delete the content the upload wrote, by its stored key; a metadata-only attachment has none.
+        if (blobStorage is not null && entity.StorageKey is { } storageKey)
         {
             try
             {
-                var blobName = AttachmentBlobs.BlobName(entity.TenantId.Value, entity.OwnerId, entity.FileName);
-                await blobStorage.DeleteAsync(AttachmentBlobs.ContainerName, blobName, ct);
+                await blobStorage.DeleteAsync(AttachmentBlobs.ContainerName, storageKey, ct);
             }
             catch (Exception ex)
             {

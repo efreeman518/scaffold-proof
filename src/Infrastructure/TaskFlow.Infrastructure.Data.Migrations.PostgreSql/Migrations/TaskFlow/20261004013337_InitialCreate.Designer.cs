@@ -13,7 +13,7 @@ using TaskFlow.Infrastructure.Data;
 namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.TaskFlow
 {
     [DbContext(typeof(TaskFlowDbContextTrxn))]
-    [Migration("20261001210623_InitialCreate")]
+    [Migration("20261004013337_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -220,6 +220,10 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.TaskFlow
 
                     b.Property<int>("OwnerType")
                         .HasColumnType("integer");
+
+                    b.Property<string>("StorageKey")
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)");
 
                     b.Property<string>("StorageUri")
                         .IsRequired()

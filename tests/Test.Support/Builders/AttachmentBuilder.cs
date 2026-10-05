@@ -14,6 +14,7 @@ public class AttachmentBuilder
     private string _storageUri = "https://storage.example.com/test-file.pdf";
     private AttachmentOwnerType _ownerType = AttachmentOwnerType.TaskItem;
     private Guid _ownerId = Guid.NewGuid();
+    private string? _storageKey;
 
     /// <summary>Sets tenant ID on the builder so tests can override only scenario-specific values.</summary>
     public AttachmentBuilder WithTenantId(Guid tenantId) { _tenantId = tenantId; return this; }
@@ -29,6 +30,8 @@ public class AttachmentBuilder
     public AttachmentBuilder WithOwnerType(AttachmentOwnerType ownerType) { _ownerType = ownerType; return this; }
     /// <summary>Sets owner ID on the builder so tests can override only scenario-specific values.</summary>
     public AttachmentBuilder WithOwnerId(Guid ownerId) { _ownerId = ownerId; return this; }
+    /// <summary>Sets the uploaded content's object key, as the upload path does; unset builds a metadata-only attachment.</summary>
+    public AttachmentBuilder WithStorageKey(string? storageKey) { _storageKey = storageKey; return this; }
 
     /// <summary>Builds test data used by focused test cases.</summary>
     public Attachment Build()
@@ -40,7 +43,8 @@ public class AttachmentBuilder
             _fileSizeBytes,
             _storageUri,
             _ownerType,
-            _ownerId);
+            _ownerId,
+            storageKey: _storageKey);
         return result.Value!;
     }
 }

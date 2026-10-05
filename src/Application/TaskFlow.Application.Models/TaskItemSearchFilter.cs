@@ -12,4 +12,7 @@ public record TaskItemSearchFilter : DefaultSearchFilter
     public DateTimeOffset? DueBefore { get; set; }
     public DateTimeOffset? DueAfter { get; set; }
     public bool? IsOverdue { get; set; }
+
+    /// <summary>Only tasks associated with the caller tenant's tag of this name, compared case-insensitively.</summary>
+    public string? TagName { get; set; }
 }
