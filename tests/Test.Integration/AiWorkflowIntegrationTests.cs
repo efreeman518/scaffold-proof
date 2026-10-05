@@ -379,17 +379,17 @@ public sealed class AiWorkflowIntegrationTests
         await RenameAttachmentAsync(client, text, "renamed.txt", ct);
 
         Assert.IsInstanceOfType<AttachmentDocumentStore>(store, "the host registers the attachment-backed store");
-        await using (var stream = await store.OpenReadAsync(text.ToString(), ct))
+        await using (var stream = await store.OpenReadAsync(text.ToString(), null, ct))
         using (var reader = new StreamReader(stream))
         {
             Assert.AreEqual("certificate expires next week", await reader.ReadToEndAsync(ct));
         }
-        await Assert.ThrowsExactlyAsync<NotSupportedException>(() => store.OpenReadAsync(binary.ToString(), ct));
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => store.OpenReadAsync(oversized.ToString(), ct));
-        await Assert.ThrowsExactlyAsync<FileNotFoundException>(() => store.OpenReadAsync(Guid.CreateVersion7().ToString(), ct));
-        await Assert.ThrowsExactlyAsync<ArgumentException>(() => store.OpenReadAsync("not-an-attachment-id", ct));
+        await Assert.ThrowsExactlyAsync<NotSupportedException>(() => store.OpenReadAsync(binary.ToString(), null, ct));
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => store.OpenReadAsync(oversized.ToString(), null, ct));
+        await Assert.ThrowsExactlyAsync<FileNotFoundException>(() => store.OpenReadAsync(Guid.CreateVersion7().ToString(), null, ct));
+        await Assert.ThrowsExactlyAsync<ArgumentException>(() => store.OpenReadAsync("not-an-attachment-id", null, ct));
         await Assert.ThrowsExactlyAsync<NotSupportedException>(() =>
-            store.StoreAsync(new MemoryStream([1]), "evidence.txt", "text/plain", ct));
+            store.StoreAsync(new MemoryStream([1]), "evidence.txt", "text/plain", null, ct));
     }
 
     // One line per instance of the workflow: id, status, terminal node, the nodes it visited and any error, so a failed
@@ -510,14 +510,14 @@ public sealed class AiWorkflowIntegrationTests
 
     private sealed class RecordingDocumentStore(IDocumentStore inner, System.Collections.Concurrent.ConcurrentQueue<string> reads) : IDocumentStore
     {
-        public Task<Stream> OpenReadAsync(string storeRef, CancellationToken ct = default)
+        public Task<Stream> OpenReadAsync(string storeRef, string? tenantId, CancellationToken ct = default)
         {
             reads.Enqueue(storeRef);
-            return inner.OpenReadAsync(storeRef, ct);
+            return inner.OpenReadAsync(storeRef, tenantId, ct);
         }
 
-        public Task<DocumentContextValue> StoreAsync(Stream content, string fileName, string contentType, CancellationToken ct = default) =>
-            inner.StoreAsync(content, fileName, contentType, ct);
+        public Task<DocumentContextValue> StoreAsync(Stream content, string fileName, string contentType, string? tenantId, CancellationToken ct = default) =>
+            inner.StoreAsync(content, fileName, contentType, tenantId, ct);
     }
 
     private const string KeyedCommentProbeId = "idempotency-key-probe";

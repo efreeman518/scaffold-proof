@@ -55,6 +55,10 @@ internal sealed class ExclusiveInProcessLockProvider(
     }
 
     /// <inheritdoc />
+    public Task<bool> TryAcquireNewAsync(string instanceId, string claimantId, TimeSpan leaseDuration, CancellationToken ct = default) =>
+        inner.TryAcquireNewAsync(instanceId, claimantId, leaseDuration, ct);
+
+    /// <inheritdoc />
     public async Task<bool> RenewAsync(string instanceId, string claimantId, TimeSpan leaseDuration, CancellationToken ct = default)
     {
         var renewed = await inner.RenewAsync(instanceId, claimantId, leaseDuration, ct).ConfigureAwait(false);

@@ -66,20 +66,20 @@
     <PackageVersion Include="EF.CosmosDb" Version="2.0.118" />
   </ItemGroup>
   <ItemGroup Label="EF.Packages.Enterprise (Private Feed)">
-    <PackageVersion Include="EF.FilterBuilder" Version="1.0.204" />
-    <PackageVersion Include="EF.FlowEngine" Version="1.0.204" />
-    <PackageVersion Include="EF.FlowEngine.StateStore.Sql" Version="1.0.204" />
-    <PackageVersion Include="EF.FlowEngine.Locks.Sql" Version="1.0.204" />
-    <PackageVersion Include="EF.FlowEngine.WorkflowRegistry.Sql" Version="1.0.204" />
-    <PackageVersion Include="EF.FlowEngine.HumanTaskStore.Sql" Version="1.0.204" />
-    <PackageVersion Include="EF.FlowEngine.Outbox.Sql" Version="1.0.204" />
-    <PackageVersion Include="EF.FlowEngine.CircuitBreaker.Sql" Version="1.0.204" />
-    <PackageVersion Include="EF.FlowEngine.Clients.AI" Version="1.0.204" />
-    <PackageVersion Include="EF.FlowEngine.Clients.Http" Version="1.0.204" />
-    <PackageVersion Include="EF.FlowEngine.Clients.ServiceBus" Version="1.0.204" />
-    <PackageVersion Include="EF.FlowEngine.AdminApi" Version="1.0.204" />
-    <PackageVersion Include="EF.FlowEngine.Dashboard" Version="1.0.204" />
-    <PackageVersion Include="EF.FlowEngine.Testing" Version="1.0.204" />
+    <PackageVersion Include="EF.FilterBuilder" Version="1.0.207" />
+    <PackageVersion Include="EF.FlowEngine" Version="1.0.207" />
+    <PackageVersion Include="EF.FlowEngine.StateStore.Sql" Version="1.0.207" />
+    <PackageVersion Include="EF.FlowEngine.Locks.Sql" Version="1.0.207" />
+    <PackageVersion Include="EF.FlowEngine.WorkflowRegistry.Sql" Version="1.0.207" />
+    <PackageVersion Include="EF.FlowEngine.HumanTaskStore.Sql" Version="1.0.207" />
+    <PackageVersion Include="EF.FlowEngine.Outbox.Sql" Version="1.0.207" />
+    <PackageVersion Include="EF.FlowEngine.CircuitBreaker.Sql" Version="1.0.207" />
+    <PackageVersion Include="EF.FlowEngine.Clients.AI" Version="1.0.207" />
+    <PackageVersion Include="EF.FlowEngine.Clients.Http" Version="1.0.207" />
+    <PackageVersion Include="EF.FlowEngine.Clients.ServiceBus" Version="1.0.207" />
+    <PackageVersion Include="EF.FlowEngine.AdminApi" Version="1.0.207" />
+    <PackageVersion Include="EF.FlowEngine.Dashboard" Version="1.0.207" />
+    <PackageVersion Include="EF.FlowEngine.Testing" Version="1.0.207" />
   </ItemGroup>
   <ItemGroup Label="Microsoft Entity Framework Core">
     <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.12" />
@@ -181,9 +181,9 @@
   </ItemGroup>
   <ItemGroup Label="UI">
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-    <PackageVersion Include="MudBlazor" Version="9.10.0" />
-    <PackageVersion Include="Refit" Version="15.2.0" />
-    <PackageVersion Include="Refit.HttpClientFactory" Version="15.2.0" />
+    <PackageVersion Include="MudBlazor" Version="9.11.0" />
+    <PackageVersion Include="Refit" Version="16.3.0" />
+    <PackageVersion Include="Refit.HttpClientFactory" Version="16.3.0" />
     <PackageVersion Include="Microsoft.Kiota.Abstractions" Version="2.1.2" />
     <PackageVersion Include="Uno.Extensions.Navigation" Version="7.3.6" />
     <PackageVersion Include="Uno.Extensions.Navigation.WinUI" Version="7.3.6" />
@@ -216,7 +216,7 @@
     <PackageVersion Include="AWSSDK.S3" Version="4.0.103.3" />
   </ItemGroup>
   <ItemGroup Label="Azure Service Bus">
-    <PackageVersion Include="Azure.Messaging.ServiceBus" Version="7.20.2" />
+    <PackageVersion Include="Azure.Messaging.ServiceBus" Version="7.21.0" />
     <PackageVersion Include="Aspire.Hosting.Azure.ServiceBus" Version="13.5.4" />
   </ItemGroup>
   <ItemGroup Label="Azure Cosmos DB">
@@ -240,7 +240,7 @@
     <PackageVersion Include="Microsoft.Agents.AI" Version="1.21.0" />
     <PackageVersion Include="Microsoft.Agents.AI.OpenAI" Version="1.21.0" />
     <PackageVersion Include="Microsoft.Extensions.AI" Version="10.10.0" />
-    <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.10.0" />
+    <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.10.1" />
     <PackageVersion Include="OpenAI" Version="2.14.0" />
     <PackageVersion Include="Aspire.Hosting.Azure.CognitiveServices" Version="13.5.4" />
     <PackageVersion Include="Aspire.Hosting.Azure.Search" Version="13.5.4" />

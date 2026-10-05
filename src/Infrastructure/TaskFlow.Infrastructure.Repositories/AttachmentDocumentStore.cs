@@ -36,7 +36,7 @@ public sealed class AttachmentDocumentStore(IServiceScopeFactory scopeFactory) :
     /// <exception cref="FileNotFoundException">No attachment has that id, or it has no uploaded content.</exception>
     /// <exception cref="NotSupportedException">The attachment is not UTF-8 text.</exception>
     /// <exception cref="InvalidDataException">The attachment is larger than <see cref="MaxEvidenceBytes"/>.</exception>
-    public async Task<Stream> OpenReadAsync(string storeRef, CancellationToken ct = default)
+    public async Task<Stream> OpenReadAsync(string storeRef, string? tenantId, CancellationToken ct = default)
     {
         if (!Guid.TryParse(storeRef, out var id))
             throw new ArgumentException($"Document reference '{storeRef}' is not an attachment id.", nameof(storeRef));
@@ -81,7 +81,7 @@ public sealed class AttachmentDocumentStore(IServiceScopeFactory scopeFactory) :
         new($"Attachment {id} is {size} bytes; workflow evidence is limited to {MaxEvidenceBytes} bytes.");
 
     /// <summary>Not supported: workflows only read evidence; attachments are written through the public API.</summary>
-    public Task<DocumentContextValue> StoreAsync(Stream content, string fileName, string contentType, CancellationToken ct = default) =>
+    public Task<DocumentContextValue> StoreAsync(Stream content, string fileName, string contentType, string? tenantId, CancellationToken ct = default) =>
         throw new NotSupportedException(
             "The attachment document store is read-only; upload attachments through POST /api/v1/attachments/upload.");
 
