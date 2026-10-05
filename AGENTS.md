@@ -9,7 +9,7 @@ This file is the single source of maintainer-session instructions: CLI agents an
 - The scaffold payload is deliberately NOT installed in this repo (no `.instructions/`). Do not install it here; the app is consulted BY scaffold sessions in other repos as verified call-site source.
 - Instruction-set problems found while working here go to `.scaffold/INSTRUCTION-GAPS.md` (one line each). Never fix instruction text in this repo - the source repo owns it.
 - `.scaffold/` artifacts (domain-specification.yaml, UBIQUITOUS-LANGUAGE.md, DESIGN-DECISIONS.md) are binding source of truth. New term, entity, or design decision -> update the artifact before the code.
-- When a change moves build/test counts or vulnerability state, refresh `.scaffold/REFERENCE-STATUS.md` in the same commit. `HANDOFF.md` is historical; REFERENCE-STATUS.md is current truth.
+- When a change moves build/test counts or vulnerability state, refresh `.scaffold/REFERENCE-STATUS.md` in the same commit. Root `HANDOFF.md` holds only the terminal `workflowStatus: complete` sentinel that scaffold-ai's `validate-reference.py` checks; REFERENCE-STATUS.md is current truth.
 
 ## Layout
 
