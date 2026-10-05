@@ -24,7 +24,8 @@ public static class AttachmentBlobs
     /// <summary>
     /// A new object key for one uploaded attachment: tenant, owner, a server-generated UUIDv7, then the file name as
     /// uploaded, so a downloaded blob keeps its name and extension (D-075). The caller validates the name with
-    /// <c>Attachment.FileNameError</c> first (no '/', '\', "..", or control characters), so it stays one final segment
+    /// <c>Attachment.FileNameError</c> first (required, at most 255 characters, no '/', '\', "..", control or format
+    /// characters or line or paragraph separators, no trailing '.' or whitespace), so it stays one final segment
     /// under the UUIDv7 and cannot reach another prefix. The key is stored once on the row (<c>Attachment.StorageKey</c>)
     /// and every read and delete uses the stored key; a later rename never changes it.
     /// </summary>

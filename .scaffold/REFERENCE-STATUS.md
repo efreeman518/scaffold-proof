@@ -33,16 +33,16 @@ Release `--no-build` after a `--no-incremental` Release solution build (0 warnin
 
 | Project | Passed | Duration |
 |---|---:|---:|
-| Test.Unit | 682 | 11 s |
+| Test.Unit | 693 | 10 s |
 | Test.UI | 54 | 1 s |
 | Test.Architecture | 87 | 2 s |
-| Test.Endpoints | 259 | 9 s |
+| Test.Endpoints | 263 | 9 s |
 | Test.Integration.FlowEngine | 40 | 0.3 s |
 | Test.Mutation | 27 | 0.1 s |
 | Test.PlaywrightUI (`TestCategory=Unit`) | 1 | 0.1 s |
-| **Total** | **1150** | |
+| **Total** | **1165** | |
 
-The Release build is the analyzer gate: `TreatWarningsAsErrors` fails it on any warning-severity diagnostic. `RedisConfiguredButUnreachable_LimiterFailsOpen` bounds fail-open latency with a production-shaped connection string (373 ms). Types the EF.* packages own are tested by the package suites, not here.
+`Test.Unit` used the CI 15-second blame-hang timeout. The Release build is the analyzer gate: `TreatWarningsAsErrors` fails it on any warning-severity diagnostic. `RedisConfiguredButUnreachable_LimiterFailsOpen` bounds fail-open latency with a production-shaped connection string (373 ms). Types the EF.* packages own are tested by the package suites, not here.
 
 ### Component containers
 
@@ -50,7 +50,7 @@ Release `--no-build`, Podman Docker-compatible context; Test.Integration 2026-10
 
 | Lane | Project | Passed | Skipped | Duration |
 |---|---|---:|---:|---:|
-| `TASKFLOW_LANE=NonAzure` / PostgreSqlJsonb | Test.Integration | 152 | 5 (Azure-only) | 106 s |
+| `TASKFLOW_LANE=NonAzure` / PostgreSqlJsonb | Test.Integration | 152 | 5 (Azure-only) | 109 s |
 | `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 138 | 19 (NonAzure-only) | 174 s |
 | NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | Test.Integration | 154 | 3 | 104 s |
 | unset (resolves NonAzure) | Test.E2E | 10 | 0 | 15 s |

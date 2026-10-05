@@ -42,7 +42,10 @@ public class AttachmentTests
         Assert.IsTrue(result.IsFailure);
     }
 
-    /// <summary>D-075: a file name is display metadata, so a path separator, a ".." segment or a control character fails.</summary>
+    /// <summary>
+    /// D-075: a file name is display metadata, so a path separator, a ".." segment, a control or format character, a line
+    /// or paragraph separator, or a trailing '.' or whitespace fails.
+    /// </summary>
     [TestMethod]
     [TestCategory("Unit")]
     [DataRow("../../tenant/task/x.txt")]
@@ -51,11 +54,32 @@ public class AttachmentTests
     [DataRow("..")]
     [DataRow("report..txt")]
     [DataRow("line\nbreak.txt")]
+    [DataRow(".", DisplayName = "only dots: one")]
+    [DataRow("...", DisplayName = "only dots: three")]
+    [DataRow("report.", DisplayName = "trailing dot")]
+    [DataRow("report.txt ", DisplayName = "trailing space")]
+    [DataRow("report.txt\u00A0", DisplayName = "trailing no-break space")]
+    [DataRow("invoice\u202Etxt.exe", DisplayName = "Cf: right-to-left override")]
+    [DataRow("zero\u200Bwidth.txt", DisplayName = "Cf: zero-width space")]
+    [DataRow("tag\U000E0041.txt", DisplayName = "Cf: supplementary-plane tag character")]
+    [DataRow("line\u2028separator.txt", DisplayName = "Zl: line separator")]
+    [DataRow("paragraph\u2029separator.txt", DisplayName = "Zp: paragraph separator")]
     public void Given_UnsafeFileName_When_AttachmentCreatedOrRenamed_Then_ReturnsDomainFailure(string fileName)
     {
         Assert.IsTrue(Attachment.Create(TenantId, fileName, "text/plain", 1, "https://storage/x", AttachmentOwnerType.TaskItem, Guid.NewGuid()).IsFailure);
         var attachment = Attachment.Create(TenantId, "file.txt", "text/plain", 1, "https://storage/x", AttachmentOwnerType.TaskItem, Guid.NewGuid()).Value!;
         Assert.IsTrue(attachment.Update(fileName: fileName).IsFailure);
+    }
+
+    /// <summary>A file name is at most 255 characters; dotted, accented and longest-allowed names pass.</summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public void Given_FileNameLength_When_Validated_Then_255CharactersIsTheLimit()
+    {
+        Assert.IsNull(Attachment.FileNameError(new string('a', 251) + ".txt"));
+        Assert.IsNotNull(Attachment.FileNameError(new string('a', 252) + ".txt"));
+        Assert.IsNull(Attachment.FileNameError("r\u00E9sum\u00E9.v2.pdf"));
+        Assert.IsNull(Attachment.FileNameError(".gitignore"));
     }
 
     /// <summary>D-075: a rename never changes the stored object key, so reads and deletes keep targeting the uploaded content.</summary>

@@ -250,6 +250,37 @@ public class AttachmentEndpointTests
         Assert.IsEmpty((await blobs.ListAsync(AttachmentBlobs.ContainerName, cancellationToken: TestContext.CancellationToken)).Items);
     }
 
+    /// <summary>
+    /// An upload whose file name breaks the rest of the name rule (over 255 characters, a trailing '.', a format
+    /// character) is a 400 before the blob is written, so a refused upload leaves no blob behind.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service, "overlong")]
+    [DataRow(EndpointStyles.Cqrs, "overlong")]
+    [DataRow(EndpointStyles.Service, "trailing-dot")]
+    [DataRow(EndpointStyles.Cqrs, "format-character")]
+    [TestMethod]
+    public async Task Given_InvalidFileName_When_PostUpload_Then_Returns400AndWritesNoBlob(string style, string kind)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        var fileName = kind switch
+        {
+            "overlong" => new string('a', 252) + ".txt",
+            "trailing-dot" => "evidence.txt.",
+            "format-character" => "invoice\u202Etxt.exe",
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
+        };
+        var blobs = new InMemoryBlobStorageRepository();
+        using var uploadFactory = UploadFactory(style, blobs);
+        using var client = uploadFactory.CreateClient();
+        var taskId = await CreateParentTaskItem(client);
+
+        using var response = await UploadAsync(client, taskId, fileName);
+
+        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode, await response.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        Assert.IsEmpty((await blobs.ListAsync(AttachmentBlobs.ContainerName, cancellationToken: TestContext.CancellationToken)).Items);
+    }
+
     /// <summary>D-075: renaming an attachment to a path or ".." name is a 400, in both endpoint styles.</summary>
     [TestCategory("Endpoint")]
     [DataRow(EndpointStyles.Service)]

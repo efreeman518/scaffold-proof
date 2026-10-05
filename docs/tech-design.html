@@ -1848,7 +1848,7 @@ cd tests/Test.PlaywrightUI &amp;&amp; npm run test
 </tr>
 <tr>
 <td><strong>compliance-check</strong></td>
-<td>Manual / dashboard / future cron via TickerQ</td>
+<td>None that runs it end to end: evidence reads need the instance's <code>TenantId</code>, and no shipped start path sets it (the admin start request, which the dashboard uses, has no tenant field, and TaskFlow registers no trigger for it), so an admin or dashboard start runs, but every evidence read is refused and that child ends on <code>n-failed</code> (D-075). A start through <code>IFlowEngine</code> with <code>StartRequest.TenantId</code> set, as a trigger makes it, reads evidence</td>
 <td><code>tenantId</code>, <code>dueBefore</code> (date-time)</td>
 <td><code>integration</code> node searching one page of at most 50 of the tenant&#39;s due tasks tagged <code>compliance</code> through <code>POST /api/v1/task-items/search</code> (<code>tagName</code> filter); parallel <code>loop</code> (max 5) starting one <code>compliance-check-item</code> child workflow per task, which finds the task&#39;s latest attachment through <code>POST /api/v1/attachments/search</code>, reads it as text evidence through a <code>document</code> node over the attachment-backed <code>IDocumentStore</code> (D-075; a task without an attachment gets no action; the store serves an attachment only to an instance of its tenant, which each child inherits from the parent, so the parent is started with a <code>TenantId</code>: an instance the admin start route starts has none, and its evidence reads are refused), classifies it with an <code>agent</code> node, and routes to human review or a keyed reminder comment</td>
 </tr>

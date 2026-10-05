@@ -283,13 +283,20 @@ public sealed class AiWorkflowIntegrationTests
             ["dueBefore"] = DateTimeOffset.UtcNow.AddDays(7).ToString("O")
         }, ct);
         var (node, body) = await WaitForTerminalAsync(client, instanceId, ct);
+        var children = await ChildInstancesAsync(client, "compliance-check-item", ct);
         var diagnostics = $"Reads: [{string.Join(", ", reads)}]; newest text {latestEvidence}, older text {olderEvidence}; "
             + $"prompts: {prompts.Count}; reminder comments: {await CountCommentsAsync(client, taggedWithEvidence.Id.Value, ct)}. "
-            + $"Parents: {await ChildInstancesAsync(client, "compliance-check", ct)}. "
-            + $"Children: {await ChildInstancesAsync(client, "compliance-check-item", ct)}.";
+            + $"Parents: {Describe(await ChildInstancesAsync(client, "compliance-check", ct))}. "
+            + $"Children: {Describe(children)}.";
         TestContext.WriteLine(diagnostics);
 
         Assert.AreEqual("n-output-ok", node, diagnostics);
+        // Exactly one child per tagged task of tenant A, each ending on n-done: a failed search on the child without
+        // evidence ends it on n-failed, and an untagged or tenant B task in the loop adds a child.
+        CollectionAssert.AreEquivalent(
+            new[] { "Compliance A tagged with evidence -> n-done", "Compliance A tagged without evidence -> n-done" },
+            children.Select(c => $"{c.Item} -> {c.At}").ToArray(),
+            "the loop starts one child per tagged task of the started tenant, and each ends on n-done. " + diagnostics);
         // The parent waits on its children and is resumed by their completion signals. A lease is exclusive, even for the
         // claimant that holds it, so a resume that met a lease still held would be skipped and the sweep would pick the
         // parent up only after the 30 s lease expired.
@@ -403,7 +410,8 @@ public sealed class AiWorkflowIntegrationTests
     /// host registers: a text attachment uploaded through the API reads back as its text, also after a rename (the read
     /// uses the stored object key, not the file name); a binary attachment, one larger
     /// than <see cref="AttachmentDocumentStore.MaxEvidenceBytes"/>, an unknown attachment id and a reference that is not an
-    /// id are refused; writing is not supported. Every call carries the scaffold tenant that uploaded the attachments.
+    /// id are refused, the oversized one also when its row understates its size (the bounded copy); writing is not
+    /// supported. Every call carries the scaffold tenant that uploaded the attachments.
     /// </summary>
     [TestMethod]
     public async Task AttachmentDocumentStore_ReadsTextEvidence_AndRefusesBinaryOversizedUnknownOrWrites()
@@ -429,6 +437,10 @@ public sealed class AiWorkflowIntegrationTests
         }
         await Assert.ThrowsExactlyAsync<NotSupportedException>(() => store.OpenReadAsync(binary.ToString(), TenantId, ct));
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() => store.OpenReadAsync(oversized.ToString(), TenantId, ct));
+        // The row size is client-settable metadata; with it understated, the bounded copy of the blob still refuses.
+        await PutAttachmentFieldAsync(client, oversized, "fileSizeBytes", 1, ct);
+        var copyRefusal = await Assert.ThrowsExactlyAsync<InvalidDataException>(() => store.OpenReadAsync(oversized.ToString(), TenantId, ct));
+        StringAssert.Contains(copyRefusal.Message, "more than", "the copy, not the row size check, refused it");
         await Assert.ThrowsExactlyAsync<FileNotFoundException>(() => store.OpenReadAsync(Guid.CreateVersion7().ToString(), TenantId, ct));
         await Assert.ThrowsExactlyAsync<ArgumentException>(() => store.OpenReadAsync("not-an-attachment-id", TenantId, ct));
         await Assert.ThrowsExactlyAsync<NotSupportedException>(() =>
@@ -474,18 +486,22 @@ public sealed class AiWorkflowIntegrationTests
         await Assert.ThrowsExactlyAsync<ArgumentException>(() => store.OpenReadAsync(reference, "not-a-tenant-id", ct));
     }
 
-    // One line per instance of the workflow: id, status, terminal node, the nodes it visited and any error, so a failed
-    // assertion shows which child took which path.
-    private static async Task<string> ChildInstancesAsync(HttpClient client, string workflowId, CancellationToken ct)
+    // One row per instance of the workflow: its item title, its current node, and a line with id, status, terminal node,
+    // the nodes it visited and any error, so a failed assertion shows which child took which path.
+    private sealed record InstanceRow(string? Item, string? At, string Line);
+
+    private static string Describe(IReadOnlyList<InstanceRow> rows) => string.Join(" | ", rows.Select(r => r.Line));
+
+    private static async Task<IReadOnlyList<InstanceRow>> ChildInstancesAsync(HttpClient client, string workflowId, CancellationToken ct)
     {
         using var response = await client.GetAsync($"/api/flowengine/instances?workflowId={workflowId}&take=50", ct);
         var text = await response.Content.ReadAsStringAsync(ct);
-        if (!response.IsSuccessStatusCode) return $"instance list failed: {(int)response.StatusCode} {Truncate(text)}";
+        Assert.IsTrue(response.IsSuccessStatusCode, $"{workflowId} instance list failed: {(int)response.StatusCode} {Truncate(text)}");
         using var json = JsonDocument.Parse(text);
         var items = json.RootElement.ValueKind == JsonValueKind.Array
             ? json.RootElement
             : json.RootElement.EnumerateObject().First(p => p.Value.ValueKind == JsonValueKind.Array).Value;
-        return string.Join(" | ", items.EnumerateArray().Select(i =>
+        return items.EnumerateArray().Select(i =>
         {
             string? Field(string name) => i.EnumerateObject()
                 .FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)).Value is { ValueKind: not JsonValueKind.Undefined } v
@@ -495,9 +511,10 @@ public sealed class AiWorkflowIntegrationTests
                 ? string.Join(">", history.EnumerateArray().Select(h => FindStringProperty(h, "nodeId") + ":" + FindStringProperty(h, "outcome")))
                 : "?";
             var title = i.TryGetProperty("context", out var context) ? FindStringProperty(context, "title") : null;
-            return $"{Field("instanceId")} created={Field("createdAt")} parentNode={Field("parentNodeId")} item={title} status={Field("status")} "
-                + $"at={Field("currentNodeId")} visits={Field("nodeVisitCounts")} path={visited} error={Field("error")}";
-        }));
+            return new InstanceRow(title, Field("currentNodeId"),
+                $"{Field("instanceId")} created={Field("createdAt")} parentNode={Field("parentNodeId")} item={title} status={Field("status")} "
+                + $"at={Field("currentNodeId")} visits={Field("nodeVisitCounts")} path={visited} error={Field("error")}");
+        }).ToList();
     }
 
     private static TaskFlow.Domain.Model.TaskItem DueTask(
@@ -566,18 +583,22 @@ public sealed class AiWorkflowIntegrationTests
         return payload.RootElement.GetProperty("item").GetProperty("id").GetGuid();
     }
 
-    private static async Task RenameAttachmentAsync(HttpClient client, Guid attachmentId, string fileName, CancellationToken ct)
+    private static Task RenameAttachmentAsync(HttpClient client, Guid attachmentId, string fileName, CancellationToken ct) =>
+        PutAttachmentFieldAsync(client, attachmentId, "fileName", fileName, ct);
+
+    // PUTs the attachment's current item with one field replaced.
+    private static async Task PutAttachmentFieldAsync(HttpClient client, Guid attachmentId, string field, JsonNode value, CancellationToken ct)
     {
         var current = await client.GetFromJsonAsync<JsonObject>($"/api/v1/attachments/{attachmentId}", ct);
         var item = current!["item"]!.AsObject();
-        item["fileName"] = fileName;
+        item[field] = value;
         using var request = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/attachments/{attachmentId}")
         {
             Content = JsonContent.Create(new JsonObject { ["item"] = item.DeepClone() })
         };
         request.Headers.TryAddWithoutValidation("If-Match", "*");
         using var response = await client.SendAsync(request, ct);
-        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, $"Rename failed: {Truncate(await response.Content.ReadAsStringAsync(ct))}");
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, $"PUT {field} failed: {Truncate(await response.Content.ReadAsStringAsync(ct))}");
     }
 
     // Keeps the host's own IDocumentStore registration (asserted to be the attachment-backed store) and records each
