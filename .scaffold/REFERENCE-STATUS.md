@@ -77,6 +77,7 @@ The Azure full-lane acceptance filter (Functions on) and the Azure Foundry live 
 
 | Surface | Result | Evidence boundary |
 |---|---|---|
+| Test.PlaywrightUI, NonAzure / PostgreSqlJsonb (2026-10-05, Refit 16.3.0, MudBlazor 9.11.0) | 4 passed, 0 failed/skipped | `BlazorTypeScriptProject_Passes` (with the C# Gateway/Blazor smoke), `UnoWasmCanvasSmoke_Passes` and the WASM host contract in one run; `ReactTypeScriptProject_Passes` in a second run, once `npm ci` had installed `src/UI/TaskFlow.React` (without it the React project is reported unavailable and the test fails). The Release Uno cold start was not run |
 | Test.PlaywrightUI, NonAzure / PostgreSqlJsonb (2026-09-29) | 4 passed, 0 failed/skipped | Blazor, React, Uno WASM and the published Release Uno cold start; the TypeScript projects ran 18 tests (1, 5, 6 and 6), all passed, in 8 min 37 s |
 | Test.PlaywrightUI, Azure / Cosmos (2026-09-29) | 4 passed, 0 failed/skipped | Same projects and 18 TypeScript tests, all passed, in 11 min 21 s |
 | Android mobile (2026-09-16) | 3 passed | Appium Android runner, pre-adoption package set |
