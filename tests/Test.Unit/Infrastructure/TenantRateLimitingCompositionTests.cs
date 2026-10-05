@@ -29,17 +29,20 @@ public sealed class TenantRateLimitingCompositionTests
     [Timeout(60000, CooperativeCancellation = true)]
     public async Task RedisConfiguredButUnreachable_LimiterFailsOpen()
     {
-        // asyncTimeout bounds each command queued behind the dead connection; at the 5 s default the two
-        // acquisitions cost about 12 s. The limiter's fail-open path is the same at either timeout.
-        using var provider = Build("127.0.0.1:1,connectTimeout=250,connectRetry=1,asyncTimeout=250,syncTimeout=250");
+        // No asyncTimeout: the limiter itself must not wait out the multiplexer's 5 s default per acquisition.
+        using var provider = Build("127.0.0.1:1,connectTimeout=250,connectRetry=1");
 
         var factory = provider.GetRequiredService<ISlidingWindowLimiterFactory>();
         using var limiter = factory.Create($"rl:test:default:tenant:{{{Guid.NewGuid()}}}", new RateLimitAllowance { PermitLimit = 1 });
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
         using var first = await limiter.AcquireAsync(1, TestContext.CancellationToken);
         using var second = await limiter.AcquireAsync(1, TestContext.CancellationToken);
+        elapsed.Stop();
 
         Assert.AreNotEqual("InProcessSlidingWindowLimiterFactory", factory.GetType().Name, "Redis is configured");
         Assert.IsTrue(first.IsAcquired && second.IsAcquired, "an unreachable limiter backend admits the request");
+        Assert.IsLessThan(TimeSpan.FromSeconds(2), elapsed.Elapsed,
+            "fail-open must not add the Redis command timeout to each request");
     }
 
     /// <summary>Without Redis the budgets stay in process: correct on one replica, and no multiplexer is needed.</summary>

@@ -4,13 +4,13 @@ Canonical current evidence for the TaskFlow reference application. Historical ph
 
 > Update this file only from observed results. TaskFlow CI records the scaffold checkout commit used for cross-repository validation so failures remain diagnosable without creating a compatibility pin.
 
-TaskFlow runs on the EF.Packages 2.0 platform packages (every `EF.*` platform id at 2.0.115; the EF.FilterBuilder and EF.FlowEngine ids keep their own versions). Results below distinguish passed, blocked, and not-run evidence; each table names its run date.
+TaskFlow runs on the EF.Packages 2.0 platform packages (every `EF.*` platform id at 2.0.118; EF.FilterBuilder and the EF.FlowEngine ids at 1.0.204). Results below distinguish passed, blocked, and not-run evidence; each table names its run date.
 
 ## Build Status
 
 | Field | Value |
 |---|---|
-| Last verified | 2026-09-29 (Release build, Uno build, analyzers, vulnerability audit, fast matrix, component containers on both lanes plus MongoDB, Aspire topology and core-lane meshes on both lanes, NonAzure full-lane graph, Test.PlaywrightUI on both lanes, Test.Load on the NonAzure dev stack); 2026-09-16 (mobile, images, deployment lanes) |
+| Last verified | 2026-10-05 (Release build, Uno build, vulnerability audit, fast matrix, Aspire topology contracts, NonAzure component containers, on EF.* 2.0.118 and EF.FlowEngine 1.0.204); 2026-09-29 (Azure and MongoDB component containers, Aspire topology and core-lane meshes on both lanes, NonAzure full-lane graph, Test.PlaywrightUI on both lanes, Test.Load on the NonAzure dev stack); 2026-09-16 (mobile, images, deployment lanes) |
 | Solution | `TaskFlow.slnx` (47 projects) |
 | Target framework | .NET 10 |
 | Configuration | Release |
@@ -23,34 +23,34 @@ TaskFlow runs on the EF.Packages 2.0 platform packages (every `EF.*` platform id
 
 A Debug restore of the Uno project followed by a Release `--no-restore` build fails with `UNOB0019` (the DevServer targets are imported for a Debug restore); restore in the configuration you build, as CI does.
 
-`dotnet ef migrations has-pending-model-changes` is clean for all 6 context/provider pairs (TaskFlow, FlowEngine and TickerQ, each against SqlServer and PostgreSql; 2026-10-01, the FlowEngine pairs again on 2026-10-02 against EF.FlowEngine 1.0.202). Each pair has exactly one initial migration (D-025, `MigrationBaselineArchitectureTests`); the TaskFlow context's `InitialCreate` was regenerated on 2026-10-01 (again the same day, for the SQL Server binary collation on the D-074 key columns) and `DatabaseMigratorIntegrationTests` applies all targets to an empty database on PostgreSQL and SQL Server.
+`dotnet ef migrations has-pending-model-changes` is clean for all 6 context/provider pairs (TaskFlow, FlowEngine and TickerQ, each against SqlServer and PostgreSql; `MigrationModelContractTests` in Test.Unit, 2026-10-05 against EF.FlowEngine 1.0.204). Each pair has exactly one initial migration (D-025, `MigrationBaselineArchitectureTests`); the TaskFlow context's `InitialCreate` was regenerated on 2026-10-01 (again the same day, for the SQL Server binary collation on the D-074 key columns) and `DatabaseMigratorIntegrationTests` applies all targets to an empty database on PostgreSQL and SQL Server.
 
 ## Test Status
 
 ### Fast matrix
 
-Release `--no-build` after a `--no-incremental` Release solution build (0 warnings, 0 errors), run serially; Unit, Architecture, Endpoints and Integration.FlowEngine 2026-10-02 (EF.* 2.0.116, EF.FlowEngine 1.0.202), UI 2026-09-30 (EF.* 2.0.115), the rest 2026-09-29. No failed, skipped, or inconclusive tests:
+Release `--no-build` after a `--no-incremental` Release solution build (0 warnings, 0 errors), run serially; 2026-10-05 (EF.* 2.0.118, EF.FlowEngine and EF.FilterBuilder 1.0.204) except Test.PlaywrightUI (2026-09-29). No failed, skipped, or inconclusive tests:
 
 | Project | Passed | Duration |
 |---|---:|---:|
 | Test.Unit | 674 | 11 s |
 | Test.UI | 54 | 1 s |
 | Test.Architecture | 87 | 2 s |
-| Test.Endpoints | 236 | 8 s |
-| Test.Integration.FlowEngine | 34 | 0.3 s |
+| Test.Endpoints | 236 | 9 s |
+| Test.Integration.FlowEngine | 35 | 0.3 s |
 | Test.Mutation | 27 | 0.1 s |
 | Test.PlaywrightUI (`TestCategory=Unit`) | 1 | 0.1 s |
-| **Total** | **1113** | |
+| **Total** | **1114** | |
 
-`Test.Unit` used the CI 15-second blame-hang timeout. Its duration is the median of three 2026-10-02 runs (10-13 s) after the test-speed changes, from a project-scoped Release build. `dotnet format analyzers TaskFlow.slnx --severity warn --verify-no-changes --no-restore` passed with no changes or diagnostics. Types the EF.* packages own are tested by the package suites, not here.
+`Test.Unit` used the CI 15-second blame-hang timeout. The Release build is the analyzer gate: `TreatWarningsAsErrors` fails it on any warning-severity diagnostic. `RedisConfiguredButUnreachable_LimiterFailsOpen` bounds fail-open latency with a production-shaped connection string (373 ms). Types the EF.* packages own are tested by the package suites, not here.
 
 ### Component containers
 
-Release `--no-build`, Podman Docker-compatible context; Test.Integration 2026-10-02 (EF.* 2.0.116, EF.FlowEngine 1.0.202; NonAzure three identical runs), Test.E2E 2026-09-29. The Redis fail-open limiter test moved out of Test.Integration (it needed no container; Test.Unit pins it), so each lane has one test fewer:
+Release `--no-build`, Podman Docker-compatible context; Test.Integration NonAzure 2026-10-05 (EF.* 2.0.118, EF.FlowEngine 1.0.204), Azure and MongoDb 2026-10-02 (EF.* 2.0.116, EF.FlowEngine 1.0.202), Test.E2E 2026-09-29:
 
 | Lane | Project | Passed | Skipped | Duration |
 |---|---|---:|---:|---:|
-| `TASKFLOW_LANE=NonAzure` / PostgreSqlJsonb | Test.Integration | 144 | 5 (Azure-only) | 98 s |
+| `TASKFLOW_LANE=NonAzure` / PostgreSqlJsonb | Test.Integration | 144 | 5 (Azure-only) | 101 s |
 | `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 130 | 19 (NonAzure-only) | 169 s |
 | NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | Test.Integration | 146 | 3 | 100 s |
 | unset (resolves NonAzure) | Test.E2E | 10 | 0 | 15 s |
@@ -106,7 +106,7 @@ Browser WASM Release sets `PublishTrimmed=false` because current Uno Navigation,
 | Global Uno.Check / Uno templates | 1.34.1 / 6.7.22 (2026-09-16) |
 | Azure Functions Core Tools | 4.12.0-preview.1 |
 | Bicep CLI (via `az bicep`) | 0.42.1; `az bicep build --file infra/main.bicep` reproduces the committed `infra/main.json` byte for byte apart from line endings |
-| Repository tools | ILSpy 11.0.0.9375; Stryker 5.0.0; dotnet-ef 10.0.12; Refitter 2.2.0 |
+| Repository tools | ILSpy 11.1.0.9782; Stryker 5.0.0; dotnet-ef 10.0.12; Refitter 2.2.0 |
 
 Machine-level updates still blocked outside the repository: installed workloads remain at manifest set 10.0.400.1 after the updater stalled twice, although required workload IDs are installed; Node.js 24.16.0 cannot move to 24.21.0 without an administrator MSI; Android updates require Google license acceptance; Functions tooling resolves 4.12.0-preview.1 because the npm 4.14 bootstrap failed with `ENOENT`; Uno.Check reports the prohibited MAUI meta-workload and a registry false positive even though required individual workloads and long paths are present.
 
@@ -114,7 +114,7 @@ Machine-level updates still blocked outside the repository: installed workloads 
 
 Run `dotnet list package --vulnerable --include-transitive` and capture findings here. Severity policy: [scaffold execution gates](https://github.com/efreeman518/scaffold-ai/blob/main/support/execution-gates.md#vulnerability-audit).
 
-Last audit (2026-09-29): `dotnet list TaskFlow.slnx package --vulnerable --include-transitive` against nuget.org and the private feed reported no vulnerable packages for all 47 solution projects, the 3 Uno projects included. The React `npm` audit was not rerun (its last result, 2026-09-16, was 0 vulnerabilities).
+Last audit (2026-10-05, EF.* 2.0.118, EF.FlowEngine and EF.FilterBuilder 1.0.204): `dotnet list TaskFlow.slnx package --vulnerable --include-transitive` against nuget.org and the private feed reported no vulnerable packages for all 47 solution projects, the 3 Uno projects included. The React `npm` audit was not rerun (its last result, 2026-09-16, was 0 vulnerabilities).
 
 | Package | Severity | Direct/Transitive | Advisory | Notes |
 |---|---|---|---|---|
