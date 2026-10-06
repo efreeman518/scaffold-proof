@@ -139,6 +139,52 @@ public sealed class SelfCallRelayTests
         Assert.IsEmpty(Header(transport.Requests.Single(), RelayHeader));
     }
 
+    /// <summary>
+    /// The self-call client over its real transport answers a 302 with the 302: a followed redirect would carry the relay
+    /// token and header to the redirect target. A loopback listener answers once, so a second hop would never return.
+    /// </summary>
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task Client_DoesNotFollowARedirect()
+    {
+        using var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var accepted = 0;
+        var server = Task.Run(async () =>
+        {
+            using var socket = await listener.AcceptTcpClientAsync(TestContext.CancellationToken);
+            Interlocked.Increment(ref accepted);
+            await using var stream = socket.GetStream();
+            var buffer = new byte[4096];
+            _ = await stream.ReadAsync(buffer, TestContext.CancellationToken);
+            var reply = System.Text.Encoding.ASCII.GetBytes(
+                $"HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:{port}/followed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            await stream.WriteAsync(reply, TestContext.CancellationToken);
+        }, TestContext.CancellationToken);
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["FlowEngine:TaskFlowApiBaseUrl"] = $"http://127.0.0.1:{port}" })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        RegisterServices.AddTaskFlowApiHttpClient(services.AddFlowEngine(), services, config);
+        await using var provider = services.BuildServiceProvider();
+        using var client = provider.GetRequiredService<IHttpClientFactory>().CreateClient(RegisterServices.TaskFlowApiClientName);
+
+        using var response = await client.GetAsync(new Uri("/start", UriKind.Relative), TestContext.CancellationToken);
+        await server;
+
+        Assert.AreEqual(HttpStatusCode.Found, response.StatusCode);
+        Assert.AreEqual(1, accepted, "no second hop");
+    }
+
+    [TestMethod]
+    public void FollowNoRedirects_RefusesAHandlerItCannotConfigure()
+    {
+        _ = Assert.ThrowsExactly<InvalidOperationException>(() => RegisterServices.FollowNoRedirects(StubHttpMessageHandler.Returns(HttpStatusCode.OK)));
+    }
+
     [TestMethod]
     public void Wrapping_KeepsEachRegistrationsLifetime()
     {

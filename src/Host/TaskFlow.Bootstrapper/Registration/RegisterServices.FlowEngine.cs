@@ -143,7 +143,8 @@ public static partial class RegisterServices
     /// host that runs it. <see cref="SelfCallRelayHandler"/> runs inside that pipeline, once per attempt, and relays the
     /// instance tenant when <c>FlowEngine:SelfCall:TokenScope</c> is set (D-068). The If-Match: * trusted-automation
     /// override (D-032) travels in each PATCH node's own "headers" config (FlowEngine forwards
-    /// IntegrationNodeConfig.Headers).
+    /// IntegrationNodeConfig.Headers). The client follows no redirect: the transport would send the relay token and
+    /// header to the redirect target below the handler's base-address check, and no self-call address redirects.
     /// </summary>
     internal static IHttpClientBuilder AddTaskFlowApiHttpClient(FlowEngineBuilder fe, IServiceCollection services, IConfiguration config)
     {
@@ -154,7 +155,26 @@ public static partial class RegisterServices
         AddSelfCallRelay(services, config, baseAddress);
         var client = services.AddHttpClient(TaskFlowApiClientName, c => c.BaseAddress = baseAddress);
         fe.AddResilientHttpClient(TaskFlowApiClientName, TaskFlowApiClientName);
-        return client.AddHttpMessageHandler<SelfCallRelayHandler>();
+        return client
+            .ConfigurePrimaryHttpMessageHandler((handler, _) => FollowNoRedirects(handler))
+            .AddHttpMessageHandler<SelfCallRelayHandler>();
+    }
+
+    /// <summary>Turns automatic redirects off on the self-call client's primary handler, whichever handler type it is.</summary>
+    internal static void FollowNoRedirects(HttpMessageHandler handler)
+    {
+        switch (handler)
+        {
+            case SocketsHttpHandler sockets:
+                sockets.AllowAutoRedirect = false;
+                break;
+            case HttpClientHandler client:
+                client.AllowAutoRedirect = false;
+                break;
+            default:
+                throw new InvalidOperationException(
+                    $"The {TaskFlowApiClientName} client's primary handler is a {handler.GetType().Name}; redirects cannot be turned off on it.");
+        }
     }
 
     /// <summary>
