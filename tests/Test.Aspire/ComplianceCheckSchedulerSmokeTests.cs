@@ -60,9 +60,10 @@ public class ComplianceCheckSchedulerSmokeTests
         var evidenceId = await UploadEvidenceAsync(client, taskId, ct);
 
         // A due one-off ticker for the job, as the cron occurrence would be; the Scheduler picks it up from the store.
+        var tickerAt = DateTimeOffset.UtcNow;
         await using (var tickerQ = CreateTickerQContext())
         {
-            var now = DateTime.UtcNow;
+            var now = tickerAt.UtcDateTime;
             tickerQ.Set<TimeTickerEntity>().Add(new TimeTickerEntity
             {
                 Id = Guid.NewGuid(),
@@ -72,7 +73,9 @@ public class ComplianceCheckSchedulerSmokeTests
             await tickerQ.SaveChangesAsync(ct);
         }
 
-        var parent = await WaitForAsync(client, "compliance-check", i => Field(i, "tenantId") == ScaffoldTenant && IsTerminal(i), ct);
+        // Only an instance this ticker's run created: an older one (an earlier run the same day) never matches.
+        var parent = await WaitForAsync(client, "compliance-check",
+            i => Field(i, "tenantId") == ScaffoldTenant && CreatedAt(i) >= tickerAt && IsTerminal(i), ct);
         Assert.AreEqual("n-output-ok", Field(parent, "currentNodeId"), parent.ToString());
 
         var listed = await WaitForAsync(client, "compliance-check-item",
@@ -84,7 +87,16 @@ public class ComplianceCheckSchedulerSmokeTests
         Assert.AreEqual(ScaffoldTenant, Field(child, "tenantId"), "the child inherits the job's tenant");
         StringAssert.Contains(path, "n-fetch-evidence:Match", "the child reads the task's evidence as the started tenant. " + child);
         Assert.AreEqual("n-done", Field(child, "currentNodeId"), child.ToString());
+        Assert.AreEqual(evidenceId.ToString(), EvidenceRead(child), "the evidence read is the attachment this test uploaded");
     }
+
+    private static DateTimeOffset CreatedAt(JsonElement instance) =>
+        DateTimeOffset.Parse(Field(instance, "createdAt")!, System.Globalization.CultureInfo.InvariantCulture);
+
+    // The attachment id n-find-evidence stored and n-fetch-evidence read (context.evidenceAttachments[0].id).
+    private static string? EvidenceRead(JsonElement instance) =>
+        instance.GetProperty("context").GetProperty("context").GetProperty("evidenceAttachments").GetProperty("value")[0]
+            .GetProperty("id").GetString();
 
     private static async Task<Guid> CreateAsync(HttpClient client, string path, object item, CancellationToken ct)
     {
