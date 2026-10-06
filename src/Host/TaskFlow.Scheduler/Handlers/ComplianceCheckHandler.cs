@@ -4,21 +4,26 @@ using EF.FlowEngine.Model;
 using Microsoft.Extensions.Options;
 using System.Globalization;
 using System.Text.Json;
+using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Repositories;
 
 namespace TaskFlow.Scheduler.Handlers;
 
 /// <summary>
-/// The start path of the <c>compliance-check</c> workflow (D-075). Cross-tenant by construction: it streams, over the
-/// system repository, the tenants with an open task tagged <c>compliance</c> due within
-/// <c>Scheduling:Compliance:WindowDays</c>, and starts one instance per tenant through
-/// <see cref="IFlowEngine.StartBackgroundAsync"/> with <see cref="StartRequest.TenantId"/> set, so the instance and its
-/// <c>compliance-check-item</c> children read evidence as that tenant. The idempotency key is the tenant and the UTC
-/// date of the run, so a same-day re-run resolves to the instance the first run started and is not a failure.
+/// The start path of the <c>compliance-check</c> workflow (D-075). It streams, over the system repository, the tenants
+/// with an open task tagged <c>compliance</c> due within <c>Scheduling:Compliance:WindowDays</c>, and starts one
+/// instance through <see cref="IFlowEngine.StartBackgroundAsync"/> with <see cref="StartRequest.TenantId"/> set, so the
+/// instance and its <c>compliance-check-item</c> children read evidence as that tenant.
 /// <para>
-/// One tenant's failed start does not hold back the others' daily check: every tenant is attempted, and the failures
-/// are rethrown together at the end so the run fails visibly through <see cref="ScheduledJobRunner"/>. A re-run is
-/// safe, since tenants already started that day resolve to their existing instance.
+/// The workflow's API calls (task search, attachment search, comment posts) authenticate as the scaffold principal, so
+/// they read and write the scaffold tenant only (<see cref="SelfCallTenantId"/>). The job therefore starts the scaffold
+/// tenant alone: an instance for any other tenant would search an empty page and report the tenant swept. Every other
+/// qualifying tenant is logged as not started, a capability limit rather than a failure.
+/// </para>
+/// <para>
+/// The idempotency key is the tenant and the UTC date of the run, so a same-day re-run resolves to the instance the
+/// first run started and is not a failure. A failed start is collected and rethrown at the end of the run, so the run
+/// fails visibly through <see cref="ScheduledJobRunner"/> after every tenant was handled.
 /// </para>
 /// </summary>
 public sealed class ComplianceCheckHandler(
@@ -36,26 +41,44 @@ public sealed class ComplianceCheckHandler(
     /// <summary>The tag the workflow's task search filters on (<c>compliance-check.json</c>, <c>n-query-due</c>).</summary>
     public const string TagName = "compliance";
 
+    /// <summary>
+    /// The one tenant the workflow's API calls act for: the scaffold principal's tenant, the identity the Api
+    /// authenticates every request as (<see cref="ScaffoldPrincipal"/>, shared with the Api's auth registration).
+    /// Remove this restriction when the workflow's API client carries a service identity that acts for the instance
+    /// tenant; the tenant stream already yields every qualifying tenant.
+    /// </summary>
+    public static readonly Guid SelfCallTenantId = Guid.Parse(ScaffoldPrincipal.TenantId);
+
     /// <summary>Tenants read per keyset page.</summary>
     private const int PageSize = 200;
 
-    /// <summary>Starts one compliance-check instance per tenant with a due compliance task.</summary>
+    /// <summary>Starts the compliance-check instance for the tenant the workflow's API calls act for.</summary>
     public async Task HandleAsync(CancellationToken ct)
     {
         var asOfUtc = timeProvider.GetUtcNow();
         var dueBefore = asOfUtc.AddDays(settings.Value.WindowDays);
         var tenants = 0;
         var started = 0;
+        var alreadyStarted = 0;
+        var notStarted = 0;
         var failures = new List<Exception>();
 
         await foreach (var tenantId in systemRepository.StreamTenantsWithTaggedOpenTasksDueAsync(TagName, dueBefore, PageSize, ct))
         {
             tenants++;
+            if (tenantId != SelfCallTenantId)
+            {
+                notStarted++;
+                logger.ComplianceCheckTenantNotServed(tenantId, SelfCallTenantId);
+                continue;
+            }
+
             try
             {
                 var request = StartRequestFor(tenantId, asOfUtc, dueBefore);
                 if (await FindStartedAsync(request, ct) is { } existing)
                 {
+                    alreadyStarted++;
                     logger.ComplianceCheckAlreadyStarted(tenantId, existing.InstanceId, existing.Status);
                     continue;
                 }
@@ -72,11 +95,10 @@ public sealed class ComplianceCheckHandler(
         }
 
         telemetry.RecordWork(JobName, tenants, started);
-        logger.ComplianceCheckTenantsStarted(started, tenants);
+        logger.ComplianceCheckRunSummary(tenants, started, alreadyStarted, notStarted, failures.Count);
         if (failures.Count > 0)
         {
-            throw new AggregateException(
-                $"{WorkflowId} failed to start for {failures.Count} of {tenants} tenants; the others were started or already running.", failures);
+            throw new AggregateException($"{WorkflowId} failed to start for {failures.Count} of {tenants} tenants.", failures);
         }
     }
 

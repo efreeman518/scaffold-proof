@@ -149,6 +149,64 @@ public class SchedulerJobIntegrationTests
             "a second run has nothing to stage");
     }
 
+    /// <summary>
+    /// The compliance tenant stream's keyset over TenantId: with pages of one, every qualifying tenant comes back once,
+    /// in the same order as one large page, although each has two matching tasks; a tenant whose only tagged task is
+    /// completed does not. Other classes share this database, so only this test's tenants are compared.
+    /// </summary>
+    [TestMethod]
+    [Timeout(180000, CooperativeCancellation = true)]
+    public async Task ComplianceTenantStream_PagesOfOne_YieldEachQualifyingTenantOnce()
+    {
+        var ct = TestContext.CancellationToken;
+        var qualifying = new[] { Guid.CreateVersion7(), Guid.CreateVersion7(), Guid.CreateVersion7() };
+        var completedOnly = Guid.CreateVersion7();
+        await using (var seed = DbContainerFixture.CreateTrxnContext())
+        {
+            foreach (var tenant in qualifying)
+            {
+                var tag = new Test.Support.Builders.TagBuilder().WithTenantId(tenant).WithName(" Compliance ").Build();
+                seed.Tags.Add(tag);
+                for (var i = 0; i < 2; i++)
+                {
+                    var task = TaskItem.Create(TenantId.From(tenant), $"Compliance stream {i}").Value!;
+                    task.UpdateDateRange(null, Now.AddDays(1 + i));
+                    task.AssociateTag(tag.Id);
+                    seed.TaskItems.Add(task);
+                }
+            }
+
+            var completedTag = new Test.Support.Builders.TagBuilder().WithTenantId(completedOnly).WithName("compliance").Build();
+            var completed = TaskItem.Create(TenantId.From(completedOnly), "Compliance stream completed").Value!;
+            completed.UpdateDateRange(null, Now.AddDays(1));
+            completed.AssociateTag(completedTag.Id);
+            Assert.IsTrue(completed.TransitionStatus(TaskItemStatus.InProgress).IsSuccess);
+            Assert.IsTrue(completed.TransitionStatus(TaskItemStatus.Completed).IsSuccess);
+            seed.Tags.Add(completedTag);
+            seed.TaskItems.Add(completed);
+            await seed.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: ct);
+        }
+
+        var ours = qualifying.Append(completedOnly).ToHashSet();
+        var pagesOfOne = await StreamComplianceTenantsAsync(pageSize: 1, ct);
+        var onePage = await StreamComplianceTenantsAsync(pageSize: 1000, ct);
+
+        Assert.HasCount(pagesOfOne.Distinct().Count(), pagesOfOne, "no tenant is repeated across pages");
+        CollectionAssert.AreEqual(onePage.Where(ours.Contains).ToArray(), pagesOfOne.Where(ours.Contains).ToArray(),
+            "pages of one walk the same tenants in the same order");
+        CollectionAssert.AreEquivalent(qualifying, pagesOfOne.Where(ours.Contains).ToArray(),
+            "each qualifying tenant once; the completed-only tenant not at all");
+    }
+
+    private static async Task<List<Guid>> StreamComplianceTenantsAsync(int pageSize, CancellationToken ct)
+    {
+        await using var db = DbContainerFixture.CreateTrxnContext();
+        var tenants = new List<Guid>();
+        await foreach (var tenant in new TaskItemSystemRepository(db).StreamTenantsWithTaggedOpenTasksDueAsync("compliance", Now.AddDays(7), pageSize, ct))
+            tenants.Add(tenant);
+        return tenants;
+    }
+
     /// <summary>Runs the overdue job and reports the resulting notified-task and outbox-row counts.</summary>
     private async Task<(int Notified, int OutboxRows)> RunOverdueAsync(Guid tenantId)
     {

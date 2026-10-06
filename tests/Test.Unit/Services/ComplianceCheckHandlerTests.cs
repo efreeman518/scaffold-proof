@@ -2,57 +2,84 @@ using EF.FlowEngine.Abstractions;
 using EF.FlowEngine.Model;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
 using System.Text.Json;
+using TaskFlow.Application.Contracts;
 using TaskFlow.Scheduler;
 using TaskFlow.Scheduler.Handlers;
 
 namespace Test.Unit.Services;
 
 /// <summary>
-/// Validates <see cref="ComplianceCheckHandler"/>, the start path of compliance-check (D-075): one start per tenant the
-/// system repository streams, the instance tenant and the <c>tenantId</c> param both that tenant, <c>dueBefore</c> the
-/// run time plus the configured window, an idempotency key that is stable for the UTC day, a same-day re-run or a
-/// duplicate start resolved to the existing instance without failing, and any other failure surfaced after every tenant
-/// was attempted. Pure-unit tier: the system repository, the engine and the state store are in-memory fakes; the engine
-/// fake keeps FlowEngine's documented duplicate-key contract (the existing instance is returned, nothing is thrown).
+/// Validates <see cref="ComplianceCheckHandler"/>, the start path of compliance-check (D-075): a start only for the
+/// tenant the workflow's API calls act for (the scaffold tenant), with the instance tenant and the <c>tenantId</c> param
+/// both that tenant and <c>dueBefore</c> the run time plus the configured window; one Warning and no start for every
+/// other qualifying tenant, which does not fail the run; an idempotency key that is stable for the UTC day; a same-day
+/// re-run or a duplicate start resolved to the existing instance without failing; and a failed start surfaced after
+/// every tenant was handled. Pure-unit tier: the system repository, the engine and the state store are in-memory fakes;
+/// the engine fake keeps FlowEngine's documented duplicate-key contract (the existing instance is returned).
 /// </summary>
 [TestClass]
 [TestCategory("Unit")]
 public class ComplianceCheckHandlerTests
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 6, 6, 10, 0, TimeSpan.Zero);
-    private static readonly Guid TenantA = Guid.Parse("00000000-0000-0000-0000-0000000000a1");
-    private static readonly Guid TenantB = Guid.Parse("00000000-0000-0000-0000-0000000000b2");
+    private static readonly Guid Served = Guid.Parse(ScaffoldPrincipal.TenantId);
+    private static readonly Guid OtherA = Guid.Parse("00000000-0000-0000-0000-0000000000a1");
+    private static readonly Guid OtherB = Guid.Parse("00000000-0000-0000-0000-0000000000b2");
 
     private readonly FakeTaskItemSystemRepository _repo = new();
     private readonly KeyedFlowEngine _engine = new();
+    private readonly RecordingLogger _logger = new();
 
     public TestContext TestContext { get; set; } = null!;
 
     [TestMethod]
-    public async Task HandleAsync_StartsOnePerStreamedTenant_WithThatTenantAndTheWindow()
+    public void SelfCallTenant_IsTheScaffoldPrincipalsTenant()
     {
-        _repo.ComplianceTenants.AddRange([TenantA, TenantB]);
+        Assert.AreEqual(Served, ComplianceCheckHandler.SelfCallTenantId);
+    }
+
+    [TestMethod]
+    public async Task HandleAsync_StartsTheServedTenant_WithThatTenantAndTheWindow()
+    {
+        _repo.ComplianceTenants.AddRange([OtherA, Served, OtherB]);
 
         await Handler(Now, windowDays: 7).HandleAsync(TestContext.CancellationToken);
 
         var dueBefore = Now.AddDays(7);
         CollectionAssert.AreEqual(new[] { ("compliance", dueBefore) }, _repo.ComplianceQueries.ToArray());
-        Assert.HasCount(2, _engine.Requests);
-        foreach (var (request, tenant) in _engine.Requests.Zip(new[] { TenantA, TenantB }))
-        {
-            Assert.AreEqual("compliance-check", request.WorkflowId);
-            Assert.AreEqual(tenant.ToString(), request.TenantId, "the instance carries the tenant, so its evidence reads are allowed");
-            Assert.AreEqual(tenant.ToString(), Param(request, "tenantId"), "the tenantId param names the same tenant");
-            Assert.AreEqual("2026-10-13T06:10:00.0000000+00:00", Param(request, "dueBefore"));
-            Assert.AreEqual(dueBefore, DateTimeOffset.Parse(Param(request, "dueBefore"), System.Globalization.CultureInfo.InvariantCulture));
-            Assert.AreEqual($"compliance-check:{tenant}:2026-10-06", request.IdempotencyKey);
-            CollectionAssert.AreEquivalent(new[] { "tenantId", "dueBefore" }, request.Params!.Keys.ToArray(),
-                "exactly the workflow's paramsSchema");
-        }
+        var request = _engine.Requests.Single();
+        Assert.AreEqual("compliance-check", request.WorkflowId);
+        Assert.AreEqual(Served.ToString(), request.TenantId, "the instance carries the tenant, so its evidence reads are allowed");
+        Assert.AreEqual(Served.ToString(), Param(request, "tenantId"), "the tenantId param names the same tenant");
+        Assert.AreEqual("2026-10-13T06:10:00.0000000+00:00", Param(request, "dueBefore"));
+        Assert.AreEqual(dueBefore, DateTimeOffset.Parse(Param(request, "dueBefore"), System.Globalization.CultureInfo.InvariantCulture));
+        Assert.AreEqual($"compliance-check:{Served}:2026-10-06", request.IdempotencyKey);
+        CollectionAssert.AreEquivalent(new[] { "tenantId", "dueBefore" }, request.Params!.Keys.ToArray(),
+            "exactly the workflow's paramsSchema");
+    }
+
+    [TestMethod]
+    public async Task HandleAsync_OtherTenants_AreNotStarted_OneWarningEach_AndTheRunSucceeds()
+    {
+        _repo.ComplianceTenants.AddRange([OtherA, Served, OtherB]);
+
+        await Handler(Now, windowDays: 7).HandleAsync(TestContext.CancellationToken);
+
+        Assert.IsFalse(_engine.Requests.Any(r => r.TenantId != Served.ToString()), "no instance for a tenant the API calls cannot read");
+        var warnings = _logger.Entries.Where(e => e.Level == LogLevel.Warning).Select(e => e.Message).ToList();
+        Assert.HasCount(2, warnings);
+        StringAssert.Contains(warnings[0], OtherA.ToString());
+        StringAssert.Contains(warnings[1], OtherB.ToString());
+        Assert.IsTrue(warnings.TrueForAll(w => w.Contains(ScaffoldPrincipal.TenantId, StringComparison.Ordinal)), "the reason names the identity");
+        var summary = _logger.Entries.Single(e => e.Message.StartsWith("Compliance check: ", StringComparison.Ordinal)).Message;
+        StringAssert.Contains(summary, "3 tenants");
+        StringAssert.Contains(summary, "1 started");
+        StringAssert.Contains(summary, "2 not started");
+        StringAssert.Contains(summary, "0 failed");
     }
 
     [TestMethod]
@@ -67,7 +94,7 @@ public class ComplianceCheckHandlerTests
     [TestMethod]
     public async Task HandleAsync_WindowDays_SetsTheDueHorizon()
     {
-        _repo.ComplianceTenants.Add(TenantA);
+        _repo.ComplianceTenants.Add(Served);
 
         await Handler(Now, windowDays: 3).HandleAsync(TestContext.CancellationToken);
 
@@ -78,88 +105,90 @@ public class ComplianceCheckHandlerTests
     [TestMethod]
     public void IdempotencyKey_IsStableForTheUtcDay_AndChangesTheNextDay()
     {
-        var early = ComplianceCheckHandler.IdempotencyKey(TenantA, new DateTimeOffset(2026, 10, 6, 0, 0, 1, TimeSpan.Zero));
-        var late = ComplianceCheckHandler.IdempotencyKey(TenantA, new DateTimeOffset(2026, 10, 6, 23, 59, 59, TimeSpan.Zero));
+        var early = ComplianceCheckHandler.IdempotencyKey(Served, new DateTimeOffset(2026, 10, 6, 0, 0, 1, TimeSpan.Zero));
+        var late = ComplianceCheckHandler.IdempotencyKey(Served, new DateTimeOffset(2026, 10, 6, 23, 59, 59, TimeSpan.Zero));
         // 2026-10-07 01:00 at +05:00 is still 2026-10-06 in UTC.
-        var offset = ComplianceCheckHandler.IdempotencyKey(TenantA, new DateTimeOffset(2026, 10, 7, 1, 0, 0, TimeSpan.FromHours(5)));
-        var nextDay = ComplianceCheckHandler.IdempotencyKey(TenantA, new DateTimeOffset(2026, 10, 7, 0, 0, 0, TimeSpan.Zero));
+        var offset = ComplianceCheckHandler.IdempotencyKey(Served, new DateTimeOffset(2026, 10, 7, 1, 0, 0, TimeSpan.FromHours(5)));
+        var nextDay = ComplianceCheckHandler.IdempotencyKey(Served, new DateTimeOffset(2026, 10, 7, 0, 0, 0, TimeSpan.Zero));
 
-        Assert.AreEqual($"compliance-check:{TenantA}:2026-10-06", early);
+        Assert.AreEqual($"compliance-check:{Served}:2026-10-06", early);
         Assert.AreEqual(early, late);
         Assert.AreEqual(early, offset, "the key uses the UTC date of the run");
-        Assert.AreEqual($"compliance-check:{TenantA}:2026-10-07", nextDay);
-        Assert.AreNotEqual(early, ComplianceCheckHandler.IdempotencyKey(TenantB, Now), "each tenant has its own key");
+        Assert.AreEqual($"compliance-check:{Served}:2026-10-07", nextDay);
+        Assert.AreNotEqual(early, ComplianceCheckHandler.IdempotencyKey(OtherB, Now), "each tenant has its own key");
     }
 
     [TestMethod]
-    public async Task HandleAsync_SameDayRerun_FindsTheDaysInstances_AndStartsNothing()
+    public async Task HandleAsync_SameDayRerun_FindsTheDaysInstance_AndStartsNothing()
     {
-        _repo.ComplianceTenants.AddRange([TenantA, TenantB]);
+        _repo.ComplianceTenants.AddRange([Served, OtherB]);
 
         await Handler(Now, windowDays: 7).HandleAsync(TestContext.CancellationToken);
         await Handler(Now.AddHours(10), windowDays: 7).HandleAsync(TestContext.CancellationToken);
 
-        Assert.HasCount(2, _engine.Requests, "the rerun starts nothing");
-        Assert.HasCount(2, _engine.Instances, "one instance per tenant for the day");
+        Assert.HasCount(1, _engine.Requests, "the rerun starts nothing");
+        Assert.HasCount(1, _engine.Instances, "one instance for the day");
         CollectionAssert.AreEqual(
-            new[] { $"compliance-check:{TenantA}:2026-10-06", $"compliance-check:{TenantB}:2026-10-06" },
-            _engine.Lookups.Skip(2).ToArray(),
-            "the rerun looks each tenant's instance up by the day's key");
+            new[] { $"compliance-check:{Served}:2026-10-06", $"compliance-check:{Served}:2026-10-06" },
+            _engine.Lookups.ToArray(),
+            "each run looks the day's instance up by its key");
+        StringAssert.Contains(_logger.Entries.Last().Message, "1 already started today");
     }
 
     [TestMethod]
     public void IdempotencyKey_FitsTheStateStoresCorrelationIdColumn()
     {
         // The key is also the correlation id the re-run lookup filters on; the store's column is 64 characters wide.
-        Assert.HasCount(64, ComplianceCheckHandler.IdempotencyKey(TenantA, Now));
+        Assert.HasCount(64, ComplianceCheckHandler.IdempotencyKey(Served, Now));
         Assert.AreEqual(
-            ComplianceCheckHandler.IdempotencyKey(TenantA, Now),
-            ComplianceCheckHandler.StartRequestFor(TenantA, Now, Now.AddDays(7)).CorrelationId);
+            ComplianceCheckHandler.IdempotencyKey(Served, Now),
+            ComplianceCheckHandler.StartRequestFor(Served, Now, Now.AddDays(7)).CorrelationId);
     }
 
     [TestMethod]
     public async Task HandleAsync_DuplicateKeyResolvedByTheEngine_IsNotAFailure()
     {
-        _repo.ComplianceTenants.AddRange([TenantA, TenantB]);
+        _repo.ComplianceTenants.Add(Served);
         await Handler(Now, windowDays: 7).HandleAsync(TestContext.CancellationToken);
         // The lookup misses (a store that has not caught up); the engine's own key check returns the existing instance.
         _engine.StoreHidesInstances = true;
 
         await Handler(Now.AddHours(10), windowDays: 7).HandleAsync(TestContext.CancellationToken);
 
-        Assert.HasCount(4, _engine.Requests, "the rerun asks the engine again");
-        Assert.HasCount(2, _engine.Instances, "and the engine resolves each duplicate key to the existing instance");
-        CollectionAssert.AreEqual(
-            _engine.Returned.Take(2).Select(i => i.InstanceId).ToArray(),
-            _engine.Returned.Skip(2).Select(i => i.InstanceId).ToArray());
+        Assert.HasCount(2, _engine.Requests, "the rerun asks the engine again");
+        Assert.HasCount(1, _engine.Instances, "and the engine resolves the duplicate key to the existing instance");
+        Assert.AreEqual(_engine.Returned[0].InstanceId, _engine.Returned[1].InstanceId);
     }
 
     [TestMethod]
-    public async Task HandleAsync_OneTenantFails_TheOthersStart_AndTheFailureSurfaces()
+    public async Task HandleAsync_FailedStart_SurfacesAfterEveryTenantIsHandled()
     {
         var primary = new InvalidOperationException("state store unavailable");
-        _repo.ComplianceTenants.AddRange([TenantA, TenantB]);
-        _engine.FailFor[TenantA.ToString()] = primary;
+        _repo.ComplianceTenants.AddRange([Served, OtherB]);
+        _engine.FailFor[Served.ToString()] = primary;
 
         var thrown = await Assert.ThrowsExactlyAsync<AggregateException>(
             () => Handler(Now, windowDays: 7).HandleAsync(TestContext.CancellationToken));
 
-        Assert.AreEqual(TenantB.ToString(), _engine.Returned.Single().TenantId, "the failed tenant does not hold back the next one");
         var failure = thrown.InnerExceptions.Single();
-        StringAssert.Contains(failure.Message, TenantA.ToString(), "the failure names its tenant");
+        StringAssert.Contains(failure.Message, Served.ToString(), "the failure names its tenant");
         Assert.AreSame(primary, failure.InnerException, "the primary error is kept");
+        Assert.IsTrue(_logger.Entries.Any(e => e.Level == LogLevel.Warning && e.Message.Contains(OtherB.ToString(), StringComparison.Ordinal)),
+            "the tenant after the failure is still handled");
+        StringAssert.Contains(_logger.Entries.Last().Message, "1 failed");
     }
 
     [TestMethod]
     public async Task HandleAsync_Cancelled_StopsAtOnce()
     {
         using var cts = new CancellationTokenSource();
-        _repo.ComplianceTenants.AddRange([TenantA, TenantB]);
+        _repo.ComplianceTenants.AddRange([Served, OtherB]);
         _engine.OnStart = cts.Cancel;
 
         await Assert.ThrowsAsync<OperationCanceledException>(() => Handler(Now, windowDays: 7).HandleAsync(cts.Token));
 
-        Assert.HasCount(1, _engine.Requests, "no further tenant is started after cancellation");
+        Assert.HasCount(1, _engine.Requests);
+        Assert.IsFalse(_logger.Entries.Any(e => e.Level == LogLevel.Warning), "no further tenant is handled after cancellation");
     }
 
     [TestMethod]
@@ -195,7 +224,7 @@ public class ComplianceCheckHandlerTests
         SchedulerTestTelemetry.Create(),
         new FixedTimeProvider(now),
         Options.Create(new ComplianceCheckSettings { WindowDays = windowDays }),
-        NullLogger<ComplianceCheckHandler>.Instance);
+        _logger);
 
     private static string Param(StartRequest request, string name) =>
         ((JsonContextValue)request.Params![name]).Value.GetString()!;
@@ -262,5 +291,18 @@ public class ComplianceCheckHandlerTests
                 .ToList();
             return new ExecutionQueryResult { Items = found, TotalCount = found.Count };
         }
+    }
+
+    /// <summary>Records each formatted log entry with its level.</summary>
+    private sealed class RecordingLogger : ILogger<ComplianceCheckHandler>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            Entries.Add((logLevel, formatter(state, exception)));
     }
 }
