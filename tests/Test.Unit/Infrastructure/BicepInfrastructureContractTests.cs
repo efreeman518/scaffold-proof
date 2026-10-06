@@ -133,6 +133,35 @@ public sealed class BicepInfrastructureContractTests
             "the compiled template must be rebuilt after main.bicep changes");
     }
 
+    /// <summary>
+    /// Every host that runs workflow nodes calling "taskflow-api" gets the Api's address, or the client falls back to
+    /// https://localhost and every self-call fails: the Scheduler (the ComplianceCheck job) and the Api itself (human-task
+    /// responses, dashboard starts) through the Api's internal ingress, and the Function App (the ai-task-triage
+    /// trigger), outside the Container Apps environment, through the public gateway.
+    /// </summary>
+    [TestMethod]
+    public void MainBicep_EveryWorkflowHost_ReceivesTheApiAddressForSelfCalls()
+    {
+        var main = ReadInfraFile("main.bicep");
+        string Module(string name, string next)
+        {
+            var start = main.IndexOf($"module {name} 'modules/", StringComparison.Ordinal);
+            Assert.IsGreaterThanOrEqualTo(0, start, name);
+            return main[start..main.IndexOf($"module {next} ", start, StringComparison.Ordinal)];
+        }
+
+        StringAssert.Contains(Module("scheduler", "blazor"), "{ name: 'FlowEngine__TaskFlowApiBaseUrl', value: 'https://${api.outputs.fqdn}' }");
+        StringAssert.Contains(Module("api", "scheduler"),
+            "{ name: 'FlowEngine__TaskFlowApiBaseUrl', value: 'https://${prefix}-api.internal.${containerAppsEnv.outputs.defaultDomain}' }");
+        StringAssert.Contains(Module("gateway", "api"), "{ name: 'ReverseProxy__Clusters__api-cluster__Destinations__api__Address', value: 'https://${api.outputs.fqdn}' }",
+            "the scheduler's address is the one the gateway already reaches the Api by");
+        StringAssert.Contains(Module("functions", "deployContributor"), "taskFlowApiBaseUrl: 'https://${gateway.outputs.fqdn}'");
+        StringAssert.Contains(ReadInfraFile(Path.Combine("modules", "functions.bicep")),
+            "{ name: 'FlowEngine__TaskFlowApiBaseUrl', value: taskFlowApiBaseUrl }");
+        Assert.AreEqual(3, ReadInfraFile("main.json").Split("FlowEngine__TaskFlowApiBaseUrl").Length - 1,
+            "the compiled template must be rebuilt after main.bicep changes (api, scheduler, functions)");
+    }
+
     [TestMethod]
     public void AzureSqlIdentities_AreProvisionedBeforeMigrationAndRuntimeActivation()
     {

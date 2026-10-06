@@ -44,6 +44,22 @@ internal static partial class LogMessages
     [LoggerMessage(EventId = LogEventIds.SchedulerBase + 17, Level = LogLevel.Information, Message = "TickerQ operational-store schema validated.")]
     public static partial void TickerQSchemaValidated(this ILogger logger);
 
+    /// <summary>Logs a compliance-check instance this run started for a tenant.</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 20, Level = LogLevel.Information, Message = "Compliance check for tenant {TenantId} started as instance {InstanceId} ({Status})")]
+    public static partial void ComplianceCheckStarted(this ILogger logger, Guid tenantId, string instanceId, EF.FlowEngine.Model.ExecStatus status);
+
+    /// <summary>Logs a tenant whose compliance-check for the day was already started by an earlier run.</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 22, Level = LogLevel.Information, Message = "Compliance check for tenant {TenantId} already started today as instance {InstanceId} ({Status})")]
+    public static partial void ComplianceCheckAlreadyStarted(this ILogger logger, Guid tenantId, string instanceId, EF.FlowEngine.Model.ExecStatus status);
+
+    /// <summary>Logs the compliance-check run's outcome per tenant class.</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 21, Level = LogLevel.Information, Message = "Compliance check: {Tenants} tenants with a due compliance task; {Started} started, {AlreadyStarted} already started today, {NotStarted} not started (outside the workflow's API identity), {Failed} failed")]
+    public static partial void ComplianceCheckRunSummary(this ILogger logger, int tenants, int started, int alreadyStarted, int notStarted, int failed);
+
+    /// <summary>Logs a tenant with due compliance tasks that the run cannot check: the workflow's API calls act for another tenant.</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 23, Level = LogLevel.Warning, Message = "Compliance check not started for tenant {TenantId}: the workflow's API calls run as the scaffold tenant {SelfCallTenantId}, so they cannot read this tenant's tasks")]
+    public static partial void ComplianceCheckTenantNotServed(this ILogger logger, Guid tenantId, Guid selfCallTenantId);
+
     // EventIds SchedulerBase + 18 and + 19 were TickerQCronManagerUnavailable / TickerQCronJobsSeeded. The cron
     // expressions now live on [TickerFunction] and TickerQ seeds them itself; retired, never reused.
 }

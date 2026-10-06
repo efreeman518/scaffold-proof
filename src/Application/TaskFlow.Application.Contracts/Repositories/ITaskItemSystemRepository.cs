@@ -35,6 +35,15 @@ public interface ITaskItemSystemRepository
     Task<bool> MarkOverdueNotifiedAsync(Guid tenantId, Guid id, DateTimeOffset asOfUtc, CancellationToken ct = default);
 
     /// <summary>
+    /// Streams, once each and in ascending order, the tenants that have an open task (not completed or cancelled)
+    /// due on or before <paramref name="dueBefore"/> and tagged <paramref name="tagName"/>, keyset-paged by
+    /// <c>TenantId</c>. The tag matches as the task search's <c>tagName</c> filter does: trimmed and case-insensitive
+    /// on both providers, so a tenant is streamed exactly when the workflow's own search can find its task.
+    /// </summary>
+    IAsyncEnumerable<Guid> StreamTenantsWithTaggedOpenTasksDueAsync(
+        string tagName, DateTimeOffset dueBefore, int pageSize, CancellationToken ct = default);
+
+    /// <summary>
     /// Streams recurrence templates whose next occurrence is due, keyset-paged by <c>(TenantId, Id)</c>.
     /// Entities rather than a projection: the generator needs the owned JSON recurrence pattern and the
     /// scalar fields the occurrence is copied from, and the due set is small by construction.

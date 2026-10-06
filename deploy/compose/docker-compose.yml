@@ -122,6 +122,8 @@ services:
       ConnectionStrings__MongoDb1: ${ConnectionStrings__MongoDb1:-}
       Database__Encryption__LocalKeyBase64: ${Database__Encryption__LocalKeyBase64:?set LocalKeyBase64 in .env.base}
       Database__Encryption__BlindIndexKeyBase64: ${Database__Encryption__BlindIndexKeyBase64:?set BlindIndexKeyBase64 in .env.base}
+      # Workflow self-calls from instances this host starts or resumes (a human-task response, a dashboard start).
+      FlowEngine__TaskFlowApiBaseUrl: ${FlowEngine__TaskFlowApiBaseUrl:-http://api:8080}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://openobserve:5081
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic ${OPENOBSERVE_OTLP_BASIC_CREDENTIAL:?set OPENOBSERVE_OTLP_BASIC_CREDENTIAL in .env.base},organization=${OPENOBSERVE_ORGANIZATION:-default},stream-name=${OPENOBSERVE_STREAM_NAME:-taskflow}"
@@ -213,6 +215,9 @@ services:
       ConnectionStrings__MongoDb1: ${ConnectionStrings__MongoDb1:-}
       Database__Encryption__LocalKeyBase64: ${Database__Encryption__LocalKeyBase64:?set LocalKeyBase64 in .env.base}
       Database__Encryption__BlindIndexKeyBase64: ${Database__Encryption__BlindIndexKeyBase64:?set BlindIndexKeyBase64 in .env.base}
+      # The ComplianceCheck job starts compliance-check here, so the workflow's "taskflow-api" self-calls leave from
+      # this host: straight to the Api on the internal app network, as the gateway's own cluster destination does.
+      FlowEngine__TaskFlowApiBaseUrl: ${FlowEngine__TaskFlowApiBaseUrl:-http://api:8080}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://openobserve:5081
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic ${OPENOBSERVE_OTLP_BASIC_CREDENTIAL:?set OPENOBSERVE_OTLP_BASIC_CREDENTIAL in .env.base},organization=${OPENOBSERVE_ORGANIZATION:-default},stream-name=${OPENOBSERVE_STREAM_NAME:-taskflow}"
@@ -239,6 +244,7 @@ services:
           cpus: "1.00"
           memory: 768M
     networks:
+      - app
       - data
       - cache
       - telemetry

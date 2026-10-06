@@ -39,6 +39,11 @@ public static class RegisterSchedulerServices
         services.AddScoped<OutboxRetentionHandler>();
         services.AddScoped<ConsumerInboxRetentionHandler>();
         services.AddScoped<AuditRetentionHandler>();
+        services.AddScoped<ComplianceCheckHandler>();
+        services.AddOptions<ComplianceCheckSettings>()
+            .Bind(config.GetSection(ComplianceCheckSettings.ConfigSectionName))
+            .Validate(o => o.IsValid(), $"{ComplianceCheckSettings.ConfigSectionName}:WindowDays must be 1 to {ComplianceCheckSettings.MaxWindowDays}.")
+            .ValidateOnStart();
         services.AddScoped<TaskMaintenanceJobs>();
         // Already added by the shared application registration; TryAdd keeps one meter per process.
         services.TryAddSingleton<MessagingMetrics>();

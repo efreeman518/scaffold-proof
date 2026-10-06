@@ -341,6 +341,9 @@ api = WithObjectStorage(api);
 api = WithBroker(api);
 api = WithReadModel(api);
 api = WithLaneEnvironment(api);
+// Workflow self-calls (the "taskflow-api" FlowEngine client) from instances this host starts or resumes, a human-task
+// response or a dashboard start among them, go to the Api's own address; unset, the client falls back to https://localhost.
+api = api.WithEnvironment("FlowEngine__TaskFlowApiBaseUrl", api.GetEndpoint("http"));
 
 // Wire the externally provisioned Azure Foundry chat model into the API.
 if (chat is not null)
@@ -404,6 +407,9 @@ if (!isTesting || schedulerAvailableInTesting || fullLaneAvailableInTesting)
         .WithEnvironment("Messaging__Provider", messagingProviderName)
         .WithEnvironment("Database__Encryption__LocalKeyBase64", columnEncryptionKey)
         .WithEnvironment("Database__Encryption__BlindIndexKeyBase64", blindIndexKey)
+        // The ComplianceCheck job starts compliance-check in this host, so its workflow self-calls (the "taskflow-api"
+        // FlowEngine client) leave from here and need the Api's address; unset, the client falls back to https://localhost.
+        .WithEnvironment("FlowEngine__TaskFlowApiBaseUrl", api.GetEndpoint("http"))
         // Two replicas so the outbox/blob lease path is exercised locally (D-026): both drain, neither doubles
         // up. One replica under test so the graph boot stays inside the mesh startup budget.
         .WithReplicas(isTesting ? 1 : 2)
@@ -472,6 +478,8 @@ if (!nonAzureLane && (!isTesting || functionsAvailableInTesting || fullLaneAvail
     functions = WithBroker(functions);
     functions = WithReadModel(functions);
     functions = WithLaneEnvironment(functions);
+    // The ai-task-triage trigger starts workflows here, so their self-calls leave from this host.
+    functions = functions.WithEnvironment("FlowEngine__TaskFlowApiBaseUrl", api.GetEndpoint("http"));
 
     if (useRabbitMq)
     {

@@ -586,6 +586,13 @@ public sealed class DeploymentWorkflowContractTests
             StringAssert.Contains(block, "      - edge");
             StringAssert.Contains(block, "      - app");
         }
+        // Workflow self-calls leave from every host that runs workflow nodes: the Scheduler (the ComplianceCheck job and the
+        // RabbitMQ trigger) and the Api (human-task responses, dashboard starts). Both must reach the Api.
+        StringAssert.Contains(api, "FlowEngine__TaskFlowApiBaseUrl: ${FlowEngine__TaskFlowApiBaseUrl:-http://api:8080}");
+        var scheduler = ServiceBlock(compose, "scheduler").Text;
+        StringAssert.Contains(scheduler, "FlowEngine__TaskFlowApiBaseUrl: ${FlowEngine__TaskFlowApiBaseUrl:-http://api:8080}");
+        StringAssert.Contains(scheduler, "      - app");
+        Assert.IsFalse(scheduler.Contains("      - edge", StringComparison.Ordinal));
 
         // Only caddy publishes to the outside world; the one other mapping is OpenObserve on loopback.
         var published = System.Text.RegularExpressions.Regex
@@ -701,6 +708,7 @@ public sealed class DeploymentWorkflowContractTests
             "RABBITMQ_DEFAULT_PASS",
             "Storage__S3__PublicServiceUrl", "Storage__S3__AccessKeyId", "Storage__S3__SecretAccessKey",
             "ConnectionStrings__MongoDb1", "Database__Encryption__LocalKeyBase64", "Grpc__TaskFlowRead__Address",
+            "FlowEngine__TaskFlowApiBaseUrl",
             "OPENOBSERVE_ROOT_EMAIL", "OPENOBSERVE_ROOT_PASSWORD", "OPENOBSERVE_OTLP_BASIC_CREDENTIAL",
             "OPENOBSERVE_ORGANIZATION", "OPENOBSERVE_STREAM_NAME", "OPENOBSERVE_RETENTION_DAYS",
             "OpenTelemetry__MetricsEnabled", "Hosting__ShutdownTimeoutSeconds", "CADDY_DOMAIN", "ACME_EMAIL", "GATEWAY_BASE_URL",

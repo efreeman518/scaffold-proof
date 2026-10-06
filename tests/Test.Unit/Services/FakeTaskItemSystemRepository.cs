@@ -55,6 +55,25 @@ internal sealed class FakeTaskItemSystemRepository : ITaskItemSystemRepository
         return Task.FromResult(!NotMarked.Contains(id));
     }
 
+    /// <summary>Tenants the compliance stream returns, as the database would have filtered them.</summary>
+    public List<Guid> ComplianceTenants { get; } = [];
+
+    /// <summary>Arguments of each compliance stream call.</summary>
+    public List<(string TagName, DateTimeOffset DueBefore)> ComplianceQueries { get; } = [];
+
+    public async IAsyncEnumerable<Guid> StreamTenantsWithTaggedOpenTasksDueAsync(
+        string tagName, DateTimeOffset dueBefore, int pageSize,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        Calls.Add(nameof(StreamTenantsWithTaggedOpenTasksDueAsync));
+        ComplianceQueries.Add((tagName, dueBefore));
+        foreach (var tenant in ComplianceTenants)
+        {
+            await Task.Yield();
+            yield return tenant;
+        }
+    }
+
     public async IAsyncEnumerable<TaskItem> StreamDueTemplatesAsync(
         DateTimeOffset asOfUtc, int pageSize,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
