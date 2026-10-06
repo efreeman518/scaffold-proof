@@ -12,9 +12,12 @@ namespace TaskFlow.Bootstrapper;
 /// The workflow self-call relay on the FlowEngine <c>taskflow-api</c> client (D-068, D-075). The header name and the
 /// claim allowlist come from the shared <c>ForwardedClaims</c> section, so the header is the one the Api reads.
 /// <list type="bullet">
-/// <item>Every request: any relay header already on it (a node's <c>headers</c> config can name any header) is removed,
-/// so the only relay header this client sends is the one written here.</item>
-/// <item>Relay configured (<see cref="SelfCallRelayOptions.TokenScope"/>): an app-only bearer token for that scope from
+/// <item>Every request: any relay header already on it or on its content (a node's <c>headers</c> config can name any
+/// header) is removed, so the only relay header this client sends is the one written here.</item>
+/// <item>Relay configured (<see cref="SelfCallRelayOptions.TokenScope"/>): the request must go to the self-call base
+/// address (<c>FlowEngine:TaskFlowApiBaseUrl</c>: same scheme, host and port), because a node's path or a fetch URL can
+/// be absolute or scheme-relative and the token must never leave for another host; a request carrying its own
+/// <c>Authorization</c> header is refused too, so a node cannot replace the token. Then an app-only bearer token for that scope from
 /// <c>EF.Auth</c> <see cref="AccessTokenCache"/>, and a relay header carrying the executing instance's tenant
 /// (<see cref="InstanceTenantNodeExecutor.CurrentTenant"/>), <see cref="Subject"/>, <see cref="DisplayName"/> and
 /// <see cref="Roles"/>. A call outside an instance with a tenant throws before anything is sent: it never falls back to
@@ -49,10 +52,25 @@ internal sealed class SelfCallRelayHandler(
         ArgumentNullException.ThrowIfNull(request);
         var claimsOptions = forwardedClaims.Get(SelfCallRelayOptions.ForwardedClaimsOptionsName);
         request.Headers.Remove(claimsOptions.HeaderName);
+        request.Content?.Headers.Remove(claimsOptions.HeaderName);
 
         var settings = relay.Value;
         if (!settings.IsRelayConfigured)
             return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+        if (!IsSelfCallTarget(request.RequestUri, settings.ApiBaseAddress))
+        {
+            throw new InvalidOperationException(
+                $"The workflow self-call to {request.RequestUri} leaves the self-call base address {settings.ApiBaseAddress}; " +
+                "the relayed token is sent to that address only.");
+        }
+
+        if (request.Headers.Authorization is not null)
+        {
+            throw new InvalidOperationException(
+                $"The workflow self-call to {request.RequestUri} carries its own Authorization header; with " +
+                $"{SelfCallRelayOptions.ConfigSectionName}:TokenScope set the relay supplies the token.");
+        }
 
         var tenant = InstanceTenantNodeExecutor.CurrentTenant;
         if (!Guid.TryParse(tenant, out var tenantId))
@@ -69,6 +87,15 @@ internal sealed class SelfCallRelayHandler(
             ForwardedClaimsCodec.Encode(RelayedPrincipal(tenantId, requestContext.Value), claimsOptions, timeProvider));
         return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Whether <paramref name="target"/> has the scheme, host and port of <paramref name="baseAddress"/> (host compared
+    /// ignoring case, a default port equal to its explicit form).
+    /// </summary>
+    internal static bool IsSelfCallTarget(Uri? target, Uri? baseAddress) =>
+        target is { IsAbsoluteUri: true } && baseAddress is { IsAbsoluteUri: true }
+        && Uri.Compare(target, baseAddress, UriComponents.Scheme | UriComponents.Host | UriComponents.StrongPort,
+            UriFormat.SafeUnescaped, StringComparison.OrdinalIgnoreCase) == 0;
 
     /// <summary>
     /// The relayed identity for <paramref name="tenantId"/>, in the claim types the Api's request context reads

@@ -82,6 +82,78 @@ public sealed class SelfCallRelayTests
         Assert.AreEqual(TenantB.ToString(), DecodeAsTheApi(request).Single(c => c.Type == "tenant_id").Value);
     }
 
+    /// <summary>
+    /// A node's path or a fetch URL can be absolute or scheme-relative; the token goes to the self-call base address only.
+    /// </summary>
+    [TestMethod]
+    [DataRow("http://evil.example/api/v1/task-items/search")]
+    [DataRow("//evil.example/api/v1/task-items/search")]
+    [DataRow("http://localhost:8081/api/v1/task-items/search")]
+    [DataRow("https://localhost/api/v1/task-items/search")]
+    public async Task RelayConfigured_RequestLeavingTheBaseAddress_FailsWithoutSending(string target)
+    {
+        var transport = StubHttpMessageHandler.Returns(HttpStatusCode.OK);
+        using var provider = Build(transport, Scope);
+
+        var thrown = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => SendInInstanceAsync(provider, TenantB.ToString(), target: target));
+
+        StringAssert.Contains(thrown.Message, "self-call base address");
+        Assert.IsEmpty(transport.Requests, "no token leaves for another address");
+    }
+
+    [TestMethod]
+    [DataRow("/api/v1/task-items/search")]
+    [DataRow("HTTP://LOCALHOST:80/api/v1/task-items/search")]
+    public async Task RelayConfigured_RequestToTheBaseAddress_IsSent(string target)
+    {
+        var transport = StubHttpMessageHandler.Returns(HttpStatusCode.OK);
+        using var provider = Build(transport, Scope);
+
+        await SendInInstanceAsync(provider, TenantB.ToString(), target: target);
+
+        Assert.HasCount(1, transport.Requests);
+    }
+
+    [TestMethod]
+    public async Task RelayConfigured_NodeSuppliedAuthorization_FailsWithoutSending()
+    {
+        var transport = StubHttpMessageHandler.Returns(HttpStatusCode.OK);
+        using var provider = Build(transport, Scope);
+
+        var thrown = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => SendInInstanceAsync(
+            provider, TenantB.ToString(), request => request.Headers.TryAddWithoutValidation("Authorization", "Bearer node-token")));
+
+        StringAssert.Contains(thrown.Message, "Authorization");
+        Assert.IsEmpty(transport.Requests);
+    }
+
+    [TestMethod]
+    public async Task NodeSuppliedRelayHeaderOnTheContent_IsRemoved()
+    {
+        var transport = StubHttpMessageHandler.Returns(HttpStatusCode.OK);
+        using var provider = Build(transport, scope: null);
+
+        await SendInInstanceAsync(provider, TenantB.ToString(),
+            request => Assert.IsTrue(request.Content!.Headers.TryAddWithoutValidation(RelayHeader, "node-supplied")));
+
+        Assert.IsEmpty(Header(transport.Requests.Single(), RelayHeader));
+    }
+
+    [TestMethod]
+    public void Wrapping_KeepsEachRegistrationsLifetime()
+    {
+        var services = new ServiceCollection();
+        services.AddScoped<INodeExecutor, EF.FlowEngine.Executors.IntegrationNodeExecutor>();
+        services.AddTransient<INodeExecutor, EF.FlowEngine.Executors.FetchNodeExecutor>();
+
+        RegisterServices.RunHttpNodesInTheInstanceTenant(services);
+
+        CollectionAssert.AreEqual(
+            new[] { ServiceLifetime.Scoped, ServiceLifetime.Transient },
+            services.Where(d => d.ServiceType == typeof(INodeExecutor)).Select(d => d.Lifetime).ToArray());
+        Assert.IsTrue(services.All(d => d.ImplementationFactory is not null), "both are the wrapper's factories");
+    }
+
     [TestMethod]
     [DataRow(null)]
     [DataRow("")]
@@ -175,13 +247,22 @@ public sealed class SelfCallRelayTests
     }
 
     /// <summary>Sends one self-call from inside a node of an instance with <paramref name="tenant"/>.</summary>
-    private Task SendInInstanceAsync(ServiceProvider provider, string? tenant, Action<HttpRequestMessage>? configure = null)
+    private Task SendInInstanceAsync(
+        ServiceProvider provider, string? tenant, Action<HttpRequestMessage>? configure = null,
+        string target = "http://localhost/api/v1/task-items/search")
     {
         var factory = provider.GetRequiredService<IHttpClientFactory>();
         var executor = new InstanceTenantNodeExecutor(new CallbackExecutor(async () =>
         {
             using var client = factory.CreateClient(RegisterServices.TaskFlowApiClientName);
-            using var request = new HttpRequestMessage(HttpMethod.Post, new Uri("http://localhost/api/v1/task-items/search"));
+            // A path ("/x") or scheme-relative ("//host/x") target is relative to the client's base address, as a node path is.
+            var uri = Uri.TryCreate(target, UriKind.Absolute, out var absolute) && absolute.Scheme.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+                ? absolute
+                : new Uri(target, UriKind.Relative);
+            using var request = new HttpRequestMessage(HttpMethod.Post, uri)
+            {
+                Content = new StringContent("{}"),
+            };
             configure?.Invoke(request);
             using var response = await client.SendAsync(request, TestContext.CancellationToken);
         }));
@@ -214,7 +295,11 @@ public sealed class SelfCallRelayTests
         if (shippedSettings)
             builder.AddJsonFile(RepoRoot.Combine("src", "Host", "TaskFlow.Scheduler", "appsettings.json"), optional: false);
         var config = builder
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["FlowEngine:SelfCall:TokenScope"] = scope })
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["FlowEngine:SelfCall:TokenScope"] = scope,
+                ["FlowEngine:TaskFlowApiBaseUrl"] = "http://localhost",
+            })
             .Build();
 
         var services = new ServiceCollection();

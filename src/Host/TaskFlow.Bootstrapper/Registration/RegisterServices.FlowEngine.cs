@@ -150,8 +150,9 @@ public static partial class RegisterServices
         var apiBaseUrl = config["FlowEngine:TaskFlowApiBaseUrl"]
             ?? config["Gateway:BaseUrl"]
             ?? "https://localhost";
-        AddSelfCallRelay(services, config);
-        var client = services.AddHttpClient(TaskFlowApiClientName, c => c.BaseAddress = new Uri(apiBaseUrl));
+        var baseAddress = new Uri(apiBaseUrl);
+        AddSelfCallRelay(services, config, baseAddress);
+        var client = services.AddHttpClient(TaskFlowApiClientName, c => c.BaseAddress = baseAddress);
         fe.AddResilientHttpClient(TaskFlowApiClientName, TaskFlowApiClientName);
         return client.AddHttpMessageHandler<SelfCallRelayHandler>();
     }
@@ -162,12 +163,13 @@ public static partial class RegisterServices
     /// allowlist would drop a relayed claim type. Tokens come from <c>EF.Auth</c> <see cref="AccessTokenCache"/> over the
     /// host credential (<c>ManagedIdentityClientId</c>, <c>AzureTenantId</c>), as the Gateway acquires its tokens.
     /// </summary>
-    private static void AddSelfCallRelay(IServiceCollection services, IConfiguration config)
+    private static void AddSelfCallRelay(IServiceCollection services, IConfiguration config, Uri baseAddress)
     {
         services.AddOptions<ForwardedClaimsOptions>(SelfCallRelayOptions.ForwardedClaimsOptionsName)
             .Bind(config.GetSection(ForwardedClaimsOptions.ConfigSectionName));
         services.AddOptions<SelfCallRelayOptions>()
             .Bind(config.GetSection(SelfCallRelayOptions.ConfigSectionName))
+            .Configure(relay => relay.ApiBaseAddress = baseAddress)
             .Validate<IOptionsMonitor<ForwardedClaimsOptions>, IOptions<HttpRequestContextOptions>>(
                 (relay, claims, requestContext) => !relay.IsRelayConfigured || SelfCallRelayHandler.DroppedClaimTypes(
                     claims.Get(SelfCallRelayOptions.ForwardedClaimsOptionsName), requestContext.Value).Count == 0,
@@ -182,8 +184,9 @@ public static partial class RegisterServices
     /// <summary>
     /// Wraps the node executors that call request-response clients (<c>integration</c>, <c>fetch</c>) in
     /// <see cref="InstanceTenantNodeExecutor"/>, so a self-call knows the tenant of the instance it runs for.
-    /// <c>AddFlowEngine</c> registers each as an <see cref="INodeExecutor"/> implementation type; a registration of
-    /// another shape fails host start rather than leaving the self-call without its tenant.
+    /// <c>AddFlowEngine</c> registers each as an <see cref="INodeExecutor"/> implementation type; the wrapper keeps that
+    /// registration's lifetime, and a registration of another shape fails host start rather than leaving the self-call
+    /// without its tenant.
     /// </summary>
     internal static void RunHttpNodesInTheInstanceTenant(IServiceCollection services)
     {
@@ -195,8 +198,10 @@ public static partial class RegisterServices
                     $"AddFlowEngine did not register {executorType.Name} as an {nameof(INodeExecutor)} implementation type, " +
                     "so the workflow self-call relay cannot read the instance tenant.");
             services.Remove(registration);
-            services.AddSingleton<INodeExecutor>(sp =>
-                new InstanceTenantNodeExecutor((INodeExecutor)ActivatorUtilities.CreateInstance(sp, executorType)));
+            services.Add(ServiceDescriptor.Describe(
+                typeof(INodeExecutor),
+                sp => new InstanceTenantNodeExecutor((INodeExecutor)ActivatorUtilities.CreateInstance(sp, executorType)),
+                registration.Lifetime));
         }
     }
 

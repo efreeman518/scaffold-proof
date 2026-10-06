@@ -25,6 +25,12 @@ public sealed class SelfCallRelayOptions
     /// <summary>The scope of the app-only token the self-calls carry (for example <c>api://taskflow-api/.default</c>).</summary>
     public string? TokenScope { get; set; }
 
+    /// <summary>
+    /// The self-call base address (<c>FlowEngine:TaskFlowApiBaseUrl</c>), the one address the relayed token is sent to.
+    /// Set by the client registration, not bound from this section.
+    /// </summary>
+    internal Uri? ApiBaseAddress { get; set; }
+
     /// <summary>Whether the self-calls relay the instance tenant.</summary>
     public bool IsRelayConfigured => !string.IsNullOrWhiteSpace(TokenScope);
 
