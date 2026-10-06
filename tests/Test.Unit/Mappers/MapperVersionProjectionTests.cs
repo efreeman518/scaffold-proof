@@ -76,7 +76,7 @@ public class MapperVersionProjectionTests
         Assert.AreEqual(taskItem.ModifiedAtUtc, projected.ModifiedAtUtc);
     }
 
-    /// <summary>Verifies a caller-supplied v7 id survives the DTO-to-entity mapping (GR-17).</summary>
+    /// <summary>Verifies a caller-supplied v7 id survives the DTO-to-entity mapping (AR-01).</summary>
     [TestMethod]
     public void Given_CallerSuppliedId_When_MappedToEntity_Then_IdIsHonored()
     {

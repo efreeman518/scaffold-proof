@@ -195,7 +195,7 @@ public class TaskItemEndpointTests
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, responseBody);
         var doc = JsonDocument.Parse(responseBody);
         var root = doc.RootElement;
-        // Keyset pages carry no total (GR-18): HasMore replaces it.
+        // Keyset pages carry no total (AR-02): HasMore replaces it.
         Assert.IsFalse(root.GetProperty("hasMore").GetBoolean());
         var items = root.GetProperty("items");
         Assert.Contains(e => e.GetProperty("title").GetString()!.Contains("SearchTarget"), items.EnumerateArray());

@@ -8,7 +8,7 @@ using Test.Support;
 namespace Test.Endpoints;
 
 /// <summary>
-/// HTTP contract tests for the concurrency and idempotent-create rules (GR-16, GR-17, D-031..D-033),
+/// HTTP contract tests for the concurrency and idempotent-create rules (AR-03, AR-01, D-031..D-033),
 /// run under both application styles. These are the cases that decide whether a lost update is
 /// prevented or silently accepted, so each one asserts a specific status code, not just "not 200".
 /// </summary>
@@ -331,7 +331,7 @@ public class ConcurrencyEndpointTests
         Assert.AreEqual(HttpStatusCode.PreconditionFailed, stale.StatusCode);
     }
 
-    /// <summary>Verifies a caller-supplied non-v7 id is refused with 400 (GR-17).</summary>
+    /// <summary>Verifies a caller-supplied non-v7 id is refused with 400 (AR-01).</summary>
     [TestCategory("Endpoint")]
     [DataRow(EndpointStyles.Service)]
     [DataRow(EndpointStyles.Cqrs)]
@@ -353,7 +353,7 @@ public class ConcurrencyEndpointTests
     }
 
     /// <summary>
-    /// Verifies Guid.Empty is refused with 400, the same as any other non-v7 id (GR-17). Guid.Empty is
+    /// Verifies Guid.Empty is refused with 400, the same as any other non-v7 id (AR-01). Guid.Empty is
     /// present, not absent - an absent id is the null JSON case, which the server fills in itself - so
     /// it must fail the UUIDv7 check rather than slip through as "unset".
     /// </summary>

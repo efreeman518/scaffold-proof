@@ -15,7 +15,7 @@ namespace TaskFlow.Api.Filters;
 /// <param name="featureName">Flag that must be on for the route to answer.</param>
 /// <param name="appliesWhen">
 /// Optional narrowing predicate over the bound arguments. Some flags gate one shape of a request rather than
-/// a whole route - SemanticSearch gates only <c>mode=Semantic</c> on /search/tasks (GR-19), and keyword search
+/// a whole route - SemanticSearch gates only <c>mode=Semantic</c> on /search/tasks (AR-04), and keyword search
 /// has to keep answering while it is off. Null means the flag gates every request to the route.
 /// </param>
 internal sealed class FeatureGateEndpointFilter(

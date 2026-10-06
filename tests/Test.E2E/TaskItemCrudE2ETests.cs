@@ -198,14 +198,14 @@ public class TaskItemCrudE2ETests
             .Cast<string>()
             .ToList();
 
-        // Keyset pages carry no total (GR-18) - the rows themselves are the assertion.
+        // Keyset pages carry no total (AR-02) - the rows themselves are the assertion.
         CollectionAssert.Contains(titles, $"{searchMarker} Task");
     }
 
     /// <summary>
-    /// Walks every keyset page against real SQL. Offset paging is gone (GR-18), so this replaces the
-    /// former distinct-pages assertion: the property that matters now is that a page-through returns
-    /// each row exactly once, which is precisely what a non-total sort order would break.
+    /// Walks every keyset page against real SQL. Paging is keyset-only (AR-02), so the property that
+    /// matters is that a page-through returns each row
+    /// exactly once, which is precisely what a non-total sort order would break.
     /// </summary>
     [TestMethod]
     public async Task TaskItem_CursorSearch_WalksEveryRowOnce_AgainstRealSql()

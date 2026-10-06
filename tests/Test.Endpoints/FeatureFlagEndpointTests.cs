@@ -90,7 +90,7 @@ public sealed class FeatureFlagEndpointTests
     }
 
     /// <summary>
-    /// GR-19/GR-20: SemanticSearch gates one search mode, not the whole route. With the flag off a Semantic
+    /// AR-04/AR-05: SemanticSearch gates one search mode, not the whole route. With the flag off a Semantic
     /// request is 404 - the surface looks absent rather than forbidden.
     /// </summary>
     [TestCategory("Endpoint")]

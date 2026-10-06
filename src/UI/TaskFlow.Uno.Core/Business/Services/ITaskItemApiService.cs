@@ -5,7 +5,7 @@ namespace TaskFlow.Uno.Core.Business.Services;
 /// <summary>Coordinates task item API application use cases with validation, tenant checks, repositories, and response shaping.</summary>
 public interface ITaskItemApiService
 {
-    /// <summary>Searches with keyset (cursor) paging, filters, and a sort mode (GR-18: no offset paging).</summary>
+    /// <summary>Searches with keyset (cursor) paging, filters, and a sort mode (AR-02: no offset paging).</summary>
     Task<TaskItemCursorPage> SearchCursorAsync(string? searchTerm = null, string? status = null,
         string? priority = null, Guid? categoryId = null, string sortMode = "IdAsc",
         int pageSize = 50, string? cursor = null, CancellationToken ct = default);

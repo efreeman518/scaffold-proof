@@ -14,7 +14,7 @@ public static class TaskFlowFeatures
     /// <summary>Gates the NDJSON task export HTTP surface; disabled answers 404 (endpoint filter).</summary>
     public const string Export = "Export";
 
-    /// <summary>Gates the PgVector semantic search HTTP surface; disabled answers 404, see GR-19 (endpoint filter, applied by P7).</summary>
+    /// <summary>Gates the PgVector semantic search HTTP surface; disabled answers 404, see AR-04 (endpoint filter, applied by P7).</summary>
     public const string SemanticSearch = "SemanticSearch";
 
     /// <summary>Gates AiTaskReviewer's AI-assisted review consumer path via IVariantFeatureManager.</summary>

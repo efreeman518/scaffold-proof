@@ -3,7 +3,7 @@ namespace TaskFlow.Infrastructure.Data.Operational;
 /// <summary>
 /// Maps a caller's <c>Idempotency-Key</c> header to the UUIDv7 id its create or child add uses (D-074). The row is
 /// committed before the write, so a retry, a concurrent duplicate or a recovery after a crash reuses the same id
-/// and the existing idempotent-create (GR-17) and child-add (D-073) replay paths deduplicate the write.
+/// and the existing idempotent-create (AR-01) and child-add (D-073) replay paths deduplicate the write.
 /// Not a tenant entity: no query filter, no Version, schema <c>taskflow</c>; the repository filters by tenant.
 /// </summary>
 public sealed class IdempotencyKeyRecord

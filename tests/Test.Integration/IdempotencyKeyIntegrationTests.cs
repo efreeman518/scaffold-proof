@@ -82,7 +82,7 @@ public sealed class IdempotencyKeyIntegrationTests
         var otherScope = await WithRepositoryAsync(r => r.GetOrAddEntityIdAsync(TenantId, "task-item.comment.add:x", key, ct));
 
         Assert.AreEqual(first, again);
-        Assert.AreEqual(7, first.Version, "the mapped id is a UUIDv7 (GR-17)");
+        Assert.AreEqual(7, first.Version, "the mapped id is a UUIDv7 (AR-01)");
         Assert.AreEqual(4, new[] { first, otherKey, otherTenant, otherScope }.Distinct().Count());
         Assert.AreEqual(1, await CountMappingsAsync(TenantId, Scope, key, ct));
     }

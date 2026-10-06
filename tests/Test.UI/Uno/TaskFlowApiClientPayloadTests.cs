@@ -9,7 +9,7 @@ namespace Test.UI.Uno;
 /// <summary>
 /// Validates the hand-authored <c>TaskFlowApiClient</c> outgoing request shape: create assigns a
 /// client-generated UUIDv7 id when the caller leaves it unset, and every PUT/DELETE sends the
-/// required If-Match header (D-021/GR-16).
+/// required If-Match header (D-021/AR-03).
 /// Pure-unit tier: a capturing <see cref="System.Net.Http.HttpMessageHandler"/> records the request
 /// without ever opening a socket - payload-shape regression coverage for client serialization rules.
 /// </summary>

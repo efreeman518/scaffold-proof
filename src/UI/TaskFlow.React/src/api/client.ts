@@ -95,7 +95,7 @@ function post<TResponse, TBody>(path: string, body: TBody, signal?: AbortSignal)
   })
 }
 
-/** Sends a PUT with the required If-Match precondition (D-021/GR-16): "*" overrides unconditionally. */
+/** Sends a PUT with the required If-Match precondition (D-021/AR-03): "*" overrides unconditionally. */
 function put<TResponse, TBody>(
   path: string,
   body: TBody,
@@ -130,7 +130,7 @@ function ifMatchOf(entity: { version?: number | null }): string {
 }
 
 export const taskFlowApi = {
-  // ---- TaskItems (cursor-only search, GR-18) ----
+  // ---- TaskItems (cursor-only search, AR-02) ----
   searchTasks: (request: TaskItemCursorSearchRequest, signal?: AbortSignal) =>
     post<TaskItemCursorPage, TaskItemCursorSearchRequest>(`${apiVersionRoot}/task-items/search`, request, signal),
 

@@ -137,12 +137,12 @@ internalRpc:
   # Gateway keeps REST for public clients. See D-054.
 
 # ---------------------------------------------------------------------------
-# Feature Flags (see DESIGN-DECISIONS D-042, domain-specification GR-20)
+# Feature Flags (see DESIGN-DECISIONS D-042, domain-specification AR-05)
 # ---------------------------------------------------------------------------
 featureFlags:
   - { name: TaskViews, checkPoint: endpoint-filter, description: "Gates the TaskView read-model HTTP surface; disabled answers 404" }
   - { name: Export, checkPoint: endpoint-filter, description: "Gates the NDJSON task export HTTP surface; disabled answers 404" }
-  - { name: SemanticSearch, checkPoint: endpoint-filter, description: "Gates the PgVector semantic search HTTP surface; disabled answers 404, see GR-19" }
+  - { name: SemanticSearch, checkPoint: endpoint-filter, description: "Gates the PgVector semantic search HTTP surface; disabled answers 404, see AR-04" }
   - { name: AiReview, checkPoint: consumer, description: "Gates AiTaskReviewer's AI-assisted review consumer path via IVariantFeatureManager" }
 
 # ---------------------------------------------------------------------------
@@ -340,7 +340,7 @@ entities:
       - { name: Dimensions, type: "int", required: true }
       - { name: ModelId, type: "nvarchar", maxLength: 128, required: true }
       - { name: UpdatedUtc, type: "DateTimeOffset", required: true }
-    note: "HNSW cosine index (vector_cosine_ops); mapped in OnModelCreating only when Database.ProviderName is Npgsql (the one new forced provider branch, D-030) - no DbSet, because a DbSet would pull the type into the SQL Server model too; migration lives in the PostgreSql migration assembly only. The vector dimension is the TaskItemEmbedding.DefaultDimensions constant (1536) because it is also the deployed column type; Search:PgVector:Dimensions is validated against it at startup rather than driving the model. Search projection, not domain state - no TaskItem attribute changes. See D-040, domain-specification GR-19/GR-20."
+    note: "HNSW cosine index (vector_cosine_ops); mapped in OnModelCreating only when Database.ProviderName is Npgsql (the one new forced provider branch, D-030) - no DbSet, because a DbSet would pull the type into the SQL Server model too; migration lives in the PostgreSql migration assembly only. The vector dimension is the TaskItemEmbedding.DefaultDimensions constant (1536) because it is also the deployed column type; Search:PgVector:Dimensions is validated against it at startup rather than driving the model. Search projection, not domain state - no TaskItem attribute changes. See D-040, domain-specification AR-04/AR-05."
 
 # ---------------------------------------------------------------------------
 # Messaging

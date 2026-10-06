@@ -12,7 +12,7 @@ using TaskFlow.Infrastructure.Repositories;
 namespace Test.Endpoints;
 
 /// <summary>
-/// Keyset paging contract for <c>/task-items/search</c> (GR-18), under both application styles: page
+/// Keyset paging contract for <c>/task-items/search</c> (AR-02), under both application styles: page
 /// size limits, a complete page-through with no duplicate or missing row, and the three ways a cursor
 /// can be wrong - tampered, foreign tenant, wrong sort mode - each of which is a 400 rather than a
 /// silent restart at page one.
