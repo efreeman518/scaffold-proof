@@ -56,7 +56,7 @@ public sealed class ServiceDefaultsScaleTests
     {
         var handler = StubHttpMessageHandler.Returns(HttpStatusCode.ServiceUnavailable);
         using var client = BuildDefaultsClient(handler, RegisterServices.TaskFlowApiClientName,
-            services => RegisterServices.AddTaskFlowApiHttpClient(services.AddFlowEngine(), services, "http://localhost"));
+            services => RegisterServices.AddTaskFlowApiHttpClient(services.AddFlowEngine(), services, new ConfigurationBuilder().Build()));
 
         using var response = await client.GetAsync(new Uri("http://localhost/tasks"), TestContext.CancellationToken);
 

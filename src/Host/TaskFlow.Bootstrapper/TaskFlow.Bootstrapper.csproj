@@ -18,6 +18,8 @@
     <!-- D-043: Data Protection key-ring persistence, lifted here from TaskFlow.Api so Gateway/Scheduler can share it. -->
     <PackageReference Include="EF.AspNetCore.DataProtection" />
     <PackageReference Include="EF.Host" />
+    <!-- D-068: the workflow self-call relay (ForwardedClaimsCodec) and its token source (AccessTokenCache). -->
+    <PackageReference Include="EF.Auth" />
     <PackageReference Include="EF.Common" />
     <!-- EF.AspNetCore.HealthChecks.MemoryHealthCheck; this project already references Microsoft.AspNetCore.App. -->
     <PackageReference Include="EF.AspNetCore" />
