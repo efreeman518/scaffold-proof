@@ -155,6 +155,7 @@ tenantIdType: Guid
 gatewayEdgeRateLimiting: token-bucket-per-client-ip   # EF.RateLimiting UseEdgeLimiter at the Gateway, in addition to the Api's EF.RateLimiting tenant limiter, see D-050
 # Scaffold auth (EF.Auth fixed principal) is the only runtime mode; gatewayAuth/apiAuth name the deployment-only providers (D-002, D-072).
 # tokenRelay: EF.Gateway AddDownstreamAuthTransforms + EF.Auth AddForwardedClaimsTransformation over one ForwardedClaims section (D-068).
+# The workflow self-calls relay the instance tenant over the same section when FlowEngine:SelfCall:TokenScope is set (SelfCallRelayHandler, shipped off; D-068).
 
 # ---------------------------------------------------------------------------
 # IaC / Pipeline
