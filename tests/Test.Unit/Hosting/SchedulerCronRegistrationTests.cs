@@ -21,6 +21,7 @@ public sealed class SchedulerCronRegistrationTests
     [DataRow(OverdueTaskCheckHandler.JobName, "0 0 */6 * * *")]
     [DataRow(RecurringTaskGenerationHandler.JobName, "0 0 2 * * *")]
     [DataRow(StaleTaskCleanupHandler.JobName, "0 0 3 * * 0")]
+    [DataRow(ComplianceCheckHandler.JobName, "0 10 6 * * *")]
     [DataRow(OutboxRetentionHandler.JobName, "0 15 * * * *")]
     [DataRow(ConsumerInboxRetentionHandler.JobName, "0 20 * * * *")]
     [DataRow(TaskMaintenanceJobs.TickerQOccurrenceRetention, "0 30 4 * * *")]

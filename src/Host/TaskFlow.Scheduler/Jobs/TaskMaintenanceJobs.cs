@@ -39,6 +39,14 @@ public sealed class TaskMaintenanceJobs(ScheduledJobRunner runner)
     public Task StaleTaskCleanupAsync(TickerFunctionContext context, CancellationToken ct) =>
         runner.RunAsync<StaleTaskCleanupHandler>(context, ct);
 
+    /// <summary>
+    /// Starts the compliance-check workflow for each tenant with a due compliance task (D-075). At 06:10, off the
+    /// 06:00 overdue check.
+    /// </summary>
+    [TickerFunction(ComplianceCheckHandler.JobName, "0 10 6 * * *")]
+    public Task ComplianceCheckAsync(TickerFunctionContext context, CancellationToken ct) =>
+        runner.RunAsync<ComplianceCheckHandler>(context, ct);
+
     /// <summary>Purges dead-lettered outbox and blob-delete rows past retention.</summary>
     [TickerFunction(OutboxRetentionHandler.JobName, "0 15 * * * *")]
     public Task OutboxRetentionAsync(TickerFunctionContext context, CancellationToken ct) =>

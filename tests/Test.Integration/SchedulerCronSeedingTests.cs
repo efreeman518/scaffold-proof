@@ -37,6 +37,7 @@ public class SchedulerCronSeedingTests
         ["OverdueTaskCheck"] = "0 0 */6 * * *",
         ["RecurringTaskGeneration"] = "0 0 2 * * *",
         ["StaleTaskCleanup"] = "0 0 3 * * 0",
+        ["ComplianceCheck"] = "0 10 6 * * *",
         ["OutboxRetention"] = "0 15 * * * *",
         ["ConsumerInboxRetention"] = "0 20 * * * *",
         ["TickerQOccurrenceRetention"] = "0 30 4 * * *",

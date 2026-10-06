@@ -53,6 +53,37 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
     }
 
     /// <inheritdoc />
+    // Hand-rolled keyset over TenantId alone: the package walk needs a unique tie-breaker, and a distinct tenant id
+    // has only the one key. Each page resumes after the last tenant it returned, so its cost is bounded by the
+    // tenants it reads, not by how many tasks the earlier tenants had.
+    public async IAsyncEnumerable<Guid> StreamTenantsWithTaggedOpenTasksDueAsync(
+        string tagName, DateTimeOffset dueBefore, int pageSize, [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(tagName);
+        ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
+        // Same normalization as the task search's tagName filter (TaskItemRepositoryQuery).
+        var upperTagName = tagName.Trim().ToUpperInvariant();
+        var candidates = DB.Set<TaskItem>()
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(e => e.DueDate != null && e.DueDate <= dueBefore
+                && e.Status != TaskItemStatus.Completed
+                && e.Status != TaskItemStatus.Cancelled
+                && e.TaskItemTags.Any(tt => tt.Tag.Name.Trim().ToUpper() == upperTagName));
+
+        TenantId? after = null;
+        while (true)
+        {
+            var page = after is { } position ? candidates.Where(e => e.TenantId > position) : candidates;
+            var tenants = await page.Select(e => e.TenantId).Distinct().OrderBy(t => t).Take(pageSize)
+                .ToListAsync(ct).ConfigureAwait(ConfigureAwaitOptions.None);
+            foreach (var tenant in tenants) yield return tenant.Value;
+            if (tenants.Count < pageSize) yield break;
+            after = tenants[^1];
+        }
+    }
+
+    /// <inheritdoc />
     public async IAsyncEnumerable<TaskItem> StreamDueTemplatesAsync(
         DateTimeOffset asOfUtc, int pageSize, [EnumeratorCancellation] CancellationToken ct = default)
     {
