@@ -148,7 +148,7 @@ public class AttachmentDto
     public Guid? OwnerId { get; set; }
 }
 
-/// <summary>TaskItem list request - the only list read that is cursor-only (offset paging removed, AR-02).</summary>
+/// <summary>TaskItem list request - the only list read that is cursor-only (no offset paging, AR-02).</summary>
 public class TaskItemCursorSearchRequest
 {
     [JsonPropertyName("filter")]

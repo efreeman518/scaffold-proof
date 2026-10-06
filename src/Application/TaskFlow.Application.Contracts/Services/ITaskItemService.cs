@@ -6,11 +6,11 @@ namespace TaskFlow.Application.Contracts.Services;
 
 /// <summary>Coordinates i task item application use cases with validation, tenant checks, repositories, and response shaping.</summary>
 ///
-/// Every mutating method takes the caller's expected aggregate version (GR-16). Null means the caller
+/// Every mutating method takes the caller's expected aggregate version (AR-03). Null means the caller
 /// sent <c>If-Match: *</c> - the explicit trusted-automation override - and the precondition is skipped.
 public interface ITaskItemService
 {
-    /// <summary>Keyset page of task items. Offset paging and totals are gone (AR-02).</summary>
+    /// <summary>Keyset page of task items. Paging is keyset-only and carries no totals (AR-02).</summary>
     Task<CursorPage<TaskItemDto>> SearchAsync(TaskItemCursorSearchRequest request, CancellationToken ct = default);
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     Task<Result<DefaultResponse<TaskItemDto>>> GetAsync(Guid id, CancellationToken ct = default);

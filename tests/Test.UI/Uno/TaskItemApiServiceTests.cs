@@ -91,7 +91,7 @@ public class TaskItemApiServiceTests
         Assert.IsNotNull(result.Id);
     }
 
-    /// <summary>Verifies UpdateAsync sends the entity's Version as the If-Match header (D-021/GR-16).</summary>
+    /// <summary>Verifies UpdateAsync sends the entity's Version as the If-Match header (D-021/AR-03).</summary>
     [TestMethod]
     public async Task UpdateAsync_SendsVersionAsIfMatchHeader()
     {

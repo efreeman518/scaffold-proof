@@ -37,7 +37,7 @@ public class ApplicationStyleBenchmarks
     private ApplicationStyleBenchmarkApiFactory _factory = null!;
     private HttpClient _client = null!;
 
-    // TaskItem search is cursor-only (AR-02): there is no PageIndex/offset request shape any more, so
+    // TaskItem search is cursor-only (AR-02): there is no PageIndex/offset request shape, so
     // this benchmark always measures the first cursor page at the standard default size (50).
     private TaskItemCursorSearchRequest _searchRequest = null!;
     private EnvironmentVariableScope? _environment;

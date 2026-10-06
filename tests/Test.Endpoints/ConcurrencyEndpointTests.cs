@@ -8,7 +8,7 @@ using Test.Support;
 namespace Test.Endpoints;
 
 /// <summary>
-/// HTTP contract tests for the concurrency and idempotent-create rules (GR-16, AR-01, D-031..D-033),
+/// HTTP contract tests for the concurrency and idempotent-create rules (AR-03, AR-01, D-031..D-033),
 /// run under both application styles. These are the cases that decide whether a lost update is
 /// prevented or silently accepted, so each one asserts a specific status code, not just "not 200".
 /// </summary>

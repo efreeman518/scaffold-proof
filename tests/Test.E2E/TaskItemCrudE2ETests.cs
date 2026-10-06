@@ -203,9 +203,9 @@ public class TaskItemCrudE2ETests
     }
 
     /// <summary>
-    /// Walks every keyset page against real SQL. Offset paging is gone (AR-02), so this replaces the
-    /// former distinct-pages assertion: the property that matters now is that a page-through returns
-    /// each row exactly once, which is precisely what a non-total sort order would break.
+    /// Walks every keyset page against real SQL. Paging is keyset-only (AR-02), so the property that
+    /// matters is that a page-through returns each row
+    /// exactly once, which is precisely what a non-total sort order would break.
     /// </summary>
     [TestMethod]
     public async Task TaskItem_CursorSearch_WalksEveryRowOnce_AgainstRealSql()

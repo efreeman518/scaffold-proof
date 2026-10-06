@@ -95,7 +95,7 @@ function post<TResponse, TBody>(path: string, body: TBody, signal?: AbortSignal)
   })
 }
 
-/** Sends a PUT with the required If-Match precondition (D-021/GR-16): "*" overrides unconditionally. */
+/** Sends a PUT with the required If-Match precondition (D-021/AR-03): "*" overrides unconditionally. */
 function put<TResponse, TBody>(
   path: string,
   body: TBody,

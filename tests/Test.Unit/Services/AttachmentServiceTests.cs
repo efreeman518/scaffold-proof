@@ -90,8 +90,8 @@ public class AttachmentServiceTests
     }
 
     /// <summary>
-    /// Verifies the upload path enforces AR-01 before anything else - it used to skip UuidV7 validation
-    /// entirely, so a caller-supplied Guid.Empty (or any v4) reached DomainId.FromNullable unchecked.
+    /// Verifies the upload path enforces AR-01 before anything else - a caller-supplied
+    /// Guid.Empty (or any v4) is rejected before it reaches DomainId.FromNullable.
     /// blobStorage stays unconfigured (null) here specifically to prove the id check runs first: a stale
     /// fix that reordered the checks would surface as "Blob storage is not configured" instead.
     /// </summary>

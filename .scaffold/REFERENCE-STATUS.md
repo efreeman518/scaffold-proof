@@ -119,7 +119,7 @@ Machine-level updates still blocked outside the repository: installed workloads 
 
 Run `dotnet list package --vulnerable --include-transitive` and capture findings here. Severity policy: [scaffold execution gates](https://github.com/efreeman518/scaffold-ai/blob/main/support/execution-gates.md#vulnerability-audit).
 
-Last audit (2026-10-05, EF.* 2.0.118, EF.FlowEngine and EF.FilterBuilder 1.0.207): `dotnet list TaskFlow.slnx package --vulnerable --include-transitive` against nuget.org and the private feed reported no vulnerable packages for all 47 solution projects, the 3 Uno projects included. `npm audit` in `src/UI/TaskFlow.React` (2026-10-06) reports 0 vulnerabilities (info 0, low 0, moderate 0, high 0, critical 0); the lockfile resolves brace-expansion 2.1.7 under `@redocly/openapi-core` and 5.0.12 at the top level, and source-map-js 1.2.2.
+Last audit (2026-10-05, EF.* 2.0.118, EF.FlowEngine and EF.FilterBuilder 1.0.207): `dotnet list TaskFlow.slnx package --vulnerable --include-transitive` against nuget.org and the private feed reported no vulnerable packages for all 47 solution projects, the 3 Uno projects included. `npm audit` in `src/UI/TaskFlow.React` (2026-10-06) reports 0 vulnerabilities (info 0, low 0, moderate 0, high 0, critical 0).
 
 | Package | Severity | Direct/Transitive | Advisory | Notes |
 |---|---|---|---|---|

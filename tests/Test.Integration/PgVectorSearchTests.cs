@@ -135,7 +135,7 @@ public class PgVectorSearchTests
             Assert.IsTrue(results[0].Score > results[1].Score, "Score must fall as cosine distance grows");
         }
 
-        // Another tenant sees none of it (GR-19).
+        // Another tenant sees none of it (AR-04).
         await using (var scope = NewScope(connString))
         {
             var others = await scope.Repository.SearchNearestAsync(

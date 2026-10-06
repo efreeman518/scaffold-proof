@@ -29,7 +29,7 @@ public sealed class PgVectorSearchService(
         if (mode != SearchMode.Semantic)
             return await prefixSearch.SearchTaskItemsAsync(query, mode, tenantId, maxResults, ct).ConfigureAwait(false);
 
-        // GR-19: semantic results are tenant-scoped like every other list read. Without a tenant there is no
+        // AR-04: semantic results are tenant-scoped like every other list read. Without a tenant there is no
         // scope to search, and an unscoped vector query would cross tenants.
         if (tenantId is null || string.IsNullOrWhiteSpace(query)) return [];
 
