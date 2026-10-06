@@ -16,8 +16,13 @@ internal static class SearchOrderingExtensions
     public static IOrderedQueryable<T> OrderByWithIdTieBreak<T, TId>(
         this IQueryable<T> query, IEnumerable<Sort> sorts, Expression<Func<T, TId>> id)
     {
-        var ordered = (IOrderedQueryable<T>)query.OrderBy(sorts);
-        return sorts.Last().SortOrder == SortOrder.Descending
+        ArgumentNullException.ThrowIfNull(sorts);
+        var list = sorts as IReadOnlyList<Sort> ?? [.. sorts]; // enumerate once
+        if (list.Count == 0)
+            throw new ArgumentException("At least one sort is required; supply a default order for an empty list.", nameof(sorts));
+
+        var ordered = (IOrderedQueryable<T>)query.OrderBy(list);
+        return list[^1].SortOrder == SortOrder.Descending
             ? ordered.ThenByDescending(id)
             : ordered.ThenBy(id);
     }

@@ -448,6 +448,7 @@ public class RepositorySearchTranslationTests
         await using var queryDb = DbContainerFixture.CreateQueryContext();
         var ascendingNames = await queryDb.Categories.IgnoreQueryFilters().Where(e => e.Name.StartsWith(marker))
             .OrderBy(e => e.Id).Select(e => e.Name).ToListAsync(TestContext.CancellationToken);
+        Assert.HasCount(2, ascendingNames);
         var repo = new CategoryRepositoryQuery(queryDb);
         foreach (var order in new[] { SortOrder.Ascending, SortOrder.Descending })
         {
@@ -479,6 +480,7 @@ public class RepositorySearchTranslationTests
         await using var queryDb = DbContainerFixture.CreateQueryContext();
         var ascendingNames = await queryDb.Tags.IgnoreQueryFilters().Where(e => e.Name.StartsWith(marker))
             .OrderBy(e => e.Id).Select(e => e.Name).ToListAsync(TestContext.CancellationToken);
+        Assert.HasCount(2, ascendingNames);
         var repo = new TagRepositoryQuery(queryDb);
         foreach (var order in new[] { SortOrder.Ascending, SortOrder.Descending })
         {
@@ -515,6 +517,7 @@ public class RepositorySearchTranslationTests
         await using var queryDb = DbContainerFixture.CreateQueryContext();
         var ascendingBodies = await queryDb.Comments.IgnoreQueryFilters().Where(e => e.Body.StartsWith(marker))
             .OrderBy(e => e.Id).Select(e => e.Body).ToListAsync(TestContext.CancellationToken);
+        Assert.HasCount(2, ascendingBodies);
         var repo = new CommentRepositoryQuery(queryDb);
         foreach (var order in new[] { SortOrder.Ascending, SortOrder.Descending })
         {
@@ -550,6 +553,7 @@ public class RepositorySearchTranslationTests
         await using var queryDb = DbContainerFixture.CreateQueryContext();
         var ascendingTitles = await queryDb.ChecklistItems.IgnoreQueryFilters().Where(e => e.Title.StartsWith(marker))
             .OrderBy(e => e.Id).Select(e => e.Title).ToListAsync(TestContext.CancellationToken);
+        Assert.HasCount(2, ascendingTitles);
         var repo = new ChecklistItemRepositoryQuery(queryDb);
         foreach (var order in new[] { SortOrder.Ascending, SortOrder.Descending })
         {
