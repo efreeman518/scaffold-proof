@@ -122,7 +122,7 @@ public class AttachmentEndpointTests
         Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <summary>Verifies that given existing attachment, when put update, then returns 200.</summary>
+    /// <summary>A metadata-only attachment (no uploaded content) takes a full replace of its fields: 200.</summary>
     [TestCategory("Endpoint")]
     [DataRow(EndpointStyles.Service)]
     [DataRow(EndpointStyles.Cqrs)]
@@ -147,18 +147,89 @@ public class AttachmentEndpointTests
         var updateDto = new AttachmentDto
         {
             Id = created!.Id,
-            FileName = "after.png",
-            ContentType = "image/png",
+            FileName = "after.jpg",
+            ContentType = "image/jpeg",
             FileSizeBytes = 1024,
-            StorageUri = "https://storage.example.com/after.png",
+            StorageUri = "https://storage.example.com/after.jpg",
             OwnerType = AttachmentOwnerType.TaskItem,
             OwnerId = taskId
         };
         var response = await client.PutAsJsonWithIfMatchAsync($"/api/v1/attachments/{created.Id}", new DefaultRequest<AttachmentDto> { Item = updateDto }, ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), JsonTestOptions.Default, TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
-        var updated = (await response.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item;
-        Assert.AreEqual("after.png", updated!.FileName);
+        var updated = (await response.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item!;
+        Assert.AreEqual("after.jpg", updated.FileName);
+        Assert.AreEqual("image/jpeg", updated.ContentType);
+        Assert.AreEqual(1024, updated.FileSizeBytes);
+        Assert.AreEqual("https://storage.example.com/after.jpg", updated.StorageUri);
+    }
+
+    /// <summary>
+    /// D-075: an uploaded attachment keeps the content type, size and storage URI the server recorded for its content,
+    /// and no attachment changes owner. A PUT that changes one of them is a 400 and the row is unchanged, in both styles.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service, "contentType")]
+    [DataRow(EndpointStyles.Cqrs, "contentType")]
+    [DataRow(EndpointStyles.Service, "fileSizeBytes")]
+    [DataRow(EndpointStyles.Cqrs, "fileSizeBytes")]
+    [DataRow(EndpointStyles.Service, "storageUri")]
+    [DataRow(EndpointStyles.Cqrs, "storageUri")]
+    [DataRow(EndpointStyles.Service, "ownerId")]
+    [DataRow(EndpointStyles.Cqrs, "ownerId")]
+    [DataRow(EndpointStyles.Service, "ownerType")]
+    [DataRow(EndpointStyles.Cqrs, "ownerType")]
+    [TestMethod]
+    public async Task Given_UploadedAttachment_When_PutChangesServerOwnedField_Then_Returns400AndRowIsUnchanged(string style, string field)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        using var uploadFactory = UploadFactory(style, new InMemoryBlobStorageRepository());
+        using var client = uploadFactory.CreateClient();
+        var taskId = await CreateParentTaskItem(client);
+        using var upload = await UploadAsync(client, taskId, "evidence.txt");
+        Assert.AreEqual(HttpStatusCode.Created, upload.StatusCode);
+        var created = (await upload.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item!;
+        var changed = field switch
+        {
+            "contentType" => created with { ContentType = "application/pdf" },
+            "fileSizeBytes" => created with { FileSizeBytes = created.FileSizeBytes + 1 },
+            "storageUri" => created with { StorageUri = "https://storage.example.com/elsewhere.txt" },
+            "ownerId" => created with { OwnerId = await CreateParentTaskItem(client) },
+            "ownerType" => created with { OwnerType = AttachmentOwnerType.Comment },
+            _ => throw new ArgumentOutOfRangeException(nameof(field), field, null)
+        };
+
+        await AssertPutRefusedAndRowUnchangedAsync(client, created, changed);
+    }
+
+    /// <summary>A metadata-only attachment cannot change owner either: the PUT is a 400 and the row is unchanged.</summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_MetadataOnlyAttachment_When_PutChangesOwner_Then_Returns400AndRowIsUnchanged(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
+        var taskId = await CreateParentTaskItem(client);
+        var createResponse = await client.PostAsJsonAsync("/api/v1/attachments", new DefaultRequest<AttachmentDto>
+        {
+            Item = new AttachmentDto { FileName = "meta.txt", ContentType = "text/plain", FileSizeBytes = 8, StorageUri = "https://storage.example.com/meta.txt", OwnerType = AttachmentOwnerType.TaskItem, OwnerId = taskId }
+        }, cancellationToken: TestContext.CancellationToken);
+        var created = (await createResponse.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item!;
+
+        await AssertPutRefusedAndRowUnchangedAsync(client, created, created with { OwnerId = await CreateParentTaskItem(client) });
+    }
+
+    private async Task AssertPutRefusedAndRowUnchangedAsync(HttpClient client, AttachmentDto created, AttachmentDto changed)
+    {
+        var response = await client.PutAsJsonWithIfMatchAsync($"/api/v1/attachments/{created.Id}",
+            new DefaultRequest<AttachmentDto> { Item = changed },
+            ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), JsonTestOptions.Default, TestContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode, await response.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        var stored = (await client.GetFromJsonAsync<DefaultResponse<AttachmentDto>>($"/api/v1/attachments/{created.Id}", _jsonOptions, TestContext.CancellationToken))!.Item!;
+        Assert.AreEqual(created, stored, "the refused PUT leaves the row as it was");
     }
 
     /// <summary>Verifies that given existing attachment, when delete, then returns 204.</summary>

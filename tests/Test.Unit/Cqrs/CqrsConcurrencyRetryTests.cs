@@ -225,7 +225,7 @@ public sealed class CqrsConcurrencyRetryTests
                 _attachmentRepo.Setup(r => r.GetAttachmentAsync(attachment.Id, It.IsAny<CancellationToken>())).ReturnsAsync(attachment);
                 _run = write == "UpdateAttachment"
                     ? v => Plain(new UpdateAttachmentHandler(Log<UpdateAttachmentHandler>(), _requestContext.Object, _attachmentRepo.Object, _tenantBoundary.Object)
-                        .HandleAsync(new UpdateAttachmentCommand(new DefaultRequest<AttachmentDto> { Item = new AttachmentDtoBuilder().WithId(attachment.Id.Value).Build() }, v), ct))
+                        .HandleAsync(new UpdateAttachmentCommand(new DefaultRequest<AttachmentDto> { Item = new AttachmentDtoBuilder().WithId(attachment.Id.Value).WithOwnerId(attachment.OwnerId).Build() }, v), ct))
                     : v => new DeleteAttachmentHandler(Log<DeleteAttachmentHandler>(), _requestContext.Object, _attachmentRepo.Object, _tenantBoundary.Object, _cache.Object)
                         .HandleAsync(new DeleteAttachmentCommand(attachment.Id.Value, v), ct);
                 return new RetryProbe().Attach(_attachmentRepo);

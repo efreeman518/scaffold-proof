@@ -437,8 +437,14 @@ public sealed class AiWorkflowIntegrationTests
         }
         await Assert.ThrowsExactlyAsync<NotSupportedException>(() => store.OpenReadAsync(binary.ToString(), TenantId, ct));
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() => store.OpenReadAsync(oversized.ToString(), TenantId, ct));
-        // The row size is client-settable metadata; with it understated, the bounded copy of the blob still refuses.
-        await PutAttachmentFieldAsync(client, oversized, "fileSizeBytes", 1, ct);
+        // The API refuses a size change on uploaded content (D-075); a row that understates its size anyway (written
+        // outside the API) still meets the bounded copy of the blob, which refuses it.
+        await using (var db = DbContainerFixture.CreateTrxnContext(connectionString))
+        {
+            var oversizedId = TaskFlow.Domain.Shared.AttachmentId.From(oversized);
+            Assert.AreEqual(1, await db.Attachments.IgnoreQueryFilters().Where(a => a.Id == oversizedId)
+                .ExecuteUpdateAsync(s => s.SetProperty(a => a.FileSizeBytes, 1L), ct));
+        }
         var copyRefusal = await Assert.ThrowsExactlyAsync<InvalidDataException>(() => store.OpenReadAsync(oversized.ToString(), TenantId, ct));
         StringAssert.Contains(copyRefusal.Message, "more than", "the copy, not the row size check, refused it");
         await Assert.ThrowsExactlyAsync<FileNotFoundException>(() => store.OpenReadAsync(Guid.CreateVersion7().ToString(), TenantId, ct));
