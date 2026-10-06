@@ -69,6 +69,17 @@ public static class IdempotentCreateGuard
     public static bool IsEquivalent(TagDto existing, TagDto incoming) =>
         existing.Name == incoming.Name && existing.Color == incoming.Color;
 
+    /// <summary>
+    /// The D-033 outcome for an upload whose caller id is already stored: a replay only when the stored row holds uploaded
+    /// content (<paramref name="existingHasContent"/>) and the payload is equivalent. A metadata-only row with that id never
+    /// received these bytes, so replaying it would answer an upload that stored nothing: it is a 409 like a divergent payload.
+    /// </summary>
+    public static DefaultResponse<AttachmentDto> ReplayUploadOrThrow(
+        AttachmentDto existing, bool existingHasContent, AttachmentDto incoming, Guid entityId) =>
+        existingHasContent
+            ? ReplayOrThrow(existing, incoming, IsEquivalent, nameof(TaskFlow.Domain.Model.Attachment), entityId)
+            : throw new ConflictException(nameof(TaskFlow.Domain.Model.Attachment), entityId.ToString());
+
     /// <summary>True when a repeated Attachment create carries the same scalar payload.</summary>
     public static bool IsEquivalent(AttachmentDto existing, AttachmentDto incoming) =>
         existing.FileName == incoming.FileName

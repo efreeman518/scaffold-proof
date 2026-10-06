@@ -152,15 +152,15 @@ internal class AttachmentService(
             var existing = await repoTrxn.GetAttachmentAsync(AttachmentId.From(callerId), ct);
             if (existing is not null)
             {
-                return Result<DefaultResponse<AttachmentDto>>.Success(IdempotentCreateGuard.ReplayOrThrow(
-                    existing.ToDto(), incoming, IdempotentCreateGuard.IsEquivalent, nameof(Attachment), callerId));
+                return Result<DefaultResponse<AttachmentDto>>.Success(IdempotentCreateGuard.ReplayUploadOrThrow(
+                    existing.ToDto(), existing.StorageKey is not null, incoming, callerId));
             }
         }
 
         var blobName = AttachmentBlobs.NewObjectKey(tenantId, ownerId, fileName);
 
         // D-075: saved before the blob is written, so content whose attachment row never lands is deleted once the
-        // reservation's grace period has passed. The save that inserts the row removes it.
+        // reservation's grace period has passed. The transaction that inserts the row removes it.
         Guid reservationId;
         try
         {
@@ -190,26 +190,24 @@ internal class AttachmentService(
         if (entityResult.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(entityResult.ErrorMessage!);
 
         var entity = entityResult.Value!;
-        repoTrxn.Create(ref entity);
-        repoTrxn.ReleaseUploadReservation(reservationId);
 
         try
         {
-            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
+            await repoTrxn.InsertUploadedAsync(entity, reservationId, ct);
         }
-        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
+        // A POST carries no precondition, so a lost save (the reservation was claimed) is a failed upload, never a 412.
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.AttachmentPersistAfterUploadFailed(ex);
-
             // D-033: a concurrent upload with the same id passed the existence check too and won the insert. Re-read on
             // the query context (this one still tracks the failed insert): the winner makes this a replay or a 409. This
             // upload's blob is left to its reservation either way.
             if (id is Guid racedId && await repoQuery.GetAttachmentAsync(AttachmentId.From(racedId), ct) is { } raced)
             {
-                return Result<DefaultResponse<AttachmentDto>>.Success(IdempotentCreateGuard.ReplayOrThrow(
-                    raced.ToDto(), incoming, IdempotentCreateGuard.IsEquivalent, nameof(Attachment), racedId));
+                return Result<DefaultResponse<AttachmentDto>>.Success(IdempotentCreateGuard.ReplayUploadOrThrow(
+                    raced.ToDto(), raced.StorageKey is not null, incoming, racedId));
             }
 
+            logger.AttachmentPersistAfterUploadFailed(ex);
             return Result<DefaultResponse<AttachmentDto>>.Failure(ErrorConstants.ERROR_SAVE_FAILED);
         }
 

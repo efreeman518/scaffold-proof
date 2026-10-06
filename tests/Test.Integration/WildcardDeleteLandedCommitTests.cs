@@ -4,6 +4,7 @@ using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using TaskFlow.Application.Contracts.Caching;
 using TaskFlow.Application.Contracts.Storage;
@@ -145,7 +146,7 @@ public sealed class WildcardDeleteLandedCommitTests
         var connStr = DbContainerFixture.ConnectionString;
         await using var db = DbContainerFixture.CreateTrxnContext(connStr, fault);
         await using var queryDb = DbContainerFixture.CreateQueryContext(connStr);
-        var repo = new AttachmentRepositoryTrxn(db);
+        var repo = new AttachmentRepositoryTrxn(db, Options.Create(new AttachmentUploadSettings()));
         return style == Service
             ? await new AttachmentService(NullLogger<AttachmentService>.Instance, RequestContext(), repo,
                 new AttachmentRepositoryQuery(queryDb), Boundary).DeleteAsync(attachmentId, expectedVersion: null, ct)

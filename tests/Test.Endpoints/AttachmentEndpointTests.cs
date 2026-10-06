@@ -575,6 +575,63 @@ public class AttachmentEndpointTests
         Assert.AreEqual("a.txt", page.Data.Single().FileName);
     }
 
+    /// <summary>
+    /// D-033: an upload whose caller id belongs to a metadata-only attachment (JSON create) is a 409 even with the same
+    /// metadata, because that row never received these bytes; nothing is written to the container and no reservation is
+    /// left behind.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_MetadataOnlyCallerId_When_Uploaded_Then_Returns409AndWritesNoBlob(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        var blobs = new InMemoryBlobStorageRepository();
+        using var uploadFactory = UploadFactory(style, blobs);
+        using var client = uploadFactory.CreateClient();
+        var taskId = await CreateParentTaskItem(client);
+        var callerId = Guid.CreateVersion7();
+        var create = await client.PostAsJsonAsync("/api/v1/attachments", new DefaultRequest<AttachmentDto>
+        {
+            Item = new AttachmentDto
+            {
+                Id = callerId, FileName = "evidence.txt", ContentType = "text/plain", FileSizeBytes = 8,
+                StorageUri = "https://storage.example.com/evidence.txt", OwnerType = AttachmentOwnerType.TaskItem, OwnerId = taskId
+            }
+        }, cancellationToken: TestContext.CancellationToken);
+        Assert.AreEqual(HttpStatusCode.Created, create.StatusCode, await create.Content.ReadAsStringAsync(TestContext.CancellationToken));
+
+        using var upload = await UploadAsync(client, taskId, "evidence.txt", callerId);
+
+        Assert.AreEqual(HttpStatusCode.Conflict, upload.StatusCode, await upload.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        Assert.IsEmpty((await blobs.ListAsync(AttachmentBlobs.ContainerName, cancellationToken: TestContext.CancellationToken)).Items);
+        Assert.IsEmpty(await BlobDeleteWorkAsync(uploadFactory));
+    }
+
+    /// <summary>D-033: a repeated upload with the same caller id and a different payload is a 409, with no second blob.</summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_UploadedCallerId_When_UploadedAgainWithAnotherPayload_Then_Returns409(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        var blobs = new InMemoryBlobStorageRepository();
+        using var uploadFactory = UploadFactory(style, blobs);
+        using var client = uploadFactory.CreateClient();
+        var taskId = await CreateParentTaskItem(client);
+        var callerId = Guid.CreateVersion7();
+        using var first = await UploadAsync(client, taskId, "evidence.txt", callerId);
+        Assert.AreEqual(HttpStatusCode.Created, first.StatusCode, await first.Content.ReadAsStringAsync(TestContext.CancellationToken));
+
+        using var again = await UploadAsync(client, taskId, "other-evidence.txt", callerId);
+
+        Assert.AreEqual(HttpStatusCode.Conflict, again.StatusCode, await again.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        Assert.HasCount(1, (await blobs.ListAsync(AttachmentBlobs.ContainerName, cancellationToken: TestContext.CancellationToken)).Items);
+        Assert.IsEmpty(await BlobDeleteWorkAsync(uploadFactory));
+    }
+
     /// <summary>Every blob-delete work row in the factory's database.</summary>
     private async Task<List<BlobDeleteWork>> BlobDeleteWorkAsync(Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> factory)
     {

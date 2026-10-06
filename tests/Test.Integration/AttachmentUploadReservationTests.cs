@@ -1,13 +1,18 @@
 extern alias SchedulerHost;
 
 using System.Collections.Concurrent;
+using EF.Common.Contracts;
 using EF.Data.Contracts;
 using EF.Data.Outbox;
 using EF.Storage.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using SchedulerHost::TaskFlow.Scheduler.Workers;
+using TaskFlow.Application.Contracts.Storage;
+using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Cqrs.Features.Attachments;
+using TaskFlow.Application.Models;
 using TaskFlow.Application.Services;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
@@ -64,9 +69,10 @@ public sealed class AttachmentUploadReservationTests
             await other.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: token);
         });
 
-        var replay = await UploadAsync(style, connStr, blobs, ownerId, callerId, ct);
+        var result = await UploadAsync(style, connStr, blobs, ownerId, callerId, ct);
 
-        Assert.IsTrue(replay, "the upload that lost the insert replays the winner");
+        Assert.IsTrue(result.IsSuccess, result.ErrorMessage);
+        Assert.IsTrue(result.Value!.IsReplay, "the upload that lost the insert replays the winner");
         var orphan = blobs.Names.Single();
         await using (var verify = DbContainerFixture.CreateTrxnContext(connStr))
         {
@@ -90,23 +96,67 @@ public sealed class AttachmentUploadReservationTests
         }
     }
 
-    /// <summary>Uploads through the style under test and returns whether the result is a replay.</summary>
-    private static async Task<bool> UploadAsync(
+    /// <summary>
+    /// The blob-delete worker claims the reservation while the upload is still in flight (an upload that outlived the
+    /// grace period). The insert's lease-guarded release removes no row, so the transaction rolls back: the upload answers
+    /// the save-failed result (400, never 412 on a POST), no attachment row is stored, and when the worker completes its
+    /// claim the blob is gone.
+    /// </summary>
+    [TestMethod]
+    [Timeout(180000, CooperativeCancellation = true)]
+    [DataRow("Service")]
+    [DataRow("Cqrs")]
+    public async Task Given_ReservationClaimedDuringUpload_When_RowInserted_Then_UploadFailsAndTheWorkerDeletesTheBlob(string style)
+    {
+        var ct = TestContext.CancellationToken;
+        var connStr = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("uploadclaimed", ct);
+        await using (var migrate = DbContainerFixture.CreateTrxnContext(connStr))
+            await migrate.Database.MigrateAsync(ct);
+        var workerClock = new MutableClock(DateTimeOffset.UtcNow + Grace + TimeSpan.FromMinutes(1));
+        LeasedBatch<BlobDeleteWork>? claimed = null;
+        var blobs = new RacingBlobStorage(async token =>
+        {
+            await using var worker = DbContainerFixture.CreateTrxnContext(connStr);
+            claimed = await new LeasedWorkStore<TaskFlowDbContextTrxn>(worker, workerClock)
+                .ClaimAsync<BlobDeleteWork>(new LeaseRequest(50, TimeSpan.FromMinutes(5), 10, "late-worker"), token);
+        });
+
+        var result = await UploadAsync(style, connStr, blobs, Guid.CreateVersion7(), Guid.CreateVersion7(), ct);
+
+        Assert.IsTrue(result.IsFailure, "the upload whose reservation the worker holds is not stored");
+        Assert.AreEqual(ErrorConstants.ERROR_SAVE_FAILED, result.ErrorMessage);
+        Assert.HasCount(1, claimed!.Items, "the worker held the reservation when the row was inserted");
+        await using (var verify = DbContainerFixture.CreateTrxnContext(connStr))
+        {
+            Assert.IsFalse(await verify.Attachments.IgnoreQueryFilters().AnyAsync(ct), "the rolled-back transaction stored no row");
+            Assert.AreEqual(1, await verify.BlobDeleteWork.CountAsync(ct), "the claimed reservation is still the worker's");
+        }
+
+        var completed = new ConcurrentBag<Guid>();
+        await BlobDeleteWorkerService.DeleteBatchAsync(blobs, claimed.Items, completed.Add,
+            (id, ex) => Assert.Fail($"blob delete {id} failed: {ex}"), maxConcurrency: 1, NullLogger.Instance, ct);
+        await using (var worker = DbContainerFixture.CreateTrxnContext(connStr))
+            Assert.AreEqual(1, await new LeasedWorkStore<TaskFlowDbContextTrxn>(worker, workerClock)
+                .CompleteAsync<BlobDeleteWork>(claimed.LeaseToken, [.. completed], ct));
+
+        Assert.IsEmpty(blobs.Names, "the worker deleted the blob of the upload that was not stored");
+    }
+
+    /// <summary>Uploads through the style under test.</summary>
+    private static async Task<Result<DefaultResponse<AttachmentDto>>> UploadAsync(
         string style, string connStr, IObjectStorageRepository blobs, Guid ownerId, Guid callerId, CancellationToken ct)
     {
         await using var db = DbContainerFixture.CreateTrxnContext(connStr);
         await using var queryDb = DbContainerFixture.CreateQueryContext(connStr);
         using var stream = new MemoryStream(Content);
-        var repo = new AttachmentRepositoryTrxn(db);
-        var result = style == "Service"
+        var repo = new AttachmentRepositoryTrxn(db, Options.Create(new AttachmentUploadSettings()));
+        return style == "Service"
             ? await new AttachmentService(NullLogger<AttachmentService>.Instance, RequestContext(), repo,
                 new AttachmentRepositoryQuery(queryDb), Boundary, blobs)
                 .UploadAsync(stream, FileName, ContentType, Content.Length, AttachmentOwnerType.TaskItem, ownerId, callerId, ct)
             : await new UploadAttachmentHandler(NullLogger<UploadAttachmentHandler>.Instance, RequestContext(), repo,
                 new AttachmentRepositoryQuery(queryDb), Boundary, blobs)
                 .HandleAsync(new UploadAttachmentCommand(stream, FileName, ContentType, Content.Length, AttachmentOwnerType.TaskItem, ownerId, callerId), ct);
-        Assert.IsTrue(result.IsSuccess, result.ErrorMessage);
-        return result.Value!.IsReplay;
     }
 
     /// <summary>

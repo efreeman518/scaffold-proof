@@ -1,4 +1,4 @@
-﻿using EF.Data;
+using EF.Data;
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -11,10 +11,11 @@ using TaskFlow.Infrastructure.Data;
 namespace TaskFlow.Infrastructure.Repositories;
 
 /// <summary>Persists and queries attachment data through infrastructure storage contracts.</summary>
-public class AttachmentRepositoryTrxn(TaskFlowDbContextTrxn db, IOptions<AttachmentUploadSettings>? uploadSettings = null)
+public class AttachmentRepositoryTrxn(TaskFlowDbContextTrxn db, IOptions<AttachmentUploadSettings> uploadSettings)
     : TaskFlowRepositoryTrxn<Attachment, AttachmentId>(db), IAttachmentRepositoryTrxn
 {
-    private readonly TimeSpan _orphanBlobGrace = (uploadSettings?.Value ?? new AttachmentUploadSettings()).OrphanBlobGrace;
+    private readonly TimeSpan _orphanBlobGrace =
+        (uploadSettings ?? throw new ArgumentNullException(nameof(uploadSettings))).Value.OrphanBlobGrace;
 
     /// <summary>Loads requested data and maps missing records to the expected response.</summary>
     public async Task<Attachment?> GetAttachmentAsync(AttachmentId id, CancellationToken ct = default)
@@ -60,9 +61,61 @@ public class AttachmentRepositoryTrxn(TaskFlowDbContextTrxn db, IOptions<Attachm
     }
 
     /// <inheritdoc />
-    // The work row carries no concurrency token, but its delete still expects one affected row: when the worker has
-    // already claimed and completed the reservation (an upload that outlived the grace period), the save fails as a lost
-    // save, so no attachment row is left pointing at the blob the worker deleted.
-    public void ReleaseUploadReservation(Guid reservationId) =>
-        DB.BlobDeleteWork.Remove(DB.BlobDeleteWork.Local.Single(w => w.Id == reservationId));
+    public Task InsertUploadedAsync(Attachment attachment, Guid reservationId, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(attachment);
+        if (!DB.Database.IsRelational())
+            return InsertReleasingTrackedAsync(attachment, reservationId, ct);
+
+        return ResilientTransaction.New(DB).ExecuteAsync(token => InsertReleasingAsync(attachment, reservationId, token), ct);
+    }
+
+    /// <summary>
+    /// One attempt of <see cref="InsertUploadedAsync"/> inside its transaction. The execution strategy runs it again after a
+    /// transient failure, also one whose commit landed but was reported failed, so every attempt starts from the insert.
+    /// </summary>
+    private async Task InsertReleasingAsync(Attachment attachment, Guid reservationId, CancellationToken ct)
+    {
+        DB.Entry(attachment).State = EntityState.Added;
+
+        // Guarded on the lease: a reservation the worker has claimed (or parked) is not released, whatever the clock says.
+        var released = await DB.BlobDeleteWork
+            .Where(w => w.Id == reservationId && w.LeaseToken == null && w.DeadLetteredAtUtc == null)
+            .ExecuteDeleteAsync(ct)
+            .ConfigureAwait(ConfigureAwaitOptions.None);
+        if (released == 0)
+        {
+            // The key is unique per upload, so a stored row with this id and key is this upload's own landed commit.
+            var id = attachment.Id;
+            var storageKey = attachment.StorageKey;
+            if (await DB.Set<Attachment>().AsNoTracking().AnyAsync(a => a.Id == id && a.StorageKey == storageKey, ct)
+                    .ConfigureAwait(ConfigureAwaitOptions.None))
+            {
+                DB.Entry(attachment).State = EntityState.Unchanged;
+                return;
+            }
+
+            throw ReservationNotReleased(reservationId);
+        }
+
+        await DB.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct).ConfigureAwait(ConfigureAwaitOptions.None);
+    }
+
+    /// <summary>
+    /// The InMemory test provider has no <c>ExecuteDelete</c> and no transactions: the same lease guard, applied to the
+    /// tracked reservation, and one save for the insert and the release.
+    /// </summary>
+    private async Task InsertReleasingTrackedAsync(Attachment attachment, Guid reservationId, CancellationToken ct)
+    {
+        var reservation = await DB.BlobDeleteWork
+            .SingleOrDefaultAsync(w => w.Id == reservationId && w.LeaseToken == null && w.DeadLetteredAtUtc == null, ct)
+            .ConfigureAwait(ConfigureAwaitOptions.None) ?? throw ReservationNotReleased(reservationId);
+        DB.Entry(attachment).State = EntityState.Added;
+        DB.BlobDeleteWork.Remove(reservation);
+        await DB.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct).ConfigureAwait(ConfigureAwaitOptions.None);
+    }
+
+    private static DbUpdateConcurrencyException ReservationNotReleased(Guid reservationId) =>
+        new($"Upload reservation {reservationId} is claimed, parked or already settled by the blob-delete worker, so the " +
+            "attachment row is not inserted; the reservation deletes the blob.");
 }
