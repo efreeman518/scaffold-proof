@@ -12,13 +12,16 @@ namespace TaskFlow.Infrastructure.Repositories;
 internal static class AttachmentBlobDeleteWork
 {
     /// <summary>
-    /// Deletes the content of one attachment. The id is a UUIDv5 of the tenant and the attachment id, so a retried
-    /// cleanup batch, or the attachment delete and the stale-task cleanup staging the same attachment, share one work
-    /// row instead of queueing the blob twice.
+    /// Deletes the content of one attachment. The id is a UUIDv5 of the tenant, the attachment id and the storage key, so
+    /// a retried cleanup batch, a re-sent commit, or the attachment delete and the stale-task cleanup staging the same
+    /// upload share one work row instead of queueing the blob twice. The key is unique per upload, so a caller id reused
+    /// after a delete (a new upload under the same id) stages a row of its own even while the earlier row is still
+    /// queued or parked.
     /// </summary>
     public static BlobDeleteWork ForAttachment(Guid tenantId, Guid attachmentId, string storageKey, DateTimeOffset availableAtUtc) =>
         Create(
-            DeterministicGuid.Create(DomainConstants.DETERMINISTIC_ID_NAMESPACE, "blob-delete", tenantId.ToString(), attachmentId.ToString()),
+            DeterministicGuid.Create(
+                DomainConstants.DETERMINISTIC_ID_NAMESPACE, "blob-delete", tenantId.ToString(), attachmentId.ToString(), storageKey),
             tenantId, storageKey, availableAtUtc);
 
     /// <summary>

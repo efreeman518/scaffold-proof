@@ -632,6 +632,39 @@ public class AttachmentEndpointTests
         Assert.IsEmpty(await BlobDeleteWorkAsync(uploadFactory));
     }
 
+    /// <summary>
+    /// D-026: the staged delete's id covers the storage key, so a caller id reused after a delete (a new upload under the
+    /// same id) deletes again while the first work row is still queued, and stages a second, distinct row.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_CallerIdReuploadedAfterDelete_When_DeletedAgain_Then_StagesASecondBlobDelete(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        var blobs = new InMemoryBlobStorageRepository();
+        using var uploadFactory = UploadFactory(style, blobs);
+        using var client = uploadFactory.CreateClient();
+        var taskId = await CreateParentTaskItem(client);
+        var callerId = Guid.CreateVersion7();
+
+        for (var round = 1; round <= 2; round++)
+        {
+            using var upload = await UploadAsync(client, taskId, "evidence.txt", callerId);
+            Assert.AreEqual(HttpStatusCode.Created, upload.StatusCode, await upload.Content.ReadAsStringAsync(TestContext.CancellationToken));
+            var created = (await upload.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item!;
+            var delete = await client.DeleteWithIfMatchAsync($"/api/v1/attachments/{created.Id}",
+                ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), TestContext.CancellationToken);
+            Assert.AreEqual(HttpStatusCode.NoContent, delete.StatusCode, $"delete {round}: {await delete.Content.ReadAsStringAsync(TestContext.CancellationToken)}");
+        }
+
+        var staged = await BlobDeleteWorkAsync(uploadFactory);
+        Assert.HasCount(2, staged);
+        Assert.AreNotEqual(staged[0].Id, staged[1].Id);
+        Assert.AreNotEqual(staged[0].BlobName, staged[1].BlobName, "each row deletes its own upload's blob");
+    }
+
     /// <summary>Every blob-delete work row in the factory's database.</summary>
     private async Task<List<BlobDeleteWork>> BlobDeleteWorkAsync(Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> factory)
     {
