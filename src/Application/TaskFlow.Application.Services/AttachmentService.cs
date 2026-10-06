@@ -225,61 +225,37 @@ internal class AttachmentService(
     }
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
-    public async Task<Result> DeleteAsync(Guid id, long? expectedVersion, CancellationToken ct = default)
-    {
-        // If-Match: * re-reads and deletes again when it loses a race (D-073); a concrete version keeps its 412. The
-        // blob delete is an outside effect, so it runs once, after the save that removed the row.
-        Attachment? sent = null;
-        var (result, entity) = await ConcurrencyRetry.RunAsync(repoTrxn, expectedVersion, nameof(Attachment), id,
-            attemptCt => DeleteOnceAsync(id, expectedVersion, sent, e => sent = e, attemptCt), ct);
-        if (entity is null) return result;
+    public Task<Result> DeleteAsync(Guid id, long? expectedVersion, CancellationToken ct = default) =>
+        // If-Match: * re-reads and deletes again when it loses a race (D-073); a concrete version keeps its 412.
+        ConcurrencyRetry.RunAsync(repoTrxn, expectedVersion, nameof(Attachment), id,
+            attemptCt => DeleteOnceAsync(id, expectedVersion, attemptCt), ct);
 
-        // Delete the content the upload wrote, by its stored key; a metadata-only attachment has none.
-        if (blobStorage is not null && entity.StorageKey is { } storageKey)
-        {
-            try
-            {
-                await blobStorage.DeleteAsync(AttachmentBlobs.ContainerName, storageKey, ct);
-            }
-            catch (Exception ex)
-            {
-                logger.AttachmentBlobDeleteFailed(ex, id);
-            }
-        }
-
-        return Result.Success();
-    }
-
-    /// <summary>One read, delete and save of <see cref="DeleteAsync"/>; <c>Deleted</c> is the removed row, if any.</summary>
-    private async Task<(Result Result, Attachment? Deleted)> DeleteOnceAsync(
-        Guid id, long? expectedVersion, Attachment? sent, Action<Attachment> markSaveSent, CancellationToken ct)
+    /// <summary>One read, delete and save of <see cref="DeleteAsync"/>.</summary>
+    private async Task<Result> DeleteOnceAsync(Guid id, long? expectedVersion, CancellationToken ct)
     {
         var entity = await repoTrxn.GetAttachmentAsync(AttachmentId.From(id), ct);
-        // D-073: gone on a wildcard retry after an earlier attempt sent its save (a commit that landed but was reported
-        // failed, or a competing delete) returns that attempt's row, so the blob delete still runs; gone on the first
-        // attempt returns none.
-        if (entity == null) return (Result.Success(), sent);
+        // Gone is a success: never there, or removed by an earlier attempt whose commit landed but was reported failed
+        // (D-073), whose save staged the blob delete with it.
+        if (entity == null) return Result.Success();
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             RequestTenantId, RequestRoles, entity.TenantId.Value,
             "Attachment:Delete", nameof(Attachment), entity.Id.Value);
-        if (boundary.IsFailure) return (Result.Failure(boundary.ErrorMessage!), null);
+        if (boundary.IsFailure) return Result.Failure(boundary.ErrorMessage!);
 
         ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(Attachment), entity.Id.Value);
 
-        repoTrxn.Delete(entity);
-        markSaveSent(entity);
-
         try
         {
-            await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, ct);
+            // D-026: the save that removes the row stages the uploaded content's blob delete with it.
+            await repoTrxn.DeleteAttachmentAsync(entity, ct);
         }
         catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.AttachmentDeleteFailed(ex, id);
-            return (Result.Failure(ErrorConstants.ERROR_SAVE_FAILED), null);
+            return Result.Failure(ErrorConstants.ERROR_SAVE_FAILED);
         }
 
-        return (Result.Success(), entity);
+        return Result.Success();
     }
 }

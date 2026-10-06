@@ -19,8 +19,4 @@ internal static partial class LogMessages
     /// <summary>Logs a blob upload failure while creating an Attachment.</summary>
     [LoggerMessage(EventId = LogEventIds.ApplicationCqrsBase + 3, Level = LogLevel.Error, Message = "Error uploading blob for Attachment {FileName}")]
     public static partial void AttachmentBlobUploadFailed(this ILogger logger, Exception exception, string fileName);
-
-    /// <summary>Logs a blob delete failure after an Attachment was deleted.</summary>
-    [LoggerMessage(EventId = LogEventIds.ApplicationCqrsBase + 4, Level = LogLevel.Warning, Message = "Failed to delete blob for Attachment {Id}")]
-    public static partial void AttachmentBlobDeleteFailed(this ILogger logger, Exception exception, Guid id);
 }

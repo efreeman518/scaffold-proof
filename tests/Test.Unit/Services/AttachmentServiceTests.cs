@@ -193,7 +193,7 @@ public class AttachmentServiceTests
         var result = await CreateService().DeleteAsync(entity.Id, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
-        _repoTrxnMock.Verify(r => r.Delete(entity), Times.Once);
+        _repoTrxnMock.Verify(r => r.DeleteAttachmentAsync(entity, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     /// <summary>Verifies that given non existent ID, when delete, then returns success idempotent.</summary>

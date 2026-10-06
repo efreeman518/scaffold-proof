@@ -1,4 +1,6 @@
 ﻿using EF.Data;
+using EF.Data.Contracts;
+using Microsoft.EntityFrameworkCore;
 using TaskFlow.Application.Contracts.Repositories;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
@@ -18,5 +20,29 @@ public class AttachmentRepositoryTrxn(TaskFlowDbContextTrxn db)
             filter: (Attachment a) => a.Id == id,
             cancellationToken: ct
         ).ConfigureAwait(ConfigureAwaitOptions.None);
+    }
+
+    /// <inheritdoc />
+    public async Task DeleteAttachmentAsync(Attachment attachment, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(attachment);
+        Delete(attachment);
+        if (attachment.StorageKey is { } storageKey)
+        {
+            DB.BlobDeleteWork.Add(AttachmentBlobDeleteWork.ForAttachment(
+                attachment.TenantId.Value, attachment.Id.Value, storageKey, DB.Clock.GetUtcNow()));
+        }
+
+        try
+        {
+            await DB.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct).ConfigureAwait(ConfigureAwaitOptions.None);
+        }
+        catch (DbUpdateException ex) when (ex is not DbUpdateConcurrencyException)
+        {
+            // Provider-neutral, as SaveChildAddAsync: the existence read decides, not the provider's error code.
+            var id = attachment.Id;
+            if (await DB.Set<Attachment>().AsNoTracking().AnyAsync(a => a.Id == id, ct).ConfigureAwait(ConfigureAwaitOptions.None)) throw;
+            throw new DbUpdateConcurrencyException("The attachment row was already deleted when this save was sent.", ex);
+        }
     }
 }

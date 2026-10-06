@@ -1,7 +1,14 @@
+extern alias SchedulerHost;
+
 using EF.Common.Contracts;
+using EF.Data.Contracts;
 using EF.Storage.Contracts;
 using EF.Testing.Http;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using SchedulerHost::TaskFlow.Scheduler.Workers;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -9,6 +16,8 @@ using System.Text.Json.Serialization;
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Application.Models;
 using TaskFlow.Domain.Shared.Enums;
+using TaskFlow.Infrastructure.Data;
+using TaskFlow.Infrastructure.Data.Operational;
 using Test.Support;
 
 namespace Test.Endpoints;
@@ -382,8 +391,9 @@ public class AttachmentEndpointTests
     }
 
     /// <summary>
-    /// D-075: a rename changes only the display name. The delete removes the uploaded content by its stored key, so the
-    /// renamed attachment's blob is the one deleted and no blob named after the new file name is touched.
+    /// D-075: a rename changes only the display name. The delete stages the uploaded content's removal by its stored key
+    /// (D-026), so once the blob-delete worker drains, the renamed attachment's blob is the one deleted and no blob named
+    /// after the new file name is touched.
     /// </summary>
     [TestCategory("Endpoint")]
     [DataRow(EndpointStyles.Service)]
@@ -416,8 +426,67 @@ public class AttachmentEndpointTests
             ConcurrencyHttpExtensions.FormatStrongETag(renamed.Version!.Value), TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.NoContent, delete.StatusCode);
+        await DrainBlobDeletesAsync(uploadFactory, blobs);
         Assert.IsEmpty((await blobs.ListAsync(AttachmentBlobs.ContainerName, cancellationToken: TestContext.CancellationToken)).Items,
-            "the delete removes the uploaded content by its stored key");
+            "the drained delete removes the uploaded content by its stored key");
+    }
+
+    /// <summary>
+    /// D-026: deleting an uploaded attachment stages exactly one blob-delete work row, for its stored key, in the save
+    /// that removes the row; the blob stays until the worker drains it, and one drain removes it and settles the row.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_UploadedAttachment_When_Deleted_Then_OneBlobDeleteIsStagedAndTheWorkerRemovesTheBlob(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        var blobs = new InMemoryBlobStorageRepository();
+        using var uploadFactory = UploadFactory(style, blobs);
+        using var client = uploadFactory.CreateClient();
+        var taskId = await CreateParentTaskItem(client);
+        using var upload = await UploadAsync(client, taskId, "evidence.txt");
+        var created = (await upload.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item!;
+        var storedKey = (await blobs.ListAsync(AttachmentBlobs.ContainerName, cancellationToken: TestContext.CancellationToken)).Items.Single().Name;
+
+        var delete = await client.DeleteWithIfMatchAsync($"/api/v1/attachments/{created.Id}",
+            ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), TestContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.NoContent, delete.StatusCode);
+        var staged = await BlobDeleteWorkAsync(uploadFactory);
+        Assert.HasCount(1, staged);
+        Assert.AreEqual((created.TenantId, AttachmentBlobs.ContainerName, storedKey), (staged[0].TenantId, staged[0].ContainerName, staged[0].BlobName));
+        Assert.IsTrue(await blobs.ExistsAsync(AttachmentBlobs.ContainerName, storedKey, TestContext.CancellationToken), "the delete defers the blob");
+
+        await DrainBlobDeletesAsync(uploadFactory, blobs);
+
+        Assert.IsFalse(await blobs.ExistsAsync(AttachmentBlobs.ContainerName, storedKey, TestContext.CancellationToken));
+        Assert.IsEmpty(await BlobDeleteWorkAsync(uploadFactory), "the drained row is settled");
+    }
+
+    /// <summary>A metadata-only attachment wrote no content, so its delete stages no blob-delete work.</summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_MetadataOnlyAttachment_When_Deleted_Then_NoBlobDeleteIsStaged(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        using var uploadFactory = UploadFactory(style, new InMemoryBlobStorageRepository());
+        using var client = uploadFactory.CreateClient();
+        var taskId = await CreateParentTaskItem(client);
+        var createResponse = await client.PostAsJsonAsync("/api/v1/attachments", new DefaultRequest<AttachmentDto>
+        {
+            Item = new AttachmentDto { FileName = "meta.txt", ContentType = "text/plain", FileSizeBytes = 8, StorageUri = "https://storage.example.com/meta.txt", OwnerType = AttachmentOwnerType.TaskItem, OwnerId = taskId }
+        }, cancellationToken: TestContext.CancellationToken);
+        var created = (await createResponse.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item!;
+
+        var delete = await client.DeleteWithIfMatchAsync($"/api/v1/attachments/{created.Id}",
+            ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), TestContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.NoContent, delete.StatusCode);
+        Assert.IsEmpty(await BlobDeleteWorkAsync(uploadFactory));
     }
 
     // The derived factory owns the host; the base CustomApiFactory it came from never builds one of its own.
@@ -475,6 +544,35 @@ public class AttachmentEndpointTests
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, body);
         var page = JsonSerializer.Deserialize<PagedResponse<AttachmentDto>>(body, _jsonOptions)!;
         Assert.AreEqual("a.txt", page.Data.Single().FileName);
+    }
+
+    /// <summary>Every blob-delete work row in the factory's database.</summary>
+    private async Task<List<BlobDeleteWork>> BlobDeleteWorkAsync(Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> factory)
+    {
+        using var scope = factory.Services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<TaskFlowDbContextTrxn>().BlobDeleteWork.AsNoTracking()
+            .ToListAsync(TestContext.CancellationToken);
+    }
+
+    /// <summary>
+    /// One drain of the deferred blob deletes, as <see cref="BlobDeleteWorkerService"/> runs it: the rows due now (the
+    /// claim's <c>AvailableAtUtc</c> test) go through its delete step, and each completed row is removed. The InMemory
+    /// provider cannot run the relational claim and settlement statements, so this tier stands in for those two.
+    /// </summary>
+    private async Task DrainBlobDeletesAsync(Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> factory, IObjectStorageRepository blobs)
+    {
+        var ct = TestContext.CancellationToken;
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskFlowDbContextTrxn>();
+        var now = DateTimeOffset.UtcNow;
+        var due = await db.BlobDeleteWork.Where(w => w.AvailableAtUtc <= now).ToListAsync(ct);
+        var completed = new ConcurrentBag<Guid>();
+
+        await BlobDeleteWorkerService.DeleteBatchAsync(blobs, due, completed.Add,
+            (id, ex) => Assert.Fail($"blob delete {id} failed: {ex}"), maxConcurrency: 1, NullLogger.Instance, ct);
+
+        db.BlobDeleteWork.RemoveRange(due.Where(w => completed.Contains(w.Id)));
+        await db.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct);
     }
 
     private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> UploadFactory(string style, InMemoryBlobStorageRepository blobs) =>

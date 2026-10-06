@@ -50,10 +50,6 @@ internal static partial class LogMessages
     [LoggerMessage(EventId = LogEventIds.ApplicationServicesBase + 29, Level = LogLevel.Error, Message = "Error deleting Attachment {Id}")]
     public static partial void AttachmentDeleteFailed(this ILogger logger, Exception exception, Guid id);
 
-    /// <summary>Logs a blob delete failure after an Attachment was deleted.</summary>
-    [LoggerMessage(EventId = LogEventIds.ApplicationServicesBase + 30, Level = LogLevel.Warning, Message = "Failed to delete blob for Attachment {Id}")]
-    public static partial void AttachmentBlobDeleteFailed(this ILogger logger, Exception exception, Guid id);
-
     /// <summary>Logs a Tag create failure.</summary>
     [LoggerMessage(EventId = LogEventIds.ApplicationServicesBase + 31, Level = LogLevel.Error, Message = "Error creating Tag")]
     public static partial void TagCreateFailed(this ILogger logger, Exception exception);

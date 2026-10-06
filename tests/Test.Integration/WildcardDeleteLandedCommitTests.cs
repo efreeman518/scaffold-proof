@@ -1,7 +1,6 @@
 using System.Data.Common;
 using EF.Cache;
 using EF.Data.Contracts;
-using EF.Storage.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -24,9 +23,10 @@ namespace Test.Integration;
 /// <summary>
 /// D-073: an <c>If-Match: *</c> delete whose save landed but was reported failed. The provider's retrying strategy
 /// re-sends the save, which then deletes nothing and fails as a lost save; the fresh-read retry re-reads, finds the row
-/// gone, and must still run the after-save effects the first attempt's delete earned: the Category cache eviction and
-/// the Attachment blob delete. A first attempt that finds no row runs neither. Service and CQRS styles, on the lane's
-/// relational provider (PostgreSQL on NonAzure, SQL Server on Azure).
+/// gone, and must still run the after-save effect the first attempt's delete earned: the Category cache eviction. The
+/// Attachment blob delete is a work row committed with the row (D-026), so the landed commit queues it exactly once. A
+/// first attempt that finds no row has no effect. Service and CQRS styles, on the lane's relational provider (PostgreSQL
+/// on NonAzure, SQL Server on Azure).
 /// Component tier: standalone SQL Testcontainer via <c>DbContainerFixture</c>.
 /// </summary>
 [TestClass]
@@ -89,12 +89,15 @@ public sealed class WildcardDeleteLandedCommitTests
         Assert.IsFalse(await IsEvictedAsync(cache, cached, ct), "a first attempt that finds no row has no after-save effect");
     }
 
-    /// <summary>The attachment row is deleted by the first attempt, and the retry that finds it gone still deletes the blob.</summary>
+    /// <summary>
+    /// The attachment row is deleted by the first attempt, whose landed commit staged the blob delete with it; the retry
+    /// that finds the row gone succeeds and stages nothing more.
+    /// </summary>
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
     [DataRow(Service)]
     [DataRow(Cqrs)]
-    public async Task Given_AttachmentDeleteCommitLandsButFails_When_DeletedWithWildcard_Then_TheBlobIsDeleted(string style)
+    public async Task Given_AttachmentDeleteCommitLandsButFails_When_DeletedWithWildcard_Then_OneBlobDeleteIsStaged(string style)
     {
         var ct = TestContext.CancellationToken;
         var fileName = $"landed-{Guid.NewGuid():N}.pdf";
@@ -106,18 +109,20 @@ public sealed class WildcardDeleteLandedCommitTests
             await seed.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct);
         }
 
-        var blobs = new RecordingBlobStorage();
-        var result = await DeleteAttachmentAsync(style, attachment.Id.Value, blobs, new LandedSaveFault(), ct);
-        var none = await DeleteAttachmentAsync(style, Guid.CreateVersion7(), blobs, new LandedSaveFault(), ct);
+        var fault = new LandedSaveFault();
+        var result = await DeleteAttachmentAsync(style, attachment.Id.Value, fault, ct);
+        var none = await DeleteAttachmentAsync(style, Guid.CreateVersion7(), new LandedSaveFault(), ct);
 
         Assert.IsTrue(result.IsSuccess, result.ErrorMessage);
         Assert.IsTrue(none.IsSuccess, none.ErrorMessage);
-        await using (var verify = DbContainerFixture.CreateTrxnContext())
-            Assert.IsFalse(await verify.Attachments.IgnoreQueryFilters().AnyAsync(a => a.Id == attachment.Id, ct));
+        Assert.AreEqual(1, fault.Faults, "the save landed and was then reported failed once");
+        await using var verify = DbContainerFixture.CreateTrxnContext();
+        Assert.IsFalse(await verify.Attachments.IgnoreQueryFilters().AnyAsync(a => a.Id == attachment.Id, ct));
         CollectionAssert.AreEqual(
             new[] { $"{AttachmentBlobs.ContainerName}/{attachment.StorageKey}" },
-            blobs.Deleted,
-            "the landed delete removes its blob once; the absent row removes none");
+            await verify.BlobDeleteWork.Where(w => w.BlobName == attachment.StorageKey)
+                .Select(w => w.ContainerName + "/" + w.BlobName).ToListAsync(ct),
+            "the landed delete staged its blob once; the absent row staged none");
     }
 
     private static async Task<EF.Common.Contracts.Result> DeleteCategoryAsync(
@@ -135,7 +140,7 @@ public sealed class WildcardDeleteLandedCommitTests
     }
 
     private static async Task<EF.Common.Contracts.Result> DeleteAttachmentAsync(
-        string style, Guid attachmentId, IObjectStorageRepository blobs, LandedSaveFault fault, CancellationToken ct)
+        string style, Guid attachmentId, LandedSaveFault fault, CancellationToken ct)
     {
         var connStr = DbContainerFixture.ConnectionString;
         await using var db = DbContainerFixture.CreateTrxnContext(connStr, fault);
@@ -143,8 +148,8 @@ public sealed class WildcardDeleteLandedCommitTests
         var repo = new AttachmentRepositoryTrxn(db);
         return style == Service
             ? await new AttachmentService(NullLogger<AttachmentService>.Instance, RequestContext(), repo,
-                new AttachmentRepositoryQuery(queryDb), Boundary, blobs).DeleteAsync(attachmentId, expectedVersion: null, ct)
-            : await new DeleteAttachmentHandler(NullLogger<DeleteAttachmentHandler>.Instance, RequestContext(), repo, Boundary, NewCache(), blobs)
+                new AttachmentRepositoryQuery(queryDb), Boundary).DeleteAsync(attachmentId, expectedVersion: null, ct)
+            : await new DeleteAttachmentHandler(NullLogger<DeleteAttachmentHandler>.Instance, RequestContext(), repo, Boundary, NewCache())
                 .HandleAsync(new DeleteAttachmentCommand(attachmentId, ExpectedVersion: null), ct);
     }
 
@@ -218,29 +223,5 @@ public sealed class WildcardDeleteLandedCommitTests
                 ? new PostgresException("injected serialization failure", "ERROR", "ERROR", PostgresErrorCodes.SerializationFailure)
                 : new TimeoutException("injected commit timeout");
         }
-    }
-
-    /// <summary>Records blob deletes; the delete path calls nothing else.</summary>
-    private sealed class RecordingBlobStorage : IObjectStorageRepository
-    {
-        public List<string> Deleted { get; } = [];
-
-        public Task DeleteAsync(string containerName, string objectName, CancellationToken cancellationToken = default)
-        {
-            Deleted.Add($"{containerName}/{objectName}");
-            return Task.CompletedTask;
-        }
-
-        public Task UploadAsync(string containerName, string objectName, Stream content, string? contentType = null,
-            IDictionary<string, string>? metadata = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Stream> DownloadAsync(string containerName, string objectName, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-        public Task<bool> ExistsAsync(string containerName, string objectName, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-        public Task<Uri> GetPresignedUrlAsync(string containerName, string objectName, TimeSpan lifetime,
-            ObjectStoragePermissions permissions = ObjectStoragePermissions.Read, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-        public Task<ObjectStoragePage> ListAsync(string containerName, string? prefix = null, string? continuationToken = null,
-            int pageSize = 100, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 }

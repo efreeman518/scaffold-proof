@@ -13,9 +13,9 @@ namespace TaskFlow.Application.Contracts.Concurrency;
 /// <remarks>
 /// The <c>work</c> of every method reads everything it changes, makes one
 /// <c>SaveChangesAsync(OptimisticConcurrencyWinner.Throw)</c> save and has no other outside effect (events go through
-/// the outbox interceptor; cache eviction and blob deletes run after it returns). The change tracker must hold no
-/// pending change when it is called: <see cref="IRepositoryBase.RetryOnConcurrencyAsync"/> clears it before each attempt
-/// and refuses pending changes rather than discarding them.
+/// the outbox interceptor and blob deletes are work rows staged in that save; cache eviction runs after it returns). The
+/// change tracker must hold no pending change when it is called: <see cref="IRepositoryBase.RetryOnConcurrencyAsync"/>
+/// clears it before each attempt and refuses pending changes rather than discarding them.
 /// </remarks>
 public static class ConcurrencyRetry
 {

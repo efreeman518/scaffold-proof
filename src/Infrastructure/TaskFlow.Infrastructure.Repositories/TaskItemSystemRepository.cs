@@ -1,16 +1,12 @@
-﻿using EF.Common;
-using EF.Data;
+﻿using EF.Data;
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
 using System.Runtime.CompilerServices;
 using TaskFlow.Application.Contracts.Repositories;
-using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
-using TaskFlow.Domain.Shared.Constants;
 using TaskFlow.Domain.Shared.Enums;
 using TaskFlow.Infrastructure.Data;
-using TaskFlow.Infrastructure.Data.Operational;
 
 namespace TaskFlow.Infrastructure.Repositories;
 
@@ -144,20 +140,7 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
         var now = _timeProvider.GetUtcNow();
         foreach (var attachment in attachments)
         {
-            DB.BlobDeleteWork.Add(new BlobDeleteWork
-            {
-                // Deterministic: a retried cleanup batch reuses the same work row instead of queueing the
-                // same blob twice. The drainer treats a 404 as success anyway, but duplicates are noise.
-                Id = DeterministicGuid.Create(
-                    DomainConstants.DETERMINISTIC_ID_NAMESPACE,
-                    "blob-delete",
-                    tenantId.ToString(),
-                    attachment.AttachmentId.ToString()),
-                TenantId = tenantId,
-                AvailableAtUtc = now,
-                ContainerName = AttachmentBlobs.ContainerName,
-                BlobName = attachment.StorageKey
-            });
+            DB.BlobDeleteWork.Add(AttachmentBlobDeleteWork.ForAttachment(tenantId, attachment.AttachmentId, attachment.StorageKey, now));
         }
 
         await DB.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct)

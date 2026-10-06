@@ -240,32 +240,18 @@ internal sealed class DeleteAttachmentHandler(
     IRequestContext<string, Guid?> requestContext,
     IAttachmentRepositoryTrxn repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    ITypedCache cache,
-    IObjectStorageRepository? blobStorage = null)
+    ITypedCache cache)
     : IRequestHandler<DeleteAttachmentCommand, Result>
 {
     /// <summary>Handles delete attachment requests and returns the application result.</summary>
     public async Task<Result> HandleAsync(DeleteAttachmentCommand command, CancellationToken ct = default)
     {
         // If-Match: * re-reads and deletes again when it loses a race (D-073); a concrete version keeps its 412. The
-        // blob delete and cache eviction are outside effects, so they run once, after the save that removed the row.
+        // cache eviction is an outside effect, so it runs once, after the save that removed the row.
         Attachment? sent = null;
         var (result, entity) = await ConcurrencyRetry.RunAsync(repoTrxn, command.ExpectedVersion, nameof(Attachment), command.Id,
             attemptCt => DeleteOnceAsync(command, sent, e => sent = e, attemptCt), ct);
         if (entity is null) return result;
-
-        // The content the upload wrote, by its stored key; a metadata-only attachment has none.
-        if (blobStorage is not null && entity.StorageKey is { } storageKey)
-        {
-            try
-            {
-                await blobStorage.DeleteAsync(AttachmentBlobs.ContainerName, storageKey, ct);
-            }
-            catch (Exception ex)
-            {
-                logger.AttachmentBlobDeleteFailed(ex, command.Id);
-            }
-        }
 
         await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(Attachment)), ct);
         return Result.Success();
@@ -277,8 +263,8 @@ internal sealed class DeleteAttachmentHandler(
     {
         var entity = await repoTrxn.GetAttachmentAsync(AttachmentId.From(command.Id), ct);
         // D-073: gone on a wildcard retry after an earlier attempt sent its save (a commit that landed but was reported
-        // failed, or a competing delete) returns that attempt's row, so the blob delete still runs; gone on the first
-        // attempt returns none.
+        // failed, or a competing delete) returns that attempt's row, so the cache eviction still runs; gone on the first
+        // attempt returns none. The save that removed the row staged its blob delete with it.
         if (entity is null) return (Result.Success(), sent);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
@@ -288,10 +274,11 @@ internal sealed class DeleteAttachmentHandler(
 
         ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(Attachment), entity.Id.Value);
 
-        repoTrxn.Delete(entity);
         markSaveSent(entity);
 
-        var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error deleting Attachment {Id}", ct, command.Id);
+        // D-026: the save that removes the row stages the uploaded content's blob delete with it.
+        var save = await CqrsHandlerSupport.TryWriteAsync(t => repoTrxn.DeleteAttachmentAsync(entity, t), logger,
+            "Error deleting Attachment {Id}", ct, command.Id);
         return (save, save.IsSuccess ? entity : null);
     }
 }
