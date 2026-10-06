@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SchedulerHost::TaskFlow.Scheduler.Handlers;
 using System.Text.Json;
+using TaskFlow.Bootstrapper;
 using TaskFlow.Domain.Shared.Enums;
 using TaskFlow.Infrastructure.Repositories;
 using Test.Integration.Infrastructure;
@@ -18,12 +19,13 @@ namespace Test.Integration;
 public sealed partial class AiWorkflowIntegrationTests
 {
     /// <summary>
-    /// The start path of compliance-check (D-075): the Scheduler's ComplianceCheck job starts the workflow only for the
-    /// tenant its API calls act for, the scaffold tenant, and that instance scans the tenant's due compliance tasks and
-    /// reads the evidence (refused to an instance without a tenant, see
+    /// The start path of compliance-check (D-075) without the self-call relay (Scaffold mode): the Scheduler's ComplianceCheck
+    /// job starts the workflow only for the tenant its API calls act for, the scaffold tenant, and that instance scans the
+    /// tenant's due compliance tasks and reads the evidence (refused to an instance without a tenant, see
     /// <see cref="ComplianceCheckItem_StartedWithoutATenant_IsRefusedItsEvidence"/>). Another tenant with a due task
     /// tagged " COMPLIANCE " qualifies but gets no instance: the API calls would read the scaffold tenant's tasks, not its
-    /// own, and report it swept. A re-run the same UTC day, after the first instance has started its children, resolves
+    /// own, and report it swept. With the relay configured it starts
+    /// (<see cref="ComplianceCheckJob_StartsOneInstancePerQualifyingTenant_CarryingThatTenant"/>). A re-run the same UTC day, after the first instance has started its children, resolves
     /// to the day's instance instead of starting a second.
     /// </summary>
     [TestMethod]
@@ -121,6 +123,7 @@ public sealed partial class AiWorkflowIntegrationTests
             SchedulerTestTelemetry.Create(),
             new FixedClock(now),
             Options.Create(new ComplianceCheckSettings()),
+            factory.Services.GetRequiredService<IOptions<SelfCallRelayOptions>>(),
             NullLogger<ComplianceCheckHandler>.Instance);
         await handler.HandleAsync(ct);
     }

@@ -7,16 +7,18 @@ using Microsoft.Extensions.Options;
 using Moq;
 using System.Text.Json;
 using TaskFlow.Application.Contracts;
+using TaskFlow.Bootstrapper;
 using TaskFlow.Scheduler;
 using TaskFlow.Scheduler.Handlers;
 
 namespace Test.Unit.Services;
 
 /// <summary>
-/// Validates <see cref="ComplianceCheckHandler"/>, the start path of compliance-check (D-075): a start only for the
-/// tenant the workflow's API calls act for (the scaffold tenant), with the instance tenant and the <c>tenantId</c> param
-/// both that tenant and <c>dueBefore</c> the run time plus the configured window; one Warning and no start for every
-/// other qualifying tenant, which does not fail the run; an idempotency key that is stable for the UTC day; a same-day
+/// Validates <see cref="ComplianceCheckHandler"/>, the start path of compliance-check (D-075): without the self-call
+/// relay a start only for the tenant the workflow's API calls act for (the scaffold tenant), with the instance tenant and
+/// the <c>tenantId</c> param both that tenant and <c>dueBefore</c> the run time plus the configured window, and one
+/// Warning and no start for every other qualifying tenant, which does not fail the run; with the relay a start for every
+/// qualifying tenant, each with its own tenant; an idempotency key that is stable for the UTC day; a same-day
 /// re-run or a duplicate start resolved to the existing instance without failing; and a failed start surfaced after
 /// every tenant was handled. Pure-unit tier: the system repository, the engine and the state store are in-memory fakes;
 /// the engine fake keeps FlowEngine's documented duplicate-key contract (the existing instance is returned).
@@ -37,9 +39,22 @@ public class ComplianceCheckHandlerTests
     public TestContext TestContext { get; set; } = null!;
 
     [TestMethod]
-    public void SelfCallTenant_IsTheScaffoldPrincipalsTenant()
+    public async Task HandleAsync_RelayConfigured_StartsEveryQualifyingTenant_WithItsOwnTenant()
     {
-        Assert.AreEqual(Served, ComplianceCheckHandler.SelfCallTenantId);
+        _repo.ComplianceTenants.AddRange([OtherA, Served, OtherB]);
+
+        await Handler(Now, windowDays: 7, relay: true).HandleAsync(TestContext.CancellationToken);
+
+        CollectionAssert.AreEqual(new[] { OtherA.ToString(), Served.ToString(), OtherB.ToString() },
+            _engine.Requests.Select(r => r.TenantId).ToArray());
+        Assert.IsTrue(_engine.Requests.TrueForAll(r => Param(r, "tenantId") == r.TenantId), "each instance's tenantId param is its own tenant");
+        CollectionAssert.AreEqual(new[] { $"compliance-check:{OtherA}:2026-10-06", $"compliance-check:{Served}:2026-10-06", $"compliance-check:{OtherB}:2026-10-06" },
+            _engine.Requests.Select(r => r.IdempotencyKey).ToArray());
+        Assert.IsFalse(_logger.Entries.Any(e => e.Level == LogLevel.Warning), "no tenant is skipped");
+        var summary = _logger.Entries.Single(e => e.Message.StartsWith("Compliance check: ", StringComparison.Ordinal)).Message;
+        StringAssert.Contains(summary, "3 tenants");
+        StringAssert.Contains(summary, "3 started");
+        StringAssert.Contains(summary, "0 not started");
     }
 
     [TestMethod]
@@ -75,6 +90,7 @@ public class ComplianceCheckHandlerTests
         StringAssert.Contains(warnings[0], OtherA.ToString());
         StringAssert.Contains(warnings[1], OtherB.ToString());
         Assert.IsTrue(warnings.TrueForAll(w => w.Contains(ScaffoldPrincipal.TenantId, StringComparison.Ordinal)), "the reason names the identity");
+        Assert.IsTrue(warnings.TrueForAll(w => w.Contains("FlowEngine:SelfCall:TokenScope", StringComparison.Ordinal)), "and the setting that lifts it");
         var summary = _logger.Entries.Single(e => e.Message.StartsWith("Compliance check: ", StringComparison.Ordinal)).Message;
         StringAssert.Contains(summary, "3 tenants");
         StringAssert.Contains(summary, "1 started");
@@ -217,13 +233,14 @@ public class ComplianceCheckHandlerTests
         Assert.AreEqual(7, provider.GetRequiredService<IOptions<ComplianceCheckSettings>>().Value.WindowDays);
     }
 
-    private ComplianceCheckHandler Handler(DateTimeOffset now, int windowDays) => new(
+    private ComplianceCheckHandler Handler(DateTimeOffset now, int windowDays, bool relay = false) => new(
         _repo,
         _engine.Object,
         _engine.Store,
         SchedulerTestTelemetry.Create(),
         new FixedTimeProvider(now),
         Options.Create(new ComplianceCheckSettings { WindowDays = windowDays }),
+        Options.Create(new SelfCallRelayOptions { TokenScope = relay ? "api://taskflow-api/.default" : "" }),
         _logger);
 
     private static string Param(StartRequest request, string name) =>

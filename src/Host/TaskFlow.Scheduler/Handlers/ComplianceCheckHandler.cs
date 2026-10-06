@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text.Json;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Repositories;
+using TaskFlow.Bootstrapper;
 
 namespace TaskFlow.Scheduler.Handlers;
 
@@ -15,10 +16,12 @@ namespace TaskFlow.Scheduler.Handlers;
 /// instance through <see cref="IFlowEngine.StartBackgroundAsync"/> with <see cref="StartRequest.TenantId"/> set, so the
 /// instance and its <c>compliance-check-item</c> children read evidence as that tenant.
 /// <para>
-/// The workflow's API calls (task search, attachment search, comment posts) authenticate as the scaffold principal, so
-/// they read and write the scaffold tenant only (<see cref="SelfCallTenantId"/>). The job therefore starts the scaffold
-/// tenant alone: an instance for any other tenant would search an empty page and report the tenant swept. Every other
-/// qualifying tenant is logged as not started, a capability limit rather than a failure.
+/// The job starts a tenant only when the workflow's API calls (task search, attachment search, comment posts) can act
+/// for it (<see cref="SelfCallRelayOptions.CanActFor"/>). With the self-call relay configured they act for the instance
+/// tenant (D-068), so every qualifying tenant starts. Without it they authenticate as the scaffold principal and read and
+/// write the scaffold tenant only, so the job starts that tenant alone: an instance for any other tenant would search an
+/// empty page and report the tenant swept. Every tenant it cannot serve is logged as not started, a capability limit
+/// rather than a failure.
 /// </para>
 /// <para>
 /// The idempotency key is the tenant and the UTC date of the run, so a same-day re-run resolves to the instance the
@@ -33,6 +36,7 @@ public sealed class ComplianceCheckHandler(
     ScheduledJobTelemetry telemetry,
     TimeProvider timeProvider,
     IOptions<ComplianceCheckSettings> settings,
+    IOptions<SelfCallRelayOptions> selfCall,
     ILogger<ComplianceCheckHandler> logger) : IScheduledJobHandler
 {
     public const string JobName = "ComplianceCheck";
@@ -41,18 +45,10 @@ public sealed class ComplianceCheckHandler(
     /// <summary>The tag the workflow's task search filters on (<c>compliance-check.json</c>, <c>n-query-due</c>).</summary>
     public const string TagName = "compliance";
 
-    /// <summary>
-    /// The one tenant the workflow's API calls act for: the scaffold principal's tenant, the identity the Api
-    /// authenticates every request as (<see cref="ScaffoldPrincipal"/>, shared with the Api's auth registration).
-    /// Remove this restriction when the workflow's API client carries a service identity that acts for the instance
-    /// tenant; the tenant stream already yields every qualifying tenant.
-    /// </summary>
-    public static readonly Guid SelfCallTenantId = Guid.Parse(ScaffoldPrincipal.TenantId);
-
     /// <summary>Tenants read per keyset page.</summary>
     private const int PageSize = 200;
 
-    /// <summary>Starts the compliance-check instance for the tenant the workflow's API calls act for.</summary>
+    /// <summary>Starts the compliance-check instance for every qualifying tenant the workflow's API calls can act for.</summary>
     public async Task HandleAsync(CancellationToken ct)
     {
         var asOfUtc = timeProvider.GetUtcNow();
@@ -66,10 +62,10 @@ public sealed class ComplianceCheckHandler(
         await foreach (var tenantId in systemRepository.StreamTenantsWithTaggedOpenTasksDueAsync(TagName, dueBefore, PageSize, ct))
         {
             tenants++;
-            if (tenantId != SelfCallTenantId)
+            if (!selfCall.Value.CanActFor(tenantId))
             {
                 notStarted++;
-                logger.ComplianceCheckTenantNotServed(tenantId, SelfCallTenantId);
+                logger.ComplianceCheckTenantNotServed(tenantId, SelfCallRelayOptions.ScaffoldTenantId);
                 continue;
             }
 
