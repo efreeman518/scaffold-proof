@@ -428,5 +428,148 @@ public class RepositorySearchTranslationTests
         Assert.AreEqual(leastId, ascending.Data.Single().FileName, "an ascending sort breaks the tie by ascending id");
     }
 
+    /// <summary>
+    /// Verifies a sort direction also orders the id tie-break: two categories tied on the sort key come back in the
+    /// provider's ascending id order for an ascending sort and in descending id order for a descending one.
+    /// </summary>
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task CategorySearch_SortDirection_AlsoOrdersTheIdTieBreak_AgainstRealSql()
+    {
+        var marker = $"TieCategory-{Guid.NewGuid():N}";
+        await using (var db = DbContainerFixture.CreateTrxnContext())
+        {
+            db.Categories.AddRange(
+                new CategoryBuilder().WithTenantId(TenantId).WithName($"{marker}-a").WithSortOrder(7).Build(),
+                new CategoryBuilder().WithTenantId(TenantId).WithName($"{marker}-b").WithSortOrder(7).Build());
+            await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
+        }
+
+        await using var queryDb = DbContainerFixture.CreateQueryContext();
+        var ascendingNames = await queryDb.Categories.IgnoreQueryFilters().Where(e => e.Name.StartsWith(marker))
+            .OrderBy(e => e.Id).Select(e => e.Name).ToListAsync(TestContext.CancellationToken);
+        Assert.HasCount(2, ascendingNames);
+        var repo = new CategoryRepositoryQuery(queryDb);
+        foreach (var order in new[] { SortOrder.Ascending, SortOrder.Descending })
+        {
+            var page = await repo.SearchCategoriesAsync(new SearchRequest<CategorySearchFilter>
+            {
+                PageIndex = 1,
+                PageSize = 10,
+                Sorts = [new Sort("SortOrder", order)],
+                Filter = new CategorySearchFilter { SearchTerm = marker, TenantId = TenantId }
+            }, includeTotal: false, TestContext.CancellationToken);
+            CollectionAssert.AreEqual(ExpectedTieOrder(ascendingNames, order), page.Data.Select(e => e.Name).ToList(), $"{order}");
+        }
+    }
+
+    /// <summary>Verifies tag search breaks a sort-key tie in the sort direction.</summary>
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task TagSearch_SortDirection_AlsoOrdersTheIdTieBreak_AgainstRealSql()
+    {
+        var marker = $"TieTag-{Guid.NewGuid():N}";
+        await using (var db = DbContainerFixture.CreateTrxnContext())
+        {
+            db.Tags.AddRange(
+                new TagBuilder().WithTenantId(TenantId).WithName($"{marker}-a").WithColor("#112233").Build(),
+                new TagBuilder().WithTenantId(TenantId).WithName($"{marker}-b").WithColor("#112233").Build());
+            await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
+        }
+
+        await using var queryDb = DbContainerFixture.CreateQueryContext();
+        var ascendingNames = await queryDb.Tags.IgnoreQueryFilters().Where(e => e.Name.StartsWith(marker))
+            .OrderBy(e => e.Id).Select(e => e.Name).ToListAsync(TestContext.CancellationToken);
+        Assert.HasCount(2, ascendingNames);
+        var repo = new TagRepositoryQuery(queryDb);
+        foreach (var order in new[] { SortOrder.Ascending, SortOrder.Descending })
+        {
+            var page = await repo.SearchTagsAsync(new SearchRequest<TagSearchFilter>
+            {
+                PageIndex = 1,
+                PageSize = 10,
+                Sorts = [new Sort("Color", order)],
+                Filter = new TagSearchFilter { SearchTerm = marker, TenantId = TenantId }
+            }, includeTotal: false, TestContext.CancellationToken);
+            CollectionAssert.AreEqual(ExpectedTieOrder(ascendingNames, order), page.Data.Select(e => e.Name).ToList(), $"{order}");
+        }
+    }
+
+    /// <summary>Verifies comment search breaks a sort-key tie in the sort direction.</summary>
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task CommentSearch_SortDirection_AlsoOrdersTheIdTieBreak_AgainstRealSql()
+    {
+        var marker = $"TieComment-{Guid.NewGuid():N}";
+        Guid taskId;
+        await using (var db = DbContainerFixture.CreateTrxnContext())
+        {
+            var task = new TaskItemBuilder().WithTenantId(TenantId).WithTitle($"{marker}-Task").Build();
+            var first = new CommentBuilder().WithTenantId(TenantId).WithTaskItemId(task.Id).WithBody($"{marker}-a").Build();
+            var second = new CommentBuilder().WithTenantId(TenantId).WithTaskItemId(task.Id).WithBody($"{marker}-b").Build();
+            db.TaskItems.Add(task);
+            db.Comments.AddRange(first, second);
+            await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
+            Assert.AreEqual(first.CreatedAtUtc, second.CreatedAtUtc, "precondition: one save stamps one CreatedAtUtc");
+            taskId = task.Id;
+        }
+
+        await using var queryDb = DbContainerFixture.CreateQueryContext();
+        var ascendingBodies = await queryDb.Comments.IgnoreQueryFilters().Where(e => e.Body.StartsWith(marker))
+            .OrderBy(e => e.Id).Select(e => e.Body).ToListAsync(TestContext.CancellationToken);
+        Assert.HasCount(2, ascendingBodies);
+        var repo = new CommentRepositoryQuery(queryDb);
+        foreach (var order in new[] { SortOrder.Ascending, SortOrder.Descending })
+        {
+            var page = await repo.SearchCommentsAsync(new SearchRequest<CommentSearchFilter>
+            {
+                PageIndex = 1,
+                PageSize = 10,
+                Sorts = [new Sort("CreatedAtUtc", order)],
+                Filter = new CommentSearchFilter { SearchTerm = marker, TenantId = TenantId, TaskItemId = taskId }
+            }, includeTotal: false, TestContext.CancellationToken);
+            CollectionAssert.AreEqual(ExpectedTieOrder(ascendingBodies, order), page.Data.Select(e => e.Body).ToList(), $"{order}");
+        }
+    }
+
+    /// <summary>Verifies checklist item search breaks a sort-key tie in the sort direction.</summary>
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task ChecklistItemSearch_SortDirection_AlsoOrdersTheIdTieBreak_AgainstRealSql()
+    {
+        var marker = $"TieChecklist-{Guid.NewGuid():N}";
+        Guid taskId;
+        await using (var db = DbContainerFixture.CreateTrxnContext())
+        {
+            var task = new TaskItemBuilder().WithTenantId(TenantId).WithTitle($"{marker}-Task").Build();
+            db.TaskItems.Add(task);
+            db.ChecklistItems.AddRange(
+                new ChecklistItemBuilder().WithTenantId(TenantId).WithTaskItemId(task.Id).WithTitle($"{marker}-a").WithSortOrder(3).Build(),
+                new ChecklistItemBuilder().WithTenantId(TenantId).WithTaskItemId(task.Id).WithTitle($"{marker}-b").WithSortOrder(3).Build());
+            await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
+            taskId = task.Id;
+        }
+
+        await using var queryDb = DbContainerFixture.CreateQueryContext();
+        var ascendingTitles = await queryDb.ChecklistItems.IgnoreQueryFilters().Where(e => e.Title.StartsWith(marker))
+            .OrderBy(e => e.Id).Select(e => e.Title).ToListAsync(TestContext.CancellationToken);
+        Assert.HasCount(2, ascendingTitles);
+        var repo = new ChecklistItemRepositoryQuery(queryDb);
+        foreach (var order in new[] { SortOrder.Ascending, SortOrder.Descending })
+        {
+            var page = await repo.SearchChecklistItemsAsync(new SearchRequest<ChecklistItemSearchFilter>
+            {
+                PageIndex = 1,
+                PageSize = 10,
+                Sorts = [new Sort("SortOrder", order)],
+                Filter = new ChecklistItemSearchFilter { SearchTerm = marker, TenantId = TenantId, TaskItemId = taskId }
+            }, includeTotal: false, TestContext.CancellationToken);
+            CollectionAssert.AreEqual(ExpectedTieOrder(ascendingTitles, order), page.Data.Select(e => e.Title).ToList(), $"{order}");
+        }
+    }
+
+    private static List<string> ExpectedTieOrder(List<string> ascendingById, SortOrder order) =>
+        order == SortOrder.Descending ? [.. ascendingById.AsEnumerable().Reverse()] : ascendingById;
+
     public TestContext TestContext { get; set; } = null!;
 }

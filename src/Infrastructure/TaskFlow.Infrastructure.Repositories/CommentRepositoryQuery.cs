@@ -32,7 +32,7 @@ public class CommentRepositoryQuery(TaskFlowDbContextQuery db)
         // ordering
         if (request.Sorts?.Any() ?? false)
         {
-            q = ((IOrderedQueryable<Comment>)q.OrderBy(request.Sorts)).ThenBy(e => e.Id);
+            q = q.OrderByWithIdTieBreak(request.Sorts, e => e.Id);
         }
         else
         {
