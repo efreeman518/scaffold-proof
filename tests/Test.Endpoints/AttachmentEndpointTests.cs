@@ -208,7 +208,9 @@ public class AttachmentEndpointTests
             _ => throw new ArgumentOutOfRangeException(nameof(field), field, null)
         };
 
-        await AssertPutRefusedAndRowUnchangedAsync(client, created, changed);
+        await AssertPutRefusedAndRowUnchangedAsync(client, created, changed, field.StartsWith("owner", StringComparison.Ordinal)
+            ? OwnerChangeError
+            : "The content type, size and storage URI of an uploaded attachment cannot change.");
     }
 
     /// <summary>A metadata-only attachment cannot change owner either: the PUT is a 400 and the row is unchanged.</summary>
@@ -227,16 +229,20 @@ public class AttachmentEndpointTests
         }, cancellationToken: TestContext.CancellationToken);
         var created = (await createResponse.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item!;
 
-        await AssertPutRefusedAndRowUnchangedAsync(client, created, created with { OwnerId = await CreateParentTaskItem(client) });
+        await AssertPutRefusedAndRowUnchangedAsync(client, created, created with { OwnerId = await CreateParentTaskItem(client) }, OwnerChangeError);
     }
 
-    private async Task AssertPutRefusedAndRowUnchangedAsync(HttpClient client, AttachmentDto created, AttachmentDto changed)
+    private const string OwnerChangeError = "The owner of an attachment cannot change.";
+
+    private async Task AssertPutRefusedAndRowUnchangedAsync(HttpClient client, AttachmentDto created, AttachmentDto changed, string expectedError)
     {
         var response = await client.PutAsJsonWithIfMatchAsync($"/api/v1/attachments/{created.Id}",
             new DefaultRequest<AttachmentDto> { Item = changed },
             ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), JsonTestOptions.Default, TestContext.CancellationToken);
 
-        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode, await response.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        var body = await response.Content.ReadAsStringAsync(TestContext.CancellationToken);
+        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode, body);
+        StringAssert.Contains(body, expectedError, "the problem names the refused change");
         var stored = (await client.GetFromJsonAsync<DefaultResponse<AttachmentDto>>($"/api/v1/attachments/{created.Id}", _jsonOptions, TestContext.CancellationToken))!.Item!;
         Assert.AreEqual(created, stored, "the refused PUT leaves the row as it was");
     }
@@ -665,6 +671,32 @@ public class AttachmentEndpointTests
         Assert.AreNotEqual(staged[0].BlobName, staged[1].BlobName, "each row deletes its own upload's blob");
     }
 
+    /// <summary>
+    /// D-075: when the blob write fails after the reservation is saved, the upload answers the blob-upload failure and the
+    /// reservation stays queued past the grace period, so whatever the store kept of the content is deleted later.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_BlobWriteFails_When_Uploaded_Then_TheReservationStays(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        var blobs = new InMemoryBlobStorageRepository { FailUploads = true };
+        using var uploadFactory = UploadFactory(style, blobs);
+        using var client = uploadFactory.CreateClient();
+        var taskId = await CreateParentTaskItem(client);
+
+        using var upload = await UploadAsync(client, taskId, "evidence.txt");
+
+        var body = await upload.Content.ReadAsStringAsync(TestContext.CancellationToken);
+        Assert.AreEqual(HttpStatusCode.BadRequest, upload.StatusCode, body);
+        StringAssert.Contains(body, "The file could not be uploaded.");
+        var reservation = (await BlobDeleteWorkAsync(uploadFactory)).Single();
+        StringAssert.EndsWith(reservation.BlobName, "/evidence.txt");
+        Assert.IsGreaterThan(DateTimeOffset.UtcNow.AddMinutes(10), reservation.AvailableAtUtc, "the reservation waits out its grace period");
+    }
+
     /// <summary>Every blob-delete work row in the factory's database.</summary>
     private async Task<List<BlobDeleteWork>> BlobDeleteWorkAsync(Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> factory)
     {
@@ -718,11 +750,15 @@ internal class InMemoryBlobStorageRepository : IObjectStorageRepository
 {
     private readonly Dictionary<string, byte[]> _blobs = new();
 
+    /// <summary>When set, every upload throws before anything is stored.</summary>
+    public bool FailUploads { get; init; }
+
     /// <summary>Verifies upload behavior and protects the expected test contract.</summary>
     public async Task UploadAsync(string containerName, string objectName, Stream content,
         string? contentType = null, IDictionary<string, string>? metadata = null,
         CancellationToken cancellationToken = default)
     {
+        if (FailUploads) throw new IOException("injected blob write failure");
         using var ms = new MemoryStream();
         await content.CopyToAsync(ms, cancellationToken);
         _blobs[$"{containerName}/{objectName}"] = ms.ToArray();

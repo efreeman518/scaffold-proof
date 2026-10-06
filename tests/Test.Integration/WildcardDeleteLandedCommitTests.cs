@@ -126,6 +126,38 @@ public sealed class WildcardDeleteLandedCommitTests
             "the landed delete staged its blob once; the absent row staged none");
     }
 
+    /// <summary>
+    /// A delete whose save fails while the attachment row is still stored keeps its original write failure: it is not
+    /// classified as a lost save. Here the failure is the staged work row's key, already taken by the stale-task cleanup's
+    /// row for the same upload (same tenant, attachment and storage key).
+    /// </summary>
+    [TestMethod]
+    [Timeout(120000, CooperativeCancellation = true)]
+    public async Task Given_DeleteSaveFailsWithTheRowStored_When_Deleted_Then_TheOriginalFailurePropagates()
+    {
+        var ct = TestContext.CancellationToken;
+        var ownerId = Guid.CreateVersion7();
+        var fileName = $"stored-{Guid.NewGuid():N}.pdf";
+        var attachment = new AttachmentBuilder().WithTenantId(TenantGuid).WithOwnerId(ownerId).WithFileName(fileName)
+            .WithStorageKey(AttachmentBlobs.NewObjectKey(TenantGuid, ownerId, fileName)).Build();
+        await using (var seed = DbContainerFixture.CreateTrxnContext())
+        {
+            seed.Attachments.Add(attachment);
+            await seed.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct);
+            Assert.AreEqual(1, await new TaskItemSystemRepository(seed).StageBlobDeletesAsync(TenantGuid, [ownerId], ct));
+        }
+
+        await using var db = DbContainerFixture.CreateTrxnContext();
+        var repo = new AttachmentRepositoryTrxn(db, Options.Create(new AttachmentUploadSettings()));
+        var loaded = await repo.GetAttachmentAsync(attachment.Id, ct);
+        Assert.IsNotNull(loaded);
+        var failure = await Assert.ThrowsAsync<DbUpdateException>(() => repo.DeleteAttachmentAsync(loaded, ct));
+
+        Assert.IsNotInstanceOfType<DbUpdateConcurrencyException>(failure, "a failure with the row still stored is not a lost save");
+        await using var verify = DbContainerFixture.CreateTrxnContext();
+        Assert.IsTrue(await verify.Attachments.IgnoreQueryFilters().AnyAsync(a => a.Id == attachment.Id, ct));
+    }
+
     private static async Task<EF.Common.Contracts.Result> DeleteCategoryAsync(
         string style, Guid categoryId, ITypedCache cache, LandedSaveFault fault, CancellationToken ct)
     {
