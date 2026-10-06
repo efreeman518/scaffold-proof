@@ -131,7 +131,7 @@ internal sealed class UploadAttachmentHandler(
     public async Task<Result<DefaultResponse<AttachmentDto>>> HandleAsync(UploadAttachmentCommand command, CancellationToken ct = default)
     {
         // AR-01: the upload form carries its own optional caller id, so it needs the same UUIDv7
-        // check as the JSON create path - it was missing here, which let Guid.Empty and v4 ids through.
+        // check as the JSON create path, so Guid.Empty and non-v7 ids are refused here too.
         var idCheck = UuidV7.ValidateCallerId(command.Id);
         if (idCheck.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(idCheck.ErrorMessage!);
 
