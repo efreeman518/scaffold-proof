@@ -94,6 +94,33 @@ public class AttachmentTests
         Assert.AreEqual("tenant/owner/key", attachment.StorageKey);
     }
 
+    /// <summary>
+    /// D-075: an uploaded attachment refuses a content type, size or storage URI that differs from the stored one, and
+    /// no attachment changes owner; a refused update applies nothing, so a rename sent with it is not applied either.
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public void Given_UploadedAttachment_When_ServerOwnedFieldChanges_Then_ReturnsDomainFailureAndKeepsValues()
+    {
+        var ownerId = Guid.NewGuid();
+        var attachment = Attachment.Create(TenantId, "file.txt", "text/plain", 1, "https://storage/x", AttachmentOwnerType.TaskItem,
+            ownerId, storageKey: "tenant/owner/key").Value!;
+
+        Assert.IsTrue(attachment.Update(fileName: "renamed.txt", contentType: "application/pdf").IsFailure);
+        Assert.IsTrue(attachment.Update(fileSizeBytes: 2).IsFailure);
+        Assert.IsTrue(attachment.Update(storageUri: "https://storage/y").IsFailure);
+        Assert.IsTrue(attachment.Update(ownerId: Guid.NewGuid()).IsFailure);
+        Assert.IsTrue(attachment.Update(ownerType: AttachmentOwnerType.Comment).IsFailure);
+        Assert.AreEqual(("file.txt", "text/plain", 1L, "https://storage/x", AttachmentOwnerType.TaskItem, ownerId),
+            (attachment.FileName, attachment.ContentType, attachment.FileSizeBytes, attachment.StorageUri, attachment.OwnerType, attachment.OwnerId));
+        Assert.IsTrue(attachment.Update("renamed.txt", "text/plain", 1, "https://storage/x", AttachmentOwnerType.TaskItem, ownerId).IsSuccess,
+            "the stored values sent back with a new name are a rename");
+
+        var metadataOnly = Attachment.Create(TenantId, "file.txt", "text/plain", 1, "https://storage/x", AttachmentOwnerType.TaskItem, ownerId).Value!;
+        Assert.IsTrue(metadataOnly.Update("other.pdf", "application/pdf", 2, "https://storage/y", AttachmentOwnerType.TaskItem, ownerId).IsSuccess);
+        Assert.IsTrue(metadataOnly.Update(ownerId: Guid.NewGuid()).IsFailure);
+    }
+
     /// <summary>Verifies that given zero file size, when attachment created, then returns domain failure.</summary>
     [TestMethod]
     [TestCategory("Unit")]

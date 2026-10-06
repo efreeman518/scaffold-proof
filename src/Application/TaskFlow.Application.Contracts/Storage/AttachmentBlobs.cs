@@ -2,7 +2,7 @@ namespace TaskFlow.Application.Contracts.Storage;
 
 /// <summary>
 /// Container and object naming for attachment content. The upload path mints the key once and stores it on the
-/// attachment row; the delete paths and the deferred blob-delete work the stale-task job stages read it back.
+/// attachment row; the attachment delete and the stale-task job stage deferred blob-delete work for it by that key.
 /// <para>
 /// The storage port itself is <c>EF.Storage.Contracts.IObjectStorageRepository</c> (D-037): Azure Blob via
 /// <c>EF.Storage.BlobRepositoryBase</c>, S3-compatible via <c>EF.Storage.S3</c>, and a no-op arm when no

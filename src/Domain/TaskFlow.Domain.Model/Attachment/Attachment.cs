@@ -54,9 +54,26 @@ public class Attachment : TaskFlowEntityBase<DomainAttachmentId>, ITenantEntity<
         return entity.Valid();
     }
 
-    /// <summary>Updates existing data after validation and preserves domain invariants.</summary>
-    public DomainResult<Attachment> Update(string? fileName = null, string? contentType = null, long? fileSizeBytes = null, string? storageUri = null)
+    /// <summary>
+    /// Updates existing data after validation and preserves domain invariants. The owner never changes, and an uploaded
+    /// attachment (<see cref="StorageKey"/> set) keeps the content type, size and storage URI the server recorded for
+    /// the content it wrote (D-075): a value that differs from the stored one is a failure and nothing is applied. A
+    /// rename stays allowed. A metadata-only attachment takes every field the caller sends.
+    /// </summary>
+    public DomainResult<Attachment> Update(
+        string? fileName = null, string? contentType = null, long? fileSizeBytes = null, string? storageUri = null,
+        AttachmentOwnerType? ownerType = null, Guid? ownerId = null)
     {
+        var errors = new List<DomainError>();
+        if ((ownerType.HasValue && ownerType.Value != OwnerType) || (ownerId.HasValue && ownerId.Value != OwnerId))
+            errors.Add(DomainError.Create("The owner of an attachment cannot change."));
+        if (StorageKey is not null
+            && ((contentType is not null && contentType != ContentType)
+                || (fileSizeBytes.HasValue && fileSizeBytes.Value != FileSizeBytes)
+                || (storageUri is not null && storageUri != StorageUri)))
+            errors.Add(DomainError.Create("The content type, size and storage URI of an uploaded attachment cannot change."));
+        if (errors.Count > 0) return DomainResult<Attachment>.Failure(errors);
+
         if (fileName is not null) FileName = fileName;
         if (contentType is not null) ContentType = contentType;
         if (fileSizeBytes.HasValue) FileSizeBytes = fileSizeBytes.Value;

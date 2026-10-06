@@ -1,7 +1,14 @@
+extern alias SchedulerHost;
+
 using EF.Common.Contracts;
+using EF.Data.Contracts;
 using EF.Storage.Contracts;
 using EF.Testing.Http;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using SchedulerHost::TaskFlow.Scheduler.Workers;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -9,6 +16,8 @@ using System.Text.Json.Serialization;
 using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Application.Models;
 using TaskFlow.Domain.Shared.Enums;
+using TaskFlow.Infrastructure.Data;
+using TaskFlow.Infrastructure.Data.Operational;
 using Test.Support;
 
 namespace Test.Endpoints;
@@ -122,7 +131,7 @@ public class AttachmentEndpointTests
         Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <summary>Verifies that given existing attachment, when put update, then returns 200.</summary>
+    /// <summary>A metadata-only attachment (no uploaded content) takes a full replace of its fields: 200.</summary>
     [TestCategory("Endpoint")]
     [DataRow(EndpointStyles.Service)]
     [DataRow(EndpointStyles.Cqrs)]
@@ -147,18 +156,95 @@ public class AttachmentEndpointTests
         var updateDto = new AttachmentDto
         {
             Id = created!.Id,
-            FileName = "after.png",
-            ContentType = "image/png",
+            FileName = "after.jpg",
+            ContentType = "image/jpeg",
             FileSizeBytes = 1024,
-            StorageUri = "https://storage.example.com/after.png",
+            StorageUri = "https://storage.example.com/after.jpg",
             OwnerType = AttachmentOwnerType.TaskItem,
             OwnerId = taskId
         };
         var response = await client.PutAsJsonWithIfMatchAsync($"/api/v1/attachments/{created.Id}", new DefaultRequest<AttachmentDto> { Item = updateDto }, ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), JsonTestOptions.Default, TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
-        var updated = (await response.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item;
-        Assert.AreEqual("after.png", updated!.FileName);
+        var updated = (await response.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item!;
+        Assert.AreEqual("after.jpg", updated.FileName);
+        Assert.AreEqual("image/jpeg", updated.ContentType);
+        Assert.AreEqual(1024, updated.FileSizeBytes);
+        Assert.AreEqual("https://storage.example.com/after.jpg", updated.StorageUri);
+    }
+
+    /// <summary>
+    /// D-075: an uploaded attachment keeps the content type, size and storage URI the server recorded for its content,
+    /// and no attachment changes owner. A PUT that changes one of them is a 400 and the row is unchanged, in both styles.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service, "contentType")]
+    [DataRow(EndpointStyles.Cqrs, "contentType")]
+    [DataRow(EndpointStyles.Service, "fileSizeBytes")]
+    [DataRow(EndpointStyles.Cqrs, "fileSizeBytes")]
+    [DataRow(EndpointStyles.Service, "storageUri")]
+    [DataRow(EndpointStyles.Cqrs, "storageUri")]
+    [DataRow(EndpointStyles.Service, "ownerId")]
+    [DataRow(EndpointStyles.Cqrs, "ownerId")]
+    [DataRow(EndpointStyles.Service, "ownerType")]
+    [DataRow(EndpointStyles.Cqrs, "ownerType")]
+    [TestMethod]
+    public async Task Given_UploadedAttachment_When_PutChangesServerOwnedField_Then_Returns400AndRowIsUnchanged(string style, string field)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        using var uploadFactory = UploadFactory(style, new InMemoryBlobStorageRepository());
+        using var client = uploadFactory.CreateClient();
+        var taskId = await CreateParentTaskItem(client);
+        using var upload = await UploadAsync(client, taskId, "evidence.txt");
+        Assert.AreEqual(HttpStatusCode.Created, upload.StatusCode);
+        var created = (await upload.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item!;
+        var changed = field switch
+        {
+            "contentType" => created with { ContentType = "application/pdf" },
+            "fileSizeBytes" => created with { FileSizeBytes = created.FileSizeBytes + 1 },
+            "storageUri" => created with { StorageUri = "https://storage.example.com/elsewhere.txt" },
+            "ownerId" => created with { OwnerId = await CreateParentTaskItem(client) },
+            "ownerType" => created with { OwnerType = AttachmentOwnerType.Comment },
+            _ => throw new ArgumentOutOfRangeException(nameof(field), field, null)
+        };
+
+        await AssertPutRefusedAndRowUnchangedAsync(client, created, changed, field.StartsWith("owner", StringComparison.Ordinal)
+            ? OwnerChangeError
+            : "The content type, size and storage URI of an uploaded attachment cannot change.");
+    }
+
+    /// <summary>A metadata-only attachment cannot change owner either: the PUT is a 400 and the row is unchanged.</summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_MetadataOnlyAttachment_When_PutChangesOwner_Then_Returns400AndRowIsUnchanged(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
+        var taskId = await CreateParentTaskItem(client);
+        var createResponse = await client.PostAsJsonAsync("/api/v1/attachments", new DefaultRequest<AttachmentDto>
+        {
+            Item = new AttachmentDto { FileName = "meta.txt", ContentType = "text/plain", FileSizeBytes = 8, StorageUri = "https://storage.example.com/meta.txt", OwnerType = AttachmentOwnerType.TaskItem, OwnerId = taskId }
+        }, cancellationToken: TestContext.CancellationToken);
+        var created = (await createResponse.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item!;
+
+        await AssertPutRefusedAndRowUnchangedAsync(client, created, created with { OwnerId = await CreateParentTaskItem(client) }, OwnerChangeError);
+    }
+
+    private const string OwnerChangeError = "The owner of an attachment cannot change.";
+
+    private async Task AssertPutRefusedAndRowUnchangedAsync(HttpClient client, AttachmentDto created, AttachmentDto changed, string expectedError)
+    {
+        var response = await client.PutAsJsonWithIfMatchAsync($"/api/v1/attachments/{created.Id}",
+            new DefaultRequest<AttachmentDto> { Item = changed },
+            ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), JsonTestOptions.Default, TestContext.CancellationToken);
+
+        var body = await response.Content.ReadAsStringAsync(TestContext.CancellationToken);
+        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode, body);
+        StringAssert.Contains(body, expectedError, "the problem names the refused change");
+        var stored = (await client.GetFromJsonAsync<DefaultResponse<AttachmentDto>>($"/api/v1/attachments/{created.Id}", _jsonOptions, TestContext.CancellationToken))!.Item!;
+        Assert.AreEqual(created, stored, "the refused PUT leaves the row as it was");
     }
 
     /// <summary>Verifies that given existing attachment, when delete, then returns 204.</summary>
@@ -228,6 +314,35 @@ public class AttachmentEndpointTests
         StringAssert.Matches(created.StorageUri, new System.Text.RegularExpressions.Regex(
             $"^https://inmemory\\.blob\\.local/{AttachmentBlobs.ContainerName}/{created.TenantId}/{taskId}/[0-9a-f-]{{36}}/upload-test\\.txt$"));
         Assert.AreEqual(fileBytes.Length, created.FileSizeBytes);
+        Assert.IsEmpty(await BlobDeleteWorkAsync(uploadFactory), "the save that inserted the row removed the upload's reservation (D-075)");
+    }
+
+    /// <summary>
+    /// D-033: a repeated upload with the same caller id replays the stored attachment before it writes anything, so the
+    /// container keeps one blob and no reservation is left behind.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_UploadedCallerId_When_UploadedAgain_Then_ReplaysWithoutASecondBlob(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        var blobs = new InMemoryBlobStorageRepository();
+        using var uploadFactory = UploadFactory(style, blobs);
+        using var client = uploadFactory.CreateClient();
+        var taskId = await CreateParentTaskItem(client);
+        var callerId = Guid.CreateVersion7();
+        using var first = await UploadAsync(client, taskId, "evidence.txt", callerId);
+        Assert.AreEqual(HttpStatusCode.Created, first.StatusCode, await first.Content.ReadAsStringAsync(TestContext.CancellationToken));
+
+        using var again = await UploadAsync(client, taskId, "evidence.txt", callerId);
+
+        Assert.AreEqual(HttpStatusCode.OK, again.StatusCode, await again.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        var replayed = (await again.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item!;
+        Assert.AreEqual(callerId, replayed.Id);
+        Assert.HasCount(1, (await blobs.ListAsync(AttachmentBlobs.ContainerName, cancellationToken: TestContext.CancellationToken)).Items);
+        Assert.IsEmpty(await BlobDeleteWorkAsync(uploadFactory));
     }
 
     /// <summary>D-075: an upload whose file name carries a path or a ".." segment is a 400, and nothing is stored.</summary>
@@ -311,8 +426,9 @@ public class AttachmentEndpointTests
     }
 
     /// <summary>
-    /// D-075: a rename changes only the display name. The delete removes the uploaded content by its stored key, so the
-    /// renamed attachment's blob is the one deleted and no blob named after the new file name is touched.
+    /// D-075: a rename changes only the display name. The delete stages the uploaded content's removal by its stored key
+    /// (D-026), so once the blob-delete worker drains, the renamed attachment's blob is the one deleted and no blob named
+    /// after the new file name is touched.
     /// </summary>
     [TestCategory("Endpoint")]
     [DataRow(EndpointStyles.Service)]
@@ -345,8 +461,67 @@ public class AttachmentEndpointTests
             ConcurrencyHttpExtensions.FormatStrongETag(renamed.Version!.Value), TestContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.NoContent, delete.StatusCode);
+        await DrainBlobDeletesAsync(uploadFactory, blobs);
         Assert.IsEmpty((await blobs.ListAsync(AttachmentBlobs.ContainerName, cancellationToken: TestContext.CancellationToken)).Items,
-            "the delete removes the uploaded content by its stored key");
+            "the drained delete removes the uploaded content by its stored key");
+    }
+
+    /// <summary>
+    /// D-026: deleting an uploaded attachment stages exactly one blob-delete work row, for its stored key, in the save
+    /// that removes the row; the blob stays until the worker drains it, and one drain removes it and settles the row.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_UploadedAttachment_When_Deleted_Then_OneBlobDeleteIsStagedAndTheWorkerRemovesTheBlob(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        var blobs = new InMemoryBlobStorageRepository();
+        using var uploadFactory = UploadFactory(style, blobs);
+        using var client = uploadFactory.CreateClient();
+        var taskId = await CreateParentTaskItem(client);
+        using var upload = await UploadAsync(client, taskId, "evidence.txt");
+        var created = (await upload.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item!;
+        var storedKey = (await blobs.ListAsync(AttachmentBlobs.ContainerName, cancellationToken: TestContext.CancellationToken)).Items.Single().Name;
+
+        var delete = await client.DeleteWithIfMatchAsync($"/api/v1/attachments/{created.Id}",
+            ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), TestContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.NoContent, delete.StatusCode);
+        var staged = await BlobDeleteWorkAsync(uploadFactory);
+        Assert.HasCount(1, staged);
+        Assert.AreEqual((created.TenantId, AttachmentBlobs.ContainerName, storedKey), (staged[0].TenantId, staged[0].ContainerName, staged[0].BlobName));
+        Assert.IsTrue(await blobs.ExistsAsync(AttachmentBlobs.ContainerName, storedKey, TestContext.CancellationToken), "the delete defers the blob");
+
+        await DrainBlobDeletesAsync(uploadFactory, blobs);
+
+        Assert.IsFalse(await blobs.ExistsAsync(AttachmentBlobs.ContainerName, storedKey, TestContext.CancellationToken));
+        Assert.IsEmpty(await BlobDeleteWorkAsync(uploadFactory), "the drained row is settled");
+    }
+
+    /// <summary>A metadata-only attachment wrote no content, so its delete stages no blob-delete work.</summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_MetadataOnlyAttachment_When_Deleted_Then_NoBlobDeleteIsStaged(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        using var uploadFactory = UploadFactory(style, new InMemoryBlobStorageRepository());
+        using var client = uploadFactory.CreateClient();
+        var taskId = await CreateParentTaskItem(client);
+        var createResponse = await client.PostAsJsonAsync("/api/v1/attachments", new DefaultRequest<AttachmentDto>
+        {
+            Item = new AttachmentDto { FileName = "meta.txt", ContentType = "text/plain", FileSizeBytes = 8, StorageUri = "https://storage.example.com/meta.txt", OwnerType = AttachmentOwnerType.TaskItem, OwnerId = taskId }
+        }, cancellationToken: TestContext.CancellationToken);
+        var created = (await createResponse.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item!;
+
+        var delete = await client.DeleteWithIfMatchAsync($"/api/v1/attachments/{created.Id}",
+            ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), TestContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.NoContent, delete.StatusCode);
+        Assert.IsEmpty(await BlobDeleteWorkAsync(uploadFactory));
     }
 
     // The derived factory owns the host; the base CustomApiFactory it came from never builds one of its own.
@@ -406,11 +581,156 @@ public class AttachmentEndpointTests
         Assert.AreEqual("a.txt", page.Data.Single().FileName);
     }
 
+    /// <summary>
+    /// D-033: an upload whose caller id belongs to a metadata-only attachment (JSON create) is a 409 even with the same
+    /// metadata, because that row never received these bytes; nothing is written to the container and no reservation is
+    /// left behind.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_MetadataOnlyCallerId_When_Uploaded_Then_Returns409AndWritesNoBlob(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        var blobs = new InMemoryBlobStorageRepository();
+        using var uploadFactory = UploadFactory(style, blobs);
+        using var client = uploadFactory.CreateClient();
+        var taskId = await CreateParentTaskItem(client);
+        var callerId = Guid.CreateVersion7();
+        var create = await client.PostAsJsonAsync("/api/v1/attachments", new DefaultRequest<AttachmentDto>
+        {
+            Item = new AttachmentDto
+            {
+                Id = callerId, FileName = "evidence.txt", ContentType = "text/plain", FileSizeBytes = 8,
+                StorageUri = "https://storage.example.com/evidence.txt", OwnerType = AttachmentOwnerType.TaskItem, OwnerId = taskId
+            }
+        }, cancellationToken: TestContext.CancellationToken);
+        Assert.AreEqual(HttpStatusCode.Created, create.StatusCode, await create.Content.ReadAsStringAsync(TestContext.CancellationToken));
+
+        using var upload = await UploadAsync(client, taskId, "evidence.txt", callerId);
+
+        Assert.AreEqual(HttpStatusCode.Conflict, upload.StatusCode, await upload.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        Assert.IsEmpty((await blobs.ListAsync(AttachmentBlobs.ContainerName, cancellationToken: TestContext.CancellationToken)).Items);
+        Assert.IsEmpty(await BlobDeleteWorkAsync(uploadFactory));
+    }
+
+    /// <summary>D-033: a repeated upload with the same caller id and a different payload is a 409, with no second blob.</summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_UploadedCallerId_When_UploadedAgainWithAnotherPayload_Then_Returns409(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        var blobs = new InMemoryBlobStorageRepository();
+        using var uploadFactory = UploadFactory(style, blobs);
+        using var client = uploadFactory.CreateClient();
+        var taskId = await CreateParentTaskItem(client);
+        var callerId = Guid.CreateVersion7();
+        using var first = await UploadAsync(client, taskId, "evidence.txt", callerId);
+        Assert.AreEqual(HttpStatusCode.Created, first.StatusCode, await first.Content.ReadAsStringAsync(TestContext.CancellationToken));
+
+        using var again = await UploadAsync(client, taskId, "other-evidence.txt", callerId);
+
+        Assert.AreEqual(HttpStatusCode.Conflict, again.StatusCode, await again.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        Assert.HasCount(1, (await blobs.ListAsync(AttachmentBlobs.ContainerName, cancellationToken: TestContext.CancellationToken)).Items);
+        Assert.IsEmpty(await BlobDeleteWorkAsync(uploadFactory));
+    }
+
+    /// <summary>
+    /// D-026: the staged delete's id covers the storage key, so a caller id reused after a delete (a new upload under the
+    /// same id) deletes again while the first work row is still queued, and stages a second, distinct row.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_CallerIdReuploadedAfterDelete_When_DeletedAgain_Then_StagesASecondBlobDelete(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        var blobs = new InMemoryBlobStorageRepository();
+        using var uploadFactory = UploadFactory(style, blobs);
+        using var client = uploadFactory.CreateClient();
+        var taskId = await CreateParentTaskItem(client);
+        var callerId = Guid.CreateVersion7();
+
+        for (var round = 1; round <= 2; round++)
+        {
+            using var upload = await UploadAsync(client, taskId, "evidence.txt", callerId);
+            Assert.AreEqual(HttpStatusCode.Created, upload.StatusCode, await upload.Content.ReadAsStringAsync(TestContext.CancellationToken));
+            var created = (await upload.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item!;
+            var delete = await client.DeleteWithIfMatchAsync($"/api/v1/attachments/{created.Id}",
+                ConcurrencyHttpExtensions.FormatStrongETag(created.Version!.Value), TestContext.CancellationToken);
+            Assert.AreEqual(HttpStatusCode.NoContent, delete.StatusCode, $"delete {round}: {await delete.Content.ReadAsStringAsync(TestContext.CancellationToken)}");
+        }
+
+        var staged = await BlobDeleteWorkAsync(uploadFactory);
+        Assert.HasCount(2, staged);
+        Assert.AreNotEqual(staged[0].Id, staged[1].Id);
+        Assert.AreNotEqual(staged[0].BlobName, staged[1].BlobName, "each row deletes its own upload's blob");
+    }
+
+    /// <summary>
+    /// D-075: when the blob write fails after the reservation is saved, the upload answers the blob-upload failure and the
+    /// reservation stays queued past the grace period, so whatever the store kept of the content is deleted later.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_BlobWriteFails_When_Uploaded_Then_TheReservationStays(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        var blobs = new InMemoryBlobStorageRepository { FailUploads = true };
+        using var uploadFactory = UploadFactory(style, blobs);
+        using var client = uploadFactory.CreateClient();
+        var taskId = await CreateParentTaskItem(client);
+
+        using var upload = await UploadAsync(client, taskId, "evidence.txt");
+
+        var body = await upload.Content.ReadAsStringAsync(TestContext.CancellationToken);
+        Assert.AreEqual(HttpStatusCode.BadRequest, upload.StatusCode, body);
+        StringAssert.Contains(body, "The file could not be uploaded.");
+        var reservation = (await BlobDeleteWorkAsync(uploadFactory)).Single();
+        StringAssert.EndsWith(reservation.BlobName, "/evidence.txt");
+        Assert.IsGreaterThan(DateTimeOffset.UtcNow.AddMinutes(10), reservation.AvailableAtUtc, "the reservation waits out its grace period");
+    }
+
+    /// <summary>Every blob-delete work row in the factory's database.</summary>
+    private async Task<List<BlobDeleteWork>> BlobDeleteWorkAsync(Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> factory)
+    {
+        using var scope = factory.Services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<TaskFlowDbContextTrxn>().BlobDeleteWork.AsNoTracking()
+            .ToListAsync(TestContext.CancellationToken);
+    }
+
+    /// <summary>
+    /// One drain of the deferred blob deletes, as <see cref="BlobDeleteWorkerService"/> runs it: the rows due now (the
+    /// claim's <c>AvailableAtUtc</c> test) go through its delete step, and each completed row is removed. The InMemory
+    /// provider cannot run the relational claim and settlement statements, so this tier stands in for those two.
+    /// </summary>
+    private async Task DrainBlobDeletesAsync(Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> factory, IObjectStorageRepository blobs)
+    {
+        var ct = TestContext.CancellationToken;
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskFlowDbContextTrxn>();
+        var now = DateTimeOffset.UtcNow;
+        var due = await db.BlobDeleteWork.Where(w => w.AvailableAtUtc <= now).ToListAsync(ct);
+        var completed = new ConcurrentBag<Guid>();
+
+        await BlobDeleteWorkerService.DeleteBatchAsync(blobs, due, completed.Add,
+            (id, ex) => Assert.Fail($"blob delete {id} failed: {ex}"), maxConcurrency: 1, NullLogger.Instance, ct);
+
+        db.BlobDeleteWork.RemoveRange(due.Where(w => completed.Contains(w.Id)));
+        await db.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct);
+    }
+
     private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> UploadFactory(string style, InMemoryBlobStorageRepository blobs) =>
         new CustomApiFactory(style).WithWebHostBuilder(builder =>
             builder.ConfigureServices(services => services.AddSingleton<IObjectStorageRepository>(blobs)));
 
-    private Task<HttpResponseMessage> UploadAsync(HttpClient client, Guid taskId, string fileName)
+    private Task<HttpResponseMessage> UploadAsync(HttpClient client, Guid taskId, string fileName, Guid? id = null)
     {
         var content = new MultipartFormDataContent();
         var fileContent = new ByteArrayContent("evidence"u8.ToArray());
@@ -418,6 +738,7 @@ public class AttachmentEndpointTests
         content.Add(fileContent, "file", fileName);
         content.Add(new StringContent(((int)AttachmentOwnerType.TaskItem).ToString()), "ownerType");
         content.Add(new StringContent(taskId.ToString()), "ownerId");
+        if (id is { } callerId) content.Add(new StringContent(callerId.ToString()), "id");
         return client.PostAsync("/api/v1/attachments/upload", content, TestContext.CancellationToken);
     }
 
@@ -429,11 +750,15 @@ internal class InMemoryBlobStorageRepository : IObjectStorageRepository
 {
     private readonly Dictionary<string, byte[]> _blobs = new();
 
+    /// <summary>When set, every upload throws before anything is stored.</summary>
+    public bool FailUploads { get; init; }
+
     /// <summary>Verifies upload behavior and protects the expected test contract.</summary>
     public async Task UploadAsync(string containerName, string objectName, Stream content,
         string? contentType = null, IDictionary<string, string>? metadata = null,
         CancellationToken cancellationToken = default)
     {
+        if (FailUploads) throw new IOException("injected blob write failure");
         using var ms = new MemoryStream();
         await content.CopyToAsync(ms, cancellationToken);
         _blobs[$"{containerName}/{objectName}"] = ms.ToArray();

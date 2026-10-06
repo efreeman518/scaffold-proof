@@ -225,10 +225,14 @@ public sealed class CqrsConcurrencyRetryTests
                 _attachmentRepo.Setup(r => r.GetAttachmentAsync(attachment.Id, It.IsAny<CancellationToken>())).ReturnsAsync(attachment);
                 _run = write == "UpdateAttachment"
                     ? v => Plain(new UpdateAttachmentHandler(Log<UpdateAttachmentHandler>(), _requestContext.Object, _attachmentRepo.Object, _tenantBoundary.Object)
-                        .HandleAsync(new UpdateAttachmentCommand(new DefaultRequest<AttachmentDto> { Item = new AttachmentDtoBuilder().WithId(attachment.Id.Value).Build() }, v), ct))
+                        .HandleAsync(new UpdateAttachmentCommand(new DefaultRequest<AttachmentDto> { Item = new AttachmentDtoBuilder().WithId(attachment.Id.Value).WithOwnerId(attachment.OwnerId).Build() }, v), ct))
                     : v => new DeleteAttachmentHandler(Log<DeleteAttachmentHandler>(), _requestContext.Object, _attachmentRepo.Object, _tenantBoundary.Object, _cache.Object)
                         .HandleAsync(new DeleteAttachmentCommand(attachment.Id.Value, v), ct);
-                return new RetryProbe().Attach(_attachmentRepo);
+                var attachmentProbe = new RetryProbe().Attach(_attachmentRepo);
+                // The delete's one save is the repository's delete-and-stage unit (D-026).
+                _attachmentRepo.Setup(r => r.DeleteAttachmentAsync(attachment, It.IsAny<CancellationToken>()))
+                    .Callback(attachmentProbe.RecordSave).Returns(Task.CompletedTask);
+                return attachmentProbe;
             default:
                 throw new ArgumentOutOfRangeException(nameof(write), write, "no such If-Match write");
         }

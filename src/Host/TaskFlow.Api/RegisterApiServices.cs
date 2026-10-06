@@ -18,6 +18,7 @@ using TaskFlow.Api.Endpoints;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Models.Serialization;
+using TaskFlow.Bootstrapper;
 using TaskFlow.Infrastructure.Caching;
 using TaskFlow.Observability.Meters;
 
@@ -167,12 +168,12 @@ public static class RegisterApiServices
     /// </summary>
     private static void AddRequestTimeouts(IServiceCollection services, IConfiguration config)
     {
-        var defaultSeconds = config.GetValue<int?>("RequestTimeouts:DefaultSeconds") ?? 30;
+        var defaultTimeout = RegisterServices.ResolveDefaultRequestTimeout(config);
         services.AddRequestTimeouts(options =>
         {
             options.DefaultPolicy = new RequestTimeoutPolicy
             {
-                Timeout = TimeSpan.FromSeconds(defaultSeconds)
+                Timeout = defaultTimeout
             };
         });
     }

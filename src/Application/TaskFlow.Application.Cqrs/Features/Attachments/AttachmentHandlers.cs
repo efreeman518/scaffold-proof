@@ -122,6 +122,7 @@ internal sealed class UploadAttachmentHandler(
     ILogger<UploadAttachmentHandler> logger,
     IRequestContext<string, Guid?> requestContext,
     IAttachmentRepositoryTrxn repoTrxn,
+    IAttachmentRepositoryQuery repoQuery,
     ITenantBoundaryValidator tenantBoundaryValidator,
     IObjectStorageRepository? blobStorage = null)
     : IRequestHandler<UploadAttachmentCommand, Result<DefaultResponse<AttachmentDto>>>
@@ -130,7 +131,7 @@ internal sealed class UploadAttachmentHandler(
     public async Task<Result<DefaultResponse<AttachmentDto>>> HandleAsync(UploadAttachmentCommand command, CancellationToken ct = default)
     {
         // AR-01: the upload form carries its own optional caller id, so it needs the same UUIDv7
-        // check as the JSON create path - it was missing here, which let Guid.Empty and v4 ids through.
+        // check as the JSON create path, so Guid.Empty and non-v7 ids are refused here too.
         var idCheck = UuidV7.ValidateCallerId(command.Id);
         if (idCheck.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(idCheck.ErrorMessage!);
 
@@ -146,7 +147,33 @@ internal sealed class UploadAttachmentHandler(
             return Result<DefaultResponse<AttachmentDto>>.Failure("Blob storage is not configured.");
 
         var tenantId = requestContext.TenantId ?? Guid.Empty;
+        var incoming = new AttachmentDto
+        {
+            FileName = command.FileName, ContentType = command.ContentType, FileSizeBytes = command.FileSizeBytes,
+            OwnerType = command.OwnerType, OwnerId = command.OwnerId
+        };
+
+        // D-033: the row itself is the idempotency record for a caller-supplied UUIDv7 id, so a repeated upload replays
+        // (or answers 409) before it writes a second blob.
+        if (command.Id is Guid callerId)
+        {
+            var existing = await repoTrxn.GetAttachmentAsync(AttachmentId.From(callerId), ct);
+            if (existing is not null)
+            {
+                return Result<DefaultResponse<AttachmentDto>>.Success(IdempotentCreateGuard.ReplayUploadOrThrow(
+                    existing.ToDto(), existing.StorageKey is not null, incoming, callerId));
+            }
+        }
+
         var blobName = AttachmentBlobs.NewObjectKey(tenantId, command.OwnerId, command.FileName);
+
+        // D-075: saved before the blob is written, so content whose attachment row never lands is deleted once the
+        // reservation's grace period has passed. The transaction that inserts the row removes it.
+        var reservationId = Guid.Empty;
+        var reserve = await CqrsHandlerSupport.TryWriteAsync(
+            async t => reservationId = await repoTrxn.ReserveUploadAsync(tenantId, blobName, t), logger,
+            "Error reserving the blob for Attachment {FileName}", ct, command.FileName);
+        if (reserve.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(reserve.ErrorMessage!);
 
         try
         {
@@ -173,10 +200,28 @@ internal sealed class UploadAttachmentHandler(
         if (entityResult.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(entityResult.ErrorMessage!);
 
         var entity = entityResult.Value!;
-        repoTrxn.Create(ref entity);
 
-        var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error persisting Attachment after upload", ct);
-        if (save.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(save.ErrorMessage!);
+        try
+        {
+            await repoTrxn.InsertUploadedAsync(entity, reservationId, ct);
+        }
+        // A POST carries no precondition, so a lost save (the reservation was claimed) is a failed upload, never a 412.
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Logged first, once: the re-read below can throw too, and the original failure must not be lost.
+            logger.AttachmentPersistAfterUploadFailed(ex);
+
+            // D-033: a concurrent upload with the same id passed the existence check too and won the insert. Re-read on
+            // the query context (this one still tracks the failed insert): the winner makes this a replay or a 409. This
+            // upload's blob is left to its reservation either way.
+            if (command.Id is Guid racedId && await repoQuery.GetAttachmentAsync(AttachmentId.From(racedId), ct) is { } raced)
+            {
+                return Result<DefaultResponse<AttachmentDto>>.Success(IdempotentCreateGuard.ReplayUploadOrThrow(
+                    raced.ToDto(), raced.StorageKey is not null, incoming, racedId));
+            }
+
+            return Result<DefaultResponse<AttachmentDto>>.Failure(ErrorConstants.ERROR_SAVE_FAILED);
+        }
 
         return HandlerHelpers.Success(entity.ToDto());
     }
@@ -224,7 +269,7 @@ internal sealed class UpdateAttachmentHandler(
             entity.TenantId.Value, dto.TenantId, nameof(Attachment), entity.Id.Value);
         if (tenantChangeCheck.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(tenantChangeCheck.ErrorMessage!);
 
-        var updateResult = entity.Update(dto.FileName, dto.ContentType, dto.FileSizeBytes, dto.StorageUri);
+        var updateResult = entity.Update(dto.FileName, dto.ContentType, dto.FileSizeBytes, dto.StorageUri, dto.OwnerType, dto.OwnerId);
         if (updateResult.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(updateResult.ErrorMessage!);
 
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error updating Attachment {Id}", ct, dto.Id);
@@ -240,32 +285,18 @@ internal sealed class DeleteAttachmentHandler(
     IRequestContext<string, Guid?> requestContext,
     IAttachmentRepositoryTrxn repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    ITypedCache cache,
-    IObjectStorageRepository? blobStorage = null)
+    ITypedCache cache)
     : IRequestHandler<DeleteAttachmentCommand, Result>
 {
     /// <summary>Handles delete attachment requests and returns the application result.</summary>
     public async Task<Result> HandleAsync(DeleteAttachmentCommand command, CancellationToken ct = default)
     {
         // If-Match: * re-reads and deletes again when it loses a race (D-073); a concrete version keeps its 412. The
-        // blob delete and cache eviction are outside effects, so they run once, after the save that removed the row.
+        // cache eviction is an outside effect, so it runs once, after the save that removed the row.
         Attachment? sent = null;
         var (result, entity) = await ConcurrencyRetry.RunAsync(repoTrxn, command.ExpectedVersion, nameof(Attachment), command.Id,
             attemptCt => DeleteOnceAsync(command, sent, e => sent = e, attemptCt), ct);
         if (entity is null) return result;
-
-        // The content the upload wrote, by its stored key; a metadata-only attachment has none.
-        if (blobStorage is not null && entity.StorageKey is { } storageKey)
-        {
-            try
-            {
-                await blobStorage.DeleteAsync(AttachmentBlobs.ContainerName, storageKey, ct);
-            }
-            catch (Exception ex)
-            {
-                logger.AttachmentBlobDeleteFailed(ex, command.Id);
-            }
-        }
 
         await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(Attachment)), ct);
         return Result.Success();
@@ -277,8 +308,8 @@ internal sealed class DeleteAttachmentHandler(
     {
         var entity = await repoTrxn.GetAttachmentAsync(AttachmentId.From(command.Id), ct);
         // D-073: gone on a wildcard retry after an earlier attempt sent its save (a commit that landed but was reported
-        // failed, or a competing delete) returns that attempt's row, so the blob delete still runs; gone on the first
-        // attempt returns none.
+        // failed, or a competing delete) returns that attempt's row, so the cache eviction still runs; gone on the first
+        // attempt returns none. The save that removed the row staged its blob delete with it.
         if (entity is null) return (Result.Success(), sent);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
@@ -288,10 +319,11 @@ internal sealed class DeleteAttachmentHandler(
 
         ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(Attachment), entity.Id.Value);
 
-        repoTrxn.Delete(entity);
         markSaveSent(entity);
 
-        var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error deleting Attachment {Id}", ct, command.Id);
+        // D-026: the save that removes the row stages the uploaded content's blob delete with it.
+        var save = await CqrsHandlerSupport.TryWriteAsync(t => repoTrxn.DeleteAttachmentAsync(entity, t), logger,
+            "Error deleting Attachment {Id}", ct, command.Id);
         return (save, save.IsSuccess ? entity : null);
     }
 }

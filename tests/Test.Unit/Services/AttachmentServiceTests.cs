@@ -2,11 +2,14 @@
 using EF.Tenancy;
 using EF.Domain.Contracts;
 using EF.Data.Contracts;
+using EF.Storage.Contracts;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Repositories;
+using TaskFlow.Application.Cqrs.Features.Attachments;
 using TaskFlow.Application.Models;
 using TaskFlow.Application.Services;
 using TaskFlow.Domain.Model;
@@ -108,6 +111,32 @@ public class AttachmentServiceTests
         Assert.Contains("not a UUIDv7", result.ErrorMessage!, StringComparison.Ordinal);
     }
 
+    /// <summary>D-075: when the reservation cannot be saved, the upload fails before anything is written to storage.</summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    [DataRow("Service")]
+    [DataRow("Cqrs")]
+    public async Task Given_ReservationSaveFails_When_Uploaded_Then_NoBlobIsWritten(string style)
+    {
+        var ct = TestContext.CancellationToken;
+        var blobs = new Mock<IObjectStorageRepository>();
+        _repoTrxnMock.Setup(r => r.ReserveUploadAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new DbUpdateException("injected reservation failure"));
+        using var stream = new MemoryStream("evidence"u8.ToArray());
+
+        var result = style == "Service"
+            ? await new AttachmentService(NullLogger<AttachmentService>.Instance, _requestContextMock.Object, _repoTrxnMock.Object,
+                _repoQueryMock.Object, _tenantBoundaryValidatorMock.Object, blobs.Object)
+                .UploadAsync(stream, "evidence.txt", "text/plain", 8, AttachmentOwnerType.TaskItem, Guid.NewGuid(), ct: ct)
+            : await new UploadAttachmentHandler(NullLogger<UploadAttachmentHandler>.Instance, _requestContextMock.Object, _repoTrxnMock.Object,
+                _repoQueryMock.Object, _tenantBoundaryValidatorMock.Object, blobs.Object)
+                .HandleAsync(new UploadAttachmentCommand(stream, "evidence.txt", "text/plain", 8, AttachmentOwnerType.TaskItem, Guid.NewGuid()), ct);
+
+        Assert.AreEqual(ErrorConstants.ERROR_SAVE_FAILED, result.ErrorMessage);
+        blobs.VerifyNoOtherCalls();
+        _repoTrxnMock.Verify(r => r.InsertUploadedAsync(It.IsAny<Attachment>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     /// <summary>Verifies that given existing entity, when get, then returns mapped DTO.</summary>
     [TestMethod]
     [TestCategory("Unit")]
@@ -193,7 +222,7 @@ public class AttachmentServiceTests
         var result = await CreateService().DeleteAsync(entity.Id, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
-        _repoTrxnMock.Verify(r => r.Delete(entity), Times.Once);
+        _repoTrxnMock.Verify(r => r.DeleteAttachmentAsync(entity, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     /// <summary>Verifies that given non existent ID, when delete, then returns success idempotent.</summary>

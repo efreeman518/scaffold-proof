@@ -12,6 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
+using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Provider;
 using TaskFlow.Infrastructure.Repositories;
@@ -21,6 +22,13 @@ namespace TaskFlow.Bootstrapper;
 /// <summary>Configures database services for TaskFlow runtime hosts.</summary>
 public static partial class RegisterServices
 {
+    /// <summary>
+    /// The API's default request timeout (D-064), <c>RequestTimeouts:DefaultSeconds</c>, 30 seconds when unset. The API
+    /// policy and the upload grace validation read it here, so they cannot disagree.
+    /// </summary>
+    public static TimeSpan ResolveDefaultRequestTimeout(IConfiguration config) =>
+        TimeSpan.FromSeconds(config.GetValue<int?>("RequestTimeouts:DefaultSeconds") ?? 30);
+
     /// <summary>
     /// The EF.Data tenant query filter fails closed: a context with no tenant reads no tenant rows unless its
     /// scope is marked all-tenants. A caller with no tenant reads every tenant only when it is the system
@@ -111,6 +119,13 @@ public static partial class RegisterServices
         services.AddScoped<ITaskItemRepositoryTrxn, TaskItemRepositoryTrxn>();
         services.AddScoped<ITaskItemRepositoryQuery, TaskItemRepositoryQuery>();
         services.AddScoped<IAttachmentRepositoryTrxn, AttachmentRepositoryTrxn>();
+        // D-075: how long an upload's blob-delete reservation waits before it may delete content whose row never landed.
+        var requestTimeout = ResolveDefaultRequestTimeout(config);
+        services.AddOptions<AttachmentUploadSettings>()
+            .Bind(config.GetSection(AttachmentUploadSettings.ConfigSectionName))
+            .Validate(o => o.OrphanBlobGrace > requestTimeout && o.OrphanBlobGrace <= AttachmentUploadSettings.MaxOrphanBlobGrace,
+                $"AttachmentUpload:OrphanBlobGrace must exceed the request timeout ({requestTimeout}) and be at most {AttachmentUploadSettings.MaxOrphanBlobGrace}.")
+            .ValidateOnStart();
         services.AddScoped<IAttachmentRepositoryQuery, AttachmentRepositoryQuery>();
 
         services.AddScoped<ITagRepositoryQuery, TagRepositoryQuery>();
