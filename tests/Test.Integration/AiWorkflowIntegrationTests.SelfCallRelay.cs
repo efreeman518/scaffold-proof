@@ -4,6 +4,8 @@ using System.Text.Json;
 using EF.Auth.Relay;
 using EF.Data.Contracts;
 using EF.FlowEngine.Abstractions;
+using EF.FlowEngine.Definition;
+using EF.FlowEngine.Model;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Test.Integration.Infrastructure;
@@ -131,6 +133,70 @@ public sealed partial class AiWorkflowIntegrationTests
             "the relayed caller reads its own tenant only, whatever tenant the filter names");
         Assert.AreEqual(HttpStatusCode.Forbidden, refused.StatusCode, Truncate(refusedBody));
         Assert.DoesNotContain("Relay direct", refusedBody, "an untrusted caller's relay header is never applied");
+    }
+
+    /// <summary>
+    /// With the relay on, a self-call from an instance with no tenant (the admin start route sets none) is refused before
+    /// it is sent: the integration node takes its Error edge with the reason in its history, and the instance completes
+    /// on that edge's node instead of faulting or running the call as the host.
+    /// </summary>
+    [TestMethod]
+    public async Task RelayOn_InstanceWithoutATenant_TakesTheErrorEdge_WithTheReasonRecorded()
+    {
+        SkipIfNoSql();
+        var ct = TestContext.CancellationToken;
+        var connectionString = await IsolatedMigratedConnectionStringAsync(ct);
+        using var factory = new FlowEngineWorkflowApiFactory(connectionString, _ => "{}", selfCallRelay: true);
+        using var client = factory.CreateClient();
+        await factory.Services.GetRequiredService<IWorkflowRegistry>().SaveAsync(TenantlessSelfCallProbe(), ct);
+
+        var instanceId = await StartWorkflowAsync(client, TenantlessSelfCallProbeId, new Dictionary<string, object?>(), ct);
+        var (node, body) = await WaitForTerminalAsync(client, instanceId, ct);
+        var status = await WaitForSettledStatusAsync(client, instanceId, ct);
+
+        Assert.AreEqual("n-failed", node, Truncate(body));
+        Assert.AreEqual("Completed", status, "the refused call is the node's Error outcome, not an instance fault. " + Truncate(body));
+        StringAssert.Contains(body, "FlowEngine:SelfCall:TokenScope", "the refusal reason is recorded on the node");
+    }
+
+    private const string TenantlessSelfCallProbeId = "tenantless-self-call-probe";
+
+    private static WorkflowDefinition TenantlessSelfCallProbe() => WorkflowDefinitionBuilder.FromJson("""
+        {
+          "id": "tenantless-self-call-probe",
+          "version": "1.0.0",
+          "status": "Active",
+          "entryNodeId": "n-search",
+          "nodes": {
+            "n-search": {
+              "id": "n-search", "type": "integration",
+              "retryPolicy": { "maxAttempts": 1 },
+              "config": { "clientRef": "taskflow-api", "method": "POST", "path": "/api/v1/task-items/search", "body": { "pageSize": 1 } },
+              "edges": [ { "on": ["Match"], "nextNodeId": "n-output-ok" }, { "on": ["Error"], "nextNodeId": "n-failed" } ]
+            },
+            "n-output-ok": { "id": "n-output-ok", "type": "output", "config": {} },
+            "n-failed": { "id": "n-failed", "type": "output", "config": {} }
+          }
+        }
+        """).Build();
+
+    // The instance's own status once it leaves Running (an output node is reached before the final save).
+    private static async Task<string?> WaitForSettledStatusAsync(HttpClient client, string instanceId, CancellationToken ct)
+    {
+        var deadline = DateTimeOffset.UtcNow.Add(PollTimeout);
+        string? status = null;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            using var response = await client.GetAsync($"/api/flowengine/instances/{instanceId}", ct);
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            status = json.RootElement.EnumerateObject()
+                .FirstOrDefault(p => string.Equals(p.Name, "status", StringComparison.OrdinalIgnoreCase)).Value.ToString();
+            if (status is not ("Running" or "Pending" or "Created"))
+                return status;
+            await Task.Delay(PollInterval, ct);
+        }
+
+        return status;
     }
 
     private static string[] Titles(string searchBody)
