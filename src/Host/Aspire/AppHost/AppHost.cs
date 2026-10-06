@@ -341,6 +341,9 @@ api = WithObjectStorage(api);
 api = WithBroker(api);
 api = WithReadModel(api);
 api = WithLaneEnvironment(api);
+// Workflow self-calls (the "taskflow-api" FlowEngine client) from instances this host starts or resumes, a human-task
+// response or a dashboard start among them, go to the Api's own address; unset, the client falls back to https://localhost.
+api = api.WithEnvironment("FlowEngine__TaskFlowApiBaseUrl", api.GetEndpoint("http"));
 
 // Wire the externally provisioned Azure Foundry chat model into the API.
 if (chat is not null)
@@ -475,6 +478,8 @@ if (!nonAzureLane && (!isTesting || functionsAvailableInTesting || fullLaneAvail
     functions = WithBroker(functions);
     functions = WithReadModel(functions);
     functions = WithLaneEnvironment(functions);
+    // The ai-task-triage trigger starts workflows here, so their self-calls leave from this host.
+    functions = functions.WithEnvironment("FlowEngine__TaskFlowApiBaseUrl", api.GetEndpoint("http"));
 
     if (useRabbitMq)
     {

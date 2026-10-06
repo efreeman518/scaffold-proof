@@ -432,6 +432,10 @@ module api 'modules/container-app.bicep' = {
       { name: 'Cors__AllowedOrigins__1', value: 'https://${reactStaticWebApp.outputs.defaultHostname}' }
       { name: 'Cors__AllowedOrigins__2', value: 'https://${unoStaticWebApp.outputs.defaultHostname}' }
       { name: 'ConnectionStrings__TableStorage1', value: storage.outputs.appStorageTableEndpoint }
+      // Workflow self-calls ("taskflow-api" FlowEngine client) from instances this host resumes, a human-task response
+      // or a dashboard start among them. The Api's own internal ingress FQDN by its stable name, since a module cannot
+      // reference its own outputs; the same address the gateway reaches as api.outputs.fqdn.
+      { name: 'FlowEngine__TaskFlowApiBaseUrl', value: 'https://${prefix}-api.internal.${containerAppsEnv.outputs.defaultDomain}' }
     ], messagingEnvVars)
     secretValues: {
       'redis-connection': redis.outputs.connectionString
@@ -463,6 +467,9 @@ module scheduler 'modules/container-app.bicep' = {
       { name: 'ConnectionStrings__TaskFlowDbContextQuery', value: dbReadConnectionString }
       { name: 'ConnectionStrings__TaskFlowFlowEngineDbContext', value: dbConnectionString }
       { name: 'ConnectionStrings__TickerQDbContext', value: dbConnectionString }
+      // Workflow self-calls from the instances this host starts (the ComplianceCheck job) or resumes: the Api's internal
+      // ingress, as the gateway's cluster destination reaches it.
+      { name: 'FlowEngine__TaskFlowApiBaseUrl', value: 'https://${api.outputs.fqdn}' }
       { name: 'ConnectionStrings__CosmosDb1', value: cosmosDb.outputs.accountEndpoint }
       { name: 'ConnectionStrings__BlobStorage1', value: storage.outputs.appStorageBlobEndpoint }
       { name: 'ConnectionStrings__TableStorage1', value: storage.outputs.appStorageTableEndpoint }
@@ -553,6 +560,9 @@ module functions 'modules/functions.bicep' = {
     storageTableEndpoint: storage.outputs.appStorageTableEndpoint
     appInsightsConnectionString: appInsights.outputs.connectionString
     functionAppScaleLimit: functionAppScaleLimit
+    // The Function App runs outside the Container Apps environment, where the Api's internal ingress is unreachable,
+    // so its workflow self-calls go through the public gateway.
+    taskFlowApiBaseUrl: 'https://${gateway.outputs.fqdn}'
     userAssignedIdentityId: runtimeSqlIdentity.outputs.id
     tags: tags
   }

@@ -279,6 +279,18 @@ public sealed class AppHostLaneTopologyTests
         StringAssert.Contains(schedulerBlock, ".WithEnvironment(\"FlowEngine__TaskFlowApiBaseUrl\", api.GetEndpoint(\"http\"))");
     }
 
+    /// <summary>
+    /// The Api resumes instances (a human-task response, a dashboard start) and Functions starts ai-task-triage, so both
+    /// run workflow nodes that call "taskflow-api" and need the Api's address too.
+    /// </summary>
+    [TestMethod]
+    public void ApiAndFunctions_ReceiveTheApiAddressForWorkflowSelfCalls()
+    {
+        var source = ReadAppHostSource();
+        StringAssert.Contains(source, "api = api.WithEnvironment(\"FlowEngine__TaskFlowApiBaseUrl\", api.GetEndpoint(\"http\"));");
+        StringAssert.Contains(source, "functions = functions.WithEnvironment(\"FlowEngine__TaskFlowApiBaseUrl\", api.GetEndpoint(\"http\"));");
+    }
+
     [TestMethod]
     public void ReadModelResources_AreReferencedOnlyWhenSelected()
     {

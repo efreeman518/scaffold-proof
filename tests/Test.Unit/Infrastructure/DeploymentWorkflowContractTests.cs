@@ -586,7 +586,9 @@ public sealed class DeploymentWorkflowContractTests
             StringAssert.Contains(block, "      - edge");
             StringAssert.Contains(block, "      - app");
         }
-        // The Scheduler starts compliance-check, so the workflow's self-calls leave from it and must reach the Api.
+        // Workflow self-calls leave from every host that runs workflow nodes: the Scheduler (the ComplianceCheck job and the
+        // RabbitMQ trigger) and the Api (human-task responses, dashboard starts). Both must reach the Api.
+        StringAssert.Contains(api, "FlowEngine__TaskFlowApiBaseUrl: ${FlowEngine__TaskFlowApiBaseUrl:-http://api:8080}");
         var scheduler = ServiceBlock(compose, "scheduler").Text;
         StringAssert.Contains(scheduler, "FlowEngine__TaskFlowApiBaseUrl: ${FlowEngine__TaskFlowApiBaseUrl:-http://api:8080}");
         StringAssert.Contains(scheduler, "      - app");

@@ -50,6 +50,9 @@ param appInsightsConnectionString string
 @description('Maximum function app instance count (Flex Consumption scale-out ceiling); pair with host.json serviceBus.maxConcurrentCalls')
 param functionAppScaleLimit int = 20
 
+@description('Base address of the workflow self-call client ("taskflow-api"): the Api as this app can reach it')
+param taskFlowApiBaseUrl string
+
 @description('User-assigned managed identity resource ID used for Azure SQL')
 param userAssignedIdentityId string
 
@@ -118,6 +121,8 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'BlobStorage1__credential', value: 'managedidentity' }
         { name: 'AttachmentBlobContainer', value: 'attachments' }
         { name: 'ConnectionStrings__TableStorage1', value: storageTableEndpoint }
+        // Workflow self-calls from the instances this host starts (the ai-task-triage trigger) or resumes.
+        { name: 'FlowEngine__TaskFlowApiBaseUrl', value: taskFlowApiBaseUrl }
         {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
           value: appInsightsConnectionString
