@@ -32,7 +32,7 @@ public class ChecklistItemRepositoryQuery(TaskFlowDbContextQuery db)
         // ordering
         if (request.Sorts?.Any() ?? false)
         {
-            q = ((IOrderedQueryable<ChecklistItem>)q.OrderBy(request.Sorts)).ThenBy(e => e.Id);
+            q = q.OrderByWithIdTieBreak(request.Sorts, e => e.Id);
         }
         else
         {
