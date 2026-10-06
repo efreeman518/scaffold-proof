@@ -208,6 +208,9 @@ internal sealed class UploadAttachmentHandler(
         // A POST carries no precondition, so a lost save (the reservation was claimed) is a failed upload, never a 412.
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // Logged first, once: the re-read below can throw too, and the original failure must not be lost.
+            logger.AttachmentPersistAfterUploadFailed(ex);
+
             // D-033: a concurrent upload with the same id passed the existence check too and won the insert. Re-read on
             // the query context (this one still tracks the failed insert): the winner makes this a replay or a 409. This
             // upload's blob is left to its reservation either way.
@@ -217,7 +220,6 @@ internal sealed class UploadAttachmentHandler(
                     raced.ToDto(), raced.StorageKey is not null, incoming, racedId));
             }
 
-            logger.SaveFailed(ex, "Error persisting Attachment after upload", []);
             return Result<DefaultResponse<AttachmentDto>>.Failure(ErrorConstants.ERROR_SAVE_FAILED);
         }
 

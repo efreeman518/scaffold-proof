@@ -38,8 +38,12 @@ internal static partial class LogMessages
     [LoggerMessage(EventId = LogEventIds.ApplicationServicesBase + 26, Level = LogLevel.Error, Message = "Error uploading blob for Attachment {FileName}")]
     public static partial void AttachmentBlobUploadFailed(this ILogger logger, Exception exception, string fileName);
 
-    /// <summary>Logs a persistence failure after an Attachment blob upload succeeded.</summary>
-    [LoggerMessage(EventId = LogEventIds.ApplicationServicesBase + 27, Level = LogLevel.Error, Message = "Error persisting Attachment after upload")]
+    /// <summary>
+    /// Logs the failed insert of an uploaded Attachment, before the D-033 re-read decides between a replay, a 409 and the
+    /// save-failed result. Warning: a same-id race replay is expected, and the trace keeps the original failure even when
+    /// the re-read throws.
+    /// </summary>
+    [LoggerMessage(EventId = LogEventIds.ApplicationServicesBase + 27, Level = LogLevel.Warning, Message = "Inserting the uploaded Attachment failed; the caller id re-read decides the result")]
     public static partial void AttachmentPersistAfterUploadFailed(this ILogger logger, Exception exception);
 
     /// <summary>Logs an Attachment update failure.</summary>
