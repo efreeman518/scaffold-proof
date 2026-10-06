@@ -18,7 +18,8 @@ public sealed partial class AiWorkflowIntegrationTests
     /// with <c>FlowEngine:SelfCall:TokenScope</c> set and the workflow host's caller id trusted, the ComplianceCheck job
     /// starts every qualifying tenant, and each instance's API calls act for that instance's tenant. Tenant B's instance
     /// scans B's two due compliance tasks only (the scaffold tenant's due task is not visible to it), reads B's evidence and
-    /// reminds B's task; the scaffold tenant's instance scans its own task only.
+    /// reminds B's task; the scaffold tenant's instance scans its own task only. A re-run the same UTC day starts no
+    /// second instance for either tenant.
     /// </summary>
     [TestMethod]
     public async Task ComplianceCheckJob_StartsOneInstancePerQualifyingTenant_CarryingThatTenant()
@@ -83,6 +84,12 @@ public sealed partial class AiWorkflowIntegrationTests
         Assert.AreEqual(1, await CountCommentsIgnoringTenantAsync(connectionString, dueBWithEvidence.Id, ct),
             "the reminder is posted to B's task as B. " + diagnostics);
         Assert.AreEqual(0, await CountCommentsIgnoringTenantAsync(connectionString, dueA.Id, ct), diagnostics);
+
+        // Same UTC day: one tenant's instance is always older than the other's, the case the engine's own key lookup misses.
+        await RunComplianceCheckJobAsync(factory, connectionString, scheduledRun.AddHours(10), ct);
+        var afterRerun = await ComplianceCheckInstancesAsync(store, ct);
+        Assert.HasCount(2, afterRerun, "a same-day re-run resolves to each tenant's instance of the day. "
+            + string.Join(" | ", afterRerun.Select(i => $"{i.InstanceId} tenant={i.TenantId} created={i.CreatedAt:O}")));
     }
 
     /// <summary>
