@@ -7,7 +7,7 @@ namespace TaskFlow.Api.Endpoints.Shared;
 
 /// <summary>
 /// First line of every search handler. An out-of-range page size is answered with 400 rather than
-/// clamped (GR-18): a silent clamp returns fewer rows than the caller asked for with a 200, and the
+/// clamped (AR-02): a silent clamp returns fewer rows than the caller asked for with a 200, and the
 /// caller has no way to tell that from "there were no more rows".
 /// </summary>
 internal static class SearchRequestGuard

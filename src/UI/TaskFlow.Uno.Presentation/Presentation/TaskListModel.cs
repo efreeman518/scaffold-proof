@@ -35,7 +35,7 @@ public partial record TaskListModel
     private IMessenger Messenger { get; }
 
     // The last page's cursor, kept outside bindable state - nothing in the UI needs it directly,
-    // only LoadMore (walking it forward one page at a time, GR-18).
+    // only LoadMore (walking it forward one page at a time, AR-02).
     private string? _nextCursor;
 
     // -- List + cursor state (individually bindable) --

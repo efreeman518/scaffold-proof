@@ -9,7 +9,7 @@ public static class ErrorConstants
     public const string ERROR_RULE_NAME_INVALID_MESSAGE = "Name is invalid; required pattern: '{0}'";
     public const string ERROR_RULE_INVALID_MESSAGE = "Item is invalid";
 
-    // Idempotent create and paging contract (GR-17, GR-18); the If-Match texts come from EF.AspNetCore.Concurrency.
+    // Idempotent create and paging contract (AR-01, AR-02); the If-Match texts come from EF.AspNetCore.Concurrency.
     public const string ERROR_CURSOR_INVALID = "Cursor is invalid, expired, or does not match the requested sort mode.";
     public const string ERROR_PAGE_SIZE_RANGE = "Page size must be between {0} and {1}.";
     public const string ERROR_CONTENT_TYPE_FILTER_INVALID = "The content type filter must hold 1 to {0} media types of the form type/subtype, each at most {1} characters.";

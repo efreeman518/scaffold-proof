@@ -12,7 +12,7 @@ namespace TaskFlow.Api.Endpoints.Shared;
 /// <summary>
 /// D-074: an <c>Idempotency-Key</c> header on a create or child add, with no body id, is mapped to a stored UUIDv7
 /// before the handler runs, and the body id is set to it. A retried, concurrent or recovered request with the same
-/// key therefore sends the same id, and the existing replay paths (GR-17, D-073) return the stored row, or 409 for
+/// key therefore sends the same id, and the existing replay paths (AR-01, D-073) return the stored row, or 409 for
 /// a divergent payload. A non-empty body id the caller supplied wins and the header is ignored.
 /// </summary>
 internal static class IdempotencyKeyFilter

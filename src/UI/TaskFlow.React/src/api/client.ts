@@ -130,7 +130,7 @@ function ifMatchOf(entity: { version?: number | null }): string {
 }
 
 export const taskFlowApi = {
-  // ---- TaskItems (cursor-only search, GR-18) ----
+  // ---- TaskItems (cursor-only search, AR-02) ----
   searchTasks: (request: TaskItemCursorSearchRequest, signal?: AbortSignal) =>
     post<TaskItemCursorPage, TaskItemCursorSearchRequest>(`${apiVersionRoot}/task-items/search`, request, signal),
 

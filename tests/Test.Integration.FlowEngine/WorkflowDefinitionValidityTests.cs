@@ -296,9 +296,9 @@ public class WorkflowDefinitionValidityTests
     /// Package request 19 asked for a stable per-iteration id so a retried loop iteration recreates the
     /// same subtask instead of a duplicate. It shipped as <c>LoopNodeConfig.IdAs</c>, but the value
     /// <c>LoopNodeExecutor.IterationId</c> stores is a deterministic RFC 4122 <b>version 5</b> UUID over
-    /// instance id + loop node id + index. TaskFlow cannot send that as a create id: GR-17 rejects any
+    /// instance id + loop node id + index. TaskFlow cannot send that as a create id: AR-01 rejects any
     /// caller-supplied id that is not a UUIDv7, because a hash-ordered key fragments the clustered index
-    /// every create lands in - the exact cost GR-17 exists to avoid. The create endpoint answers 400 and
+    /// every create lands in - the exact cost AR-01 exists to avoid. The create endpoint answers 400 and
     /// the loop lands on <c>n-output-failed</c>.
     /// <para>
     /// So the body sends no <c>Id</c>; it sends the engine's per-iteration key in the <c>Idempotency-Key</c> header
@@ -319,7 +319,7 @@ public class WorkflowDefinitionValidityTests
         var body = nodes.GetProperty(loop.BodyEntryNodeId!).GetProperty("config");
         Assert.IsFalse(
             body.GetProperty("body").GetProperty("item").TryGetProperty("Id", out _),
-            "the created subtask must not carry the loop's per-iteration id while that id is a UUIDv5 (GR-17)");
+            "the created subtask must not carry the loop's per-iteration id while that id is a UUIDv5 (AR-01)");
         Assert.AreEqual("Idempotency-Key", body.GetProperty("idempotencyKeyHeader").GetString());
     }
 
@@ -343,7 +343,7 @@ public class WorkflowDefinitionValidityTests
             [new ExecutionInstance { InstanceId = Guid.CreateVersion7().ToString() }, new NodeDefinition { Id = "n-loop" }, 0, null])!;
 
         Assert.AreEqual(5, Guid.Parse(value.Value.GetString()!).Version,
-            "the loop iteration id is no longer a UUIDv5: revisit package request 19 (GR-17 accepts UUIDv7 create ids)");
+            "the loop iteration id is no longer a UUIDv5: revisit package request 19 (AR-01 accepts UUIDv7 create ids)");
     }
 
     /// <summary>Verifies read workflow file behavior and protects the expected test contract.</summary>

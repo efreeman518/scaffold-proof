@@ -7,7 +7,7 @@ using Test.Support;
 namespace Test.Unit.Contracts;
 
 /// <summary>
-/// Unit coverage for the cursor primitives (GR-18): page-size limits and the codec's rejection paths. A
+/// Unit coverage for the cursor primitives (AR-02): page-size limits and the codec's rejection paths. A
 /// cursor that decodes when it should not is a cross-tenant read; a cursor that fails to round-trip is a
 /// broken page-through - both are cheapest to catch here.
 /// The primitives themselves are package types now (<c>EF.Common.Contracts.PageSizeLimits</c>,

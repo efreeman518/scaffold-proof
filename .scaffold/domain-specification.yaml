@@ -236,19 +236,19 @@ globalRules:
     condition: "Every aggregate root or child write (PUT/PATCH/DELETE) must carry an If-Match header naming the aggregate Version; If-Match: * is an explicit trusted-automation override and is logged"
     errorMessage: "If-Match header is required for this write."
 
-  - id: GR-17
+  - id: AR-01
     name: IdempotentCreateByCallerId
     condition: "Create accepts an optional caller-supplied UUIDv7 id; a replay request with an equivalent payload returns the existing entity, a divergent payload is a conflict"
     errorMessage: "A different entity already exists with this id."
 
-  - id: GR-18
+  - id: AR-02
     name: KeysetPagedListReads
     condition: "List reads are keyset (cursor) paged with page size constrained to [1,100]; totals are computed only when explicitly requested (opt-in)"
     errorMessage: "Page size must be between 1 and 100."
 
   - id: GR-19
     name: SemanticSearchOptInAndScoped
-    condition: "Semantic search is an opt-in search provider (Search:Provider = PgVector); results are tenant-scoped and page-bounded like every other list read (GR-18)"
+    condition: "Semantic search is an opt-in search provider (Search:Provider = PgVector); results are tenant-scoped and page-bounded like every other list read (AR-02)"
     errorMessage: "Semantic search is not enabled for this deployment."
 
   - id: GR-20

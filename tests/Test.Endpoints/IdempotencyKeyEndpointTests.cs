@@ -144,7 +144,7 @@ public class IdempotencyKeyEndpointTests
 
     /// <summary>
     /// An empty body id (<see cref="Guid.Empty"/>) is no id, so the header still maps: the same key twice creates one
-    /// task. Before, the header was ignored and the create answered 400 (GR-17 rejects an empty caller id).
+    /// task. Before, the header was ignored and the create answered 400 (AR-01 rejects an empty caller id).
     /// </summary>
     [TestCategory("Endpoint")]
     [DataRow(EndpointStyles.Service)]
