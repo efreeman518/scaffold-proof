@@ -122,6 +122,7 @@ internal sealed class UploadAttachmentHandler(
     ILogger<UploadAttachmentHandler> logger,
     IRequestContext<string, Guid?> requestContext,
     IAttachmentRepositoryTrxn repoTrxn,
+    IAttachmentRepositoryQuery repoQuery,
     ITenantBoundaryValidator tenantBoundaryValidator,
     IObjectStorageRepository? blobStorage = null)
     : IRequestHandler<UploadAttachmentCommand, Result<DefaultResponse<AttachmentDto>>>
@@ -146,7 +147,33 @@ internal sealed class UploadAttachmentHandler(
             return Result<DefaultResponse<AttachmentDto>>.Failure("Blob storage is not configured.");
 
         var tenantId = requestContext.TenantId ?? Guid.Empty;
+        var incoming = new AttachmentDto
+        {
+            FileName = command.FileName, ContentType = command.ContentType, FileSizeBytes = command.FileSizeBytes,
+            OwnerType = command.OwnerType, OwnerId = command.OwnerId
+        };
+
+        // D-033: the row itself is the idempotency record for a caller-supplied UUIDv7 id, so a repeated upload replays
+        // (or answers 409) before it writes a second blob.
+        if (command.Id is Guid callerId)
+        {
+            var existing = await repoTrxn.GetAttachmentAsync(AttachmentId.From(callerId), ct);
+            if (existing is not null)
+            {
+                return Result<DefaultResponse<AttachmentDto>>.Success(IdempotentCreateGuard.ReplayOrThrow(
+                    existing.ToDto(), incoming, IdempotentCreateGuard.IsEquivalent, nameof(Attachment), callerId));
+            }
+        }
+
         var blobName = AttachmentBlobs.NewObjectKey(tenantId, command.OwnerId, command.FileName);
+
+        // D-075: saved before the blob is written, so content whose attachment row never lands is deleted once the
+        // reservation's grace period has passed. The save that inserts the row removes it.
+        var reservationId = Guid.Empty;
+        var reserve = await CqrsHandlerSupport.TryWriteAsync(
+            async t => reservationId = await repoTrxn.ReserveUploadAsync(tenantId, blobName, t), logger,
+            "Error reserving the blob for Attachment {FileName}", ct, command.FileName);
+        if (reserve.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(reserve.ErrorMessage!);
 
         try
         {
@@ -174,9 +201,22 @@ internal sealed class UploadAttachmentHandler(
 
         var entity = entityResult.Value!;
         repoTrxn.Create(ref entity);
+        repoTrxn.ReleaseUploadReservation(reservationId);
 
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error persisting Attachment after upload", ct);
-        if (save.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(save.ErrorMessage!);
+        if (save.IsFailure)
+        {
+            // D-033: a concurrent upload with the same id passed the existence check too and won the insert. Re-read on
+            // the query context (this one still tracks the failed insert): the winner makes this a replay or a 409. This
+            // upload's blob is left to its reservation either way.
+            if (command.Id is Guid racedId && await repoQuery.GetAttachmentAsync(AttachmentId.From(racedId), ct) is { } raced)
+            {
+                return Result<DefaultResponse<AttachmentDto>>.Success(IdempotentCreateGuard.ReplayOrThrow(
+                    raced.ToDto(), incoming, IdempotentCreateGuard.IsEquivalent, nameof(Attachment), racedId));
+            }
+
+            return Result<DefaultResponse<AttachmentDto>>.Failure(save.ErrorMessage!);
+        }
 
         return HandlerHelpers.Success(entity.ToDto());
     }

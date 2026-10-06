@@ -12,6 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
+using TaskFlow.Application.Contracts.Storage;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Provider;
 using TaskFlow.Infrastructure.Repositories;
@@ -111,6 +112,11 @@ public static partial class RegisterServices
         services.AddScoped<ITaskItemRepositoryTrxn, TaskItemRepositoryTrxn>();
         services.AddScoped<ITaskItemRepositoryQuery, TaskItemRepositoryQuery>();
         services.AddScoped<IAttachmentRepositoryTrxn, AttachmentRepositoryTrxn>();
+        // D-075: how long an upload's blob-delete reservation waits before it may delete content whose row never landed.
+        services.AddOptions<AttachmentUploadSettings>()
+            .Bind(config.GetSection(AttachmentUploadSettings.ConfigSectionName))
+            .Validate(o => o.OrphanBlobGrace > TimeSpan.Zero, "AttachmentUpload:OrphanBlobGrace must be positive.")
+            .ValidateOnStart();
         services.AddScoped<IAttachmentRepositoryQuery, AttachmentRepositoryQuery>();
 
         services.AddScoped<ITagRepositoryQuery, TagRepositoryQuery>();

@@ -20,4 +20,18 @@ public interface IAttachmentRepositoryTrxn : IRepositoryTrxn<Attachment, Attachm
     /// propagates unchanged.
     /// </summary>
     Task DeleteAttachmentAsync(Attachment attachment, CancellationToken ct = default);
+
+    /// <summary>
+    /// Saves the unit of work with a reservation for content an upload is about to write under
+    /// <paramref name="storageKey"/>: a blob-delete work row the worker cannot claim before the configured grace period
+    /// (<c>AttachmentUploadSettings.OrphanBlobGrace</c>). When the attachment row is never saved, the reservation deletes
+    /// the orphaned blob (D-075). Returns the reservation id for <see cref="ReleaseUploadReservation"/>.
+    /// </summary>
+    Task<Guid> ReserveUploadAsync(Guid tenantId, string storageKey, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes the reservation <see cref="ReserveUploadAsync"/> saved on this unit of work, so the save that inserts the
+    /// attachment row also drops it.
+    /// </summary>
+    void ReleaseUploadReservation(Guid reservationId);
 }

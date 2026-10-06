@@ -308,6 +308,35 @@ public class AttachmentEndpointTests
         StringAssert.Matches(created.StorageUri, new System.Text.RegularExpressions.Regex(
             $"^https://inmemory\\.blob\\.local/{AttachmentBlobs.ContainerName}/{created.TenantId}/{taskId}/[0-9a-f-]{{36}}/upload-test\\.txt$"));
         Assert.AreEqual(fileBytes.Length, created.FileSizeBytes);
+        Assert.IsEmpty(await BlobDeleteWorkAsync(uploadFactory), "the save that inserted the row removed the upload's reservation (D-075)");
+    }
+
+    /// <summary>
+    /// D-033: a repeated upload with the same caller id replays the stored attachment before it writes anything, so the
+    /// container keeps one blob and no reservation is left behind.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_UploadedCallerId_When_UploadedAgain_Then_ReplaysWithoutASecondBlob(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        var blobs = new InMemoryBlobStorageRepository();
+        using var uploadFactory = UploadFactory(style, blobs);
+        using var client = uploadFactory.CreateClient();
+        var taskId = await CreateParentTaskItem(client);
+        var callerId = Guid.CreateVersion7();
+        using var first = await UploadAsync(client, taskId, "evidence.txt", callerId);
+        Assert.AreEqual(HttpStatusCode.Created, first.StatusCode, await first.Content.ReadAsStringAsync(TestContext.CancellationToken));
+
+        using var again = await UploadAsync(client, taskId, "evidence.txt", callerId);
+
+        Assert.AreEqual(HttpStatusCode.OK, again.StatusCode, await again.Content.ReadAsStringAsync(TestContext.CancellationToken));
+        var replayed = (await again.Content.ReadFromJsonAsync<DefaultResponse<AttachmentDto>>(_jsonOptions, TestContext.CancellationToken))!.Item!;
+        Assert.AreEqual(callerId, replayed.Id);
+        Assert.HasCount(1, (await blobs.ListAsync(AttachmentBlobs.ContainerName, cancellationToken: TestContext.CancellationToken)).Items);
+        Assert.IsEmpty(await BlobDeleteWorkAsync(uploadFactory));
     }
 
     /// <summary>D-075: an upload whose file name carries a path or a ".." segment is a 400, and nothing is stored.</summary>
@@ -579,7 +608,7 @@ public class AttachmentEndpointTests
         new CustomApiFactory(style).WithWebHostBuilder(builder =>
             builder.ConfigureServices(services => services.AddSingleton<IObjectStorageRepository>(blobs)));
 
-    private Task<HttpResponseMessage> UploadAsync(HttpClient client, Guid taskId, string fileName)
+    private Task<HttpResponseMessage> UploadAsync(HttpClient client, Guid taskId, string fileName, Guid? id = null)
     {
         var content = new MultipartFormDataContent();
         var fileContent = new ByteArrayContent("evidence"u8.ToArray());
@@ -587,6 +616,7 @@ public class AttachmentEndpointTests
         content.Add(fileContent, "file", fileName);
         content.Add(new StringContent(((int)AttachmentOwnerType.TaskItem).ToString()), "ownerType");
         content.Add(new StringContent(taskId.ToString()), "ownerId");
+        if (id is { } callerId) content.Add(new StringContent(callerId.ToString()), "id");
         return client.PostAsync("/api/v1/attachments/upload", content, TestContext.CancellationToken);
     }
 

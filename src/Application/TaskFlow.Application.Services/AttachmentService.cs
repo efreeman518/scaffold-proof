@@ -140,7 +140,37 @@ internal class AttachmentService(
             return Result<DefaultResponse<AttachmentDto>>.Failure("Blob storage is not configured.");
 
         var tenantId = RequestTenantId ?? Guid.Empty;
+        var incoming = new AttachmentDto
+        {
+            FileName = fileName, ContentType = contentType, FileSizeBytes = fileSizeBytes, OwnerType = ownerType, OwnerId = ownerId
+        };
+
+        // D-033: the row itself is the idempotency record for a caller-supplied UUIDv7 id, so a repeated upload replays
+        // (or answers 409) before it writes a second blob.
+        if (id is Guid callerId)
+        {
+            var existing = await repoTrxn.GetAttachmentAsync(AttachmentId.From(callerId), ct);
+            if (existing is not null)
+            {
+                return Result<DefaultResponse<AttachmentDto>>.Success(IdempotentCreateGuard.ReplayOrThrow(
+                    existing.ToDto(), incoming, IdempotentCreateGuard.IsEquivalent, nameof(Attachment), callerId));
+            }
+        }
+
         var blobName = AttachmentBlobs.NewObjectKey(tenantId, ownerId, fileName);
+
+        // D-075: saved before the blob is written, so content whose attachment row never lands is deleted once the
+        // reservation's grace period has passed. The save that inserts the row removes it.
+        Guid reservationId;
+        try
+        {
+            reservationId = await repoTrxn.ReserveUploadAsync(tenantId, blobName, ct);
+        }
+        catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
+        {
+            logger.AttachmentCreateFailed(ex);
+            return Result<DefaultResponse<AttachmentDto>>.Failure(ErrorConstants.ERROR_SAVE_FAILED);
+        }
 
         try
         {
@@ -161,6 +191,7 @@ internal class AttachmentService(
 
         var entity = entityResult.Value!;
         repoTrxn.Create(ref entity);
+        repoTrxn.ReleaseUploadReservation(reservationId);
 
         try
         {
@@ -169,6 +200,16 @@ internal class AttachmentService(
         catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.AttachmentPersistAfterUploadFailed(ex);
+
+            // D-033: a concurrent upload with the same id passed the existence check too and won the insert. Re-read on
+            // the query context (this one still tracks the failed insert): the winner makes this a replay or a 409. This
+            // upload's blob is left to its reservation either way.
+            if (id is Guid racedId && await repoQuery.GetAttachmentAsync(AttachmentId.From(racedId), ct) is { } raced)
+            {
+                return Result<DefaultResponse<AttachmentDto>>.Success(IdempotentCreateGuard.ReplayOrThrow(
+                    raced.ToDto(), incoming, IdempotentCreateGuard.IsEquivalent, nameof(Attachment), racedId));
+            }
+
             return Result<DefaultResponse<AttachmentDto>>.Failure(ErrorConstants.ERROR_SAVE_FAILED);
         }
 
