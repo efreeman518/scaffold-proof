@@ -28,7 +28,7 @@ namespace Test.Integration;
 [TestClass]
 [TestCategory("Integration")]
 [DoNotParallelize]
-public sealed class AiWorkflowIntegrationTests
+public sealed partial class AiWorkflowIntegrationTests
 {
     // Scaffold auth identity (ScaffoldPrincipal, EF.Auth fixed principal) the in-process host authenticates every request as.
     private const string TenantId = "00000000-0000-0000-0000-000000000001";

@@ -265,6 +265,20 @@ public sealed class AppHostLaneTopologyTests
         StringAssert.Contains(unoBlock, ".WithEnvironment(\"Gateway__BaseUrl\", gateway.GetEndpoint(\"http\"))");
     }
 
+    /// <summary>
+    /// The ComplianceCheck job starts compliance-check in the Scheduler, so the workflow's "taskflow-api" self-calls
+    /// leave from it; without the Api's address the client falls back to https://localhost and every call fails.
+    /// </summary>
+    [TestMethod]
+    public void Scheduler_ReceivesTheApiAddressForWorkflowSelfCalls()
+    {
+        var source = ReadAppHostSource();
+        var schedulerStart = source.IndexOf("var scheduler =", StringComparison.Ordinal);
+        Assert.IsGreaterThanOrEqualTo(0, schedulerStart);
+        var schedulerBlock = source[schedulerStart..source.IndexOf("WithAuditSink(scheduler)", schedulerStart, StringComparison.Ordinal)];
+        StringAssert.Contains(schedulerBlock, ".WithEnvironment(\"FlowEngine__TaskFlowApiBaseUrl\", api.GetEndpoint(\"http\"))");
+    }
+
     [TestMethod]
     public void ReadModelResources_AreReferencedOnlyWhenSelected()
     {

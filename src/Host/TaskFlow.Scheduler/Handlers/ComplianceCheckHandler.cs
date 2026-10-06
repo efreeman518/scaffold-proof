@@ -14,8 +14,7 @@ namespace TaskFlow.Scheduler.Handlers;
 /// <c>Scheduling:Compliance:WindowDays</c>, and starts one instance per tenant through
 /// <see cref="IFlowEngine.StartBackgroundAsync"/> with <see cref="StartRequest.TenantId"/> set, so the instance and its
 /// <c>compliance-check-item</c> children read evidence as that tenant. The idempotency key is the tenant and the UTC
-/// date of the run: FlowEngine returns the existing instance for a key it already holds, so a same-day re-run starts
-/// nothing new and is not a failure.
+/// date of the run, so a same-day re-run resolves to the instance the first run started and is not a failure.
 /// <para>
 /// One tenant's failed start does not hold back the others' daily check: every tenant is attempted, and the failures
 /// are rethrown together at the end so the run fails visibly through <see cref="ScheduledJobRunner"/>. A re-run is
@@ -25,6 +24,7 @@ namespace TaskFlow.Scheduler.Handlers;
 public sealed class ComplianceCheckHandler(
     ITaskItemSystemRepository systemRepository,
     IFlowEngine engine,
+    IExecutionStateStore stateStore,
     ScheduledJobTelemetry telemetry,
     TimeProvider timeProvider,
     IOptions<ComplianceCheckSettings> settings,
@@ -45,6 +45,7 @@ public sealed class ComplianceCheckHandler(
         var asOfUtc = timeProvider.GetUtcNow();
         var dueBefore = asOfUtc.AddDays(settings.Value.WindowDays);
         var tenants = 0;
+        var started = 0;
         var failures = new List<Exception>();
 
         await foreach (var tenantId in systemRepository.StreamTenantsWithTaggedOpenTasksDueAsync(TagName, dueBefore, PageSize, ct))
@@ -52,7 +53,15 @@ public sealed class ComplianceCheckHandler(
             tenants++;
             try
             {
-                var instance = await engine.StartBackgroundAsync(StartRequestFor(tenantId, asOfUtc, dueBefore), ct);
+                var request = StartRequestFor(tenantId, asOfUtc, dueBefore);
+                if (await FindStartedAsync(request, ct) is { } existing)
+                {
+                    logger.ComplianceCheckAlreadyStarted(tenantId, existing.InstanceId, existing.Status);
+                    continue;
+                }
+
+                var instance = await engine.StartBackgroundAsync(request, ct);
+                started++;
                 logger.ComplianceCheckStarted(tenantId, instance.InstanceId, instance.Status);
             }
             // The job's own cancellation ends the run at once; anything else, a timeout included, is this tenant's failure.
@@ -62,13 +71,33 @@ public sealed class ComplianceCheckHandler(
             }
         }
 
-        telemetry.RecordWork(JobName, tenants, tenants - failures.Count);
-        logger.ComplianceCheckTenantsStarted(tenants - failures.Count, tenants);
+        telemetry.RecordWork(JobName, tenants, started);
+        logger.ComplianceCheckTenantsStarted(started, tenants);
         if (failures.Count > 0)
         {
             throw new AggregateException(
-                $"{WorkflowId} failed to start for {failures.Count} of {tenants} tenants; the others were started.", failures);
+                $"{WorkflowId} failed to start for {failures.Count} of {tenants} tenants; the others were started or already running.", failures);
         }
+    }
+
+    /// <summary>
+    /// The instance already started under this request's key, found by its correlation id (which is the key).
+    /// <para>
+    /// Mitigation for EF.FlowEngine 1.0.207: <see cref="StartRequest.IdempotencyKey"/> is documented to return the existing
+    /// instance, but the SQL state store's <c>QueryAsync</c> pages before it applies the tag filter the engine's key lookup
+    /// uses (<c>Take = 1</c>), so the engine finds the original only while it is the newest instance in the store, and a
+    /// re-run after another tenant's start creates a duplicate. <c>CorrelationId</c> is a column the store filters before
+    /// paging. Remove this lookup when the state store applies the tag filter before paging and a same-day re-run in
+    /// <c>AiWorkflowIntegrationTests.ComplianceCheckJob_StartsOneInstancePerQualifyingTenant_CarryingThatTenant</c> still
+    /// yields one instance per tenant without it. Two runs racing for the same tenant can still both start; TickerQ runs
+    /// one occurrence of the cron job at a time.
+    /// </para>
+    /// </summary>
+    private async Task<ExecutionInstance?> FindStartedAsync(StartRequest request, CancellationToken ct)
+    {
+        var result = await stateStore.QueryAsync(
+            new ExecutionQuery { WorkflowId = WorkflowId, CorrelationId = request.CorrelationId, Take = 1 }, ct);
+        return result.Items.FirstOrDefault();
     }
 
     /// <summary>
@@ -93,7 +122,10 @@ public sealed class ComplianceCheckHandler(
         };
     }
 
-    /// <summary><c>compliance-check:{tenant}:{yyyy-MM-dd}</c>, the UTC date of the run: one instance per tenant per day.</summary>
+    /// <summary>
+    /// <c>compliance-check:{tenant}:{yyyy-MM-dd}</c>, the UTC date of the run: one instance per tenant per day. Also the
+    /// correlation id, so it is exactly 64 characters, the width of the state store's <c>CorrelationId</c> column.
+    /// </summary>
     public static string IdempotencyKey(Guid tenantId, DateTimeOffset asOfUtc) =>
         string.Create(CultureInfo.InvariantCulture, $"{WorkflowId}:{tenantId}:{asOfUtc.UtcDateTime:yyyy-MM-dd}");
 
