@@ -9,6 +9,7 @@ using EF.Grpc;
 using EF.RateLimiting;
 using EF.RateLimiting.Redis;
 using EF.Auth.Relay;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
@@ -91,12 +92,21 @@ public static class RegisterApiServices
     /// Registers authentication: the Scaffold fixed principal, then the EF.Auth trusted-gateway claims relay bound
     /// from the same <c>ForwardedClaims</c> section the Gateway binds. The relay replaces the principal only for an
     /// app-only token from a caller listed in <c>ForwardedClaims:TrustedCallerIds</c> (empty here, so it is inert:
-    /// the Scaffold principal carries no caller id), and the relayed identity holds only the relayed claims.
+    /// the Scaffold principal carries no caller id), and the relayed identity holds only the relayed claims. The package
+    /// transformation runs inside <see cref="RelayedPrincipalMarker"/>, which records the principal it relayed for the
+    /// workflow rate-limit partition.
     /// </summary>
     private static void AddAuthentication(IServiceCollection services, IConfiguration config)
     {
         services.AddTaskFlowAuth(config);
         services.AddForwardedClaimsTransformation(config);
+        var relay = services.SingleOrDefault(d =>
+                d.ServiceType == typeof(IClaimsTransformation) && d.ImplementationType == typeof(ForwardedClaimsTransformation))
+            ?? throw new InvalidOperationException(
+                "AddForwardedClaimsTransformation did not register ForwardedClaimsTransformation as the IClaimsTransformation type.");
+        services.Remove(relay);
+        services.AddSingleton<ForwardedClaimsTransformation>();
+        services.AddSingleton<IClaimsTransformation, RelayedPrincipalMarker>();
     }
 
     /// <summary>Registers authorization dependencies in the service container.</summary>

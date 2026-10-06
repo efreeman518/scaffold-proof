@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using System.Threading.RateLimiting;
 using EF.Auth.Relay;
 using EF.RateLimiting;
@@ -11,13 +10,16 @@ namespace TaskFlow.Api.RateLimiting;
 /// Gives workflow self-calls their own partition and allowance in the tenant limiter, so workflow traffic neither
 /// starves nor is starved by the tenant's interactive traffic. EF.RateLimiting 2.0.118 partitions on the tenant claim
 /// alone, with no caller hook, so this replaces the global limiter it installs with one that asks the same
-/// <see cref="TenantRateLimitPartitioner"/>: a request relayed (its <c>ForwardedClaims:RelayedByClaimType</c> claim) by a
-/// caller in <see cref="WorkflowRateLimitSettings.CallerIds"/> that the default budget would meter by its tenant gets
+/// <see cref="TenantRateLimitPartitioner"/>: a request whose principal the relay built from a trusted caller's header
+/// (<see cref="Auth.RelayedPrincipalMarker"/>), relayed by a caller in both <c>ForwardedClaims:TrustedCallerIds</c> and
+/// <see cref="WorkflowRateLimitSettings.CallerIds"/>, that the default budget would meter by its tenant gets
 /// the tenant's <see cref="WorkflowRateLimitSettings.Budget"/> budget partition (storage key
 /// <c>{prefix}:{namespace}:workflow:tenant:{id}</c>, shared through Redis like every other budget); every other request,
 /// a Gateway-relayed user included, keeps the package's partition. Exempt paths and endpoints with their own budget are
-/// unchanged. A rejection is still reported by the package under the default budget's telemetry tag. With no caller id
-/// configured (the shipped settings) the package's limiter is left in place.
+/// unchanged. A token that carries a <c>ForwardedClaims:RelayedByClaimType</c> claim of its own, issued by an identity
+/// provider rather than built by the relay, never reaches the workflow budget. A rejection is still reported by the
+/// package under the default budget's telemetry tag. With no caller id configured (the shipped settings) the package's
+/// limiter is left in place; with caller ids set, a disabled global limiter fails host start.
 /// </summary>
 internal sealed class WorkflowRateLimitPartitioning(
     TenantRateLimitPartitioner partitioner,
@@ -32,8 +34,15 @@ internal sealed class WorkflowRateLimitPartitioning(
     {
         ArgumentNullException.ThrowIfNull(options);
         var callerIds = workflow.Value.CallerIds;
-        if (callerIds.Count == 0 || options.GlobalLimiter is null)
+        if (callerIds.Count == 0)
             return;
+
+        if (options.GlobalLimiter is null)
+        {
+            throw new InvalidOperationException(
+                $"{WorkflowRateLimitSettings.ConfigSectionName}:CallerIds is set, so RateLimiting:Tenants:UseGlobalLimiter " +
+                "must stay true: the workflow budget replaces a partition of the global limiter.");
+        }
 
         if (!tenantSettings.CurrentValue.Budgets.ContainsKey(WorkflowRateLimitSettings.Budget))
         {
@@ -57,7 +66,7 @@ internal sealed class WorkflowRateLimitPartitioning(
     internal RateLimitPartition<string> Partition(HttpContext context)
     {
         var partition = partitioner.Default(context);
-        if (!IsWorkflowCall(context.User) || !partition.PartitionKey.StartsWith(TenantPartitionPrefix, StringComparison.Ordinal))
+        if (!IsWorkflowCall(context) || !partition.PartitionKey.StartsWith(TenantPartitionPrefix, StringComparison.Ordinal))
             return partition;
 
         // The budget partition carries the same "tenant:{id}" key as the default one; one partitioned limiter holds
@@ -66,8 +75,9 @@ internal sealed class WorkflowRateLimitPartitioning(
         return RateLimitPartition.Get($"{WorkflowRateLimitSettings.Budget}:{budget.PartitionKey}", budget.Factory);
     }
 
-    private bool IsWorkflowCall(ClaimsPrincipal user) =>
-        user.Identity?.IsAuthenticated == true
-        && user.FindFirst(relay.Value.RelayedByClaimType)?.Value is { } caller
+    private bool IsWorkflowCall(HttpContext context) =>
+        Auth.RelayedPrincipalMarker.IsRelayed(context)
+        && context.User.FindFirst(relay.Value.RelayedByClaimType)?.Value is { } caller
+        && relay.Value.TrustedCallerIds.Contains(caller, StringComparer.OrdinalIgnoreCase)
         && workflow.Value.CallerIds.Contains(caller, StringComparer.OrdinalIgnoreCase);
 }
