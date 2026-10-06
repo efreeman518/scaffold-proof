@@ -9,12 +9,16 @@ using EF.Grpc;
 using EF.RateLimiting;
 using EF.RateLimiting.Redis;
 using EF.Auth.Relay;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http.Timeouts;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json.Serialization;
 using TaskFlow.Api.Auth;
 using TaskFlow.Api.Serialization;
 using TaskFlow.Api.Endpoints;
+using TaskFlow.Api.RateLimiting;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Models.Serialization;
@@ -88,12 +92,21 @@ public static class RegisterApiServices
     /// Registers authentication: the Scaffold fixed principal, then the EF.Auth trusted-gateway claims relay bound
     /// from the same <c>ForwardedClaims</c> section the Gateway binds. The relay replaces the principal only for an
     /// app-only token from a caller listed in <c>ForwardedClaims:TrustedCallerIds</c> (empty here, so it is inert:
-    /// the Scaffold principal carries no caller id), and the relayed identity holds only the relayed claims.
+    /// the Scaffold principal carries no caller id), and the relayed identity holds only the relayed claims. The package
+    /// transformation runs inside <see cref="RelayedPrincipalMarker"/>, which records the principal it relayed for the
+    /// workflow rate-limit partition.
     /// </summary>
     private static void AddAuthentication(IServiceCollection services, IConfiguration config)
     {
         services.AddTaskFlowAuth(config);
         services.AddForwardedClaimsTransformation(config);
+        var relay = services.SingleOrDefault(d =>
+                d.ServiceType == typeof(IClaimsTransformation) && d.ImplementationType == typeof(ForwardedClaimsTransformation))
+            ?? throw new InvalidOperationException(
+                "AddForwardedClaimsTransformation did not register ForwardedClaimsTransformation as the IClaimsTransformation type.");
+        services.Remove(relay);
+        services.AddSingleton<ForwardedClaimsTransformation>();
+        services.AddSingleton<IClaimsTransformation, RelayedPrincipalMarker>();
     }
 
     /// <summary>Registers authorization dependencies in the service container.</summary>
@@ -143,7 +156,9 @@ public static class RegisterApiServices
     /// (EF.RateLimiting.Redis, one allowance across replicas, fail-open with <c>ratelimit.backend_failure</c>);
     /// without it they stay in process, which is correct on one replica only. The health policies stay in process and
     /// per client IP because they protect this instance's probes and must work when Redis does not; the /healthz
-    /// probes carry DisableRateLimiting (MapEfHealthEndpoints), which skips every limiter.
+    /// probes carry DisableRateLimiting (MapEfHealthEndpoints), which skips every limiter. Workflow self-calls relayed by a
+    /// caller in <c>RateLimiting:Workflow:CallerIds</c> spend the tenant's <c>workflow</c> budget instead of its tier
+    /// (<see cref="WorkflowRateLimitPartitioning"/>); the shipped list is empty.
     /// </summary>
     private static void AddRateLimiting(IServiceCollection services, IConfiguration config)
     {
@@ -154,6 +169,8 @@ public static class RegisterApiServices
         services.AddTenantRateLimiting(config);
         if (services.HasSharedRedis())
             services.AddRedisRateLimiting();
+        services.AddOptions<WorkflowRateLimitSettings>().Bind(config.GetSection(WorkflowRateLimitSettings.ConfigSectionName));
+        services.AddSingleton<IPostConfigureOptions<RateLimiterOptions>, WorkflowRateLimitPartitioning>();
 
         services.AddRateLimiter(options => options
             .AddPerClientIpFixedWindowPolicy("HealthMemory", healthMemoryPermitLimit, TimeSpan.FromSeconds(10), queueLimit: 5)

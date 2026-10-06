@@ -46,18 +46,25 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
     private readonly Func<string, string> _chatReply;
     private readonly Action<IHttpClientBuilder>? _configureSelfCallClient;
     private readonly Action<IServiceCollection>? _configureServices;
+    private readonly bool _selfCallRelay;
 
     /// <param name="configureSelfCallClient">Adds test handlers to the "taskflow-api" self-call client, inside its resilience handler.</param>
     /// <param name="configureServices">Last service registrations, after the host's own (a staged race, for instance).</param>
+    /// <param name="selfCallRelay">
+    /// Turns the workflow self-call relay on (D-068) with the test-only token scheme of <see cref="SelfCallRelayTestAuth"/>:
+    /// the self-calls then act for their instance's tenant instead of the scaffold principal.
+    /// </param>
     public FlowEngineWorkflowApiFactory(
         string connectionString,
         Func<string, string> chatReply,
         Action<IHttpClientBuilder>? configureSelfCallClient = null,
-        Action<IServiceCollection>? configureServices = null)
+        Action<IServiceCollection>? configureServices = null,
+        bool selfCallRelay = false)
     {
         _chatReply = chatReply;
         _configureSelfCallClient = configureSelfCallClient;
         _configureServices = configureServices;
+        _selfCallRelay = selfCallRelay;
 
         // Development so the host AND Program's own config-driven gates (the migration startup tasks read
         // config["ASPNETCORE_ENVIRONMENT"]) both see Development. Set as an env var so WebApplication.CreateBuilder
@@ -80,6 +87,11 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
         }
         // The host must open the same provider as the container the test created the database on.
         _environment.Set("Database__Provider", TestHostingLane.DatabaseProvider.ToString());
+        if (selfCallRelay)
+        {
+            foreach (var (key, value) in SelfCallRelayTestAuth.Environment)
+                _environment.Set(key, value);
+        }
         ConfigureStrictLaneEnvironment();
     }
 
@@ -127,6 +139,8 @@ internal sealed class FlowEngineWorkflowApiFactory : WebApplicationFactory<Progr
             var selfCall = services.AddHttpClient("taskflow-api")
                 .ConfigurePrimaryHttpMessageHandler(() => Server.CreateHandler());
             _configureSelfCallClient?.Invoke(selfCall);
+            if (_selfCallRelay)
+                SelfCallRelayTestAuth.Register(services);
             _configureServices?.Invoke(services);
         });
     }

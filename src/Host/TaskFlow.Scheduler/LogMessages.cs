@@ -57,7 +57,7 @@ internal static partial class LogMessages
     public static partial void ComplianceCheckRunSummary(this ILogger logger, int tenants, int started, int alreadyStarted, int notStarted, int failed);
 
     /// <summary>Logs a tenant with due compliance tasks that the run cannot check: the workflow's API calls act for another tenant.</summary>
-    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 23, Level = LogLevel.Warning, Message = "Compliance check not started for tenant {TenantId}: the workflow's API calls run as the scaffold tenant {SelfCallTenantId}, so they cannot read this tenant's tasks")]
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 23, Level = LogLevel.Warning, Message = "Compliance check not started for tenant {TenantId}: no self-call relay is configured (FlowEngine:SelfCall:TokenScope), so the workflow's API calls run as the scaffold tenant {SelfCallTenantId} and cannot read this tenant's tasks")]
     public static partial void ComplianceCheckTenantNotServed(this ILogger logger, Guid tenantId, Guid selfCallTenantId);
 
     // EventIds SchedulerBase + 18 and + 19 were TickerQCronManagerUnavailable / TickerQCronJobsSeeded. The cron

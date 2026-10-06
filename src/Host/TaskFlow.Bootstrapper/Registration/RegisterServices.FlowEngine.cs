@@ -1,9 +1,14 @@
+using EF.AspNetCore.RequestContext;
+using EF.Auth.Relay;
+using EF.Auth.Tokens;
 using EF.FlowEngine;
+using EF.FlowEngine.Abstractions;
 using EF.FlowEngine.AdminApi;
 using EF.FlowEngine.Clients;
 using EF.FlowEngine.Clients.AI;
 using EF.FlowEngine.Clients.Http;
 using EF.FlowEngine.Clients.ServiceBus;
+using EF.FlowEngine.Executors;
 using EF.FlowEngine.Model;
 using EF.FlowEngine.Sql;
 using EF.Host;
@@ -14,6 +19,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Infrastructure.Messaging.RabbitMq;
@@ -50,6 +56,7 @@ public static partial class RegisterServices
             .UseCircuitBreakerSql<TaskFlowFlowEngineDbContext>()
             // D-075: document nodes read attachment evidence from the lane's object storage (Azure Blob or S3).
             .UseDocumentStore<AttachmentDocumentStore>();
+        RunHttpNodesInTheInstanceTenant(services);
 
         // Retention removes terminal workflow instances so the FlowEngine state store stays bounded.
         // UseRetentionPolicy registers a hosted service, and every host loading this assembly would run its
@@ -93,13 +100,7 @@ public static partial class RegisterServices
     {
         // Self-call client - workflows that mutate TaskItems do so through the public API
         // (preserves auth, validation, audit, integration-event publishing).
-        var apiBaseUrl = config["FlowEngine:TaskFlowApiBaseUrl"]
-            ?? config["Gateway:BaseUrl"]
-            ?? "https://localhost";
-        // The If-Match: * trusted-automation override (D-032) travels in each PATCH node's own
-        // "headers" config (FlowEngine forwards IntegrationNodeConfig.Headers), so this
-        // client needs no message handler of its own.
-        AddTaskFlowApiHttpClient(fe, services, apiBaseUrl);
+        AddTaskFlowApiHttpClient(fe, services, config);
 
         if (ResolveMessagingProvider(config) == MessagingProvider.RabbitMq)
         {
@@ -139,13 +140,89 @@ public static partial class RegisterServices
     /// <c>AddResilientHttpClient</c> replaces the inherited ServiceDefaults handler (D-063) on this dedicated named
     /// client with the package pipeline: one send per node attempt for every method, with the timeouts and circuit
     /// breaker kept. The adapter creates the named client from the factory per request, so a workflow can call the
-    /// host that runs it.
+    /// host that runs it. <see cref="SelfCallRelayHandler"/> runs inside that pipeline, once per attempt, and relays the
+    /// instance tenant when <c>FlowEngine:SelfCall:TokenScope</c> is set (D-068). The If-Match: * trusted-automation
+    /// override (D-032) travels in each PATCH node's own "headers" config (FlowEngine forwards
+    /// IntegrationNodeConfig.Headers). The client follows no redirect: the transport would send the relay token and
+    /// header to the redirect target below the handler's base-address check, and no self-call address redirects.
     /// </summary>
-    internal static IHttpClientBuilder AddTaskFlowApiHttpClient(FlowEngineBuilder fe, IServiceCollection services, string apiBaseUrl)
+    internal static IHttpClientBuilder AddTaskFlowApiHttpClient(FlowEngineBuilder fe, IServiceCollection services, IConfiguration config)
     {
-        var client = services.AddHttpClient(TaskFlowApiClientName, c => c.BaseAddress = new Uri(apiBaseUrl));
+        var apiBaseUrl = config["FlowEngine:TaskFlowApiBaseUrl"]
+            ?? config["Gateway:BaseUrl"]
+            ?? "https://localhost";
+        var baseAddress = new Uri(apiBaseUrl);
+        AddSelfCallRelay(services, config, baseAddress);
+        var client = services.AddHttpClient(TaskFlowApiClientName, c => c.BaseAddress = baseAddress);
         fe.AddResilientHttpClient(TaskFlowApiClientName, TaskFlowApiClientName);
-        return client;
+        return client
+            .ConfigurePrimaryHttpMessageHandler((handler, _) => FollowNoRedirects(handler))
+            .AddHttpMessageHandler<SelfCallRelayHandler>();
+    }
+
+    /// <summary>Turns automatic redirects off on the self-call client's primary handler, whichever handler type it is.</summary>
+    internal static void FollowNoRedirects(HttpMessageHandler handler)
+    {
+        switch (handler)
+        {
+            case SocketsHttpHandler sockets:
+                sockets.AllowAutoRedirect = false;
+                break;
+            case HttpClientHandler client:
+                client.AllowAutoRedirect = false;
+                break;
+            default:
+                throw new InvalidOperationException(
+                    $"The {TaskFlowApiClientName} client's primary handler is a {handler.GetType().Name}; redirects cannot be turned off on it.");
+        }
+    }
+
+    /// <summary>
+    /// The self-call relay settings and their token source. <c>ForwardedClaims</c> is bound into a named instance so the
+    /// Api's own instance (its relay transformation) is bound once. With the relay configured, host start fails when the
+    /// allowlist would drop a relayed claim type. Tokens come from <c>EF.Auth</c> <see cref="AccessTokenCache"/> over the
+    /// host credential (<c>ManagedIdentityClientId</c>, <c>AzureTenantId</c>), as the Gateway acquires its tokens.
+    /// </summary>
+    private static void AddSelfCallRelay(IServiceCollection services, IConfiguration config, Uri baseAddress)
+    {
+        services.AddOptions<ForwardedClaimsOptions>(SelfCallRelayOptions.ForwardedClaimsOptionsName)
+            .Bind(config.GetSection(ForwardedClaimsOptions.ConfigSectionName));
+        services.AddOptions<SelfCallRelayOptions>()
+            .Bind(config.GetSection(SelfCallRelayOptions.ConfigSectionName))
+            .Configure(relay => relay.ApiBaseAddress = baseAddress)
+            .Validate<IOptionsMonitor<ForwardedClaimsOptions>, IOptions<HttpRequestContextOptions>>(
+                (relay, claims, requestContext) => !relay.IsRelayConfigured || SelfCallRelayHandler.DroppedClaimTypes(
+                    claims.Get(SelfCallRelayOptions.ForwardedClaimsOptionsName), requestContext.Value).Count == 0,
+                $"{SelfCallRelayOptions.ConfigSectionName}:TokenScope is set, so ForwardedClaims:ClaimTypes must list every " +
+                "relayed claim type: the tenant claim, sub, and the .NET name and role claim types.")
+            .ValidateOnStart();
+        services.AddAzureTokenCredential(config);
+        services.AddAccessTokenCache();
+        services.AddTransient<SelfCallRelayHandler>();
+    }
+
+    /// <summary>
+    /// Wraps the node executors that call request-response clients (<c>integration</c>, <c>fetch</c>) in
+    /// <see cref="InstanceTenantNodeExecutor"/>, so a self-call knows the tenant of the instance it runs for.
+    /// <c>AddFlowEngine</c> registers each as an <see cref="INodeExecutor"/> implementation type; the wrapper keeps that
+    /// registration's lifetime, and a registration of another shape fails host start rather than leaving the self-call
+    /// without its tenant.
+    /// </summary>
+    internal static void RunHttpNodesInTheInstanceTenant(IServiceCollection services)
+    {
+        foreach (var executorType in new[] { typeof(IntegrationNodeExecutor), typeof(FetchNodeExecutor) })
+        {
+            var registration = services.SingleOrDefault(d =>
+                    d.ServiceType == typeof(INodeExecutor) && d.ImplementationType == executorType)
+                ?? throw new InvalidOperationException(
+                    $"AddFlowEngine did not register {executorType.Name} as an {nameof(INodeExecutor)} implementation type, " +
+                    "so the workflow self-call relay cannot read the instance tenant.");
+            services.Remove(registration);
+            services.Add(ServiceDescriptor.Describe(
+                typeof(INodeExecutor),
+                sp => new InstanceTenantNodeExecutor((INodeExecutor)ActivatorUtilities.CreateInstance(sp, executorType)),
+                registration.Lifetime));
+        }
     }
 
     internal static string ResolveFlowEngineServiceBusTopic(IConfiguration config) =>
