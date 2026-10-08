@@ -36,7 +36,7 @@ on:
       includeFullAcceptance:
         type: boolean
         default: false
-        description: "Run complete live Aspire host/UI and browser acceptance on the workstation runner"
+        description: "Run complete live Aspire host/UI and browser acceptance on a hosted runner"
       includeComposeSmoke:
         type: boolean
         default: false
@@ -166,7 +166,7 @@ jobs:
           --results-directory ./tests/TestResults
 
       # Deterministic graph construction only. This proves exact resource membership without claiming the
-      # containers or hosts started; the manual workstation job below owns runnable full-lane proof.
+      # containers or hosts started; the manual full-lane-acceptance job below owns runnable full-lane proof.
       - name: Aspire lane topology contracts
         run: >
           dotnet test tests/Test.Aspire/Test.Aspire.csproj
@@ -385,12 +385,14 @@ jobs:
             ./tests/TestResults/**/*.dmp
           if-no-files-found: warn
 
-  # Complete runnable graph proof is manual and uses the zero-billable-minute workstation runner. Unlike
-  # the deterministic topology contracts, this starts every lane host and UI, then drives all three UIs.
+  # Complete runnable graph proof is manual. Unlike the deterministic topology contracts, this starts every lane
+  # host and UI, then drives all three UIs. Hosted: this repo is public, so hosted minutes are free and a
+  # self-hosted runner would expose the machine to fork code (the old [self-hosted, workstation] target has no
+  # runner registered here, so dispatches queued until GitHub cancelled them).
   full-lane-acceptance:
     needs: build-and-test
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeFullAcceptance == true }}
-    runs-on: [self-hosted, workstation]
+    runs-on: ubuntu-latest
     timeout-minutes: 120
     defaults:
       run:
@@ -419,7 +421,16 @@ jobs:
             tests/Test.PlaywrightUI/package-lock.json
             src/UI/TaskFlow.React/package-lock.json
 
-      - name: Verify workstation runtime prerequisites
+      - name: Install runtime prerequisites
+        run: |
+          dotnet workload install wasm-tools
+          if ($LASTEXITCODE -ne 0) { throw "dotnet workload install wasm-tools failed." }
+          if ("${{ inputs.lane }}" -in @("both", "Azure")) {
+            npm install --global azure-functions-core-tools@4 --unsafe-perm true
+            if ($LASTEXITCODE -ne 0) { throw "Azure Functions Core Tools install failed." }
+          }
+
+      - name: Verify runtime prerequisites
         run: |
           docker info | Out-Null
           if ($LASTEXITCODE -ne 0) {
