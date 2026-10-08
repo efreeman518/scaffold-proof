@@ -286,7 +286,8 @@ public sealed class DeploymentWorkflowContractTests
         var fullJob = workflow[fullStart..databaseStart];
 
         StringAssert.Contains(fullJob, "inputs.includeFullAcceptance == true");
-        StringAssert.Contains(fullJob, "runs-on: [self-hosted, workstation]");
+        StringAssert.Contains(fullJob, "runs-on: ubuntu-latest");
+        StringAssert.Contains(fullJob, "dotnet workload install wasm-tools");
         StringAssert.Contains(fullJob, "TASKFLOW_ASPIRE_FULL_LANE: \"true\"");
         StringAssert.Contains(fullJob, "TASKFLOW_ASPIRE_SCHEDULER_AVAILABLE: \"true\"");
         StringAssert.Contains(fullJob, "TASKFLOW_REACT_TESTS_ENABLED: \"true\"");
@@ -324,15 +325,14 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(fullJob, "Run: dotnet workload install wasm-tools");
         Assert.IsFalse(fullJob.Contains("dotnet workload install wasm-tools aspire", StringComparison.Ordinal),
             ".NET 10 Aspire is package-based and has no workload ID.");
-        Assert.IsFalse(
+        Assert.IsTrue(
             System.Text.RegularExpressions.Regex.IsMatch(
                 fullJob,
                 "^\\s+dotnet workload install wasm-tools\\s*$",
                 System.Text.RegularExpressions.RegexOptions.Multiline),
-            "A self-hosted CI job must not mutate machine-wide workloads.");
+            "The hosted runner starts without wasm-tools, so the job installs it (this public repo has no self-hosted runner).");
         StringAssert.Contains(fullJob, "$azureSelected = \"${{ inputs.lane }}\" -in @(\"both\", \"Azure\")");
         StringAssert.Contains(fullJob, "if ($azureSelected -and -not (Get-Command func");
-        Assert.IsFalse(fullJob.Contains("runs-on: ubuntu-latest", StringComparison.Ordinal));
 
         Assert.IsFalse(
             System.Text.RegularExpressions.Regex.IsMatch(
