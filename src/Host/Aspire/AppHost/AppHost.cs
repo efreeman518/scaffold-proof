@@ -130,7 +130,8 @@ else
         .RunAsEmulator(emulator => emulator
             .WithImage(ContainerImages.AzuriteRepository)
             .WithImageRegistry(ContainerImages.MicrosoftContainerRegistry)
-            .WithImageTag(ContainerImages.AzuriteTag));
+            .WithImageTag(ContainerImages.AzuriteTag)
+            .WithEnvironment(ContainerImages.AzuriteSkipApiVersionCheckVariable, "true"));
     blobs = storage.AddBlobs("BlobStorage1");
     tables = storage.AddTables("TableStorage1");
 }

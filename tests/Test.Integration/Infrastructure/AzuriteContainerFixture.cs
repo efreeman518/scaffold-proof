@@ -15,7 +15,9 @@ internal static class AzuriteContainerFixture
     // Pass the image explicitly (the parameterless AzuriteBuilder() ctor is obsolete); pin the tag
     // to latest like every other emulator.
     private static readonly ContainerFixture<AzuriteContainer> Azurite =
-        new(() => new AzuriteBuilder(ContainerImages.Azurite).Build());
+        new(() => new AzuriteBuilder(ContainerImages.Azurite)
+            .WithEnvironment(ContainerImages.AzuriteSkipApiVersionCheckVariable, "true")
+            .Build());
 
     /// <summary>Startup failure recorded by the fixture; null when the container started cleanly.</summary>
     internal static Exception? StartupError => Azurite.StartupError;
