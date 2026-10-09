@@ -36,7 +36,7 @@ endpoint change fails this test, not silently.
 
 ## 2. Regenerate the .NET Refit client
 
-The root `dotnet-tools.json` pins Refitter 2.2.0 so regeneration uses the same generator version locally and in automation.
+The root `dotnet-tools.json` pins Refitter 2.3.0 so regeneration uses the same generator version locally and in automation.
 
 ```powershell
 dotnet tool run refitter -- --settings-file src/UI/TaskFlow.ApiClient/.refitter --no-banner
@@ -74,9 +74,8 @@ writes its full effective settings back out, so it stays self-documenting). Nota
 
 `POST /api/v1/attachments/upload` is a known generation gap: OpenAPI describes its file part as a
 `multipart/form-data` schema property (`"type": "string", "format": "binary"`), and Refitter's
-`--interface-only` mode recognizes the `[Multipart]` shape for the surrounding scalar fields but
-drops the file part entirely - the generated `UploadAttachment` method can never actually send a
-file. It is left in the generated file (harmless, unused) rather than hand-patched, so regeneration
+`--interface-only` mode emits the `[Multipart]` method with that file part typed `object`, not a
+Refit `StreamPart`, so the generated `UploadAttachment` method is not the upload path. It is left in the generated file (harmless, unused) rather than hand-patched, so regeneration
 stays this one command. The real upload path is hand-written: `IAttachmentUploadClient` (its own
 interface, not a second partial of `ITaskFlowApiClient`), using Refit's `StreamPart`. That shape is
 also a case the Refit *source generator* cannot build (`RF006`, suppressed at that one method with
@@ -99,7 +98,7 @@ flattened `DefaultResponseOfTaskItemDto`-equivalent shape is structurally identi
 
 ## Tool versions
 
-- `refitter` 2.2.0, pinned in `dotnet-tools.json` (repo-local, `dotnet tool restore`).
+- `refitter` 2.3.0, pinned in `dotnet-tools.json` (repo-local, `dotnet tool restore`).
 - `openapi-typescript` 7.13.0, pinned as a `devDependency` in `src/UI/TaskFlow.React/package.json`.
 - `Microsoft.Extensions.ApiDescription.Server` 10.0.12 (matches the `Microsoft.AspNetCore.OpenApi`
   pin), `PackageVersion` in `Directory.Packages.props`.
