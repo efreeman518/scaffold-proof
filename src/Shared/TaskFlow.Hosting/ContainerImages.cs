@@ -23,7 +23,7 @@ public static class ContainerImages
     public const string Azurite = $"{MicrosoftContainerRegistry}/{AzuriteRepository}:{AzuriteTag}";
 
     // Third-party mitigation: Azure.Storage.Blobs 12.30 (the floor of EF.Storage and EF.AspNetCore.DataProtection
-    // 2.0.130) sends service version 2026-10-06, and Azurite 3.37.0, the latest release, accepts up to 2026-06-06 and
+    // 2.0.131) sends service version 2026-10-06, and Azurite 3.37.0, the latest release, accepts up to 2026-06-06 and
     // answers every other version 400 InvalidHeaderValue. Every Azurite container sets this variable to "true".
     // Remove it when an Azurite release supports the SDK's service version and the Azure lane passes without it.
     public const string AzuriteSkipApiVersionCheckVariable = "AZURITE_SKIP_API_VERSION_CHECK";

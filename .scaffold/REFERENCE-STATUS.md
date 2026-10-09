@@ -4,13 +4,13 @@ Canonical current evidence for the TaskFlow reference application. Historical ph
 
 > Update this file only from observed results. TaskFlow CI records the scaffold checkout commit used for cross-repository validation so failures remain diagnosable without creating a compatibility pin.
 
-TaskFlow runs on the EF.Packages 2.0 platform packages (every `EF.*` platform id at 2.0.130; EF.FilterBuilder and the EF.FlowEngine ids at 1.0.235). Every NuGet package in `Directory.Packages.props`, the repository tools and the npm packages are on their latest stable release (2026-10-09), except `typescript` (held on ~6.0.3: typescript-eslint 8.71.1 accepts typescript >=4.8.4 <6.1.0) and `@types/node` (24.19.2, the Node 24 line CI runs, not 26.x); `Aspire.Azure.AI.Inference` is on its 13.6.1 preview line (no stable release). Results below distinguish passed, blocked, and not-run evidence; each table names its run date.
+TaskFlow runs on the EF.Packages 2.0 platform packages (every `EF.*` platform id at 2.0.131; EF.FilterBuilder and the EF.FlowEngine ids at 1.0.235). Every NuGet package in `Directory.Packages.props`, the repository tools and the npm packages are on their latest stable release (2026-10-09), except `typescript` (held on ~6.0.3: typescript-eslint 8.71.1 accepts typescript >=4.8.4 <6.1.0) and `@types/node` (24.19.2, the Node 24 line CI runs, not 26.x); `Aspire.Azure.AI.Inference` is on its 13.6.1 preview line (no stable release). Results below distinguish passed, blocked, and not-run evidence; each table names its run date.
 
 ## Build Status
 
 | Field | Value |
 |---|---|
-| Last verified | 2026-10-09 (Release `--no-incremental` build, vulnerability audit, Test.Unit, Test.Architecture, Test.Endpoints, Test.Integration.FlowEngine, Test.Integration on all three lanes, `AppHostLaneTopologyTests`, `ComplianceCheckSchedulerSmokeTests` and the Playwright React project, on EF.* 2.0.130 and EF.FlowEngine 1.0.235); 2026-10-05 (Test.UI, Test.Mutation; Uno build on EF.FlowEngine 1.0.204); 2026-09-29 (Aspire topology and core-lane meshes on both lanes, NonAzure full-lane graph, Test.PlaywrightUI on both lanes, Test.Load on the NonAzure dev stack); 2026-09-16 (mobile, images, deployment lanes) |
+| Last verified | 2026-10-09 (Release `--no-incremental` build, vulnerability audit, Test.Unit, Test.Architecture, Test.Endpoints, Test.Integration.FlowEngine, Test.Integration on all three lanes, `AppHostLaneTopologyTests`, `ComplianceCheckSchedulerSmokeTests` and the Playwright React project, on EF.* 2.0.131 and EF.FlowEngine 1.0.235); 2026-10-05 (Test.UI, Test.Mutation; Uno build on EF.FlowEngine 1.0.204); 2026-09-29 (Aspire topology and core-lane meshes on both lanes, NonAzure full-lane graph, Test.PlaywrightUI on both lanes, Test.Load on the NonAzure dev stack); 2026-09-16 (mobile, images, deployment lanes) |
 | Solution | `TaskFlow.slnx` (47 projects) |
 | Target framework | .NET 10 |
 | Configuration | Release |
@@ -29,7 +29,7 @@ A Debug restore of the Uno project followed by a Release `--no-restore` build fa
 
 ### Fast matrix
 
-Release `--no-build` after a `--no-incremental` Release solution build (0 warnings, 0 errors), run serially; 2026-10-09 (EF.* 2.0.130, EF.FlowEngine and EF.FilterBuilder 1.0.235) for Test.Unit, Test.Architecture, Test.Endpoints and Test.Integration.FlowEngine; 2026-10-05 for Test.UI and Test.Mutation; 2026-09-29 for Test.PlaywrightUI. No failed, skipped, or inconclusive tests:
+Release `--no-build` after a `--no-incremental` Release solution build (0 warnings, 0 errors), run serially; 2026-10-09 (EF.* 2.0.131, EF.FlowEngine and EF.FilterBuilder 1.0.235) for Test.Unit, Test.Architecture, Test.Endpoints and Test.Integration.FlowEngine; 2026-10-05 for Test.UI and Test.Mutation; 2026-09-29 for Test.PlaywrightUI. No failed, skipped, or inconclusive tests:
 
 | Project | Passed | Duration |
 |---|---:|---:|
@@ -46,7 +46,7 @@ Release `--no-build` after a `--no-incremental` Release solution build (0 warnin
 
 ### Component containers
 
-Release `--no-build`, Podman Docker-compatible context; Test.Integration 2026-10-09 on all three lanes (EF.* 2.0.130, EF.FlowEngine 1.0.235), Test.E2E 2026-09-29:
+Release `--no-build`, Podman Docker-compatible context; Test.Integration 2026-10-09 on all three lanes (EF.* 2.0.131, EF.FlowEngine 1.0.235), Test.E2E 2026-09-29:
 
 | Lane | Project | Passed | Skipped | Duration |
 |---|---|---:|---:|---:|
@@ -120,7 +120,7 @@ Machine-level updates still blocked outside the repository: installed workloads 
 
 Run `dotnet list package --vulnerable --include-transitive` and capture findings here. Severity policy: [scaffold execution gates](https://github.com/efreeman518/scaffold-ai/blob/main/support/execution-gates.md#vulnerability-audit).
 
-Last audit (2026-10-09, EF.* 2.0.130, EF.FlowEngine and EF.FilterBuilder 1.0.235): `dotnet list TaskFlow.slnx package --vulnerable --include-transitive` against nuget.org and the private feed reported no vulnerable packages for all 47 solution projects, the 3 Uno projects included. `npm audit` in `src/UI/TaskFlow.React` and `tests/Test.PlaywrightUI` (2026-10-09) reports 0 vulnerabilities in each.
+Last audit (2026-10-09, EF.* 2.0.131, EF.FlowEngine and EF.FilterBuilder 1.0.235): `dotnet list TaskFlow.slnx package --vulnerable --include-transitive` against nuget.org and the private feed reported no vulnerable packages for all 47 solution projects, the 3 Uno projects included. `npm audit` in `src/UI/TaskFlow.React` and `tests/Test.PlaywrightUI` (2026-10-09) reports 0 vulnerabilities in each.
 
 | Package | Severity | Direct/Transitive | Advisory | Notes |
 |---|---|---|---|---|
@@ -246,5 +246,4 @@ Validate locally with `az bicep build --file infra/main.bicep` and `docker compo
 7. The scaffold-ai TaskFlow proof map and feature sentinels still name the app files and calls the EF.Packages 2.0 adoption replaced (35 `validate-reference.py` issues); the scaffold-ai side owns that update.
 8. Deployment configuration: in the shipped Scaffold mode workflow self-calls run as the scaffold principal and count against the scaffold tenant's `standard` tier (100 requests per 60 s), the budget the UI uses; a compliance-check run makes about two calls per due task (one page of at most 50 tasks), each `taskflow-api` node retries a 429 up to its `retryPolicy.maxAttempts` (3, exponential) honoring `Retry-After`, and a node that still gets 429 takes its Error edge. A live-identity deployment with the self-call relay lists the workflow hosts' client ids in the Api's `RateLimiting:Workflow:CallerIds`, so relayed self-calls spend each tenant's own `workflow` budget (`RateLimiting:Tenants:Budgets:workflow`, 300 per 60 s) instead of its tier (D-068).
 9. Deployment configuration: the workflow self-call identity (D-068). In the shipped Scaffold mode the `ComplianceCheck` job starts the scaffold tenant only and logs every other tenant with a due compliance task as not started. A live-identity deployment covers every tenant by setting, on the Api, its token scheme (TaskFlow ships none) and the workflow hosts' app-only client ids in `ForwardedClaims:TrustedCallerIds` and `RateLimiting:Workflow:CallerIds`, and on every workflow host (Api, Scheduler, Functions) `FlowEngine:SelfCall:TokenScope` and the identity the token is issued to (`ManagedIdentityClientId`), plus, on Functions (its `appsettings.json` is not in its build output), the `ForwardedClaims` header name and claim types; the relay path is proven in Test.Integration with a test-only token scheme, and no live Entra deployment ran.
-10. Azurite 3.37.0, the latest release, accepts storage service versions up to 2026-06-06, and Azure.Storage.Blobs 12.30 (the floor of EF.Storage and EF.AspNetCore.DataProtection 2.0.130) sends 2026-10-06, so the AppHost emulator and the Test.Integration fixture set `AZURITE_SKIP_API_VERSION_CHECK=true` (`ContainerImages.AzuriteSkipApiVersionCheckVariable`). Remove it when an Azurite release supports the SDK's service version and the Azure lane passes without it.
-11. Test.Integration runs within EF Core's limit of twenty internal service providers per process with little margin: `ColumnEncryptionOptionsExtension` (EF.Data.Encryption 2.0.130) keys the provider on the encryptor instance, so every test host adds one per encrypted context, and two more hosts made later tests throw `ManyServiceProvidersCreatedWarning` (2026-10-09). Ceiling: 17 `FlowEngineWorkflowApiFactory` constructions; the next test host can trip the 20-provider limit, so new tests reuse an existing host. Keying the provider on encryptor equivalence in EF.Data.Encryption is an open ask to the package owner, not shipped; when it ships, adopt it and new hosts stop adding providers.
+10. Azurite 3.37.0, the latest release, accepts storage service versions up to 2026-06-06, and Azure.Storage.Blobs 12.30 (the floor of EF.Storage and EF.AspNetCore.DataProtection 2.0.131) sends 2026-10-06, so the AppHost emulator and the Test.Integration fixture set `AZURITE_SKIP_API_VERSION_CHECK=true` (`ContainerImages.AzuriteSkipApiVersionCheckVariable`). Remove it when an Azurite release supports the SDK's service version and the Azure lane passes without it.
