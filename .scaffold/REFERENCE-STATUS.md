@@ -33,14 +33,14 @@ Release `--no-build` after a `--no-incremental` Release solution build (0 warnin
 
 | Project | Passed | Duration |
 |---|---:|---:|
-| Test.Unit | 743 | 12 s |
+| Test.Unit | 745 | 12 s |
 | Test.UI | 54 | 1 s |
 | Test.Architecture | 87 | 2 s |
 | Test.Endpoints | 297 | 13 s |
 | Test.Integration.FlowEngine | 40 | 0.3 s |
 | Test.Mutation | 27 | 0.1 s |
 | Test.PlaywrightUI (`TestCategory=Unit`) | 1 | 0.1 s |
-| **Total** | **1249** | |
+| **Total** | **1251** | |
 
 `Test.Unit` used the CI 15-second blame-hang timeout. The Release build is the analyzer gate: `TreatWarningsAsErrors` fails it on any warning-severity diagnostic. `RedisConfiguredButUnreachable_LimiterFailsOpen` bounds fail-open latency with a production-shaped connection string (373 ms). Types the EF.* packages own are tested by the package suites, not here.
 
@@ -247,4 +247,4 @@ Validate locally with `az bicep build --file infra/main.bicep` and `docker compo
 8. Deployment configuration: in the shipped Scaffold mode workflow self-calls run as the scaffold principal and count against the scaffold tenant's `standard` tier (100 requests per 60 s), the budget the UI uses; a compliance-check run makes about two calls per due task (one page of at most 50 tasks), each `taskflow-api` node retries a 429 up to its `retryPolicy.maxAttempts` (3, exponential) honoring `Retry-After`, and a node that still gets 429 takes its Error edge. A live-identity deployment with the self-call relay lists the workflow hosts' client ids in the Api's `RateLimiting:Workflow:CallerIds`, so relayed self-calls spend each tenant's own `workflow` budget (`RateLimiting:Tenants:Budgets:workflow`, 300 per 60 s) instead of its tier (D-068).
 9. Deployment configuration: the workflow self-call identity (D-068). In the shipped Scaffold mode the `ComplianceCheck` job starts the scaffold tenant only and logs every other tenant with a due compliance task as not started. A live-identity deployment covers every tenant by setting, on the Api, its token scheme (TaskFlow ships none) and the workflow hosts' app-only client ids in `ForwardedClaims:TrustedCallerIds` and `RateLimiting:Workflow:CallerIds`, and on every workflow host (Api, Scheduler, Functions) `FlowEngine:SelfCall:TokenScope` and the identity the token is issued to (`ManagedIdentityClientId`), plus, on Functions (its `appsettings.json` is not in its build output), the `ForwardedClaims` header name and claim types; the relay path is proven in Test.Integration with a test-only token scheme, and no live Entra deployment ran.
 10. Azurite 3.37.0, the latest release, accepts storage service versions up to 2026-06-06, and Azure.Storage.Blobs 12.30 (the floor of EF.Storage and EF.AspNetCore.DataProtection 2.0.130) sends 2026-10-06, so the AppHost emulator and the Test.Integration fixture set `AZURITE_SKIP_API_VERSION_CHECK=true` (`ContainerImages.AzuriteSkipApiVersionCheckVariable`). Remove it when an Azurite release supports the SDK's service version and the Azure lane passes without it.
-11. Test.Integration runs within EF Core's limit of twenty internal service providers per process with little margin: `ColumnEncryptionOptionsExtension` (EF.Data.Encryption 2.0.130) keys the provider on the encryptor instance, so every test host adds one per encrypted context, and two more hosts made later tests throw `ManyServiceProvidersCreatedWarning` (2026-10-09). The admin start cases share one host; the package owner keys the provider on encryptor equivalence.
+11. Test.Integration runs within EF Core's limit of twenty internal service providers per process with little margin: `ColumnEncryptionOptionsExtension` (EF.Data.Encryption 2.0.130) keys the provider on the encryptor instance, so every test host adds one per encrypted context, and two more hosts made later tests throw `ManyServiceProvidersCreatedWarning` (2026-10-09). Ceiling: 17 `FlowEngineWorkflowApiFactory` constructions; the next test host can trip the 20-provider limit, so new tests reuse an existing host. Keying the provider on encryptor equivalence in EF.Data.Encryption is an open ask to the package owner, not shipped; when it ships, adopt it and new hosts stop adding providers.

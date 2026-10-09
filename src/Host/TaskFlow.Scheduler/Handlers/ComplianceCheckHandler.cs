@@ -25,7 +25,8 @@ namespace TaskFlow.Scheduler.Handlers;
 /// </para>
 /// <para>
 /// The idempotency key is the tenant and the UTC date of the run, so the engine resolves a same-day re-run to the
-/// instance the first run started (<see cref="StartRequest.IdempotencyKey"/>), and that is not a failure. A failed start is collected and rethrown at the end of the run, so the run
+/// instance the first run started (<see cref="StartRequest.IdempotencyKey"/>), and that is not a failure. Only an
+/// instance this call created counts as started and as a row affected in the run's telemetry. A failed start is collected and rethrown at the end of the run, so the run
 /// fails visibly through <see cref="ScheduledJobRunner"/> after every tenant was handled.
 /// </para>
 /// </summary>
@@ -54,6 +55,7 @@ public sealed class ComplianceCheckHandler(
         var dueBefore = asOfUtc.AddDays(settings.Value.WindowDays);
         var tenants = 0;
         var started = 0;
+        var alreadyStarted = 0;
         var notStarted = 0;
         var failures = new List<Exception>();
 
@@ -69,9 +71,20 @@ public sealed class ComplianceCheckHandler(
 
             try
             {
+                // The engine stamps CreatedAt from the wall clock, so the call's wall-clock start tells an instance this
+                // call created from the day's instance it resolved the key to; the job's TimeProvider sets the run date only.
+                var callStartedUtc = TimeProvider.System.GetUtcNow();
                 var instance = await engine.StartBackgroundAsync(StartRequestFor(tenantId, asOfUtc, dueBefore), ct);
-                started++;
-                logger.ComplianceCheckStarted(tenantId, instance.InstanceId, instance.Status);
+                if (instance.CreatedAt >= callStartedUtc)
+                {
+                    started++;
+                    logger.ComplianceCheckStarted(tenantId, instance.InstanceId, instance.Status);
+                }
+                else
+                {
+                    alreadyStarted++;
+                    logger.ComplianceCheckAlreadyStarted(tenantId, instance.InstanceId, instance.Status);
+                }
             }
             // The job's own cancellation ends the run at once; anything else, a timeout included, is this tenant's failure.
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
@@ -81,7 +94,7 @@ public sealed class ComplianceCheckHandler(
         }
 
         telemetry.RecordWork(JobName, tenants, started);
-        logger.ComplianceCheckRunSummary(tenants, started, notStarted, failures.Count);
+        logger.ComplianceCheckRunSummary(tenants, started, alreadyStarted, notStarted, failures.Count);
         if (failures.Count > 0)
         {
             throw new AggregateException($"{WorkflowId} failed to start for {failures.Count} of {tenants} tenants.", failures);

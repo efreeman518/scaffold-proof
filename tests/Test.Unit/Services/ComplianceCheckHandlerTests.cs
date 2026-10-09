@@ -148,8 +148,39 @@ public class ComplianceCheckHandlerTests
             "each run asks the engine with the day's key");
         Assert.HasCount(1, _engine.Instances, "the engine resolves the day's key to one instance");
         Assert.AreEqual(_engine.Returned[0].InstanceId, _engine.Returned[1].InstanceId);
-        StringAssert.Contains(_logger.Entries.Last().Message, "1 started or already started today");
+        StringAssert.Contains(_logger.Entries.Last().Message, "0 started, 1 already started today");
         StringAssert.Contains(_logger.Entries.Last().Message, "0 failed");
+    }
+
+    /// <summary>
+    /// The run's rows affected count the instances it created: the first run 1, a same-day re-run 0. Not parallelized:
+    /// the listener sees every ComplianceCheck measurement in the process.
+    /// </summary>
+    [TestMethod]
+    [DoNotParallelize]
+    public async Task HandleAsync_RowsAffected_CountNewInstancesOnly()
+    {
+        _repo.ComplianceTenants.Add(Served);
+        var affected = new List<long>();
+        using var listener = new System.Diagnostics.Metrics.MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Name == "scheduler.job.rows_affected") l.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<long>((_, value, tags, _) =>
+        {
+            foreach (var tag in tags)
+            {
+                if (Equals(tag.Value, ComplianceCheckHandler.JobName)) affected.Add(value);
+            }
+        });
+        listener.Start();
+
+        await Handler(Now, windowDays: 7).HandleAsync(TestContext.CancellationToken);
+        StringAssert.Contains(_logger.Entries.Last().Message, "1 started, 0 already started today");
+        await Handler(Now.AddHours(10), windowDays: 7).HandleAsync(TestContext.CancellationToken);
+
+        CollectionAssert.AreEqual(new long[] { 1, 0 }, affected, "the re-run records no affected row");
     }
 
     [TestMethod]
@@ -268,6 +299,8 @@ public class ComplianceCheckHandlerTests
                     TenantId = request.TenantId,
                     CorrelationId = request.CorrelationId,
                     Status = ExecStatus.Running,
+                    // As the engine stamps it: the wall clock at creation.
+                    CreatedAt = DateTimeOffset.UtcNow,
                 };
                 Instances[request.IdempotencyKey!] = instance;
             }

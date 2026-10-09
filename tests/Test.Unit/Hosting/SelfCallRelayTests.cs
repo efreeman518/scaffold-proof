@@ -258,6 +258,38 @@ public sealed class SelfCallRelayTests
     }
 
     /// <summary>
+    /// A loop's child workflow inherits the parent's tenant, and its integration node runs inside the child's execution
+    /// (<c>FlowExecution.Current</c> is the child), so each child's self-call relays the parent's tenant.
+    /// </summary>
+    [TestMethod]
+    public async Task LoopChildNode_RelaysTheParentsTenant()
+    {
+        var transport = StubHttpMessageHandler.Returns(HttpStatusCode.OK);
+        using var provider = Build(transport, Scope);
+        await provider.GetRequiredService<IWorkflowRegistry>().SaveAsync(LoopChild(), TestContext.CancellationToken);
+
+        var instance = await RunAsync(provider, LoopParent(), TenantB.ToString(),
+            new Dictionary<string, ContextValue> { ["items"] = new JsonContextValue { Value = System.Text.Json.JsonSerializer.SerializeToElement(new[] { 1, 2 }) } });
+
+        // The loop suspends while its children run and the parent resumes when they finish, so wait for it to settle.
+        var store = provider.GetRequiredService<IExecutionStateStore>();
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(20);
+        while (instance.Status is ExecStatus.Running or ExecStatus.Suspended && DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(50, TestContext.CancellationToken);
+            instance = await store.LoadAsync(instance.InstanceId, TestContext.CancellationToken) ?? instance;
+        }
+
+        Assert.AreEqual(ExecStatus.Completed, instance.Status, $"at {instance.CurrentNodeId}: {instance.Error?.Message}");
+        Assert.AreEqual("n-done", instance.CurrentNodeId, instance.Error?.Message);
+        Assert.HasCount(2, transport.Requests, "one self-call per loop child");
+        foreach (var request in transport.Requests)
+        {
+            Assert.AreEqual(TenantB.ToString(), DecodeAsTheApi(request).Single(c => c.Type == "tenant_id").Value);
+        }
+    }
+
+    /// <summary>
     /// The package holds the requests its integration and fetch nodes build to the client's base address
     /// (<c>BaseAddressBoundary</c>): a node URL naming another origin is refused before the client pipeline runs, so
     /// nothing is sent and the node takes its Error edge. The relay is off, so the handler checks no address and the
@@ -331,15 +363,54 @@ public sealed class SelfCallRelayTests
         probe.Failure?.Throw();
     }
 
-    private async Task<ExecutionInstance> RunAsync(ServiceProvider provider, WorkflowDefinition definition, string? tenant)
+    private async Task<ExecutionInstance> RunAsync(
+        ServiceProvider provider, WorkflowDefinition definition, string? tenant, Dictionary<string, ContextValue>? parameters = null)
     {
         await provider.GetRequiredService<IWorkflowRegistry>().SaveAsync(definition, TestContext.CancellationToken);
         return await provider.GetRequiredService<IFlowEngine>().StartAsync(new StartRequest
         {
             WorkflowId = definition.Id,
             TenantId = tenant,
+            Params = parameters,
         }, TestContext.CancellationToken);
     }
+
+    private static WorkflowDefinition LoopParent() => WorkflowDefinitionBuilder.FromJson("""
+        {
+          "id": "relay-loop-parent",
+          "version": "1.0.0",
+          "status": "Active",
+          "entryNodeId": "n-loop",
+          "nodes": {
+            "n-loop": {
+              "id": "n-loop", "type": "loop",
+              "config": { "items": "$.params.items", "mode": "sequential", "subWorkflowId": "relay-loop-child" },
+              "edges": [ { "on": ["Match"], "nextNodeId": "n-done" }, { "on": ["NoMatch", "Error"], "nextNodeId": "n-failed" } ]
+            },
+            "n-done": { "id": "n-done", "type": "output", "config": {} },
+            "n-failed": { "id": "n-failed", "type": "output", "config": {} }
+          }
+        }
+        """).Build();
+
+    private static WorkflowDefinition LoopChild() => WorkflowDefinitionBuilder.FromJson("""
+        {
+          "id": "relay-loop-child",
+          "version": "1.0.0",
+          "status": "Active",
+          "entryNodeId": "n-search",
+          "nodes": {
+            "n-search": {
+              "id": "n-search", "type": "integration",
+              "retryPolicy": { "maxAttempts": 1 },
+              "config": { "clientRef": "taskflow-api", "method": "POST", "path": "/api/v1/task-items/search", "body": { "pageSize": 1 } },
+              "edges": [ { "on": ["Match"], "nextNodeId": "n-ok" }, { "on": ["NoMatch", "Error"], "nextNodeId": "n-failed" } ]
+            },
+            "n-ok": { "id": "n-ok", "type": "output", "config": {} },
+            "n-failed": { "id": "n-failed", "type": "output", "config": {} }
+          }
+        }
+        """).Build();
 
     private static WorkflowDefinition SendProbe() => WorkflowDefinitionBuilder.FromJson($$"""
         {
