@@ -56,6 +56,8 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.FlowEngi
                     Status = table.Column<int>(type: "integer", nullable: false),
                     ParentInstanceId = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
                     CorrelationId = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
+                    TenantId = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: true),
+                    WorkflowVersion = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
                     EventName = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: true),
                     CorrelationKey = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: true),
                     TimeoutAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
@@ -125,6 +127,27 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.FlowEngi
                     table.PrimaryKey("PK_Workflows", x => x.CompositeKey);
                 });
 
+            migrationBuilder.CreateTable(
+                name: "FlowEngineExecutionTagRow",
+                schema: "flowengine",
+                columns: table => new
+                {
+                    InstanceId = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    Key = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
+                    Value = table.Column<string>(type: "text", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_FlowEngineExecutionTagRow", x => new { x.InstanceId, x.Key });
+                    table.ForeignKey(
+                        name: "FK_FlowEngineExecutionTagRow_Executions_InstanceId",
+                        column: x => x.InstanceId,
+                        principalSchema: "flowengine",
+                        principalTable: "Executions",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
             migrationBuilder.CreateIndex(
                 name: "IX_ChildSignals_ParentInstanceId",
                 schema: "flowengine",
@@ -156,10 +179,22 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.FlowEngi
                 column: "Status");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Executions_TenantId",
+                schema: "flowengine",
+                table: "Executions",
+                column: "TenantId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Executions_WorkflowId",
                 schema: "flowengine",
                 table: "Executions",
                 column: "WorkflowId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_FlowEngineExecutionTagRow_Key",
+                schema: "flowengine",
+                table: "FlowEngineExecutionTagRow",
+                column: "Key");
 
             migrationBuilder.CreateIndex(
                 name: "IX_HumanTasks_AssignedTo_Status",
@@ -204,7 +239,7 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.FlowEngi
                 schema: "flowengine");
 
             migrationBuilder.DropTable(
-                name: "Executions",
+                name: "FlowEngineExecutionTagRow",
                 schema: "flowengine");
 
             migrationBuilder.DropTable(
@@ -217,6 +252,10 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.FlowEngi
 
             migrationBuilder.DropTable(
                 name: "Workflows",
+                schema: "flowengine");
+
+            migrationBuilder.DropTable(
+                name: "Executions",
                 schema: "flowengine");
         }
     }
