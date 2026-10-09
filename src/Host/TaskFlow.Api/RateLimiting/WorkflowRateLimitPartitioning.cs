@@ -8,7 +8,7 @@ namespace TaskFlow.Api.RateLimiting;
 
 /// <summary>
 /// Gives workflow self-calls their own partition and allowance in the tenant limiter, so workflow traffic neither
-/// starves nor is starved by the tenant's interactive traffic. EF.RateLimiting 2.0.118 partitions on the tenant claim
+/// starves nor is starved by the tenant's interactive traffic. EF.RateLimiting partitions on the tenant claim
 /// alone, with no caller hook, so this replaces the global limiter it installs with one that asks the same
 /// <see cref="TenantRateLimitPartitioner"/>: a request whose principal the relay built from a trusted caller's header
 /// (<see cref="Auth.RelayedPrincipalMarker"/>), relayed by a caller in both <c>ForwardedClaims:TrustedCallerIds</c> and

@@ -12,7 +12,7 @@ using TaskFlow.Infrastructure.Data;
 namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.FlowEngine
 {
     [DbContext(typeof(TaskFlowFlowEngineDbContext))]
-    [Migration("20260904210624_InitialFlowEngine")]
+    [Migration("20261009191033_InitialFlowEngine")]
     partial class InitialFlowEngine
     {
         /// <inheritdoc />
@@ -21,7 +21,7 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.FlowEngin
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("flowengine")
-                .HasAnnotation("ProductVersion", "10.0.11")
+                .HasAnnotation("ProductVersion", "10.0.12")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -170,6 +170,11 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.FlowEngin
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
+                    b.Property<string>("TenantId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
                     b.Property<DateTimeOffset?>("TimeoutAt")
                         .HasColumnType("datetimeoffset");
 
@@ -177,6 +182,7 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.FlowEngin
                         .HasColumnType("datetimeoffset");
 
                     b.Property<long>("Version")
+                        .IsConcurrencyToken()
                         .HasColumnType("bigint");
 
                     b.Property<string>("WorkflowId")
@@ -184,17 +190,47 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.FlowEngin
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("WorkflowVersion")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ParentInstanceId");
 
                     b.HasIndex("Status");
 
+                    b.HasIndex("TenantId");
+
                     b.HasIndex("WorkflowId");
 
                     b.HasIndex("EventName", "CorrelationKey");
 
                     b.ToTable("Executions", "flowengine");
+                });
+
+            modelBuilder.Entity("EF.FlowEngine.Sql.FlowEngineExecutionTagRow", b =>
+                {
+                    b.Property<string>("InstanceId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Key")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.HasKey("InstanceId", "Key");
+
+                    b.HasIndex("Key");
+
+                    b.ToTable("FlowEngineExecutionTagRow", "flowengine");
                 });
 
             modelBuilder.Entity("EF.FlowEngine.Sql.FlowEngineHumanTaskRow", b =>
@@ -253,6 +289,15 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.FlowEngin
                     b.HasKey("CompositeKey");
 
                     b.ToTable("Workflows", "flowengine");
+                });
+
+            modelBuilder.Entity("EF.FlowEngine.Sql.FlowEngineExecutionTagRow", b =>
+                {
+                    b.HasOne("EF.FlowEngine.Sql.FlowEngineExecutionRow", null)
+                        .WithMany()
+                        .HasForeignKey("InstanceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 #pragma warning restore 612, 618
         }

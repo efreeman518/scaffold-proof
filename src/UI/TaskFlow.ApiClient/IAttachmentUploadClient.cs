@@ -12,9 +12,10 @@ namespace TaskFlow.ApiClient;
 /// AttachmentEndpoints.Upload) alongside scalar form fields. Two separate problems rule out putting this
 /// on ITaskFlowApiClient:
 /// 1. OpenAPI describes the file part as a `multipart/form-data` schema property of type "string, format:
-///    binary" - Refitter's --interface-only generation recognizes the [Multipart] shape for the scalar
-///    fields (see the generated, unused <c>UploadAttachment</c> method) but drops the file part entirely,
-///    so that generated method can never actually upload a file.
+///    binary" - Refitter's --interface-only generation emits the [Multipart] method (the generated, unused
+///    <c>UploadAttachmentAsync</c>) with that file part typed <c>object</c>, not a <see cref="StreamPart"/>,
+///    and the Refit source generator builds that method through the reflection request builder, as it does
+///    every multipart method; it reports no diagnostic for it.
 /// 2. A correct multipart method using <see cref="StreamPart"/> is a request shape the Refit *source
 ///    generator* cannot build (RF006) - it needs the reflection-based request builder. ITaskFlowApiClient
 ///    is registered via AddRefitGeneratedClient (source-generated, AOT/trim-friendly - relevant for the

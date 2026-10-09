@@ -55,6 +55,8 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.FlowEngin
                     Status = table.Column<int>(type: "int", nullable: false),
                     ParentInstanceId = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
                     CorrelationId = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
+                    TenantId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true, collation: "Latin1_General_100_BIN2"),
+                    WorkflowVersion = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: false),
                     EventName = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
                     CorrelationKey = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
                     TimeoutAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
@@ -124,6 +126,27 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.FlowEngin
                     table.PrimaryKey("PK_Workflows", x => x.CompositeKey);
                 });
 
+            migrationBuilder.CreateTable(
+                name: "FlowEngineExecutionTagRow",
+                schema: "flowengine",
+                columns: table => new
+                {
+                    InstanceId = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: false),
+                    Key = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: false, collation: "Latin1_General_100_BIN2"),
+                    Value = table.Column<string>(type: "nvarchar(max)", nullable: false, collation: "Latin1_General_100_BIN2")
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_FlowEngineExecutionTagRow", x => new { x.InstanceId, x.Key });
+                    table.ForeignKey(
+                        name: "FK_FlowEngineExecutionTagRow_Executions_InstanceId",
+                        column: x => x.InstanceId,
+                        principalSchema: "flowengine",
+                        principalTable: "Executions",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
             migrationBuilder.CreateIndex(
                 name: "IX_ChildSignals_ParentInstanceId",
                 schema: "flowengine",
@@ -155,10 +178,22 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.FlowEngin
                 column: "Status");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Executions_TenantId",
+                schema: "flowengine",
+                table: "Executions",
+                column: "TenantId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Executions_WorkflowId",
                 schema: "flowengine",
                 table: "Executions",
                 column: "WorkflowId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_FlowEngineExecutionTagRow_Key",
+                schema: "flowengine",
+                table: "FlowEngineExecutionTagRow",
+                column: "Key");
 
             migrationBuilder.CreateIndex(
                 name: "IX_HumanTasks_AssignedTo_Status",
@@ -203,7 +238,7 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.FlowEngin
                 schema: "flowengine");
 
             migrationBuilder.DropTable(
-                name: "Executions",
+                name: "FlowEngineExecutionTagRow",
                 schema: "flowengine");
 
             migrationBuilder.DropTable(
@@ -216,6 +251,10 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.FlowEngin
 
             migrationBuilder.DropTable(
                 name: "Workflows",
+                schema: "flowengine");
+
+            migrationBuilder.DropTable(
+                name: "Executions",
                 schema: "flowengine");
         }
     }

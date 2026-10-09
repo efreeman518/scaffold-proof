@@ -87,7 +87,8 @@ public sealed partial class AiWorkflowIntegrationTests
             "the reminder is posted to B's task as B. " + diagnostics);
         Assert.AreEqual(0, await CountCommentsIgnoringTenantAsync(connectionString, dueA.Id, ct), diagnostics);
 
-        // Same UTC day: one tenant's instance is always older than the other's, the case the engine's own key lookup misses.
+        // Same UTC day: one tenant's instance is always older than the other's, so the engine's key lookup has to find an
+        // instance that is not the newest in the store.
         await RunComplianceCheckJobAsync(factory, connectionString, scheduledRun.AddHours(10), ct);
         var afterRerun = await ComplianceCheckInstancesAsync(store, ct);
         Assert.HasCount(2, afterRerun, "a same-day re-run resolves to each tenant's instance of the day. "

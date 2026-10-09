@@ -19,8 +19,8 @@ namespace Test.Unit.Services;
 /// the <c>tenantId</c> param both that tenant and <c>dueBefore</c> the run time plus the configured window, and one
 /// Warning and no start for every other qualifying tenant, which does not fail the run; with the relay a start for every
 /// qualifying tenant, each with its own tenant; an idempotency key that is stable for the UTC day; a same-day
-/// re-run or a duplicate start resolved to the existing instance without failing; and a failed start surfaced after
-/// every tenant was handled. Pure-unit tier: the system repository, the engine and the state store are in-memory fakes;
+/// re-run resolved by the engine to the day's instance without failing; and a failed start surfaced after every tenant
+/// was handled. Pure-unit tier: the system repository and the engine are in-memory fakes;
 /// the engine fake keeps FlowEngine's documented duplicate-key contract (the existing instance is returned).
 /// </summary>
 [TestClass]
@@ -135,45 +135,62 @@ public class ComplianceCheckHandlerTests
     }
 
     [TestMethod]
-    public async Task HandleAsync_SameDayRerun_FindsTheDaysInstance_AndStartsNothing()
+    public async Task HandleAsync_SameDayRerun_ResolvesToTheDaysInstance_AndIsNotAFailure()
     {
         _repo.ComplianceTenants.AddRange([Served, OtherB]);
 
         await Handler(Now, windowDays: 7).HandleAsync(TestContext.CancellationToken);
         await Handler(Now.AddHours(10), windowDays: 7).HandleAsync(TestContext.CancellationToken);
 
-        Assert.HasCount(1, _engine.Requests, "the rerun starts nothing");
-        Assert.HasCount(1, _engine.Instances, "one instance for the day");
         CollectionAssert.AreEqual(
             new[] { $"compliance-check:{Served}:2026-10-06", $"compliance-check:{Served}:2026-10-06" },
-            _engine.Lookups.ToArray(),
-            "each run looks the day's instance up by its key");
-        StringAssert.Contains(_logger.Entries.Last().Message, "1 already started today");
+            _engine.Requests.Select(r => r.IdempotencyKey).ToArray(),
+            "each run asks the engine with the day's key");
+        Assert.HasCount(1, _engine.Instances, "the engine resolves the day's key to one instance");
+        Assert.AreEqual(_engine.Returned[0].InstanceId, _engine.Returned[1].InstanceId);
+        StringAssert.Contains(_logger.Entries.Last().Message, "0 started, 1 already started today");
+        StringAssert.Contains(_logger.Entries.Last().Message, "0 failed");
+    }
+
+    /// <summary>
+    /// The run's rows affected count the instances it created: the first run 1, a same-day re-run 0. Not parallelized:
+    /// the listener sees every ComplianceCheck measurement in the process.
+    /// </summary>
+    [TestMethod]
+    [DoNotParallelize]
+    public async Task HandleAsync_RowsAffected_CountNewInstancesOnly()
+    {
+        _repo.ComplianceTenants.Add(Served);
+        var affected = new List<long>();
+        using var listener = new System.Diagnostics.Metrics.MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Name == "scheduler.job.rows_affected") l.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<long>((_, value, tags, _) =>
+        {
+            foreach (var tag in tags)
+            {
+                if (Equals(tag.Value, ComplianceCheckHandler.JobName)) affected.Add(value);
+            }
+        });
+        listener.Start();
+
+        await Handler(Now, windowDays: 7).HandleAsync(TestContext.CancellationToken);
+        StringAssert.Contains(_logger.Entries.Last().Message, "1 started, 0 already started today");
+        await Handler(Now.AddHours(10), windowDays: 7).HandleAsync(TestContext.CancellationToken);
+
+        CollectionAssert.AreEqual(new long[] { 1, 0 }, affected, "the re-run records no affected row");
     }
 
     [TestMethod]
     public void IdempotencyKey_FitsTheStateStoresCorrelationIdColumn()
     {
-        // The key is also the correlation id the re-run lookup filters on; the store's column is 64 characters wide.
+        // The key is also the instance's correlation id; the store's column is 64 characters wide.
         Assert.HasCount(64, ComplianceCheckHandler.IdempotencyKey(Served, Now));
         Assert.AreEqual(
             ComplianceCheckHandler.IdempotencyKey(Served, Now),
             ComplianceCheckHandler.StartRequestFor(Served, Now, Now.AddDays(7)).CorrelationId);
-    }
-
-    [TestMethod]
-    public async Task HandleAsync_DuplicateKeyResolvedByTheEngine_IsNotAFailure()
-    {
-        _repo.ComplianceTenants.Add(Served);
-        await Handler(Now, windowDays: 7).HandleAsync(TestContext.CancellationToken);
-        // The lookup misses (a store that has not caught up); the engine's own key check returns the existing instance.
-        _engine.StoreHidesInstances = true;
-
-        await Handler(Now.AddHours(10), windowDays: 7).HandleAsync(TestContext.CancellationToken);
-
-        Assert.HasCount(2, _engine.Requests, "the rerun asks the engine again");
-        Assert.HasCount(1, _engine.Instances, "and the engine resolves the duplicate key to the existing instance");
-        Assert.AreEqual(_engine.Returned[0].InstanceId, _engine.Returned[1].InstanceId);
     }
 
     [TestMethod]
@@ -236,7 +253,6 @@ public class ComplianceCheckHandlerTests
     private ComplianceCheckHandler Handler(DateTimeOffset now, int windowDays, bool relay = false) => new(
         _repo,
         _engine.Object,
-        _engine.Store,
         SchedulerTestTelemetry.Create(),
         new FixedTimeProvider(now),
         Options.Create(new ComplianceCheckSettings { WindowDays = windowDays }),
@@ -247,27 +263,20 @@ public class ComplianceCheckHandlerTests
         ((JsonContextValue)request.Params![name]).Value.GetString()!;
 
     /// <summary>
-    /// An engine that keeps FlowEngine's start contract for <see cref="StartRequest.IdempotencyKey"/> (a key it already
-    /// holds returns that instance instead of creating a new one), and a state store over the same instances that
-    /// answers the handler's lookup by workflow and correlation id.
+    /// An engine that keeps FlowEngine's start contract for <see cref="StartRequest.IdempotencyKey"/>: a key it already
+    /// holds returns that instance instead of creating a new one.
     /// </summary>
     private sealed class KeyedFlowEngine
     {
         private readonly Mock<IFlowEngine> _mock = new(MockBehavior.Strict);
-        private readonly Mock<IExecutionStateStore> _store = new(MockBehavior.Strict);
 
         public KeyedFlowEngine()
         {
             _mock.Setup(e => e.StartBackgroundAsync(It.IsAny<StartRequest>(), It.IsAny<CancellationToken>()))
                 .Returns((StartRequest request, CancellationToken ct) => Task.FromResult(Start(request, ct)));
-            _store.Setup(s => s.QueryAsync(It.IsAny<ExecutionQuery>(), It.IsAny<CancellationToken>()))
-                .Returns((ExecutionQuery query, CancellationToken _) => Task.FromResult(Query(query)));
         }
 
         public IFlowEngine Object => _mock.Object;
-        public IExecutionStateStore Store => _store.Object;
-        public bool StoreHidesInstances { get; set; }
-        public List<string> Lookups { get; } = [];
         public List<StartRequest> Requests { get; } = [];
         public Dictionary<string, ExecutionInstance> Instances { get; } = [];
         public List<ExecutionInstance> Returned { get; } = [];
@@ -290,23 +299,14 @@ public class ComplianceCheckHandlerTests
                     TenantId = request.TenantId,
                     CorrelationId = request.CorrelationId,
                     Status = ExecStatus.Running,
+                    // As the engine stamps it: the wall clock at creation.
+                    CreatedAt = DateTimeOffset.UtcNow,
                 };
                 Instances[request.IdempotencyKey!] = instance;
             }
 
             Returned.Add(instance);
             return instance;
-        }
-
-        private ExecutionQueryResult Query(ExecutionQuery query)
-        {
-            Assert.AreEqual("compliance-check", query.WorkflowId);
-            Lookups.Add(query.CorrelationId!);
-            var found = Instances.Values
-                .Where(i => !StoreHidesInstances && i.CorrelationId == query.CorrelationId)
-                .Take(query.Take)
-                .ToList();
-            return new ExecutionQueryResult { Items = found, TotalCount = found.Count };
         }
     }
 

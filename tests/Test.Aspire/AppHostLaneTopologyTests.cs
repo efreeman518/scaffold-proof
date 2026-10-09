@@ -144,6 +144,8 @@ public sealed class AppHostLaneTopologyTests
             StringAssert.Contains(source, $"ContainerImages.{name}Tag");
         }
 
+        StringAssert.Contains(source, ".WithEnvironment(ContainerImages.AzuriteSkipApiVersionCheckVariable, \"true\")",
+            "the Azurite emulator accepts the Blob SDK's service version (ContainerImages.AzuriteSkipApiVersionCheckVariable)");
         Assert.IsFalse(source.Contains("minio", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(source.Contains("portableLane", StringComparison.Ordinal));
         StringAssert.Contains(source, "if (nonAzureLane)");

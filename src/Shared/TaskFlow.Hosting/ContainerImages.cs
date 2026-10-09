@@ -22,6 +22,12 @@ public static class ContainerImages
     public const string AzuriteTag = "3.37.0@sha256:830430c1da1a2d537e08f3e6764dd1f5ae00cf0346bcaf625b968ec3f0971fd5";
     public const string Azurite = $"{MicrosoftContainerRegistry}/{AzuriteRepository}:{AzuriteTag}";
 
+    // Third-party mitigation: Azure.Storage.Blobs 12.30 (the floor of EF.Storage and EF.AspNetCore.DataProtection
+    // 2.0.130) sends service version 2026-10-06, and Azurite 3.37.0, the latest release, accepts up to 2026-06-06 and
+    // answers every other version 400 InvalidHeaderValue. Every Azurite container sets this variable to "true".
+    // Remove it when an Azurite release supports the SDK's service version and the Azure lane passes without it.
+    public const string AzuriteSkipApiVersionCheckVariable = "AZURITE_SKIP_API_VERSION_CHECK";
+
     public const string CosmosEmulatorRepository = "cosmosdb/linux/azure-cosmos-emulator";
     public const string CosmosEmulatorTag = "vnext-EN20260907@sha256:2db1f9e74c506bcf6fc347aa937aea1c00fa756061296a5a9efba530ce86ec02";
     public const string CosmosEmulator = $"{MicrosoftContainerRegistry}/{CosmosEmulatorRepository}:{CosmosEmulatorTag}";

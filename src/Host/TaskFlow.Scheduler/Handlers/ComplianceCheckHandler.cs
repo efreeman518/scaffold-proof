@@ -24,15 +24,15 @@ namespace TaskFlow.Scheduler.Handlers;
 /// rather than a failure.
 /// </para>
 /// <para>
-/// The idempotency key is the tenant and the UTC date of the run, so a same-day re-run resolves to the instance the
-/// first run started and is not a failure. A failed start is collected and rethrown at the end of the run, so the run
+/// The idempotency key is the tenant and the UTC date of the run, so the engine resolves a same-day re-run to the
+/// instance the first run started (<see cref="StartRequest.IdempotencyKey"/>), and that is not a failure. Only an
+/// instance this call created counts as started and as a row affected in the run's telemetry. A failed start is collected and rethrown at the end of the run, so the run
 /// fails visibly through <see cref="ScheduledJobRunner"/> after every tenant was handled.
 /// </para>
 /// </summary>
 public sealed class ComplianceCheckHandler(
     ITaskItemSystemRepository systemRepository,
     IFlowEngine engine,
-    IExecutionStateStore stateStore,
     ScheduledJobTelemetry telemetry,
     TimeProvider timeProvider,
     IOptions<ComplianceCheckSettings> settings,
@@ -71,17 +71,20 @@ public sealed class ComplianceCheckHandler(
 
             try
             {
-                var request = StartRequestFor(tenantId, asOfUtc, dueBefore);
-                if (await FindStartedAsync(request, ct) is { } existing)
+                // The engine stamps CreatedAt from the wall clock, so the call's wall-clock start tells an instance this
+                // call created from the day's instance it resolved the key to; the job's TimeProvider sets the run date only.
+                var callStartedUtc = TimeProvider.System.GetUtcNow();
+                var instance = await engine.StartBackgroundAsync(StartRequestFor(tenantId, asOfUtc, dueBefore), ct);
+                if (instance.CreatedAt >= callStartedUtc)
+                {
+                    started++;
+                    logger.ComplianceCheckStarted(tenantId, instance.InstanceId, instance.Status);
+                }
+                else
                 {
                     alreadyStarted++;
-                    logger.ComplianceCheckAlreadyStarted(tenantId, existing.InstanceId, existing.Status);
-                    continue;
+                    logger.ComplianceCheckAlreadyStarted(tenantId, instance.InstanceId, instance.Status);
                 }
-
-                var instance = await engine.StartBackgroundAsync(request, ct);
-                started++;
-                logger.ComplianceCheckStarted(tenantId, instance.InstanceId, instance.Status);
             }
             // The job's own cancellation ends the run at once; anything else, a timeout included, is this tenant's failure.
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
@@ -96,26 +99,6 @@ public sealed class ComplianceCheckHandler(
         {
             throw new AggregateException($"{WorkflowId} failed to start for {failures.Count} of {tenants} tenants.", failures);
         }
-    }
-
-    /// <summary>
-    /// The instance already started under this request's key, found by its correlation id (which is the key).
-    /// <para>
-    /// Mitigation for EF.FlowEngine 1.0.207: <see cref="StartRequest.IdempotencyKey"/> is documented to return the existing
-    /// instance, but the SQL state store's <c>QueryAsync</c> pages before it applies the tag filter the engine's key lookup
-    /// uses (<c>Take = 1</c>), so the engine finds the original only while it is the newest instance in the store, and a
-    /// re-run after another tenant's start creates a duplicate. <c>CorrelationId</c> is a column the store filters before
-    /// paging. Remove this lookup when the state store applies the tag filter before paging and a same-day re-run in
-    /// <c>AiWorkflowIntegrationTests.ComplianceCheckJob_StartsOneInstancePerQualifyingTenant_CarryingThatTenant</c> still
-    /// yields one instance per tenant without it. Two runs racing for the same tenant can still both start; TickerQ runs
-    /// one occurrence of the cron job at a time.
-    /// </para>
-    /// </summary>
-    private async Task<ExecutionInstance?> FindStartedAsync(StartRequest request, CancellationToken ct)
-    {
-        var result = await stateStore.QueryAsync(
-            new ExecutionQuery { WorkflowId = WorkflowId, CorrelationId = request.CorrelationId, Take = 1 }, ct);
-        return result.Items.FirstOrDefault();
     }
 
     /// <summary>

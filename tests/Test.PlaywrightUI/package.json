@@ -1,8 +1,8 @@
 {
   "private": true,
   "devDependencies": {
-    "@playwright/test": "1.63.0",
-    "@types/node": "^24.13.5"
+    "@playwright/test": "1.64.0",
+    "@types/node": "^24.19.2"
   },
   "scripts": {
     "test": "npx playwright test",

@@ -368,12 +368,17 @@ public sealed partial class AiWorkflowIntegrationTests
     }
 
     /// <summary>
-    /// D-075: the admin start route has no tenant field, so an instance it starts has no tenant. A compliance-check-item
-    /// run started there for the scaffold tenant's own task with text evidence finds the attachment, and the store refuses
-    /// the read: the run ends on n-failed with no agent call and no comment.
+    /// D-075, the admin start route on one host. Without <c>tenantId</c> the instance has no tenant: a compliance-check-item
+    /// run for the scaffold tenant's own task with text evidence finds the attachment, and the store refuses the read (the
+    /// run ends on n-failed with no agent call and no comment). With <c>tenantId</c> = the scaffold tenant, a compliance-check
+    /// run carries that tenant, its child reads the due task's evidence and the task gets its reminder. The scaffold
+    /// principal carries tenant <c>0001</c> and <c>GlobalAdmin</c>, but in Scaffold mode the Admin API reads its tenant from
+    /// <c>flowengine_tenant_id</c>, which it does not carry, so it is a caller without a tenant and the package honours any
+    /// <c>tenantId</c>: a start for another tenant runs in that tenant (a caller with a tenant would get 403).
+    /// One host for the three starts keeps the test process within EF Core's internal service provider limit.
     /// </summary>
     [TestMethod]
-    public async Task ComplianceCheckItem_StartedWithoutATenant_IsRefusedItsEvidence()
+    public async Task AdminStart_CarriesTheRequestedTenant_AndWithoutOneIsRefusedTheEvidence()
     {
         SkipIfNoSql();
         var ct = TestContext.CancellationToken;
@@ -403,6 +408,39 @@ public sealed partial class AiWorkflowIntegrationTests
         StringAssert.Contains(body, "no tenant", "the store's refusal is the instance error");
         Assert.AreEqual(0, prompts, "no evidence reaches the agent");
         Assert.AreEqual(0, await CountCommentsAsync(client, task, ct), "the task gets no comment");
+
+        // With tenantId = the scaffold tenant: compliance-check over a due compliance task with evidence.
+        var now = DateTimeOffset.UtcNow;
+        var tenant = Guid.Parse(TenantId);
+        var compliance = new TagBuilder().WithTenantId(tenant).WithName("Compliance").Build();
+        var due = DueTask(tenant, "Admin start with evidence", now.AddDays(1), compliance);
+        await using (var seed = DbContainerFixture.CreateTrxnContext(connectionString))
+        {
+            seed.Tags.Add(compliance);
+            seed.TaskItems.Add(due);
+            await seed.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct);
+        }
+        var dueEvidence = await UploadAttachmentAsync(client, due.Id.Value, "evidence.txt", "text/plain", "certificate expires next week", ct);
+        var store = factory.Services.GetRequiredService<IExecutionStateStore>();
+
+        var tenantInstanceId = await StartWorkflowAsync(client, "compliance-check", ComplianceCheckParams(TenantId, now), ct, tenantId: TenantId);
+        var (tenantNode, tenantBody) = await WaitForTerminalAsync(client, tenantInstanceId, ct);
+        var children = await ChildInstancesAsync(client, "compliance-check-item", ct);
+        var diagnostics = $"Reads: [{string.Join(", ", reads)}]; evidence {dueEvidence}; children: {Describe(children)}. Parent: {Truncate(tenantBody)}";
+
+        Assert.AreEqual(TenantId, (await store.LoadAsync(tenantInstanceId, ct))?.TenantId, "the admin start carries the requested tenant. " + diagnostics);
+        Assert.AreEqual("n-output-ok", tenantNode, diagnostics);
+        CollectionAssert.Contains(children.Select(c => $"{c.Item} -> {c.At}").ToArray(), "Admin start with evidence -> n-done", diagnostics);
+        CollectionAssert.AreEqual(new[] { evidence.ToString(), dueEvidence.ToString() }, reads.ToArray(),
+            "the child reads the due task's evidence as the instance tenant. " + diagnostics);
+        Assert.AreEqual(1, await CountCommentsAsync(client, due.Id.Value, ct), "the expiring task gets one reminder. " + diagnostics);
+
+        // With tenantId = another tenant, from the same caller.
+        var other = Guid.CreateVersion7().ToString();
+        var otherInstanceId = await StartWorkflowAsync(client, "compliance-check", ComplianceCheckParams(other, now), ct, tenantId: other);
+        var (_, otherBody) = await WaitForTerminalAsync(client, otherInstanceId, ct);
+        Assert.AreEqual(other, (await store.LoadAsync(otherInstanceId, ct))?.TenantId,
+            "a caller without an Admin API tenant starts in the requested tenant. " + Truncate(otherBody));
     }
 
     /// <summary>
@@ -857,18 +895,12 @@ public sealed partial class AiWorkflowIntegrationTests
         return payload.RootElement.GetProperty("items").GetArrayLength();
     }
 
+    // Starts the workflow through the admin start route. With tenantId the request carries the instance tenant, which
+    // the package honours for a caller that resolves to no Admin API tenant (the scaffold principal in Scaffold mode).
     private static async Task<string> StartWorkflowAsync(
-        HttpClient client, string workflowId, Dictionary<string, object?> parameters, CancellationToken ct)
+        HttpClient client, string workflowId, Dictionary<string, object?> parameters, CancellationToken ct, string? tenantId = null)
     {
-        using var response = await client.PostAsJsonAsync(
-            "/api/flowengine/instances/start",
-            new Dictionary<string, object?>
-            {
-                ["workflowId"] = workflowId,
-                ["correlationId"] = Guid.NewGuid().ToString("N"),
-                ["params"] = parameters
-            },
-            ct);
+        using var response = await PostAdminStartAsync(client, workflowId, parameters, tenantId, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
         Assert.IsTrue(
             response.StatusCode is HttpStatusCode.OK or HttpStatusCode.Accepted or HttpStatusCode.Created,
@@ -879,9 +911,23 @@ public sealed partial class AiWorkflowIntegrationTests
         return instanceId!;
     }
 
+    private static Task<HttpResponseMessage> PostAdminStartAsync(
+        HttpClient client, string workflowId, Dictionary<string, object?> parameters, string? tenantId, CancellationToken ct)
+    {
+        var request = new Dictionary<string, object?>
+        {
+            ["workflowId"] = workflowId,
+            ["correlationId"] = Guid.NewGuid().ToString("N"),
+            ["params"] = parameters
+        };
+        if (tenantId is not null)
+            request["tenantId"] = tenantId;
+        return client.PostAsJsonAsync("/api/flowengine/instances/start", request, ct);
+    }
+
     // Starts the workflow as a trigger does (WorkflowTriggerHandler): through IFlowEngine with the instance tenant set, so
-    // the instance and its loop children read evidence as that tenant. The admin start route has no tenant field, so an
-    // instance it starts has no tenant, and the attachment-backed store refuses its evidence reads.
+    // the instance and its loop children read evidence as that tenant. An admin start without tenantId has no tenant, and
+    // the attachment-backed store refuses its evidence reads.
     private static async Task<string> StartForTenantAsync(
         FlowEngineWorkflowApiFactory factory, string workflowId, Dictionary<string, object?> parameters, CancellationToken ct)
     {

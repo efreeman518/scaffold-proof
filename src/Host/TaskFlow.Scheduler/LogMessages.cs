@@ -48,7 +48,7 @@ internal static partial class LogMessages
     [LoggerMessage(EventId = LogEventIds.SchedulerBase + 20, Level = LogLevel.Information, Message = "Compliance check for tenant {TenantId} started as instance {InstanceId} ({Status})")]
     public static partial void ComplianceCheckStarted(this ILogger logger, Guid tenantId, string instanceId, EF.FlowEngine.Model.ExecStatus status);
 
-    /// <summary>Logs a tenant whose compliance-check for the day was already started by an earlier run.</summary>
+    /// <summary>Logs a tenant whose compliance-check for the day an earlier run started; the engine resolved the key to it.</summary>
     [LoggerMessage(EventId = LogEventIds.SchedulerBase + 22, Level = LogLevel.Information, Message = "Compliance check for tenant {TenantId} already started today as instance {InstanceId} ({Status})")]
     public static partial void ComplianceCheckAlreadyStarted(this ILogger logger, Guid tenantId, string instanceId, EF.FlowEngine.Model.ExecStatus status);
 

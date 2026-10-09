@@ -3,6 +3,7 @@ using System.Security.Claims;
 using EF.AspNetCore.RequestContext;
 using EF.Auth.Relay;
 using EF.Auth.Tokens;
+using EF.FlowEngine;
 using Microsoft.Extensions.Options;
 using TaskFlow.Application.Contracts;
 
@@ -19,7 +20,7 @@ namespace TaskFlow.Bootstrapper;
 /// be absolute or scheme-relative and the token must never leave for another host; a request carrying its own
 /// <c>Authorization</c> header is refused too, so a node cannot replace the token. Then an app-only bearer token for that scope from
 /// <c>EF.Auth</c> <see cref="AccessTokenCache"/>, and a relay header carrying the executing instance's tenant
-/// (<see cref="InstanceTenantNodeExecutor.CurrentTenant"/>), <see cref="Subject"/>, <see cref="DisplayName"/> and
+/// (<see cref="FlowExecution.Current"/>), <see cref="Subject"/>, <see cref="DisplayName"/> and
 /// <see cref="Roles"/>. A call outside an instance with a tenant throws before anything is sent: it never falls back to
 /// the host's own identity. The integration node takes its Error edge.</item>
 /// <item>Relay not configured: no token and no header; the call runs as the Api's own authentication.</item>
@@ -58,6 +59,8 @@ internal sealed class SelfCallRelayHandler(
         if (!settings.IsRelayConfigured)
             return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
+        // FlowEngine holds the requests its nodes build to this client's BaseAddress (BaseAddressBoundary); this check
+        // guards the credential this handler attaches for any sender on the named client, whoever built the request.
         if (!IsSelfCallTarget(request.RequestUri, settings.ApiBaseAddress))
         {
             throw new InvalidOperationException(
@@ -72,7 +75,7 @@ internal sealed class SelfCallRelayHandler(
                 $"{SelfCallRelayOptions.ConfigSectionName}:TokenScope set the relay supplies the token.");
         }
 
-        var tenant = InstanceTenantNodeExecutor.CurrentTenant;
+        var tenant = FlowExecution.Current?.TenantId;
         if (!Guid.TryParse(tenant, out var tenantId))
         {
             throw new InvalidOperationException(

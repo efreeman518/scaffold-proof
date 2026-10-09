@@ -22,7 +22,7 @@ public sealed partial class AiWorkflowIntegrationTests
     /// The start path of compliance-check (D-075) without the self-call relay (Scaffold mode): the Scheduler's ComplianceCheck
     /// job starts the workflow only for the tenant its API calls act for, the scaffold tenant, and that instance scans the
     /// tenant's due compliance tasks and reads the evidence (refused to an instance without a tenant, see
-    /// <see cref="ComplianceCheckItem_StartedWithoutATenant_IsRefusedItsEvidence"/>). Another tenant with a due task
+    /// <see cref="AdminStart_CarriesTheRequestedTenant_AndWithoutOneIsRefusedTheEvidence"/>). Another tenant with a due task
     /// tagged " COMPLIANCE " qualifies but gets no instance: the API calls would read the scaffold tenant's tasks, not its
     /// own, and report it swept. With the relay configured it starts
     /// (<see cref="ComplianceCheckJob_StartsOneInstancePerQualifyingTenant_CarryingThatTenant"/>). A re-run the same UTC day, after the first instance has started its children, resolves
@@ -82,8 +82,8 @@ public sealed partial class AiWorkflowIntegrationTests
             "the job-started instance carries the tenant, so its child reads the task's evidence. " + diagnostics);
         Assert.AreEqual(1, await CountCommentsAsync(client, dueWithEvidence.Id.Value, ct), "the expiring task gets one reminder. " + diagnostics);
 
-        // Same UTC day, after another workflow's instance was saved, as any other start between two runs does. The engine's
-        // own key lookup sees only the newest instance, so this asserts the handler's correlation-id lookup.
+        // Same UTC day, after another workflow's instance was saved, as any other start between two runs does, so the
+        // engine's key lookup has to find an instance that is not the newest in the store.
         var now2 = DateTimeOffset.UtcNow;
         await store.SaveAsync(new ExecutionInstance
         {
@@ -100,6 +100,12 @@ public sealed partial class AiWorkflowIntegrationTests
         Assert.HasCount(1, afterRerun, "a same-day re-run resolves to the day's instance. "
             + string.Join(" | ", afterRerun.Select(i => $"{i.InstanceId} tenant={i.TenantId} created={i.CreatedAt:O}")));
     }
+
+    private static Dictionary<string, object?> ComplianceCheckParams(string tenantId, DateTimeOffset now) => new()
+    {
+        ["tenantId"] = tenantId,
+        ["dueBefore"] = now.AddDays(7).ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+    };
 
     private static async Task<List<ExecutionInstance>> ComplianceCheckInstancesAsync(IExecutionStateStore store, CancellationToken ct) =>
         (await store.QueryAsync(new ExecutionQuery { WorkflowId = "compliance-check", Take = 50 }, ct)).Items.ToList();
@@ -119,7 +125,6 @@ public sealed partial class AiWorkflowIntegrationTests
         var handler = new ComplianceCheckHandler(
             new TaskItemSystemRepository(db),
             factory.Services.GetRequiredService<IFlowEngine>(),
-            factory.Services.GetRequiredService<IExecutionStateStore>(),
             SchedulerTestTelemetry.Create(),
             new FixedClock(now),
             Options.Create(new ComplianceCheckSettings()),
