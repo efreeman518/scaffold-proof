@@ -1,6 +1,10 @@
 using EF.Data.Encryption;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Metadata;
 using System.Security.Cryptography;
 using System.Text;
+using TaskFlow.Infrastructure.Data;
 using Test.Support;
 
 namespace Test.Unit.Infrastructure;
@@ -75,5 +79,29 @@ public sealed class ColumnEncryptionTests
         var disabled = ColumnEncryptionKeys.Resolve(new ColumnEncryptionOptions { Enabled = false });
         Assert.IsFalse(disabled.IsEnabled);
         Assert.AreSame(PlaintextColumnEncryptor.Instance, disabled.CreateEncryptor());
+    }
+
+    [TestMethod]
+    public void EquivalentEncryptors_ShareOneInternalServiceProvider_AcrossMoreHostsThanEfAllows()
+    {
+        // Each test host resolves its own encryptor from the same keys. EF caps a process at 20 internal service
+        // providers (ManyServiceProvidersCreatedWarning, thrown here); equivalent encryptors share one.
+        var models = new HashSet<IModel>(ReferenceEqualityComparer.Instance);
+
+        for (var host = 0; host < 25; host++)
+        {
+            using var db = new TaskFlowDbContextTrxn(new DbContextOptionsBuilder<TaskFlowDbContextTrxn>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .UseColumnEncryption(TestColumnEncryption.Keys.CreateEncryptor())
+                .ConfigureWarnings(w => w.Throw(CoreEventId.ManyServiceProvidersCreatedWarning))
+                .Options)
+            {
+                AuditId = "service-provider-sharing-test",
+                TenantId = TestConstants.TenantId
+            };
+            models.Add(db.Model);
+        }
+
+        Assert.HasCount(1, models, "equivalent encryptors must share one internal service provider and cached model");
     }
 }
