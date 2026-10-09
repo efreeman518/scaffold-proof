@@ -45,11 +45,11 @@
     <PackageVersion Include="EF.Audit.Data" Version="2.0.118" />
     <PackageVersion Include="EF.Grpc" Version="2.0.118" />
     <PackageVersion Include="EF.AI" Version="2.0.118" />
-    <PackageVersion Include="Testcontainers.MsSql" Version="4.15.0" />
-    <PackageVersion Include="Testcontainers.Azurite" Version="4.15.0" />
-    <PackageVersion Include="Testcontainers.Redis" Version="4.15.0" />
+    <PackageVersion Include="Testcontainers.MsSql" Version="4.16.0" />
+    <PackageVersion Include="Testcontainers.Azurite" Version="4.16.0" />
+    <PackageVersion Include="Testcontainers.Redis" Version="4.16.0" />
     <!-- Generic containers host SeaweedFS and MongoDB without provider-specific fixture packages. -->
-    <PackageVersion Include="Testcontainers" Version="4.15.0" />
+    <PackageVersion Include="Testcontainers" Version="4.16.0" />
   </ItemGroup>
   <ItemGroup Label="EF.Packages hosting, web and UI client">
     <PackageVersion Include="EF.AspNetCore.DataProtection" Version="2.0.118" />
@@ -120,35 +120,35 @@
     <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.10.0" />
   </ItemGroup>
   <ItemGroup Label="Aspire">
-    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.5.4" />
-    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.5.4" />
-    <PackageVersion Include="Aspire.Hosting.SqlServer" Version="13.5.4" />
-    <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="13.5.4" />
-    <PackageVersion Include="Aspire.Hosting.Redis" Version="13.5.4" />
-    <PackageVersion Include="Aspire.Hosting.Azure.Functions" Version="13.5.4" />
+    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.6.1" />
+    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.6.1" />
+    <PackageVersion Include="Aspire.Hosting.SqlServer" Version="13.6.1" />
+    <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="13.6.1" />
+    <PackageVersion Include="Aspire.Hosting.Redis" Version="13.6.1" />
+    <PackageVersion Include="Aspire.Hosting.Azure.Functions" Version="13.6.1" />
     <PackageVersion Include="KubernetesClient" Version="19.0.2" />
   </ItemGroup>
   <ItemGroup Label="RabbitMQ (Aspire hosting/client plus the integration tests' own broker client)">
     <PackageVersion Include="RabbitMQ.Client" Version="7.2.2" />
     <!-- D-034: Aspire hosting declares the local broker; the client integration registers the singleton
          IConnection that the package multiplexer reuses instead of opening a second one. -->
-    <PackageVersion Include="Aspire.Hosting.RabbitMQ" Version="13.5.4" />
-    <PackageVersion Include="Aspire.RabbitMQ.Client" Version="13.5.4" />
+    <PackageVersion Include="Aspire.Hosting.RabbitMQ" Version="13.6.1" />
+    <PackageVersion Include="Aspire.RabbitMQ.Client" Version="13.6.1" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.12" />
-    <PackageVersion Include="Testcontainers.RabbitMq" Version="4.15.0" />
+    <PackageVersion Include="Testcontainers.RabbitMq" Version="4.16.0" />
   </ItemGroup>
   <ItemGroup Label="gRPC (D-054 internal read service)">
     <!-- Grpc.Tools is a build-time-only protoc/codegen package: referenced with PrivateAssets=all in the
          contracts project, so it never flows to consumers or the publish output. -->
     <PackageVersion Include="Grpc.Tools" Version="2.84.0" />
-    <PackageVersion Include="Google.Protobuf" Version="3.36.1" />
-    <PackageVersion Include="Grpc.Net.ClientFactory" Version="2.83.0" />
-    <PackageVersion Include="Grpc.AspNetCore" Version="2.83.0" />
+    <PackageVersion Include="Google.Protobuf" Version="3.36.2" />
+    <PackageVersion Include="Grpc.Net.ClientFactory" Version="2.84.0" />
+    <PackageVersion Include="Grpc.AspNetCore" Version="2.84.0" />
   </ItemGroup>
   <ItemGroup Label="YARP">
-    <PackageVersion Include="Scalar.AspNetCore" Version="2.17.3" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="2.17.14" />
     <PackageVersion Include="Yarp.ReverseProxy" Version="2.3.0" />
     <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery.Yarp" Version="10.10.0" />
   </ItemGroup>
@@ -167,14 +167,14 @@
     <PackageVersion Include="TickerQ.Dashboard" Version="10.4.0" />
   </ItemGroup>
   <ItemGroup Label="OpenTelemetry">
-    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.18.0" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.19.1" />
   </ItemGroup>
   <ItemGroup Label="Testing">
-    <PackageVersion Include="MSTest" Version="4.4.0" />
+    <PackageVersion Include="MSTest" Version="4.5.1" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
-    <PackageVersion Include="Microsoft.Playwright" Version="1.62.0" />
-    <PackageVersion Include="Appium.WebDriver" Version="8.4.0" />
-    <PackageVersion Include="Moq" Version="4.20.72" />
+    <PackageVersion Include="Microsoft.Playwright" Version="1.63.0" />
+    <PackageVersion Include="Appium.WebDriver" Version="9.0.0" />
+    <PackageVersion Include="Moq" Version="4.21.0" />
     <!-- Test.Architecture reads IL directly (ConcurrencyGuard policy check); same version EF.Testing.Architecture uses. -->
     <PackageVersion Include="Mono.Cecil" Version="0.11.6" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
@@ -194,7 +194,7 @@
          references MessagePack directly for ContractlessStandardResolver. Pinned here, alongside its former
          exception neighbors, for centralized version control.
          Validate with the Infrastructure.Caching consumers and the Test.Support build. -->
-    <PackageVersion Include="MessagePack" Version="3.1.8" />
+    <PackageVersion Include="MessagePack" Version="3.1.11" />
     <!-- Temporary exception: the Uno toolchain resolves a vulnerable cryptography transitive.
          Reason: direct reference lifts the vulnerable transitive. Remove when the parent resolves a non-vulnerable release.
          Validate with the transitive vulnerability audit and the separate Uno build. -->
@@ -205,49 +205,49 @@
     <PackageVersion Include="SSH.NET" Version="2026.0.0" />
   </ItemGroup>
   <ItemGroup Label="Azure Storage">
-    <PackageVersion Include="Azure.Data.Tables" Version="12.12.0" />
-    <PackageVersion Include="Azure.Storage.Blobs" Version="12.29.2" />
+    <PackageVersion Include="Azure.Data.Tables" Version="12.13.0" />
+    <PackageVersion Include="Azure.Storage.Blobs" Version="12.30.1" />
     <PackageVersion Include="Microsoft.Extensions.Azure" Version="1.14.1" />
-    <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.5.4" />
+    <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.6.1" />
   </ItemGroup>
   <ItemGroup Label="AWS S3 (D-037 NonAzure object-storage arm: SeaweedFS locally/on the VPS, any S3-compatible provider in production)">
     <!-- The S3 arm itself is EF.Storage.S3; this direct reference exists for Test.Integration, which drives
          SeaweedFS with its own IAmazonS3 client. Version tracks EF.Storage.S3's own dependency (no downgrade). -->
-    <PackageVersion Include="AWSSDK.S3" Version="4.0.103.3" />
+    <PackageVersion Include="AWSSDK.S3" Version="4.0.104.2" />
   </ItemGroup>
   <ItemGroup Label="Azure Service Bus">
     <PackageVersion Include="Azure.Messaging.ServiceBus" Version="7.21.0" />
-    <PackageVersion Include="Aspire.Hosting.Azure.ServiceBus" Version="13.5.4" />
+    <PackageVersion Include="Aspire.Hosting.Azure.ServiceBus" Version="13.6.1" />
   </ItemGroup>
   <ItemGroup Label="Azure Cosmos DB">
-    <PackageVersion Include="Microsoft.Azure.Cosmos" Version="3.63.0" />
+    <PackageVersion Include="Microsoft.Azure.Cosmos" Version="3.63.2" />
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.5.4" />
+    <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.6.1" />
   </ItemGroup>
   <ItemGroup Label="MongoDB">
     <!-- D-038/D-060 explicit NonAzure TaskView alternative. -->
-    <PackageVersion Include="MongoDB.Driver" Version="3.11.2" />
+    <PackageVersion Include="MongoDB.Driver" Version="3.12.0" />
   </ItemGroup>
   <ItemGroup Label="Feature flags">
     <!-- D-042: Azure App Configuration itself comes from EF.Host. -->
-    <PackageVersion Include="Microsoft.FeatureManagement.AspNetCore" Version="4.7.0" />
+    <PackageVersion Include="Microsoft.FeatureManagement.AspNetCore" Version="4.8.0" />
     <!-- Infrastructure.AI checks AiReview via IVariantFeatureManager without the ASP.NET Core-specific package. -->
-    <PackageVersion Include="Microsoft.FeatureManagement" Version="4.7.0" />
+    <PackageVersion Include="Microsoft.FeatureManagement" Version="4.8.0" />
   </ItemGroup>
   <ItemGroup Label="AI Services">
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
     <PackageVersion Include="Azure.Search.Documents" Version="12.0.0" />
-    <PackageVersion Include="Microsoft.Agents.AI" Version="1.21.0" />
-    <PackageVersion Include="Microsoft.Agents.AI.OpenAI" Version="1.21.0" />
+    <PackageVersion Include="Microsoft.Agents.AI" Version="1.24.0" />
+    <PackageVersion Include="Microsoft.Agents.AI.OpenAI" Version="1.24.0" />
     <PackageVersion Include="Microsoft.Extensions.AI" Version="10.10.0" />
     <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.10.1" />
     <PackageVersion Include="OpenAI" Version="2.14.0" />
-    <PackageVersion Include="Aspire.Hosting.Azure.CognitiveServices" Version="13.5.4" />
-    <PackageVersion Include="Aspire.Hosting.Azure.Search" Version="13.5.4" />
-    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.5.4" />
+    <PackageVersion Include="Aspire.Hosting.Azure.CognitiveServices" Version="13.6.1" />
+    <PackageVersion Include="Aspire.Hosting.Azure.Search" Version="13.6.1" />
+    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.6.1" />
     <!-- Temporary exception: Azure AI Inference has no stable package release.
          Reason: use its latest compatible preview release for the enabled Azure AI proof. Remove when a stable release exists.
          Validate with restore, full build, Test.Aspire AI topology, and the Azure live-provider lane. -->
-    <PackageVersion Include="Aspire.Azure.AI.Inference" Version="13.5.4-preview.1.26464.4" />
+    <PackageVersion Include="Aspire.Azure.AI.Inference" Version="13.6.1-preview.1.26506.6" />
   </ItemGroup>
 </Project>

@@ -63,6 +63,10 @@ internal sealed class RetryProbe
         }
     }
 
-    private static Task Invoke(IInvocation invocation) =>
-        (Task)((Delegate)invocation.Arguments[0]).DynamicInvoke(invocation.Arguments[2])!;
+    private static Task Invoke(IInvocation invocation)
+    {
+        var work = invocation.Arguments[0] as Delegate
+            ?? throw new InvalidOperationException("The probed call carries no work delegate as its first argument.");
+        return (Task)work.DynamicInvoke(invocation.Arguments[2])!;
+    }
 }
