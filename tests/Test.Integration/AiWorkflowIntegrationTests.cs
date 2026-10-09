@@ -368,9 +368,9 @@ public sealed partial class AiWorkflowIntegrationTests
     }
 
     /// <summary>
-    /// D-075: the admin start route has no tenant field, so an instance it starts has no tenant. A compliance-check-item
-    /// run started there for the scaffold tenant's own task with text evidence finds the attachment, and the store refuses
-    /// the read: the run ends on n-failed with no agent call and no comment.
+    /// D-075: an admin start without <c>tenantId</c> starts an instance with no tenant. A compliance-check-item run started
+    /// that way for the scaffold tenant's own task with text evidence finds the attachment, and the store refuses the read:
+    /// the run ends on n-failed with no agent call and no comment.
     /// </summary>
     [TestMethod]
     public async Task ComplianceCheckItem_StartedWithoutATenant_IsRefusedItsEvidence()
@@ -857,18 +857,12 @@ public sealed partial class AiWorkflowIntegrationTests
         return payload.RootElement.GetProperty("items").GetArrayLength();
     }
 
+    // Starts the workflow through the admin start route. With tenantId the request carries the instance tenant, which
+    // the package honours for a caller that resolves to no Admin API tenant (the scaffold principal in Scaffold mode).
     private static async Task<string> StartWorkflowAsync(
-        HttpClient client, string workflowId, Dictionary<string, object?> parameters, CancellationToken ct)
+        HttpClient client, string workflowId, Dictionary<string, object?> parameters, CancellationToken ct, string? tenantId = null)
     {
-        using var response = await client.PostAsJsonAsync(
-            "/api/flowengine/instances/start",
-            new Dictionary<string, object?>
-            {
-                ["workflowId"] = workflowId,
-                ["correlationId"] = Guid.NewGuid().ToString("N"),
-                ["params"] = parameters
-            },
-            ct);
+        using var response = await PostAdminStartAsync(client, workflowId, parameters, tenantId, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
         Assert.IsTrue(
             response.StatusCode is HttpStatusCode.OK or HttpStatusCode.Accepted or HttpStatusCode.Created,
@@ -879,9 +873,23 @@ public sealed partial class AiWorkflowIntegrationTests
         return instanceId!;
     }
 
+    private static Task<HttpResponseMessage> PostAdminStartAsync(
+        HttpClient client, string workflowId, Dictionary<string, object?> parameters, string? tenantId, CancellationToken ct)
+    {
+        var request = new Dictionary<string, object?>
+        {
+            ["workflowId"] = workflowId,
+            ["correlationId"] = Guid.NewGuid().ToString("N"),
+            ["params"] = parameters
+        };
+        if (tenantId is not null)
+            request["tenantId"] = tenantId;
+        return client.PostAsJsonAsync("/api/flowengine/instances/start", request, ct);
+    }
+
     // Starts the workflow as a trigger does (WorkflowTriggerHandler): through IFlowEngine with the instance tenant set, so
-    // the instance and its loop children read evidence as that tenant. The admin start route has no tenant field, so an
-    // instance it starts has no tenant, and the attachment-backed store refuses its evidence reads.
+    // the instance and its loop children read evidence as that tenant. An admin start without tenantId has no tenant, and
+    // the attachment-backed store refuses its evidence reads.
     private static async Task<string> StartForTenantAsync(
         FlowEngineWorkflowApiFactory factory, string workflowId, Dictionary<string, object?> parameters, CancellationToken ct)
     {

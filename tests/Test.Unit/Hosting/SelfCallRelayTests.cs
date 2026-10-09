@@ -1,4 +1,5 @@
 using System.Net;
+using System.Runtime.ExceptionServices;
 using System.Security.Claims;
 using Azure.Core;
 using EF.Auth.Relay;
@@ -186,21 +187,6 @@ public sealed class SelfCallRelayTests
     }
 
     [TestMethod]
-    public void Wrapping_KeepsEachRegistrationsLifetime()
-    {
-        var services = new ServiceCollection();
-        services.AddScoped<INodeExecutor, EF.FlowEngine.Executors.IntegrationNodeExecutor>();
-        services.AddTransient<INodeExecutor, EF.FlowEngine.Executors.FetchNodeExecutor>();
-
-        RegisterServices.RunHttpNodesInTheInstanceTenant(services);
-
-        CollectionAssert.AreEqual(
-            new[] { ServiceLifetime.Scoped, ServiceLifetime.Transient },
-            services.Where(d => d.ServiceType == typeof(INodeExecutor)).Select(d => d.Lifetime).ToArray());
-        Assert.IsTrue(services.All(d => d.ImplementationFactory is not null), "both are the wrapper's factories");
-    }
-
-    [TestMethod]
     [DataRow(null)]
     [DataRow("")]
     [DataRow("not-a-tenant")]
@@ -251,31 +237,51 @@ public sealed class SelfCallRelayTests
         StringAssert.Contains(thrown.Message, "ForwardedClaims:ClaimTypes");
     }
 
+    /// <summary>
+    /// The package's integration and fetch nodes on the real <c>taskflow-api</c> registration: each self-call they make
+    /// runs inside the instance (<c>FlowExecution.Current</c>), so the relay carries that instance's tenant.
+    /// </summary>
     [TestMethod]
-    public void Registration_WrapsTheHttpNodeExecutors_AndNoOther()
+    public async Task IntegrationAndFetchNodes_RelayTheInstanceTenant()
     {
-        using var provider = Build(StubHttpMessageHandler.Returns(HttpStatusCode.OK), scope: null);
-        var registry = provider.GetRequiredService<INodeExecutorRegistry>();
+        var transport = StubHttpMessageHandler.Returns(HttpStatusCode.OK);
+        using var provider = Build(transport, Scope);
 
-        Assert.IsInstanceOfType<InstanceTenantNodeExecutor>(registry.Get("integration"));
-        Assert.IsInstanceOfType<InstanceTenantNodeExecutor>(registry.Get("fetch"));
-        Assert.IsNotInstanceOfType<InstanceTenantNodeExecutor>(registry.Get("agent"));
-        Assert.AreEqual("integration", registry.Get("integration")!.NodeType);
+        var instance = await RunAsync(provider, HttpNodesProbe("/api/v1/task-items/search"), TenantB.ToString());
+
+        Assert.AreEqual("n-done", instance.CurrentNodeId, instance.Error?.Message);
+        Assert.HasCount(2, transport.Requests, "one integration call and one fetch call");
+        foreach (var request in transport.Requests)
+        {
+            Assert.AreEqual(TenantB.ToString(), DecodeAsTheApi(request).Single(c => c.Type == "tenant_id").Value);
+        }
     }
 
+    /// <summary>
+    /// The package holds the requests its integration and fetch nodes build to the client's base address
+    /// (<c>BaseAddressBoundary</c>): a node URL naming another origin is refused before the client pipeline runs, so
+    /// nothing is sent and the node takes its Error edge. The relay is off, so the handler checks no address and the
+    /// refusal is the package's.
+    /// </summary>
     [TestMethod]
-    public async Task InstanceTenant_IsScopedToTheNode()
+    [DataRow("integration", "http://evil.example/api/v1/task-items/search")]
+    [DataRow("integration", "//evil.example/api/v1/task-items/search")]
+    [DataRow("integration", "http://localhost:8081/api/v1/task-items/search")]
+    [DataRow("fetch", "http://evil.example/api/v1/task-items/search")]
+    [DataRow("fetch", "//evil.example/api/v1/task-items/search")]
+    [DataRow("fetch", "http://localhost:8081/api/v1/task-items/search")]
+    public async Task HttpNode_UrlLeavingTheBaseAddress_IsRefusedByThePackage(string nodeType, string target)
     {
-        var seen = new System.Collections.Concurrent.ConcurrentBag<string?>();
-        var executor = new InstanceTenantNodeExecutor(new CallbackExecutor(() => seen.Add(InstanceTenantNodeExecutor.CurrentTenant)));
+        var transport = StubHttpMessageHandler.Returns(HttpStatusCode.OK);
+        using var provider = Build(transport, scope: null);
+        var definition = nodeType == "integration"
+            ? HttpNodesProbe(target)
+            : HttpNodesProbe("/api/v1/task-items/search", fetchTarget: target);
 
-        await executor.ExecuteAsync(new NodeDefinition { Id = "n", Type = "integration" }, Instance("t-1"), null!, TestContext.CancellationToken);
-        await Task.WhenAll(
-            executor.ExecuteAsync(new NodeDefinition { Id = "n", Type = "integration" }, Instance("t-2"), null!, TestContext.CancellationToken),
-            executor.ExecuteAsync(new NodeDefinition { Id = "n", Type = "integration" }, Instance("t-3"), null!, TestContext.CancellationToken));
+        var instance = await RunAsync(provider, definition, TenantB.ToString());
 
-        CollectionAssert.AreEquivalent(new[] { "t-1", "t-2", "t-3" }, seen);
-        Assert.IsNull(InstanceTenantNodeExecutor.CurrentTenant, "nothing leaks out of the node");
+        Assert.AreEqual("n-failed", instance.CurrentNodeId, instance.Error?.Message);
+        Assert.HasCount(nodeType == "integration" ? 0 : 1, transport.Requests, "the call leaving the base address is never sent");
     }
 
     [TestMethod]
@@ -292,13 +298,19 @@ public sealed class SelfCallRelayTests
         Assert.IsTrue(on.CanActFor(TenantB));
     }
 
-    /// <summary>Sends one self-call from inside a node of an instance with <paramref name="tenant"/>.</summary>
-    private Task SendInInstanceAsync(
+    /// <summary>
+    /// Sends one self-call on the named client from inside a node of an instance with <paramref name="tenant"/> run by the
+    /// engine, so <c>FlowExecution.Current</c> is that instance. The probe node builds the request itself, as any other
+    /// sender on the named client would, so the handler's own checks are what stand between it and the transport. The
+    /// send's exception, if any, is rethrown here.
+    /// </summary>
+    private async Task SendInInstanceAsync(
         ServiceProvider provider, string? tenant, Action<HttpRequestMessage>? configure = null,
         string target = "http://localhost/api/v1/task-items/search")
     {
         var factory = provider.GetRequiredService<IHttpClientFactory>();
-        var executor = new InstanceTenantNodeExecutor(new CallbackExecutor(async () =>
+        var probe = provider.GetRequiredService<SendProbeExecutor>();
+        probe.Work = async ct =>
         {
             using var client = factory.CreateClient(RegisterServices.TaskFlowApiClientName);
             // A path ("/x") or scheme-relative ("//host/x") target is relative to the client's base address, as a node path is.
@@ -310,10 +322,68 @@ public sealed class SelfCallRelayTests
                 Content = new StringContent("{}"),
             };
             configure?.Invoke(request);
-            using var response = await client.SendAsync(request, TestContext.CancellationToken);
-        }));
-        return executor.ExecuteAsync(new NodeDefinition { Id = "n", Type = "integration" }, Instance(tenant), null!, TestContext.CancellationToken);
+            using var response = await client.SendAsync(request, ct);
+        };
+
+        var instance = await RunAsync(provider, SendProbe(), tenant);
+
+        Assert.IsTrue(probe.Ran, $"the probe node ran: {instance.Error?.Message}");
+        probe.Failure?.Throw();
     }
+
+    private async Task<ExecutionInstance> RunAsync(ServiceProvider provider, WorkflowDefinition definition, string? tenant)
+    {
+        await provider.GetRequiredService<IWorkflowRegistry>().SaveAsync(definition, TestContext.CancellationToken);
+        return await provider.GetRequiredService<IFlowEngine>().StartAsync(new StartRequest
+        {
+            WorkflowId = definition.Id,
+            TenantId = tenant,
+        }, TestContext.CancellationToken);
+    }
+
+    private static WorkflowDefinition SendProbe() => WorkflowDefinitionBuilder.FromJson($$"""
+        {
+          "id": "relay-send-probe",
+          "version": "1.0.0",
+          "status": "Active",
+          "entryNodeId": "n-send",
+          "nodes": {
+            "n-send": {
+              "id": "n-send", "type": "{{SendProbeExecutor.Type}}",
+              "retryPolicy": { "maxAttempts": 1 },
+              "config": {},
+              "edges": [ { "on": ["Match", "Error"], "nextNodeId": "n-done" } ]
+            },
+            "n-done": { "id": "n-done", "type": "output", "config": {} }
+          }
+        }
+        """).Build();
+
+    /// <summary>An integration node then a fetch node, both on the <c>taskflow-api</c> client.</summary>
+    private static WorkflowDefinition HttpNodesProbe(string target, string? fetchTarget = null) => WorkflowDefinitionBuilder.FromJson($$"""
+        {
+          "id": "relay-http-nodes-probe",
+          "version": "1.0.0",
+          "status": "Active",
+          "entryNodeId": "n-integration",
+          "nodes": {
+            "n-integration": {
+              "id": "n-integration", "type": "integration",
+              "retryPolicy": { "maxAttempts": 1 },
+              "config": { "clientRef": "taskflow-api", "method": "POST", "path": "{{target}}", "body": { "pageSize": 1 } },
+              "edges": [ { "on": ["Match"], "nextNodeId": "n-fetch" }, { "on": ["NoMatch", "Error"], "nextNodeId": "n-failed" } ]
+            },
+            "n-fetch": {
+              "id": "n-fetch", "type": "fetch",
+              "retryPolicy": { "maxAttempts": 1 },
+              "config": { "clientRef": "taskflow-api", "method": "POST", "url": "{{fetchTarget ?? target}}", "body": "{}" },
+              "edges": [ { "on": ["Match"], "nextNodeId": "n-done" }, { "on": ["NoMatch", "Error"], "nextNodeId": "n-failed" } ]
+            },
+            "n-done": { "id": "n-done", "type": "output", "config": {} },
+            "n-failed": { "id": "n-failed", "type": "output", "config": {} }
+          }
+        }
+        """).Build();
 
     /// <summary>The relay header decoded with the Api's shipped <c>ForwardedClaims</c> section, as its relay does.</summary>
     private static IReadOnlyList<Claim> DecodeAsTheApi(RecordedHttpRequest request)
@@ -351,33 +421,39 @@ public sealed class SelfCallRelayTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<TokenCredential>(new FixedCredential());
-        var fe = services.AddFlowEngine();
-        RegisterServices.RunHttpNodesInTheInstanceTenant(services);
+        var probe = new SendProbeExecutor();
+        services.AddSingleton(probe);
+        var fe = services.AddFlowEngine().UseAllInMemoryProviders().AddNodeExecutor(probe);
         RegisterServices.AddTaskFlowApiHttpClient(fe, services, config).ConfigurePrimaryHttpMessageHandler(() => transport);
         return services.BuildServiceProvider();
     }
 
-    private static ExecutionInstance Instance(string? tenant) => new()
+    /// <summary>Runs <see cref="Work"/> as the node's work and keeps the exception it throws for the test to rethrow.</summary>
+    private sealed class SendProbeExecutor : INodeExecutor
     {
-        InstanceId = Guid.CreateVersion7().ToString("N"),
-        WorkflowId = "compliance-check",
-        TenantId = tenant,
-        Status = ExecStatus.Running,
-    };
+        public const string Type = "relay-send-probe";
 
-    /// <summary>Runs a callback as the node's work.</summary>
-    private sealed class CallbackExecutor(Func<Task> work) : INodeExecutor
-    {
-        public CallbackExecutor(Action work) : this(() => { work(); return Task.CompletedTask; })
-        {
-        }
+        public Func<CancellationToken, Task> Work { get; set; } = _ => Task.CompletedTask;
 
-        public string NodeType => "integration";
+        public bool Ran { get; private set; }
+
+        public ExceptionDispatchInfo? Failure { get; private set; }
+
+        public string NodeType => Type;
 
         public async Task<NodeResult> ExecuteAsync(NodeDefinition node, ExecutionInstance instance, IExecutionContext ctx, CancellationToken ct = default)
         {
-            await Task.Yield();
-            await work();
+            Ran = true;
+            try
+            {
+                await Work(ct);
+            }
+            catch (Exception ex)
+            {
+                Failure = ExceptionDispatchInfo.Capture(ex);
+                throw;
+            }
+
             return new NodeResult { Outcome = DecisionOutcome.Match };
         }
     }

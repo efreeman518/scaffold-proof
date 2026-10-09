@@ -8,7 +8,6 @@ using EF.FlowEngine.Clients;
 using EF.FlowEngine.Clients.AI;
 using EF.FlowEngine.Clients.Http;
 using EF.FlowEngine.Clients.ServiceBus;
-using EF.FlowEngine.Executors;
 using EF.FlowEngine.Model;
 using EF.FlowEngine.Sql;
 using EF.Host;
@@ -56,7 +55,6 @@ public static partial class RegisterServices
             .UseCircuitBreakerSql<TaskFlowFlowEngineDbContext>()
             // D-075: document nodes read attachment evidence from the lane's object storage (Azure Blob or S3).
             .UseDocumentStore<AttachmentDocumentStore>();
-        RunHttpNodesInTheInstanceTenant(services);
 
         // Retention removes terminal workflow instances so the FlowEngine state store stays bounded.
         // UseRetentionPolicy registers a hosted service, and every host loading this assembly would run its
@@ -199,30 +197,6 @@ public static partial class RegisterServices
         services.AddAzureTokenCredential(config);
         services.AddAccessTokenCache();
         services.AddTransient<SelfCallRelayHandler>();
-    }
-
-    /// <summary>
-    /// Wraps the node executors that call request-response clients (<c>integration</c>, <c>fetch</c>) in
-    /// <see cref="InstanceTenantNodeExecutor"/>, so a self-call knows the tenant of the instance it runs for.
-    /// <c>AddFlowEngine</c> registers each as an <see cref="INodeExecutor"/> implementation type; the wrapper keeps that
-    /// registration's lifetime, and a registration of another shape fails host start rather than leaving the self-call
-    /// without its tenant.
-    /// </summary>
-    internal static void RunHttpNodesInTheInstanceTenant(IServiceCollection services)
-    {
-        foreach (var executorType in new[] { typeof(IntegrationNodeExecutor), typeof(FetchNodeExecutor) })
-        {
-            var registration = services.SingleOrDefault(d =>
-                    d.ServiceType == typeof(INodeExecutor) && d.ImplementationType == executorType)
-                ?? throw new InvalidOperationException(
-                    $"AddFlowEngine did not register {executorType.Name} as an {nameof(INodeExecutor)} implementation type, " +
-                    "so the workflow self-call relay cannot read the instance tenant.");
-            services.Remove(registration);
-            services.Add(ServiceDescriptor.Describe(
-                typeof(INodeExecutor),
-                sp => new InstanceTenantNodeExecutor((INodeExecutor)ActivatorUtilities.CreateInstance(sp, executorType)),
-                registration.Lifetime));
-        }
     }
 
     internal static string ResolveFlowEngineServiceBusTopic(IConfiguration config) =>
