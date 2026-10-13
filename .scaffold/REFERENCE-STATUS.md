@@ -4,13 +4,46 @@ Canonical current evidence for the TaskFlow reference application. Historical ph
 
 > Update this file only from observed results. TaskFlow CI records the scaffold checkout commit used for cross-repository validation so failures remain diagnosable without creating a compatibility pin.
 
-TaskFlow runs on the EF.Packages 2.0 platform packages (every `EF.*` platform id at 2.0.131; EF.FilterBuilder and the EF.FlowEngine ids at 1.0.235). Every NuGet package in `Directory.Packages.props`, the repository tools and the npm packages are on their latest stable release (2026-10-09), except `typescript` (held on ~6.0.3: typescript-eslint 8.71.1 accepts typescript >=4.8.4 <6.1.0) and `@types/node` (24.19.2, the Node 24 line CI runs, not 26.x); `Aspire.Azure.AI.Inference` is on its 13.6.1 preview line (no stable release). Results below distinguish passed, blocked, and not-run evidence; each table names its run date.
+TaskFlow runs on the EF.Packages 2.0 platform packages (every `EF.*` platform id at 2.0.132; EF.FilterBuilder and the EF.FlowEngine ids at 1.0.237). A 2026-10-13 freshness audit checked every `Directory.Packages.props` entry against nuget.org and the EF feed, plus the repository tools, Uno.Sdk (6.7.30) and the npm packages: all are on their latest stable release, except `typescript` (held on ~6.0.3: typescript-eslint 8.71.2 accepts typescript >=4.8.4 <6.1.0) and `@types/node` (24.19.2, the Node 24 line CI runs, not 26.x); `Aspire.Azure.AI.Inference` is on its 13.6.1 preview line (no stable release). The .NET SDK stays on 10.0.401 (`global.json`) until 10.0.402 (released 2026-10-13) is installed on the verification host. Results below distinguish passed, blocked, and not-run evidence; each table names its run date.
+
+## Current acceptance (2026-10-13)
+
+Release `--no-incremental` solution build on .NET SDK 10.0.401 (0 warnings, 0 errors, 145 s), separate Uno build (0 warnings), then Release `--no-build` runs on the final package set, serially, Podman Docker-compatible context:
+
+| Scope | Passed | Failed | Skipped |
+|---|---:|---:|---:|
+| Test.Unit | 746 | 0 | 0 |
+| Test.Architecture | 87 | 0 | 0 |
+| Test.Endpoints | 297 | 0 | 0 |
+| Test.Integration.FlowEngine | 40 | 0 | 0 |
+| Test.UI | 54 | 0 | 0 |
+| Test.Mutation | 27 | 0 | 0 |
+| Test.Integration, `TASKFLOW_LANE=NonAzure` / PostgreSqlJsonb | 166 | 0 | 5 (Azure-only) |
+| Test.Integration, `TASKFLOW_LANE=Azure` / Cosmos | 152 | 0 | 19 (NonAzure-only) |
+| Test.Integration, NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | 168 | 0 | 3 |
+| Test.E2E, NonAzure | 10 | 0 | 0 |
+| Test.E2E, `TASKFLOW_LANE=Azure` | 10 | 0 | 0 |
+| Test.Aspire topology contracts (`FullyQualifiedName~Topology`) | 43 | 0 | 0 |
+| Test.PlaywrightUI `ReactTypeScriptProject_Passes` (NonAzure Aspire graph, 3 min 13 s) | 1 | 0 | 0 |
+| **Total** | **1801** | **0** | **27** |
+
+The transitive vulnerability audit (`dotnet list package --vulnerable --include-transitive`) is clean for the solution and the Uno project. It required two temporary direct-reference exceptions for advisories published 2026-10-13 whose parents have no patched release: `System.Security.Cryptography.Pkcs` 10.0.13 (CVE-2026-84008, CVE-2026-70162; reached through `Microsoft.Data.SqlClient` 7.x, `Aspire.Hosting.SqlServer` and DataProtection) and the existing `System.Security.Cryptography.Xml` 10.0.13 exception widened to the DataProtection path (CVE-2026-96958, CVE-2026-96960). Projects with the `Microsoft.AspNetCore.App` framework reference prune the Xml package (NU1510), so only Functions and Test.Architecture reference it directly. `npm audit` reports 0 vulnerabilities for TaskFlow.React.
+
+Both `InitialFlowEngine` baselines were regenerated under D-025 for EF.FlowEngine 1.0.237's 512-character execution-tag value limit and `(Key, Value)` index; each context/provider pair still has exactly one initial migration, and `MigrationModelContractTests` report no pending changes for all six pairs. A development volume created against the previous baseline needs the documented reset before reuse.
+
+Earlier the same day, on the package set before the EF.FilterBuilder 1.0.237, MessagePack 3.1.12 and Pkcs exception changes: the Android Appium runner rebuilt the APK (0 warnings) and passed its 3 MobileUI tests in 6.22 minutes; the Test.Mobile process cancellation contract passed; Stryker completed in 92.34 s with a 65.83% mutation score (79 killed, 34 surviving, 0 timeouts/errors), meeting the `break: 0` gate.
+
+Not run on 2026-10-13: Aspire core-lane and full-lane meshes, Playwright Blazor, Uno WASM and Release Uno cold start, Test.Load, benchmarks, live Azure Foundry (needs external configuration) and iOS (needs a Mac). Their latest evidence is in the sections below.
+
+An earlier attempt the same day could not reach containers: the Podman WSL machine had lost its generated `/etc/resolv.conf`, so image pulls failed name resolution. Restarting the Podman machine regenerated it; no networking settings were changed.
+
+TRX evidence and per-lane logs are under `tests/TestResults/Acceptance-2026-10-13b/`.
 
 ## Build Status
 
 | Field | Value |
 |---|---|
-| Last verified | 2026-10-09 (Release `--no-incremental` build, vulnerability audit, Test.Unit, Test.Architecture, Test.Endpoints, Test.Integration.FlowEngine, Test.Integration on all three lanes, `AppHostLaneTopologyTests`, `ComplianceCheckSchedulerSmokeTests` and the Playwright React project, on EF.* 2.0.131 and EF.FlowEngine 1.0.235); 2026-10-05 (Test.UI, Test.Mutation; Uno build on EF.FlowEngine 1.0.204); 2026-09-29 (Aspire topology and core-lane meshes on both lanes, NonAzure full-lane graph, Test.PlaywrightUI on both lanes, Test.Load on the NonAzure dev stack); 2026-09-16 (mobile, images, deployment lanes) |
+| Last verified | 2026-10-13 (Release `--no-incremental` build, Uno build, vulnerability audit, Test.Unit, Test.Architecture, Test.Endpoints, Test.Integration.FlowEngine, Test.UI, Test.Mutation, Test.Integration on all three lanes, Test.E2E on both lanes, Aspire topology contracts and the Playwright React project, on EF.* 2.0.132 and EF.FlowEngine 1.0.237; Android Appium and Stryker on the same day's pre-final package set); 2026-09-29 (Aspire topology and core-lane meshes on both lanes, NonAzure full-lane graph, Test.PlaywrightUI on both lanes, Test.Load on the NonAzure dev stack); 2026-09-16 (mobile, images, deployment lanes) |
 | Solution | `TaskFlow.slnx` (47 projects) |
 | Target framework | .NET 10 |
 | Configuration | Release |
@@ -23,38 +56,38 @@ TaskFlow runs on the EF.Packages 2.0 platform packages (every `EF.*` platform id
 
 A Debug restore of the Uno project followed by a Release `--no-restore` build fails with `UNOB0019` (the DevServer targets are imported for a Debug restore); restore in the configuration you build, as CI does.
 
-`dotnet ef migrations has-pending-model-changes` is clean for all 6 context/provider pairs (TaskFlow, FlowEngine and TickerQ, each against SqlServer and PostgreSql; `dotnet ef migrations has-pending-model-changes` per pair and `MigrationModelContractTests` in Test.Unit, 2026-10-09 against EF Core 10.0.12 and EF.FlowEngine 1.0.235). Each pair has exactly one initial migration (D-025, `MigrationBaselineArchitectureTests`); the TaskFlow context's `InitialCreate` was regenerated on 2026-10-03 for the `Attachment.StorageKey` column (D-075, max 400), the FlowEngine context's `InitialFlowEngine` on 2026-10-09 for the EF.FlowEngine 1.0.235 tag table and `Executions` columns (a dev volume created before it is dropped, README), and `DatabaseMigratorIntegrationTests` applies all targets to an empty database on PostgreSQL and SQL Server.
+`dotnet ef migrations has-pending-model-changes` is clean for all 6 context/provider pairs (TaskFlow, FlowEngine and TickerQ, each against SqlServer and PostgreSql; `dotnet ef migrations has-pending-model-changes` per pair and `MigrationModelContractTests` in Test.Unit, 2026-10-13 against EF Core 10.0.13 and EF.FlowEngine 1.0.237). Each pair has exactly one initial migration (D-025, `MigrationBaselineArchitectureTests`); the TaskFlow context's `InitialCreate` was regenerated on 2026-10-03 for the `Attachment.StorageKey` column (D-075, max 400), the FlowEngine context's `InitialFlowEngine` on 2026-10-13 for the EF.FlowEngine 1.0.237 512-character tag value and `(Key, Value)` index (a dev volume created before it is dropped, README), and `DatabaseMigratorIntegrationTests` applies all targets to an empty database on PostgreSQL and SQL Server.
 
 ## Test Status
 
 ### Fast matrix
 
-Release `--no-build` after a `--no-incremental` Release solution build (0 warnings, 0 errors), run serially; 2026-10-09 (EF.* 2.0.131, EF.FlowEngine and EF.FilterBuilder 1.0.235) for Test.Unit, Test.Architecture, Test.Endpoints and Test.Integration.FlowEngine; 2026-10-05 for Test.UI and Test.Mutation; 2026-09-29 for Test.PlaywrightUI. No failed, skipped, or inconclusive tests:
+Release `--no-build` after a `--no-incremental` Release solution build (0 warnings, 0 errors), run serially; 2026-10-13 (EF.* 2.0.132, EF.FlowEngine and EF.FilterBuilder 1.0.237) for Test.Unit, Test.Architecture, Test.Endpoints, Test.Integration.FlowEngine, Test.UI and Test.Mutation; 2026-09-29 for Test.PlaywrightUI. No failed, skipped, or inconclusive tests:
 
 | Project | Passed | Duration |
 |---|---:|---:|
-| Test.Unit | 745 | 12 s |
+| Test.Unit | 746 | 12 s |
 | Test.UI | 54 | 1 s |
 | Test.Architecture | 87 | 2 s |
-| Test.Endpoints | 297 | 13 s |
+| Test.Endpoints | 297 | 14 s |
 | Test.Integration.FlowEngine | 40 | 0.3 s |
 | Test.Mutation | 27 | 0.1 s |
 | Test.PlaywrightUI (`TestCategory=Unit`) | 1 | 0.1 s |
-| **Total** | **1251** | |
+| **Total** | **1252** | |
 
 `Test.Unit` used the CI 15-second blame-hang timeout. The Release build is the analyzer gate: `TreatWarningsAsErrors` fails it on any warning-severity diagnostic. `RedisConfiguredButUnreachable_LimiterFailsOpen` bounds fail-open latency with a production-shaped connection string (373 ms). Types the EF.* packages own are tested by the package suites, not here.
 
 ### Component containers
 
-Release `--no-build`, Podman Docker-compatible context; Test.Integration 2026-10-09 on all three lanes (EF.* 2.0.131, EF.FlowEngine 1.0.235), Test.E2E 2026-09-29:
+Release `--no-build`, Podman Docker-compatible context; Test.Integration and Test.E2E 2026-10-13 (EF.* 2.0.132, EF.FlowEngine 1.0.237):
 
 | Lane | Project | Passed | Skipped | Duration |
 |---|---|---:|---:|---:|
-| `TASKFLOW_LANE=NonAzure` / PostgreSqlJsonb | Test.Integration | 166 | 5 (Azure-only) | 110 s |
-| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 152 | 19 (NonAzure-only) | 183 s |
+| `TASKFLOW_LANE=NonAzure` / PostgreSqlJsonb | Test.Integration | 166 | 5 (Azure-only) | 118 s |
+| `TASKFLOW_LANE=Azure` / Cosmos | Test.Integration | 152 | 19 (NonAzure-only) | 210 s |
 | NonAzure / `TASKFLOW_READMODEL_PROVIDER=MongoDb` | Test.Integration | 168 | 3 | 113 s |
 | unset (resolves NonAzure) | Test.E2E | 10 | 0 | 15 s |
-| `TASKFLOW_LANE=Azure` | Test.E2E | 10 | 0 | 33 s |
+| `TASKFLOW_LANE=Azure` | Test.E2E | 10 | 0 | 34 s |
 
 Isolated PostgreSQL test databases are unpooled (`TestDatabaseContainer.UnpooledPostgreSql`): with pooling, idle connections to finished tests' databases reached 86 of the container's 100 `max_connections` and a MongoDB-lane run failed with 53300 "too many clients"; unpooled, a sampled MongoDB-lane run peaked at 5 client connections.
 

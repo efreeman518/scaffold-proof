@@ -15,6 +15,8 @@
          ResolveAssemblyReferences does not see two different floors and warn MSB3277. -->
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" PrivateAssets="all" />
     <PackageReference Include="OpenAI" PrivateAssets="all" />
+    <!-- Temporary direct reference lifting a vulnerable transitive - see Directory.Packages.props. -->
+    <PackageReference Include="System.Security.Cryptography.Xml" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>

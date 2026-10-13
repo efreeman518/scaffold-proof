@@ -220,12 +220,13 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.FlowEngin
 
                     b.Property<string>("Value")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
                         .UseCollation("Latin1_General_100_BIN2");
 
                     b.HasKey("InstanceId", "Key");
 
-                    b.HasIndex("Key");
+                    b.HasIndex("Key", "Value");
 
                     b.ToTable("FlowEngineExecutionTagRow", "flowengine");
                 });

@@ -218,11 +218,12 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.FlowEngi
 
                     b.Property<string>("Value")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
 
                     b.HasKey("InstanceId", "Key");
 
-                    b.HasIndex("Key");
+                    b.HasIndex("Key", "Value");
 
                     b.ToTable("FlowEngineExecutionTagRow", "flowengine");
                 });

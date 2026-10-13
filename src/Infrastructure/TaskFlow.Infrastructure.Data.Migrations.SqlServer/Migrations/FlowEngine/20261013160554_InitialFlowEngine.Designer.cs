@@ -12,7 +12,7 @@ using TaskFlow.Infrastructure.Data;
 namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.FlowEngine
 {
     [DbContext(typeof(TaskFlowFlowEngineDbContext))]
-    [Migration("20261009191033_InitialFlowEngine")]
+    [Migration("20261013160554_InitialFlowEngine")]
     partial class InitialFlowEngine
     {
         /// <inheritdoc />
@@ -223,12 +223,13 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.FlowEngin
 
                     b.Property<string>("Value")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
                         .UseCollation("Latin1_General_100_BIN2");
 
                     b.HasKey("InstanceId", "Key");
 
-                    b.HasIndex("Key");
+                    b.HasIndex("Key", "Value");
 
                     b.ToTable("FlowEngineExecutionTagRow", "flowengine");
                 });
