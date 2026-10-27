@@ -138,42 +138,42 @@ jobs:
         timeout-minutes: 1
         run: |
           timeout --signal=INT --kill-after=5s 50s \
-            dotnet test tests/Test.Unit/Test.Unit.csproj \
+            dotnet test --project tests/Test.Unit/Test.Unit.csproj \
               --no-build --configuration Release \
-              --blame-hang --blame-hang-timeout 15s \
-              --logger "trx;LogFileName=unit-results.trx" \
-              --results-directory ./tests/TestResults
+              --hangdump --hangdump-timeout 15s \
+              --report-trx --report-trx-filename unit-results.trx \
+              --results-directory ./tests/TestResults/Test.Unit
 
       - name: Architecture Tests
         run: >
-          dotnet test tests/Test.Architecture/Test.Architecture.csproj
+          dotnet test --project tests/Test.Architecture/Test.Architecture.csproj
           --no-build --configuration Release
-          --logger "trx;LogFileName=arch-results.trx"
-          --results-directory ./tests/TestResults
+          --report-trx --report-trx-filename arch-results.trx
+          --results-directory ./tests/TestResults/Test.Architecture
 
       - name: Endpoint Tests
         run: >
-          dotnet test tests/Test.Endpoints/Test.Endpoints.csproj
+          dotnet test --project tests/Test.Endpoints/Test.Endpoints.csproj
           --no-build --configuration Release
-          --logger "trx;LogFileName=endpoint-results.trx"
-          --results-directory ./tests/TestResults
+          --report-trx --report-trx-filename endpoint-results.trx
+          --results-directory ./tests/TestResults/Test.Endpoints
 
       - name: FlowEngine Definition Tests
         run: >
-          dotnet test tests/Test.Integration.FlowEngine/Test.Integration.FlowEngine.csproj
+          dotnet test --project tests/Test.Integration.FlowEngine/Test.Integration.FlowEngine.csproj
           --no-build --configuration Release
-          --logger "trx;LogFileName=flowengine-results.trx"
-          --results-directory ./tests/TestResults
+          --report-trx --report-trx-filename flowengine-results.trx
+          --results-directory ./tests/TestResults/Test.Integration.FlowEngine
 
       # Deterministic graph construction only. This proves exact resource membership without claiming the
       # containers or hosts started; the manual full-lane-acceptance job below owns runnable full-lane proof.
       - name: Aspire lane topology contracts
         run: >
-          dotnet test tests/Test.Aspire/Test.Aspire.csproj
+          dotnet test --project tests/Test.Aspire/Test.Aspire.csproj
           --no-build --configuration Release
           --filter "FullyQualifiedName~AppHostLaneTopologyTests|FullyQualifiedName~AppHostMigratorTopologyTests"
-          --logger "trx;LogFileName=aspire-topology-results.trx"
-          --results-directory ./tests/TestResults
+          --report-trx --report-trx-filename aspire-topology-results.trx
+          --results-directory ./tests/TestResults/Test.Aspire
 
       - name: Aspire Core Lane Mesh Tests (manual)
         id: aspire_mesh
@@ -234,11 +234,10 @@ jobs:
             local read_model="$2"
             echo "Running Aspire lane ${lane} with read model ${read_model}."
             TASKFLOW_LANE="$lane" TASKFLOW_READMODEL_PROVIDER="$read_model" \
-              dotnet test tests/Test.Aspire/Test.Aspire.csproj \
+              dotnet test --project tests/Test.Aspire/Test.Aspire.csproj \
                 --no-build --configuration Release \
-                -m:1 \
-                --logger "trx;LogFileName=aspire-${lane}-${read_model}-results.trx" \
-                --results-directory ./tests/TestResults
+                --report-trx --report-trx-filename aspire-${lane}-${read_model}-results.trx \
+                --results-directory ./tests/TestResults/Test.Aspire
           }
 
           # NonAzure is the default lane (D-060), so it runs first; Azure is the explicit opt-in.
@@ -331,7 +330,8 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.includePlaywrightUI == true }}
         shell: pwsh
         run: |
-          ./tests/Test.PlaywrightUI/bin/Release/net10.0/playwright.ps1 install chromium
+          $tfm = (dotnet msbuild tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj -getProperty:TargetFramework).Trim()
+          & "./tests/Test.PlaywrightUI/bin/Release/$tfm/playwright.ps1" install chromium
           npx --prefix tests/Test.PlaywrightUI playwright install --with-deps chromium
 
       - name: Playwright UI Tests (manual, browser)
@@ -344,11 +344,10 @@ jobs:
             local read_model="$2"
             echo "Running browser acceptance for ${lane} with read model ${read_model}."
             TASKFLOW_LANE="$lane" TASKFLOW_READMODEL_PROVIDER="$read_model" \
-              dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj \
+              dotnet test --project tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj \
                 --no-build --configuration Release \
-                -m:1 \
-                --logger "trx;LogFileName=playwrightui-${lane}-${read_model}-results.trx" \
-                --results-directory ./tests/TestResults
+                --report-trx --report-trx-filename playwrightui-${lane}-${read_model}-results.trx \
+                --results-directory ./tests/TestResults/Test.PlaywrightUI
           }
 
           if [ "${{ inputs.lane }}" = "both" ] || [ "${{ inputs.lane }}" = "NonAzure" ]; then
@@ -360,19 +359,19 @@ jobs:
 
       - name: Migration model drift gate
         run: >
-          dotnet test tests/Test.Unit/Test.Unit.csproj
+          dotnet test --project tests/Test.Unit/Test.Unit.csproj
           --no-build --configuration Release
           --filter FullyQualifiedName~MigrationModelContractTests
-          --logger "trx;LogFileName=migration-model-results.trx"
-          --results-directory ./tests/TestResults
+          --report-trx --report-trx-filename migration-model-results.trx
+          --results-directory ./tests/TestResults/Test.Unit
 
       - name: Deployment workflow contract gate
         run: >
-          dotnet test tests/Test.Unit/Test.Unit.csproj
+          dotnet test --project tests/Test.Unit/Test.Unit.csproj
           --no-build --configuration Release
           --filter FullyQualifiedName~DeploymentWorkflowContractTests
-          --logger "trx;LogFileName=deployment-contract-results.trx"
-          --results-directory ./tests/TestResults
+          --report-trx --report-trx-filename deployment-contract-results.trx
+          --results-directory ./tests/TestResults/Test.Unit
 
       - name: Upload Test Results
         if: always()
@@ -480,7 +479,9 @@ jobs:
 
       - name: Install Playwright Chromium
         run: |
-          ./tests/Test.PlaywrightUI/bin/Release/net10.0/playwright.ps1 install chromium
+          $tfm = (dotnet msbuild tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj -getProperty:TargetFramework).Trim()
+          if ($LASTEXITCODE -ne 0 -or -not $tfm) { throw "Could not read the Test.PlaywrightUI target framework." }
+          & "./tests/Test.PlaywrightUI/bin/Release/$tfm/playwright.ps1" install chromium
           if ($LASTEXITCODE -ne 0) { throw "Playwright Chromium installation failed." }
           npx --prefix tests/Test.PlaywrightUI playwright install --with-deps chromium
           if ($LASTEXITCODE -ne 0) { throw "npm Playwright Chromium installation failed." }
@@ -511,18 +512,18 @@ jobs:
               $aspireFilter = "FullyQualifiedName~AppSurfaceAspireTests|FullyQualifiedName~OutboxMeshTests"
             }
 
-            dotnet test tests/Test.Aspire/Test.Aspire.csproj `
-              --no-build --configuration Release -m:1 `
+            dotnet test --project tests/Test.Aspire/Test.Aspire.csproj `
+              --no-build --configuration Release `
               --filter $aspireFilter `
-              --logger "trx;LogFileName=full-aspire-${Lane}-${ReadModel}-results.trx" `
-              --results-directory ./tests/TestResults
+              --report-trx --report-trx-filename full-aspire-${Lane}-${ReadModel}-results.trx `
+              --results-directory ./tests/TestResults/Test.Aspire
             if ($LASTEXITCODE -ne 0) { throw "${Lane} complete Aspire graph acceptance failed." }
 
-            dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj `
-              --no-build --configuration Release -m:1 `
+            dotnet test --project tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj `
+              --no-build --configuration Release `
               --filter "TestCategory=PlaywrightUI|TestCategory=WasmUI" `
-              --logger "trx;LogFileName=full-ui-${Lane}-${ReadModel}-results.trx" `
-              --results-directory ./tests/TestResults
+              --report-trx --report-trx-filename full-ui-${Lane}-${ReadModel}-results.trx `
+              --results-directory ./tests/TestResults/Test.PlaywrightUI
             if ($LASTEXITCODE -ne 0) { throw "${Lane} browser acceptance failed." }
           }
 
@@ -593,19 +594,19 @@ jobs:
         if: ${{ inputs.includeE2E == true && (inputs.lane == 'both' || inputs.lane == matrix.lane) }}
         timeout-minutes: 20
         run: >
-          dotnet test tests/Test.E2E/Test.E2E.csproj
+          dotnet test --project tests/Test.E2E/Test.E2E.csproj
           --no-build --configuration Release
-          --logger "trx;LogFileName=e2e-${{ matrix.lane }}-results.trx"
-          --results-directory ./tests/TestResults
+          --report-trx --report-trx-filename e2e-${{ matrix.lane }}-results.trx
+          --results-directory ./tests/TestResults/Test.E2E
 
       - name: Integration Tests (${{ matrix.lane }}, component)
         if: ${{ inputs.includeIntegration == true && (inputs.lane == 'both' || inputs.lane == matrix.lane) }}
         timeout-minutes: 20
         run: >
-          dotnet test tests/Test.Integration/Test.Integration.csproj
+          dotnet test --project tests/Test.Integration/Test.Integration.csproj
           --no-build --configuration Release
-          --logger "trx;LogFileName=integration-${{ matrix.lane }}-results.trx"
-          --results-directory ./tests/TestResults
+          --report-trx --report-trx-filename integration-${{ matrix.lane }}-results.trx
+          --results-directory ./tests/TestResults/Test.Integration
 
       - name: Upload Test Results
         if: ${{ always() && (inputs.lane == 'both' || inputs.lane == matrix.lane) }}

@@ -1,11 +1,12 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<!-- Azure.Functions.Sdk replaces the Microsoft.Azure.Functions.Worker.Sdk package, which does not support
+     net11.0; the SDK sets OutputType Exe and AzureFunctionsVersion v4 itself. Its version is pinned in global.json
+     (msbuild-sdks) because the extension project it generates under obj/ names the SDK without a version. -->
+<Project Sdk="Azure.Functions.Sdk">
 
   <!-- D-047 shared host runtime profile; the override below follows it deliberately. -->
   <Import Project="..\TaskFlow.Host.props" />
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <AzureFunctionsVersion>v4</AzureFunctionsVersion>
     <RuntimeIdentifiers>win-x64;linux-x64;osx-arm64</RuntimeIdentifiers>
     <!-- The Functions host, not this worker, owns globalization: it decides the culture a trigger runs
          under and the platform image ships ICU. Forcing invariant mode here would change how the worker
@@ -16,7 +17,6 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Azure.Functions.Worker" />
-    <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Timer" />
@@ -52,7 +52,7 @@
     </None>
   </ItemGroup>
 
-  <!-- Worker.Sdk 2.0.x emits a relative OutDir, but Aspire may invoke this project from another directory. -->
+  <!-- Azure.Functions.Sdk sets RunWorkingDirectory to the relative OutDir, but Aspire may invoke this project from another directory. -->
   <Target Name="UseAbsoluteFunctionsRunWorkingDirectory"
           AfterTargets="_FunctionsComputeRunArguments">
     <PropertyGroup>

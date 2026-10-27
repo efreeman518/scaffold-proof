@@ -153,7 +153,7 @@ curl -fsS "https://$CADDY_DOMAIN/healthz/ready"
 
 ## Why the app services have no healthcheck
 
-The .NET app images use immutable ASP.NET runtime pins: Gateway uses `mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled@sha256:9651fa59abcdf177c30392cb44a820605ca5d618429ab37acbf6e7c644510b02`; API, Scheduler, DatabaseMigrator, Functions, and Blazor use `mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra@sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28`. A chiseled image has
+The .NET app images use immutable ASP.NET runtime pins: Gateway uses `mcr.microsoft.com/dotnet/aspnet:11.0.0-rc.3-resolute-chiseled@sha256:1431d55bf5bd5708450c10664f3d4c4603d7e60cc059e64397787de3978f3e8c`; API, Scheduler, DatabaseMigrator, Functions, and Blazor use `mcr.microsoft.com/dotnet/aspnet:11.0.0-rc.3-resolute-chiseled-extra@sha256:4a02e6f650d442ef3acf66932e74a2f63f3585b44e1990c3c8edd2c010298ff0`. A chiseled image has
 no shell and no `curl`, so there is nothing for `healthcheck:` to exec - a `CMD-SHELL` probe would fail
 permanently and a `CMD` probe has no binary to call. Adding `curl` back to the runtime image to satisfy a
 probe would trade the attack surface the chiseled base exists to remove for a status column.

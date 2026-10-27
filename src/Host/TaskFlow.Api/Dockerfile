@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM mcr.microsoft.com/dotnet/sdk:10.0.401@sha256:2fa828c68761b1b8c23d7662dc134421b9d3b59fe1425fdbc80804e390cdb24d AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0.100-rc.3@sha256:3a9175b6c54b2f076817af1360f691c9994447b192faa48a1a1f112a516844c7 AS build
 WORKDIR /source
 
 # Copy solution + package management files for restore-layer caching
@@ -21,7 +21,7 @@ RUN dotnet publish src/Host/TaskFlow.Api/TaskFlow.Api.csproj -c Release -r linux
     -p:PublishReadyToRun=true -o /app --no-restore
 
 # Runtime
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra@sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:11.0.0-rc.3-resolute-chiseled-extra@sha256:4a02e6f650d442ef3acf66932e74a2f63f3585b44e1990c3c8edd2c010298ff0 AS runtime
 WORKDIR /app
 # D-054: 8080 REST/HTTP1.1, 8081 cleartext HTTP/2 for the internal gRPC read service. Both listeners are
 # declared in appsettings Kestrel:Endpoints, and no ASPNETCORE_URLS is set here on purpose: with both

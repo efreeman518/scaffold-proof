@@ -27,10 +27,10 @@ This file is the single source of maintainer-session instructions: CLI agents an
 ```powershell
 dotnet build TaskFlow.slnx                                     # 0 warnings expected
 dotnet build src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj           # Uno builds separately (Uno.Sdk)
-dotnet test tests/Test.Unit/Test.Unit.csproj                    # full unit project, including untagged provider/contract tests
-dotnet test TaskFlow.slnx --filter "TestCategory=Unit"         # category-filtered solution fast lane
-dotnet test TaskFlow.slnx --filter "TestCategory=Architecture|TestCategory=Endpoint"
-dotnet test TaskFlow.slnx --no-build -m:1                     # unfiltered serial acceptance; full-stack projects are resource-heavy
+dotnet test --project tests/Test.Unit/Test.Unit.csproj          # full unit project, including untagged provider/contract tests
+dotnet test --solution TaskFlow.slnx --filter "TestCategory=Unit"   # category-filtered solution fast lane
+dotnet test --solution TaskFlow.slnx --filter "TestCategory=Architecture|TestCategory=Endpoint"
+dotnet test --solution TaskFlow.slnx --no-build --max-parallel-test-modules 1   # unfiltered serial acceptance; full-stack projects are resource-heavy
 # Dual EF Core provider: TASKFLOW_DB_PROVIDER=SqlServer|PostgreSql selects the runtime provider (lane default: PostgreSql, SqlServer on Azure)
 # TASKFLOW_TEST_DB_PROVIDER=SqlServer|PostgreSql is a deprecated test-only alias for one release; new orchestration uses TASKFLOW_LANE
 # TASKFLOW_MESSAGING_PROVIDER=ServiceBus|RabbitMq selects the messaging transport (lane default: RabbitMq, ServiceBus on Azure); switching needs no code change, only config

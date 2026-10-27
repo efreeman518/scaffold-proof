@@ -50,10 +50,16 @@
     <Optimize Condition="'$(Configuration)'=='Release'">true</Optimize>
     <UnoDisableHotDesign Condition="'$(Configuration)'=='Release'">true</UnoDisableHotDesign>
     <UnoDisableMCPSupport Condition="'$(Configuration)'=='Release'">true</UnoDisableMCPSupport>
+    <!-- shortcut: Uno.Extensions 8.0.0-dev.135 adds the Debug-only Uno.HotTesting.Reactive generator, whose
+         mocks call MockingService.SwapFeed<T> for TaskItemPageModel's IFeed<DateTimeOffset?> and IFeed<Guid?>
+         and break its notnull constraint (CS8714 under TreatWarningsAsErrors, reproduced 2026-10-27). Remove when
+         a Uno.Extensions build generates compiling mocks for nullable value-type feeds; validate with a Debug
+         build of all Uno targets (-p:BuildAllUnoTargets=true). -->
+    <UnoDisableHotTesting>true</UnoDisableHotTesting>
   </PropertyGroup>
 
   <ItemGroup>
-    <UnoSplashScreen Include="Assets\splashscreen.svg" BaseSize="128,128" Color="#6750A4" />
+    <UnoSplashScreen Include="Assets\splashscreen.svg" BaseSize="128,128" BackgroundColor="#6750A4" />
     <EmbeddedResource Include="Platforms\WebAssembly\WasmScripts\TaskFlowRuntimeConfig.js" />
   </ItemGroup>
 
@@ -109,6 +115,19 @@
     <Copy SourceFiles="@(_WasmStaticAssetsToMirror)"
           DestinationFiles="@(_WasmStaticAssetsToMirror->'$(TargetDir)%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- shortcut: Uno.Sdk 7.0.0-dev.89 (Uno.SingleProject.iOS.targets) sets UseInterpreter=True for every
+       non-optimized iOS build, but the net11.0-ios head runs on CoreCLR, where the iOS SDK reports that the
+       property has no effect (warning in _VerifyValidProperties, reproduced 2026-10-27). Clear the Uno-injected
+       value before that check. Remove when Uno.Sdk sets UseInterpreter only for the Mono runtime; validate with a
+       Debug build of all Uno targets (-p:BuildAllUnoTargets=true). -->
+  <Target Name="_ClearUnoInterpreterOnCoreClrIos"
+          BeforeTargets="_VerifyValidProperties"
+          Condition="'$(UseMonoRuntime)' == 'false' AND '$(UseInterpreter)' == 'true'">
+    <PropertyGroup>
+      <UseInterpreter />
+    </PropertyGroup>
   </Target>
 
 </Project>

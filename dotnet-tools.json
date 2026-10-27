@@ -3,7 +3,7 @@
   "isRoot": true,
   "tools": {
     "ilspycmd": {
-      "version": "11.1.0.9782",
+      "version": "11.2.0.10050",
       "commands": [
         "ilspycmd"
       ],
@@ -24,7 +24,7 @@
       "rollForward": false
     },
     "refitter": {
-      "version": "2.3.0",
+      "version": "2.3.1",
       "commands": [
         "refitter"
       ],

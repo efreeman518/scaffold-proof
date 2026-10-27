@@ -33,7 +33,7 @@ Multi-tenant (row-level tenancy, fail-closed tenant filter). Event-driven async 
 
 ### Prerequisites
 
-- **.NET 10 SDK** - the exact version is pinned by [`global.json`](global.json).
+- **.NET 11 SDK** (11.0.100 RC 3) - the exact version is pinned by [`global.json`](global.json), which also selects the Microsoft.Testing.Platform test runner for `dotnet test`.
 - **Workloads:** `dotnet workload install wasm-tools aspire` (required for the Uno WASM host and the Aspire AppHost).
 - **Docker-compatible container runtime** (Docker Desktop, headless Docker Engine, or Podman) - no desktop UI is required. Aspire starts only the selected lane: PostgreSQL/RabbitMQ/SeaweedFS with optional MongoDB by default, or the Azure emulators with `TASKFLOW_LANE=Azure`, plus common Redis and application services.
 - **Private NuGet feed access:** the `EF.*` packages (platform and FlowEngine) restore from GitHub Packages via the `efreeman518-github` source in [`nuget.config`](nuget.config). Supply a `NUGET_PAT` (a GitHub token with `read:packages`) before restoring.
@@ -55,7 +55,7 @@ Local development sends OpenTelemetry only to the Aspire Dashboard. Deployed Non
 ```powershell
 $env:TASKFLOW_LANE = "NonAzure"
 $env:TASKFLOW_READMODEL_PROVIDER = "PostgreSqlJsonb" # default; set MongoDb explicitly for that alternative
-dotnet test tests/Test.Integration/Test.Integration.csproj
+dotnet test --project tests/Test.Integration/Test.Integration.csproj
 ```
 
 `TASKFLOW_TEST_DB_PROVIDER` remains a deprecated compatibility input for one release. New runtime, Aspire, Testcontainers, and CI orchestration uses `TASKFLOW_LANE` and `TASKFLOW_READMODEL_PROVIDER`.
@@ -195,7 +195,7 @@ Leave the lane default or set `TASKFLOW_AI_PROVIDER=None` to force no-op locally
 
 ### Aspire-backed AI tests
 
-`dotnet test tests/Test.Aspire/Test.Aspire.csproj -m:1 --filter TestCategory=Foundry` boots the AppHost through `Aspire.Hosting.Testing` and runs the Azure live Foundry smoke set. Missing Azure configuration is inconclusive. Once Azure is configured and active, HTTP/provider contract failures remain red. `TASKFLOW_RUN_AZURE_FOUNDRY_TESTS=false` can opt out explicitly. App-level AI HTTP contract coverage lives in `Test.Endpoints` with a fake `IChatClient`.
+`dotnet test --project tests/Test.Aspire/Test.Aspire.csproj --filter TestCategory=Foundry` boots the AppHost through `Aspire.Hosting.Testing` and runs the Azure live Foundry smoke set. Missing Azure configuration is inconclusive. Once Azure is configured and active, HTTP/provider contract failures remain red. `TASKFLOW_RUN_AZURE_FOUNDRY_TESTS=false` can opt out explicitly. App-level AI HTTP contract coverage lives in `Test.Endpoints` with a fake `IChatClient`.
 
 | Test condition | Result |
 |----------------|--------|
@@ -234,7 +234,7 @@ Unfiltered CI acceptance uses explicit false opt-outs for unavailable Functions,
 
 ### Aspire-backed UI tests
 
-`dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj -m:1` boots the AppHost through `Aspire.Hosting.Testing`, runs the C# Gateway/Blazor happy-path smoke with `Microsoft.Playwright`, and invokes the installed TypeScript Playwright projects for Blazor, React, and Uno.
+`dotnet test --project tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj` boots the AppHost through `Aspire.Hosting.Testing`, runs the C# Gateway/Blazor happy-path smoke with `Microsoft.Playwright`, and invokes the installed TypeScript Playwright projects for Blazor, React, and Uno.
 
 The C# page objects stay intentionally narrow: Gateway root/`/alive` plus Blazor `/tasks`. React coverage remains DOM/ARIA based. Uno coverage is canvas-first: wait for painted canvas, click stable app chrome, compare visual fingerprints. Do not assert Uno Skia text through DOM selectors. `PLAYWRIGHT_GATEWAY_URL`, `PLAYWRIGHT_BLAZOR_URL`, `PLAYWRIGHT_REACT_URL`, and `PLAYWRIGHT_UNO_URL` are target overrides, not test opt-ins. The `EF.IntegrationTesting.Aspire` `AspireTestHostContext` is shared by mesh and Playwright/WASM fixtures and owns Docker preflight, one cumulative startup deadline, named waits, default state/health/exit/timestamp diagnostics, and bounded stop/dispose. `TASKFLOW_ASPIRE_STARTUP_TIMEOUT_SECONDS` or `TASKFLOW_WASM_STARTUP_TIMEOUT_SECONDS` sets the one wall-clock budget; project/test timeouts are shorter caps only. Explicit `TASKFLOW_PLAYWRIGHT_TESTS_ENABLED=false` / `TASKFLOW_WASM_TESTS_ENABLED=false` is inconclusive. On a default run (lane switch unset) a failed Docker preflight or a missing optional prerequisite (Playwright npm dependencies, browser, Node.js, `wasm-tools` workload) is inconclusive and the message names the enabling command or opt-out variable; with the lane switch explicitly `true` the same gap is red. Once Docker succeeds, AppHost/resource/browser startup failures and test failures are red.
 
@@ -298,7 +298,7 @@ TaskFlow has a focused Stryker.NET sample project at [tests/Test.Mutation](tests
 
 ```powershell
 dotnet tool restore
-dotnet test tests/Test.Mutation/Test.Mutation.csproj
+dotnet test --project tests/Test.Mutation/Test.Mutation.csproj
 ```
 
 Run Stryker from `tests/Test.Mutation`:

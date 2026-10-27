@@ -403,6 +403,17 @@ public class SchedulerTransactionRetryTests
     }
 
     /// <summary>
+    /// The command's leading statement. EF Core 11 prefixes SQL Server ExecuteUpdate/ExecuteDelete batches with
+    /// <c>SET NOCOUNT OFF;</c>, so the statement kind is read after that prefix.
+    /// </summary>
+    private static string StatementText(DbCommand command)
+    {
+        const string noCountOff = "SET NOCOUNT OFF;";
+        var text = command.CommandText.TrimStart();
+        return text.StartsWith(noCountOff, StringComparison.OrdinalIgnoreCase) ? text[noCountOff.Length..].TrimStart() : text;
+    }
+
+    /// <summary>
     /// A second cleanup run that, just before this run's first write inside its tenant step, queues the blob
     /// deletions for <paramref name="taskIds"/> through the same repository call this job uses, then deletes their
     /// attachments and the tasks, each statement committing on its own. Runs once. The hook is the first write, not
@@ -430,7 +441,7 @@ public class SchedulerTransactionRetryTests
         private async Task RunBeforeFirstWriteAsync(DbCommand command, CancellationToken ct)
         {
             if (Ran || command.Transaction is null
-                || command.CommandText.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)) return;
+                || StatementText(command).StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)) return;
             Ran = true;
 
             await using var other = DbContainerFixture.CreateTrxnContext();
@@ -457,7 +468,7 @@ public class SchedulerTransactionRetryTests
         public override async ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
             DbCommand command, CommandEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
         {
-            if (Ran || !command.CommandText.TrimStart().StartsWith("UPDATE", StringComparison.OrdinalIgnoreCase)) return result;
+            if (Ran || !StatementText(command).StartsWith("UPDATE", StringComparison.OrdinalIgnoreCase)) return result;
             Ran = true;
 
             await using var other = DbContainerFixture.CreateTrxnContext();

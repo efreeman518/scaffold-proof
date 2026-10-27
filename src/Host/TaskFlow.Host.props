@@ -43,7 +43,7 @@
     <TieredCompilation>true</TieredCompilation>
 
     <!-- Invariant globalization: no ICU load at startup and no ICU in the runtime image, which is
-         what the aspnet:*-noble-chiseled base (no ICU, no tzdata) already requires. Two independent
+         what the aspnet:*-resolute-chiseled base (no ICU, no tzdata) already requires. Two independent
          reasons force a host to override this to false AND move to the -chiseled-extra base image:
          rendering user-facing cultures (Blazor), or depending on Microsoft.Data.SqlClient, which
          throws NotSupportedException under invariant globalization (Api, Scheduler, DatabaseMigrator,

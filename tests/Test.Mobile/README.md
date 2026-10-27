@@ -85,7 +85,7 @@ Only use direct `dotnet test` after the emulator and Appium are already running:
 $env:TASKFLOW_MOBILE_TESTS_ENABLED = "true"
 $env:TASKFLOW_MOBILE_PLATFORM = "Android"
 $env:TASKFLOW_ANDROID_APP_PATH = "src/UI/TaskFlow.Uno/bin/Debug/net11.0-android/com.taskflow.uno-Signed.apk"
-dotnet test tests/Test.Mobile/Test.Mobile.csproj --no-build --filter TestCategory=MobileUI
+dotnet test --project tests/Test.Mobile/Test.Mobile.csproj --no-build --filter TestCategory=MobileUI
 ```
 
 Appium must be started with UiAutomator2 shell support:

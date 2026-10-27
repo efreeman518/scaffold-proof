@@ -1,11 +1,14 @@
 #if __WASM__
 using System.Runtime.InteropServices.JavaScript;
+using System.Runtime.Versioning;
 using EF.UI.Client.Configuration;
 using Uno.UI.Hosting;
 
 namespace TaskFlow.Uno;
 
 /// <summary>Bootstraps the Uno application host for the selected platform target.</summary>
+// The JSImport interop below is browser-only; the browserwasm head's assembly-level BrowserWasm platform does not imply it.
+[SupportedOSPlatform("browser")]
 public class Program
 {
     static async Task Main(string[] args)

@@ -2,6 +2,10 @@
 
   <PropertyGroup>
     <IsTestProject>true</IsTestProject>
+    <!-- Microsoft.Testing.Platform makes this test project an executable, and the presentation tests run headless
+         on the Uno reference assemblies (no Uno runtime host). Declaring the Reference variant states that
+         intent to Uno.WinUI 7 instead of leaving it to infer a missing runtime host (UNOB0025). -->
+    <UnoRuntimeVariant>Reference</UnoRuntimeVariant>
   </PropertyGroup>
 
   <ItemGroup>

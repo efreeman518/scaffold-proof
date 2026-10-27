@@ -222,7 +222,7 @@ Push-Location $repoRoot
 try {
     # Set enablement only after dependencies are ready. At this point missing
     # mobile infrastructure is a real failure, not an inconclusive test.
-    & dotnet test $testProject --no-build -m:1 --filter $Filter --logger "console;verbosity=normal" --logger "trx;LogFileName=mobile.trx" --results-directory $resultDir
+    & dotnet test --project $testProject --no-build --filter $Filter --output Detailed --report-trx --report-trx-filename mobile.trx --results-directory $resultDir
     exit $LASTEXITCODE
 }
 finally {

@@ -36,7 +36,7 @@ endpoint change fails this test, not silently.
 
 ## 2. Regenerate the .NET Refit client
 
-The root `dotnet-tools.json` pins Refitter 2.3.0 so regeneration uses the same generator version locally and in automation.
+The root `dotnet-tools.json` pins Refitter 2.3.1 so regeneration uses the same generator version locally and in automation.
 
 ```powershell
 dotnet tool run refitter -- --settings-file src/UI/TaskFlow.ApiClient/.refitter --no-banner
@@ -98,7 +98,11 @@ flattened `DefaultResponseOfTaskItemDto`-equivalent shape is structurally identi
 
 ## Tool versions
 
-- `refitter` 2.3.0, pinned in `dotnet-tools.json` (repo-local, `dotnet tool restore`).
+- `refitter` 2.3.1, pinned in `dotnet-tools.json` (repo-local, `dotnet tool restore`).
 - `openapi-typescript` 7.13.0, pinned as a `devDependency` in `src/UI/TaskFlow.React/package.json`.
-- `Microsoft.Extensions.ApiDescription.Server` 10.0.12 (matches the `Microsoft.AspNetCore.OpenApi`
-  pin), `PackageVersion` in `Directory.Packages.props`.
+- `Microsoft.Extensions.ApiDescription.Server` 11.0.0-rc.3.26522.148 (the build-time document generator),
+  `PackageVersion` in `Directory.Packages.props`. `Microsoft.AspNetCore.OpenApi` is held on 10.0.14 because
+  EF.AspNetCore 2.0 caps `Microsoft.OpenApi` below 3; on net11.0 that combination fails the document request
+  (`ArgumentException: An item with the same key has already been added. Key: 400` in
+  `OpenApiDocumentService.GetResponsesAsync`), so the committed document is not regenerated until the pin lifts
+  (see the exception comment in `Directory.Packages.props`).

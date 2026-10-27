@@ -33,7 +33,7 @@
 </ol>
 <hr>
 <h2 id="1-overview">1. Overview</h2>
-<p>TaskFlow is a <strong>multi-tenant task management reference application</strong> built on .NET 10 and .NET Aspire. It demonstrates production-grade patterns for building cloud-native distributed systems with Azure backing services.</p>
+<p>TaskFlow is a <strong>multi-tenant task management reference application</strong> built on .NET 11 and .NET Aspire. It demonstrates production-grade patterns for building cloud-native distributed systems with Azure backing services.</p>
 <h3 id="tech-stack">Tech Stack</h3>
 <table>
 <thead>
@@ -1196,7 +1196,7 @@ TASKFLOW_LANE=Azure dotnet run --project src/Host/Aspire/AppHost/AppHost.csproj
 <p><code>Test.Mutation</code> is intentionally narrow. Its <code>stryker-config.json</code> mutates <code>TaskFlow.Domain.Model</code> only for <code>TaskItem.cs</code>, filters tests to <code>TestCategory=Mutation</code>, and emits progress, cleartext, and HTML reports. This makes the sample fast enough for local learning while keeping the report focused on domain invariants rather than framework wiring.</p>
 <p>Run from repo root:</p>
 <pre><code class="language-powershell">dotnet tool restore
-dotnet test tests/Test.Mutation/Test.Mutation.csproj
+dotnet test --project tests/Test.Mutation/Test.Mutation.csproj
 </code></pre>
 <p>Run Stryker from <code>tests/Test.Mutation</code>:</p>
 <pre><code class="language-powershell">dotnet tool run dotnet-stryker
@@ -1409,7 +1409,7 @@ public sealed class SqlApiFactory
 </ul>
 <p><strong>Component vs mesh split</strong> - the single-store classes (<code>MigrationAndRepositoryTests</code>, <code>DomainEventPipelineTests</code>, <code>RelationalAuditLogRepositoryTests</code> and the other component classes) live in <code>Test.Integration</code> and run on standalone Testcontainers (the lane database, Azurite, Redis, RabbitMQ, SeaweedFS, MongoDB) via <code>IntegrationTestSetup</code> and the <code>EF.IntegrationTesting</code> <code>ContainerFixture&lt;T&gt;</code> fixtures, never booting the Aspire graph. Multi-resource HTTP pipelines, app-surface checks, and Aspire-backed AI smoke tests live in <code>Test.Aspire</code> and boot the full <code>AppHost</code> graph lazily via <code>AspireTestHost.EnsureStartedAsync</code>. Keeping them in separate assemblies means the fast component tier never pays the mesh startup, and the mesh tier boots once per run only when a mesh test executes.</p>
 <h3 id="126-testplaywrightui">12.6 Test.PlaywrightUI</h3>
-<p>A solution-included Playwright test project that drives the <strong>running</strong> UI and Gateway in a real browser. <code>dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj</code> starts the Aspire AppHost in test mode, exposes endpoint URLs through environment variables, runs the stable C# Gateway/Blazor smoke path, and then invokes the TypeScript Playwright projects for Blazor, React, and Uno when <code>npm install</code> has been run.</p>
+<p>A solution-included Playwright test project that drives the <strong>running</strong> UI and Gateway in a real browser. <code>dotnet test --project tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj</code> starts the Aspire AppHost in test mode, exposes endpoint URLs through environment variables, runs the stable C# Gateway/Blazor smoke path, and then invokes the TypeScript Playwright projects for Blazor, React, and Uno when <code>npm install</code> has been run.</p>
 <p>Keep C# page objects focused on the stable smoke path:</p>
 <ul>
 <li>Gateway root and <code>/alive</code> marker checks.</li>
@@ -1485,7 +1485,7 @@ npx playwright install --with-deps chromium
 </li>
 </ol>
 <p><strong>Running</strong></p>
-<pre><code class="language-bash">dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj
+<pre><code class="language-bash">dotnet test --project tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj
 
 cd tests/Test.PlaywrightUI
 npm install
@@ -1507,29 +1507,29 @@ await expectTaskInTable(page, taskTitle);            // .mud-table-body
 <p><strong>What this catches.</strong> Server-side suites cannot observe binding errors, missing <code>@onclick</code> wiring, broken MudDialog renders, Uno XAML resource errors, or the dialog-confirm-then-API-call sequence. Playwright drives the entire stack the user touches - UI, Gateway, API, database - so any broken link in that chain surfaces as a failed step with a screenshot and trace.</p>
 <h3 id="127-running-tests">12.7 Running Tests</h3>
 <pre><code class="language-bash"># CI default gate (fast, no Docker)
-dotnet test tests/Test.Unit/Test.Unit.csproj
-dotnet test tests/Test.UI/Test.UI.csproj
-dotnet test tests/Test.Architecture/Test.Architecture.csproj
-dotnet test tests/Test.Endpoints/Test.Endpoints.csproj
-dotnet test tests/Test.Integration.FlowEngine/Test.Integration.FlowEngine.csproj
+dotnet test --project tests/Test.Unit/Test.Unit.csproj
+dotnet test --project tests/Test.UI/Test.UI.csproj
+dotnet test --project tests/Test.Architecture/Test.Architecture.csproj
+dotnet test --project tests/Test.Endpoints/Test.Endpoints.csproj
+dotnet test --project tests/Test.Integration.FlowEngine/Test.Integration.FlowEngine.csproj
 
 # E2E tests (Docker required - Testcontainers SQL)
-dotnet test tests/Test.E2E/Test.E2E.csproj
+dotnet test --project tests/Test.E2E/Test.E2E.csproj
 
 # Component integration tests (Docker required - Testcontainers SQL + Azurite)
-dotnet test tests/Test.Integration/Test.Integration.csproj
+dotnet test --project tests/Test.Integration/Test.Integration.csproj
 
 # Aspire mesh tests (Docker required - full AppHost graph)
-dotnet test tests/Test.Aspire/Test.Aspire.csproj
+dotnet test --project tests/Test.Aspire/Test.Aspire.csproj
 
 # Load tests (manual - start Aspire AppHost first; set TASKFLOW_LOAD_BASE_URL if taskflowapi uses a non-default port)
-dotnet test tests/Test.Load/Test.Load.csproj --filter &quot;TestCategory=Load&quot;
+dotnet test --project tests/Test.Load/Test.Load.csproj --filter &quot;TestCategory=Load&quot;
 
 # Benchmarks (Release build, console runner)
 dotnet run -c Release --project tests/Test.Benchmarks
 
 # UI E2E (starts Aspire AppHost, then runs C# smoke and installed TypeScript projects)
-dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj
+dotnet test --project tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj
 
 # Direct TypeScript UI E2E (requires AppHost and requested browser UI running)
 cd tests/Test.PlaywrightUI &amp;&amp; npm run test
@@ -1584,7 +1584,7 @@ cd tests/Test.PlaywrightUI &amp;&amp; npm run test
 
 
 
-<p><code>TaskFlow.Blazor</code> is a fully-built <strong>.NET 10 Interactive Server</strong> application using <strong>MudBlazor</strong> components and the Refitter-generated <strong>Refit</strong> client (<code>ITaskFlowApiClient</code>, project <code>src/UI/TaskFlow.ApiClient</code>; regeneration steps in <code>docs/plans/client-generation.md</code>) with <code>AddStandardResilienceHandler()</code>. It connects to the API through the YARP Gateway.</p>
+<p><code>TaskFlow.Blazor</code> is a fully-built <strong>.NET 11 Interactive Server</strong> application using <strong>MudBlazor</strong> components and the Refitter-generated <strong>Refit</strong> client (<code>ITaskFlowApiClient</code>, project <code>src/UI/TaskFlow.ApiClient</code>; regeneration steps in <code>docs/plans/client-generation.md</code>) with <code>AddStandardResilienceHandler()</code>. It connects to the API through the YARP Gateway.</p>
 <p><strong>Layout:</strong> MudAppBar (hamburger toggle, &quot;TaskFlow&quot; title, breadcrumb via <code>FloatService.ModuleName</code>, progress spinner, dark mode toggle) + MudDrawer (nav: Dashboard, Tasks, Categories, Tags, Settings).</p>
 <p><strong>Pages:</strong></p>
 <table>

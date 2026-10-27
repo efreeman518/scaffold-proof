@@ -1,0 +1,12 @@
+<Project>
+  <!-- Azure.Functions.Sdk generates and restores the Functions extension project in a hook that runs after
+       Restore on the Functions project itself, which a solution restore never invokes (AZFW0108). This target is
+       the SDK's documented fix for solution restores: it walks the solution's projects after Restore and runs
+       the hook on the Functions app. Source: Azure/azure-functions-dotnet-worker docs/sdk-rules/AZFW0108.md. -->
+  <Target Name="_RecursiveGenerateFunctionsExtensionProject" AfterTargets="Restore">
+    <MSBuild Projects="@(ProjectReference)" Targets="_RecursiveGenerateFunctionsExtensionProject"
+      SkipNonexistentProjects="true" SkipNonexistentTargets="true" />
+    <MSBuild Projects="@(ProjectReference)" Targets="GenerateFunctionsExtensionProject"
+      SkipNonexistentProjects="true" SkipNonexistentTargets="true" />
+  </Target>
+</Project>

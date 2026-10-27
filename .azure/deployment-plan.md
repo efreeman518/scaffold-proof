@@ -30,11 +30,11 @@ Generated: 2026-04-23
 
 | Component | Type | Technology | Path |
 |-----------|------|------------|------|
-| TaskFlow.Gateway | API Gateway (YARP) | ASP.NET Core, .NET 10 | `src/Host/TaskFlow.Gateway/` |
+| TaskFlow.Gateway | API Gateway (YARP) | ASP.NET Core, .NET 11 | `src/Host/TaskFlow.Gateway/` |
 | TaskFlow.Api | Backend API | ASP.NET Core Minimal APIs, EF Core 10 | `src/Host/TaskFlow.Api/` |
 | TaskFlow.Scheduler | Background Worker | ASP.NET Core, EF.Data.Scheduling | `src/Host/TaskFlow.Scheduler/` |
 | TaskFlow.Functions | Event Processor | Azure Functions Isolated Worker v4 | `src/Host/TaskFlow.Functions/` |
-| TaskFlow.Blazor | Web UI | .NET 10 Interactive Server, MudBlazor | `src/UI/TaskFlow.Blazor/` |
+| TaskFlow.Blazor | Web UI | .NET 11 Interactive Server, MudBlazor | `src/UI/TaskFlow.Blazor/` |
 | TaskFlow.React | Web UI | React | `src/UI/TaskFlow.React/` |
 | TaskFlow.Uno | Cross-platform UI | Uno Platform WASM | `src/UI/TaskFlow.Uno/` |
 
@@ -117,7 +117,7 @@ subscription role contains only `Microsoft.Resources/deployments/*` and resource
 resource management and role assignment remain limited to the TaskFlow resource group. The federated credential
 subject is `repo:owner/repo:environment:dev`, matching the workflow jobs' GitHub environment.
 Bootstrap never invokes `main.bicep`; this prevents a rerun from replacing live image digests with template defaults.
-The workflow owns application deployment and publishes the .NET 10 isolated Functions artifact through the Flex
+The workflow owns application deployment and publishes the isolated Functions artifact (built for net11.0) through the Flex
 Consumption OneDeploy path backed by the precreated `function-releases` Blob container.
 
 ### Networking

@@ -256,8 +256,8 @@ public sealed class DeploymentWorkflowContractTests
         var unitStep = workflow[unitStart..architectureStart];
         StringAssert.Contains(unitStep, "timeout-minutes: 1");
         StringAssert.Contains(unitStep, "timeout --signal=INT --kill-after=5s 50s");
-        StringAssert.Contains(unitStep, "dotnet test tests/Test.Unit/Test.Unit.csproj");
-        StringAssert.Contains(unitStep, "--blame-hang --blame-hang-timeout 15s");
+        StringAssert.Contains(unitStep, "dotnet test --project tests/Test.Unit/Test.Unit.csproj");
+        StringAssert.Contains(unitStep, "--hangdump --hangdump-timeout 15s");
         Assert.IsFalse(
             unitStep.Contains("TestCategory=Unit", StringComparison.Ordinal),
             "The complete Test.Unit project includes untagged provider and regression contracts.");
@@ -293,13 +293,14 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(fullJob, "TASKFLOW_REACT_TESTS_ENABLED: \"true\"");
         StringAssert.Contains(fullJob, "TASKFLOW_WASM_TESTS_ENABLED: \"true\"");
         StringAssert.Contains(fullJob, "TASKFLOW_PLAYWRIGHT_TESTS_ENABLED: \"true\"");
-        StringAssert.Contains(fullJob, "dotnet test tests/Test.Aspire/Test.Aspire.csproj");
+        StringAssert.Contains(fullJob, "dotnet test --project tests/Test.Aspire/Test.Aspire.csproj");
         StringAssert.Contains(fullJob, "FullyQualifiedName~AppSurfaceAspireTests");
         StringAssert.Contains(fullJob, "FullyQualifiedName~OutboxMeshTests");
         StringAssert.Contains(fullJob, "FullyQualifiedName~FunctionAuditPipelineTests");
-        StringAssert.Contains(fullJob, "dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj");
+        StringAssert.Contains(fullJob, "dotnet test --project tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj");
         StringAssert.Contains(fullJob, "TestCategory=PlaywrightUI|TestCategory=WasmUI");
-        StringAssert.Contains(fullJob, "./tests/Test.PlaywrightUI/bin/Release/net10.0/playwright.ps1 install chromium");
+        StringAssert.Contains(fullJob, "dotnet msbuild tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj -getProperty:TargetFramework");
+        StringAssert.Contains(fullJob, "& \"./tests/Test.PlaywrightUI/bin/Release/$tfm/playwright.ps1\" install chromium");
         StringAssert.Contains(fullJob, "npx --prefix tests/Test.PlaywrightUI playwright install --with-deps chromium");
         StringAssert.Contains(fullJob, "Invoke-LaneAcceptance -Lane Azure -ReadModel Cosmos -RunFunctions $true");
         StringAssert.Contains(fullJob, "Invoke-LaneAcceptance -Lane NonAzure");
@@ -998,12 +999,12 @@ public sealed class DeploymentWorkflowContractTests
     {
         foreach (var (dockerfile, runtimeImage) in new[]
         {
-            ("src/Host/TaskFlow.Gateway/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled@sha256:9651fa59abcdf177c30392cb44a820605ca5d618429ab37acbf6e7c644510b02"),
-            ("src/Host/TaskFlow.Api/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra@sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28"),
-            ("src/Host/TaskFlow.Scheduler/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra@sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28"),
-            ("src/Host/TaskFlow.DatabaseMigrator/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra@sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28"),
-            ("src/Host/TaskFlow.Functions/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra@sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28"),
-            ("src/UI/TaskFlow.Blazor/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra@sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28")
+            ("src/Host/TaskFlow.Gateway/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:11.0.0-rc.3-resolute-chiseled@sha256:1431d55bf5bd5708450c10664f3d4c4603d7e60cc059e64397787de3978f3e8c"),
+            ("src/Host/TaskFlow.Api/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:11.0.0-rc.3-resolute-chiseled-extra@sha256:4a02e6f650d442ef3acf66932e74a2f63f3585b44e1990c3c8edd2c010298ff0"),
+            ("src/Host/TaskFlow.Scheduler/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:11.0.0-rc.3-resolute-chiseled-extra@sha256:4a02e6f650d442ef3acf66932e74a2f63f3585b44e1990c3c8edd2c010298ff0"),
+            ("src/Host/TaskFlow.DatabaseMigrator/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:11.0.0-rc.3-resolute-chiseled-extra@sha256:4a02e6f650d442ef3acf66932e74a2f63f3585b44e1990c3c8edd2c010298ff0"),
+            ("src/Host/TaskFlow.Functions/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:11.0.0-rc.3-resolute-chiseled-extra@sha256:4a02e6f650d442ef3acf66932e74a2f63f3585b44e1990c3c8edd2c010298ff0"),
+            ("src/UI/TaskFlow.Blazor/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:11.0.0-rc.3-resolute-chiseled-extra@sha256:4a02e6f650d442ef3acf66932e74a2f63f3585b44e1990c3c8edd2c010298ff0")
         })
         {
             var content = File.ReadAllText(RepoRoot.Combine(dockerfile.Split('/')));
