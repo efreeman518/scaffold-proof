@@ -2,6 +2,7 @@ using EF.AspNetCore;
 using EF.AspNetCore.Concurrency;
 using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
+using EF.Domain.Contracts;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using TaskFlow.Api.Endpoints.Shared;
@@ -19,7 +20,9 @@ public static class AttachmentCqrsEndpoints
     public static IEndpointRouteBuilder MapAttachmentCqrsEndpoints(this IEndpointRouteBuilder group)
     {
         var g = group.MapGroup("/attachments").WithTags("Attachments")
-            .WithETag();
+            .WithETag()
+            // Every route enforces the caller's tenant boundary: a ForbiddenError answers 403.
+            .ProducesProblem(StatusCodes.Status403Forbidden);
 
         g.MapPost("/search", Search)
             .WithName("SearchAttachments")
@@ -90,10 +93,7 @@ public static class AttachmentCqrsEndpoints
         CancellationToken ct)
     {
         var result = await handler.HandleAsync(new GetAttachmentByIdQuery(id), ct);
-        return result.Match<IResult>(
-            response => TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)),
-            () => TypedResults.NotFound(id));
+        return result.ToHttp(response => TypedResults.Ok(response));
     }
 
     /// <summary>Creates requested data after validation and maps the result to the caller contract.</summary>
@@ -104,11 +104,9 @@ public static class AttachmentCqrsEndpoints
         CancellationToken ct)
     {
         var result = await handler.HandleAsync(new CreateAttachmentCommand(request), ct);
-        return result.Match<IResult>(
-            response => response.IsReplay
+        return result.ToHttp(response => response.IsReplay
                 ? TypedResults.Ok(response)
-                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response));
     }
 
     /// <summary>Uploads upload to the configured storage backend and returns metadata.</summary>
@@ -125,11 +123,9 @@ public static class AttachmentCqrsEndpoints
         var result = await handler.HandleAsync(
             new UploadAttachmentCommand(stream, file.FileName, file.ContentType, file.Length, ownerType, ownerId, id),
             ct);
-        return result.Match<IResult>(
-            response => response.IsReplay
+        return result.ToHttp(response => response.IsReplay
                 ? TypedResults.Ok(response)
-                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response));
     }
 
     /// <summary>Updates existing data after validation and preserves domain invariants.</summary>
@@ -147,22 +143,18 @@ public static class AttachmentCqrsEndpoints
                 $"{ErrorConstants.ERROR_URL_BODY_ID_MISMATCH}: {id} <> {request.Item.Id}"));
 
         var result = await handler.HandleAsync(new UpdateAttachmentCommand(request, ifMatch.ExpectedVersion), ct);
-        return result.Match(
-            response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response));
     }
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
     private static async Task<IResult> Delete(
         HttpContext httpContext,
-        [FromServices] IRequestHandler<DeleteAttachmentCommand, Result> handler,
+        [FromServices] IRequestHandler<DeleteAttachmentCommand, Result<Unit>> handler,
         Guid id,
         IfMatch ifMatch,
         CancellationToken ct)
     {
         var result = await handler.HandleAsync(new DeleteAttachmentCommand(id, ifMatch.ExpectedVersion), ct);
-        return result.Match<IResult>(
-            () => TypedResults.NoContent(),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(_ => TypedResults.NoContent());
     }
 }

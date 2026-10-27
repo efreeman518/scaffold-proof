@@ -1,4 +1,5 @@
 using EF.Common.Contracts;
+using EF.Domain.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using TaskFlow.Application.Contracts.Services;
@@ -91,7 +92,7 @@ public class TaskItemToolsTests
 
         _taskItemServiceMock
             .Setup(x => x.GetAsync(taskId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<DefaultResponse<TaskItemDto>>.Success(new DefaultResponse<TaskItemDto> { Item = dto }));
+            .ReturnsAsync(new Result<DefaultResponse<TaskItemDto>>(new DefaultResponse<TaskItemDto> { Item = dto }));
 
         var result = await _tools.GetTaskDetails(taskId.ToString());
 
@@ -116,7 +117,7 @@ public class TaskItemToolsTests
 
         _taskItemServiceMock
             .Setup(x => x.GetAsync(taskId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<DefaultResponse<TaskItemDto>>.None());
+            .ReturnsAsync(new Result<DefaultResponse<TaskItemDto>>(new NotFoundError("not found")));
 
         var result = await _tools.GetTaskDetails(taskId.ToString());
 
@@ -130,7 +131,7 @@ public class TaskItemToolsTests
         var newId = Guid.NewGuid();
         _taskItemServiceMock
             .Setup(x => x.CreateAsync(It.IsAny<DefaultRequest<TaskItemDto>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<DefaultResponse<TaskItemDto>>.Success(
+            .ReturnsAsync(new Result<DefaultResponse<TaskItemDto>>(
                 new DefaultResponse<TaskItemDto> { Item = new TaskItemDto { Id = newId, Title = "New task" } }));
 
         var result = await _tools.CreateTask("New task", "A description", "High");
@@ -176,7 +177,7 @@ public class TaskItemToolsTests
 
         _taskItemServiceMock
             .Setup(x => x.GetAsync(taskId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<DefaultResponse<TaskItemDto>>.Success(new DefaultResponse<TaskItemDto> { Item = dto }));
+            .ReturnsAsync(new Result<DefaultResponse<TaskItemDto>>(new DefaultResponse<TaskItemDto> { Item = dto }));
         _taskItemServiceMock
             .Setup(x => x.UpdateAsync(It.IsAny<DefaultRequest<TaskItemDto>>(), dto.Version, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new PreconditionFailedException("TaskItem", taskId.ToString(), dto.Version, (dto.Version ?? 0) + 1));

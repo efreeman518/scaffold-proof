@@ -1,4 +1,5 @@
 using EF.AI;
+using EF.Domain.Contracts;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
@@ -58,11 +59,11 @@ public sealed class TaskDraftService(
 
         var dto = new TaskItemDto { Title = title, Description = description };
         var create = await taskItemService.CreateAsync(new DefaultRequest<TaskItemDto> { Item = dto }, ct);
-        if (create.IsFailure)
-            return new DraftTaskResponse(null, title, draft.Description, draft.AcceptanceCriteria, false, true, create.ErrorMessage);
+        if (create.TryGetValue(out Error? createError))
+            return new DraftTaskResponse(null, title, draft.Description, draft.AcceptanceCriteria, false, true, createError.Message);
 
         return new DraftTaskResponse(
-            create.Value!.Item!.Id, title, draft.Description, draft.AcceptanceCriteria, true, true);
+            create.GetValueOrThrow().Item!.Id, title, draft.Description, draft.AcceptanceCriteria, true, true);
     }
 
     private static Draft? ParseDraft(string? text)

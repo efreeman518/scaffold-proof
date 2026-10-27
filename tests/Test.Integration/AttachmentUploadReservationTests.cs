@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using EF.Common.Contracts;
 using EF.Data.Contracts;
 using EF.Data.Outbox;
+using EF.Domain.Contracts;
 using EF.Storage.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -65,14 +66,14 @@ public sealed class AttachmentUploadReservationTests
         {
             await using var other = DbContainerFixture.CreateTrxnContext(connStr);
             other.Attachments.Add(Attachment.Create(TenantId.From(TenantGuid), FileName, ContentType, Content.Length,
-                "https://storage.example.com/winner", AttachmentOwnerType.TaskItem, ownerId, AttachmentId.From(callerId), "winner-key").Value!);
+                "https://storage.example.com/winner", AttachmentOwnerType.TaskItem, ownerId, AttachmentId.From(callerId), "winner-key").GetValueOrThrow());
             await other.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: token);
         });
 
         var result = await UploadAsync(style, connStr, blobs, ownerId, callerId, ct);
 
-        Assert.IsTrue(result.IsSuccess, result.ErrorMessage);
-        Assert.IsTrue(result.Value!.IsReplay, "the upload that lost the insert replays the winner");
+        Assert.IsTrue(result.IsSuccess, result.ToString());
+        Assert.IsTrue(result.GetValueOrThrow().IsReplay, "the upload that lost the insert replays the winner");
         var orphan = blobs.Names.Single();
         await using (var verify = DbContainerFixture.CreateTrxnContext(connStr))
         {
@@ -123,8 +124,8 @@ public sealed class AttachmentUploadReservationTests
 
         var result = await UploadAsync(style, connStr, blobs, Guid.CreateVersion7(), Guid.CreateVersion7(), ct);
 
-        Assert.IsTrue(result.IsFailure, "the upload whose reservation the worker holds is not stored");
-        Assert.AreEqual(ErrorConstants.ERROR_SAVE_FAILED, result.ErrorMessage);
+        Assert.IsFalse(result.IsSuccess, "the upload whose reservation the worker holds is not stored");
+        Assert.AreEqual(ErrorConstants.ERROR_SAVE_FAILED, Assert.IsInstanceOfType<Error>(result.Value).Message);
         Assert.HasCount(1, claimed!.Items, "the worker held the reservation when the row was inserted");
         await using (var verify = DbContainerFixture.CreateTrxnContext(connStr))
         {

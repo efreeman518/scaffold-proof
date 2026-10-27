@@ -9,6 +9,7 @@ using TaskFlow.Application.Mappers;
 using TaskFlow.Application.Models;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
+using EF.Domain.Contracts;
 
 namespace TaskFlow.Application.Cqrs.Features.ChecklistItems;
 
@@ -39,12 +40,12 @@ internal sealed class GetChecklistItemByIdHandler(
     public async Task<Result<DefaultResponse<ChecklistItemDto>>> HandleAsync(GetChecklistItemByIdQuery query, CancellationToken ct = default)
     {
         var entity = await repoQuery.GetChecklistItemAsync(ChecklistItemId.From(query.Id), ct);
-        if (entity is null) return Result<DefaultResponse<ChecklistItemDto>>.None();
+        if (entity is null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "ChecklistItem:Get", nameof(ChecklistItem), entity.Id.Value);
-        if (boundary.IsFailure) return Result<DefaultResponse<ChecklistItemDto>>.Failure(boundary.ErrorMessage!);
+        if (boundary.TryGetValue(out Error? boundaryError)) return boundaryError;
 
         return HandlerHelpers.Success(entity.ToDto());
     }

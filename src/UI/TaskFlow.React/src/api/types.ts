@@ -297,6 +297,15 @@ export interface paths {
                         "application/problem+json": components["schemas"]["ProblemDetails"];
                     };
                 };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -333,6 +342,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["DefaultResponseOfCommentDto"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
                     };
                 };
                 /** @description Not Found */
@@ -399,6 +417,15 @@ export interface paths {
                         "application/problem+json": components["schemas"]["ProblemDetails"];
                     };
                 };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -435,6 +462,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["DefaultResponseOfChecklistItemDto"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
                     };
                 };
                 /** @description Not Found */
@@ -859,9 +895,17 @@ export interface components {
             /** Format: uuid */
             tenantId?: null | string;
         };
+        /**
+         * @description One keyset (cursor) page. The counterpart to PagedResponse&lt;T&gt; for list reads that walk
+         *     forward from an opaque cursor instead of an offset, so deep pages cost the same as the first and a row
+         *     inserted between two requests cannot duplicate or skip a row.
+         */
         CursorPageOfTaskItemDto: {
+            /** @description Items on this page, in sort order. */
             items: components["schemas"]["TaskItemDto"][];
+            /** @description Cursor that resumes after the last item; `null` exactly when HasMore is false. */
             nextCursor: null | string;
+            /** @description True when at least one further row exists after this page. */
             hasMore: boolean;
         };
         DefaultRequestOfAttachmentDto: {
@@ -929,49 +973,119 @@ export interface components {
         };
         /** Format: binary */
         IFormFile: string;
+        /**
+         * @description Standard envelope returned by paginated query endpoints.
+         *     Pair with SearchRequest&lt;TFilter&gt; to drive the query, then return this DTO to callers.
+         */
         PagedResponseOfAttachmentDto: {
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Maximum number of items per page as requested.
+             */
             pageSize?: number | string;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Zero-based page index of this response.
+             */
             pageIndex?: number | string;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Total number of items across all pages (used to calculate page count).
+             */
             total?: number | string;
+            /** @description Items on the current page. */
             data?: components["schemas"]["AttachmentDto"][];
         };
+        /**
+         * @description Standard envelope returned by paginated query endpoints.
+         *     Pair with SearchRequest&lt;TFilter&gt; to drive the query, then return this DTO to callers.
+         */
         PagedResponseOfCategoryDto: {
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Maximum number of items per page as requested.
+             */
             pageSize?: number | string;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Zero-based page index of this response.
+             */
             pageIndex?: number | string;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Total number of items across all pages (used to calculate page count).
+             */
             total?: number | string;
+            /** @description Items on the current page. */
             data?: components["schemas"]["CategoryDto"][];
         };
+        /**
+         * @description Standard envelope returned by paginated query endpoints.
+         *     Pair with SearchRequest&lt;TFilter&gt; to drive the query, then return this DTO to callers.
+         */
         PagedResponseOfChecklistItemDto: {
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Maximum number of items per page as requested.
+             */
             pageSize?: number | string;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Zero-based page index of this response.
+             */
             pageIndex?: number | string;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Total number of items across all pages (used to calculate page count).
+             */
             total?: number | string;
+            /** @description Items on the current page. */
             data?: components["schemas"]["ChecklistItemDto"][];
         };
+        /**
+         * @description Standard envelope returned by paginated query endpoints.
+         *     Pair with SearchRequest&lt;TFilter&gt; to drive the query, then return this DTO to callers.
+         */
         PagedResponseOfCommentDto: {
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Maximum number of items per page as requested.
+             */
             pageSize?: number | string;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Zero-based page index of this response.
+             */
             pageIndex?: number | string;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Total number of items across all pages (used to calculate page count).
+             */
             total?: number | string;
+            /** @description Items on the current page. */
             data?: components["schemas"]["CommentDto"][];
         };
+        /**
+         * @description Standard envelope returned by paginated query endpoints.
+         *     Pair with SearchRequest&lt;TFilter&gt; to drive the query, then return this DTO to callers.
+         */
         PagedResponseOfTagDto: {
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Maximum number of items per page as requested.
+             */
             pageSize?: number | string;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Zero-based page index of this response.
+             */
             pageIndex?: number | string;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Total number of items across all pages (used to calculate page count).
+             */
             total?: number | string;
+            /** @description Items on the current page. */
             data?: components["schemas"]["TagDto"][];
         };
         /** @enum {unknown} */
@@ -986,58 +1100,121 @@ export interface components {
         };
         /** @enum {unknown} */
         SearchMode: "Keyword" | "Semantic" | "Vector" | "Hybrid";
+        /**
+         * @description Standard paged-query request. Pass as the inbound DTO for list/search endpoints;
+         *     map TFilter? SearchRequest&lt;TFilter&gt;.Filter to a LINQ predicate and apply IEnumerable&lt;Sort&gt;? SearchRequest&lt;TFilter&gt;.Sorts via
+         *     `IQueryableExtensions` before projecting to a PagedResponse&lt;T&gt;.
+         */
         SearchRequestOfAttachmentSearchFilter: {
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Maximum number of items to return per page.
+             */
             pageSize?: number | string;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Zero-based page index.
+             */
             pageIndex?: number | string;
+            /** @description Ordered list of sort directives applied to the query result. */
             sorts?: null | components["schemas"]["Sort"][];
             filter?: null | components["schemas"]["AttachmentSearchFilter"];
         };
+        /**
+         * @description Standard paged-query request. Pass as the inbound DTO for list/search endpoints;
+         *     map TFilter? SearchRequest&lt;TFilter&gt;.Filter to a LINQ predicate and apply IEnumerable&lt;Sort&gt;? SearchRequest&lt;TFilter&gt;.Sorts via
+         *     `IQueryableExtensions` before projecting to a PagedResponse&lt;T&gt;.
+         */
         SearchRequestOfCategorySearchFilter: {
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Maximum number of items to return per page.
+             */
             pageSize?: number | string;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Zero-based page index.
+             */
             pageIndex?: number | string;
+            /** @description Ordered list of sort directives applied to the query result. */
             sorts?: null | components["schemas"]["Sort"][];
             filter?: null | components["schemas"]["CategorySearchFilter"];
         };
+        /**
+         * @description Standard paged-query request. Pass as the inbound DTO for list/search endpoints;
+         *     map TFilter? SearchRequest&lt;TFilter&gt;.Filter to a LINQ predicate and apply IEnumerable&lt;Sort&gt;? SearchRequest&lt;TFilter&gt;.Sorts via
+         *     `IQueryableExtensions` before projecting to a PagedResponse&lt;T&gt;.
+         */
         SearchRequestOfChecklistItemSearchFilter: {
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Maximum number of items to return per page.
+             */
             pageSize?: number | string;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Zero-based page index.
+             */
             pageIndex?: number | string;
+            /** @description Ordered list of sort directives applied to the query result. */
             sorts?: null | components["schemas"]["Sort"][];
             filter?: null | components["schemas"]["ChecklistItemSearchFilter"];
         };
+        /**
+         * @description Standard paged-query request. Pass as the inbound DTO for list/search endpoints;
+         *     map TFilter? SearchRequest&lt;TFilter&gt;.Filter to a LINQ predicate and apply IEnumerable&lt;Sort&gt;? SearchRequest&lt;TFilter&gt;.Sorts via
+         *     `IQueryableExtensions` before projecting to a PagedResponse&lt;T&gt;.
+         */
         SearchRequestOfCommentSearchFilter: {
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Maximum number of items to return per page.
+             */
             pageSize?: number | string;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Zero-based page index.
+             */
             pageIndex?: number | string;
+            /** @description Ordered list of sort directives applied to the query result. */
             sorts?: null | components["schemas"]["Sort"][];
             filter?: null | components["schemas"]["CommentSearchFilter"];
         };
+        /**
+         * @description Standard paged-query request. Pass as the inbound DTO for list/search endpoints;
+         *     map TFilter? SearchRequest&lt;TFilter&gt;.Filter to a LINQ predicate and apply IEnumerable&lt;Sort&gt;? SearchRequest&lt;TFilter&gt;.Sorts via
+         *     `IQueryableExtensions` before projecting to a PagedResponse&lt;T&gt;.
+         */
         SearchRequestOfTagSearchFilter: {
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Maximum number of items to return per page.
+             */
             pageSize?: number | string;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Zero-based page index.
+             */
             pageIndex?: number | string;
+            /** @description Ordered list of sort directives applied to the query result. */
             sorts?: null | components["schemas"]["Sort"][];
             filter?: null | components["schemas"]["TagSearchFilter"];
         };
+        /**
+         * @description Specifies a single sort directive for a query. Use inside IEnumerable&lt;Sort&gt;? SearchRequest&lt;TFilter&gt;.Sorts
+         *     and apply via `IQueryableExtensions.ApplySorts`.
+         */
         Sort: {
+            /** @description Name of the property to sort on (must match the entity/DTO property name). */
             propertyName: string;
+            /** @description Direction of the sort. */
             sortOrder: components["schemas"]["SortOrder"];
         };
-        /** @enum {unknown} */
+        /**
+         * @description Sort direction used in Sort directives.
+         * @enum {unknown}
+         */
         SortOrder: "Ascending" | "Descending";
-        SseItemOfstring: {
-            data?: null | string;
-            eventType?: null | string;
-            eventId?: null | string;
-            reconnectionInterval?: null | string;
-        };
         TagDto: {
             /** Format: uuid */
             tenantId?: string;
@@ -1056,9 +1233,14 @@ export interface components {
         TaskFeatures: string;
         TaskItemCursorSearchRequest: {
             filter?: null | components["schemas"]["TaskItemSearchFilter"];
+            /** @description The ordering to page in. Must match the mode the string? CursorSearchRequest&lt;TFilter, TSortMode&gt;.Cursor was minted under. */
             sortMode?: components["schemas"]["TaskItemSortMode"];
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Maximum number of items to return; validate against PageSizeLimits.
+             */
             pageSize?: number | string;
+            /** @description Opaque cursor returned by the previous page; `null` starts at the first page. */
             cursor?: null | string;
         };
         TaskItemDto: {
@@ -1244,6 +1426,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     GetCategory: {
@@ -1266,6 +1457,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DefaultResponseOfCategoryDto"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Not Found */
@@ -1314,7 +1514,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"] | components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Not Found */
@@ -1373,7 +1582,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"] | components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Precondition Failed */
@@ -1443,6 +1661,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
                 };
             };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description Conflict */
             409: {
                 headers: {
@@ -1489,6 +1716,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     GetTag: {
@@ -1511,6 +1747,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DefaultResponseOfTagDto"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Not Found */
@@ -1559,7 +1804,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"] | components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Not Found */
@@ -1618,7 +1872,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"] | components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Precondition Failed */
@@ -1688,6 +1951,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
                 };
             };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description Conflict */
             409: {
                 headers: {
@@ -1732,6 +2004,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     GetTaskItem: {
@@ -1754,6 +2035,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DefaultResponseOfTaskItemDto"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Not Found */
@@ -1802,7 +2092,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"] | components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Not Found */
@@ -1816,6 +2115,15 @@ export interface operations {
             };
             /** @description Precondition Failed */
             412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1861,7 +2169,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"] | components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Precondition Failed */
@@ -1919,7 +2236,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"] | components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Not Found */
@@ -1933,6 +2259,15 @@ export interface operations {
             };
             /** @description Precondition Failed */
             412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1998,6 +2333,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
                 };
             };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description Conflict */
             409: {
                 headers: {
@@ -2058,6 +2402,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
                 };
             };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description Not Found */
             404: {
                 headers: {
@@ -2114,7 +2467,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"] | components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Not Found */
@@ -2174,7 +2536,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"] | components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Precondition Failed */
@@ -2246,6 +2617,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
                 };
             };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description Not Found */
             404: {
                 headers: {
@@ -2302,7 +2682,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"] | components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Not Found */
@@ -2362,7 +2751,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"] | components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Precondition Failed */
@@ -2428,6 +2826,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
                 };
             };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description Not Found */
             404: {
                 headers: {
@@ -2467,7 +2874,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"] | components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Precondition Failed */
@@ -2525,6 +2941,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     GetAttachment: {
@@ -2547,6 +2972,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DefaultResponseOfAttachmentDto"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Not Found */
@@ -2595,7 +3029,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"] | components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Not Found */
@@ -2654,7 +3097,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"] | components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Precondition Failed */
@@ -2724,6 +3176,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
                 };
             };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description Conflict */
             409: {
                 headers: {
@@ -2787,6 +3248,15 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Conflict */
@@ -2984,7 +3454,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/event-stream": components["schemas"]["SseItemOfstring"];
+                    "text/event-stream": unknown;
                 };
             };
         };

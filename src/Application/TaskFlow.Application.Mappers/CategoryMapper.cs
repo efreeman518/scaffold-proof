@@ -28,7 +28,7 @@ public static class CategoryMapper
     public static CategoryDto ToDto(this Category entity) => Compiled(entity);
 
     /// <summary>Converts the current value to entity.</summary>
-    public static DomainResult<Category> ToEntity(this CategoryDto dto, Guid tenantId)
+    public static Result<Category> ToEntity(this CategoryDto dto, Guid tenantId)
     {
         var parentCategoryId = DomainId.FromNullable<CategoryId>(dto.ParentCategoryId);
         return Category.Create(TenantId.From(tenantId), dto.Name, dto.Description, dto.SortOrder, parentCategoryId,

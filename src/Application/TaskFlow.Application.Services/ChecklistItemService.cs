@@ -8,6 +8,7 @@ using TaskFlow.Application.Models;
 using TaskFlow.Application.Services.Rules;
 using TaskFlow.Domain.Model;
 using TaskFlow.Domain.Shared;
+using EF.Domain.Contracts;
 
 namespace TaskFlow.Application.Services;
 
@@ -40,13 +41,13 @@ internal class ChecklistItemService(
     public async Task<Result<DefaultResponse<ChecklistItemDto>>> GetAsync(Guid id, CancellationToken ct = default)
     {
         var entity = await repoQuery.GetChecklistItemAsync(ChecklistItemId.From(id), ct);
-        if (entity == null) return Result<DefaultResponse<ChecklistItemDto>>.None();
+        if (entity == null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             RequestTenantId, RequestRoles, entity.TenantId.Value,
             "ChecklistItem:Get", nameof(ChecklistItem), entity.Id.Value);
-        if (boundary.IsFailure) return Result<DefaultResponse<ChecklistItemDto>>.Failure(boundary.ErrorMessage!);
+        if (boundary.TryGetValue(out Error? boundaryError)) return boundaryError;
 
-        return Result<DefaultResponse<ChecklistItemDto>>.Success(BuildResponse(entity.ToDto()));
+        return BuildResponse(entity.ToDto());
     }
 }

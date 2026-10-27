@@ -30,7 +30,7 @@ public static class ChecklistItemMapper
     public static ChecklistItemDto ToDto(this ChecklistItem entity) => Compiled(entity);
 
     /// <summary>Converts the current value to entity.</summary>
-    public static DomainResult<ChecklistItem> ToEntity(this ChecklistItemDto dto, Guid tenantId)
+    public static Result<ChecklistItem> ToEntity(this ChecklistItemDto dto, Guid tenantId)
         => ChecklistItem.Create(TenantId.From(tenantId), TaskItemId.From(dto.TaskItemId), dto.Title, dto.SortOrder,
             DomainId.FromNullable<ChecklistItemId>(dto.Id));
 }

@@ -22,9 +22,9 @@ public class CommentTests
         var taskItemId = TaskItemId.From(Guid.NewGuid());
         var result = Comment.Create(TenantId, taskItemId, "Test comment body");
         Assert.IsTrue(result.IsSuccess);
-        Assert.IsNotNull(result.Value);
-        Assert.AreEqual("Test comment body", result.Value.Body);
-        Assert.AreEqual(taskItemId, result.Value.TaskItemId);
+        Assert.IsTrue(result.IsSuccess, result.ToString());
+        Assert.AreEqual("Test comment body", result.GetValueOrThrow().Body);
+        Assert.AreEqual(taskItemId, result.GetValueOrThrow().TaskItemId);
     }
 
     /// <summary>Verifies that given empty body, when comment created, then returns domain failure.</summary>
@@ -36,7 +36,7 @@ public class CommentTests
     public void Given_EmptyBody_When_CommentCreated_Then_ReturnsDomainFailure(string? body)
     {
         var result = Comment.Create(TenantId, TaskItemId.From(Guid.NewGuid()), body!);
-        Assert.IsTrue(result.IsFailure);
+        Assert.IsFalse(result.IsSuccess);
     }
 
     /// <summary>Verifies that given empty task item ID, when comment created, then returns domain failure.</summary>
@@ -45,7 +45,7 @@ public class CommentTests
     public void Given_EmptyTaskItemId_When_CommentCreated_Then_ReturnsDomainFailure()
     {
         var result = Comment.Create(TenantId, TaskItemId.From(Guid.Empty), "Body");
-        Assert.IsTrue(result.IsFailure);
+        Assert.IsFalse(result.IsSuccess);
     }
 
     /// <summary>Verifies that given existing comment, when updated, then returns updated values.</summary>
@@ -53,10 +53,10 @@ public class CommentTests
     [TestCategory("Unit")]
     public void Given_ExistingComment_When_Updated_Then_ReturnsUpdatedValues()
     {
-        var comment = Comment.Create(TenantId, TaskItemId.From(Guid.NewGuid()), "Original").Value!;
+        var comment = Comment.Create(TenantId, TaskItemId.From(Guid.NewGuid()), "Original").GetValueOrThrow();
         var result = comment.Update(body: "Updated body");
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual("Updated body", result.Value!.Body);
+        Assert.AreEqual("Updated body", result.GetValueOrThrow().Body);
     }
 
     /// <summary>Verifies that given null update, when updated, then original values preserved.</summary>
@@ -64,9 +64,9 @@ public class CommentTests
     [TestCategory("Unit")]
     public void Given_NullUpdate_When_Updated_Then_OriginalValuesPreserved()
     {
-        var comment = Comment.Create(TenantId, TaskItemId.From(Guid.NewGuid()), "Original").Value!;
+        var comment = Comment.Create(TenantId, TaskItemId.From(Guid.NewGuid()), "Original").GetValueOrThrow();
         var result = comment.Update();
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual("Original", result.Value!.Body);
+        Assert.AreEqual("Original", result.GetValueOrThrow().Body);
     }
 }

@@ -100,7 +100,7 @@ public sealed class SetBasedVersionStampTests
     public async Task MarkOverdueNotified_BumpsVersionAndModifiedAtUtc()
     {
         var ct = TestContext.CancellationToken;
-        var task = TaskItem.Create(TenantId.From(TestConstants.TenantId), $"Overdue-{Guid.NewGuid():N}").Value!;
+        var task = TaskItem.Create(TenantId.From(TestConstants.TenantId), $"Overdue-{Guid.NewGuid():N}").GetValueOrThrow();
         task.UpdateDateRange(null, DateTimeOffset.UtcNow.AddDays(-2));
         var before = await SeedAsync(task, ct);
 
@@ -117,7 +117,7 @@ public sealed class SetBasedVersionStampTests
     public async Task AdvanceNextOccurrence_BumpsVersionAndModifiedAtUtc()
     {
         var ct = TestContext.CancellationToken;
-        var template = TaskItem.Create(TenantId.From(TestConstants.TenantId), $"Template-{Guid.NewGuid():N}").Value!;
+        var template = TaskItem.Create(TenantId.From(TestConstants.TenantId), $"Template-{Guid.NewGuid():N}").GetValueOrThrow();
         template.Update(features: TaskFeatures.Recurring);
         template.UpdateDateRange(null, DateTimeOffset.UtcNow.AddDays(-3));
         template.UpdateRecurrencePattern(new RecurrencePattern { Frequency = RecurrencePattern.Daily, Interval = 1 });
@@ -139,7 +139,7 @@ public sealed class SetBasedVersionStampTests
         var ct = TestContext.CancellationToken;
         var occurrenceUtc = DateTimeOffset.UtcNow.AddDays(-1);
         var occurrence = TaskItem.CreateOccurrence(TenantId.From(TestConstants.TenantId), TaskItemId.From(Guid.CreateVersion7()),
-            TaskItemId.From(Guid.CreateVersion7()), occurrenceUtc, $"Occurrence-{Guid.NewGuid():N}").Value!;
+            TaskItemId.From(Guid.CreateVersion7()), occurrenceUtc, $"Occurrence-{Guid.NewGuid():N}").GetValueOrThrow();
         var start = DateTimeOffset.UtcNow.AddSeconds(-5);
 
         await using (var db = DbContainerFixture.CreateTrxnContext(_connectionString))

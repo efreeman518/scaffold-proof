@@ -2,6 +2,7 @@ using EF.AspNetCore;
 using EF.AspNetCore.Concurrency;
 using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
+using EF.Domain.Contracts;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using TaskFlow.Api.Endpoints.Shared;
@@ -19,7 +20,9 @@ public static class TaskItemCqrsEndpoints
     public static IEndpointRouteBuilder MapTaskItemCqrsEndpoints(this IEndpointRouteBuilder group)
     {
         var g = group.MapGroup("/task-items").WithTags("TaskItems")
-            .WithETag();
+            .WithETag()
+            // Every route enforces the caller's tenant boundary: a ForbiddenError answers 403.
+            .ProducesProblem(StatusCodes.Status403Forbidden);
 
         g.MapPost("/search", Search)
             .WithName("SearchTaskItems")
@@ -48,6 +51,8 @@ public static class TaskItemCqrsEndpoints
             .Produces<DefaultResponse<TaskItemDto>>()
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status404NotFound)
+            // An invalid status transition is a RuleError.
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
             .WithSummary("Update an existing TaskItem");
 
         // PATCH exists in both styles now; its absence here previously 404'd the AI triage workflow
@@ -58,6 +63,8 @@ public static class TaskItemCqrsEndpoints
             .Produces<DefaultResponse<TaskItemDto>>()
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status404NotFound)
+            // An invalid status transition is a RuleError.
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
             .WithSummary("Partially update a TaskItem (JSON merge patch - omitted fields are unchanged)");
 
         g.MapDelete("/{id:guid}", Delete)
@@ -159,10 +166,7 @@ public static class TaskItemCqrsEndpoints
         CancellationToken ct)
     {
         var result = await handler.HandleAsync(new GetTaskItemByIdQuery(id), ct);
-        return result.Match<IResult>(
-            response => TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)),
-            () => TypedResults.NotFound(id));
+        return result.ToHttp(response => TypedResults.Ok(response));
     }
 
     /// <summary>Creates requested data after validation and maps the result to the caller contract.</summary>
@@ -173,11 +177,9 @@ public static class TaskItemCqrsEndpoints
         CancellationToken ct)
     {
         var result = await handler.HandleAsync(new CreateTaskItemCommand(request), ct);
-        return result.Match<IResult>(
-            response => response.IsReplay
+        return result.ToHttp(response => response.IsReplay
                 ? TypedResults.Ok(response)
-                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response));
     }
 
     /// <summary>Updates existing data after validation and preserves domain invariants.</summary>
@@ -195,9 +197,7 @@ public static class TaskItemCqrsEndpoints
                 $"{ErrorConstants.ERROR_URL_BODY_ID_MISMATCH}: {id} <> {request.Item.Id}"));
 
         var result = await handler.HandleAsync(new UpdateTaskItemCommand(request, ifMatch.ExpectedVersion), ct);
-        return result.Match(
-            response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response));
     }
 
     /// <summary>Applies a sparse partial update (JSON merge patch) to a TaskItem through the aggregate root.</summary>
@@ -210,23 +210,19 @@ public static class TaskItemCqrsEndpoints
         CancellationToken ct)
     {
         var result = await handler.HandleAsync(new PatchTaskItemCommand(id, request.Item, ifMatch.ExpectedVersion), ct);
-        return result.Match(
-            response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response));
     }
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
     private static async Task<IResult> Delete(
         HttpContext httpContext,
-        [FromServices] IRequestHandler<DeleteTaskItemCommand, Result> handler,
+        [FromServices] IRequestHandler<DeleteTaskItemCommand, Result<Unit>> handler,
         Guid id,
         IfMatch ifMatch,
         CancellationToken ct)
     {
         var result = await handler.HandleAsync(new DeleteTaskItemCommand(id, ifMatch.ExpectedVersion), ct);
-        return result.Match<IResult>(
-            () => TypedResults.NoContent(),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(_ => TypedResults.NoContent());
     }
 
     /// <summary>Adds a comment to the TaskItem aggregate through the root.</summary>
@@ -238,13 +234,11 @@ public static class TaskItemCqrsEndpoints
         CancellationToken ct)
     {
         var result = await handler.HandleAsync(new AddTaskItemCommentCommand(id, request.Item), ct);
-        return result.Match(
-            response => response.Item is null
+        return result.ToHttp(response => response.Item is null
                 ? Results.NotFound(id)
                 : response.IsReplay
                     ? TypedResults.Ok(response)
-                    : TypedResults.Created($"{httpContext.Request.Path}/{response.Item.Id}", response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+                    : TypedResults.Created($"{httpContext.Request.Path}/{response.Item.Id}", response));
     }
 
     /// <summary>Updates a comment owned by the TaskItem aggregate.</summary>
@@ -259,15 +253,13 @@ public static class TaskItemCqrsEndpoints
     {
         var result = await handler.HandleAsync(
             new UpdateTaskItemCommentCommand(id, commentId, request.Item, ifMatch.ExpectedVersion), ct);
-        return result.Match(
-            response => response.Item is null ? Results.NotFound(commentId) : TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(response => response.Item is null ? Results.NotFound(commentId) : TypedResults.Ok(response));
     }
 
     /// <summary>Removes a comment from the TaskItem aggregate through the root.</summary>
     private static async Task<IResult> RemoveComment(
         HttpContext httpContext,
-        [FromServices] IRequestHandler<RemoveTaskItemCommentCommand, Result> handler,
+        [FromServices] IRequestHandler<RemoveTaskItemCommentCommand, Result<Unit>> handler,
         Guid id,
         Guid commentId,
         IfMatch ifMatch,
@@ -275,9 +267,7 @@ public static class TaskItemCqrsEndpoints
     {
         var result = await handler.HandleAsync(
             new RemoveTaskItemCommentCommand(id, commentId, ifMatch.ExpectedVersion), ct);
-        return result.Match<IResult>(
-            () => TypedResults.NoContent(),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(_ => TypedResults.NoContent());
     }
 
     /// <summary>Adds a checklist item to the TaskItem aggregate through the root.</summary>
@@ -289,13 +279,11 @@ public static class TaskItemCqrsEndpoints
         CancellationToken ct)
     {
         var result = await handler.HandleAsync(new AddTaskItemChecklistItemCommand(id, request.Item), ct);
-        return result.Match(
-            response => response.Item is null
+        return result.ToHttp(response => response.Item is null
                 ? Results.NotFound(id)
                 : response.IsReplay
                     ? TypedResults.Ok(response)
-                    : TypedResults.Created($"{httpContext.Request.Path}/{response.Item.Id}", response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+                    : TypedResults.Created($"{httpContext.Request.Path}/{response.Item.Id}", response));
     }
 
     /// <summary>Updates a checklist item owned by the TaskItem aggregate.</summary>
@@ -310,15 +298,13 @@ public static class TaskItemCqrsEndpoints
     {
         var result = await handler.HandleAsync(
             new UpdateTaskItemChecklistItemCommand(id, checklistItemId, request.Item, ifMatch.ExpectedVersion), ct);
-        return result.Match(
-            response => response.Item is null ? Results.NotFound(checklistItemId) : TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(response => response.Item is null ? Results.NotFound(checklistItemId) : TypedResults.Ok(response));
     }
 
     /// <summary>Removes a checklist item from the TaskItem aggregate through the root.</summary>
     private static async Task<IResult> RemoveChecklistItem(
         HttpContext httpContext,
-        [FromServices] IRequestHandler<RemoveTaskItemChecklistItemCommand, Result> handler,
+        [FromServices] IRequestHandler<RemoveTaskItemChecklistItemCommand, Result<Unit>> handler,
         Guid id,
         Guid checklistItemId,
         IfMatch ifMatch,
@@ -326,9 +312,7 @@ public static class TaskItemCqrsEndpoints
     {
         var result = await handler.HandleAsync(
             new RemoveTaskItemChecklistItemCommand(id, checklistItemId, ifMatch.ExpectedVersion), ct);
-        return result.Match<IResult>(
-            () => TypedResults.NoContent(),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(_ => TypedResults.NoContent());
     }
 
     /// <summary>Associates an existing Tag with the TaskItem aggregate through the root.</summary>
@@ -340,27 +324,23 @@ public static class TaskItemCqrsEndpoints
         CancellationToken ct)
     {
         var result = await handler.HandleAsync(new AssociateTaskItemTagCommand(id, tagId), ct);
-        return result.Match(
-            response => response.Item is null
+        return result.ToHttp(response => response.Item is null
                 ? Results.NotFound(id)
                 : response.IsReplay
                     ? TypedResults.Ok(response)
-                    : TypedResults.Created($"{httpContext.Request.Path}", response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+                    : TypedResults.Created($"{httpContext.Request.Path}", response));
     }
 
     /// <summary>Removes a Tag association from the TaskItem aggregate through the root.</summary>
     private static async Task<IResult> RemoveTag(
         HttpContext httpContext,
-        [FromServices] IRequestHandler<RemoveTaskItemTagCommand, Result> handler,
+        [FromServices] IRequestHandler<RemoveTaskItemTagCommand, Result<Unit>> handler,
         Guid id,
         Guid tagId,
         IfMatch ifMatch,
         CancellationToken ct)
     {
         var result = await handler.HandleAsync(new RemoveTaskItemTagCommand(id, tagId, ifMatch.ExpectedVersion), ct);
-        return result.Match<IResult>(
-            () => TypedResults.NoContent(),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(_ => TypedResults.NoContent());
     }
 }

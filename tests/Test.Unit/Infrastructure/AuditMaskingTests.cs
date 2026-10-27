@@ -36,7 +36,7 @@ public sealed class AuditMaskingTests
         var dbName = Guid.NewGuid().ToString();
         var task = TaskItem.Create(
             TenantId.From(TestConstants.TenantId), "Audited task",
-            secureDeterministic: DeterministicPlain, secureRandom: RandomPlain).Value!;
+            secureDeterministic: DeterministicPlain, secureRandom: RandomPlain).GetValueOrThrow();
 
         await using (var db = Create(dbName))
         {

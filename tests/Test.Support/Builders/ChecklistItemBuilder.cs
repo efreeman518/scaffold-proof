@@ -28,6 +28,6 @@ public class ChecklistItemBuilder
             TaskItemId.From(_taskItemId),
             _title,
             _sortOrder);
-        return result.Value!;
+        return result.GetValueOrThrow();
     }
 }

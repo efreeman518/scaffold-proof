@@ -1,6 +1,7 @@
 using EF.Common.Contracts;
 using TaskFlow.Application.Models;
 using TaskFlow.Application.Models.Paging;
+using EF.Domain.Contracts;
 
 namespace TaskFlow.Application.Contracts.Services;
 
@@ -21,7 +22,7 @@ public interface ITaskItemService
     /// <summary>Applies a sparse partial update (JSON merge patch) - null fields are left unchanged.</summary>
     Task<Result<DefaultResponse<TaskItemDto>>> PatchAsync(Guid id, TaskItemPatchDto patch, long? expectedVersion, CancellationToken ct = default);
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
-    Task<Result> DeleteAsync(Guid id, long? expectedVersion, CancellationToken ct = default);
+    Task<Result<Unit>> DeleteAsync(Guid id, long? expectedVersion, CancellationToken ct = default);
 
     // Nested child operations. Comment, ChecklistItem, and the Tag association are internal to the
     // TaskItem aggregate, so they are mutated only through the root (GR-15) - there is no
@@ -34,17 +35,17 @@ public interface ITaskItemService
     /// <summary>Updates a comment owned by a TaskItem through the aggregate root.</summary>
     Task<Result<DefaultResponse<CommentDto>>> UpdateCommentAsync(Guid taskItemId, Guid commentId, CommentDto comment, long? expectedVersion, CancellationToken ct = default);
     /// <summary>Removes a comment from a TaskItem through the aggregate root.</summary>
-    Task<Result> RemoveCommentAsync(Guid taskItemId, Guid commentId, long? expectedVersion, CancellationToken ct = default);
+    Task<Result<Unit>> RemoveCommentAsync(Guid taskItemId, Guid commentId, long? expectedVersion, CancellationToken ct = default);
 
     /// <summary>Adds a checklist item to a TaskItem through the aggregate root.</summary>
     Task<Result<DefaultResponse<ChecklistItemDto>>> AddChecklistItemAsync(Guid taskItemId, ChecklistItemDto checklistItem, CancellationToken ct = default);
     /// <summary>Updates a checklist item owned by a TaskItem through the aggregate root.</summary>
     Task<Result<DefaultResponse<ChecklistItemDto>>> UpdateChecklistItemAsync(Guid taskItemId, Guid checklistItemId, ChecklistItemDto checklistItem, long? expectedVersion, CancellationToken ct = default);
     /// <summary>Removes a checklist item from a TaskItem through the aggregate root.</summary>
-    Task<Result> RemoveChecklistItemAsync(Guid taskItemId, Guid checklistItemId, long? expectedVersion, CancellationToken ct = default);
+    Task<Result<Unit>> RemoveChecklistItemAsync(Guid taskItemId, Guid checklistItemId, long? expectedVersion, CancellationToken ct = default);
 
     /// <summary>Associates an existing Tag with a TaskItem through the aggregate root.</summary>
     Task<Result<DefaultResponse<TaskItemTagDto>>> AssociateTagAsync(Guid taskItemId, Guid tagId, CancellationToken ct = default);
     /// <summary>Removes a Tag association from a TaskItem through the aggregate root.</summary>
-    Task<Result> RemoveTagAsync(Guid taskItemId, Guid tagId, long? expectedVersion, CancellationToken ct = default);
+    Task<Result<Unit>> RemoveTagAsync(Guid taskItemId, Guid tagId, long? expectedVersion, CancellationToken ct = default);
 }

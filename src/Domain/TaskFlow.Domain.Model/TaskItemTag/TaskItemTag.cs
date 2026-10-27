@@ -32,21 +32,21 @@ public class TaskItemTag : TaskFlowEntityBase<DomainTaskItemTagId>, ITenantEntit
     }
 
     /// <summary>Creates requested data after validation and maps the result to the caller contract.</summary>
-    public static DomainResult<TaskItemTag> Create(DomainTenantId tenantId, DomainTaskItemId taskItemId, DomainTagId tagId)
+    public static Result<TaskItemTag> Create(DomainTenantId tenantId, DomainTaskItemId taskItemId, DomainTagId tagId)
     {
         var entity = new TaskItemTag(tenantId, taskItemId, tagId);
         return entity.Valid();
     }
 
     /// <summary>Creates a valid task item tag instance with domain-required defaults.</summary>
-    private DomainResult<TaskItemTag> Valid()
+    private Result<TaskItemTag> Valid()
     {
-        var errors = new List<DomainError>();
-        if (TenantId.Value == Guid.Empty) errors.Add(DomainError.Create("Tenant ID cannot be empty."));
-        if (TaskItemId.Value == Guid.Empty) errors.Add(DomainError.Create("Task Item ID cannot be empty."));
-        if (TagId.Value == Guid.Empty) errors.Add(DomainError.Create("Tag ID cannot be empty."));
+        var errors = new List<ValidationIssue>();
+        if (TenantId.Value == Guid.Empty) errors.Add(new ValidationIssue("Tenant ID cannot be empty.", nameof(TenantId)));
+        if (TaskItemId.Value == Guid.Empty) errors.Add(new ValidationIssue("Task Item ID cannot be empty.", nameof(TaskItemId)));
+        if (TagId.Value == Guid.Empty) errors.Add(new ValidationIssue("Tag ID cannot be empty.", nameof(TagId)));
         return errors.Count > 0
-            ? DomainResult<TaskItemTag>.Failure(errors)
-            : DomainResult<TaskItemTag>.Success(this);
+            ? new ValidationError(errors)
+            : this;
     }
 }

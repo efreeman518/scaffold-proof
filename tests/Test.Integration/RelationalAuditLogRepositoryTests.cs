@@ -91,7 +91,7 @@ public class RelationalAuditLogRepositoryTests
         try
         {
             var tenantId = TenantId.From(Guid.CreateVersion7());
-            var category = Category.Create(tenantId, $"Audited {Guid.NewGuid():N}").Value!;
+            var category = Category.Create(tenantId, $"Audited {Guid.NewGuid():N}").GetValueOrThrow();
             using (var scope = host.Services.CreateScope())
             {
                 var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TaskFlowDbContextTrxn>>();

@@ -19,7 +19,7 @@ internal static class TaskItemUpdater
     /// When RelatedDeleteBehavior is RelationshipAndEntity, missing children are hard-deleted so
     /// a single parent save can represent client-side removals.
     /// </summary>
-    public static DomainResult<TaskItem> UpdateFromDto(this TaskFlowDbContextTrxn db, TaskItem entity, TaskItemDto dto,
+    public static Result<TaskItem> UpdateFromDto(this TaskFlowDbContextTrxn db, TaskItem entity, TaskItemDto dto,
         RelatedDeleteBehavior relatedDeleteBehavior = RelatedDeleteBehavior.None)
     {
         return entity.Update(
@@ -31,7 +31,7 @@ internal static class TaskItemUpdater
             actualEffort: dto.ActualEffort,
             categoryId: DomainId.FromNullable<CategoryId>(dto.CategoryId),
             parentTaskItemId: DomainId.FromNullable<TaskItemId>(dto.ParentTaskItemId))
-        .Bind(updatedEntity => DomainResult.Combine(
+        .Bind(updatedEntity => Result.Combine(
             // Children are mutated through the aggregate root's own methods (AddComment /
             // RemoveComment etc.), never by touching the navigation collections directly.
             // New children added to the loaded, tracked parent are inferred as Added on save
@@ -44,14 +44,14 @@ internal static class TaskItemUpdater
                 dto.Comments ?? [],
                 e => e.Id.Value,
                 i => i.Id,
-                incomingDto => updatedEntity.AddComment(incomingDto.Body),
-                (existing, incomingDto) => existing.Update(incomingDto.Body),
+                incomingDto => updatedEntity.AddComment(incomingDto.Body).Map(_ => Unit.Value),
+                (existing, incomingDto) => existing.Update(incomingDto.Body).Map(_ => Unit.Value),
                 toRemove =>
                 {
-                    if (relatedDeleteBehavior == RelatedDeleteBehavior.None) return DomainResult.Success();
+                    if (relatedDeleteBehavior == RelatedDeleteBehavior.None) return Result.Ok();
                     updatedEntity.RemoveComment(toRemove);
                     db.Delete(toRemove);
-                    return DomainResult.Success();
+                    return Result.Ok();
                 }
             ),
             CollectionUtility.SyncCollectionWithResult<ChecklistItem, ChecklistItemDto, Guid>(
@@ -65,19 +65,19 @@ internal static class TaskItemUpdater
                     // Apply IsCompleted immediately - AddChecklistItem/Create don't take it,
                     // so a buffered "checked" item from the client would lose that state
                     // without this follow-up Update on the newly created child.
-                    if (result.IsSuccess && incomingDto.IsCompleted)
+                    if (result.TryGetValue(out ChecklistItem? added) && incomingDto.IsCompleted)
                     {
-                        result.Value!.Update(isCompleted: true);
+                        added.Update(isCompleted: true);
                     }
-                    return result;
+                    return result.Map(_ => Unit.Value);
                 },
-                (existing, incomingDto) => existing.Update(incomingDto.Title, incomingDto.IsCompleted, incomingDto.SortOrder),
+                (existing, incomingDto) => existing.Update(incomingDto.Title, incomingDto.IsCompleted, incomingDto.SortOrder).Map(_ => Unit.Value),
                 toRemove =>
                 {
-                    if (relatedDeleteBehavior == RelatedDeleteBehavior.None) return DomainResult.Success();
+                    if (relatedDeleteBehavior == RelatedDeleteBehavior.None) return Result.Ok();
                     updatedEntity.RemoveChecklistItem(toRemove);
                     db.Delete(toRemove);
-                    return DomainResult.Success();
+                    return Result.Ok();
                 }
             ),
             CollectionUtility.SyncCollectionWithResult<TaskItemTag, TagDto, Guid>(
@@ -85,16 +85,16 @@ internal static class TaskItemUpdater
                 dto.Tags ?? [],
                 e => e.TagId.Value,
                 i => i.Id,
-                incomingDto => updatedEntity.AssociateTag(TagId.From(incomingDto.Id!.Value)),
+                incomingDto => updatedEntity.AssociateTag(TagId.From(incomingDto.Id!.Value)).Map(_ => Unit.Value),
                 removeFunc: toRemove =>
                 {
-                    if (relatedDeleteBehavior == RelatedDeleteBehavior.None) return DomainResult.Success();
+                    if (relatedDeleteBehavior == RelatedDeleteBehavior.None) return Result.Ok();
                     updatedEntity.RemoveTag(toRemove);
                     db.Delete(toRemove);
-                    return DomainResult.Success();
+                    return Result.Ok();
                 }
             ))
-            .Map(updatedEntity)
+            .Map(_ => updatedEntity)
         );
     }
 }

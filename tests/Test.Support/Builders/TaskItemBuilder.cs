@@ -38,6 +38,6 @@ public class TaskItemBuilder
             _priority,
             DomainId.FromNullable<CategoryId>(_categoryId),
             DomainId.FromNullable<TaskItemId>(_parentTaskItemId));
-        return result.Value!;
+        return result.GetValueOrThrow();
     }
 }

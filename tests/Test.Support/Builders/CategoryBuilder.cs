@@ -33,6 +33,6 @@ public class CategoryBuilder
             _description,
             _sortOrder,
             DomainId.FromNullable<CategoryId>(_parentCategoryId));
-        return result.Value!;
+        return result.GetValueOrThrow();
     }
 }

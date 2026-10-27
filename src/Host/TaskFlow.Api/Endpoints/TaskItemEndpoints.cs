@@ -20,7 +20,9 @@ public static class TaskItemEndpoints
         // The ETag filter is attached to the group, not to individual routes, so reads carry the token
         // that writes are required to send back.
         var g = group.MapGroup("/task-items").WithTags("TaskItems")
-            .WithETag();
+            .WithETag()
+            // Every route enforces the caller's tenant boundary: a ForbiddenError answers 403.
+            .ProducesProblem(StatusCodes.Status403Forbidden);
 
         g.MapPost("/search", Search)
             .WithName("SearchTaskItems")
@@ -49,6 +51,8 @@ public static class TaskItemEndpoints
             .Produces<DefaultResponse<TaskItemDto>>()
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status404NotFound)
+            // An invalid status transition is a RuleError.
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
             .WithSummary("Update an existing TaskItem");
 
         g.MapPatch("/{id:guid}", Patch)
@@ -57,6 +61,8 @@ public static class TaskItemEndpoints
             .Produces<DefaultResponse<TaskItemDto>>()
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status404NotFound)
+            // An invalid status transition is a RuleError.
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
             .WithSummary("Partially update a TaskItem (JSON merge patch - omitted fields are unchanged)");
 
         g.MapDelete("/{id:guid}", Delete)
@@ -155,10 +161,7 @@ public static class TaskItemEndpoints
         [FromServices] ITaskItemService service, Guid id, CancellationToken ct)
     {
         var result = await service.GetAsync(id, ct);
-        return result.Match<IResult>(
-            response => TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)),
-            () => TypedResults.NotFound(id));
+        return result.ToHttp(response => TypedResults.Ok(response));
     }
 
     /// <summary>Creates requested data after validation and maps the result to the caller contract.</summary>
@@ -169,12 +172,10 @@ public static class TaskItemEndpoints
         CancellationToken ct)
     {
         var result = await service.CreateAsync(request, ct);
-        return result.Match<IResult>(
-            // A replay of a caller-supplied id is 200, not 201: nothing was created this time.
-            response => response.IsReplay
+        // A replay of a caller-supplied id is 200, not 201: nothing was created this time.
+        return result.ToHttp(response => response.IsReplay
                 ? TypedResults.Ok(response)
-                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response));
     }
 
     /// <summary>Updates existing data after validation and preserves domain invariants.</summary>
@@ -192,9 +193,7 @@ public static class TaskItemEndpoints
                 $"{ErrorConstants.ERROR_URL_BODY_ID_MISMATCH}: {id} <> {request.Item.Id}"));
 
         var result = await service.UpdateAsync(request, ifMatch.ExpectedVersion, ct);
-        return result.Match(
-            response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response));
     }
 
     /// <summary>Applies a sparse partial update (JSON merge patch) to a TaskItem through the aggregate root.</summary>
@@ -207,9 +206,7 @@ public static class TaskItemEndpoints
         CancellationToken ct)
     {
         var result = await service.PatchAsync(id, request.Item, ifMatch.ExpectedVersion, ct);
-        return result.Match(
-            response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response));
     }
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
@@ -218,10 +215,7 @@ public static class TaskItemEndpoints
         [FromServices] ITaskItemService service, Guid id, IfMatch ifMatch, CancellationToken ct)
     {
         var result = await service.DeleteAsync(id, ifMatch.ExpectedVersion, ct);
-        return result.Match<IResult>(
-            () => TypedResults.NoContent(),
-            errors => TypedResults.Problem(
-                ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(_ => TypedResults.NoContent());
     }
 
     /// <summary>Adds a comment to the TaskItem aggregate through the root.</summary>
@@ -233,13 +227,11 @@ public static class TaskItemEndpoints
         CancellationToken ct)
     {
         var result = await service.AddCommentAsync(id, request.Item, ct);
-        return result.Match(
-            response => response.Item is null
+        return result.ToHttp(response => response.Item is null
                 ? Results.NotFound(id)
                 : response.IsReplay
                     ? TypedResults.Ok(response)
-                    : TypedResults.Created($"{httpContext.Request.Path}/{response.Item.Id}", response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+                    : TypedResults.Created($"{httpContext.Request.Path}/{response.Item.Id}", response));
     }
 
     /// <summary>Updates a comment owned by the TaskItem aggregate.</summary>
@@ -253,9 +245,7 @@ public static class TaskItemEndpoints
         CancellationToken ct)
     {
         var result = await service.UpdateCommentAsync(id, commentId, request.Item, ifMatch.ExpectedVersion, ct);
-        return result.Match(
-            response => response.Item is null ? Results.NotFound(commentId) : TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(response => response.Item is null ? Results.NotFound(commentId) : TypedResults.Ok(response));
     }
 
     /// <summary>Removes a comment from the TaskItem aggregate through the root.</summary>
@@ -268,9 +258,7 @@ public static class TaskItemEndpoints
         CancellationToken ct)
     {
         var result = await service.RemoveCommentAsync(id, commentId, ifMatch.ExpectedVersion, ct);
-        return result.Match<IResult>(
-            () => TypedResults.NoContent(),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(_ => TypedResults.NoContent());
     }
 
     /// <summary>Adds a checklist item to the TaskItem aggregate through the root.</summary>
@@ -282,13 +270,11 @@ public static class TaskItemEndpoints
         CancellationToken ct)
     {
         var result = await service.AddChecklistItemAsync(id, request.Item, ct);
-        return result.Match(
-            response => response.Item is null
+        return result.ToHttp(response => response.Item is null
                 ? Results.NotFound(id)
                 : response.IsReplay
                     ? TypedResults.Ok(response)
-                    : TypedResults.Created($"{httpContext.Request.Path}/{response.Item.Id}", response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+                    : TypedResults.Created($"{httpContext.Request.Path}/{response.Item.Id}", response));
     }
 
     /// <summary>Updates a checklist item owned by the TaskItem aggregate.</summary>
@@ -302,9 +288,7 @@ public static class TaskItemEndpoints
         CancellationToken ct)
     {
         var result = await service.UpdateChecklistItemAsync(id, checklistItemId, request.Item, ifMatch.ExpectedVersion, ct);
-        return result.Match(
-            response => response.Item is null ? Results.NotFound(checklistItemId) : TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(response => response.Item is null ? Results.NotFound(checklistItemId) : TypedResults.Ok(response));
     }
 
     /// <summary>Removes a checklist item from the TaskItem aggregate through the root.</summary>
@@ -317,9 +301,7 @@ public static class TaskItemEndpoints
         CancellationToken ct)
     {
         var result = await service.RemoveChecklistItemAsync(id, checklistItemId, ifMatch.ExpectedVersion, ct);
-        return result.Match<IResult>(
-            () => TypedResults.NoContent(),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(_ => TypedResults.NoContent());
     }
 
     /// <summary>Associates an existing Tag with the TaskItem aggregate through the root.</summary>
@@ -331,13 +313,11 @@ public static class TaskItemEndpoints
         CancellationToken ct)
     {
         var result = await service.AssociateTagAsync(id, tagId, ct);
-        return result.Match(
-            response => response.Item is null
+        return result.ToHttp(response => response.Item is null
                 ? Results.NotFound(id)
                 : response.IsReplay
                     ? TypedResults.Ok(response)
-                    : TypedResults.Created($"{httpContext.Request.Path}", response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+                    : TypedResults.Created($"{httpContext.Request.Path}", response));
     }
 
     /// <summary>Removes a Tag association from the TaskItem aggregate through the root.</summary>
@@ -350,8 +330,6 @@ public static class TaskItemEndpoints
         CancellationToken ct)
     {
         var result = await service.RemoveTagAsync(id, tagId, ifMatch.ExpectedVersion, ct);
-        return result.Match<IResult>(
-            () => TypedResults.NoContent(),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(_ => TypedResults.NoContent());
     }
 }

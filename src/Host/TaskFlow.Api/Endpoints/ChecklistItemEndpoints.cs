@@ -16,7 +16,9 @@ public static class ChecklistItemEndpoints
     public static IEndpointRouteBuilder MapChecklistItemEndpoints(this IEndpointRouteBuilder group)
     {
         var g = group.MapGroup("/checklist-items").WithTags("ChecklistItems")
-            .WithETag();
+            .WithETag()
+            // Every route enforces the caller's tenant boundary: a ForbiddenError answers 403.
+            .ProducesProblem(StatusCodes.Status403Forbidden);
 
         g.MapPost("/search", Search)
             .Produces<PagedResponse<ChecklistItemDto>>(StatusCodes.Status200OK)
@@ -50,9 +52,6 @@ public static class ChecklistItemEndpoints
         [FromServices] IChecklistItemService service, Guid id, CancellationToken ct)
     {
         var result = await service.GetAsync(id, ct);
-        return result.Match<IResult>(
-            response => TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)),
-            () => TypedResults.NotFound(id));
+        return result.ToHttp(response => TypedResults.Ok(response));
     }
 }

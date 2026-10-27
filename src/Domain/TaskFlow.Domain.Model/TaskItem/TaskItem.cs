@@ -92,7 +92,7 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
     }
 
     /// <summary>Creates requested data after validation and maps the result to the caller contract.</summary>
-    public static DomainResult<TaskItem> Create(
+    public static Result<TaskItem> Create(
         DomainTenantId tenantId, string title, string? description = null,
         Priority priority = Priority.None, DomainCategoryId? categoryId = null,
         DomainTaskItemId? parentTaskItemId = null,
@@ -116,7 +116,7 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
     /// OccurrenceUtc)</c> is unique, so a replayed generation run upserts the same row instead of a second
     /// copy. The occurrence is an ordinary task afterwards: it is not linked to the template as a subtask.
     /// </summary>
-    public static DomainResult<TaskItem> CreateOccurrence(
+    public static Result<TaskItem> CreateOccurrence(
         DomainTenantId tenantId,
         DomainTaskItemId id,
         DomainTaskItemId templateId,
@@ -139,7 +139,7 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
     /// Applies a partial update. Null means "leave current value"; Guid.Empty clears optional
     /// category and parent links for DTO-driven updates.
     /// </summary>
-    public DomainResult<TaskItem> Update(
+    public Result<TaskItem> Update(
         string? title = null, string? description = null,
         Priority? priority = null, TaskFeatures? features = null,
         decimal? estimatedEffort = null, decimal? actualEffort = null,
@@ -175,18 +175,18 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
     /// Moves the task through the allowed status state machine and keeps CompletedDate and TerminalAtUtc
     /// aligned with the terminal statuses. TaskItemStatus.None is a reset escape hatch for seed/test data.
     /// </summary>
-    public DomainResult<TaskItem> TransitionStatus(TaskItemStatus newStatus)
+    public Result<TaskItem> TransitionStatus(TaskItemStatus newStatus)
     {
         if (newStatus == TaskItemStatus.None)
         {
             Status = TaskItemStatus.None;
             CompletedDate = null;
             TerminalAtUtc = null;
-            return DomainResult<TaskItem>.Success(this);
+            return this;
         }
 
         if (!IsValidTransition(Status, newStatus))
-            return DomainResult<TaskItem>.Failure($"Cannot transition from {Status} to {newStatus}.");
+            return new RuleError($"Cannot transition from {Status} to {newStatus}.", "task.status_transition");
 
         var previousStatus = Status;
         var now = DateTimeOffset.UtcNow;
@@ -204,7 +204,7 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
         if (newStatus == TaskItemStatus.Completed)
             _domainEvents.Raise(new TaskItemCompletedEvent(Id.Value, TenantId.Value, CompletedDate!.Value));
 
-        return DomainResult<TaskItem>.Success(this);
+        return this;
     }
 
     // D-031 (aggregate-level ETag): every child mutation below calls the base Touch() so EF marks the
@@ -215,100 +215,100 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
     /// <summary>
     /// Add a new comment to this task item.
     /// </summary>
-    public DomainResult<Comment> AddComment(string body, CommentId? commentId = null)
+    public Result<Comment> AddComment(string body, CommentId? commentId = null)
     {
         var result = Comment.Create(TenantId, Id, body, commentId);
-        if (result.IsFailure) return result;
+        if (!result.TryGetValue(out Comment? comment)) return result;
 
-        Comments.Add(result.Value!);
+        Comments.Add(comment);
         Touch();
         return result;
     }
 
     /// <summary>Removes remove comment while keeping aggregate relationship state consistent.</summary>
-    public DomainResult RemoveComment(Comment comment)
+    public Result<Unit> RemoveComment(Comment comment)
     {
         Comments.Remove(comment);
         Touch();
-        return DomainResult.Success();
+        return Result.Ok();
     }
 
     /// <summary>
     /// Removes a comment by id as an idempotent desired-state operation.
     /// </summary>
-    public DomainResult RemoveComment(CommentId commentId)
+    public Result<Unit> RemoveComment(CommentId commentId)
     {
         var toRemove = Comments.FirstOrDefault(c => c.Id == commentId);
         if (toRemove != null) Comments.Remove(toRemove);
         Touch();
-        return DomainResult.Success(); // Always return success - desired state (comment removed) is achieved
+        return Result.Ok(); // Always return success - desired state (comment removed) is achieved
     }
 
     /// <summary>
     /// Add a new checklist item to this task item.
     /// </summary>
-    public DomainResult<ChecklistItem> AddChecklistItem(string title, int sortOrder = 0, ChecklistItemId? checklistItemId = null)
+    public Result<ChecklistItem> AddChecklistItem(string title, int sortOrder = 0, ChecklistItemId? checklistItemId = null)
     {
         var result = ChecklistItem.Create(TenantId, Id, title, sortOrder, checklistItemId);
-        if (result.IsFailure) return result;
+        if (!result.TryGetValue(out ChecklistItem? checklistItem)) return result;
 
-        ChecklistItems.Add(result.Value!);
+        ChecklistItems.Add(checklistItem);
         Touch();
         return result;
     }
 
     /// <summary>Removes remove checklist item while keeping aggregate relationship state consistent.</summary>
-    public DomainResult RemoveChecklistItem(ChecklistItem checklistItem)
+    public Result<Unit> RemoveChecklistItem(ChecklistItem checklistItem)
     {
         ChecklistItems.Remove(checklistItem);
         Touch();
-        return DomainResult.Success();
+        return Result.Ok();
     }
 
     /// <summary>
     /// Removes a checklist item by id as an idempotent desired-state operation.
     /// </summary>
-    public DomainResult RemoveChecklistItem(ChecklistItemId checklistItemId)
+    public Result<Unit> RemoveChecklistItem(ChecklistItemId checklistItemId)
     {
         var toRemove = ChecklistItems.FirstOrDefault(ci => ci.Id == checklistItemId);
         if (toRemove != null) ChecklistItems.Remove(toRemove);
         Touch();
-        return DomainResult.Success(); // Always return success - desired state is achieved
+        return Result.Ok(); // Always return success - desired state is achieved
     }
 
     /// <summary>
     /// Associate an existing tag with this task item.
     /// </summary>
-    public DomainResult<TaskItemTag> AssociateTag(TagId tagId)
+    public Result<TaskItemTag> AssociateTag(TagId tagId)
     {
         var existing = TaskItemTags.FirstOrDefault(t => t.TagId == tagId);
-        if (existing != null) return DomainResult<TaskItemTag>.Success(existing); // Idempotent
+        if (existing != null) return existing; // Idempotent
 
         var result = TaskItemTag.Create(TenantId, Id, tagId);
-        if (result.IsFailure) return result;
+        if (!result.TryGetValue(out TaskItemTag? taskItemTag)) return result;
 
-        TaskItemTags.Add(result.Value!);
+        TaskItemTags.Add(taskItemTag);
         Touch();
         return result;
     }
 
     /// <summary>Removes remove tag while keeping aggregate relationship state consistent.</summary>
-    public DomainResult RemoveTag(TaskItemTag taskItemTag)
+    public Result<Unit> RemoveTag(TaskItemTag taskItemTag)
     {
         TaskItemTags.Remove(taskItemTag);
         Touch();
-        return DomainResult.Success();
+        return Result.Ok();
     }
 
     /// <summary>
     /// Removes a tag association by tag id as an idempotent desired-state operation.
     /// </summary>
-    public DomainResult RemoveTag(TagId tagId)
+    public Result<Unit> RemoveTag(TagId tagId)
     {
         var toRemove = TaskItemTags.FirstOrDefault(t => t.TagId == tagId);
         if (toRemove != null) TaskItemTags.Remove(toRemove);
         Touch();
-        return DomainResult.Success(); // Always return success - desired state (tag not assigned) is achieved
+        return Result.Ok(); // Always return success - desired state (tag not assigned) is achieved
     }
 
     /// <summary>
@@ -372,18 +372,18 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
         };
 
     /// <summary>Creates a valid task item instance with domain-required defaults.</summary>
-    private DomainResult<TaskItem> Valid()
+    private Result<TaskItem> Valid()
     {
-        var errors = new List<DomainError>();
-        if (TenantId.Value == Guid.Empty) errors.Add(DomainError.Create("Tenant ID cannot be empty."));
-        if (string.IsNullOrWhiteSpace(Title)) errors.Add(DomainError.Create("Title is required."));
+        var errors = new List<ValidationIssue>();
+        if (TenantId.Value == Guid.Empty) errors.Add(new ValidationIssue("Tenant ID cannot be empty.", nameof(TenantId)));
+        if (string.IsNullOrWhiteSpace(Title)) errors.Add(new ValidationIssue("Title is required.", nameof(Title)));
         if (Title is not null && Title.Length < DomainConstants.RULE_DEFAULT_NAME_LENGTH_MIN)
-            errors.Add(DomainError.Create($"Title must be at least {DomainConstants.RULE_DEFAULT_NAME_LENGTH_MIN} characters."));
+            errors.Add(new ValidationIssue($"Title must be at least {DomainConstants.RULE_DEFAULT_NAME_LENGTH_MIN} characters.", nameof(Title)));
         if (ExceedsSecureBudget(SecureDeterministic) || ExceedsSecureBudget(SecureRandom))
-            errors.Add(DomainError.Create($"Secure property must not exceed {DomainConstants.RULE_SECURE_PROPERTY_MAX_BYTES} bytes (UTF8)."));
+            errors.Add(new ValidationIssue($"Secure property must not exceed {DomainConstants.RULE_SECURE_PROPERTY_MAX_BYTES} bytes (UTF8)."));
         return errors.Count > 0
-            ? DomainResult<TaskItem>.Failure(errors)
-            : DomainResult<TaskItem>.Success(this);
+            ? new ValidationError(errors)
+            : this;
     }
 
     /// <summary>True when a secure property's UTF8 encoding exceeds the plaintext budget (ciphertext column is 256 bytes: 200 + 12 nonce + 16 tag + headroom).</summary>

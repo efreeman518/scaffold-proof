@@ -2,6 +2,7 @@ using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using TaskFlow.Application.Models;
 using TaskFlow.Domain.Shared.Enums;
+using EF.Domain.Contracts;
 
 namespace TaskFlow.Application.Cqrs.Features.Attachments;
 
@@ -34,4 +35,4 @@ public sealed record UpdateAttachmentCommand(DefaultRequest<AttachmentDto> Reque
 
 /// <summary>Carries delete attachment command CQRS data between endpoints and handlers.</summary>
 public sealed record DeleteAttachmentCommand(Guid Id, long? ExpectedVersion)
-    : ICommand<Result>;
+    : ICommand<Result<Unit>>;

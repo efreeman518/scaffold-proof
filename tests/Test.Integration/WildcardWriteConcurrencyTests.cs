@@ -62,10 +62,10 @@ public class WildcardWriteConcurrencyTests
                 .HandleAsync(new PatchTaskItemCommand(taskId, patch, ExpectedVersion: null), ct),
             race);
 
-        Assert.IsTrue(result.IsSuccess, result.ErrorMessage);
+        Assert.IsTrue(result.IsSuccess, result.ToString());
         var root = await AssertRetriedAsync(taskId, race);
         Assert.AreEqual(patch.Title, root!.Title);
-        Assert.AreEqual<long?>(root.Version, result.Value!.Item!.Version, "the response reports the version the retried save wrote");
+        Assert.AreEqual<long?>(root.Version, result.GetValueOrThrow().Item!.Version, "the response reports the version the retried save wrote");
         Assert.AreEqual(1, await CommentCountAsync(taskId), "the competing comment survives a PATCH");
     }
 
@@ -91,10 +91,10 @@ public class WildcardWriteConcurrencyTests
                 .HandleAsync(new UpdateTaskItemCommand(new DefaultRequest<TaskItemDto> { Item = dto }, ExpectedVersion: null), ct),
             race);
 
-        Assert.IsTrue(result.IsSuccess, result.ErrorMessage);
+        Assert.IsTrue(result.IsSuccess, result.ToString());
         var root = await AssertRetriedAsync(taskId, race);
         Assert.AreEqual(dto.Title, root!.Title);
-        Assert.AreEqual<long?>(root.Version, result.Value!.Item!.Version, "the response reports the version the retried save wrote");
+        Assert.AreEqual<long?>(root.Version, result.GetValueOrThrow().Item!.Version, "the response reports the version the retried save wrote");
         Assert.AreEqual(0, await CommentCountAsync(taskId), "the retried PUT replaced the fresh child set, which held the competing comment");
     }
 
@@ -115,7 +115,7 @@ public class WildcardWriteConcurrencyTests
                 .HandleAsync(new DeleteTaskItemCommand(taskId, ExpectedVersion: null), ct),
             race);
 
-        Assert.IsTrue(result.IsSuccess, result.ErrorMessage);
+        Assert.IsTrue(result.IsSuccess, result.ToString());
         Assert.IsTrue(race.Ran, "the competing write must run before the handler's first save");
         Assert.AreEqual(2, race.Saves, "one lost save and one retried save");
         Assert.IsNull(await ReadRootAsync(taskId), "the retried delete removed the task");
@@ -141,9 +141,9 @@ public class WildcardWriteConcurrencyTests
                 .HandleAsync(new UpdateTaskItemCommentCommand(taskId, commentId, dto, ExpectedVersion: null), ct),
             race);
 
-        Assert.IsTrue(result.IsSuccess, result.ErrorMessage);
+        Assert.IsTrue(result.IsSuccess, result.ToString());
         var root = await AssertRetriedAsync(taskId, race);
-        Assert.AreEqual<long?>(root!.Version, result.Value!.AggregateVersion, "the response reports the root version the retried save wrote");
+        Assert.AreEqual<long?>(root!.Version, result.GetValueOrThrow().AggregateVersion, "the response reports the root version the retried save wrote");
         await using var verify = DbContainerFixture.CreateTrxnContext();
         var body = await verify.Comments.IgnoreQueryFilters().Where(c => c.Id == CommentId.From(commentId))
             .Select(c => c.Body).SingleAsync(TestContext.CancellationToken);
@@ -255,7 +255,7 @@ public class WildcardWriteConcurrencyTests
     private async Task<Guid> SeedCommentAsync(Guid taskId)
     {
         await using var db = DbContainerFixture.CreateTrxnContext();
-        var comment = Comment.Create(TenantId.From(TenantGuid), TaskItemId.From(taskId), "seeded comment", CommentId.From(Guid.CreateVersion7())).Value!;
+        var comment = Comment.Create(TenantId.From(TenantGuid), TaskItemId.From(taskId), "seeded comment", CommentId.From(Guid.CreateVersion7())).GetValueOrThrow();
         db.Comments.Add(comment);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: TestContext.CancellationToken);
         return comment.Id.Value;

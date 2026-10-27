@@ -1,4 +1,5 @@
 using EF.AI;
+using EF.Domain.Contracts;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
@@ -35,12 +36,12 @@ public sealed class TaskTriageService(
     public async Task<TaskTriageResponse> TriageAsync(Guid taskId, bool apply, CancellationToken ct = default)
     {
         var getResult = await taskItemService.GetAsync(taskId, ct);
-        if (getResult.IsNone)
+        if (getResult is NotFoundError)
             return new TaskTriageResponse(taskId, null, false, true, $"Task {taskId} not found.");
-        if (getResult.IsFailure)
-            return new TaskTriageResponse(taskId, null, false, true, getResult.ErrorMessage);
+        if (getResult.TryGetValue(out Error? getError))
+            return new TaskTriageResponse(taskId, null, false, true, getError.Message);
 
-        var task = getResult.Value!.Item!;
+        var task = getResult.GetValueOrThrow().Item!;
 
         if (chatClient.IsDisabled())
             return new TaskTriageResponse(taskId, null, false, false, "AI model not configured.");
@@ -65,9 +66,10 @@ public sealed class TaskTriageService(
         {
             task.Priority = priority;
             var update = await taskItemService.UpdateAsync(new DefaultRequest<TaskItemDto> { Item = task }, task.Version, ct);
-            applied = !update.IsFailure;
-            if (!applied)
-                logger.TaskTriageApplyFailed(taskId, update.ErrorMessage);
+            if (update.TryGetValue(out Error? updateError))
+                logger.TaskTriageApplyFailed(taskId, updateError.Message);
+            else
+                applied = true;
         }
 
         return new TaskTriageResponse(taskId, triage, applied, true);

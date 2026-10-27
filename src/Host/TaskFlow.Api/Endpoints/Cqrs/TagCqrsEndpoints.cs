@@ -2,6 +2,7 @@ using EF.AspNetCore;
 using EF.AspNetCore.Concurrency;
 using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
+using EF.Domain.Contracts;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using TaskFlow.Api.Endpoints.Shared;
@@ -18,7 +19,9 @@ public static class TagCqrsEndpoints
     public static IEndpointRouteBuilder MapTagCqrsEndpoints(this IEndpointRouteBuilder group)
     {
         var g = group.MapGroup("/tags").WithTags("Tags")
-            .WithETag();
+            .WithETag()
+            // Every route enforces the caller's tenant boundary: a ForbiddenError answers 403.
+            .ProducesProblem(StatusCodes.Status403Forbidden);
 
         g.MapPost("/search", Search)
             .WithName("SearchTags")
@@ -80,10 +83,7 @@ public static class TagCqrsEndpoints
         CancellationToken ct)
     {
         var result = await handler.HandleAsync(new GetTagByIdQuery(id), ct);
-        return result.Match<IResult>(
-            response => TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)),
-            () => TypedResults.NotFound(id));
+        return result.ToHttp(response => TypedResults.Ok(response));
     }
 
     /// <summary>Creates requested data after validation and maps the result to the caller contract.</summary>
@@ -94,11 +94,9 @@ public static class TagCqrsEndpoints
         CancellationToken ct)
     {
         var result = await handler.HandleAsync(new CreateTagCommand(request), ct);
-        return result.Match<IResult>(
-            response => response.IsReplay
+        return result.ToHttp(response => response.IsReplay
                 ? TypedResults.Ok(response)
-                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response));
     }
 
     /// <summary>Updates existing data after validation and preserves domain invariants.</summary>
@@ -116,22 +114,18 @@ public static class TagCqrsEndpoints
                 $"{ErrorConstants.ERROR_URL_BODY_ID_MISMATCH}: {id} <> {request.Item.Id}"));
 
         var result = await handler.HandleAsync(new UpdateTagCommand(request, ifMatch.ExpectedVersion), ct);
-        return result.Match(
-            response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response));
     }
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
     private static async Task<IResult> Delete(
         HttpContext httpContext,
-        [FromServices] IRequestHandler<DeleteTagCommand, Result> handler,
+        [FromServices] IRequestHandler<DeleteTagCommand, Result<Unit>> handler,
         Guid id,
         IfMatch ifMatch,
         CancellationToken ct)
     {
         var result = await handler.HandleAsync(new DeleteTagCommand(id, ifMatch.ExpectedVersion), ct);
-        return result.Match<IResult>(
-            () => TypedResults.NoContent(),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(_ => TypedResults.NoContent());
     }
 }

@@ -30,15 +30,15 @@ public class CommentMapperTests
     /// <summary>Verifies that given valid DTO, when mapped to entity, then returns success domain result.</summary>
     [TestMethod]
     [TestCategory("Unit")]
-    public void Given_ValidDto_When_MappedToEntity_Then_ReturnsSuccessDomainResult()
+    public void Given_ValidDto_When_MappedToEntity_Then_ReturnsSuccessResult()
     {
         var taskItemId = Guid.NewGuid();
         var dto = new CommentDto { Body = "A comment", TaskItemId = taskItemId };
         var result = dto.ToEntity(TestConstants.TenantId);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual("A comment", result.Value!.Body);
-        Assert.AreEqual(taskItemId, result.Value.TaskItemId);
+        Assert.AreEqual("A comment", result.GetValueOrThrow().Body);
+        Assert.AreEqual(taskItemId, result.GetValueOrThrow().TaskItemId);
     }
 
     /// <summary>Verifies that given invalid DTO, when mapped to entity, then returns failure.</summary>
@@ -49,6 +49,6 @@ public class CommentMapperTests
         var dto = new CommentDto { Body = "", TaskItemId = Guid.Empty };
         var result = dto.ToEntity(TestConstants.TenantId);
 
-        Assert.IsTrue(result.IsFailure);
+        Assert.IsFalse(result.IsSuccess);
     }
 }

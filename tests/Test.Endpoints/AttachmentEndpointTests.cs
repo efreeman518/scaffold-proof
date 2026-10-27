@@ -672,7 +672,7 @@ public class AttachmentEndpointTests
     }
 
     /// <summary>
-    /// D-075: when the blob write fails after the reservation is saved, the upload answers the blob-upload failure and the
+    /// D-075: when the blob write fails after the reservation is saved, the upload answers the blob-upload failure (500) and the
     /// reservation stays queued past the grace period, so whatever the store kept of the content is deleted later.
     /// </summary>
     [TestCategory("Endpoint")]
@@ -690,8 +690,9 @@ public class AttachmentEndpointTests
         using var upload = await UploadAsync(client, taskId, "evidence.txt");
 
         var body = await upload.Content.ReadAsStringAsync(TestContext.CancellationToken);
-        Assert.AreEqual(HttpStatusCode.BadRequest, upload.StatusCode, body);
-        StringAssert.Contains(body, "The file could not be uploaded.");
+        // A storage failure is the server's, not the request's: 500 with no detail, told apart by its code.
+        Assert.AreEqual(HttpStatusCode.InternalServerError, upload.StatusCode, body);
+        StringAssert.Contains(body, "\"code\":\"attachment.upload_failed\"");
         var reservation = (await BlobDeleteWorkAsync(uploadFactory)).Single();
         StringAssert.EndsWith(reservation.BlobName, "/evidence.txt");
         Assert.IsGreaterThan(DateTimeOffset.UtcNow.AddMinutes(10), reservation.AvailableAtUtc, "the reservation waits out its grace period");

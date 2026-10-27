@@ -25,6 +25,6 @@ public static class TagMapper
     public static TagDto ToDto(this Tag entity) => Compiled(entity);
 
     /// <summary>Converts the current value to entity.</summary>
-    public static DomainResult<Tag> ToEntity(this TagDto dto, Guid tenantId)
+    public static Result<Tag> ToEntity(this TagDto dto, Guid tenantId)
         => Tag.Create(TenantId.From(tenantId), dto.Name, dto.Color, DomainId.FromNullable<TagId>(dto.Id));
 }

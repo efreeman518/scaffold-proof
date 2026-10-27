@@ -84,6 +84,6 @@ public class TaskItemRepositoryTrxn(TaskFlowDbContextTrxn db)
     /// Delegates DTO graph sync to the DbContext updater so EF change tracking and related deletes
     /// happen inside the same unit of work.
     /// </summary>
-    public DomainResult<TaskItem> UpdateFromDto(TaskItem entity, TaskItemDto dto, RelatedDeleteBehavior relatedDeleteBehavior = RelatedDeleteBehavior.None)
+    public Result<TaskItem> UpdateFromDto(TaskItem entity, TaskItemDto dto, RelatedDeleteBehavior relatedDeleteBehavior = RelatedDeleteBehavior.None)
         => DB.UpdateFromDto(entity, dto, relatedDeleteBehavior);
 }

@@ -51,15 +51,15 @@ public class TaskItemMapperTests
     /// <summary>Verifies that given valid DTO, when mapped to entity, then returns success domain result.</summary>
     [TestMethod]
     [TestCategory("Unit")]
-    public void Given_ValidDto_When_MappedToEntity_Then_ReturnsSuccessDomainResult()
+    public void Given_ValidDto_When_MappedToEntity_Then_ReturnsSuccessResult()
     {
         var dto = new TaskItemDto { Title = "New Task", Priority = Priority.Medium };
         var result = dto.ToEntity(TestConstants.TenantId);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual("New Task", result.Value!.Title);
-        Assert.AreEqual(Priority.Medium, result.Value.Priority);
-        Assert.AreEqual(TaskItemStatus.Open, result.Value.Status);
+        Assert.AreEqual("New Task", result.GetValueOrThrow().Title);
+        Assert.AreEqual(Priority.Medium, result.GetValueOrThrow().Priority);
+        Assert.AreEqual(TaskItemStatus.Open, result.GetValueOrThrow().Status);
     }
 
     /// <summary>Verifies that given DTO with dates, when mapped to entity, then date range set.</summary>
@@ -73,8 +73,8 @@ public class TaskItemMapperTests
         var result = dto.ToEntity(TestConstants.TenantId);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual(start, result.Value!.DateRange.StartDate);
-        Assert.AreEqual(due, result.Value.DateRange.DueDate);
+        Assert.AreEqual(start, result.GetValueOrThrow().DateRange.StartDate);
+        Assert.AreEqual(due, result.GetValueOrThrow().DateRange.DueDate);
     }
 
     /// <summary>Verifies that given DTO with recurrence, when mapped to entity, then recurrence pattern set.</summary>
@@ -92,9 +92,10 @@ public class TaskItemMapperTests
         var result = dto.ToEntity(TestConstants.TenantId);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.IsNotNull(result.Value!.RecurrencePattern);
-        Assert.AreEqual(1, result.Value.RecurrencePattern!.Interval);
-        Assert.AreEqual("Weekly", result.Value.RecurrencePattern.Frequency);
+        var pattern = result.GetValueOrThrow().RecurrencePattern;
+        Assert.IsNotNull(pattern);
+        Assert.AreEqual(1, pattern.Interval);
+        Assert.AreEqual("Weekly", pattern.Frequency);
     }
 
     /// <summary>Verifies that given invalid DTO, when mapped to entity, then returns failure.</summary>
@@ -105,6 +106,6 @@ public class TaskItemMapperTests
         var dto = new TaskItemDto { Title = "" };
         var result = dto.ToEntity(TestConstants.TenantId);
 
-        Assert.IsTrue(result.IsFailure);
+        Assert.IsFalse(result.IsSuccess);
     }
 }

@@ -29,7 +29,7 @@ public sealed class OutboxStagingTests
     {
         var ct = TestContext.CancellationToken;
         var dbName = Guid.NewGuid().ToString();
-        var task = TaskItem.Create(TenantId.From(TestConstants.TenantId), "staged").Value!;
+        var task = TaskItem.Create(TenantId.From(TestConstants.TenantId), "staged").GetValueOrThrow();
 
         await using var db = Create(dbName);
         db.TaskItems.Add(task);
@@ -65,7 +65,7 @@ public sealed class OutboxStagingTests
     {
         var ct = TestContext.CancellationToken;
         var dbName = Guid.NewGuid().ToString();
-        var task = TaskItem.Create(TenantId.From(TestConstants.TenantId), "completing").Value!;
+        var task = TaskItem.Create(TenantId.From(TestConstants.TenantId), "completing").GetValueOrThrow();
 
         await using var db = Create(dbName);
         db.TaskItems.Add(task);
@@ -91,7 +91,7 @@ public sealed class OutboxStagingTests
     {
         var ct = TestContext.CancellationToken;
         var dbName = Guid.NewGuid().ToString();
-        var task = TaskItem.Create(TenantId.From(TestConstants.TenantId), "not yet").Value!;
+        var task = TaskItem.Create(TenantId.From(TestConstants.TenantId), "not yet").GetValueOrThrow();
 
         await using var db = Create(dbName);
         db.TaskItems.Add(task);
@@ -116,7 +116,7 @@ public sealed class OutboxStagingTests
         var ct = TestContext.CancellationToken;
         var dbName = Guid.NewGuid().ToString();
         var tenantId = TenantId.From(TestConstants.TenantId);
-        var task = TaskItem.Create(tenantId, "round trip").Value!;
+        var task = TaskItem.Create(tenantId, "round trip").GetValueOrThrow();
 
         await using var db = Create(dbName);
         db.TaskItems.Add(task);
@@ -147,7 +147,7 @@ public sealed class OutboxStagingTests
     public async Task Save_UnderAnActivity_StoresItsTraceContextOnTheRow()
     {
         var ct = TestContext.CancellationToken;
-        var task = TaskItem.Create(TenantId.From(TestConstants.TenantId), "traced").Value!;
+        var task = TaskItem.Create(TenantId.From(TestConstants.TenantId), "traced").GetValueOrThrow();
 
         await using var db = Create(Guid.NewGuid().ToString());
         db.TaskItems.Add(task);

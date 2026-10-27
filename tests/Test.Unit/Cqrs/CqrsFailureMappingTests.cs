@@ -1,3 +1,4 @@
+using EF.Domain.Contracts;
 using EF.Tenancy;
 using EF.Cache;
 using EF.Common.Contracts;
@@ -45,7 +46,7 @@ public sealed class CqrsFailureMappingTests
         _requestContext.SetupGet(x => x.Roles).Returns(new List<string>());
         _tenantBoundary
             .Setup(x => x.EnsureTenantBoundary(It.IsAny<Guid?>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>()))
-            .Returns(Result.Success());
+            .Returns(Result.Ok());
     }
 
     /// <summary>Verifies a cancelled TaskItem search propagates.</summary>
@@ -70,9 +71,9 @@ public sealed class CqrsFailureMappingTests
 
         var result = await CreateHandler().HandleAsync(command, TestContext.CancellationToken);
 
-        Assert.IsTrue(result.IsFailure);
-        Assert.AreEqual(ErrorConstants.ERROR_SAVE_FAILED, result.ErrorMessage);
-        Assert.DoesNotContain("PK_Category", string.Join(";", result.Errors));
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual(ErrorConstants.ERROR_SAVE_FAILED, Assert.IsInstanceOfType<Error>(result.Value).Message);
+        Assert.DoesNotContain("PK_Category", Assert.IsInstanceOfType<Error>(result.Value).Message);
     }
 
     /// <summary>Verifies a cancelled save propagates instead of becoming a 400 failure result.</summary>
@@ -108,7 +109,7 @@ public sealed class CqrsFailureMappingTests
         var result = await CreateHandler().HandleAsync(command, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.IsTrue(result.Value!.IsReplay);
+        Assert.IsTrue(result.GetValueOrThrow().IsReplay);
     }
 
     /// <summary>Arranges a create with a caller id whose existence check finds nothing and whose save throws.</summary>

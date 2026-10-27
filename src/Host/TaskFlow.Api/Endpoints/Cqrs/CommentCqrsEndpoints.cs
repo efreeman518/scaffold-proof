@@ -2,6 +2,7 @@ using EF.AspNetCore;
 using EF.AspNetCore.Concurrency;
 using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
+using EF.Domain.Contracts;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using TaskFlow.Api.Endpoints.Shared;
@@ -17,7 +18,9 @@ public static class CommentCqrsEndpoints
     public static IEndpointRouteBuilder MapCommentCqrsEndpoints(this IEndpointRouteBuilder group)
     {
         var g = group.MapGroup("/comments").WithTags("Comments")
-            .WithETag();
+            .WithETag()
+            // Every route enforces the caller's tenant boundary: a ForbiddenError answers 403.
+            .ProducesProblem(StatusCodes.Status403Forbidden);
 
         g.MapPost("/search", Search)
             .Produces<PagedResponse<CommentDto>>(StatusCodes.Status200OK)
@@ -53,9 +56,6 @@ public static class CommentCqrsEndpoints
         CancellationToken ct)
     {
         var result = await handler.HandleAsync(new GetCommentByIdQuery(id), ct);
-        return result.Match<IResult>(
-            response => TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)),
-            () => TypedResults.NotFound(id));
+        return result.ToHttp(response => TypedResults.Ok(response));
     }
 }

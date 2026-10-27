@@ -19,6 +19,6 @@ public static class TaskItemTagMapper
     };
 
     /// <summary>Converts the current value to entity.</summary>
-    public static DomainResult<TaskItemTag> ToEntity(this TaskItemTagDto dto, Guid tenantId)
+    public static Result<TaskItemTag> ToEntity(this TaskItemTagDto dto, Guid tenantId)
         => TaskItemTag.Create(TenantId.From(tenantId), TaskItemId.From(dto.TaskItemId), TagId.From(dto.TagId));
 }

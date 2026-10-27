@@ -1,4 +1,5 @@
 using EF.Common.Contracts;
+using EF.Domain.Contracts;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Models;
@@ -49,10 +50,10 @@ public class TaskItemTools(
             return $"Invalid task ID: {taskId}";
 
         var result = await taskItemService.GetAsync(id);
-        if (result.IsNone) return $"Task {taskId} not found.";
-        if (result.IsFailure) return $"Error retrieving task: {result.ErrorMessage}";
+        if (result is NotFoundError) return $"Task {taskId} not found.";
+        if (result.TryGetValue(out Error? error)) return $"Error retrieving task: {error.Message}";
 
-        var task = result.Value!.Item!;
+        var task = result.GetValueOrThrow().Item!;
         return $"""
             Task: {task.Title}
             ID: {task.Id}
@@ -86,9 +87,9 @@ public class TaskItemTools(
         };
 
         var result = await taskItemService.CreateAsync(new DefaultRequest<TaskItemDto> { Item = dto });
-        if (result.IsFailure) return $"Failed to create task: {result.ErrorMessage}";
+        if (result.TryGetValue(out Error? error)) return $"Failed to create task: {error.Message}";
 
-        return $"Created task '{title}' with ID {result.Value!.Item!.Id}";
+        return $"Created task '{title}' with ID {result.GetValueOrThrow().Item!.Id}";
     }
 
     /// <summary>
@@ -106,10 +107,10 @@ public class TaskItemTools(
             return $"Invalid status: {newStatus}. Valid values: Open, InProgress, Completed, Cancelled, Blocked.";
 
         var getResult = await taskItemService.GetAsync(id);
-        if (getResult.IsNone) return $"Task {taskId} not found.";
-        if (getResult.IsFailure) return $"Error: {getResult.ErrorMessage}";
+        if (getResult is NotFoundError) return $"Task {taskId} not found.";
+        if (getResult.TryGetValue(out Error? getError)) return $"Error: {getError.Message}";
 
-        var dto = getResult.Value!.Item!;
+        var dto = getResult.GetValueOrThrow().Item!;
         dto.Status = status;
 
         // The loaded version is the If-Match currency. The tool retries nothing itself - a
@@ -119,7 +120,7 @@ public class TaskItemTools(
         try
         {
             var updateResult = await taskItemService.UpdateAsync(new DefaultRequest<TaskItemDto> { Item = dto }, dto.Version);
-            if (updateResult.IsFailure) return $"Failed to update status: {updateResult.ErrorMessage}";
+            if (updateResult.TryGetValue(out Error? updateError)) return $"Failed to update status: {updateError.Message}";
         }
         catch (PreconditionFailedException)
         {

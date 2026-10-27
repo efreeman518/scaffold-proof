@@ -61,13 +61,10 @@ public static class WebApplicationBuilderExtensions
         // OpenAPI / Scalar
         if (app.Configuration.GetValue<bool>("OpenApiSettings:Enable", true))
         {
-            // .WithDocumentPerVersion() is required by EF.AspNetCore AddEfVersionedOpenApi: the
-            // documents now come from AddApiVersioning().AddOpenApi(), and a plain MapOpenApi() serves none
-            // of them (every document URL 404s). Document names are unchanged. 1.1.101 also restored the
-            // per-document group-name ShouldInclude predicate, so version-neutral routes (/alive, the
-            // FlowEngine admin group) are excluded from every versioned document without app-side opt-outs.
+            // AddEfVersionedOpenApi registers one document per configured version, served at
+            // /openapi/{GroupName}.json; its per-document group-name predicate keeps version-neutral routes
+            // (/alive, the FlowEngine admin group) out of every versioned document.
             app.MapOpenApi()
-                .WithDocumentPerVersion()
                 .AllowAnonymous();
             app.MapScalarApiReference(options =>
             {

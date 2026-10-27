@@ -1,5 +1,6 @@
 using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
+using EF.Domain.Contracts;
 using Grpc.Core;
 using TaskFlow.Application.Contracts.Services;
 using TaskFlow.Application.Cqrs.Features.TaskItems;
@@ -63,13 +64,16 @@ internal sealed class TaskFlowReadGrpcService(
 
         var result = await GetTaskItemResultAsync(id, context.CancellationToken);
 
-        return result.Match(
-            response => response.Item is null
-                ? throw new RpcException(new Status(StatusCode.NotFound, $"Task item {id} was not found."))
-                : response.Item.ToProto(),
-            errors => throw new RpcException(new Status(
-                StatusCode.InvalidArgument, string.Join("; ", errors.Select(e => e.Message)))),
-            () => throw new RpcException(new Status(StatusCode.NotFound, $"Task item {id} was not found.")));
+        // Error categories map to gRPC status codes the way EF.AspNetCore maps them to HTTP (404, 403, 500, 400).
+        return result switch
+        {
+            DefaultResponse<TaskItemDto> { Item: { } item } => item.ToProto(),
+            DefaultResponse<TaskItemDto> or NotFoundError =>
+                throw new RpcException(new Status(StatusCode.NotFound, $"Task item {id} was not found.")),
+            ForbiddenError forbidden => throw new RpcException(new Status(StatusCode.PermissionDenied, forbidden.Message)),
+            UnexpectedError => throw new RpcException(new Status(StatusCode.Internal, "The task item could not be read.")),
+            Error error => throw new RpcException(new Status(StatusCode.InvalidArgument, error.Message)),
+        };
     }
 
     /// <summary>Routes the by-id read to whichever application style this host was configured with.</summary>

@@ -29,7 +29,7 @@ public static class AttachmentMapper
     public static AttachmentDto ToDto(this Attachment entity) => Compiled(entity);
 
     /// <summary>Converts the current value to entity.</summary>
-    public static DomainResult<Attachment> ToEntity(this AttachmentDto dto, Guid tenantId)
+    public static Result<Attachment> ToEntity(this AttachmentDto dto, Guid tenantId)
         => Attachment.Create(TenantId.From(tenantId), dto.FileName, dto.ContentType, dto.FileSizeBytes, dto.StorageUri, dto.OwnerType, dto.OwnerId,
             DomainId.FromNullable<AttachmentId>(dto.Id));
 }

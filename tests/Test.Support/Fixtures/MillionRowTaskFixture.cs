@@ -74,7 +74,7 @@ public sealed class MillionRowTaskFixture
             tenantId,
             $"Seeded task {index:D8}",
             $"Generated row {index}",
-            (Priority)_random.Next(0, 5)).Value!;
+            (Priority)_random.Next(0, 5)).GetValueOrThrow();
 
         if (roll < StaleCancelledShare)
         {

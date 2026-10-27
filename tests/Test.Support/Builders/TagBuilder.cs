@@ -21,6 +21,6 @@ public class TagBuilder
     public Tag Build()
     {
         var result = Tag.Create(TenantId.From(_tenantId), _name, _color);
-        return result.Value!;
+        return result.GetValueOrThrow();
     }
 }

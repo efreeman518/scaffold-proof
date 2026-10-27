@@ -1,3 +1,4 @@
+using EF.Domain.Contracts;
 using EF.Tenancy;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts.Repositories;
@@ -20,7 +21,7 @@ public static class TaskItemChildLoader
     /// Returns (null, null) for a missing root so callers can answer 404 or stay idempotent, and
     /// (null, error) when the tenant boundary rejects the request.
     /// </summary>
-    public static async Task<(TaskItem? Entity, string? Error)> LoadRootAsync(
+    public static async Task<(TaskItem? Entity, Error? Error)> LoadRootAsync(
         ITaskItemRepositoryTrxn repoTrxn,
         ITenantBoundaryValidator tenantBoundaryValidator,
         ILogger logger,
@@ -35,7 +36,7 @@ public static class TaskItemChildLoader
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             requestTenantId, requestRoles, entity.TenantId.Value, operation, nameof(TaskItem), entity.Id.Value);
-        return boundary.IsFailure ? (null, boundary.ErrorMessage!) : (entity, null);
+        return boundary.TryGetValue(out Error? denied) ? (null, denied) : (entity, null);
     }
 
     /// <summary>Loads one tracked comment of the aggregate, or null when it does not belong to it.</summary>

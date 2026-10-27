@@ -49,10 +49,10 @@ public sealed class CqrsConcurrencyRetryTests
         _requestContext.SetupGet(x => x.Roles).Returns(new List<string>());
         _tenantBoundary
             .Setup(x => x.EnsureTenantBoundary(It.IsAny<Guid?>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>()))
-            .Returns(Result.Success());
+            .Returns(Result.Ok());
         _tenantBoundary
             .Setup(x => x.PreventTenantChange(It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<Guid>()))
-            .Returns(Result.Success());
+            .Returns(Result.Ok());
         _repoTrxn.Setup(r => r.GetTaskItemAsync(_task.Id, It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync(_task);
     }
 
@@ -119,7 +119,7 @@ public sealed class CqrsConcurrencyRetryTests
 
         var result = await RunIfMatchWriteAsync(write, expectedVersion: null);
 
-        Assert.IsTrue(result.IsSuccess, result.ErrorMessage);
+        Assert.IsTrue(result.IsSuccess, result.ToString());
         Assert.AreEqual(1, probe.Retries, "the wildcard write runs through the retry once");
         Assert.AreEqual(1, probe.SavesInside, "its one save is made from inside the retry");
         Assert.AreEqual(0, probe.SavesOutside);
@@ -134,14 +134,14 @@ public sealed class CqrsConcurrencyRetryTests
 
         var result = await RunIfMatchWriteAsync(write, expectedVersion: _currentVersion);
 
-        Assert.IsTrue(result.IsSuccess, result.ErrorMessage);
+        Assert.IsTrue(result.IsSuccess, result.ToString());
         Assert.AreEqual(0, probe.Retries, "a concrete If-Match is never retried");
         Assert.AreEqual(1, probe.SavesOutside);
         Assert.AreEqual(0, probe.SavesInside);
     }
 
     private long _currentVersion;
-    private Func<long?, Task<Result>> _run = null!;
+    private Func<long?, Task<Result<EF.Domain.Contracts.Unit>>> _run = null!;
 
     /// <summary>Stores the entity the write targets, attaches the probe to its repository and builds the call.</summary>
     private RetryProbe AttachProbe(string write)
@@ -154,7 +154,7 @@ public sealed class CqrsConcurrencyRetryTests
         {
             case "UpdateTaskItem":
                 _repoTrxn.Setup(r => r.UpdateFromDto(It.IsAny<TaskItem>(), It.IsAny<TaskItemDto>(), It.IsAny<RelatedDeleteBehavior>()))
-                    .Returns((TaskItem e, TaskItemDto _, RelatedDeleteBehavior __) => DomainResult<TaskItem>.Success(e));
+                    .Returns((TaskItem e, TaskItemDto _, RelatedDeleteBehavior __) => new Result<TaskItem>(e));
                 _run = v => Plain(new UpdateTaskItemHandler(Log<UpdateTaskItemHandler>(), _requestContext.Object, _repoTrxn.Object, _tenantBoundary.Object, _cache.Object)
                     .HandleAsync(new UpdateTaskItemCommand(new DefaultRequest<TaskItemDto> { Item = _task.ToDto() }, v), ct));
                 break;
@@ -240,16 +240,13 @@ public sealed class CqrsConcurrencyRetryTests
         return new RetryProbe().Attach(_repoTrxn);
     }
 
-    private Task<Result> RunIfMatchWriteAsync(string write, long? expectedVersion) => _run(expectedVersion);
+    private Task<Result<EF.Domain.Contracts.Unit>> RunIfMatchWriteAsync(string write, long? expectedVersion) => _run(expectedVersion);
 
     private static NullLogger<T> Log<T>() => NullLogger<T>.Instance;
 
     /// <summary>Drops the response, keeping the outcome and its message.</summary>
-    private static async Task<Result> Plain<T>(Task<Result<T>> call)
-    {
-        var result = await call;
-        return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorMessage ?? string.Join("; ", result.Errors));
-    }
+    private static async Task<Result<EF.Domain.Contracts.Unit>> Plain<T>(Task<Result<T>> call) where T : notnull =>
+        (await call).Map(_ => EF.Domain.Contracts.Unit.Value);
 
     /// <summary>The mocked wrapper runs the handler's work once, as when no race is lost.</summary>
     private void RunWorkInsideRetry<TDto>() =>
@@ -259,8 +256,8 @@ public sealed class CqrsConcurrencyRetryTests
 
     private void AssertSavedInsideRetry<TDto>(Result<DefaultResponse<TDto>> result)
     {
-        Assert.IsTrue(result.IsSuccess, result.ErrorMessage);
-        Assert.IsNotNull(result.Value!.Item);
+        Assert.IsTrue(result.IsSuccess, result.ToString());
+        Assert.IsNotNull(result.GetValueOrThrow().Item);
         _repoTrxn.Verify(r => r.RetryOnConcurrencyAsync(
             It.IsAny<Func<CancellationToken, Task<Result<DefaultResponse<TDto>>>>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
         _repoTrxn.Verify(r => r.SaveChildAddAsync(It.IsAny<Func<CancellationToken, Task<bool>>?>(), It.IsAny<CancellationToken>()), Times.Once);

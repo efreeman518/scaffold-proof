@@ -102,7 +102,7 @@ public sealed class BrokerTracePropagationTests
         using (var request = new Activity("POST /tasks").SetIdFormat(ActivityIdFormat.W3C).Start())
         {
             requestTrace = request.TraceId;
-            db.TaskItems.Add(TaskItem.Create(TenantId.From(TestConstants.TenantId), "traced hop").Value!);
+            db.TaskItems.Add(TaskItem.Create(TenantId.From(TestConstants.TenantId), "traced hop").GetValueOrThrow());
             await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: ct);
         }
 

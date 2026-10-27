@@ -22,10 +22,10 @@ public class ChecklistItemTests
         var taskItemId = TaskItemId.From(Guid.NewGuid());
         var result = ChecklistItem.Create(TenantId, taskItemId, "Test Item", 1);
         Assert.IsTrue(result.IsSuccess);
-        Assert.IsNotNull(result.Value);
-        Assert.AreEqual("Test Item", result.Value.Title);
-        Assert.IsFalse(result.Value.IsCompleted);
-        Assert.IsNull(result.Value.CompletedDate);
+        Assert.IsTrue(result.IsSuccess, result.ToString());
+        Assert.AreEqual("Test Item", result.GetValueOrThrow().Title);
+        Assert.IsFalse(result.GetValueOrThrow().IsCompleted);
+        Assert.IsNull(result.GetValueOrThrow().CompletedDate);
     }
 
     /// <summary>Verifies that given empty title, when checklist item created, then returns domain failure.</summary>
@@ -37,7 +37,7 @@ public class ChecklistItemTests
     public void Given_EmptyTitle_When_ChecklistItemCreated_Then_ReturnsDomainFailure(string? title)
     {
         var result = ChecklistItem.Create(TenantId, TaskItemId.From(Guid.NewGuid()), title!);
-        Assert.IsTrue(result.IsFailure);
+        Assert.IsFalse(result.IsSuccess);
     }
 
     /// <summary>Verifies that given empty task item ID, when checklist item created, then returns domain failure.</summary>
@@ -46,7 +46,7 @@ public class ChecklistItemTests
     public void Given_EmptyTaskItemId_When_ChecklistItemCreated_Then_ReturnsDomainFailure()
     {
         var result = ChecklistItem.Create(TenantId, TaskItemId.From(Guid.Empty), "Title");
-        Assert.IsTrue(result.IsFailure);
+        Assert.IsFalse(result.IsSuccess);
     }
 
     /// <summary>Verifies that given existing item, when updated with title, then returns updated values.</summary>
@@ -54,10 +54,10 @@ public class ChecklistItemTests
     [TestCategory("Unit")]
     public void Given_ExistingItem_When_UpdatedWithTitle_Then_ReturnsUpdatedValues()
     {
-        var item = ChecklistItem.Create(TenantId, TaskItemId.From(Guid.NewGuid()), "Original").Value!;
+        var item = ChecklistItem.Create(TenantId, TaskItemId.From(Guid.NewGuid()), "Original").GetValueOrThrow();
         var result = item.Update(title: "Updated");
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual("Updated", result.Value!.Title);
+        Assert.AreEqual("Updated", result.GetValueOrThrow().Title);
     }
 
     /// <summary>Verifies that given incomplete item, when completion set, then completed date set.</summary>
@@ -65,11 +65,11 @@ public class ChecklistItemTests
     [TestCategory("Unit")]
     public void Given_IncompleteItem_When_CompletionSet_Then_CompletedDateSet()
     {
-        var item = ChecklistItem.Create(TenantId, TaskItemId.From(Guid.NewGuid()), "Item").Value!;
+        var item = ChecklistItem.Create(TenantId, TaskItemId.From(Guid.NewGuid()), "Item").GetValueOrThrow();
         var result = item.Update(isCompleted: true);
         Assert.IsTrue(result.IsSuccess);
-        Assert.IsTrue(result.Value!.IsCompleted);
-        Assert.IsNotNull(result.Value.CompletedDate);
+        Assert.IsTrue(result.GetValueOrThrow().IsCompleted);
+        Assert.IsNotNull(result.GetValueOrThrow().CompletedDate);
     }
 
     /// <summary>Verifies that given completed item, when uncompleted, then completed date cleared.</summary>
@@ -77,14 +77,14 @@ public class ChecklistItemTests
     [TestCategory("Unit")]
     public void Given_CompletedItem_When_Uncompleted_Then_CompletedDateCleared()
     {
-        var item = ChecklistItem.Create(TenantId, TaskItemId.From(Guid.NewGuid()), "Item").Value!;
+        var item = ChecklistItem.Create(TenantId, TaskItemId.From(Guid.NewGuid()), "Item").GetValueOrThrow();
         item.Update(isCompleted: true);
         Assert.IsNotNull(item.CompletedDate);
 
         var result = item.Update(isCompleted: false);
         Assert.IsTrue(result.IsSuccess);
-        Assert.IsFalse(result.Value!.IsCompleted);
-        Assert.IsNull(result.Value.CompletedDate);
+        Assert.IsFalse(result.GetValueOrThrow().IsCompleted);
+        Assert.IsNull(result.GetValueOrThrow().CompletedDate);
     }
 
     /// <summary>Verifies that given null update, when updated, then original values preserved.</summary>
@@ -92,10 +92,10 @@ public class ChecklistItemTests
     [TestCategory("Unit")]
     public void Given_NullUpdate_When_Updated_Then_OriginalValuesPreserved()
     {
-        var item = ChecklistItem.Create(TenantId, TaskItemId.From(Guid.NewGuid()), "Original", 5).Value!;
+        var item = ChecklistItem.Create(TenantId, TaskItemId.From(Guid.NewGuid()), "Original", 5).GetValueOrThrow();
         var result = item.Update();
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual("Original", result.Value!.Title);
-        Assert.AreEqual(5, result.Value.SortOrder);
+        Assert.AreEqual("Original", result.GetValueOrThrow().Title);
+        Assert.AreEqual(5, result.GetValueOrThrow().SortOrder);
     }
 }

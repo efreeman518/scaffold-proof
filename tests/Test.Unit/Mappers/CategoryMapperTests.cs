@@ -1,3 +1,4 @@
+using EF.Domain.Contracts;
 using TaskFlow.Application.Mappers;
 using TaskFlow.Application.Models;
 using Test.Support;
@@ -7,7 +8,7 @@ namespace Test.Unit.Mappers;
 
 /// <summary>
 /// Validates <c>CategoryMapper</c> entity <-> DTO round-trips: every property is preserved,
-/// <c>ParentCategoryId</c> survives mapping, and invalid DTO input is surfaced as a <c>DomainResult</c>
+/// <c>ParentCategoryId</c> survives mapping, and invalid DTO input is surfaced as a <c>Result</c>
 /// failure rather than throwing.
 /// Pure-unit tier: static extension methods over POCOs - no DbContext, no DI.
 /// </summary>
@@ -33,15 +34,15 @@ public class CategoryMapperTests
     /// <summary>Verifies that given valid DTO, when mapped to entity, then returns success domain result.</summary>
     [TestMethod]
     [TestCategory("Unit")]
-    public void Given_ValidDto_When_MappedToEntity_Then_ReturnsSuccessDomainResult()
+    public void Given_ValidDto_When_MappedToEntity_Then_ReturnsSuccessResult()
     {
         var dto = new CategoryDto { Name = "From DTO", Description = "Test desc", SortOrder = 2 };
         var result = dto.ToEntity(TestConstants.TenantId);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual("From DTO", result.Value!.Name);
-        Assert.AreEqual("Test desc", result.Value.Description);
-        Assert.AreEqual(2, result.Value.SortOrder);
+        Assert.AreEqual("From DTO", result.GetValueOrThrow().Name);
+        Assert.AreEqual("Test desc", result.GetValueOrThrow().Description);
+        Assert.AreEqual(2, result.GetValueOrThrow().SortOrder);
     }
 
     /// <summary>Verifies that given DTO with parent category ID, when mapped to entity, then parent category ID preserved.</summary>
@@ -54,7 +55,7 @@ public class CategoryMapperTests
         var result = dto.ToEntity(TestConstants.TenantId);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual(parentId, result.Value!.ParentCategoryId!.Value);
+        Assert.AreEqual(parentId, result.GetValueOrThrow().ParentCategoryId!.Value);
     }
 
     /// <summary>Verifies that given invalid DTO, when mapped to entity, then returns failure.</summary>
@@ -65,6 +66,6 @@ public class CategoryMapperTests
         var dto = new CategoryDto { Name = "" };
         var result = dto.ToEntity(TestConstants.TenantId);
 
-        Assert.IsTrue(result.IsFailure);
+        Assert.IsFalse(result.IsSuccess);
     }
 }

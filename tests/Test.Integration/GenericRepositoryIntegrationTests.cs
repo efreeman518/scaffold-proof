@@ -51,7 +51,7 @@ public class GenericRepositoryIntegrationTests
         // Arrange + Act (write) - generic RepositoryTrxn.Create + SaveChangesAsync
         await using var trxnCtx = DbContainerFixture.CreateTrxnContext(connStr);
         var trxnRepo = new TaskFlowRepositoryTrxn<Tag, TagId>(trxnCtx);
-        var tag = Tag.Create(TenantId, $"GenRepo-{Guid.NewGuid():N}").Value!;
+        var tag = Tag.Create(TenantId, $"GenRepo-{Guid.NewGuid():N}").GetValueOrThrow();
         trxnRepo.Create(ref tag);
         await trxnRepo.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, CancellationToken.None);
 
@@ -82,8 +82,8 @@ public class GenericRepositoryIntegrationTests
 
         await using var trxnCtx = DbContainerFixture.CreateTrxnContext(connStr);
         var trxnRepo = new TaskFlowRepositoryTrxn<Tag, TagId>(trxnCtx);
-        var tagA = Tag.Create(TenantId, $"{prefix}-A").Value!;
-        var tagB = Tag.Create(TenantId, $"{prefix}-B").Value!;
+        var tagA = Tag.Create(TenantId, $"{prefix}-A").GetValueOrThrow();
+        var tagB = Tag.Create(TenantId, $"{prefix}-B").GetValueOrThrow();
         trxnRepo.Create(ref tagA);
         trxnRepo.Create(ref tagB);
         await trxnRepo.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, CancellationToken.None);

@@ -1,3 +1,4 @@
+using EF.Domain.Contracts;
 using EF.Tenancy;
 using EF.Common.Contracts;
 using Microsoft.Extensions.Logging;
@@ -34,10 +35,10 @@ public class ChecklistItemServiceTests
         _requestContextMock.Setup(x => x.Roles).Returns(new List<string>());
         _tenantBoundaryValidatorMock
             .Setup(x => x.EnsureTenantBoundary(It.IsAny<Guid?>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>()))
-            .Returns(Result.Success());
+            .Returns(Result.Ok());
         _tenantBoundaryValidatorMock
             .Setup(x => x.PreventTenantChange(It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<Guid>()))
-            .Returns(Result.Success());
+            .Returns(Result.Ok());
     }
 
     /// <summary>Creates service used by the surrounding test cases.</summary>
@@ -61,7 +62,7 @@ public class ChecklistItemServiceTests
         var result = await CreateService().GetAsync(entity.Id, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual(entity.Title, result.Value!.Item!.Title);
+        Assert.AreEqual(entity.Title, result.GetValueOrThrow().Item!.Title);
     }
 
     /// <summary>Verifies that given non existent ID, when get, then returns none.</summary>
@@ -73,7 +74,7 @@ public class ChecklistItemServiceTests
 
         var result = await CreateService().GetAsync(Guid.NewGuid(), TestContext.CancellationToken);
 
-        Assert.IsTrue(result.IsNone);
+        Assert.IsInstanceOfType<NotFoundError>(result.Value);
     }
 
     /// <summary>Verifies that given search request, when search, then returns paged response.</summary>

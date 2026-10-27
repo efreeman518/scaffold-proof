@@ -36,14 +36,14 @@ public class ChecklistItem : TaskFlowEntityBase<DomainChecklistItemId>, ITenantE
     }
 
     /// <summary>Creates requested data after validation and maps the result to the caller contract.</summary>
-    public static DomainResult<ChecklistItem> Create(DomainTenantId tenantId, DomainTaskItemId taskItemId, string title, int sortOrder = 0, DomainChecklistItemId? id = null)
+    public static Result<ChecklistItem> Create(DomainTenantId tenantId, DomainTaskItemId taskItemId, string title, int sortOrder = 0, DomainChecklistItemId? id = null)
     {
         var entity = new ChecklistItem(tenantId, taskItemId, title, sortOrder, id);
         return entity.Valid();
     }
 
     /// <summary>Updates existing data after validation and preserves domain invariants.</summary>
-    public DomainResult<ChecklistItem> Update(string? title = null, bool? isCompleted = null, int? sortOrder = null)
+    public Result<ChecklistItem> Update(string? title = null, bool? isCompleted = null, int? sortOrder = null)
     {
         if (title is not null) Title = title;
         if (sortOrder.HasValue) SortOrder = sortOrder.Value;
@@ -56,14 +56,14 @@ public class ChecklistItem : TaskFlowEntityBase<DomainChecklistItemId>, ITenantE
     }
 
     /// <summary>Creates a valid checklist item instance with domain-required defaults.</summary>
-    private DomainResult<ChecklistItem> Valid()
+    private Result<ChecklistItem> Valid()
     {
-        var errors = new List<DomainError>();
-        if (TenantId.Value == Guid.Empty) errors.Add(DomainError.Create("Tenant ID cannot be empty."));
-        if (TaskItemId.Value == Guid.Empty) errors.Add(DomainError.Create("Task Item ID cannot be empty."));
-        if (string.IsNullOrWhiteSpace(Title)) errors.Add(DomainError.Create("Title is required."));
+        var errors = new List<ValidationIssue>();
+        if (TenantId.Value == Guid.Empty) errors.Add(new ValidationIssue("Tenant ID cannot be empty.", nameof(TenantId)));
+        if (TaskItemId.Value == Guid.Empty) errors.Add(new ValidationIssue("Task Item ID cannot be empty.", nameof(TaskItemId)));
+        if (string.IsNullOrWhiteSpace(Title)) errors.Add(new ValidationIssue("Title is required.", nameof(Title)));
         return errors.Count > 0
-            ? DomainResult<ChecklistItem>.Failure(errors)
-            : DomainResult<ChecklistItem>.Success(this);
+            ? new ValidationError(errors)
+            : this;
     }
 }

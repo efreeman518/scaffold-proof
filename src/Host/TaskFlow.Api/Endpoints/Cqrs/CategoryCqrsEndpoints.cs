@@ -2,6 +2,7 @@ using EF.AspNetCore;
 using EF.AspNetCore.Concurrency;
 using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
+using EF.Domain.Contracts;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using TaskFlow.Api.Endpoints.Shared;
@@ -18,7 +19,9 @@ public static class CategoryCqrsEndpoints
     public static IEndpointRouteBuilder MapCategoryCqrsEndpoints(this IEndpointRouteBuilder group)
     {
         var g = group.MapGroup("/categories").WithTags("Categories")
-            .WithETag();
+            .WithETag()
+            // Every route enforces the caller's tenant boundary: a ForbiddenError answers 403.
+            .ProducesProblem(StatusCodes.Status403Forbidden);
 
         g.MapPost("/search", Search)
             .WithName("SearchCategories")
@@ -80,10 +83,7 @@ public static class CategoryCqrsEndpoints
         CancellationToken ct)
     {
         var result = await handler.HandleAsync(new GetCategoryByIdQuery(id), ct);
-        return result.Match<IResult>(
-            response => TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)),
-            () => TypedResults.NotFound(id));
+        return result.ToHttp(response => TypedResults.Ok(response));
     }
 
     /// <summary>Creates requested data after validation and maps the result to the caller contract.</summary>
@@ -94,11 +94,9 @@ public static class CategoryCqrsEndpoints
         CancellationToken ct)
     {
         var result = await handler.HandleAsync(new CreateCategoryCommand(request), ct);
-        return result.Match<IResult>(
-            response => response.IsReplay
+        return result.ToHttp(response => response.IsReplay
                 ? TypedResults.Ok(response)
-                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response));
     }
 
     /// <summary>Updates existing data after validation and preserves domain invariants.</summary>
@@ -116,22 +114,18 @@ public static class CategoryCqrsEndpoints
                 $"{ErrorConstants.ERROR_URL_BODY_ID_MISMATCH}: {id} <> {request.Item.Id}"));
 
         var result = await handler.HandleAsync(new UpdateCategoryCommand(request, ifMatch.ExpectedVersion), ct);
-        return result.Match(
-            response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response));
     }
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
     private static async Task<IResult> Delete(
         HttpContext httpContext,
-        [FromServices] IRequestHandler<DeleteCategoryCommand, Result> handler,
+        [FromServices] IRequestHandler<DeleteCategoryCommand, Result<Unit>> handler,
         Guid id,
         IfMatch ifMatch,
         CancellationToken ct)
     {
         var result = await handler.HandleAsync(new DeleteCategoryCommand(id, ifMatch.ExpectedVersion), ct);
-        return result.Match<IResult>(
-            () => TypedResults.NoContent(),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(_ => TypedResults.NoContent());
     }
 }

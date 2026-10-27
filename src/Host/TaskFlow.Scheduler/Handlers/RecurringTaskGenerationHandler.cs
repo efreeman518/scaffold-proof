@@ -1,5 +1,6 @@
 using EF.Common;
 using System.Globalization;
+using EF.Domain.Contracts;
 using EF.Messaging.Outbox;
 using TaskFlow.Application.Contracts.Messaging;
 using TaskFlow.Application.Contracts.Repositories;
@@ -82,13 +83,15 @@ public sealed class RecurringTaskGenerationHandler(
                 template.Priority,
                 template.CategoryId);
 
-            if (created.IsFailure)
+            switch (created)
             {
-                logger.RecurrenceOccurrenceRejected(templateId, occurrenceUtc, created.ErrorMessage ?? "unknown");
-                continue;
+                case TaskItem occurrence:
+                    occurrences.Add(occurrence);
+                    break;
+                case Error error:
+                    logger.RecurrenceOccurrenceRejected(templateId, occurrenceUtc, error.Message);
+                    break;
             }
-
-            occurrences.Add(created.Value!);
         }
 
         // The committed attempt's count only. The guarded advance also covers a retry after a commit that landed:

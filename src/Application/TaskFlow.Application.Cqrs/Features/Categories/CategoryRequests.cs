@@ -1,6 +1,7 @@
 using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using TaskFlow.Application.Models;
+using EF.Domain.Contracts;
 
 namespace TaskFlow.Application.Cqrs.Features.Categories;
 
@@ -22,4 +23,4 @@ public sealed record UpdateCategoryCommand(DefaultRequest<CategoryDto> Request, 
 
 /// <summary>Carries delete category command CQRS data between endpoints and handlers.</summary>
 public sealed record DeleteCategoryCommand(Guid Id, long? ExpectedVersion)
-    : ICommand<Result>;
+    : ICommand<Result<Unit>>;

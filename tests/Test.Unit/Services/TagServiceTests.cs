@@ -1,3 +1,4 @@
+using EF.Domain.Contracts;
 using EF.Tenancy;
 using EF.Cache;
 using EF.Common.Contracts;
@@ -42,10 +43,10 @@ public class TagServiceTests
         _requestContextMock.Setup(x => x.Roles).Returns(new List<string>());
         _tenantBoundaryValidatorMock
             .Setup(x => x.EnsureTenantBoundary(It.IsAny<Guid?>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>()))
-            .Returns(Result.Success());
+            .Returns(Result.Ok());
         _tenantBoundaryValidatorMock
             .Setup(x => x.PreventTenantChange(It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<Guid>()))
-            .Returns(Result.Success());
+            .Returns(Result.Ok());
     }
 
     /// <summary>Creates service used by the surrounding test cases.</summary>
@@ -69,7 +70,7 @@ public class TagServiceTests
         var result = await CreateService().CreateAsync(new DefaultRequest<TagDto> { Item = dto }, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual("Important", result.Value!.Item!.Name);
+        Assert.AreEqual("Important", result.GetValueOrThrow().Item!.Name);
     }
 
     /// <summary>Verifies that given invalid DTO, when create, then returns failure.</summary>
@@ -80,7 +81,7 @@ public class TagServiceTests
         var dto = new TagDto { Name = "" };
         var result = await CreateService().CreateAsync(new DefaultRequest<TagDto> { Item = dto }, TestContext.CancellationToken);
 
-        Assert.IsTrue(result.IsFailure);
+        Assert.IsFalse(result.IsSuccess);
     }
 
     /// <summary>Verifies that given existing entity, when get, then returns mapped DTO.</summary>
@@ -94,7 +95,7 @@ public class TagServiceTests
         var result = await CreateService().GetAsync(entity.Id, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual(entity.Name, result.Value!.Item!.Name);
+        Assert.AreEqual(entity.Name, result.GetValueOrThrow().Item!.Name);
     }
 
     /// <summary>Verifies that given non existent ID, when get, then returns none.</summary>
@@ -106,7 +107,7 @@ public class TagServiceTests
 
         var result = await CreateService().GetAsync(Guid.NewGuid(), TestContext.CancellationToken);
 
-        Assert.IsTrue(result.IsNone);
+        Assert.IsInstanceOfType<NotFoundError>(result.Value);
     }
 
     /// <summary>Verifies that given existing entity, when update, then returns success.</summary>
@@ -122,7 +123,7 @@ public class TagServiceTests
         var result = await CreateService().UpdateAsync(new DefaultRequest<TagDto> { Item = dto }, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual("Updated", result.Value!.Item!.Name);
+        Assert.AreEqual("Updated", result.GetValueOrThrow().Item!.Name);
     }
 
     /// <summary>Verifies that given non existent ID, when update, then returns null item.</summary>
@@ -136,7 +137,7 @@ public class TagServiceTests
         var result = await CreateService().UpdateAsync(new DefaultRequest<TagDto> { Item = dto }, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.IsNull(result.Value?.Item);
+        Assert.IsNull(result.GetValueOrThrow().Item);
     }
 
     /// <summary>Verifies that given existing entity, when delete, then returns success.</summary>

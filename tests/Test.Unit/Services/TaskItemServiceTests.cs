@@ -1,4 +1,4 @@
-﻿using EF.Cache;
+using EF.Cache;
 using EF.Tenancy;
 using EF.Common.Contracts;
 using EF.Data.Contracts;
@@ -23,7 +23,7 @@ namespace Test.Unit.Services;
 /// <summary>
 /// Validates <see cref="TaskFlow.Application.Services.TaskItemService"/> orchestration with fully-mocked
 /// dependencies (repositories, request context, tenant-boundary validator, cache, event bus): CRUD
-/// success/failure paths, status transitions surfacing as DomainResult, search projection, and event
+/// success/failure paths, status transitions surfacing as Result, search projection, and event
 /// publication on create/update.
 /// Pure-unit tier (Moq only): the service contract is exercised in isolation - SQL semantics are covered
 /// by the E2E tier (<c>TaskItemCrudE2ETests</c>) and Integration tier (<c>DomainEventPipelineTests</c>).
@@ -47,10 +47,10 @@ public class TaskItemServiceTests
         _requestContextMock.Setup(x => x.Roles).Returns(new List<string>());
         _tenantBoundaryValidatorMock
             .Setup(x => x.EnsureTenantBoundary(It.IsAny<Guid?>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>()))
-            .Returns(Result.Success());
+            .Returns(Result.Ok());
         _tenantBoundaryValidatorMock
             .Setup(x => x.PreventTenantChange(It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<Guid>()))
-            .Returns(Result.Success());
+            .Returns(Result.Ok());
     }
 
     /// <summary>Creates service used by the surrounding test cases.</summary>
@@ -69,15 +69,17 @@ public class TaskItemServiceTests
     {
         _repoTrxnMock.Setup(r => r.Create(ref It.Ref<TaskItem>.IsAny));
         _repoTrxnMock.Setup(r => r.UpdateFromDto(It.IsAny<TaskItem>(), It.IsAny<TaskItemDto>(), It.IsAny<RelatedDeleteBehavior>()))
-            .Returns((TaskItem e, TaskItemDto _, RelatedDeleteBehavior __) => DomainResult<TaskItem>.Success(e));
+            .Returns((TaskItem e, TaskItemDto _, RelatedDeleteBehavior __) => new Result<TaskItem>(e));
         _repoTrxnMock.Setup(r => r.SaveChangesAsync(It.IsAny<OptimisticConcurrencyWinner>(), It.IsAny<CancellationToken>())).ReturnsAsync(0);
 
         var dto = new TaskItemDto { Title = "Test Task", Priority = Priority.Medium };
         var result = await CreateService().CreateAsync(new DefaultRequest<TaskItemDto> { Item = dto }, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual("Test Task", result.Value!.Item!.Title);
-        Assert.AreEqual(TaskItemStatus.Open, result.Value.Item.Status);
+        var item = result.GetValueOrThrow().Item;
+        Assert.IsNotNull(item);
+        Assert.AreEqual("Test Task", item.Title);
+        Assert.AreEqual(TaskItemStatus.Open, item.Status);
     }
 
     /// <summary>Verifies that given invalid DTO, when create, then returns failure.</summary>
@@ -88,7 +90,7 @@ public class TaskItemServiceTests
         var dto = new TaskItemDto { Title = "" };
         var result = await CreateService().CreateAsync(new DefaultRequest<TaskItemDto> { Item = dto }, TestContext.CancellationToken);
 
-        Assert.IsTrue(result.IsFailure);
+        Assert.IsFalse(result.IsSuccess);
     }
 
     /// <summary>Verifies that given existing entity, when get, then returns mapped DTO.</summary>
@@ -102,7 +104,7 @@ public class TaskItemServiceTests
         var result = await CreateService().GetAsync(entity.Id, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual(entity.Title, result.Value!.Item!.Title);
+        Assert.AreEqual(entity.Title, result.GetValueOrThrow().Item!.Title);
     }
 
     /// <summary>Verifies that given non existent ID, when get, then returns none.</summary>
@@ -114,7 +116,7 @@ public class TaskItemServiceTests
 
         var result = await CreateService().GetAsync(Guid.NewGuid(), TestContext.CancellationToken);
 
-        Assert.IsTrue(result.IsNone);
+        Assert.IsInstanceOfType<NotFoundError>(result.Value);
     }
 
     /// <summary>Verifies that given existing entity, when update, then returns success.</summary>
@@ -125,14 +127,14 @@ public class TaskItemServiceTests
         var entity = new TaskItemBuilder().Build();
         _repoTrxnMock.Setup(r => r.GetTaskItemAsync(entity.Id, It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync(entity);
         _repoTrxnMock.Setup(r => r.UpdateFromDto(It.IsAny<TaskItem>(), It.IsAny<TaskItemDto>(), It.IsAny<RelatedDeleteBehavior>()))
-            .Returns((TaskItem e, TaskItemDto _, RelatedDeleteBehavior __) => DomainResult<TaskItem>.Success(e));
+            .Returns((TaskItem e, TaskItemDto _, RelatedDeleteBehavior __) => new Result<TaskItem>(e));
         _repoTrxnMock.Setup(r => r.SaveChangesAsync(It.IsAny<OptimisticConcurrencyWinner>(), It.IsAny<CancellationToken>())).ReturnsAsync(0);
 
         var dto = new TaskItemDto { Id = entity.Id, Title = "Updated Title", Status = TaskItemStatus.Open };
         var result = await CreateService().UpdateAsync(new DefaultRequest<TaskItemDto> { Item = dto }, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual("Updated Title", result.Value!.Item!.Title);
+        Assert.AreEqual("Updated Title", result.GetValueOrThrow().Item!.Title);
     }
 
     /// <summary>Verifies that given existing entity, when update with status transition, then status updated.</summary>
@@ -143,14 +145,14 @@ public class TaskItemServiceTests
         var entity = new TaskItemBuilder().Build(); // Status = Open
         _repoTrxnMock.Setup(r => r.GetTaskItemAsync(entity.Id, It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync(entity);
         _repoTrxnMock.Setup(r => r.UpdateFromDto(It.IsAny<TaskItem>(), It.IsAny<TaskItemDto>(), It.IsAny<RelatedDeleteBehavior>()))
-            .Returns((TaskItem e, TaskItemDto _, RelatedDeleteBehavior __) => DomainResult<TaskItem>.Success(e));
+            .Returns((TaskItem e, TaskItemDto _, RelatedDeleteBehavior __) => new Result<TaskItem>(e));
         _repoTrxnMock.Setup(r => r.SaveChangesAsync(It.IsAny<OptimisticConcurrencyWinner>(), It.IsAny<CancellationToken>())).ReturnsAsync(0);
 
         var dto = new TaskItemDto { Id = entity.Id, Title = entity.Title, Status = TaskItemStatus.InProgress };
         var result = await CreateService().UpdateAsync(new DefaultRequest<TaskItemDto> { Item = dto }, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual(TaskItemStatus.InProgress, result.Value!.Item!.Status);
+        Assert.AreEqual(TaskItemStatus.InProgress, result.GetValueOrThrow().Item!.Status);
     }
 
     /// <summary>Verifies that given existing entity, when update with invalid transition, then returns failure.</summary>
@@ -164,7 +166,7 @@ public class TaskItemServiceTests
         var dto = new TaskItemDto { Id = entity.Id, Title = entity.Title, Status = TaskItemStatus.Completed };
         var result = await CreateService().UpdateAsync(new DefaultRequest<TaskItemDto> { Item = dto }, null, TestContext.CancellationToken);
 
-        Assert.IsTrue(result.IsFailure);
+        Assert.IsFalse(result.IsSuccess);
     }
 
     /// <summary>Verifies that given non existent ID, when update, then returns null item.</summary>
@@ -178,7 +180,7 @@ public class TaskItemServiceTests
         var result = await CreateService().UpdateAsync(new DefaultRequest<TaskItemDto> { Item = dto }, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.IsNull(result.Value?.Item);
+        Assert.IsNull(result.GetValueOrThrow().Item);
     }
 
     /// <summary>Verifies that given existing entity, when delete, then returns success.</summary>

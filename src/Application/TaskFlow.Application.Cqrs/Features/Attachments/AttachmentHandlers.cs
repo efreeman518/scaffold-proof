@@ -46,12 +46,12 @@ internal sealed class GetAttachmentByIdHandler(
     public async Task<Result<DefaultResponse<AttachmentDto>>> HandleAsync(GetAttachmentByIdQuery query, CancellationToken ct = default)
     {
         var entity = await repoQuery.GetAttachmentAsync(AttachmentId.From(query.Id), ct);
-        if (entity is null) return Result<DefaultResponse<AttachmentDto>>.None();
+        if (entity is null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "Attachment:Get", nameof(Attachment), entity.Id.Value);
-        if (boundary.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(boundary.ErrorMessage!);
+        if (boundary.TryGetValue(out Error? boundaryError)) return boundaryError;
 
         return HandlerHelpers.Success(entity.ToDto());
     }
@@ -73,12 +73,12 @@ internal sealed class CreateAttachmentHandler(
         dto.TenantId = requestContext.TenantId ?? Guid.Empty;
 
         var validation = AttachmentStructureValidator.ValidateCreate(dto);
-        if (validation.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(validation.Errors);
+        if (validation.TryGetValue(out Error? validationError)) return validationError;
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             requestContext.TenantId, requestContext.Roles, dto.TenantId,
             "Attachment:Create", nameof(Attachment));
-        if (boundary.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(boundary.ErrorMessage!);
+        if (boundary.TryGetValue(out Error? boundaryError)) return boundaryError;
 
         // D-033: the row itself is the idempotency record for a caller-supplied UUIDv7 id.
         if (dto.Id is Guid callerId && callerId != Guid.Empty)
@@ -86,19 +86,19 @@ internal sealed class CreateAttachmentHandler(
             var existing = await repoTrxn.GetAttachmentAsync(AttachmentId.From(callerId), ct);
             if (existing is not null)
             {
-                return Result<DefaultResponse<AttachmentDto>>.Success(IdempotentCreateGuard.ReplayOrThrow(
-                    existing.ToDto(), dto, IdempotentCreateGuard.IsEquivalent, nameof(Attachment), callerId));
+                return IdempotentCreateGuard.ReplayOrThrow(
+                    existing.ToDto(), dto, IdempotentCreateGuard.IsEquivalent, nameof(Attachment), callerId);
             }
         }
 
         var entityResult = dto.ToEntity(dto.TenantId);
-        if (entityResult.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(entityResult.ErrorMessage!);
+        if (entityResult.TryGetValue(out Error? entityResultError)) return entityResultError;
 
-        var entity = entityResult.Value!;
+        var entity = entityResult.GetValueOrThrow();
         repoTrxn.Create(ref entity);
 
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error creating Attachment", ct);
-        if (save.IsFailure)
+        if (save.TryGetValue(out Error? saveError))
         {
             // D-033: a concurrent create with the same id passed the existence check too and won the insert.
             // Re-read on the query context (this one still tracks the failed insert): the winner makes this a
@@ -106,11 +106,11 @@ internal sealed class CreateAttachmentHandler(
             if (dto.Id is Guid racedId && racedId != Guid.Empty
                 && await repoQuery.GetAttachmentAsync(AttachmentId.From(racedId), ct) is { } raced)
             {
-                return Result<DefaultResponse<AttachmentDto>>.Success(IdempotentCreateGuard.ReplayOrThrow(
-                    raced.ToDto(), dto, IdempotentCreateGuard.IsEquivalent, nameof(Attachment), racedId));
+                return IdempotentCreateGuard.ReplayOrThrow(
+                    raced.ToDto(), dto, IdempotentCreateGuard.IsEquivalent, nameof(Attachment), racedId);
             }
 
-            return Result<DefaultResponse<AttachmentDto>>.Failure(save.ErrorMessage!);
+            return saveError;
         }
 
         return HandlerHelpers.Success(entity.ToDto());
@@ -133,18 +133,18 @@ internal sealed class UploadAttachmentHandler(
         // AR-01: the upload form carries its own optional caller id, so it needs the same UUIDv7
         // check as the JSON create path, so Guid.Empty and non-v7 ids are refused here too.
         var idCheck = UuidV7.ValidateCallerId(command.Id);
-        if (idCheck.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(idCheck.ErrorMessage!);
+        if (idCheck.TryGetValue(out Error? idCheckError)) return idCheckError;
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             requestContext.TenantId, requestContext.Roles, requestContext.TenantId,
             "Attachment:Upload", nameof(Attachment));
-        if (boundary.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(boundary.ErrorMessage!);
+        if (boundary.TryGetValue(out Error? boundaryError)) return boundaryError;
 
         if (Attachment.FileNameError(command.FileName) is { } fileNameError)
-            return Result<DefaultResponse<AttachmentDto>>.Failure(fileNameError);
+            return new ValidationError(fileNameError, "fileName");
 
         if (blobStorage is null)
-            return Result<DefaultResponse<AttachmentDto>>.Failure("Blob storage is not configured.");
+            return new UnexpectedError("Blob storage is not configured.");
 
         var tenantId = requestContext.TenantId ?? Guid.Empty;
         var incoming = new AttachmentDto
@@ -160,8 +160,8 @@ internal sealed class UploadAttachmentHandler(
             var existing = await repoTrxn.GetAttachmentAsync(AttachmentId.From(callerId), ct);
             if (existing is not null)
             {
-                return Result<DefaultResponse<AttachmentDto>>.Success(IdempotentCreateGuard.ReplayUploadOrThrow(
-                    existing.ToDto(), existing.StorageKey is not null, incoming, callerId));
+                return IdempotentCreateGuard.ReplayUploadOrThrow(
+                    existing.ToDto(), existing.StorageKey is not null, incoming, callerId);
             }
         }
 
@@ -173,7 +173,7 @@ internal sealed class UploadAttachmentHandler(
         var reserve = await CqrsHandlerSupport.TryWriteAsync(
             async t => reservationId = await repoTrxn.ReserveUploadAsync(tenantId, blobName, t), logger,
             "Error reserving the blob for Attachment {FileName}", ct, command.FileName);
-        if (reserve.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(reserve.ErrorMessage!);
+        if (reserve.TryGetValue(out Error? reserveError)) return reserveError;
 
         try
         {
@@ -182,7 +182,7 @@ internal sealed class UploadAttachmentHandler(
         catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.AttachmentBlobUploadFailed(ex, command.FileName);
-            return Result<DefaultResponse<AttachmentDto>>.Failure(ErrorConstants.ERROR_BLOB_UPLOAD_FAILED);
+            return new UnexpectedError(ErrorConstants.ERROR_BLOB_UPLOAD_FAILED, ex, "attachment.upload_failed");
         }
 
         var storageUri = (await blobStorage.GetPresignedUrlAsync(
@@ -197,9 +197,9 @@ internal sealed class UploadAttachmentHandler(
             command.OwnerId,
             DomainId.FromNullable<AttachmentId>(command.Id),
             blobName);
-        if (entityResult.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(entityResult.ErrorMessage!);
+        if (entityResult.TryGetValue(out Error? entityResultError)) return entityResultError;
 
-        var entity = entityResult.Value!;
+        var entity = entityResult.GetValueOrThrow();
 
         try
         {
@@ -216,11 +216,11 @@ internal sealed class UploadAttachmentHandler(
             // upload's blob is left to its reservation either way.
             if (command.Id is Guid racedId && await repoQuery.GetAttachmentAsync(AttachmentId.From(racedId), ct) is { } raced)
             {
-                return Result<DefaultResponse<AttachmentDto>>.Success(IdempotentCreateGuard.ReplayUploadOrThrow(
-                    raced.ToDto(), raced.StorageKey is not null, incoming, racedId));
+                return IdempotentCreateGuard.ReplayUploadOrThrow(
+                    raced.ToDto(), raced.StorageKey is not null, incoming, racedId);
             }
 
-            return Result<DefaultResponse<AttachmentDto>>.Failure(ErrorConstants.ERROR_SAVE_FAILED);
+            return SaveFailure.ToError(ex);
         }
 
         return HandlerHelpers.Success(entity.ToDto());
@@ -242,7 +242,7 @@ internal sealed class UpdateAttachmentHandler(
         dto.TenantId = requestContext.TenantId ?? Guid.Empty;
 
         var validation = AttachmentStructureValidator.ValidateUpdate(dto);
-        if (validation.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(validation.Errors);
+        if (validation.TryGetValue(out Error? validationError)) return validationError;
 
         // If-Match: * re-reads and applies again when it loses a race (D-073); a concrete version keeps its 412.
         return await ConcurrencyRetry.RunAsync(repoTrxn, command.ExpectedVersion, nameof(Attachment), dto.Id!.Value,
@@ -261,19 +261,19 @@ internal sealed class UpdateAttachmentHandler(
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "Attachment:Update", nameof(Attachment), entity.Id.Value);
-        if (boundary.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(boundary.ErrorMessage!);
+        if (boundary.TryGetValue(out Error? boundaryError)) return boundaryError;
 
         ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(Attachment), entity.Id.Value);
 
         var tenantChangeCheck = tenantBoundaryValidator.PreventTenantChange(
             entity.TenantId.Value, dto.TenantId, nameof(Attachment), entity.Id.Value);
-        if (tenantChangeCheck.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(tenantChangeCheck.ErrorMessage!);
+        if (tenantChangeCheck.TryGetValue(out Error? tenantChangeCheckError)) return tenantChangeCheckError;
 
         var updateResult = entity.Update(dto.FileName, dto.ContentType, dto.FileSizeBytes, dto.StorageUri, dto.OwnerType, dto.OwnerId);
-        if (updateResult.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(updateResult.ErrorMessage!);
+        if (updateResult.TryGetValue(out Error? updateResultError)) return updateResultError;
 
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error updating Attachment {Id}", ct, dto.Id);
-        if (save.IsFailure) return Result<DefaultResponse<AttachmentDto>>.Failure(save.ErrorMessage!);
+        if (save.TryGetValue(out Error? saveError)) return saveError;
 
         return HandlerHelpers.Success(entity.ToDto());
     }
@@ -286,10 +286,10 @@ internal sealed class DeleteAttachmentHandler(
     IAttachmentRepositoryTrxn repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
     ITypedCache cache)
-    : IRequestHandler<DeleteAttachmentCommand, Result>
+    : IRequestHandler<DeleteAttachmentCommand, Result<Unit>>
 {
     /// <summary>Handles delete attachment requests and returns the application result.</summary>
-    public async Task<Result> HandleAsync(DeleteAttachmentCommand command, CancellationToken ct = default)
+    public async Task<Result<Unit>> HandleAsync(DeleteAttachmentCommand command, CancellationToken ct = default)
     {
         // If-Match: * re-reads and deletes again when it loses a race (D-073); a concrete version keeps its 412. The
         // cache eviction is an outside effect, so it runs once, after the save that removed the row.
@@ -299,23 +299,23 @@ internal sealed class DeleteAttachmentHandler(
         if (entity is null) return result;
 
         await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(Attachment)), ct);
-        return Result.Success();
+        return Result.Ok();
     }
 
     /// <summary>One read, delete and save; <c>Deleted</c> is the removed row, if any.</summary>
-    private async Task<(Result Result, Attachment? Deleted)> DeleteOnceAsync(
+    private async Task<(Result<Unit> Result, Attachment? Deleted)> DeleteOnceAsync(
         DeleteAttachmentCommand command, Attachment? sent, Action<Attachment> markSaveSent, CancellationToken ct)
     {
         var entity = await repoTrxn.GetAttachmentAsync(AttachmentId.From(command.Id), ct);
         // D-073: gone on a wildcard retry after an earlier attempt sent its save (a commit that landed but was reported
         // failed, or a competing delete) returns that attempt's row, so the cache eviction still runs; gone on the first
         // attempt returns none. The save that removed the row staged its blob delete with it.
-        if (entity is null) return (Result.Success(), sent);
+        if (entity is null) return (Result.Ok(), sent);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "Attachment:Delete", nameof(Attachment), entity.Id.Value);
-        if (boundary.IsFailure) return (Result.Failure(boundary.ErrorMessage!), null);
+        if (boundary.TryGetValue(out Error? boundaryError)) return (boundaryError, null);
 
         ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(Attachment), entity.Id.Value);
 

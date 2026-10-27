@@ -70,7 +70,7 @@ public class SchedulerTransactionRetryTests
         {
             for (var i = 0; i < 3; i++)
             {
-                var task = TaskItem.Create(TenantId.From(tenantId), $"Overdue {i}").Value!;
+                var task = TaskItem.Create(TenantId.From(tenantId), $"Overdue {i}").GetValueOrThrow();
                 task.UpdateDateRange(null, Now.AddDays(-2 - i));
                 seed.TaskItems.Add(task);
             }
@@ -102,7 +102,7 @@ public class SchedulerTransactionRetryTests
         var tenantId = Guid.NewGuid();
         await using (var seed = DbContainerFixture.CreateTrxnContext())
         {
-            var template = TaskItem.Create(TenantId.From(tenantId), "Weekly report").Value!;
+            var template = TaskItem.Create(TenantId.From(tenantId), "Weekly report").GetValueOrThrow();
             template.Update(features: TaskFeatures.Recurring);
             template.UpdateDateRange(null, Now.AddDays(-3));
             template.UpdateRecurrencePattern(new RecurrencePattern { Frequency = RecurrencePattern.Daily, Interval = 1 });
@@ -138,7 +138,7 @@ public class SchedulerTransactionRetryTests
         var typedTenantId = TenantId.From(tenantId);
         await using (var seed = DbContainerFixture.CreateTrxnContext())
         {
-            var task = TaskItem.Create(typedTenantId, "Cancelled long ago").Value!;
+            var task = TaskItem.Create(typedTenantId, "Cancelled long ago").GetValueOrThrow();
             task.TransitionStatus(TaskItemStatus.Cancelled);
             seed.TaskItems.Add(task);
             await seed.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
@@ -147,7 +147,7 @@ public class SchedulerTransactionRetryTests
                 .ExecuteUpdateAsync(s => s.SetProperty(t => t.TerminalAtUtc, Now.AddDays(-200)), TestContext.CancellationToken);
             seed.Attachments.Add(Attachment.Create(
                 typedTenantId, "spec.pdf", "application/pdf", 1024, "https://example/spec.pdf",
-                AttachmentOwnerType.TaskItem, task.Id.Value, storageKey: $"{tenantId}/{task.Id.Value}/spec").Value!);
+                AttachmentOwnerType.TaskItem, task.Id.Value, storageKey: $"{tenantId}/{task.Id.Value}/spec").GetValueOrThrow());
             await seed.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
         }
 
@@ -179,7 +179,7 @@ public class SchedulerTransactionRetryTests
         {
             for (var i = 0; i < 3; i++)
             {
-                var task = TaskItem.Create(TenantId.From(tenantId), $"Raced {i}").Value!;
+                var task = TaskItem.Create(TenantId.From(tenantId), $"Raced {i}").GetValueOrThrow();
                 task.UpdateDateRange(null, Now.AddDays(-2 - i));
                 seed.TaskItems.Add(task);
                 rows.Add(new OverdueTaskRow(tenantId, task.Id.Value, task.DueDate!.Value));
@@ -217,7 +217,7 @@ public class SchedulerTransactionRetryTests
         TaskItemId templateId;
         await using (var seed = DbContainerFixture.CreateTrxnContext())
         {
-            var template = TaskItem.Create(TenantId.From(tenantId), "Daily standup").Value!;
+            var template = TaskItem.Create(TenantId.From(tenantId), "Daily standup").GetValueOrThrow();
             template.Update(features: TaskFeatures.Recurring);
             template.UpdateDateRange(null, dueFrom);
             template.UpdateRecurrencePattern(new RecurrencePattern { Frequency = RecurrencePattern.Daily, Interval = 1 });
@@ -264,12 +264,12 @@ public class SchedulerTransactionRetryTests
         {
             for (var i = 0; i < 3; i++)
             {
-                var task = TaskItem.Create(typedTenantId, $"Cancelled {i}").Value!;
+                var task = TaskItem.Create(typedTenantId, $"Cancelled {i}").GetValueOrThrow();
                 task.TransitionStatus(TaskItemStatus.Cancelled);
                 seed.TaskItems.Add(task);
                 seed.Attachments.Add(Attachment.Create(
                     typedTenantId, $"spec-{i}.pdf", "application/pdf", 1024, $"https://example/spec-{i}.pdf",
-                    AttachmentOwnerType.TaskItem, task.Id.Value, storageKey: $"{tenantId}/{task.Id.Value}/spec-{i}").Value!);
+                    AttachmentOwnerType.TaskItem, task.Id.Value, storageKey: $"{tenantId}/{task.Id.Value}/spec-{i}").GetValueOrThrow());
                 taskIds.Add(task.Id.Value);
             }
             await seed.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);

@@ -1,6 +1,7 @@
 using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using TaskFlow.Application.Models;
+using EF.Domain.Contracts;
 
 namespace TaskFlow.Application.Cqrs.Features.Tags;
 
@@ -22,4 +23,4 @@ public sealed record UpdateTagCommand(DefaultRequest<TagDto> Request, long? Expe
 
 /// <summary>Carries delete tag command CQRS data between endpoints and handlers.</summary>
 public sealed record DeleteTagCommand(Guid Id, long? ExpectedVersion)
-    : ICommand<Result>;
+    : ICommand<Result<Unit>>;

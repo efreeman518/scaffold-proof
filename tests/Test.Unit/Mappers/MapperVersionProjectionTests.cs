@@ -36,15 +36,15 @@ public class MapperVersionProjectionTests
         await using var db = CreateContext();
         var tenantId = TenantId.From(TestConstants.TenantId);
 
-        var category = Category.Create(tenantId, "Ops").Value!;
-        var tag = Tag.Create(tenantId, "urgent").Value!;
-        var taskItem = TaskItem.Create(tenantId, "Versioned").Value!;
-        var comment = taskItem.AddComment("body").Value!;
-        var checklistItem = taskItem.AddChecklistItem("step").Value!;
-        var association = taskItem.AssociateTag(tag.Id).Value!;
+        var category = Category.Create(tenantId, "Ops").GetValueOrThrow();
+        var tag = Tag.Create(tenantId, "urgent").GetValueOrThrow();
+        var taskItem = TaskItem.Create(tenantId, "Versioned").GetValueOrThrow();
+        var comment = taskItem.AddComment("body").GetValueOrThrow();
+        var checklistItem = taskItem.AddChecklistItem("step").GetValueOrThrow();
+        var association = taskItem.AssociateTag(tag.Id).GetValueOrThrow();
         var attachment = Attachment.Create(
             tenantId, "file.txt", "text/plain", 12, "https://example/blob",
-            TaskFlow.Domain.Shared.Enums.AttachmentOwnerType.TaskItem, taskItem.Id.Value).Value!;
+            TaskFlow.Domain.Shared.Enums.AttachmentOwnerType.TaskItem, taskItem.Id.Value).GetValueOrThrow();
 
         db.AddRange(category, tag, taskItem, attachment);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: TestContext.CancellationToken);
@@ -66,7 +66,7 @@ public class MapperVersionProjectionTests
     public async Task Given_PersistedTaskItem_When_SearchProjected_Then_CarriesVersionAndModifiedAt()
     {
         await using var db = CreateContext();
-        var taskItem = TaskItem.Create(TenantId.From(TestConstants.TenantId), "Search shape").Value!;
+        var taskItem = TaskItem.Create(TenantId.From(TestConstants.TenantId), "Search shape").GetValueOrThrow();
         db.Add(taskItem);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: TestContext.CancellationToken);
 
@@ -82,9 +82,9 @@ public class MapperVersionProjectionTests
     {
         var id = Guid.CreateVersion7();
 
-        var taskItem = new TaskItemDto { Id = id, Title = "Caller id" }.ToEntity(TestConstants.TenantId).Value!;
-        var category = new CategoryDto { Id = id, Name = "Caller id" }.ToEntity(TestConstants.TenantId).Value!;
-        var tag = new TagDto { Id = id, Name = "caller-id" }.ToEntity(TestConstants.TenantId).Value!;
+        var taskItem = new TaskItemDto { Id = id, Title = "Caller id" }.ToEntity(TestConstants.TenantId).GetValueOrThrow();
+        var category = new CategoryDto { Id = id, Name = "Caller id" }.ToEntity(TestConstants.TenantId).GetValueOrThrow();
+        var tag = new TagDto { Id = id, Name = "caller-id" }.ToEntity(TestConstants.TenantId).GetValueOrThrow();
 
         Assert.AreEqual(id, taskItem.Id.Value);
         Assert.AreEqual(id, category.Id.Value);

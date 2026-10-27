@@ -87,15 +87,14 @@ public static class TaskItemMapper
     public static TaskItemDto ToDto(this TaskItem entity) => Compiled(entity);
 
     /// <summary>Converts the current value to entity.</summary>
-    public static DomainResult<TaskItem> ToEntity(this TaskItemDto dto, Guid tenantId)
+    public static Result<TaskItem> ToEntity(this TaskItemDto dto, Guid tenantId)
     {
         var categoryId = DomainId.FromNullable<CategoryId>(dto.CategoryId);
         var parentTaskItemId = DomainId.FromNullable<TaskItemId>(dto.ParentTaskItemId);
         var result = TaskItem.Create(TenantId.From(tenantId), dto.Title, dto.Description, dto.Priority, categoryId, parentTaskItemId,
             id: DomainId.FromNullable<TaskItemId>(dto.Id));
-        if (result.IsFailure) return result;
+        if (!result.TryGetValue(out TaskItem? entity)) return result;
 
-        var entity = result.Value!;
         entity.UpdateDateRange(dto.StartDate, dto.DueDate);
 
         if (dto.RecurrenceInterval.HasValue && !string.IsNullOrEmpty(dto.RecurrenceFrequency))
@@ -108,7 +107,7 @@ public static class TaskItemMapper
             });
         }
 
-        return DomainResult<TaskItem>.Success(entity);
+        return entity;
     }
 
     // Minimal query-only shape for list/search endpoints. Intentionally has no ToDto counterpart

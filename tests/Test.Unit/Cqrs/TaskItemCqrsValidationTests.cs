@@ -2,6 +2,7 @@ using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using EF.CQRS.Decorators;
 using EF.CQRS.Validation;
+using EF.Domain.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using TaskFlow.Application.Cqrs.Features.TaskItems;
@@ -28,7 +29,7 @@ public sealed class TaskItemCqrsValidationTests
         var decorator = new ValidationRequestHandlerDecorator<CreateTaskItemCommand, Result<DefaultResponse<TaskItemDto>>>(
             inner,
             [validator],
-            new StaticFailureValidationResponseFactory<Result<DefaultResponse<TaskItemDto>>>(),
+            new FailableValidationResponseFactory<Result<DefaultResponse<TaskItemDto>>>(),
             NullLogger<ValidationRequestHandlerDecorator<CreateTaskItemCommand, Result<DefaultResponse<TaskItemDto>>>>.Instance);
 
         var command = new CreateTaskItemCommand(new DefaultRequest<TaskItemDto>
@@ -38,10 +39,10 @@ public sealed class TaskItemCqrsValidationTests
 
         var result = await decorator.HandleAsync(command, TestContext.CancellationToken);
 
-        Assert.IsTrue(result.IsFailure);
+        Assert.IsFalse(result.IsSuccess);
         Assert.IsFalse(inner.WasCalled);
         Assert.AreEqual(tenantId, command.Request.Item.TenantId);
-        Assert.Contains("Title is required", string.Join(";", result.Errors));
+        Assert.Contains("Title is required", result.ToString());
     }
 
     /// <summary>Supports test execution for Test.unit CQRS scenarios.</summary>
@@ -56,7 +57,7 @@ public sealed class TaskItemCqrsValidationTests
             CancellationToken ct = default)
         {
             WasCalled = true;
-            return Task.FromResult(Result<DefaultResponse<TaskItemDto>>.Success(new DefaultResponse<TaskItemDto>
+            return Task.FromResult(new Result<DefaultResponse<TaskItemDto>>(new DefaultResponse<TaskItemDto>
             {
                 Item = request.Request.Item
             }));

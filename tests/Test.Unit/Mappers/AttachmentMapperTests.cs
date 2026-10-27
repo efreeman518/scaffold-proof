@@ -35,7 +35,7 @@ public class AttachmentMapperTests
     /// <summary>Verifies that given valid DTO, when mapped to entity, then returns success domain result.</summary>
     [TestMethod]
     [TestCategory("Unit")]
-    public void Given_ValidDto_When_MappedToEntity_Then_ReturnsSuccessDomainResult()
+    public void Given_ValidDto_When_MappedToEntity_Then_ReturnsSuccessResult()
     {
         var ownerId = Guid.NewGuid();
         var dto = new AttachmentDto
@@ -50,8 +50,8 @@ public class AttachmentMapperTests
         var result = dto.ToEntity(TestConstants.TenantId);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual("report.pdf", result.Value!.FileName);
-        Assert.AreEqual(ownerId, result.Value.OwnerId);
+        Assert.AreEqual("report.pdf", result.GetValueOrThrow().FileName);
+        Assert.AreEqual(ownerId, result.GetValueOrThrow().OwnerId);
     }
 
     /// <summary>Verifies that given invalid DTO, when mapped to entity, then returns failure.</summary>
@@ -62,6 +62,6 @@ public class AttachmentMapperTests
         var dto = new AttachmentDto { FileName = "", ContentType = "", FileSizeBytes = 0, StorageUri = "", OwnerId = Guid.Empty };
         var result = dto.ToEntity(TestConstants.TenantId);
 
-        Assert.IsTrue(result.IsFailure);
+        Assert.IsFalse(result.IsSuccess);
     }
 }

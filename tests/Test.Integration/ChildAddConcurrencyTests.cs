@@ -1,5 +1,6 @@
 using EF.Common.Contracts;
 using EF.Data.Contracts;
+using EF.Domain.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using TaskFlow.Application.Contracts;
@@ -133,7 +134,7 @@ public class ChildAddConcurrencyTests
         var dto = new CommentDto { Id = Guid.CreateVersion7(), Body = "same-id comment" };
         var race = new CompetingWrite(DbContainerFixture.ConnectionString, taskId, (other, ct) =>
         {
-            other.Comments.Add(Comment.Create(TenantId.From(TenantGuid), TaskItemId.From(taskId), dto.Body, CommentId.From(dto.Id!.Value)).Value!);
+            other.Comments.Add(Comment.Create(TenantId.From(TenantGuid), TaskItemId.From(taskId), dto.Body, CommentId.From(dto.Id!.Value)).GetValueOrThrow());
             return Task.CompletedTask;
         });
 
@@ -161,7 +162,7 @@ public class ChildAddConcurrencyTests
         var dto = new ChecklistItemDto { Id = Guid.CreateVersion7(), Title = "same-id step", SortOrder = 2 };
         var race = new CompetingWrite(DbContainerFixture.ConnectionString, taskId, (other, ct) =>
         {
-            other.ChecklistItems.Add(ChecklistItem.Create(TenantId.From(TenantGuid), TaskItemId.From(taskId), dto.Title, dto.SortOrder, ChecklistItemId.From(dto.Id!.Value)).Value!);
+            other.ChecklistItems.Add(ChecklistItem.Create(TenantId.From(TenantGuid), TaskItemId.From(taskId), dto.Title, dto.SortOrder, ChecklistItemId.From(dto.Id!.Value)).GetValueOrThrow());
             return Task.CompletedTask;
         });
 
@@ -189,7 +190,7 @@ public class ChildAddConcurrencyTests
         var tagId = await SeedTagAsync();
         var race = new CompetingWrite(DbContainerFixture.ConnectionString, taskId, (other, ct) =>
         {
-            other.TaskItemTags.Add(TaskItemTag.Create(TenantId.From(TenantGuid), TaskItemId.From(taskId), TagId.From(tagId)).Value!);
+            other.TaskItemTags.Add(TaskItemTag.Create(TenantId.From(TenantGuid), TaskItemId.From(taskId), TagId.From(tagId)).GetValueOrThrow());
             return Task.CompletedTask;
         });
 
@@ -241,9 +242,9 @@ public class ChildAddConcurrencyTests
         race ??= new CompetingWrite(DbContainerFixture.ConnectionString, taskId);
         var result = await InvokeRacedAsync(style, viaService, viaCqrs, race);
 
-        Assert.IsTrue(result.IsSuccess, result.ErrorMessage);
-        Assert.IsNotNull(result.Value!.Item);
-        return (result.Value, race);
+        Assert.IsTrue(result.IsSuccess, result.ToString());
+        Assert.IsNotNull(result.GetValueOrThrow().Item);
+        return (result.GetValueOrThrow(), race);
     }
 
     /// <summary>Runs one child add through the chosen style on a context the competing write intercepts.</summary>
@@ -285,7 +286,7 @@ public class ChildAddConcurrencyTests
     private async Task<Guid> SeedTagAsync()
     {
         await using var db = DbContainerFixture.CreateTrxnContext();
-        var tag = Tag.Create(TenantId.From(TenantGuid), $"Race-{Guid.NewGuid():N}"[..20]).Value!;
+        var tag = Tag.Create(TenantId.From(TenantGuid), $"Race-{Guid.NewGuid():N}"[..20]).GetValueOrThrow();
         db.Tags.Add(tag);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: TestContext.CancellationToken);
         return tag.Id.Value;

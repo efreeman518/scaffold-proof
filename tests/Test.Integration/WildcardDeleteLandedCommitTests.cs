@@ -1,6 +1,7 @@
 using System.Data.Common;
 using EF.Cache;
 using EF.Data.Contracts;
+using EF.Domain.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -67,7 +68,7 @@ public sealed class WildcardDeleteLandedCommitTests
 
         var result = await DeleteCategoryAsync(style, categoryId, cache, fault, ct);
 
-        Assert.IsTrue(result.IsSuccess, result.ErrorMessage);
+        Assert.IsTrue(result.IsSuccess, result.ToString());
         Assert.AreEqual(1, fault.Faults, "the save landed and was then reported failed once");
         await using (var verify = DbContainerFixture.CreateTrxnContext())
             Assert.IsFalse(await verify.Categories.IgnoreQueryFilters().AnyAsync(c => c.Id == CategoryId.From(categoryId), ct));
@@ -86,7 +87,7 @@ public sealed class WildcardDeleteLandedCommitTests
 
         var result = await DeleteCategoryAsync(style, Guid.CreateVersion7(), cache, new LandedSaveFault(), ct);
 
-        Assert.IsTrue(result.IsSuccess, result.ErrorMessage);
+        Assert.IsTrue(result.IsSuccess, result.ToString());
         Assert.IsFalse(await IsEvictedAsync(cache, cached, ct), "a first attempt that finds no row has no after-save effect");
     }
 
@@ -114,8 +115,8 @@ public sealed class WildcardDeleteLandedCommitTests
         var result = await DeleteAttachmentAsync(style, attachment.Id.Value, fault, ct);
         var none = await DeleteAttachmentAsync(style, Guid.CreateVersion7(), new LandedSaveFault(), ct);
 
-        Assert.IsTrue(result.IsSuccess, result.ErrorMessage);
-        Assert.IsTrue(none.IsSuccess, none.ErrorMessage);
+        Assert.IsTrue(result.IsSuccess, result.ToString());
+        Assert.IsTrue(none.IsSuccess, none.ToString());
         Assert.AreEqual(1, fault.Faults, "the save landed and was then reported failed once");
         await using var verify = DbContainerFixture.CreateTrxnContext();
         Assert.IsFalse(await verify.Attachments.IgnoreQueryFilters().AnyAsync(a => a.Id == attachment.Id, ct));
@@ -158,7 +159,7 @@ public sealed class WildcardDeleteLandedCommitTests
         Assert.IsTrue(await verify.Attachments.IgnoreQueryFilters().AnyAsync(a => a.Id == attachment.Id, ct));
     }
 
-    private static async Task<EF.Common.Contracts.Result> DeleteCategoryAsync(
+    private static async Task<Result<Unit>> DeleteCategoryAsync(
         string style, Guid categoryId, ITypedCache cache, LandedSaveFault fault, CancellationToken ct)
     {
         var connStr = DbContainerFixture.ConnectionString;
@@ -172,7 +173,7 @@ public sealed class WildcardDeleteLandedCommitTests
                 .HandleAsync(new DeleteCategoryCommand(categoryId, ExpectedVersion: null), ct);
     }
 
-    private static async Task<EF.Common.Contracts.Result> DeleteAttachmentAsync(
+    private static async Task<Result<Unit>> DeleteAttachmentAsync(
         string style, Guid attachmentId, LandedSaveFault fault, CancellationToken ct)
     {
         var connStr = DbContainerFixture.ConnectionString;

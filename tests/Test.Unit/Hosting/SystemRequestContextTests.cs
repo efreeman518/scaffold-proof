@@ -1,5 +1,6 @@
 using EF.Cache;
 using EF.Common.Contracts;
+using EF.Domain.Contracts;
 using EF.Tenancy;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
@@ -130,7 +131,7 @@ public sealed class SystemRequestContextTests
             SomeTenant, "TaskItem:Get", nameof(TaskItem));
 
         Assert.IsTrue(system.IsSuccess, "the system role is one of the cross-tenant roles EF.Tenancy lets through");
-        Assert.IsTrue(tenantlessMember.IsFailure, "only the system identity is exempt; a tenantless caller is not");
+        Assert.IsFalse(tenantlessMember.IsSuccess, "only the system identity is exempt; a tenantless caller is not");
     }
 
     /// <summary>
@@ -161,8 +162,8 @@ public sealed class SystemRequestContextTests
         var result = await service.AddCommentAsync(task.Id.Value, new CommentDto { Body = "AI readiness review" },
             TestContext.CancellationToken);
 
-        Assert.IsTrue(result.IsSuccess, result.ErrorMessage);
-        Assert.IsNotNull(result.Value!.Item);
+        Assert.IsTrue(result.IsSuccess, result.ToString());
+        Assert.IsNotNull(result.GetValueOrThrow().Item);
         repoTrxn.Verify(r => r.SaveChildAddAsync(It.IsAny<Func<CancellationToken, Task<bool>>?>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }

@@ -52,7 +52,7 @@ public class TaskItemStatusTransitionTests
 
         var result = task.TransitionStatus(target);
 
-        Assert.IsTrue(result.IsFailure);
+        Assert.IsFalse(result.IsSuccess);
         Assert.AreEqual(current, task.Status);
     }
 
@@ -72,7 +72,7 @@ public class TaskItemStatusTransitionTests
     /// <summary>Walks a new task through legal transitions to reach <paramref name="status"/>.</summary>
     private static TaskItem CreateTaskAtStatus(TaskItemStatus status)
     {
-        var task = TaskItem.Create(TenantId.From(TestConstants.TenantId), "Transition sample").Value!;
+        var task = TaskItem.Create(TenantId.From(TestConstants.TenantId), "Transition sample").GetValueOrThrow();
         TaskItemStatus[] path = status switch
         {
             TaskItemStatus.Open => [],

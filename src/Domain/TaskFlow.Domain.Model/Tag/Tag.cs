@@ -28,14 +28,14 @@ public sealed class Tag : TaskFlowEntityBase<DomainTagId>, ITenantEntity<DomainT
     }
 
     /// <summary>Creates requested data after validation and maps the result to the caller contract.</summary>
-    public static DomainResult<Tag> Create(DomainTenantId tenantId, string name, string? color = null, DomainTagId? id = null)
+    public static Result<Tag> Create(DomainTenantId tenantId, string name, string? color = null, DomainTagId? id = null)
     {
         var entity = new Tag(tenantId, name, color, id);
         return entity.Valid();
     }
 
     /// <summary>Updates existing data after validation and preserves domain invariants.</summary>
-    public DomainResult<Tag> Update(string? name = null, string? color = null)
+    public Result<Tag> Update(string? name = null, string? color = null)
     {
         if (name is not null) Name = name;
         if (color is not null) Color = color;
@@ -43,14 +43,14 @@ public sealed class Tag : TaskFlowEntityBase<DomainTagId>, ITenantEntity<DomainT
     }
 
     /// <summary>Creates a valid tag instance with domain-required defaults.</summary>
-    private DomainResult<Tag> Valid()
+    private Result<Tag> Valid()
     {
-        var errors = new List<DomainError>();
-        if (TenantId.Value == Guid.Empty) errors.Add(DomainError.Create("Tenant ID cannot be empty."));
-        if (string.IsNullOrWhiteSpace(Name)) errors.Add(DomainError.Create("Name is required."));
+        var errors = new List<ValidationIssue>();
+        if (TenantId.Value == Guid.Empty) errors.Add(new ValidationIssue("Tenant ID cannot be empty.", nameof(TenantId)));
+        if (string.IsNullOrWhiteSpace(Name)) errors.Add(new ValidationIssue("Name is required.", nameof(Name)));
         return errors.Count > 0
-            ? DomainResult<Tag>.Failure(errors)
-            : DomainResult<Tag>.Success(this);
+            ? new ValidationError(errors)
+            : this;
     }
 
     // Value-based equality: same TenantId + case-insensitive trimmed Name

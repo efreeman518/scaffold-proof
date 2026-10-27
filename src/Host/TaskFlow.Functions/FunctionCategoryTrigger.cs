@@ -1,4 +1,5 @@
 using EF.Common.Contracts;
+using EF.Domain.Contracts;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
@@ -51,7 +52,7 @@ public class FunctionCategoryTrigger(
             return conflict;
         }
 
-        if (result.IsFailure || result.Value?.Item == null)
+        if (!result.TryGetValue(out DefaultResponse<CategoryDto>? created) || created.Item is null)
         {
             logger.CreateCategoryFailed(request.Name);
             var failed = req.CreateResponse(HttpStatusCode.BadRequest);
@@ -59,15 +60,15 @@ public class FunctionCategoryTrigger(
             return failed;
         }
 
-        logger.CategoryCreated(result.Value.Item.Id);
+        logger.CategoryCreated(created.Item.Id);
 
         // A replay of a caller-supplied id is 200, not 201: nothing was created this time (D-033).
-        var response = req.CreateResponse(result.Value.IsReplay ? HttpStatusCode.OK : HttpStatusCode.Created);
-        if (result.Value.ETagVersion is long version)
+        var response = req.CreateResponse(created.IsReplay ? HttpStatusCode.OK : HttpStatusCode.Created);
+        if (created.ETagVersion is long version)
         {
             response.Headers.Add("ETag", $"\"{version.ToString(CultureInfo.InvariantCulture)}\"");
         }
-        await response.WriteAsJsonAsync(result.Value.Item, ct);
+        await response.WriteAsJsonAsync(created.Item, ct);
         return response;
     }
 

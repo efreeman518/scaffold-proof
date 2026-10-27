@@ -1,6 +1,7 @@
 using EF.Common.Contracts;
 using EF.CQRS.DependencyInjection;
 using TaskFlow.Application.Models;
+using EF.Domain.Contracts;
 
 namespace TaskFlow.Application.Cqrs.Features.Attachments;
 
@@ -14,6 +15,6 @@ internal static class AttachmentCqrsRegistrations
         new(typeof(CreateAttachmentCommand), typeof(Result<DefaultResponse<AttachmentDto>>), typeof(CreateAttachmentHandler)),
         new(typeof(UploadAttachmentCommand), typeof(Result<DefaultResponse<AttachmentDto>>), typeof(UploadAttachmentHandler)),
         new(typeof(UpdateAttachmentCommand), typeof(Result<DefaultResponse<AttachmentDto>>), typeof(UpdateAttachmentHandler)),
-        new(typeof(DeleteAttachmentCommand), typeof(Result), typeof(DeleteAttachmentHandler)),
+        new(typeof(DeleteAttachmentCommand), typeof(Result<Unit>), typeof(DeleteAttachmentHandler)),
     ];
 }

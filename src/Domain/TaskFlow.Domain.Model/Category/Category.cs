@@ -38,14 +38,14 @@ public class Category : TaskFlowEntityBase<DomainCategoryId>, ITenantEntity<Doma
     }
 
     /// <summary>Creates requested data after validation and maps the result to the caller contract.</summary>
-    public static DomainResult<Category> Create(DomainTenantId tenantId, string name, string? description = null, int sortOrder = 0, DomainCategoryId? parentCategoryId = null, DomainCategoryId? id = null)
+    public static Result<Category> Create(DomainTenantId tenantId, string name, string? description = null, int sortOrder = 0, DomainCategoryId? parentCategoryId = null, DomainCategoryId? id = null)
     {
         var entity = new Category(tenantId, name, description, sortOrder, parentCategoryId, id);
         return entity.Valid();
     }
 
     /// <summary>Updates existing data after validation and preserves domain invariants.</summary>
-    public DomainResult<Category> Update(string? name = null, string? description = null, int? sortOrder = null, bool? isActive = null, DomainCategoryId? parentCategoryId = null)
+    public Result<Category> Update(string? name = null, string? description = null, int? sortOrder = null, bool? isActive = null, DomainCategoryId? parentCategoryId = null)
     {
         if (name is not null) Name = name;
         if (description is not null) Description = description;
@@ -56,13 +56,13 @@ public class Category : TaskFlowEntityBase<DomainCategoryId>, ITenantEntity<Doma
     }
 
     /// <summary>Creates a valid category instance with domain-required defaults.</summary>
-    private DomainResult<Category> Valid()
+    private Result<Category> Valid()
     {
-        var errors = new List<DomainError>();
-        if (TenantId.Value == Guid.Empty) errors.Add(DomainError.Create("Tenant ID cannot be empty."));
-        if (string.IsNullOrWhiteSpace(Name)) errors.Add(DomainError.Create("Name is required."));
+        var errors = new List<ValidationIssue>();
+        if (TenantId.Value == Guid.Empty) errors.Add(new ValidationIssue("Tenant ID cannot be empty.", nameof(TenantId)));
+        if (string.IsNullOrWhiteSpace(Name)) errors.Add(new ValidationIssue("Name is required.", nameof(Name)));
         return errors.Count > 0
-            ? DomainResult<Category>.Failure(errors)
-            : DomainResult<Category>.Success(this);
+            ? new ValidationError(errors)
+            : this;
     }
 }

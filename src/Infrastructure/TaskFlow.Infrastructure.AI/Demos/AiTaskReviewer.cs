@@ -1,4 +1,5 @@
 using EF.AI;
+using EF.Domain.Contracts;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.FeatureManagement;
@@ -33,13 +34,13 @@ public sealed class AiTaskReviewer(
         }
 
         var getResult = await taskItemService.GetAsync(taskId, ct);
-        if (getResult.IsNone || getResult.IsFailure)
+        if (!getResult.IsSuccess)
         {
             logger.AiReviewerLoadFailed(taskId);
             return;
         }
 
-        var task = getResult.Value!.Item!;
+        var task = getResult.GetValueOrThrow().Item!;
 
         var prompt = $$"""
             A new task was just created. Review it for readiness. If important details are missing or
@@ -67,8 +68,8 @@ public sealed class AiTaskReviewer(
         };
 
         var result = await taskItemService.AddCommentAsync(taskId, comment, ct);
-        if (result.IsFailure)
-            logger.AiReviewerPostFailed(taskId, result.ErrorMessage);
+        if (result.TryGetValue(out Error? error))
+            logger.AiReviewerPostFailed(taskId, error.Message);
         else
             logger.AiReviewerPosted(taskId);
     }

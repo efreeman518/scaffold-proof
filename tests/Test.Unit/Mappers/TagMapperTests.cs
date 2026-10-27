@@ -28,14 +28,14 @@ public class TagMapperTests
     /// <summary>Verifies that given valid DTO, when mapped to entity, then returns success domain result.</summary>
     [TestMethod]
     [TestCategory("Unit")]
-    public void Given_ValidDto_When_MappedToEntity_Then_ReturnsSuccessDomainResult()
+    public void Given_ValidDto_When_MappedToEntity_Then_ReturnsSuccessResult()
     {
         var dto = new TagDto { Name = "Urgent", Color = "#FF0000" };
         var result = dto.ToEntity(TestConstants.TenantId);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual("Urgent", result.Value!.Name);
-        Assert.AreEqual("#FF0000", result.Value.Color);
+        Assert.AreEqual("Urgent", result.GetValueOrThrow().Name);
+        Assert.AreEqual("#FF0000", result.GetValueOrThrow().Color);
     }
 
     /// <summary>Verifies that given invalid DTO, when mapped to entity, then returns failure.</summary>
@@ -46,6 +46,6 @@ public class TagMapperTests
         var dto = new TagDto { Name = "" };
         var result = dto.ToEntity(TestConstants.TenantId);
 
-        Assert.IsTrue(result.IsFailure);
+        Assert.IsFalse(result.IsSuccess);
     }
 }

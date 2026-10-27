@@ -65,7 +65,7 @@ public class CategoryDeleteAtomicityTests
                 : await new DeleteCategoryHandler(NullLogger<DeleteCategoryHandler>.Instance, RequestContext(), repo, Boundary, Cache)
                     .HandleAsync(new DeleteCategoryCommand(categoryId, ExpectedVersion: null), ct);
 
-            Assert.IsTrue(result.IsFailure, "the failed save is reported as a failed delete");
+            Assert.IsFalse(result.IsSuccess, "the failed save is reported as a failed delete");
         }
 
         Assert.AreEqual(1, failSave.Saves, "the delete reached its save once and it failed");
@@ -107,7 +107,7 @@ public class CategoryDeleteAtomicityTests
                 : await new DeleteCategoryHandler(NullLogger<DeleteCategoryHandler>.Instance, RequestContext(), repo, Boundary, Cache)
                     .HandleAsync(new DeleteCategoryCommand(categoryId, ExpectedVersion: null), ct);
 
-            Assert.IsTrue(result.IsSuccess, result.ErrorMessage);
+            Assert.IsTrue(result.IsSuccess, result.ToString());
         }
 
         Assert.AreEqual(2, race.Saves, "one lost save and one retried save");

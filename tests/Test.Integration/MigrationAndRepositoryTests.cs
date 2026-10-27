@@ -156,11 +156,11 @@ public class MigrationAndRepositoryTests
 
         // Add comment
         var commentResult = Comment.Create(TenantAId, task.Id, "Test comment body");
-        db.Comments.Add(commentResult.Value!);
+        db.Comments.Add(commentResult.GetValueOrThrow());
 
         // Add checklist item
         var checklistResult = ChecklistItem.Create(TenantAId, task.Id, "Checklist step 1", 0);
-        db.ChecklistItems.Add(checklistResult.Value!);
+        db.ChecklistItems.Add(checklistResult.GetValueOrThrow());
 
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 
@@ -221,7 +221,7 @@ public class MigrationAndRepositoryTests
 
         var repo = new TaskItemRepositoryTrxn(db);
         var sync = repo.UpdateFromDto(loaded, dto, RelatedDeleteBehavior.RelationshipAndEntity);
-        Assert.IsTrue(sync.IsSuccess, $"UpdateFromDto failed: {sync.ErrorMessage}");
+        Assert.IsTrue(sync.IsSuccess, $"UpdateFromDto failed: {sync}");
 
         // Inserts the navigation-added children. Succeeds because the key is ValueGeneratedNever;
         // without that baseline EF would emit an UPDATE against a non-existent row and throw.
@@ -258,7 +258,7 @@ public class MigrationAndRepositoryTests
 
         // Create bridge entity
         var taskItemTag = TaskItemTag.Create(TenantAId, task.Id, tag.Id);
-        db.TaskItemTags.Add(taskItemTag.Value!);
+        db.TaskItemTags.Add(taskItemTag.GetValueOrThrow());
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 
         // Verify via include

@@ -33,16 +33,16 @@ public class ChecklistItemMapperTests
     /// <summary>Verifies that given valid DTO, when mapped to entity, then returns success domain result.</summary>
     [TestMethod]
     [TestCategory("Unit")]
-    public void Given_ValidDto_When_MappedToEntity_Then_ReturnsSuccessDomainResult()
+    public void Given_ValidDto_When_MappedToEntity_Then_ReturnsSuccessResult()
     {
         var taskItemId = Guid.NewGuid();
         var dto = new ChecklistItemDto { Title = "Step 1", TaskItemId = taskItemId, SortOrder = 1 };
         var result = dto.ToEntity(TestConstants.TenantId);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual("Step 1", result.Value!.Title);
-        Assert.AreEqual(taskItemId, result.Value.TaskItemId);
-        Assert.AreEqual(1, result.Value.SortOrder);
+        Assert.AreEqual("Step 1", result.GetValueOrThrow().Title);
+        Assert.AreEqual(taskItemId, result.GetValueOrThrow().TaskItemId);
+        Assert.AreEqual(1, result.GetValueOrThrow().SortOrder);
     }
 
     /// <summary>Verifies that given invalid DTO, when mapped to entity, then returns failure.</summary>
@@ -53,6 +53,6 @@ public class ChecklistItemMapperTests
         var dto = new ChecklistItemDto { Title = "", TaskItemId = Guid.Empty };
         var result = dto.ToEntity(TestConstants.TenantId);
 
-        Assert.IsTrue(result.IsFailure);
+        Assert.IsFalse(result.IsSuccess);
     }
 }

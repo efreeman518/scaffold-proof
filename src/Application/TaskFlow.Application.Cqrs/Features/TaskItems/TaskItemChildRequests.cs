@@ -1,6 +1,7 @@
 using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using TaskFlow.Application.Models;
+using EF.Domain.Contracts;
 
 namespace TaskFlow.Application.Cqrs.Features.TaskItems;
 
@@ -22,7 +23,7 @@ public sealed record UpdateTaskItemCommentCommand(Guid TaskItemId, Guid CommentI
 
 /// <summary>Removes a comment from a TaskItem aggregate through the root.</summary>
 public sealed record RemoveTaskItemCommentCommand(Guid TaskItemId, Guid CommentId, long? ExpectedVersion)
-    : ICommand<Result>;
+    : ICommand<Result<Unit>>;
 
 /// <summary>Adds a checklist item to a TaskItem aggregate through the root.</summary>
 public sealed record AddTaskItemChecklistItemCommand(Guid TaskItemId, ChecklistItemDto ChecklistItem)
@@ -34,7 +35,7 @@ public sealed record UpdateTaskItemChecklistItemCommand(Guid TaskItemId, Guid Ch
 
 /// <summary>Removes a checklist item from a TaskItem aggregate through the root.</summary>
 public sealed record RemoveTaskItemChecklistItemCommand(Guid TaskItemId, Guid ChecklistItemId, long? ExpectedVersion)
-    : ICommand<Result>;
+    : ICommand<Result<Unit>>;
 
 /// <summary>Associates an existing Tag with a TaskItem aggregate through the root.</summary>
 public sealed record AssociateTaskItemTagCommand(Guid TaskItemId, Guid TagId)
@@ -42,4 +43,4 @@ public sealed record AssociateTaskItemTagCommand(Guid TaskItemId, Guid TagId)
 
 /// <summary>Removes a Tag association from a TaskItem aggregate through the root.</summary>
 public sealed record RemoveTaskItemTagCommand(Guid TaskItemId, Guid TagId, long? ExpectedVersion)
-    : ICommand<Result>;
+    : ICommand<Result<Unit>>;

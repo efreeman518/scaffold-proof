@@ -13,25 +13,25 @@ internal static class TaskItemStructureValidator
     public static Result<TaskItemDto> ValidateCreate(TaskItemDto dto)
     {
         var common = EntityDtoRules.ValidateCreate(dto);
-        if (common.IsFailure) return Result<TaskItemDto>.Failure(common.Errors);
+        if (common.TryGetValue(out Error? commonError)) return commonError;
 
-        var errors = new List<DomainError>();
-        if (string.IsNullOrWhiteSpace(dto.Title)) errors.Add(DomainError.Create("Title is required."));
-        if (dto.Title?.Length > DomainConstants.RULE_DEFAULT_NAME_LENGTH_MAX) errors.Add(DomainError.Create($"Title cannot exceed {DomainConstants.RULE_DEFAULT_NAME_LENGTH_MAX} characters."));
-        if (dto.Description?.Length > DomainConstants.RULE_DEFAULT_DESCRIPTION_LENGTH_MAX) errors.Add(DomainError.Create($"Description cannot exceed {DomainConstants.RULE_DEFAULT_DESCRIPTION_LENGTH_MAX} characters."));
-        return errors.Count > 0 ? Result<TaskItemDto>.Failure(errors) : Result<TaskItemDto>.Success(dto);
+        var errors = new List<ValidationIssue>();
+        if (string.IsNullOrWhiteSpace(dto.Title)) errors.Add(new ValidationIssue("Title is required."));
+        if (dto.Title?.Length > DomainConstants.RULE_DEFAULT_NAME_LENGTH_MAX) errors.Add(new ValidationIssue($"Title cannot exceed {DomainConstants.RULE_DEFAULT_NAME_LENGTH_MAX} characters."));
+        if (dto.Description?.Length > DomainConstants.RULE_DEFAULT_DESCRIPTION_LENGTH_MAX) errors.Add(new ValidationIssue($"Description cannot exceed {DomainConstants.RULE_DEFAULT_DESCRIPTION_LENGTH_MAX} characters."));
+        return errors.Count > 0 ? new ValidationError(errors) : dto;
     }
 
     /// <summary>Validates validate update rules and returns failures before work continues.</summary>
     public static Result<TaskItemDto> ValidateUpdate(TaskItemDto dto)
     {
         var common = EntityDtoRules.ValidateUpdate(dto);
-        if (common.IsFailure) return Result<TaskItemDto>.Failure(common.Errors);
+        if (common.TryGetValue(out Error? commonError)) return commonError;
 
-        var errors = new List<DomainError>();
-        if (string.IsNullOrWhiteSpace(dto.Title)) errors.Add(DomainError.Create("Title is required."));
-        if (dto.Title?.Length > DomainConstants.RULE_DEFAULT_NAME_LENGTH_MAX) errors.Add(DomainError.Create($"Title cannot exceed {DomainConstants.RULE_DEFAULT_NAME_LENGTH_MAX} characters."));
-        if (dto.Description?.Length > DomainConstants.RULE_DEFAULT_DESCRIPTION_LENGTH_MAX) errors.Add(DomainError.Create($"Description cannot exceed {DomainConstants.RULE_DEFAULT_DESCRIPTION_LENGTH_MAX} characters."));
-        return errors.Count > 0 ? Result<TaskItemDto>.Failure(errors) : Result<TaskItemDto>.Success(dto);
+        var errors = new List<ValidationIssue>();
+        if (string.IsNullOrWhiteSpace(dto.Title)) errors.Add(new ValidationIssue("Title is required."));
+        if (dto.Title?.Length > DomainConstants.RULE_DEFAULT_NAME_LENGTH_MAX) errors.Add(new ValidationIssue($"Title cannot exceed {DomainConstants.RULE_DEFAULT_NAME_LENGTH_MAX} characters."));
+        if (dto.Description?.Length > DomainConstants.RULE_DEFAULT_DESCRIPTION_LENGTH_MAX) errors.Add(new ValidationIssue($"Description cannot exceed {DomainConstants.RULE_DEFAULT_DESCRIPTION_LENGTH_MAX} characters."));
+        return errors.Count > 0 ? new ValidationError(errors) : dto;
     }
 }

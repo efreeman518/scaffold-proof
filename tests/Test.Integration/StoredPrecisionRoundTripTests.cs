@@ -34,7 +34,7 @@ public class StoredPrecisionRoundTripTests
     {
         var tenantId = TenantId.From(Guid.NewGuid());
         var moment = new DateTimeOffset(2030, 5, 6, 7, 8, 9, TimeSpan.Zero).AddTicks(1234567);
-        var task = TaskItem.Create(tenantId, "Precision").Value!;
+        var task = TaskItem.Create(tenantId, "Precision").GetValueOrThrow();
         task.Update(estimatedEffort: 1.23456m, actualEffort: 2.005m);
         task.UpdateDateRange(moment, moment.AddDays(1));
 

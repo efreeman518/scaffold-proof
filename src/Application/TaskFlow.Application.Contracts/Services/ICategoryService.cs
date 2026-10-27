@@ -1,5 +1,6 @@
 using EF.Common.Contracts;
 using TaskFlow.Application.Models;
+using EF.Domain.Contracts;
 
 namespace TaskFlow.Application.Contracts.Services;
 
@@ -15,5 +16,5 @@ public interface ICategoryService
     /// <summary>Updates existing data after validation and preserves domain invariants.</summary>
     Task<Result<DefaultResponse<CategoryDto>>> UpdateAsync(DefaultRequest<CategoryDto> request, long? expectedVersion, CancellationToken ct = default);
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
-    Task<Result> DeleteAsync(Guid id, long? expectedVersion, CancellationToken ct = default);
+    Task<Result<Unit>> DeleteAsync(Guid id, long? expectedVersion, CancellationToken ct = default);
 }

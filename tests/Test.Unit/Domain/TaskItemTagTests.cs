@@ -24,9 +24,9 @@ public class TaskItemTagTests
         var tagId = TagId.From(Guid.NewGuid());
         var result = TaskItemTag.Create(TenantId, taskItemId, tagId);
         Assert.IsTrue(result.IsSuccess);
-        Assert.IsNotNull(result.Value);
-        Assert.AreEqual(taskItemId, result.Value.TaskItemId);
-        Assert.AreEqual(tagId, result.Value.TagId);
+        Assert.IsTrue(result.IsSuccess, result.ToString());
+        Assert.AreEqual(taskItemId, result.GetValueOrThrow().TaskItemId);
+        Assert.AreEqual(tagId, result.GetValueOrThrow().TagId);
     }
 
     /// <summary>Verifies that given empty task item ID, when task item tag created, then returns domain failure.</summary>
@@ -35,7 +35,7 @@ public class TaskItemTagTests
     public void Given_EmptyTaskItemId_When_TaskItemTagCreated_Then_ReturnsDomainFailure()
     {
         var result = TaskItemTag.Create(TenantId, TaskItemId.From(Guid.Empty), TagId.From(Guid.NewGuid()));
-        Assert.IsTrue(result.IsFailure);
+        Assert.IsFalse(result.IsSuccess);
     }
 
     /// <summary>Verifies that given empty tag ID, when task item tag created, then returns domain failure.</summary>
@@ -44,7 +44,7 @@ public class TaskItemTagTests
     public void Given_EmptyTagId_When_TaskItemTagCreated_Then_ReturnsDomainFailure()
     {
         var result = TaskItemTag.Create(TenantId, TaskItemId.From(Guid.NewGuid()), TagId.From(Guid.Empty));
-        Assert.IsTrue(result.IsFailure);
+        Assert.IsFalse(result.IsSuccess);
     }
 
     /// <summary>Verifies that given empty tenant ID, when task item tag created, then returns domain failure.</summary>
@@ -56,6 +56,6 @@ public class TaskItemTagTests
             TenantId.From(Guid.Empty),
             TaskItemId.From(Guid.NewGuid()),
             TagId.From(Guid.NewGuid()));
-        Assert.IsTrue(result.IsFailure);
+        Assert.IsFalse(result.IsSuccess);
     }
 }

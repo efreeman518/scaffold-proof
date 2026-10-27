@@ -1,5 +1,6 @@
 using EF.Common.Contracts;
 using EF.CQRS.DependencyInjection;
+using EF.Domain.Contracts;
 using TaskFlow.Application.Models;
 
 namespace TaskFlow.Application.Cqrs.Features.Comments;

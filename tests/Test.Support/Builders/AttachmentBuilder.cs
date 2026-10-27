@@ -45,6 +45,6 @@ public class AttachmentBuilder
             _ownerType,
             _ownerId,
             storageKey: _storageKey);
-        return result.Value!;
+        return result.GetValueOrThrow();
     }
 }

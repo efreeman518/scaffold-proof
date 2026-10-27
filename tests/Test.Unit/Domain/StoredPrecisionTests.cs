@@ -42,7 +42,7 @@ public class StoredPrecisionTests
     [TestMethod]
     public void TaskItem_NormalizesEffortAndDates()
     {
-        var item = TaskItem.Create(TenantId.From(Guid.NewGuid()), "Normalize").Value!;
+        var item = TaskItem.Create(TenantId.From(Guid.NewGuid()), "Normalize").GetValueOrThrow();
         var ticks = new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero).AddTicks(9);
 
         item.Update(estimatedEffort: 1.23456m, actualEffort: 0.005m);
@@ -54,7 +54,7 @@ public class StoredPrecisionTests
         Assert.AreEqual(ticks.Ticks - 9, item.DueDate!.Value.Ticks);
 
         var occurrence = TaskItem.CreateOccurrence(TenantId.From(Guid.NewGuid()), TaskItemId.From(Guid.NewGuid()),
-            TaskItemId.From(Guid.NewGuid()), ticks, "Occurrence").Value!;
+            TaskItemId.From(Guid.NewGuid()), ticks, "Occurrence").GetValueOrThrow();
         Assert.AreEqual(ticks.Ticks - 9, occurrence.DueDate!.Value.Ticks);
     }
 }

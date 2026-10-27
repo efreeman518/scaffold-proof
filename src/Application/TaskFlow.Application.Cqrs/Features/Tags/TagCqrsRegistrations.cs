@@ -1,6 +1,7 @@
 using EF.Common.Contracts;
 using EF.CQRS.DependencyInjection;
 using TaskFlow.Application.Models;
+using EF.Domain.Contracts;
 
 namespace TaskFlow.Application.Cqrs.Features.Tags;
 
@@ -13,6 +14,6 @@ internal static class TagCqrsRegistrations
         new(typeof(GetTagByIdQuery), typeof(Result<DefaultResponse<TagDto>>), typeof(GetTagByIdHandler)),
         new(typeof(CreateTagCommand), typeof(Result<DefaultResponse<TagDto>>), typeof(CreateTagHandler)),
         new(typeof(UpdateTagCommand), typeof(Result<DefaultResponse<TagDto>>), typeof(UpdateTagHandler)),
-        new(typeof(DeleteTagCommand), typeof(Result), typeof(DeleteTagHandler)),
+        new(typeof(DeleteTagCommand), typeof(Result<Unit>), typeof(DeleteTagHandler)),
     ];
 }

@@ -1,4 +1,4 @@
-﻿using EF.Common.Contracts;
+using EF.Common.Contracts;
 using EF.Tenancy;
 using EF.Domain.Contracts;
 using EF.Data.Contracts;
@@ -44,10 +44,10 @@ public class AttachmentServiceTests
         _requestContextMock.Setup(x => x.Roles).Returns(new List<string>());
         _tenantBoundaryValidatorMock
             .Setup(x => x.EnsureTenantBoundary(It.IsAny<Guid?>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>()))
-            .Returns(Result.Success());
+            .Returns(Result.Ok());
         _tenantBoundaryValidatorMock
             .Setup(x => x.PreventTenantChange(It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<Guid>()))
-            .Returns(Result.Success());
+            .Returns(Result.Ok());
     }
 
     /// <summary>Creates service used by the surrounding test cases.</summary>
@@ -78,7 +78,7 @@ public class AttachmentServiceTests
         var result = await CreateService().CreateAsync(new DefaultRequest<AttachmentDto> { Item = dto }, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual("doc.pdf", result.Value!.Item!.FileName);
+        Assert.AreEqual("doc.pdf", result.GetValueOrThrow().Item!.FileName);
     }
 
     /// <summary>Verifies that given invalid DTO, when create, then returns failure.</summary>
@@ -89,7 +89,7 @@ public class AttachmentServiceTests
         var dto = new AttachmentDto { FileName = "", ContentType = "", FileSizeBytes = 0, StorageUri = "", OwnerId = Guid.Empty };
         var result = await CreateService().CreateAsync(new DefaultRequest<AttachmentDto> { Item = dto }, TestContext.CancellationToken);
 
-        Assert.IsTrue(result.IsFailure);
+        Assert.IsFalse(result.IsSuccess);
     }
 
     /// <summary>
@@ -107,8 +107,8 @@ public class AttachmentServiceTests
             stream, "doc.pdf", "application/pdf", 0,
             AttachmentOwnerType.TaskItem, Guid.NewGuid(), id: Guid.Empty, ct: TestContext.CancellationToken);
 
-        Assert.IsTrue(result.IsFailure);
-        Assert.Contains("not a UUIDv7", result.ErrorMessage!, StringComparison.Ordinal);
+        Assert.IsFalse(result.IsSuccess);
+        Assert.Contains("not a UUIDv7", Assert.IsInstanceOfType<Error>(result.Value).Message, StringComparison.Ordinal);
     }
 
     /// <summary>D-075: when the reservation cannot be saved, the upload fails before anything is written to storage.</summary>
@@ -132,7 +132,7 @@ public class AttachmentServiceTests
                 _repoQueryMock.Object, _tenantBoundaryValidatorMock.Object, blobs.Object)
                 .HandleAsync(new UploadAttachmentCommand(stream, "evidence.txt", "text/plain", 8, AttachmentOwnerType.TaskItem, Guid.NewGuid()), ct);
 
-        Assert.AreEqual(ErrorConstants.ERROR_SAVE_FAILED, result.ErrorMessage);
+        Assert.AreEqual(ErrorConstants.ERROR_SAVE_FAILED, Assert.IsInstanceOfType<Error>(result.Value).Message);
         blobs.VerifyNoOtherCalls();
         _repoTrxnMock.Verify(r => r.InsertUploadedAsync(It.IsAny<Attachment>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -148,7 +148,7 @@ public class AttachmentServiceTests
         var result = await CreateService().GetAsync(entity.Id, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual(entity.FileName, result.Value!.Item!.FileName);
+        Assert.AreEqual(entity.FileName, result.GetValueOrThrow().Item!.FileName);
     }
 
     /// <summary>Verifies that given non existent ID, when get, then returns none.</summary>
@@ -160,7 +160,7 @@ public class AttachmentServiceTests
 
         var result = await CreateService().GetAsync(Guid.NewGuid(), TestContext.CancellationToken);
 
-        Assert.IsTrue(result.IsNone);
+        Assert.IsInstanceOfType<NotFoundError>(result.Value);
     }
 
     /// <summary>Verifies that given existing entity, when update, then returns success.</summary>
@@ -185,7 +185,7 @@ public class AttachmentServiceTests
         var result = await CreateService().UpdateAsync(new DefaultRequest<AttachmentDto> { Item = dto }, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual("updated.pdf", result.Value!.Item!.FileName);
+        Assert.AreEqual("updated.pdf", result.GetValueOrThrow().Item!.FileName);
     }
 
     /// <summary>Verifies that given non existent ID, when update, then returns null item.</summary>
@@ -207,7 +207,7 @@ public class AttachmentServiceTests
         var result = await CreateService().UpdateAsync(new DefaultRequest<AttachmentDto> { Item = dto }, null, TestContext.CancellationToken);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.IsNull(result.Value?.Item);
+        Assert.IsNull(result.GetValueOrThrow().Item);
     }
 
     /// <summary>Verifies that given existing entity, when delete, then returns success.</summary>

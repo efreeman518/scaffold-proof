@@ -1,4 +1,5 @@
 using EF.Data.Contracts;
+using EF.Domain.Contracts;
 
 namespace TaskFlow.Application.Contracts.Concurrency;
 
@@ -13,4 +14,13 @@ public static class SaveFailure
     /// <summary>True when a save exception may be converted into a failure Result.</summary>
     public static bool MapsToFailureResult(Exception ex) =>
         ex is not OperationCanceledException && !ConcurrencyGuard.IsConcurrencyFailure(ex);
+
+    /// <summary>
+    /// The failure for a save exception <see cref="MapsToFailureResult"/> accepted, always with the fixed
+    /// <see cref="ErrorConstants.ERROR_SAVE_FAILED"/> text: a constraint violation is a conflict with stored data (409),
+    /// anything else an unexpected failure (500, no detail sent).
+    /// </summary>
+    public static Error ToError(Exception ex) => ex is DatabaseConstraintException
+        ? new ConflictError(ErrorConstants.ERROR_SAVE_FAILED, "save.constraint")
+        : new UnexpectedError(ErrorConstants.ERROR_SAVE_FAILED, ex, "save.failed");
 }

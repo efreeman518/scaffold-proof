@@ -1,6 +1,7 @@
 using EF.AI.Chat;
 using EF.AI.Testing;
 using EF.Common.Contracts;
+using EF.Domain.Contracts;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,7 +31,7 @@ public class AiDemoServiceTests
         var taskItemService = new Mock<ITaskItemService>();
         taskItemService
             .Setup(x => x.GetAsync(taskId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<DefaultResponse<TaskItemDto>>.Success(new DefaultResponse<TaskItemDto>
+            .ReturnsAsync(new Result<DefaultResponse<TaskItemDto>>(new DefaultResponse<TaskItemDto>
             {
                 Item = new TaskItemDto { Id = taskId, Title = "Billing outage", Priority = Priority.High }
             }));
@@ -63,11 +64,11 @@ public class AiDemoServiceTests
         var taskItemService = new Mock<ITaskItemService>();
         taskItemService
             .Setup(x => x.GetAsync(taskId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<DefaultResponse<TaskItemDto>>.Success(new DefaultResponse<TaskItemDto> { Item = task }));
+            .ReturnsAsync(new Result<DefaultResponse<TaskItemDto>>(new DefaultResponse<TaskItemDto> { Item = task }));
         taskItemService
             .Setup(x => x.UpdateAsync(It.IsAny<DefaultRequest<TaskItemDto>>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((DefaultRequest<TaskItemDto> request, long? _, CancellationToken _) =>
-                Result<DefaultResponse<TaskItemDto>>.Success(new DefaultResponse<TaskItemDto> { Item = request.Item }));
+                new Result<DefaultResponse<TaskItemDto>>(new DefaultResponse<TaskItemDto> { Item = request.Item }));
 
         var chatClient = new FakeChatClient("""
             ```json
@@ -100,7 +101,7 @@ public class AiDemoServiceTests
         var taskItemService = new Mock<ITaskItemService>();
         taskItemService
             .Setup(x => x.GetAsync(taskId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<DefaultResponse<TaskItemDto>>.Success(new DefaultResponse<TaskItemDto>
+            .ReturnsAsync(new Result<DefaultResponse<TaskItemDto>>(new DefaultResponse<TaskItemDto>
             {
                 Item = new TaskItemDto { Id = taskId, Title = "Review queue", Priority = Priority.Low }
             }));
@@ -128,7 +129,7 @@ public class AiDemoServiceTests
         taskItemService
             .Setup(x => x.CreateAsync(It.IsAny<DefaultRequest<TaskItemDto>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((DefaultRequest<TaskItemDto> request, CancellationToken _) =>
-                Result<DefaultResponse<TaskItemDto>>.Success(new DefaultResponse<TaskItemDto>
+                new Result<DefaultResponse<TaskItemDto>>(new DefaultResponse<TaskItemDto>
                 {
                     Item = request.Item with { Id = createdId }
                 }));

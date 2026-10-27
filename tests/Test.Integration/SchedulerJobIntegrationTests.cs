@@ -54,7 +54,7 @@ public class SchedulerJobIntegrationTests
         {
             for (var i = 0; i < 3; i++)
             {
-                var task = TaskItem.Create(TenantId.From(tenantId), $"Overdue {i}").Value!;
+                var task = TaskItem.Create(TenantId.From(tenantId), $"Overdue {i}").GetValueOrThrow();
                 task.UpdateDateRange(null, Now.AddDays(-2 - i));
                 seed.TaskItems.Add(task);
             }
@@ -78,7 +78,7 @@ public class SchedulerJobIntegrationTests
         var tenantId = Guid.NewGuid();
         await using (var seed = DbContainerFixture.CreateTrxnContext())
         {
-            var template = TaskItem.Create(TenantId.From(tenantId), "Weekly report").Value!;
+            var template = TaskItem.Create(TenantId.From(tenantId), "Weekly report").GetValueOrThrow();
             template.Update(features: TaskFeatures.Recurring);
             template.UpdateDateRange(null, Now.AddDays(-3));
             template.UpdateRecurrencePattern(new RecurrencePattern
@@ -113,7 +113,7 @@ public class SchedulerJobIntegrationTests
 
         await using (var seed = DbContainerFixture.CreateTrxnContext())
         {
-            var task = TaskItem.Create(typedTenantId, "Cancelled long ago").Value!;
+            var task = TaskItem.Create(typedTenantId, "Cancelled long ago").GetValueOrThrow();
             task.TransitionStatus(TaskItemStatus.Cancelled);
             seed.TaskItems.Add(task);
             await seed.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
@@ -128,7 +128,7 @@ public class SchedulerJobIntegrationTests
 
             var attachment = Attachment.Create(
                 typedTenantId, "spec.pdf", "application/pdf", 1024, "https://example/spec.pdf",
-                AttachmentOwnerType.TaskItem, taskId, storageKey: $"{tenantId}/{taskId}/spec").Value!;
+                AttachmentOwnerType.TaskItem, taskId, storageKey: $"{tenantId}/{taskId}/spec").GetValueOrThrow();
             seed.Attachments.Add(attachment);
             await seed.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
         }
@@ -169,7 +169,7 @@ public class SchedulerJobIntegrationTests
                 seed.Tags.Add(tag);
                 for (var i = 0; i < 2; i++)
                 {
-                    var task = TaskItem.Create(TenantId.From(tenant), $"Compliance stream {i}").Value!;
+                    var task = TaskItem.Create(TenantId.From(tenant), $"Compliance stream {i}").GetValueOrThrow();
                     task.UpdateDateRange(null, Now.AddDays(1 + i));
                     task.AssociateTag(tag.Id);
                     seed.TaskItems.Add(task);
@@ -177,7 +177,7 @@ public class SchedulerJobIntegrationTests
             }
 
             var completedTag = new Test.Support.Builders.TagBuilder().WithTenantId(completedOnly).WithName("compliance").Build();
-            var completed = TaskItem.Create(TenantId.From(completedOnly), "Compliance stream completed").Value!;
+            var completed = TaskItem.Create(TenantId.From(completedOnly), "Compliance stream completed").GetValueOrThrow();
             completed.UpdateDateRange(null, Now.AddDays(1));
             completed.AssociateTag(completedTag.Id);
             Assert.IsTrue(completed.TransitionStatus(TaskItemStatus.InProgress).IsSuccess);

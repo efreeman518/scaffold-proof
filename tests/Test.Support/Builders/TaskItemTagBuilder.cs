@@ -24,6 +24,6 @@ public class TaskItemTagBuilder
             TenantId.From(_tenantId),
             TaskItemId.From(_taskItemId),
             TagId.From(_tagId));
-        return result.Value!;
+        return result.GetValueOrThrow();
     }
 }

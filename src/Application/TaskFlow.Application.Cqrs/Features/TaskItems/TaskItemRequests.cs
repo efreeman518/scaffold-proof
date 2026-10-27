@@ -2,6 +2,7 @@ using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using TaskFlow.Application.Models;
 using TaskFlow.Application.Models.Paging;
+using EF.Domain.Contracts;
 
 namespace TaskFlow.Application.Cqrs.Features.TaskItems;
 
@@ -35,4 +36,4 @@ public sealed record PatchTaskItemCommand(Guid Id, TaskItemPatchDto Patch, long?
 
 /// <summary>Carries delete task item command CQRS data between endpoints and handlers.</summary>
 public sealed record DeleteTaskItemCommand(Guid Id, long? ExpectedVersion)
-    : ICommand<Result>;
+    : ICommand<Result<Unit>>;

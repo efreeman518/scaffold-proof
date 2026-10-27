@@ -35,7 +35,7 @@ public class TaskItemMutationSamples
         var result = TaskItem.Create(TenantId, title);
 
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual(title, result.Value!.Title);
+        Assert.AreEqual(title, result.GetValueOrThrow().Title);
     }
 
     /// <summary>Verifies that given title below minimum length, when task item created, then fails with minimum length message.</summary>
@@ -46,10 +46,10 @@ public class TaskItemMutationSamples
 
         var result = TaskItem.Create(TenantId, title);
 
-        Assert.IsTrue(result.IsFailure);
+        Assert.IsFalse(result.IsSuccess);
         Assert.Contains(
             $"Title must be at least {DomainConstants.RULE_DEFAULT_NAME_LENGTH_MIN} characters.",
-            string.Join(";", result.Errors));
+            result.ToString());
     }
 
     /// <summary>Verifies that given whitespace title, when task item created, then fails with required title message.</summary>
@@ -58,8 +58,8 @@ public class TaskItemMutationSamples
     {
         var result = TaskItem.Create(TenantId, "   ");
 
-        Assert.IsTrue(result.IsFailure);
-        Assert.Contains("Title is required.", string.Join(";", result.Errors));
+        Assert.IsFalse(result.IsSuccess);
+        Assert.Contains("Title is required.", result.ToString());
     }
 
     /// <summary>Verifies that given empty tenant ID, when task item created, then fails with tenant message.</summary>
@@ -68,8 +68,8 @@ public class TaskItemMutationSamples
     {
         var result = TaskItem.Create(TenantId.From(Guid.Empty), "Mutation sample");
 
-        Assert.IsTrue(result.IsFailure);
-        Assert.Contains("Tenant ID cannot be empty.", string.Join(";", result.Errors));
+        Assert.IsFalse(result.IsSuccess);
+        Assert.Contains("Tenant ID cannot be empty.", result.ToString());
     }
 
     /// <summary>Verifies that given allowed aggregate transition, when task item transitioned, then status changes.</summary>
@@ -108,8 +108,8 @@ public class TaskItemMutationSamples
 
         var result = task.TransitionStatus(target);
 
-        Assert.IsTrue(result.IsFailure);
-        Assert.Contains($"Cannot transition from {current} to {target}.", string.Join(";", result.Errors));
+        Assert.IsFalse(result.IsSuccess);
+        Assert.Contains($"Cannot transition from {current} to {target}.", result.ToString());
         Assert.AreEqual(current, task.Status);
     }
 
@@ -117,12 +117,12 @@ public class TaskItemMutationSamples
     [TestMethod]
     public void Given_DisallowedAggregateTransition_When_TaskItemTransitioned_Then_FailsWithTransitionMessage()
     {
-        var task = TaskItem.Create(TenantId, "Mutation sample").Value!;
+        var task = TaskItem.Create(TenantId, "Mutation sample").GetValueOrThrow();
 
         var result = task.TransitionStatus(TaskItemStatus.Blocked);
 
-        Assert.IsTrue(result.IsFailure);
-        Assert.Contains("Cannot transition from Open to Blocked.", string.Join(";", result.Errors));
+        Assert.IsFalse(result.IsSuccess);
+        Assert.Contains("Cannot transition from Open to Blocked.", result.ToString());
         Assert.AreEqual(TaskItemStatus.Open, task.Status);
     }
 
@@ -130,7 +130,7 @@ public class TaskItemMutationSamples
     [TestMethod]
     public void Given_CompletedTask_When_Reopened_Then_CompletedDateCleared()
     {
-        var task = TaskItem.Create(TenantId, "Mutation sample").Value!;
+        var task = TaskItem.Create(TenantId, "Mutation sample").GetValueOrThrow();
         Assert.IsTrue(task.TransitionStatus(TaskItemStatus.InProgress).IsSuccess);
         Assert.IsTrue(task.TransitionStatus(TaskItemStatus.Completed).IsSuccess);
         Assert.IsNotNull(task.CompletedDate);
@@ -146,7 +146,7 @@ public class TaskItemMutationSamples
     [TestMethod]
     public void Given_CompletedTask_When_ResetToNone_Then_StatusAndCompletedDateReset()
     {
-        var task = TaskItem.Create(TenantId, "Mutation sample").Value!;
+        var task = TaskItem.Create(TenantId, "Mutation sample").GetValueOrThrow();
         Assert.IsTrue(task.TransitionStatus(TaskItemStatus.InProgress).IsSuccess);
         Assert.IsTrue(task.TransitionStatus(TaskItemStatus.Completed).IsSuccess);
         Assert.IsNotNull(task.CompletedDate);
@@ -162,7 +162,7 @@ public class TaskItemMutationSamples
     [TestMethod]
     public void Given_ExistingTag_When_AssociatedAgain_Then_TagAssociationIsIdempotent()
     {
-        var task = TaskItem.Create(TenantId, "Mutation sample").Value!;
+        var task = TaskItem.Create(TenantId, "Mutation sample").GetValueOrThrow();
         var tagId = TagId.From(Guid.Parse("3f3f9966-753b-43f5-bba7-54e87fbaf101"));
 
         var first = task.AssociateTag(tagId);
@@ -170,7 +170,7 @@ public class TaskItemMutationSamples
 
         Assert.IsTrue(first.IsSuccess);
         Assert.IsTrue(second.IsSuccess);
-        Assert.AreSame(first.Value, second.Value);
+        Assert.AreSame(first.GetValueOrThrow(), second.GetValueOrThrow());
         Assert.HasCount(1, task.TaskItemTags);
     }
 
@@ -187,7 +187,7 @@ public class TaskItemMutationSamples
             "Original description",
             Priority.Low,
             originalCategoryId,
-            originalParentId).Value!;
+            originalParentId).GetValueOrThrow();
 
         var result = task.Update(
             title: "Updated title",
@@ -216,7 +216,7 @@ public class TaskItemMutationSamples
     {
         var categoryId = CategoryId.From(Guid.Parse("721e91c8-8b5c-4247-8c36-fd661da0deaa"));
         var parentId = TaskItemId.From(Guid.Parse("82b87a46-6e80-4df8-a242-4ebdcf86d584"));
-        var task = TaskItem.Create(TenantId, "Mutation sample", categoryId: categoryId, parentTaskItemId: parentId).Value!;
+        var task = TaskItem.Create(TenantId, "Mutation sample", categoryId: categoryId, parentTaskItemId: parentId).GetValueOrThrow();
         var replacementCategoryId = CategoryId.From(Guid.Parse("7b18b783-2554-4d68-9220-588667e3e8c2"));
 
         var result = task.Update(categoryId: replacementCategoryId, parentTaskItemId: TaskItemId.From(Guid.Empty));
@@ -230,31 +230,31 @@ public class TaskItemMutationSamples
     [TestMethod]
     public void Given_InvalidUpdatedTitle_When_TaskUpdated_Then_FailsWithRequiredTitleMessage()
     {
-        var task = TaskItem.Create(TenantId, "Mutation sample").Value!;
+        var task = TaskItem.Create(TenantId, "Mutation sample").GetValueOrThrow();
 
         var result = task.Update(title: "   ");
 
-        Assert.IsTrue(result.IsFailure);
-        Assert.Contains("Title is required.", string.Join(";", result.Errors));
+        Assert.IsFalse(result.IsSuccess);
+        Assert.Contains("Title is required.", result.ToString());
     }
 
     /// <summary>Verifies that given valid and invalid comments, when mutated, then collection state is explicit.</summary>
     [TestMethod]
     public void Given_ValidAndInvalidComments_When_Mutated_Then_CollectionStateIsExplicit()
     {
-        var task = TaskItem.Create(TenantId, "Mutation sample").Value!;
+        var task = TaskItem.Create(TenantId, "Mutation sample").GetValueOrThrow();
 
         var invalid = task.AddComment("   ");
         var first = task.AddComment("First comment");
 
-        Assert.IsTrue(invalid.IsFailure);
+        Assert.IsFalse(invalid.IsSuccess);
         Assert.IsTrue(first.IsSuccess);
         Assert.HasCount(1, task.Comments);
 
-        Assert.IsTrue(task.RemoveComment(first.Value!).IsSuccess);
+        Assert.IsTrue(task.RemoveComment(first.GetValueOrThrow()).IsSuccess);
         Assert.IsEmpty(task.Comments);
 
-        var second = task.AddComment("Second comment").Value!;
+        var second = task.AddComment("Second comment").GetValueOrThrow();
 
         Assert.IsTrue(task.RemoveComment(second.Id).IsSuccess);
         Assert.IsEmpty(task.Comments);
@@ -265,20 +265,20 @@ public class TaskItemMutationSamples
     [TestMethod]
     public void Given_ValidAndInvalidChecklistItems_When_Mutated_Then_CollectionStateIsExplicit()
     {
-        var task = TaskItem.Create(TenantId, "Mutation sample").Value!;
+        var task = TaskItem.Create(TenantId, "Mutation sample").GetValueOrThrow();
 
         var invalid = task.AddChecklistItem("   ");
         var first = task.AddChecklistItem("First checklist item", sortOrder: 10);
 
-        Assert.IsTrue(invalid.IsFailure);
+        Assert.IsFalse(invalid.IsSuccess);
         Assert.IsTrue(first.IsSuccess);
         Assert.HasCount(1, task.ChecklistItems);
-        Assert.AreEqual(10, first.Value!.SortOrder);
+        Assert.AreEqual(10, first.GetValueOrThrow().SortOrder);
 
-        Assert.IsTrue(task.RemoveChecklistItem(first.Value).IsSuccess);
+        Assert.IsTrue(task.RemoveChecklistItem(first.GetValueOrThrow()).IsSuccess);
         Assert.IsEmpty(task.ChecklistItems);
 
-        var second = task.AddChecklistItem("Second checklist item").Value!;
+        var second = task.AddChecklistItem("Second checklist item").GetValueOrThrow();
 
         Assert.IsTrue(task.RemoveChecklistItem(second.Id).IsSuccess);
         Assert.IsEmpty(task.ChecklistItems);
@@ -289,11 +289,11 @@ public class TaskItemMutationSamples
     [TestMethod]
     public void Given_TagAssociations_When_RemovedByObjectAndId_Then_CollectionStateIsExplicit()
     {
-        var task = TaskItem.Create(TenantId, "Mutation sample").Value!;
+        var task = TaskItem.Create(TenantId, "Mutation sample").GetValueOrThrow();
         var firstTagId = TagId.From(Guid.Parse("08e7611a-6b35-4b8b-a451-29a1340d1215"));
         var secondTagId = TagId.From(Guid.Parse("80875aa9-e0af-4712-842f-136445c5e759"));
 
-        var first = task.AssociateTag(firstTagId).Value!;
+        var first = task.AssociateTag(firstTagId).GetValueOrThrow();
         Assert.HasCount(1, task.TaskItemTags);
 
         Assert.IsTrue(task.RemoveTag(first).IsSuccess);
@@ -309,7 +309,7 @@ public class TaskItemMutationSamples
     [TestMethod]
     public void Given_DateRangeAndRecurrencePattern_When_Updated_Then_ValueObjectsAreReplaced()
     {
-        var task = TaskItem.Create(TenantId, "Mutation sample").Value!;
+        var task = TaskItem.Create(TenantId, "Mutation sample").GetValueOrThrow();
         var startDate = DateTimeOffset.Parse("2026-05-27T12:00:00+00:00");
         var dueDate = DateTimeOffset.Parse("2026-06-03T12:00:00+00:00");
         var pattern = new RecurrencePattern
@@ -334,7 +334,7 @@ public class TaskItemMutationSamples
     /// <summary>Creates task at status used by the surrounding test cases.</summary>
     private static TaskItem CreateTaskAtStatus(TaskItemStatus status)
     {
-        var task = TaskItem.Create(TenantId, "Mutation sample").Value!;
+        var task = TaskItem.Create(TenantId, "Mutation sample").GetValueOrThrow();
 
         foreach (var nextStatus in PathTo(status))
         {

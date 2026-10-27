@@ -21,9 +21,9 @@ public class CategoryTests
     {
         var result = Category.Create(TenantId, "Test Category");
         Assert.IsTrue(result.IsSuccess);
-        Assert.IsNotNull(result.Value);
-        Assert.AreEqual("Test Category", result.Value.Name);
-        Assert.IsTrue(result.Value.IsActive);
+        Assert.IsTrue(result.IsSuccess, result.ToString());
+        Assert.AreEqual("Test Category", result.GetValueOrThrow().Name);
+        Assert.IsTrue(result.GetValueOrThrow().IsActive);
     }
 
     /// <summary>Verifies that given empty name, when category created, then returns domain failure.</summary>
@@ -35,7 +35,7 @@ public class CategoryTests
     public void Given_EmptyName_When_CategoryCreated_Then_ReturnsDomainFailure(string? name)
     {
         var result = Category.Create(TenantId, name!);
-        Assert.IsTrue(result.IsFailure);
+        Assert.IsFalse(result.IsSuccess);
     }
 
     /// <summary>Verifies that given empty tenant ID, when category created, then returns domain failure.</summary>
@@ -44,7 +44,7 @@ public class CategoryTests
     public void Given_EmptyTenantId_When_CategoryCreated_Then_ReturnsDomainFailure()
     {
         var result = Category.Create(TenantId.From(Guid.Empty), "Test");
-        Assert.IsTrue(result.IsFailure);
+        Assert.IsFalse(result.IsSuccess);
     }
 
     /// <summary>Verifies that given existing category, when updated, then returns updated values.</summary>
@@ -52,11 +52,11 @@ public class CategoryTests
     [TestCategory("Unit")]
     public void Given_ExistingCategory_When_Updated_Then_ReturnsUpdatedValues()
     {
-        var cat = Category.Create(TenantId, "Original").Value!;
+        var cat = Category.Create(TenantId, "Original").GetValueOrThrow();
         var result = cat.Update(name: "Updated", description: "New desc");
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual("Updated", result.Value!.Name);
-        Assert.AreEqual("New desc", result.Value.Description);
+        Assert.AreEqual("Updated", result.GetValueOrThrow().Name);
+        Assert.AreEqual("New desc", result.GetValueOrThrow().Description);
     }
 
     /// <summary>Verifies that given null update, when updated, then original values preserved.</summary>
@@ -64,11 +64,11 @@ public class CategoryTests
     [TestCategory("Unit")]
     public void Given_NullUpdate_When_Updated_Then_OriginalValuesPreserved()
     {
-        var cat = Category.Create(TenantId, "Original", "Desc").Value!;
+        var cat = Category.Create(TenantId, "Original", "Desc").GetValueOrThrow();
         var result = cat.Update();
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual("Original", result.Value!.Name);
-        Assert.AreEqual("Desc", result.Value.Description);
+        Assert.AreEqual("Original", result.GetValueOrThrow().Name);
+        Assert.AreEqual("Desc", result.GetValueOrThrow().Description);
     }
 
     /// <summary>Verifies that given category with parent, when created, then parent ID set.</summary>
@@ -79,6 +79,6 @@ public class CategoryTests
         var parentId = CategoryId.From(Guid.NewGuid());
         var result = Category.Create(TenantId, "Child", parentCategoryId: parentId);
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual(parentId, result.Value!.ParentCategoryId!.Value);
+        Assert.AreEqual(parentId, result.GetValueOrThrow().ParentCategoryId!.Value);
     }
 }

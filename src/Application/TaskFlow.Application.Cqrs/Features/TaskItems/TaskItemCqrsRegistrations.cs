@@ -2,6 +2,7 @@ using EF.Common.Contracts;
 using EF.CQRS.DependencyInjection;
 using TaskFlow.Application.Models;
 using TaskFlow.Application.Models.Paging;
+using EF.Domain.Contracts;
 
 namespace TaskFlow.Application.Cqrs.Features.TaskItems;
 
@@ -15,16 +16,16 @@ internal static class TaskItemCqrsRegistrations
         new(typeof(CreateTaskItemCommand), typeof(Result<DefaultResponse<TaskItemDto>>), typeof(CreateTaskItemHandler)),
         new(typeof(UpdateTaskItemCommand), typeof(Result<DefaultResponse<TaskItemDto>>), typeof(UpdateTaskItemHandler)),
         new(typeof(PatchTaskItemCommand), typeof(Result<DefaultResponse<TaskItemDto>>), typeof(PatchTaskItemHandler)),
-        new(typeof(DeleteTaskItemCommand), typeof(Result), typeof(DeleteTaskItemHandler)),
+        new(typeof(DeleteTaskItemCommand), typeof(Result<Unit>), typeof(DeleteTaskItemHandler)),
 
         // Nested children mutated through the aggregate root (GR-15) - no standalone child handlers.
         new(typeof(AddTaskItemCommentCommand), typeof(Result<DefaultResponse<CommentDto>>), typeof(AddTaskItemCommentHandler)),
         new(typeof(UpdateTaskItemCommentCommand), typeof(Result<DefaultResponse<CommentDto>>), typeof(UpdateTaskItemCommentHandler)),
-        new(typeof(RemoveTaskItemCommentCommand), typeof(Result), typeof(RemoveTaskItemCommentHandler)),
+        new(typeof(RemoveTaskItemCommentCommand), typeof(Result<Unit>), typeof(RemoveTaskItemCommentHandler)),
         new(typeof(AddTaskItemChecklistItemCommand), typeof(Result<DefaultResponse<ChecklistItemDto>>), typeof(AddTaskItemChecklistItemHandler)),
         new(typeof(UpdateTaskItemChecklistItemCommand), typeof(Result<DefaultResponse<ChecklistItemDto>>), typeof(UpdateTaskItemChecklistItemHandler)),
-        new(typeof(RemoveTaskItemChecklistItemCommand), typeof(Result), typeof(RemoveTaskItemChecklistItemHandler)),
+        new(typeof(RemoveTaskItemChecklistItemCommand), typeof(Result<Unit>), typeof(RemoveTaskItemChecklistItemHandler)),
         new(typeof(AssociateTaskItemTagCommand), typeof(Result<DefaultResponse<TaskItemTagDto>>), typeof(AssociateTaskItemTagHandler)),
-        new(typeof(RemoveTaskItemTagCommand), typeof(Result), typeof(RemoveTaskItemTagHandler)),
+        new(typeof(RemoveTaskItemTagCommand), typeof(Result<Unit>), typeof(RemoveTaskItemTagHandler)),
     ];
 }

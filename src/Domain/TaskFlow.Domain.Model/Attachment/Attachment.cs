@@ -45,7 +45,7 @@ public class Attachment : TaskFlowEntityBase<DomainAttachmentId>, ITenantEntity<
     }
 
     /// <summary>Creates requested data after validation and maps the result to the caller contract.</summary>
-    public static DomainResult<Attachment> Create(
+    public static Result<Attachment> Create(
         DomainTenantId tenantId, string fileName, string contentType,
         long fileSizeBytes, string storageUri,
         AttachmentOwnerType ownerType, Guid ownerId, DomainAttachmentId? id = null, string? storageKey = null)
@@ -60,19 +60,19 @@ public class Attachment : TaskFlowEntityBase<DomainAttachmentId>, ITenantEntity<
     /// the content it wrote (D-075): a value that differs from the stored one is a failure and nothing is applied. A
     /// rename stays allowed. A metadata-only attachment takes every field the caller sends.
     /// </summary>
-    public DomainResult<Attachment> Update(
+    public Result<Attachment> Update(
         string? fileName = null, string? contentType = null, long? fileSizeBytes = null, string? storageUri = null,
         AttachmentOwnerType? ownerType = null, Guid? ownerId = null)
     {
-        var errors = new List<DomainError>();
+        var errors = new List<ValidationIssue>();
         if ((ownerType.HasValue && ownerType.Value != OwnerType) || (ownerId.HasValue && ownerId.Value != OwnerId))
-            errors.Add(DomainError.Create("The owner of an attachment cannot change."));
+            errors.Add(new ValidationIssue("The owner of an attachment cannot change."));
         if (StorageKey is not null
             && ((contentType is not null && contentType != ContentType)
                 || (fileSizeBytes.HasValue && fileSizeBytes.Value != FileSizeBytes)
                 || (storageUri is not null && storageUri != StorageUri)))
-            errors.Add(DomainError.Create("The content type, size and storage URI of an uploaded attachment cannot change."));
-        if (errors.Count > 0) return DomainResult<Attachment>.Failure(errors);
+            errors.Add(new ValidationIssue("The content type, size and storage URI of an uploaded attachment cannot change."));
+        if (errors.Count > 0) return new ValidationError(errors);
 
         if (fileName is not null) FileName = fileName;
         if (contentType is not null) ContentType = contentType;
@@ -108,18 +108,18 @@ public class Attachment : TaskFlowEntityBase<DomainAttachmentId>, ITenantEntity<
             or System.Globalization.UnicodeCategory.ParagraphSeparator;
 
     /// <summary>Creates a valid attachment instance with domain-required defaults.</summary>
-    private DomainResult<Attachment> Valid()
+    private Result<Attachment> Valid()
     {
-        var errors = new List<DomainError>();
-        if (TenantId.Value == Guid.Empty) errors.Add(DomainError.Create("Tenant ID cannot be empty."));
-        if (FileNameError(FileName) is { } fileNameError) errors.Add(DomainError.Create(fileNameError));
-        if (StorageKey is not null && string.IsNullOrWhiteSpace(StorageKey)) errors.Add(DomainError.Create("Storage key cannot be blank."));
-        if (string.IsNullOrWhiteSpace(ContentType)) errors.Add(DomainError.Create("Content type is required."));
-        if (FileSizeBytes <= 0) errors.Add(DomainError.Create("File size must be greater than zero."));
-        if (string.IsNullOrWhiteSpace(StorageUri)) errors.Add(DomainError.Create("Storage URI is required."));
-        if (OwnerId == Guid.Empty) errors.Add(DomainError.Create("Owner ID cannot be empty."));
+        var errors = new List<ValidationIssue>();
+        if (TenantId.Value == Guid.Empty) errors.Add(new ValidationIssue("Tenant ID cannot be empty.", nameof(TenantId)));
+        if (FileNameError(FileName) is { } fileNameError) errors.Add(new ValidationIssue(fileNameError));
+        if (StorageKey is not null && string.IsNullOrWhiteSpace(StorageKey)) errors.Add(new ValidationIssue("Storage key cannot be blank.", nameof(StorageKey)));
+        if (string.IsNullOrWhiteSpace(ContentType)) errors.Add(new ValidationIssue("Content type is required.", nameof(ContentType)));
+        if (FileSizeBytes <= 0) errors.Add(new ValidationIssue("File size must be greater than zero.", nameof(FileSizeBytes)));
+        if (string.IsNullOrWhiteSpace(StorageUri)) errors.Add(new ValidationIssue("Storage URI is required.", nameof(StorageUri)));
+        if (OwnerId == Guid.Empty) errors.Add(new ValidationIssue("Owner ID cannot be empty.", nameof(OwnerId)));
         return errors.Count > 0
-            ? DomainResult<Attachment>.Failure(errors)
-            : DomainResult<Attachment>.Success(this);
+            ? new ValidationError(errors)
+            : this;
     }
 }

@@ -1,5 +1,5 @@
 {
-  "openapi": "3.1.1",
+  "openapi": "3.2.0",
   "info": {
     "title": "TaskFlow API",
     "description": "Multi-tenant TaskFlow API",
@@ -67,6 +67,16 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         }
       }
@@ -104,6 +114,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DefaultResponseOfCategoryDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -157,36 +177,6 @@
           "required": true
         },
         "responses": {
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
-                }
-              }
-            }
-          },
-          "412": {
-            "description": "Precondition Failed",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "Precondition Required",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
           "200": {
             "description": "OK",
             "headers": {
@@ -205,8 +195,55 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProblemDetails"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -244,12 +281,32 @@
           }
         ],
         "responses": {
+          "204": {
+            "description": "No Content"
+          },
           "400": {
             "description": "Bad Request",
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProblemDetails"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -273,9 +330,6 @@
                 }
               }
             }
-          },
-          "204": {
-            "description": "No Content"
           }
         }
       }
@@ -310,8 +364,8 @@
           "required": true
         },
         "responses": {
-          "201": {
-            "description": "Created",
+          "200": {
+            "description": "OK",
             "headers": {
               "ETag": {
                 "description": "Strong entity tag - the entity version to send back as If-Match.",
@@ -328,8 +382,8 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
+          "201": {
+            "description": "Created",
             "headers": {
               "ETag": {
                 "description": "Strong entity tag - the entity version to send back as If-Match.",
@@ -352,6 +406,16 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -430,6 +494,16 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         }
       }
@@ -467,6 +541,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DefaultResponseOfTagDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -520,36 +604,6 @@
           "required": true
         },
         "responses": {
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
-                }
-              }
-            }
-          },
-          "412": {
-            "description": "Precondition Failed",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "Precondition Required",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
           "200": {
             "description": "OK",
             "headers": {
@@ -568,8 +622,55 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProblemDetails"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -607,12 +708,32 @@
           }
         ],
         "responses": {
+          "204": {
+            "description": "No Content"
+          },
           "400": {
             "description": "Bad Request",
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProblemDetails"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -636,9 +757,6 @@
                 }
               }
             }
-          },
-          "204": {
-            "description": "No Content"
           }
         }
       }
@@ -673,8 +791,8 @@
           "required": true
         },
         "responses": {
-          "201": {
-            "description": "Created",
+          "200": {
+            "description": "OK",
             "headers": {
               "ETag": {
                 "description": "Strong entity tag - the entity version to send back as If-Match.",
@@ -691,8 +809,8 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
+          "201": {
+            "description": "Created",
             "headers": {
               "ETag": {
                 "description": "Strong entity tag - the entity version to send back as If-Match.",
@@ -715,6 +833,16 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -783,6 +911,16 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         }
       }
@@ -820,6 +958,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DefaultResponseOfTaskItemDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -873,36 +1021,6 @@
           "required": true
         },
         "responses": {
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
-                }
-              }
-            }
-          },
-          "412": {
-            "description": "Precondition Failed",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "Precondition Required",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
           "200": {
             "description": "OK",
             "headers": {
@@ -921,8 +1039,65 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProblemDetails"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -970,36 +1145,6 @@
           "required": true
         },
         "responses": {
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
-                }
-              }
-            }
-          },
-          "412": {
-            "description": "Precondition Failed",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "Precondition Required",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
           "200": {
             "description": "OK",
             "headers": {
@@ -1018,8 +1163,65 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProblemDetails"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1057,12 +1259,32 @@
           }
         ],
         "responses": {
+          "204": {
+            "description": "No Content"
+          },
           "400": {
             "description": "Bad Request",
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProblemDetails"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -1086,9 +1308,6 @@
                 }
               }
             }
-          },
-          "204": {
-            "description": "No Content"
           }
         }
       }
@@ -1123,8 +1342,8 @@
           "required": true
         },
         "responses": {
-          "201": {
-            "description": "Created",
+          "200": {
+            "description": "OK",
             "headers": {
               "ETag": {
                 "description": "Strong entity tag - the entity version to send back as If-Match.",
@@ -1141,8 +1360,8 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
+          "201": {
+            "description": "Created",
             "headers": {
               "ETag": {
                 "description": "Strong entity tag - the entity version to send back as If-Match.",
@@ -1165,6 +1384,16 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -1221,8 +1450,8 @@
           "required": true
         },
         "responses": {
-          "201": {
-            "description": "Created",
+          "200": {
+            "description": "OK",
             "headers": {
               "ETag": {
                 "description": "Strong entity tag - the entity version to send back as If-Match.",
@@ -1239,8 +1468,8 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
+          "201": {
+            "description": "Created",
             "headers": {
               "ETag": {
                 "description": "Strong entity tag - the entity version to send back as If-Match.",
@@ -1263,6 +1492,16 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -1337,36 +1576,6 @@
           "required": true
         },
         "responses": {
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
-                }
-              }
-            }
-          },
-          "412": {
-            "description": "Precondition Failed",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "Precondition Required",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
           "200": {
             "description": "OK",
             "headers": {
@@ -1385,8 +1594,55 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProblemDetails"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1433,12 +1689,32 @@
           }
         ],
         "responses": {
+          "204": {
+            "description": "No Content"
+          },
           "400": {
             "description": "Bad Request",
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProblemDetails"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -1462,9 +1738,6 @@
                 }
               }
             }
-          },
-          "204": {
-            "description": "No Content"
           }
         }
       }
@@ -1508,8 +1781,8 @@
           "required": true
         },
         "responses": {
-          "201": {
-            "description": "Created",
+          "200": {
+            "description": "OK",
             "headers": {
               "ETag": {
                 "description": "Strong entity tag - the entity version to send back as If-Match.",
@@ -1526,8 +1799,8 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
+          "201": {
+            "description": "Created",
             "headers": {
               "ETag": {
                 "description": "Strong entity tag - the entity version to send back as If-Match.",
@@ -1550,6 +1823,16 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -1624,36 +1907,6 @@
           "required": true
         },
         "responses": {
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
-                }
-              }
-            }
-          },
-          "412": {
-            "description": "Precondition Failed",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "Precondition Required",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
           "200": {
             "description": "OK",
             "headers": {
@@ -1672,8 +1925,55 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProblemDetails"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1720,12 +2020,32 @@
           }
         ],
         "responses": {
+          "204": {
+            "description": "No Content"
+          },
           "400": {
             "description": "Bad Request",
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProblemDetails"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -1749,9 +2069,6 @@
                 }
               }
             }
-          },
-          "204": {
-            "description": "No Content"
           }
         }
       }
@@ -1784,8 +2101,8 @@
           }
         ],
         "responses": {
-          "201": {
-            "description": "Created",
+          "200": {
+            "description": "OK",
             "headers": {
               "ETag": {
                 "description": "Strong entity tag - the entity version to send back as If-Match.",
@@ -1802,8 +2119,8 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
+          "201": {
+            "description": "Created",
             "headers": {
               "ETag": {
                 "description": "Strong entity tag - the entity version to send back as If-Match.",
@@ -1826,6 +2143,16 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -1878,12 +2205,32 @@
           }
         ],
         "responses": {
+          "204": {
+            "description": "No Content"
+          },
           "400": {
             "description": "Bad Request",
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProblemDetails"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -1907,9 +2254,6 @@
                 }
               }
             }
-          },
-          "204": {
-            "description": "No Content"
           }
         }
       }
@@ -1974,6 +2318,16 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         }
       }
@@ -2010,6 +2364,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DefaultResponseOfCommentDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -2087,6 +2451,16 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         }
       }
@@ -2123,6 +2497,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DefaultResponseOfChecklistItemDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -2201,6 +2585,16 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         }
       }
@@ -2238,6 +2632,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DefaultResponseOfAttachmentDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -2291,36 +2695,6 @@
           "required": true
         },
         "responses": {
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
-                }
-              }
-            }
-          },
-          "412": {
-            "description": "Precondition Failed",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "Precondition Required",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
           "200": {
             "description": "OK",
             "headers": {
@@ -2339,8 +2713,55 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProblemDetails"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2378,12 +2799,32 @@
           }
         ],
         "responses": {
+          "204": {
+            "description": "No Content"
+          },
           "400": {
             "description": "Bad Request",
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProblemDetails"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -2407,9 +2848,6 @@
                 }
               }
             }
-          },
-          "204": {
-            "description": "No Content"
           }
         }
       }
@@ -2444,8 +2882,8 @@
           "required": true
         },
         "responses": {
-          "201": {
-            "description": "Created",
+          "200": {
+            "description": "OK",
             "headers": {
               "ETag": {
                 "description": "Strong entity tag - the entity version to send back as If-Match.",
@@ -2462,8 +2900,8 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
+          "201": {
+            "description": "Created",
             "headers": {
               "ETag": {
                 "description": "Strong entity tag - the entity version to send back as If-Match.",
@@ -2486,6 +2924,16 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -2562,8 +3010,8 @@
           "required": true
         },
         "responses": {
-          "201": {
-            "description": "Created",
+          "200": {
+            "description": "OK",
             "headers": {
               "ETag": {
                 "description": "Strong entity tag - the entity version to send back as If-Match.",
@@ -2580,8 +3028,8 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
+          "201": {
+            "description": "Created",
             "headers": {
               "ETag": {
                 "description": "Strong entity tag - the entity version to send back as If-Match.",
@@ -2604,6 +3052,16 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -2850,8 +3308,22 @@
             "description": "OK",
             "content": {
               "text/event-stream": {
-                "schema": {
-                  "$ref": "#/components/schemas/SseItemOfstring"
+                "itemSchema": {
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "string"
+                    },
+                    "event": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  }
                 }
               }
             }
@@ -3403,18 +3875,22 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TaskItemDto"
-            }
+            },
+            "description": "Items on this page, in sort order."
           },
           "nextCursor": {
             "type": [
               "null",
               "string"
-            ]
+            ],
+            "description": "Cursor that resumes after the last item; `null` exactly when HasMore is false."
           },
           "hasMore": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "True when at least one further row exists after this page."
           }
-        }
+        },
+        "description": "One keyset (cursor) page. The counterpart to PagedResponse&lt;T&gt; for list reads that walk\nforward from an opaque cursor instead of an offset, so deep pages cost the same as the first and a row\ninserted between two requests cannot duplicate or skip a row."
       },
       "DefaultRequestOfAttachmentDto": {
         "required": [
@@ -3788,6 +4264,7 @@
               "integer",
               "string"
             ],
+            "description": "Maximum number of items per page as requested.",
             "format": "int32"
           },
           "pageIndex": {
@@ -3796,6 +4273,7 @@
               "integer",
               "string"
             ],
+            "description": "Zero-based page index of this response.",
             "format": "int32"
           },
           "total": {
@@ -3804,15 +4282,18 @@
               "integer",
               "string"
             ],
+            "description": "Total number of items across all pages (used to calculate page count).",
             "format": "int32"
           },
           "data": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AttachmentDto"
-            }
+            },
+            "description": "Items on the current page."
           }
-        }
+        },
+        "description": "Standard envelope returned by paginated query endpoints.\nPair with SearchRequest&lt;TFilter&gt; to drive the query, then return this DTO to callers."
       },
       "PagedResponseOfCategoryDto": {
         "type": "object",
@@ -3823,6 +4304,7 @@
               "integer",
               "string"
             ],
+            "description": "Maximum number of items per page as requested.",
             "format": "int32"
           },
           "pageIndex": {
@@ -3831,6 +4313,7 @@
               "integer",
               "string"
             ],
+            "description": "Zero-based page index of this response.",
             "format": "int32"
           },
           "total": {
@@ -3839,15 +4322,18 @@
               "integer",
               "string"
             ],
+            "description": "Total number of items across all pages (used to calculate page count).",
             "format": "int32"
           },
           "data": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/CategoryDto"
-            }
+            },
+            "description": "Items on the current page."
           }
-        }
+        },
+        "description": "Standard envelope returned by paginated query endpoints.\nPair with SearchRequest&lt;TFilter&gt; to drive the query, then return this DTO to callers."
       },
       "PagedResponseOfChecklistItemDto": {
         "type": "object",
@@ -3858,6 +4344,7 @@
               "integer",
               "string"
             ],
+            "description": "Maximum number of items per page as requested.",
             "format": "int32"
           },
           "pageIndex": {
@@ -3866,6 +4353,7 @@
               "integer",
               "string"
             ],
+            "description": "Zero-based page index of this response.",
             "format": "int32"
           },
           "total": {
@@ -3874,15 +4362,18 @@
               "integer",
               "string"
             ],
+            "description": "Total number of items across all pages (used to calculate page count).",
             "format": "int32"
           },
           "data": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ChecklistItemDto"
-            }
+            },
+            "description": "Items on the current page."
           }
-        }
+        },
+        "description": "Standard envelope returned by paginated query endpoints.\nPair with SearchRequest&lt;TFilter&gt; to drive the query, then return this DTO to callers."
       },
       "PagedResponseOfCommentDto": {
         "type": "object",
@@ -3893,6 +4384,7 @@
               "integer",
               "string"
             ],
+            "description": "Maximum number of items per page as requested.",
             "format": "int32"
           },
           "pageIndex": {
@@ -3901,6 +4393,7 @@
               "integer",
               "string"
             ],
+            "description": "Zero-based page index of this response.",
             "format": "int32"
           },
           "total": {
@@ -3909,15 +4402,18 @@
               "integer",
               "string"
             ],
+            "description": "Total number of items across all pages (used to calculate page count).",
             "format": "int32"
           },
           "data": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/CommentDto"
-            }
+            },
+            "description": "Items on the current page."
           }
-        }
+        },
+        "description": "Standard envelope returned by paginated query endpoints.\nPair with SearchRequest&lt;TFilter&gt; to drive the query, then return this DTO to callers."
       },
       "PagedResponseOfTagDto": {
         "type": "object",
@@ -3928,6 +4424,7 @@
               "integer",
               "string"
             ],
+            "description": "Maximum number of items per page as requested.",
             "format": "int32"
           },
           "pageIndex": {
@@ -3936,6 +4433,7 @@
               "integer",
               "string"
             ],
+            "description": "Zero-based page index of this response.",
             "format": "int32"
           },
           "total": {
@@ -3944,15 +4442,18 @@
               "integer",
               "string"
             ],
+            "description": "Total number of items across all pages (used to calculate page count).",
             "format": "int32"
           },
           "data": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TagDto"
-            }
+            },
+            "description": "Items on the current page."
           }
-        }
+        },
+        "description": "Standard envelope returned by paginated query endpoints.\nPair with SearchRequest&lt;TFilter&gt; to drive the query, then return this DTO to callers."
       },
       "Priority": {
         "enum": [
@@ -4018,6 +4519,7 @@
               "integer",
               "string"
             ],
+            "description": "Maximum number of items to return per page.",
             "format": "int32"
           },
           "pageIndex": {
@@ -4026,6 +4528,7 @@
               "integer",
               "string"
             ],
+            "description": "Zero-based page index.",
             "format": "int32"
           },
           "sorts": {
@@ -4035,7 +4538,8 @@
             ],
             "items": {
               "$ref": "#/components/schemas/Sort"
-            }
+            },
+            "description": "Ordered list of sort directives applied to the query result."
           },
           "filter": {
             "oneOf": [
@@ -4043,11 +4547,13 @@
                 "type": "null"
               },
               {
+                "description": "Resource-specific filter criteria; `null` means no filtering.",
                 "$ref": "#/components/schemas/AttachmentSearchFilter"
               }
             ]
           }
-        }
+        },
+        "description": "Standard paged-query request. Pass as the inbound DTO for list/search endpoints;\nmap TFilter? SearchRequest&lt;TFilter&gt;.Filter to a LINQ predicate and apply IEnumerable&lt;Sort&gt;? SearchRequest&lt;TFilter&gt;.Sorts via\n`IQueryableExtensions` before projecting to a PagedResponse&lt;T&gt;."
       },
       "SearchRequestOfCategorySearchFilter": {
         "type": "object",
@@ -4058,6 +4564,7 @@
               "integer",
               "string"
             ],
+            "description": "Maximum number of items to return per page.",
             "format": "int32"
           },
           "pageIndex": {
@@ -4066,6 +4573,7 @@
               "integer",
               "string"
             ],
+            "description": "Zero-based page index.",
             "format": "int32"
           },
           "sorts": {
@@ -4075,7 +4583,8 @@
             ],
             "items": {
               "$ref": "#/components/schemas/Sort"
-            }
+            },
+            "description": "Ordered list of sort directives applied to the query result."
           },
           "filter": {
             "oneOf": [
@@ -4083,11 +4592,13 @@
                 "type": "null"
               },
               {
+                "description": "Resource-specific filter criteria; `null` means no filtering.",
                 "$ref": "#/components/schemas/CategorySearchFilter"
               }
             ]
           }
-        }
+        },
+        "description": "Standard paged-query request. Pass as the inbound DTO for list/search endpoints;\nmap TFilter? SearchRequest&lt;TFilter&gt;.Filter to a LINQ predicate and apply IEnumerable&lt;Sort&gt;? SearchRequest&lt;TFilter&gt;.Sorts via\n`IQueryableExtensions` before projecting to a PagedResponse&lt;T&gt;."
       },
       "SearchRequestOfChecklistItemSearchFilter": {
         "type": "object",
@@ -4098,6 +4609,7 @@
               "integer",
               "string"
             ],
+            "description": "Maximum number of items to return per page.",
             "format": "int32"
           },
           "pageIndex": {
@@ -4106,6 +4618,7 @@
               "integer",
               "string"
             ],
+            "description": "Zero-based page index.",
             "format": "int32"
           },
           "sorts": {
@@ -4115,7 +4628,8 @@
             ],
             "items": {
               "$ref": "#/components/schemas/Sort"
-            }
+            },
+            "description": "Ordered list of sort directives applied to the query result."
           },
           "filter": {
             "oneOf": [
@@ -4123,11 +4637,13 @@
                 "type": "null"
               },
               {
+                "description": "Resource-specific filter criteria; `null` means no filtering.",
                 "$ref": "#/components/schemas/ChecklistItemSearchFilter"
               }
             ]
           }
-        }
+        },
+        "description": "Standard paged-query request. Pass as the inbound DTO for list/search endpoints;\nmap TFilter? SearchRequest&lt;TFilter&gt;.Filter to a LINQ predicate and apply IEnumerable&lt;Sort&gt;? SearchRequest&lt;TFilter&gt;.Sorts via\n`IQueryableExtensions` before projecting to a PagedResponse&lt;T&gt;."
       },
       "SearchRequestOfCommentSearchFilter": {
         "type": "object",
@@ -4138,6 +4654,7 @@
               "integer",
               "string"
             ],
+            "description": "Maximum number of items to return per page.",
             "format": "int32"
           },
           "pageIndex": {
@@ -4146,6 +4663,7 @@
               "integer",
               "string"
             ],
+            "description": "Zero-based page index.",
             "format": "int32"
           },
           "sorts": {
@@ -4155,7 +4673,8 @@
             ],
             "items": {
               "$ref": "#/components/schemas/Sort"
-            }
+            },
+            "description": "Ordered list of sort directives applied to the query result."
           },
           "filter": {
             "oneOf": [
@@ -4163,11 +4682,13 @@
                 "type": "null"
               },
               {
+                "description": "Resource-specific filter criteria; `null` means no filtering.",
                 "$ref": "#/components/schemas/CommentSearchFilter"
               }
             ]
           }
-        }
+        },
+        "description": "Standard paged-query request. Pass as the inbound DTO for list/search endpoints;\nmap TFilter? SearchRequest&lt;TFilter&gt;.Filter to a LINQ predicate and apply IEnumerable&lt;Sort&gt;? SearchRequest&lt;TFilter&gt;.Sorts via\n`IQueryableExtensions` before projecting to a PagedResponse&lt;T&gt;."
       },
       "SearchRequestOfTagSearchFilter": {
         "type": "object",
@@ -4178,6 +4699,7 @@
               "integer",
               "string"
             ],
+            "description": "Maximum number of items to return per page.",
             "format": "int32"
           },
           "pageIndex": {
@@ -4186,6 +4708,7 @@
               "integer",
               "string"
             ],
+            "description": "Zero-based page index.",
             "format": "int32"
           },
           "sorts": {
@@ -4195,7 +4718,8 @@
             ],
             "items": {
               "$ref": "#/components/schemas/Sort"
-            }
+            },
+            "description": "Ordered list of sort directives applied to the query result."
           },
           "filter": {
             "oneOf": [
@@ -4203,11 +4727,13 @@
                 "type": "null"
               },
               {
+                "description": "Resource-specific filter criteria; `null` means no filtering.",
                 "$ref": "#/components/schemas/TagSearchFilter"
               }
             ]
           }
-        }
+        },
+        "description": "Standard paged-query request. Pass as the inbound DTO for list/search endpoints;\nmap TFilter? SearchRequest&lt;TFilter&gt;.Filter to a LINQ predicate and apply IEnumerable&lt;Sort&gt;? SearchRequest&lt;TFilter&gt;.Sorts via\n`IQueryableExtensions` before projecting to a PagedResponse&lt;T&gt;."
       },
       "Sort": {
         "required": [
@@ -4217,48 +4743,22 @@
         "type": "object",
         "properties": {
           "propertyName": {
-            "type": "string"
+            "type": "string",
+            "description": "Name of the property to sort on (must match the entity/DTO property name)."
           },
           "sortOrder": {
+            "description": "Direction of the sort.",
             "$ref": "#/components/schemas/SortOrder"
           }
-        }
+        },
+        "description": "Specifies a single sort directive for a query. Use inside IEnumerable&lt;Sort&gt;? SearchRequest&lt;TFilter&gt;.Sorts\nand apply via `IQueryableExtensions.ApplySorts`."
       },
       "SortOrder": {
         "enum": [
           "Ascending",
           "Descending"
-        ]
-      },
-      "SseItemOfstring": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "eventType": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "eventId": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "reconnectionInterval": {
-            "pattern": "^-?(\\d+\\.)?\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,7})?$",
-            "type": [
-              "null",
-              "string"
-            ]
-          }
-        }
+        ],
+        "description": "Sort direction used in Sort directives."
       },
       "TagDto": {
         "type": "object",
@@ -4324,11 +4824,13 @@
                 "type": "null"
               },
               {
+                "description": "Resource-specific filter criteria; `null` means no filtering.",
                 "$ref": "#/components/schemas/TaskItemSearchFilter"
               }
             ]
           },
           "sortMode": {
+            "description": "The ordering to page in. Must match the mode the string? CursorSearchRequest&lt;TFilter, TSortMode&gt;.Cursor was minted under.",
             "$ref": "#/components/schemas/TaskItemSortMode"
           },
           "pageSize": {
@@ -4337,13 +4839,15 @@
               "integer",
               "string"
             ],
+            "description": "Maximum number of items to return; validate against PageSizeLimits.",
             "format": "int32"
           },
           "cursor": {
             "type": [
               "null",
               "string"
-            ]
+            ],
+            "description": "Opaque cursor returned by the previous page; `null` starts at the first page."
           }
         }
       },
@@ -4888,7 +5392,28 @@
   },
   "tags": [
     {
+      "name": "AI Demos"
+    },
+    {
+      "name": "Admin"
+    },
+    {
+      "name": "Agent"
+    },
+    {
+      "name": "Attachments"
+    },
+    {
       "name": "Categories"
+    },
+    {
+      "name": "ChecklistItems"
+    },
+    {
+      "name": "Comments"
+    },
+    {
+      "name": "Search"
     },
     {
       "name": "Tags"
@@ -4897,28 +5422,7 @@
       "name": "TaskItems"
     },
     {
-      "name": "Comments"
-    },
-    {
-      "name": "ChecklistItems"
-    },
-    {
-      "name": "Attachments"
-    },
-    {
-      "name": "Search"
-    },
-    {
-      "name": "Agent"
-    },
-    {
-      "name": "AI Demos"
-    },
-    {
       "name": "TaskViews"
-    },
-    {
-      "name": "Admin"
     }
   ]
 }

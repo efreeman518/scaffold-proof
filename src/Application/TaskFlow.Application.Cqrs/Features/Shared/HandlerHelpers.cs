@@ -2,6 +2,7 @@ using EF.Common.Contracts;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Caching;
 using TaskFlow.Application.Models;
+using EF.Domain.Contracts;
 
 namespace TaskFlow.Application.Cqrs.Shared;
 
@@ -17,12 +18,11 @@ internal static class HandlerHelpers
 
     /// <summary>Provides the success operation for handler helpers.</summary>
     public static Result<DefaultResponse<TDto>> Success<TDto>(TDto? dto) =>
-        Result<DefaultResponse<TDto>>.Success(BuildResponse(dto));
+        BuildResponse(dto);
 
     /// <summary>Success envelope for a child of the TaskItem aggregate, tagged with the root version (D-031).</summary>
     public static Result<DefaultResponse<TDto>> SuccessForChild<TDto>(TDto? dto, long aggregateVersion) =>
-        Result<DefaultResponse<TDto>>.Success(
-            new DefaultResponse<TDto> { Item = dto, TenantInfo = null, AggregateVersion = aggregateVersion });
+        new DefaultResponse<TDto> { Item = dto, TenantInfo = null, AggregateVersion = aggregateVersion };
 
     /// <summary>Provides the not found response operation for handler helpers.</summary>
     public static Result<DefaultResponse<TDto>> NotFoundResponse<TDto>() =>

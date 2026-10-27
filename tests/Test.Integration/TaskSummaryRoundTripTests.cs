@@ -46,12 +46,12 @@ public class TaskSummaryRoundTripTests
         {
             for (var i = 0; i < 5; i++)
             {
-                var task = TaskItem.Create(typedTenantId, $"Summary task {i}").Value!;
+                var task = TaskItem.Create(typedTenantId, $"Summary task {i}").GetValueOrThrow();
                 if (i % 2 == 0) task.UpdateDateRange(null, DateTimeOffset.UtcNow.AddDays(-1));
                 seed.TaskItems.Add(task);
             }
 
-            var completed = TaskItem.Create(typedTenantId, "Completed task").Value!;
+            var completed = TaskItem.Create(typedTenantId, "Completed task").GetValueOrThrow();
             completed.TransitionStatus(TaskItemStatus.InProgress);
             completed.TransitionStatus(TaskItemStatus.Completed);
             seed.TaskItems.Add(completed);

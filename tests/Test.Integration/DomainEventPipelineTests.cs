@@ -56,14 +56,14 @@ public class DomainEventPipelineTests
         var connStr = DbContainerFixture.ConnectionString;
         var ctx = DbContainerFixture.CreateTrxnContext(connStr);
 
-        var category = Category.Create(TenantId, "Work").Value!;
+        var category = Category.Create(TenantId, "Work").GetValueOrThrow();
         ctx.Categories.Add(category);
         await ctx.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 
         var taskResult = TaskItem.Create(TenantId, "Integration Test Task",
             "Verify projection pipeline", Priority.High, category.Id);
         Assert.IsTrue(taskResult.IsSuccess);
-        var task = taskResult.Value!;
+        var task = taskResult.GetValueOrThrow();
         ctx.TaskItems.Add(task);
         await ctx.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 
@@ -104,22 +104,22 @@ public class DomainEventPipelineTests
         var ctx = DbContainerFixture.CreateTrxnContext(connStr);
 
         var taskResult = TaskItem.Create(TenantId, "Task With Children");
-        var task = taskResult.Value!;
+        var task = taskResult.GetValueOrThrow();
         ctx.TaskItems.Add(task);
         await ctx.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 
         // Add a comment
         var commentResult = Comment.Create(TenantId, task.Id, "Test comment");
-        ctx.Comments.Add(commentResult.Value!);
+        ctx.Comments.Add(commentResult.GetValueOrThrow());
 
         // Add an attachment
         var attachmentResult = Attachment.Create(TenantId, "file.pdf", "application/pdf",
             1024, "https://storage.example.com/file.pdf", AttachmentOwnerType.TaskItem, task.Id.Value);
-        ctx.Attachments.Add(attachmentResult.Value!);
+        ctx.Attachments.Add(attachmentResult.GetValueOrThrow());
 
         // Add a checklist item
         var checklistResult = ChecklistItem.Create(TenantId, task.Id, "Step 1");
-        ctx.ChecklistItems.Add(checklistResult.Value!);
+        ctx.ChecklistItems.Add(checklistResult.GetValueOrThrow());
 
         await ctx.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 

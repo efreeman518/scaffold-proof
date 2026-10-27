@@ -1,4 +1,5 @@
 using EF.Common.Contracts;
+using EF.Domain.Contracts;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.FeatureManagement;
@@ -50,7 +51,7 @@ public class AiTaskReviewerTests
         var taskItemService = new Mock<ITaskItemService>();
         taskItemService
             .Setup(x => x.GetAsync(taskId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<DefaultResponse<TaskItemDto>>.None());
+            .ReturnsAsync(new Result<DefaultResponse<TaskItemDto>>(new NotFoundError("not found")));
 
         var reviewer = new AiTaskReviewer(
             NullLogger<AiTaskReviewer>.Instance,

@@ -56,14 +56,14 @@ internal class CategoryService(
     public async Task<Result<DefaultResponse<CategoryDto>>> GetAsync(Guid id, CancellationToken ct = default)
     {
         var entity = await repoQuery.GetCategoryAsync(CategoryId.From(id), ct);
-        if (entity == null) return Result<DefaultResponse<CategoryDto>>.None();
+        if (entity == null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             RequestTenantId, RequestRoles, entity.TenantId.Value,
             "Category:Get", nameof(Category), entity.Id.Value);
-        if (boundary.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(boundary.ErrorMessage!);
+        if (boundary.TryGetValue(out Error? boundaryError)) return boundaryError;
 
-        return Result<DefaultResponse<CategoryDto>>.Success(BuildResponse(entity.ToDto()));
+        return BuildResponse(entity.ToDto());
     }
 
     /// <summary>Creates requested data after validation and maps the result to the caller contract.</summary>
@@ -74,12 +74,12 @@ internal class CategoryService(
         dto.TenantId = RequestTenantId ?? Guid.Empty;
 
         var validation = CategoryStructureValidator.ValidateCreate(dto);
-        if (validation.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(validation.Errors);
+        if (validation.TryGetValue(out Error? validationError)) return validationError;
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             RequestTenantId, RequestRoles, dto.TenantId,
             "Category:Create", nameof(Category));
-        if (boundary.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(boundary.ErrorMessage!);
+        if (boundary.TryGetValue(out Error? boundaryError)) return boundaryError;
 
         // D-033: the row itself is the idempotency record for a caller-supplied UUIDv7 id.
         if (dto.Id is Guid callerId && callerId != Guid.Empty)
@@ -87,15 +87,15 @@ internal class CategoryService(
             var existing = await repoTrxn.GetCategoryAsync(CategoryId.From(callerId), ct);
             if (existing is not null)
             {
-                return Result<DefaultResponse<CategoryDto>>.Success(IdempotentCreateGuard.ReplayOrThrow(
-                    existing.ToDto(), dto, IdempotentCreateGuard.IsEquivalent, nameof(Category), callerId));
+                return IdempotentCreateGuard.ReplayOrThrow(
+                    existing.ToDto(), dto, IdempotentCreateGuard.IsEquivalent, nameof(Category), callerId);
             }
         }
 
         var entityResult = dto.ToEntity(dto.TenantId);
-        if (entityResult.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(entityResult.ErrorMessage!);
+        if (entityResult.TryGetValue(out Error? entityResultError)) return entityResultError;
 
-        var entity = entityResult.Value!;
+        var entity = entityResult.GetValueOrThrow();
         repoTrxn.Create(ref entity);
 
         try
@@ -112,15 +112,15 @@ internal class CategoryService(
             if (dto.Id is Guid racedId && racedId != Guid.Empty
                 && await repoQuery.GetCategoryAsync(CategoryId.From(racedId), ct) is { } raced)
             {
-                return Result<DefaultResponse<CategoryDto>>.Success(IdempotentCreateGuard.ReplayOrThrow(
-                    raced.ToDto(), dto, IdempotentCreateGuard.IsEquivalent, nameof(Category), racedId));
+                return IdempotentCreateGuard.ReplayOrThrow(
+                    raced.ToDto(), dto, IdempotentCreateGuard.IsEquivalent, nameof(Category), racedId);
             }
 
-            return Result<DefaultResponse<CategoryDto>>.Failure(ErrorConstants.ERROR_SAVE_FAILED);
+            return SaveFailure.ToError(ex);
         }
 
         await InvalidateMetadataAsync(ct);
-        return Result<DefaultResponse<CategoryDto>>.Success(BuildResponse(entity.ToDto()));
+        return BuildResponse(entity.ToDto());
     }
 
     /// <summary>Updates existing data after validation and preserves domain invariants.</summary>
@@ -131,12 +131,12 @@ internal class CategoryService(
         dto.TenantId = RequestTenantId ?? Guid.Empty;
 
         var validation = CategoryStructureValidator.ValidateUpdate(dto);
-        if (validation.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(validation.Errors);
+        if (validation.TryGetValue(out Error? validationError)) return validationError;
 
         // If-Match: * re-reads and applies again when it loses a race (D-073); a concrete version keeps its 412.
         var result = await ConcurrencyRetry.RunAsync(repoTrxn, expectedVersion, nameof(Category), dto.Id!.Value,
             attemptCt => UpdateOnceAsync(dto, expectedVersion, attemptCt), ct);
-        if (result.IsSuccess && result.Value!.Item is not null) await InvalidateMetadataAsync(ct);
+        if (result is DefaultResponse<CategoryDto> { Item: not null }) await InvalidateMetadataAsync(ct);
         return result;
     }
 
@@ -145,23 +145,23 @@ internal class CategoryService(
     {
         var entity = await repoTrxn.GetCategoryAsync(CategoryId.From(dto.Id!.Value), ct);
         if (entity == null)
-            return Result<DefaultResponse<CategoryDto>>.Success(new DefaultResponse<CategoryDto> { Item = null });
+            return new DefaultResponse<CategoryDto> { Item = null };
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             RequestTenantId, RequestRoles, entity.TenantId.Value,
             "Category:Update", nameof(Category), entity.Id.Value);
-        if (boundary.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(boundary.ErrorMessage!);
+        if (boundary.TryGetValue(out Error? boundaryError)) return boundaryError;
 
         ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(Category), entity.Id.Value);
 
         var tenantChangeCheck = tenantBoundaryValidator.PreventTenantChange(
             entity.TenantId.Value, dto.TenantId, nameof(Category), entity.Id.Value);
-        if (tenantChangeCheck.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(tenantChangeCheck.ErrorMessage!);
+        if (tenantChangeCheck.TryGetValue(out Error? tenantChangeCheckError)) return tenantChangeCheckError;
 
         var updateResult = entity.Update(
             dto.Name, dto.Description, dto.SortOrder, dto.IsActive,
             DomainId.FromNullable<CategoryId>(dto.ParentCategoryId));
-        if (updateResult.IsFailure) return Result<DefaultResponse<CategoryDto>>.Failure(updateResult.ErrorMessage!);
+        if (updateResult.TryGetValue(out Error? updateResultError)) return updateResultError;
 
         try
         {
@@ -170,14 +170,14 @@ internal class CategoryService(
         catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.CategoryUpdateFailed(ex, dto.Id);
-            return Result<DefaultResponse<CategoryDto>>.Failure(ErrorConstants.ERROR_SAVE_FAILED);
+            return SaveFailure.ToError(ex);
         }
 
-        return Result<DefaultResponse<CategoryDto>>.Success(BuildResponse(entity.ToDto()));
+        return BuildResponse(entity.ToDto());
     }
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
-    public async Task<Result> DeleteAsync(Guid id, long? expectedVersion, CancellationToken ct = default)
+    public async Task<Result<Unit>> DeleteAsync(Guid id, long? expectedVersion, CancellationToken ct = default)
     {
         // If-Match: * re-reads and deletes again when it loses a race (D-073); a concrete version keeps its 412.
         var saveSent = false;
@@ -188,18 +188,18 @@ internal class CategoryService(
     }
 
     /// <summary>One read, delete and save of <see cref="DeleteAsync"/>; <c>Deleted</c> is true when a row was removed.</summary>
-    private async Task<(Result Result, bool Deleted)> DeleteOnceAsync(
+    private async Task<(Result<Unit> Result, bool Deleted)> DeleteOnceAsync(
         Guid id, long? expectedVersion, bool saveSent, Action markSaveSent, CancellationToken ct)
     {
         var entity = await repoTrxn.GetCategoryAsync(CategoryId.From(id), ct);
         // D-073: gone on a wildcard retry after an earlier attempt sent its save (a commit that landed but was reported
         // failed, or a competing delete) counts as deleted, so the after-save effects run; gone on the first attempt does not.
-        if (entity == null) return (Result.Success(), saveSent);
+        if (entity == null) return (Result.Ok(), saveSent);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             RequestTenantId, RequestRoles, entity.TenantId.Value,
             "Category:Delete", nameof(Category), entity.Id.Value);
-        if (boundary.IsFailure) return (Result.Failure(boundary.ErrorMessage!), false);
+        if (boundary.TryGetValue(out Error? boundaryError)) return (boundaryError, false);
 
         ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(Category), entity.Id.Value);
 
@@ -213,9 +213,9 @@ internal class CategoryService(
         catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.CategoryDeleteFailed(ex, id);
-            return (Result.Failure(ErrorConstants.ERROR_SAVE_FAILED), false);
+            return (SaveFailure.ToError(ex), false);
         }
 
-        return (Result.Success(), true);
+        return (Result.Ok(), true);
     }
 }

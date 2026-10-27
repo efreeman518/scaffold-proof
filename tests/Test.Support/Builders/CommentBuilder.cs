@@ -24,6 +24,6 @@ public class CommentBuilder
             TenantId.From(_tenantId),
             TaskItemId.From(_taskItemId),
             _body);
-        return result.Value!;
+        return result.GetValueOrThrow();
     }
 }

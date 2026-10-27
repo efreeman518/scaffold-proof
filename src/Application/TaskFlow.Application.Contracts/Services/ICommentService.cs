@@ -1,4 +1,5 @@
 using EF.Common.Contracts;
+using EF.Domain.Contracts;
 using TaskFlow.Application.Models;
 
 namespace TaskFlow.Application.Contracts.Services;

@@ -1,3 +1,4 @@
+using EF.Domain.Contracts;
 ﻿using EF.Common.Contracts;
 using EF.CQRS.Validation;
 using EF.Data.Contracts;
@@ -22,7 +23,7 @@ internal static class CqrsHandlerSupport
     /// returned as a generic 400 instead of reaching the handler as a 412, and a cancellation would become
     /// a 400 instead of the host's 499/504.
     /// </summary>
-    public static Task<Result> TrySaveAsync(
+    public static Task<Result<Unit>> TrySaveAsync(
         IRepositoryBase repository,
         ILogger logger,
         string errorMessage,
@@ -34,7 +35,7 @@ internal static class CqrsHandlerSupport
     /// Runs a repository write that ends in one <c>Throw</c> save (a unit the repository owns, such as a delete with
     /// its set-based pre-step) and maps its failures like <see cref="TrySaveAsync"/>.
     /// </summary>
-    public static async Task<Result> TryWriteAsync(
+    public static async Task<Result<Unit>> TryWriteAsync(
         Func<CancellationToken, Task> write,
         ILogger logger,
         string errorMessage,
@@ -44,12 +45,12 @@ internal static class CqrsHandlerSupport
         try
         {
             await write(ct);
-            return Result.Success();
+            return Result.Ok();
         }
         catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.SaveFailed(ex, errorMessage, args);
-            return Result.Failure(ErrorConstants.ERROR_SAVE_FAILED);
+            return SaveFailure.ToError(ex);
         }
     }
 
@@ -57,7 +58,7 @@ internal static class CqrsHandlerSupport
     /// Saves a child add (D-073): a write failure after which <paramref name="callerKeyStored"/> finds the caller's key
     /// stored is a lost race for the retry; any other failure maps to a Result like <see cref="TrySaveAsync"/>.
     /// </summary>
-    public static async Task<Result> TrySaveAddAsync(
+    public static async Task<Result<Unit>> TrySaveAddAsync(
         ITaskItemRepositoryTrxn repository,
         Func<CancellationToken, Task<bool>>? callerKeyStored,
         ILogger logger,
@@ -68,20 +69,20 @@ internal static class CqrsHandlerSupport
         try
         {
             await repository.SaveChildAddAsync(callerKeyStored, ct);
-            return Result.Success();
+            return Result.Ok();
         }
         catch (Exception ex) when (SaveFailure.MapsToFailureResult(ex))
         {
             logger.SaveFailed(ex, errorMessage, args);
-            return Result.Failure(ErrorConstants.ERROR_SAVE_FAILED);
+            return SaveFailure.ToError(ex);
         }
     }
 
     /// <summary>Converts the current value to validation result.</summary>
-    public static RequestValidationResult ToValidationResult<T>(Result<T> result)
+    public static RequestValidationResult ToValidationResult<T>(Result<T> result) where T : notnull => result switch
     {
-        if (result.IsSuccess) return RequestValidationResult.Valid();
-        if (result.Errors.Count > 0) return RequestValidationResult.Failure(result.Errors);
-        return RequestValidationResult.Failure(result.ErrorMessage ?? "Validation failed.");
-    }
+        T => RequestValidationResult.Valid(),
+        ValidationError validation => RequestValidationResult.Failure(validation.Issues),
+        Error error => RequestValidationResult.Failure(error.Message),
+    };
 }

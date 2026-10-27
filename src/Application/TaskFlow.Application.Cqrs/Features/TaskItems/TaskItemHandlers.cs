@@ -58,12 +58,12 @@ internal sealed class GetTaskItemByIdHandler(
     public async Task<Result<DefaultResponse<TaskItemDto>>> HandleAsync(GetTaskItemByIdQuery query, CancellationToken ct = default)
     {
         var entity = await repoQuery.GetTaskItemAsync(TaskItemId.From(query.Id), ct);
-        if (entity is null) return Result<DefaultResponse<TaskItemDto>>.None();
+        if (entity is null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "TaskItem:Get", nameof(TaskItem), entity.Id.Value);
-        if (boundary.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(boundary.ErrorMessage!);
+        if (boundary.TryGetValue(out Error? boundaryError)) return boundaryError;
 
         return HandlerHelpers.Success(entity.ToDto());
     }
@@ -86,12 +86,12 @@ internal sealed class CreateTaskItemHandler(
         dto.TenantId = requestContext.TenantId ?? Guid.Empty;
 
         var validation = TaskItemStructureValidator.ValidateCreate(dto);
-        if (validation.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(validation.Errors);
+        if (validation.TryGetValue(out Error? validationError)) return validationError;
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             requestContext.TenantId, requestContext.Roles, dto.TenantId,
             "TaskItem:Create", nameof(TaskItem));
-        if (boundary.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(boundary.ErrorMessage!);
+        if (boundary.TryGetValue(out Error? boundaryError)) return boundaryError;
 
         // D-033: the row itself is the idempotency record for a caller-supplied UUIDv7 id.
         if (dto.Id is Guid callerId && callerId != Guid.Empty)
@@ -99,20 +99,20 @@ internal sealed class CreateTaskItemHandler(
             var existing = await repoTrxn.GetTaskItemAsync(TaskItemId.From(callerId), inclChildren: false, ct);
             if (existing is not null)
             {
-                return Result<DefaultResponse<TaskItemDto>>.Success(IdempotentCreateGuard.ReplayOrThrow(
-                    existing.ToDto(), dto, IdempotentCreateGuard.IsEquivalent, nameof(TaskItem), callerId));
+                return IdempotentCreateGuard.ReplayOrThrow(
+                    existing.ToDto(), dto, IdempotentCreateGuard.IsEquivalent, nameof(TaskItem), callerId);
             }
         }
 
         var entityResult = dto.ToEntity(dto.TenantId)
             .Bind(e => repoTrxn.UpdateFromDto(e, dto));
-        if (entityResult.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(entityResult.ErrorMessage!);
+        if (entityResult.TryGetValue(out Error? entityResultError)) return entityResultError;
 
-        var entity = entityResult.Value!;
+        var entity = entityResult.GetValueOrThrow();
         repoTrxn.Create(ref entity);
 
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error creating TaskItem", ct);
-        if (save.IsFailure)
+        if (save.TryGetValue(out Error? saveError))
         {
             // D-033: a concurrent create with the same id passed the existence check too and won the insert.
             // Re-read on the query context (this one still tracks the failed insert): the winner makes this a
@@ -120,11 +120,11 @@ internal sealed class CreateTaskItemHandler(
             if (dto.Id is Guid racedId && racedId != Guid.Empty
                 && await repoQuery.GetTaskItemAsync(TaskItemId.From(racedId), ct) is { } raced)
             {
-                return Result<DefaultResponse<TaskItemDto>>.Success(IdempotentCreateGuard.ReplayOrThrow(
-                    raced.ToDto(), dto, IdempotentCreateGuard.IsEquivalent, nameof(TaskItem), racedId));
+                return IdempotentCreateGuard.ReplayOrThrow(
+                    raced.ToDto(), dto, IdempotentCreateGuard.IsEquivalent, nameof(TaskItem), racedId);
             }
 
-            return Result<DefaultResponse<TaskItemDto>>.Failure(save.ErrorMessage!);
+            return saveError;
         }
 
         await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(TaskItem)), ct);
@@ -148,12 +148,12 @@ internal sealed class UpdateTaskItemHandler(
         dto.TenantId = requestContext.TenantId ?? Guid.Empty;
 
         var validation = TaskItemStructureValidator.ValidateUpdate(dto);
-        if (validation.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(validation.Errors);
+        if (validation.TryGetValue(out Error? validationError)) return validationError;
 
         // If-Match: * re-reads and applies again when it loses a race (D-073); a concrete version keeps its 412.
         var result = await ConcurrencyRetry.RunAsync(repoTrxn, command.ExpectedVersion, nameof(TaskItem), dto.Id!.Value,
             attemptCt => UpdateOnceAsync(dto, command.ExpectedVersion, attemptCt), ct);
-        if (result.IsSuccess && result.Value!.Item is not null)
+        if (result is DefaultResponse<TaskItemDto> { Item: not null })
             await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(TaskItem)), ct);
         return result;
     }
@@ -170,20 +170,20 @@ internal sealed class UpdateTaskItemHandler(
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "TaskItem:Update", nameof(TaskItem), entity.Id.Value);
-        if (boundary.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(boundary.ErrorMessage!);
+        if (boundary.TryGetValue(out Error? boundaryError)) return boundaryError;
 
         // After load, before any mutation: a stale caller must not run the status state machine.
         ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
 
         var tenantChangeCheck = tenantBoundaryValidator.PreventTenantChange(
             entity.TenantId.Value, dto.TenantId, nameof(TaskItem), entity.Id.Value);
-        if (tenantChangeCheck.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(tenantChangeCheck.ErrorMessage!);
+        if (tenantChangeCheck.TryGetValue(out Error? tenantChangeCheckError)) return tenantChangeCheckError;
 
         // The aggregate raises the status/completed events; the staging interceptor writes them (D-026).
         if (dto.Status != entity.Status)
         {
             var transitionResult = entity.TransitionStatus(dto.Status);
-            if (transitionResult.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(transitionResult.ErrorMessage!);
+            if (transitionResult.TryGetValue(out Error? transitionResultError)) return transitionResultError;
         }
 
         var updateResult = entity.Update(
@@ -191,7 +191,7 @@ internal sealed class UpdateTaskItemHandler(
             dto.EstimatedEffort, dto.ActualEffort,
             DomainId.FromNullable<CategoryId>(dto.CategoryId),
             DomainId.FromNullable<TaskItemId>(dto.ParentTaskItemId));
-        if (updateResult.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(updateResult.ErrorMessage!);
+        if (updateResult.TryGetValue(out Error? updateResultError)) return updateResultError;
 
         entity.UpdateDateRange(dto.StartDate, dto.DueDate);
 
@@ -210,10 +210,10 @@ internal sealed class UpdateTaskItemHandler(
         }
 
         var syncResult = repoTrxn.UpdateFromDto(entity, dto, RelatedDeleteBehavior.RelationshipAndEntity);
-        if (syncResult.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(syncResult.ErrorMessage!);
+        if (syncResult.TryGetValue(out Error? syncResultError)) return syncResultError;
 
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error updating TaskItem {Id}", ct, dto.Id);
-        if (save.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(save.ErrorMessage!);
+        if (save.TryGetValue(out Error? saveError)) return saveError;
 
         return HandlerHelpers.Success(entity.ToDto());
     }
@@ -226,10 +226,10 @@ internal sealed class DeleteTaskItemHandler(
     ITaskItemRepositoryTrxn repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
     ITypedCache cache)
-    : IRequestHandler<DeleteTaskItemCommand, Result>
+    : IRequestHandler<DeleteTaskItemCommand, Result<Unit>>
 {
     /// <summary>Handles delete task item requests and returns the application result.</summary>
-    public async Task<Result> HandleAsync(DeleteTaskItemCommand command, CancellationToken ct = default)
+    public async Task<Result<Unit>> HandleAsync(DeleteTaskItemCommand command, CancellationToken ct = default)
     {
         // If-Match: * re-reads and deletes again when it loses a race (D-073); a concrete version keeps its 412.
         var saveSent = false;
@@ -240,18 +240,18 @@ internal sealed class DeleteTaskItemHandler(
     }
 
     /// <summary>One read, delete and save; <c>Deleted</c> is true when a row was removed.</summary>
-    private async Task<(Result Result, bool Deleted)> DeleteOnceAsync(
+    private async Task<(Result<Unit> Result, bool Deleted)> DeleteOnceAsync(
         DeleteTaskItemCommand command, bool saveSent, Action markSaveSent, CancellationToken ct)
     {
         var entity = await repoTrxn.GetTaskItemAsync(TaskItemId.From(command.Id), ct: ct);
         // D-073: gone on a wildcard retry after an earlier attempt sent its save (a commit that landed but was reported
         // failed, or a competing delete) counts as deleted, so the after-save effects run; gone on the first attempt does not.
-        if (entity is null) return (Result.Success(), saveSent);
+        if (entity is null) return (Result.Ok(), saveSent);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "TaskItem:Delete", nameof(TaskItem), entity.Id.Value);
-        if (boundary.IsFailure) return (Result.Failure(boundary.ErrorMessage!), false);
+        if (boundary.TryGetValue(out Error? boundaryError)) return (boundaryError, false);
 
         ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
 
@@ -282,7 +282,7 @@ internal sealed class PatchTaskItemHandler(
         // If-Match: * re-reads and applies again when it loses a race (D-073); a concrete version keeps its 412.
         var result = await ConcurrencyRetry.RunAsync(repoTrxn, command.ExpectedVersion, nameof(TaskItem), command.Id,
             attemptCt => PatchOnceAsync(command, attemptCt), ct);
-        if (result.IsSuccess && result.Value!.Item is not null)
+        if (result is DefaultResponse<TaskItemDto> { Item: not null })
             await cache.RemoveByTagAsync(HandlerHelpers.EntityTag(requestContext.TenantId, nameof(TaskItem)), ct);
         return result;
     }
@@ -296,7 +296,7 @@ internal sealed class PatchTaskItemHandler(
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
             "TaskItem:Patch", nameof(TaskItem), entity.Id.Value);
-        if (boundary.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(boundary.ErrorMessage!);
+        if (boundary.TryGetValue(out Error? boundaryError)) return boundaryError;
 
         ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
 
@@ -308,10 +308,10 @@ internal sealed class PatchTaskItemHandler(
             estimatedEffort: patch.EstimatedEffort,
             categoryId: DomainId.FromNullable<CategoryId>(patch.CategoryId),
             parentTaskItemId: DomainId.FromNullable<TaskItemId>(patch.ParentTaskItemId));
-        if (updateResult.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(updateResult.ErrorMessage!);
+        if (updateResult.TryGetValue(out Error? updateResultError)) return updateResultError;
 
         var save = await CqrsHandlerSupport.TrySaveAsync(repoTrxn, logger, "Error patching TaskItem {Id}", ct, command.Id);
-        if (save.IsFailure) return Result<DefaultResponse<TaskItemDto>>.Failure(save.ErrorMessage!);
+        if (save.TryGetValue(out Error? saveError)) return saveError;
 
         return HandlerHelpers.Success(entity.ToDto());
     }

@@ -18,7 +18,9 @@ public static class AttachmentEndpoints
     public static IEndpointRouteBuilder MapAttachmentEndpoints(this IEndpointRouteBuilder group)
     {
         var g = group.MapGroup("/attachments").WithTags("Attachments")
-            .WithETag();
+            .WithETag()
+            // Every route enforces the caller's tenant boundary: a ForbiddenError answers 403.
+            .ProducesProblem(StatusCodes.Status403Forbidden);
 
         g.MapPost("/search", Search)
             .WithName("SearchAttachments")
@@ -87,10 +89,7 @@ public static class AttachmentEndpoints
         [FromServices] IAttachmentService service, Guid id, CancellationToken ct)
     {
         var result = await service.GetAsync(id, ct);
-        return result.Match<IResult>(
-            response => TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)),
-            () => TypedResults.NotFound(id));
+        return result.ToHttp(response => TypedResults.Ok(response));
     }
 
     /// <summary>Creates requested data after validation and maps the result to the caller contract.</summary>
@@ -101,11 +100,9 @@ public static class AttachmentEndpoints
         CancellationToken ct)
     {
         var result = await service.CreateAsync(request, ct);
-        return result.Match<IResult>(
-            response => response.IsReplay
+        return result.ToHttp(response => response.IsReplay
                 ? TypedResults.Ok(response)
-                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response));
     }
 
     /// <summary>Uploads upload to the configured storage backend and returns metadata.</summary>
@@ -122,11 +119,9 @@ public static class AttachmentEndpoints
         var result = await service.UploadAsync(
             stream, file.FileName, file.ContentType, file.Length,
             ownerType, ownerId, id, ct);
-        return result.Match<IResult>(
-            response => response.IsReplay
+        return result.ToHttp(response => response.IsReplay
                 ? TypedResults.Ok(response)
-                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response));
     }
 
     /// <summary>Updates existing data after validation and preserves domain invariants.</summary>
@@ -144,9 +139,7 @@ public static class AttachmentEndpoints
                 $"{ErrorConstants.ERROR_URL_BODY_ID_MISMATCH}: {id} <> {request.Item.Id}"));
 
         var result = await service.UpdateAsync(request, ifMatch.ExpectedVersion, ct);
-        return result.Match(
-            response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response));
     }
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
@@ -155,9 +148,6 @@ public static class AttachmentEndpoints
         [FromServices] IAttachmentService service, Guid id, IfMatch ifMatch, CancellationToken ct)
     {
         var result = await service.DeleteAsync(id, ifMatch.ExpectedVersion, ct);
-        return result.Match<IResult>(
-            () => TypedResults.NoContent(),
-            errors => TypedResults.Problem(
-                ProblemDetailsHelper.FromErrors(errors)));
+        return result.ToHttp(_ => TypedResults.NoContent());
     }
 }
