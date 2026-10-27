@@ -16,8 +16,16 @@ namespace Test.Architecture;
 [TestCategory("Architecture")]
 public class MigrationBaselineArchitectureTests : BaseTest
 {
-    private static readonly Type[] Contexts =
-        [typeof(TaskFlowDbContextTrxn), typeof(TaskFlowFlowEngineDbContext), typeof(TaskFlowSchedulerDbContext)];
+    // EF Core 11 names a generated migration class after its full id (_<timestamp>_<name>), so the migration name
+    // is read from the [Migration] id, whose part after the timestamp is the name given to `migrations add`.
+    private static readonly (Type Context, string Name)[] InitialMigrations =
+    [
+        (typeof(TaskFlowDbContextTrxn), "InitialCreate"),
+        (typeof(TaskFlowFlowEngineDbContext), "InitialFlowEngine"),
+        (typeof(TaskFlowSchedulerDbContext), "InitialScheduler"),
+    ];
+
+    private static readonly Type[] Contexts = [.. InitialMigrations.Select(m => m.Context)];
 
     /// <summary>The provider migration assemblies, one per <see cref="TaskFlowDbProvider"/>.</summary>
     public static IEnumerable<object[]> MigrationAssemblies() =>
@@ -33,19 +41,25 @@ public class MigrationBaselineArchitectureTests : BaseTest
     {
         var migrations = Assembly.Load(assemblyName).GetTypes()
             .Where(t => typeof(Migration).IsAssignableFrom(t) && !t.IsAbstract)
-            .Select(t => (Type: t, Context: t.GetCustomAttribute<DbContextAttribute>()?.ContextType))
+            .Select(t => (Type: t, Context: t.GetCustomAttribute<DbContextAttribute>()?.ContextType,
+                Id: t.GetCustomAttribute<MigrationAttribute>()?.Id ?? t.Name))
             .ToList();
 
         Assert.IsFalse(migrations.Any(m => m.Context is null),
             $"{assemblyName}: every migration must name its DbContext ({string.Join(", ", migrations.Where(m => m.Context is null).Select(m => m.Type.Name))}).");
         foreach (var context in Contexts)
         {
-            var names = migrations.Where(m => m.Context == context).Select(m => m.Type.Name).ToList();
+            var names = migrations.Where(m => m.Context == context).Select(m => m.Id).ToList();
             Assert.HasCount(1, names,
                 $"{assemblyName}: {context.Name} must have exactly one initial migration; regenerate it instead of adding one ({string.Join(", ", names)}).");
         }
 
-        Assert.AreEqual("InitialCreate", migrations.Single(m => m.Context == typeof(TaskFlowDbContextTrxn)).Type.Name);
+        foreach (var (context, name) in InitialMigrations)
+        {
+            var id = migrations.Single(m => m.Context == context).Id;
+            Assert.AreEqual(name, id[(id.IndexOf('_', StringComparison.Ordinal) + 1)..],
+                $"{assemblyName}: {context.Name}'s only migration must keep its initial name ({id}).");
+        }
         Assert.IsTrue(migrations.All(m => Contexts.Contains(m.Context)),
             $"{assemblyName}: a migration targets a context this rule does not know; add the context to {nameof(Contexts)}.");
     }
