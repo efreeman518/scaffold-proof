@@ -18,7 +18,7 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.FlowEngin
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("flowengine")
-                .HasAnnotation("ProductVersion", "10.0.12")
+                .HasAnnotation("ProductVersion", "10.0.14")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -275,6 +275,9 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.FlowEngin
                     b.Property<string>("Data")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<long>("Revision")
+                        .HasColumnType("bigint");
 
                     b.Property<int>("Status")
                         .HasColumnType("int");

@@ -12,7 +12,7 @@ using TaskFlow.Infrastructure.Data;
 namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.FlowEngine
 {
     [DbContext(typeof(TaskFlowFlowEngineDbContext))]
-    [Migration("20261013160554_InitialFlowEngine")]
+    [Migration("20261027175939_InitialFlowEngine")]
     partial class InitialFlowEngine
     {
         /// <inheritdoc />
@@ -21,7 +21,7 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.FlowEngin
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("flowengine")
-                .HasAnnotation("ProductVersion", "10.0.12")
+                .HasAnnotation("ProductVersion", "10.0.14")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -278,6 +278,9 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.FlowEngin
                     b.Property<string>("Data")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<long>("Revision")
+                        .HasColumnType("bigint");
 
                     b.Property<int>("Status")
                         .HasColumnType("int");

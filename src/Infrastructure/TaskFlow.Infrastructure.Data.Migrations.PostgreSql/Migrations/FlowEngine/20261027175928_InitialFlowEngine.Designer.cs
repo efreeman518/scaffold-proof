@@ -12,7 +12,7 @@ using TaskFlow.Infrastructure.Data;
 namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.FlowEngine
 {
     [DbContext(typeof(TaskFlowFlowEngineDbContext))]
-    [Migration("20261013160516_InitialFlowEngine")]
+    [Migration("20261027175928_InitialFlowEngine")]
     partial class InitialFlowEngine
     {
         /// <inheritdoc />
@@ -21,7 +21,7 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.FlowEngi
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("flowengine")
-                .HasAnnotation("ProductVersion", "10.0.12")
+                .HasAnnotation("ProductVersion", "10.0.14")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -275,6 +275,9 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.FlowEngi
                     b.Property<string>("Data")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<long>("Revision")
+                        .HasColumnType("bigint");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
