@@ -10,7 +10,7 @@ namespace TaskFlow.Uno.Core.Business.Services;
 /// </summary>
 public class MockHttpMessageHandler : HttpMessageHandler
 {
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
 
     private readonly List<CategoryDto> _categories =
     [
