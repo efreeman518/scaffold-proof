@@ -18,7 +18,7 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.FlowEngi
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("flowengine")
-                .HasAnnotation("ProductVersion", "10.0.12")
+                .HasAnnotation("ProductVersion", "10.0.14")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -272,6 +272,9 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.FlowEngi
                     b.Property<string>("Data")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<long>("Revision")
+                        .HasColumnType("bigint");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");

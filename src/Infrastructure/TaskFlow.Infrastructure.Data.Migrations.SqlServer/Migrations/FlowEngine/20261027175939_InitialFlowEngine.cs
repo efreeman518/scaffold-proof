@@ -119,7 +119,8 @@ namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.FlowEngin
                     CompositeKey = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: false),
                     WorkflowId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
                     Status = table.Column<int>(type: "int", nullable: false),
-                    Data = table.Column<string>(type: "nvarchar(max)", nullable: false)
+                    Data = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    Revision = table.Column<long>(type: "bigint", nullable: false)
                 },
                 constraints: table =>
                 {
