@@ -254,7 +254,7 @@ public sealed class AppHostLaneTopologyTests
             StringAssert.Contains(source, $"\"{resourceName}\"");
         }
 
-        StringAssert.Contains(source, ".WithReference(taskflowDb, connectionName: \"TickerQDbContext\")");
+        StringAssert.Contains(source, ".WithReference(taskflowDb, connectionName: \"TaskFlowSchedulerDbContext\")");
     }
 
     [TestMethod]

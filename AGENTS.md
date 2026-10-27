@@ -46,7 +46,7 @@ dotnet test TaskFlow.slnx --no-build -m:1                     # unfiltered seria
 # TASKFLOW_DATAPROTECTION_PERSISTENCE=AzureBlob|Redis|None selects persistence; strict lane defaults are AzureBlob and Redis - D-043/D-060
 # Database:PostgreSql:PoolerMode=None|Transaction (config only, no env var) appends the PgBouncer transaction-pooling connection-string flags (default None) - D-045
 # Health probes (D-049): /healthz/live (self only, restart-worthy), /healthz/ready (database, outbox, scheduler, broker on consumer hosts), /healthz (aggregate, humans + Compose healthchecks); /readyz removed
-# Redis, DatabaseMigrator, API, Gateway, Scheduler with embedded TickerQ, Blazor, React, and Uno WASM run in both lanes
+# Redis, DatabaseMigrator, API, Gateway, Scheduler (EF.Data.Scheduling cron jobs), Blazor, React, and Uno WASM run in both lanes
 # CI runs the full Test.Unit project under a sub-minute timeout with blame-hang diagnostics; all container, Aspire, browser, and full-stack lanes are workflow_dispatch-only
 # Container-backed tests need a Docker-compatible runtime; Docker Desktop, headless Docker Engine, and Podman are supported.
 # Podman on Windows/WSL2 uses mirrored networking on this machine, so published localhost ports work without TESTCONTAINERS_HOST_OVERRIDE.

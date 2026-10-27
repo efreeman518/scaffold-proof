@@ -72,7 +72,7 @@ The runner performs the required Android restore/build:
 
 ```powershell
 dotnet restore src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj -p:BuildAllUnoTargets=true
-dotnet build src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj -p:TargetFrameworkOverride=net10.0-android -p:UseMocks=true --no-restore -m:1
+dotnet build src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj -p:TargetFrameworkOverride=net11.0-android -p:UseMocks=true --no-restore -m:1
 ```
 
 `BuildAllUnoTargets=true` is required because the Uno project defaults to fast Wasm-only restore for local web work. Android/Appium runs need platform-specific Skia runtime packages in the NuGet asset graph.
@@ -84,7 +84,7 @@ Only use direct `dotnet test` after the emulator and Appium are already running:
 ```powershell
 $env:TASKFLOW_MOBILE_TESTS_ENABLED = "true"
 $env:TASKFLOW_MOBILE_PLATFORM = "Android"
-$env:TASKFLOW_ANDROID_APP_PATH = "src/UI/TaskFlow.Uno/bin/Debug/net10.0-android/com.taskflow.uno-Signed.apk"
+$env:TASKFLOW_ANDROID_APP_PATH = "src/UI/TaskFlow.Uno/bin/Debug/net11.0-android/com.taskflow.uno-Signed.apk"
 dotnet test tests/Test.Mobile/Test.Mobile.csproj --no-build --filter TestCategory=MobileUI
 ```
 

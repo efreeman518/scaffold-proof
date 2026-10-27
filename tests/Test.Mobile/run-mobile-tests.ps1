@@ -99,7 +99,11 @@ function Wait-Until {
 $repoRoot = Get-SourceRoot
 $testProject = Join-Path $repoRoot "tests\Test.Mobile\Test.Mobile.csproj"
 $unoProject = Join-Path $repoRoot "src\UI\TaskFlow.Uno\TaskFlow.Uno.csproj"
-$apkPath = Join-Path $repoRoot "src\UI\TaskFlow.Uno\bin\Debug\net10.0-android\com.taskflow.uno-Signed.apk"
+# The repository target framework (Directory.Build.props) names the Uno Android head.
+$dotnetTfm = (& dotnet msbuild $testProject -getProperty:TargetFramework | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or -not $dotnetTfm) { throw "Could not read TargetFramework from $testProject." }
+$androidTfm = "$dotnetTfm-android"
+$apkPath = Join-Path $repoRoot "src\UI\TaskFlow.Uno\bin\Debug\$androidTfm\com.taskflow.uno-Signed.apk"
 $resultDir = Join-Path $repoRoot "tests\TestResults\Mobile"
 
 New-Item -ItemType Directory -Force -Path $resultDir | Out-Null
@@ -127,7 +131,7 @@ if (-not $SkipBuild) {
     & dotnet restore $unoProject -p:BuildAllUnoTargets=true
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-    & dotnet build $unoProject -p:TargetFrameworkOverride=net10.0-android -p:UseMocks=true --no-restore -m:1
+    & dotnet build $unoProject -p:TargetFrameworkOverride=$androidTfm -p:UseMocks=true --no-restore -m:1
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 

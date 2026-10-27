@@ -36,7 +36,7 @@ if (string.IsNullOrWhiteSpace(distPath))
         "TaskFlow.Uno",
         "bin",
         configuration,
-        "net10.0-browserwasm",
+        "net11.0-browserwasm",
         configuration == "Release" ? "publish" : string.Empty));
 }
 else

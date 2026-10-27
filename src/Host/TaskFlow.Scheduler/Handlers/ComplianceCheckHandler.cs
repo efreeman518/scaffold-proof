@@ -26,8 +26,9 @@ namespace TaskFlow.Scheduler.Handlers;
 /// <para>
 /// The idempotency key is the tenant and the UTC date of the run, so the engine resolves a same-day re-run to the
 /// instance the first run started (<see cref="StartRequest.IdempotencyKey"/>), and that is not a failure. Only an
-/// instance this call created counts as started and as a row affected in the run's telemetry. A failed start is collected and rethrown at the end of the run, so the run
-/// fails visibly through <see cref="ScheduledJobRunner"/> after every tenant was handled.
+/// instance this call created counts as started and as a row affected in the run's telemetry. A failed start is collected and rethrown at the end of the run, so the
+/// attempt fails visibly (and the scheduler retries it) after every tenant was handled; a retry resolves the tenants it
+/// already started to their instances through the idempotency key.
 /// </para>
 /// </summary>
 public sealed class ComplianceCheckHandler(
@@ -39,7 +40,8 @@ public sealed class ComplianceCheckHandler(
     IOptions<SelfCallRelayOptions> selfCall,
     ILogger<ComplianceCheckHandler> logger) : IScheduledJobHandler
 {
-    public const string JobName = "ComplianceCheck";
+    /// <summary>Scheduled job name; also the job tag on its telemetry.</summary>
+    public const string JobName = "compliance_check";
     public const string WorkflowId = "compliance-check";
 
     /// <summary>The tag the workflow's task search filters on (<c>compliance-check.json</c>, <c>n-query-due</c>).</summary>

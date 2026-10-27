@@ -15,7 +15,8 @@ public sealed class OutboxRetentionHandler(
     TimeProvider timeProvider,
     IConfiguration config) : IScheduledJobHandler
 {
-    public const string JobName = "OutboxRetention";
+    /// <summary>Scheduled job name; also the job tag on its telemetry.</summary>
+    public const string JobName = "outbox_retention";
     private const int DefaultRetentionDays = 7;
 
     /// <summary>Handles outbox retention requests.</summary>

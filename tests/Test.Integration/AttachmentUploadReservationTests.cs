@@ -118,7 +118,7 @@ public sealed class AttachmentUploadReservationTests
         {
             await using var worker = DbContainerFixture.CreateTrxnContext(connStr);
             claimed = await new LeasedWorkStore<TaskFlowDbContextTrxn>(worker, workerClock)
-                .ClaimAsync<BlobDeleteWork>(new LeaseRequest(50, TimeSpan.FromMinutes(5), 10, "late-worker"), token);
+                .ClaimAsync<BlobDeleteWork>(new LeaseRequest(50, TimeSpan.FromMinutes(5), 10, "late-worker"), filter: null, token);
         });
 
         var result = await UploadAsync(style, connStr, blobs, Guid.CreateVersion7(), Guid.CreateVersion7(), ct);
@@ -167,7 +167,7 @@ public sealed class AttachmentUploadReservationTests
     {
         await using var db = DbContainerFixture.CreateTrxnContext(connStr);
         var store = new LeasedWorkStore<TaskFlowDbContextTrxn>(db, clock);
-        var batch = await store.ClaimAsync<BlobDeleteWork>(new LeaseRequest(50, TimeSpan.FromMinutes(5), 10, "reservation-test"), ct);
+        var batch = await store.ClaimAsync<BlobDeleteWork>(new LeaseRequest(50, TimeSpan.FromMinutes(5), 10, "reservation-test"), filter: null, ct);
         var completed = new ConcurrentBag<Guid>();
 
         await BlobDeleteWorkerService.DeleteBatchAsync(blobs, batch.Items, completed.Add,

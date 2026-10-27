@@ -36,13 +36,11 @@ internal static partial class LogMessages
     [LoggerMessage(EventId = LogEventIds.SchedulerBase + 12, Level = LogLevel.Error, Message = "Occurrence {OccurrenceUtc} of template {TemplateId} was rejected: {Reason}")]
     public static partial void RecurrenceOccurrenceRejected(this ILogger logger, Guid templateId, DateTimeOffset occurrenceUtc, string reason);
 
-    /// <summary>Logs that TickerQ is running without a persisted operational store.</summary>
-    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 16, Level = LogLevel.Information, Message = "TickerQ running without persisted operational store.")]
-    public static partial void TickerQPersistenceDisabled(this ILogger logger);
+    // EventId SchedulerBase + 16 is retired, never reused.
 
-    /// <summary>Logs that the TickerQ operational-store schema was validated.</summary>
-    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 17, Level = LogLevel.Information, Message = "TickerQ operational-store schema validated.")]
-    public static partial void TickerQSchemaValidated(this ILogger logger);
+    /// <summary>Logs that the scheduler database schema was validated.</summary>
+    [LoggerMessage(EventId = LogEventIds.SchedulerBase + 17, Level = LogLevel.Information, Message = "Scheduler database schema validated.")]
+    public static partial void SchedulerSchemaValidated(this ILogger logger);
 
     /// <summary>Logs a compliance-check instance this run started for a tenant.</summary>
     [LoggerMessage(EventId = LogEventIds.SchedulerBase + 20, Level = LogLevel.Information, Message = "Compliance check for tenant {TenantId} started as instance {InstanceId} ({Status})")]
@@ -60,6 +58,5 @@ internal static partial class LogMessages
     [LoggerMessage(EventId = LogEventIds.SchedulerBase + 23, Level = LogLevel.Warning, Message = "Compliance check not started for tenant {TenantId}: no self-call relay is configured (FlowEngine:SelfCall:TokenScope), so the workflow's API calls run as the scaffold tenant {SelfCallTenantId} and cannot read this tenant's tasks")]
     public static partial void ComplianceCheckTenantNotServed(this ILogger logger, Guid tenantId, Guid selfCallTenantId);
 
-    // EventIds SchedulerBase + 18 and + 19 were TickerQCronManagerUnavailable / TickerQCronJobsSeeded. The cron
-    // expressions now live on [TickerFunction] and TickerQ seeds them itself; retired, never reused.
+    // EventIds SchedulerBase + 18 and + 19 are retired, never reused.
 }

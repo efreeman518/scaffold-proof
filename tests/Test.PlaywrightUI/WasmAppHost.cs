@@ -17,7 +17,7 @@ internal static class WasmAppHost
     private const string TestsEnabledVariable = "TASKFLOW_WASM_TESTS_ENABLED";
     private const string UnoResourceName = "taskflowuno";
     private const string HttpEndpointName = "http";
-    private const string TargetFramework = "net10.0-browserwasm";
+    private const string TargetFramework = "net11.0-browserwasm";
     private const string StampFileName = ".taskflow-wasm-test-build.stamp";
     private const string PublishedDistPathVariable = "TASKFLOW_UNO_WASM_DIST_PATH";
 

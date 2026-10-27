@@ -10,7 +10,7 @@ namespace Test.Integration;
 
 /// <summary>
 /// Runs the three migration targets in migrator order against an empty database on the lane's provider and
-/// proves idempotency, per-target history tables, the TickerQ schema validator, and BeforeSchema/AfterSchema
+/// proves idempotency, per-target history tables, the scheduler schema check, and BeforeSchema/AfterSchema
 /// data steps. Every SQL statement here is standard SQL (INFORMATION_SCHEMA, quoted identifiers) so the same
 /// test runs on SQL Server and PostgreSQL.
 /// </summary>
@@ -46,9 +46,9 @@ public sealed class DatabaseMigratorIntegrationTests
         Assert.IsGreaterThanOrEqualTo(4, flowEngineTableCount, $"Expected at least 4 FlowEngine tables, found {flowEngineTableCount}.");
         Assert.IsTrue(await TableExistsAsync(flowEngine, TaskFlowFlowEngineDbContext.SchemaName, TaskFlowFlowEngineDbContext.MigrationHistoryTable));
 
-        await using var tickerQ = DbContainerFixture.CreateTickerQContext(connectionString);
-        Assert.IsEmpty(await tickerQ.GetMissingTablesAsync(TestContext.CancellationToken));
-        Assert.IsTrue(await TableExistsAsync(tickerQ, TaskFlowTickerQDbContext.SchemaName, TaskFlowTickerQDbContext.MigrationHistoryTable));
+        await using var scheduler = DbContainerFixture.CreateSchedulerContext(connectionString);
+        Assert.IsEmpty(await scheduler.GetMissingTablesAsync(TestContext.CancellationToken));
+        Assert.IsTrue(await TableExistsAsync(scheduler, TaskFlowSchedulerDbContext.SchemaName, TaskFlowSchedulerDbContext.MigrationHistoryTable));
 
         // The AfterSchema data step ran once per RunAsync and stayed idempotent (BeforeSchema clears, AfterSchema inserts).
         var proofRows = await trxn.ConsumerInbox.Where(x => x.Consumer == ProofConsumer).ToListAsync(TestContext.CancellationToken);
@@ -58,13 +58,13 @@ public sealed class DatabaseMigratorIntegrationTests
 
     [TestMethod]
     [Timeout(120000, CooperativeCancellation = true)]
-    public async Task TickerQValidation_FailsWhenSchemaMissing()
+    public async Task SchedulerValidation_FailsWhenSchemaMissing()
     {
-        var connectionString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("TickerQMissing", TestContext.CancellationToken);
-        await using var tickerQ = DbContainerFixture.CreateTickerQContext(connectionString);
+        var connectionString = await DbContainerFixture.CreateEmptyDatabaseConnectionStringAsync("SchedulerMissing", TestContext.CancellationToken);
+        await using var scheduler = DbContainerFixture.CreateSchedulerContext(connectionString);
 
-        Assert.IsTrue(await tickerQ.Database.CanConnectAsync(TestContext.CancellationToken));
-        Assert.IsNotEmpty(await tickerQ.GetMissingTablesAsync(TestContext.CancellationToken));
+        Assert.IsTrue(await scheduler.Database.CanConnectAsync(TestContext.CancellationToken));
+        Assert.IsNotEmpty(await scheduler.GetMissingTablesAsync(TestContext.CancellationToken));
     }
 
     private static DatabaseMigrationRunner CreateRunner(string connectionString)
@@ -83,26 +83,26 @@ public sealed class DatabaseMigratorIntegrationTests
                 new EfTestDbContextFactory<TaskFlowFlowEngineDbContext>(() => DbContainerFixture.CreateFlowEngineContext(connectionString)),
                 [],
                 NullLogger<EntityFrameworkMigrationTarget<TaskFlowFlowEngineDbContext>>.Instance),
-            new EntityFrameworkMigrationTarget<TaskFlowTickerQDbContext>(
-                "TaskFlowTickerQDbContext",
+            new EntityFrameworkMigrationTarget<TaskFlowSchedulerDbContext>(
+                "TaskFlowSchedulerDbContext",
                 30,
-                new EfTestDbContextFactory<TaskFlowTickerQDbContext>(() => DbContainerFixture.CreateTickerQContext(connectionString)),
-                CreateTickerQDataMigrationSteps(),
-                NullLogger<EntityFrameworkMigrationTarget<TaskFlowTickerQDbContext>>.Instance)
+                new EfTestDbContextFactory<TaskFlowSchedulerDbContext>(() => DbContainerFixture.CreateSchedulerContext(connectionString)),
+                CreateSchedulerDataMigrationSteps(),
+                NullLogger<EntityFrameworkMigrationTarget<TaskFlowSchedulerDbContext>>.Instance)
         ],
         NullLogger<DatabaseMigrationRunner>.Instance);
     }
 
     // Data steps target the EF-created taskflow."ConsumerInbox" (migrated by the order-10 target) with plain
     // DML and double-quoted identifiers, which both providers accept.
-    private static IReadOnlyList<IDatabaseMigrationStep<TaskFlowTickerQDbContext>> CreateTickerQDataMigrationSteps() =>
+    private static IReadOnlyList<IDatabaseMigrationStep<TaskFlowSchedulerDbContext>> CreateSchedulerDataMigrationSteps() =>
     [
-        new SqlDatabaseMigrationStep<TaskFlowTickerQDbContext>(
+        new SqlDatabaseMigrationStep<TaskFlowSchedulerDbContext>(
             "clear-proof-row",
             DatabaseMigrationStepPhase.BeforeSchema,
             10,
             $"""DELETE FROM taskflow."ConsumerInbox" WHERE "Consumer" = '{ProofConsumer}'"""),
-        new SqlDatabaseMigrationStep<TaskFlowTickerQDbContext>(
+        new SqlDatabaseMigrationStep<TaskFlowSchedulerDbContext>(
             "insert-proof-row",
             DatabaseMigrationStepPhase.AfterSchema,
             10,

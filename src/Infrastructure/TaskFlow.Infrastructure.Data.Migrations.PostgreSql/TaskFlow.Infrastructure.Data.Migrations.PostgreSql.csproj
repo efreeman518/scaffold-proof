@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- D-025: PostgreSQL migration set for TaskFlow (Trxn/Query), FlowEngine and TickerQ contexts.
+  <!-- D-025: PostgreSQL migration set for TaskFlow (Trxn/Query), FlowEngine and Scheduler contexts.
        Selected at runtime through TaskFlowDbProviderSelector.MigrationsAssembly; never referenced by Infrastructure.Data. -->
 
   <ItemGroup>

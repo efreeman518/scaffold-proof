@@ -132,7 +132,7 @@ internal sealed record MobileTestSettings
                 "TaskFlow.Uno",
                 "bin",
                 "Debug",
-                "net10.0-android",
+                "net11.0-android",
                 "com.taskflow.uno-Signed.apk"),
             MobileTestPlatform.Ios => Path.Combine(
                 repoRoot,
@@ -141,7 +141,7 @@ internal sealed record MobileTestSettings
                 "TaskFlow.Uno",
                 "bin",
                 "Debug",
-                "net10.0-ios",
+                "net11.0-ios",
                 "iossimulator-x64",
                 "TaskFlow.Uno.app"),
             _ => throw new InvalidOperationException($"Unsupported platform '{platform}'.")

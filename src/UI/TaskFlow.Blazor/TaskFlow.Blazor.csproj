@@ -4,7 +4,6 @@
   <Import Project="..\..\Host\TaskFlow.Host.props" />
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>TaskFlow.Blazor</RootNamespace>
@@ -16,8 +15,6 @@
 
   <ItemGroup>
     <PackageReference Include="EF.FlowEngine.Dashboard" />
-    <!-- Temporary direct reference lifting a vulnerable transitive - see Directory.Packages.props. -->
-    <PackageReference Include="System.Security.Cryptography.Pkcs" />
     <PackageReference Include="EF.Http.Resilience" />
     <PackageReference Include="MudBlazor" />
     <PackageReference Include="Refit" />

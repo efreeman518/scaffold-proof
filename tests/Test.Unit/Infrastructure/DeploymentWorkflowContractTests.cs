@@ -420,7 +420,7 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(smokeJob, "ConnectionStrings__TaskFlowDbContextTrxn=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password");
         StringAssert.Contains(smokeJob, "ConnectionStrings__TaskFlowDbContextQuery=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password");
         StringAssert.Contains(smokeJob, "ConnectionStrings__TaskFlowFlowEngineDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password");
-        StringAssert.Contains(smokeJob, "ConnectionStrings__TickerQDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password");
+        StringAssert.Contains(smokeJob, "ConnectionStrings__TaskFlowSchedulerDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password");
         StringAssert.Contains(smokeJob, "RABBITMQ_DEFAULT_USER=taskflow-ci");
         StringAssert.Contains(smokeJob, "RABBITMQ_DEFAULT_PASS=$rabbitmq_password");
         StringAssert.Contains(smokeJob, "ConnectionStrings__RabbitMq1=amqp://taskflow-ci:$rabbitmq_password@rabbitmq:5672");
@@ -723,7 +723,7 @@ public sealed class DeploymentWorkflowContractTests
         {
             "POSTGRES_PASSWORD", "ConnectionStrings__TaskFlowDbContextTrxn",
             "ConnectionStrings__TaskFlowDbContextQuery", "ConnectionStrings__TaskFlowFlowEngineDbContext",
-            "ConnectionStrings__TickerQDbContext", "REDIS_PASSWORD", "ConnectionStrings__Redis1",
+            "ConnectionStrings__TaskFlowSchedulerDbContext", "REDIS_PASSWORD", "ConnectionStrings__Redis1",
             "RABBITMQ_DEFAULT_PASS", "Messaging__RabbitMq__ConnectionString", "ConnectionStrings__RabbitMq1",
             "Storage__S3__AccessKeyId", "Storage__S3__SecretAccessKey", "MONGO_INITDB_ROOT_PASSWORD",
             "Database__Encryption__LocalKeyBase64", "Database__Encryption__BlindIndexKeyBase64",

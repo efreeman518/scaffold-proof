@@ -359,7 +359,7 @@ module migrator 'modules/container-app-job.bicep' = {
     envVars: union(commonEnvVars, [
       { name: 'ConnectionStrings__TaskFlowDbContextTrxn', value: migratorDbConnectionString }
       { name: 'ConnectionStrings__TaskFlowFlowEngineDbContext', value: migratorDbConnectionString }
-      { name: 'ConnectionStrings__TickerQDbContext', value: migratorDbConnectionString }
+      { name: 'ConnectionStrings__TaskFlowSchedulerDbContext', value: migratorDbConnectionString }
     ])
     tags: tags
   }
@@ -466,8 +466,8 @@ module scheduler 'modules/container-app.bicep' = {
       { name: 'ConnectionStrings__TaskFlowDbContextTrxn', value: dbConnectionString }
       { name: 'ConnectionStrings__TaskFlowDbContextQuery', value: dbReadConnectionString }
       { name: 'ConnectionStrings__TaskFlowFlowEngineDbContext', value: dbConnectionString }
-      { name: 'ConnectionStrings__TickerQDbContext', value: dbConnectionString }
-      // Workflow self-calls from the instances this host starts (the ComplianceCheck job) or resumes: the Api's internal
+      { name: 'ConnectionStrings__TaskFlowSchedulerDbContext', value: dbConnectionString }
+      // Workflow self-calls from the instances this host starts (the compliance_check job) or resumes: the Api's internal
       // ingress, as the gateway's cluster destination reaches it.
       { name: 'FlowEngine__TaskFlowApiBaseUrl', value: 'https://${api.outputs.fqdn}' }
       { name: 'ConnectionStrings__CosmosDb1', value: cosmosDb.outputs.accountEndpoint }

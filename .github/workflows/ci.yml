@@ -677,7 +677,7 @@ jobs:
           ConnectionStrings__TaskFlowDbContextTrxn=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password
           ConnectionStrings__TaskFlowDbContextQuery=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password
           ConnectionStrings__TaskFlowFlowEngineDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password
-          ConnectionStrings__TickerQDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password
+          ConnectionStrings__TaskFlowSchedulerDbContext=Host=postgres;Port=5432;Database=taskflowdb;Username=taskflow-ci;Password=$postgres_password
           REDIS_PASSWORD=$redis_password
           ConnectionStrings__Redis1=redis:6379,password=$redis_password,abortConnect=false
           RABBITMQ_DEFAULT_USER=taskflow-ci

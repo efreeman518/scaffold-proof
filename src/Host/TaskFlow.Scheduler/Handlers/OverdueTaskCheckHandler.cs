@@ -23,7 +23,8 @@ public sealed class OverdueTaskCheckHandler(
     TimeProvider timeProvider,
     ILogger<OverdueTaskCheckHandler> logger) : IScheduledJobHandler
 {
-    public const string JobName = "OverdueTaskCheck";
+    /// <summary>Scheduled job name; also the job tag on its telemetry.</summary>
+    public const string JobName = "overdue_task_check";
 
     /// <summary>Rows read per keyset page, and the size of one tenant transaction at most.</summary>
     private const int PageSize = 200;

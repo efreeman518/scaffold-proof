@@ -117,7 +117,7 @@ public sealed partial class AiWorkflowIntegrationTests
         return json.RootElement.GetProperty("context").GetProperty("context").GetProperty("dueTasks").GetProperty("value").GetArrayLength();
     }
 
-    // The Scheduler's handler over the system repository and this host's engine, as the TickerQ job runs it.
+    // The Scheduler's handler over the system repository and this host's engine, as the scheduled job runs it.
     private static async Task RunComplianceCheckJobAsync(
         FlowEngineWorkflowApiFactory factory, string connectionString, DateTimeOffset now, CancellationToken ct)
     {

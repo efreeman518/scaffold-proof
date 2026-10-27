@@ -8,7 +8,6 @@
     <PackageReference Include="MSTest" />
     <PackageReference Include="Moq" />
     <PackageReference Include="EF.FlowEngine" />
-    <PackageReference Include="System.Security.Cryptography.Xml" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>

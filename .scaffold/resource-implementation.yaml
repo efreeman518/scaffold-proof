@@ -18,7 +18,7 @@ unoProfile: full
 # those packages rather than app code: outbox, inbox and leased work (EF.Data.Outbox), broker transports and consumer
 # base (EF.Messaging, EF.Messaging.RabbitMq, EF.Messaging.Functions), tenancy boundary (EF.Tenancy), audit sinks
 # (EF.Audit.AzureTable, EF.Audit.Data), cache and shared Redis (EF.Cache), rate limiting (EF.RateLimiting(.Redis)),
-# scaffold principal, token cache and claims relay (EF.Auth, EF.Gateway), scheduler runtime (EF.BackgroundServices.TickerQ),
+# scaffold principal, token cache and claims relay (EF.Auth, EF.Gateway), scheduler runtime (EF.Data.Scheduling),
 # hosting, problem details, concurrency and health endpoints (EF.Host, EF.AspNetCore, EF.OpenTelemetry,
 # EF.Http.Resilience), storage and Cosmos health (EF.Storage(.S3), EF.CosmosDb), the disabled AI client (EF.AI),
 # the Uno client pipeline (EF.UI.Client) and test support (EF.Testing, EF.Testing.Architecture, EF.IntegrationTesting.*).
@@ -363,47 +363,47 @@ messagingSemantics:
 # ---------------------------------------------------------------------------
 # Scheduled Jobs
 # ---------------------------------------------------------------------------
-# Schedules are the seeded TickerQ cron expressions (6 fields, seconds first) from
-# RegisterSchedulerServices.SeedCronJobs. targetService/method name the entry point each
-# TickerFunction handler calls; the handler itself is Handlers/<name>Handler.
+# Schedules are the EF.Data.Scheduling cron expressions (6 fields, seconds first, UTC) registered in
+# RegisterSchedulerServices.AddJobScheduler. targetService/method name the entry point each
+# job handler calls; the handler itself is Handlers/<Name>Handler.
 scheduledJobs:
-  - name: OverdueTaskCheck
+  - name: overdue_task_check
     schedule: "0 0 */6 * * *"
     description: "Announce tasks past their due date as TaskItemOverdueSuspected, once per due date"
     targetService: ITaskItemSystemRepository
     method: StreamOverdueAsync
 
-  - name: RecurringTaskGeneration
+  - name: recurring_task_generation
     schedule: "0 0 2 * * *"
     description: "Generate up to 12 due occurrences per recurring template and advance its next-occurrence pointer"
     targetService: ITaskItemSystemRepository
     method: StreamDueTemplatesAsync
 
-  - name: StaleTaskCleanup
+  - name: stale_task_cleanup
     schedule: "0 0 3 * * 0"
     description: "Delete cancelled tasks terminal for more than 90 days, staging deferred blob deletes first"
     targetService: ITaskItemSystemRepository
     method: GetStaleBatchAsync
 
-  - name: OutboxRetention
+  - name: outbox_retention
     schedule: "0 15 * * * *"
     description: "Hard-delete dead-lettered OutboxMessage and BlobDeleteWork rows older than 7 days"
     targetService: EF.Data.Outbox.ILeasedWorkStore
     method: PurgeDeadLetteredAsync
 
-  - name: ConsumerInboxRetention
+  - name: consumer_inbox_retention
     schedule: "0 20 * * * *"
     description: "Hard-delete ConsumerInbox rows older than 7 days"
     targetService: EF.Messaging.IInboxStore
     method: PurgeAsync
 
-  - name: TickerQOccurrenceRetention
+  - name: scheduler_retention
     schedule: "0 30 4 * * *"
-    description: "Purge TickerQ cron occurrence rows older than Scheduling:Retention:OccurrenceRetention (1 day)"
-    targetService: EF.BackgroundServices.TickerQ.TickerQOccurrenceRetentionHandler<TaskFlowTickerQDbContext>
+    description: "Purge scheduler run history older than Scheduling:Retention:RunRetention (1 day) and parked runs older than ParkedRetention (30 days)"
+    targetService: EF.Data.Scheduling.SchedulerRetentionHandler<TaskFlowSchedulerDbContext>
     method: HandleAsync
 
-  - name: AuditRetention
+  - name: audit_retention
     schedule: "0 40 4 * * *"
     description: "Batch-delete audit log entries older than 30 days (100-row single-partition transactions, PartitionKey = tenantId|yyyyMMdd)"
     targetService: EF.Audit.Contracts.IAuditLogRepository

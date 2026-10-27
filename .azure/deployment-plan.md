@@ -32,7 +32,7 @@ Generated: 2026-04-23
 |-----------|------|------------|------|
 | TaskFlow.Gateway | API Gateway (YARP) | ASP.NET Core, .NET 10 | `src/Host/TaskFlow.Gateway/` |
 | TaskFlow.Api | Backend API | ASP.NET Core Minimal APIs, EF Core 10 | `src/Host/TaskFlow.Api/` |
-| TaskFlow.Scheduler | Background Worker | ASP.NET Core, TickerQ | `src/Host/TaskFlow.Scheduler/` |
+| TaskFlow.Scheduler | Background Worker | ASP.NET Core, EF.Data.Scheduling | `src/Host/TaskFlow.Scheduler/` |
 | TaskFlow.Functions | Event Processor | Azure Functions Isolated Worker v4 | `src/Host/TaskFlow.Functions/` |
 | TaskFlow.Blazor | Web UI | .NET 10 Interactive Server, MudBlazor | `src/UI/TaskFlow.Blazor/` |
 | TaskFlow.React | Web UI | React | `src/UI/TaskFlow.React/` |

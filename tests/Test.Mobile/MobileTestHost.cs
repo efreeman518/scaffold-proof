@@ -92,7 +92,7 @@ internal static class MobileTestHost
         await RunDotnetAsync(
             projectPath,
             repoRoot,
-            ["build", projectPath, "-p:TargetFrameworkOverride=net10.0-android", "-p:Configuration=Debug", "--no-restore", "-m:1"],
+            ["build", projectPath, "-p:TargetFrameworkOverride=net11.0-android", "-p:Configuration=Debug", "--no-restore", "-m:1"],
             cancellationToken);
     }
 

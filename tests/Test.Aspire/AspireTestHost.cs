@@ -379,7 +379,7 @@ internal static class AspireTestHost
             return null;
 
         return Directory.EnumerateFiles(outputRoot, "index.html", SearchOption.AllDirectories)
-            .Where(path => path.Contains("net10.0-browserwasm", StringComparison.OrdinalIgnoreCase)
+            .Where(path => path.Contains("net11.0-browserwasm", StringComparison.OrdinalIgnoreCase)
                 && path.Contains($"{Path.DirectorySeparatorChar}wwwroot{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(File.GetLastWriteTimeUtc)
             .Select(path => Directory.GetParent(Path.GetDirectoryName(path)!)?.FullName)

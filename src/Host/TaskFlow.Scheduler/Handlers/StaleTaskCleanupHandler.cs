@@ -16,7 +16,8 @@ public sealed class StaleTaskCleanupHandler(
     IConfiguration config,
     ILogger<StaleTaskCleanupHandler> logger) : IScheduledJobHandler
 {
-    public const string JobName = "StaleTaskCleanup";
+    /// <summary>Scheduled job name; also the job tag on its telemetry.</summary>
+    public const string JobName = "stale_task_cleanup";
 
     /// <summary>Tasks read per keyset page, and the size of one tenant transaction at most.</summary>
     private const int PageSize = 200;

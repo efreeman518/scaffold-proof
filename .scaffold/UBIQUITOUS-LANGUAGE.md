@@ -183,7 +183,7 @@ Terms used by the workflow orchestration layer. These are FlowEngine-runtime con
 | Rejected Term | Use Instead | Reason |
 |---|---|---|
 | `Workflow` (as code identifier) | `WorkflowDefinition` | Avoid collision with the runtime concept; reserve unqualified `Workflow` for prose. |
-| `Job` | `ExecutionInstance` | "Job" collides with TickerQ scheduled jobs; FlowEngine instances are not cron-triggered. |
+| `Job` | `ExecutionInstance` | "Job" collides with the Scheduler's scheduled jobs; FlowEngine instances are not cron-triggered. |
 | `Step` | `Node` | FlowEngine's own vocabulary; consistent with the JSON schema. |
 | `Task` (FlowEngine) | `HumanTask` for human approvals, `Node` for engine steps | Prevents triple collision with `System.Threading.Tasks.Task` and `TaskItem`. |
 

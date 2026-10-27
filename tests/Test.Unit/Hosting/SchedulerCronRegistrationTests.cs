@@ -1,59 +1,91 @@
-using System.Runtime.CompilerServices;
+using EF.Data.Scheduling;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using TaskFlow.Scheduler;
 using TaskFlow.Scheduler.Handlers;
 using TaskFlow.Scheduler.Handlers.Retention;
-using TaskFlow.Scheduler.Jobs;
-using TickerQ.Utilities;
 
 namespace Test.Unit.Hosting;
 
 /// <summary>
-/// Every Scheduler cron job carries its schedule in its <c>[TickerFunction]</c> registration. TickerQ seeds the
-/// operational store only from functions that have a cron expression, so a job registered without one is never
-/// scheduled - which is what happened while the expressions lived in a manual seeding call that ran before
-/// TickerQ knew any function. The store round trip is proven in Test.Integration SchedulerCronSeedingTests.
-/// Pure-unit tier: reads TickerQ's in-process function registry, no database.
+/// Every Scheduler cron job carries its schedule in its EF.Data.Scheduling registration, after the shipped
+/// <c>Scheduling:Jobs:{name}</c> configuration is applied. The planner enqueues occurrences only for a job with a cron,
+/// so a job registered without one would never run. The database round trip (catalog publication and the run) is
+/// proven in Test.Integration SchedulerCronSeedingTests.
+/// Pure-unit tier: the Scheduler's registration over the shipped appsettings, no database.
 /// </summary>
 [TestClass]
 [TestCategory("Unit")]
 public sealed class SchedulerCronRegistrationTests
 {
-    [TestMethod]
-    [DataRow(OverdueTaskCheckHandler.JobName, "0 0 */6 * * *")]
-    [DataRow(RecurringTaskGenerationHandler.JobName, "0 0 2 * * *")]
-    [DataRow(StaleTaskCleanupHandler.JobName, "0 0 3 * * 0")]
-    [DataRow(ComplianceCheckHandler.JobName, "0 10 6 * * *")]
-    [DataRow(OutboxRetentionHandler.JobName, "0 15 * * * *")]
-    [DataRow(ConsumerInboxRetentionHandler.JobName, "0 20 * * * *")]
-    [DataRow(TaskMaintenanceJobs.TickerQOccurrenceRetention, "0 30 4 * * *")]
-    [DataRow(AuditRetentionHandler.JobName, "0 40 4 * * *")]
-    public void Given_SchedulerAssembly_When_TickerFunctionsBuilt_Then_JobCarriesItsCronExpression(
-        string jobName, string expectedCron)
+    private static readonly Dictionary<string, string> ExpectedJobs = new(StringComparer.Ordinal)
     {
-        var functions = RegisteredFunctions();
+        [OverdueTaskCheckHandler.JobName] = "0 0 */6 * * *",
+        [RecurringTaskGenerationHandler.JobName] = "0 0 2 * * *",
+        [StaleTaskCleanupHandler.JobName] = "0 0 3 * * 0",
+        [ComplianceCheckHandler.JobName] = "0 10 6 * * *",
+        [OutboxRetentionHandler.JobName] = "0 15 * * * *",
+        [ConsumerInboxRetentionHandler.JobName] = "0 20 * * * *",
+        [RegisterSchedulerServices.SchedulerRetentionJobName] = "0 30 4 * * *",
+        [AuditRetentionHandler.JobName] = "0 40 4 * * *"
+    };
 
-        Assert.IsTrue(functions.TryGetValue(jobName, out var function), $"{jobName} is not a registered TickerFunction");
-        Assert.AreEqual(expectedCron, function.cronExpression,
-            $"{jobName} has no schedule on its TickerFunction; TickerQ would never seed it");
+    [TestMethod]
+    public void Given_SchedulerRegistration_When_JobOptionsResolved_Then_EveryJobCarriesItsCronInUtc()
+    {
+        using var provider = BuildSchedulerServices();
+        var jobs = provider.GetRequiredService<IOptionsMonitor<ScheduledJobOptions>>();
+
+        foreach (var (name, cron) in ExpectedJobs)
+        {
+            // Get validates the job's options (a cron that cannot be parsed or never matches throws).
+            var options = jobs.Get(name);
+            Assert.AreEqual(cron, options.Cron, $"{name} has the wrong schedule");
+            Assert.AreEqual("UTC", options.TimeZoneId, $"{name} must read its cron in UTC");
+        }
     }
 
     [TestMethod]
-    public void Given_SchedulerAssembly_When_TickerFunctionsBuilt_Then_NoJobIsLeftWithoutASchedule()
+    public void Given_SchedulerRegistration_When_JobsListed_Then_ExactlyTheExpectedJobsAreRegistered()
     {
-        var unscheduled = RegisteredFunctions()
-            .Where(f => f.Value.Delegate is not null && string.IsNullOrWhiteSpace(f.Value.cronExpression))
-            .Select(f => f.Key)
+        using var provider = BuildSchedulerServices();
+
+        // Each AddJob binds Scheduling:Jobs:{name} once, so the named change-token sources list the registered jobs.
+        var registered = provider.GetServices<IOptionsChangeTokenSource<ScheduledJobOptions>>()
+            .Select(s => s.Name!)
+            .Order(StringComparer.Ordinal)
             .ToList();
 
-        Assert.IsEmpty(unscheduled, $"cron jobs without a schedule: {string.Join(", ", unscheduled)}");
+        CollectionAssert.AreEqual(ExpectedJobs.Keys.Order(StringComparer.Ordinal).ToList(), registered);
     }
 
-    private static IReadOnlyDictionary<string, (string cronExpression, TickerQ.Utilities.Enums.TickerTaskPriority Priority, TickerFunctionDelegate Delegate, int MaxConcurrency)> RegisteredFunctions()
+    [TestMethod]
+    public void Given_ShippedSchedulerSettings_When_Validated_Then_TheWorkerOptionsAreValid()
     {
-        // The TickerQ source generator registers the functions from a module initializer; running it explicitly
-        // makes the test independent of whether anything else touched the Scheduler assembly first. Build is what
-        // TickerQ's initializer calls at host start, and is idempotent.
-        RuntimeHelpers.RunModuleConstructor(typeof(TaskMaintenanceJobs).Module.ModuleHandle);
-        TickerFunctionProvider.Build();
-        return TickerFunctionProvider.TickerFunctions;
+        using var provider = BuildSchedulerServices();
+
+        // Value runs the options validator against every registered job's timeout and the lease.
+        var options = provider.GetRequiredService<IOptions<SchedulerOptions>>().Value;
+
+        Assert.AreEqual(5, options.Slots);
+        Assert.AreEqual(TimeSpan.FromDays(1), provider.GetRequiredService<IOptions<SchedulerRetentionSettings>>().Value.RunRetention);
+    }
+
+    private static ServiceProvider BuildSchedulerServices()
+    {
+        var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
+        builder.Configuration
+            .AddJsonFile(RepoRoot.Combine("src", "Host", "TaskFlow.Scheduler", "appsettings.json"), optional: false)
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                // Never opened: the registration only needs a connection string to build the context options.
+                [$"ConnectionStrings:{RegisterSchedulerServices.SchedulerConnectionName}"] =
+                    "Host=localhost;Database=scheduler-registration-test;Username=test;Password=test"
+            });
+        builder.Services.AddSingleton<IConfiguration>(builder.Configuration);
+        builder.AddJobScheduler();
+        return builder.Services.BuildServiceProvider();
     }
 }

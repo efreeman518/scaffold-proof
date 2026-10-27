@@ -1,4 +1,5 @@
 using Aspire.Hosting.Testing;
+using EF.Data.Scheduling;
 using Microsoft.EntityFrameworkCore;
 using System.Net;
 using System.Net.Http.Json;
@@ -7,12 +8,11 @@ using TaskFlow.Domain.Shared.Enums;
 using TaskFlow.Infrastructure.Data;
 using TaskFlow.Infrastructure.Data.Provider;
 using Test.Support.Hosting;
-using TickerQ.Utilities.Entities;
 
 namespace Test.Aspire;
 
 /// <summary>
-/// The compliance-check start path in the running graph (D-075): a due ticker for the Scheduler's ComplianceCheck job
+/// The compliance-check start path in the running graph (D-075): a due run of the Scheduler's compliance_check job
 /// starts compliance-check for the scaffold tenant, which has an open task tagged "compliance" with text evidence, and
 /// the compliance-check-item child that the instance starts reads that evidence (its document node takes the Match
 /// edge). That read is refused to an instance without a tenant, so it shows the job set the instance tenant, and the
@@ -45,7 +45,7 @@ public class ComplianceCheckSchedulerSmokeTests
 
     [TestMethod]
     [Timeout(900_000, CooperativeCancellation = true)]
-    public async Task DueComplianceCheckTicker_StartsTheTenantsInstance_AndItsChildReadsTheEvidence()
+    public async Task DueComplianceCheckRun_StartsTheTenantsInstance_AndItsChildReadsTheEvidence()
     {
         var ct = TestContext.CancellationToken;
         var client = AspireTestHost.AspireApp!.CreateHttpClient("taskflowapi");
@@ -59,23 +59,23 @@ public class ComplianceCheckSchedulerSmokeTests
         }
         var evidenceId = await UploadEvidenceAsync(client, taskId, ct);
 
-        // A due one-off ticker for the job, as the cron occurrence would be; the Scheduler picks it up from the store.
-        var tickerAt = DateTimeOffset.UtcNow;
-        await using (var tickerQ = CreateTickerQContext())
+        // A due on-demand run of the job, as a cron occurrence would be; a Scheduler replica claims it from the queue.
+        var runAt = DateTimeOffset.UtcNow;
+        await using (var scheduler = CreateSchedulerContext())
         {
-            var now = tickerAt.UtcDateTime;
-            tickerQ.Set<TimeTickerEntity>().Add(new TimeTickerEntity
+            scheduler.Set<ScheduledJob>().Add(new ScheduledJob
             {
-                Id = Guid.NewGuid(),
-                Function = "ComplianceCheck",
-                ExecutionTime = now,
+                Id = Guid.CreateVersion7(),
+                JobName = "compliance_check",
+                AvailableAtUtc = runAt,
+                CreatedUtc = runAt,
             });
-            await tickerQ.SaveChangesAsync(ct);
+            await scheduler.SaveChangesAsync(ct);
         }
 
-        // Only an instance this ticker's run created: an older one (an earlier run the same day) never matches.
+        // Only an instance this run created: an older one (an earlier run the same day) never matches.
         var parent = await WaitForAsync(client, "compliance-check",
-            i => Field(i, "tenantId") == ScaffoldTenant && CreatedAt(i) >= tickerAt && IsTerminal(i), ct);
+            i => Field(i, "tenantId") == ScaffoldTenant && CreatedAt(i) >= runAt && IsTerminal(i), ct);
         Assert.AreEqual("n-output-ok", Field(parent, "currentNodeId"), parent.ToString());
 
         var listed = await WaitForAsync(client, "compliance-check-item",
@@ -166,12 +166,12 @@ public class ComplianceCheckSchedulerSmokeTests
             : string.Join(">", history.EnumerateArray().Select(h => Field(h, "nodeId") + ":" + Field(h, "outcome")));
     }
 
-    private static TaskFlowTickerQDbContext CreateTickerQContext() =>
-        new(new DbContextOptionsBuilder<TaskFlowTickerQDbContext>()
+    private static TaskFlowSchedulerDbContext CreateSchedulerContext() =>
+        new(new DbContextOptionsBuilder<TaskFlowSchedulerDbContext>()
             .UseTaskFlowProvider(new TaskFlowProviderOptions(
                 TestHostingLane.DatabaseProvider,
                 AspireTestHost.ConnectionString,
-                TaskFlowTickerQDbContext.MigrationHistoryTable,
-                TaskFlowTickerQDbContext.SchemaName))
+                TaskFlowSchedulerDbContext.MigrationHistoryTable,
+                TaskFlowSchedulerDbContext.SchemaName))
             .Options);
 }

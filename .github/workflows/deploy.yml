@@ -133,7 +133,7 @@ jobs:
       - name: Publish Uno WASM Release once
         run: >
           dotnet publish src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj
-          -f net10.0-browserwasm -p:TargetFrameworkOverride=net10.0-browserwasm
+          -f net11.0-browserwasm -p:TargetFrameworkOverride=net11.0-browserwasm
           -p:EnableUnoWasm=true -c Release
           -p:PublishDir=${{ github.workspace }}/release/uno -m:1
       - name: Build React release once

@@ -3,7 +3,7 @@
     "solution": "../../TaskFlow.slnx",
     "project": "TaskFlow.Domain.Model.csproj",
     "configuration": "Debug",
-    "target-framework": "net10.0",
+    "target-framework": "net11.0",
     "mutation-level": "Standard",
     "test-case-filter": "TestCategory=Mutation",
     "reporters": [

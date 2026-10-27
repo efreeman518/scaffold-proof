@@ -17,7 +17,7 @@ namespace Test.Architecture;
 public class MigrationBaselineArchitectureTests : BaseTest
 {
     private static readonly Type[] Contexts =
-        [typeof(TaskFlowDbContextTrxn), typeof(TaskFlowFlowEngineDbContext), typeof(TaskFlowTickerQDbContext)];
+        [typeof(TaskFlowDbContextTrxn), typeof(TaskFlowFlowEngineDbContext), typeof(TaskFlowSchedulerDbContext)];
 
     /// <summary>The provider migration assemblies, one per <see cref="TaskFlowDbProvider"/>.</summary>
     public static IEnumerable<object[]> MigrationAssemblies() =>

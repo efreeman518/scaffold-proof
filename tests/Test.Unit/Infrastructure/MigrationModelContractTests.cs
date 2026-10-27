@@ -27,12 +27,12 @@ public sealed class MigrationModelContractTests
         using var transactional = CreateTransactionalContext(provider);
         using var flowEngine = new TaskFlowFlowEngineDbContext(Build<TaskFlowFlowEngineDbContext>(
             provider, TaskFlowFlowEngineDbContext.MigrationHistoryTable, TaskFlowFlowEngineDbContext.SchemaName));
-        using var tickerQ = new TaskFlowTickerQDbContext(Build<TaskFlowTickerQDbContext>(
-            provider, TaskFlowTickerQDbContext.MigrationHistoryTable, TaskFlowTickerQDbContext.SchemaName));
+        using var scheduler = new TaskFlowSchedulerDbContext(Build<TaskFlowSchedulerDbContext>(
+            provider, TaskFlowSchedulerDbContext.MigrationHistoryTable, TaskFlowSchedulerDbContext.SchemaName));
 
         Assert.IsFalse(transactional.Database.HasPendingModelChanges(), $"{nameof(TaskFlowDbContextTrxn)} on {provider}");
         Assert.IsFalse(flowEngine.Database.HasPendingModelChanges(), $"{nameof(TaskFlowFlowEngineDbContext)} on {provider}");
-        Assert.IsFalse(tickerQ.Database.HasPendingModelChanges(), $"{nameof(TaskFlowTickerQDbContext)} on {provider}");
+        Assert.IsFalse(scheduler.Database.HasPendingModelChanges(), $"{nameof(TaskFlowSchedulerDbContext)} on {provider}");
     }
 
     [TestMethod]

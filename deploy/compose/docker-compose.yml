@@ -71,7 +71,7 @@ services:
       Database__PostgreSql__PoolerMode: ${Database__PostgreSql__PoolerMode:-}
       ConnectionStrings__TaskFlowDbContextTrxn: ${ConnectionStrings__TaskFlowDbContextTrxn:?set TaskFlowDbContextTrxn in .env.base}
       ConnectionStrings__TaskFlowFlowEngineDbContext: ${ConnectionStrings__TaskFlowFlowEngineDbContext:?set TaskFlowFlowEngineDbContext in .env.base}
-      ConnectionStrings__TickerQDbContext: ${ConnectionStrings__TickerQDbContext:?set TickerQDbContext in .env.base}
+      ConnectionStrings__TaskFlowSchedulerDbContext: ${ConnectionStrings__TaskFlowSchedulerDbContext:?set TaskFlowSchedulerDbContext in .env.base}
       Database__Encryption__LocalKeyBase64: ${Database__Encryption__LocalKeyBase64:?set LocalKeyBase64 in .env.base}
       Database__Encryption__BlindIndexKeyBase64: ${Database__Encryption__BlindIndexKeyBase64:?set BlindIndexKeyBase64 in .env.base}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://openobserve:5081
@@ -109,7 +109,7 @@ services:
       ConnectionStrings__TaskFlowDbContextTrxn: ${ConnectionStrings__TaskFlowDbContextTrxn:?set TaskFlowDbContextTrxn in .env.base}
       ConnectionStrings__TaskFlowDbContextQuery: ${ConnectionStrings__TaskFlowDbContextQuery:?set TaskFlowDbContextQuery in .env.base}
       ConnectionStrings__TaskFlowFlowEngineDbContext: ${ConnectionStrings__TaskFlowFlowEngineDbContext:?set TaskFlowFlowEngineDbContext in .env.base}
-      ConnectionStrings__TickerQDbContext: ${ConnectionStrings__TickerQDbContext:?set TickerQDbContext in .env.base}
+      ConnectionStrings__TaskFlowSchedulerDbContext: ${ConnectionStrings__TaskFlowSchedulerDbContext:?set TaskFlowSchedulerDbContext in .env.base}
       ConnectionStrings__Redis1: ${ConnectionStrings__Redis1:?set Redis1 in .env.base}
       Messaging__RabbitMq__ConnectionString: ${Messaging__RabbitMq__ConnectionString:?set RabbitMq connection in .env.base}
       ConnectionStrings__RabbitMq1: ${ConnectionStrings__RabbitMq1:?set RabbitMq1 in .env.base}
@@ -202,7 +202,7 @@ services:
       ConnectionStrings__TaskFlowDbContextTrxn: ${ConnectionStrings__TaskFlowDbContextTrxn:?set TaskFlowDbContextTrxn in .env.base}
       ConnectionStrings__TaskFlowDbContextQuery: ${ConnectionStrings__TaskFlowDbContextQuery:?set TaskFlowDbContextQuery in .env.base}
       ConnectionStrings__TaskFlowFlowEngineDbContext: ${ConnectionStrings__TaskFlowFlowEngineDbContext:?set TaskFlowFlowEngineDbContext in .env.base}
-      ConnectionStrings__TickerQDbContext: ${ConnectionStrings__TickerQDbContext:?set TickerQDbContext in .env.base}
+      ConnectionStrings__TaskFlowSchedulerDbContext: ${ConnectionStrings__TaskFlowSchedulerDbContext:?set TaskFlowSchedulerDbContext in .env.base}
       ConnectionStrings__Redis1: ${ConnectionStrings__Redis1:?set Redis1 in .env.base}
       Messaging__RabbitMq__ConnectionString: ${Messaging__RabbitMq__ConnectionString:?set RabbitMq connection in .env.base}
       ConnectionStrings__RabbitMq1: ${ConnectionStrings__RabbitMq1:?set RabbitMq1 in .env.base}
@@ -215,7 +215,7 @@ services:
       ConnectionStrings__MongoDb1: ${ConnectionStrings__MongoDb1:-}
       Database__Encryption__LocalKeyBase64: ${Database__Encryption__LocalKeyBase64:?set LocalKeyBase64 in .env.base}
       Database__Encryption__BlindIndexKeyBase64: ${Database__Encryption__BlindIndexKeyBase64:?set BlindIndexKeyBase64 in .env.base}
-      # The ComplianceCheck job starts compliance-check here, so the workflow's "taskflow-api" self-calls leave from
+      # The compliance_check job starts compliance-check here, so the workflow's "taskflow-api" self-calls leave from
       # this host: straight to the Api on the internal app network, as the gateway's own cluster destination does.
       FlowEngine__TaskFlowApiBaseUrl: ${FlowEngine__TaskFlowApiBaseUrl:-http://api:8080}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://openobserve:5081

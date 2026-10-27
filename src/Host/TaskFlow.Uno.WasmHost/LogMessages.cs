@@ -11,6 +11,6 @@ namespace TaskFlow.Uno.WasmHost;
 internal static partial class LogMessages
 {
     /// <summary>Logs that the built Uno WASM assets were not found at the resolved dist path.</summary>
-    [LoggerMessage(EventId = LogEventIds.UnoWasmHostBase + 1, Level = LogLevel.Warning, Message = "Uno WASM assets were not found at {DistPath}. Build TaskFlow.Uno for net10.0-browserwasm first.")]
+    [LoggerMessage(EventId = LogEventIds.UnoWasmHostBase + 1, Level = LogLevel.Warning, Message = "Uno WASM assets were not found at {DistPath}. Build TaskFlow.Uno for net11.0-browserwasm first.")]
     public static partial void UnoWasmAssetsNotFound(this ILogger logger, string distPath);
 }

@@ -16,10 +16,9 @@
     <PackageReference Include="EF.BackgroundServices" />
     <PackageReference Include="EF.Storage.Contracts" />
     <PackageReference Include="EF.Audit.Contracts" />
-    <!-- S13-S15: AddEFTickerQ, ScheduledJobRunner, the cron-seed lock, schema validation, retention and the stall
-         check. It carries TickerQ with PrivateAssets none, so the TickerQ source generator reaches this project. -->
-    <PackageReference Include="EF.BackgroundServices.TickerQ" />
-    <PackageReference Include="TickerQ.Dashboard" />
+    <!-- S13-S15: AddEFScheduler (cron planner and leased job worker), schema validation, run-history retention and
+         the stall check. -->
+    <PackageReference Include="EF.Data.Scheduling" />
     <PackageReference Include="Newtonsoft.Json" />
     <!-- D-034: registers the singleton IConnection the RabbitMQ multiplexer reuses when RabbitMq is selected. -->
     <PackageReference Include="Aspire.RabbitMQ.Client" />

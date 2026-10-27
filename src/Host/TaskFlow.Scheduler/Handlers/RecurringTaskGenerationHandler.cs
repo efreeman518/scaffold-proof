@@ -25,7 +25,8 @@ public sealed class RecurringTaskGenerationHandler(
     TimeProvider timeProvider,
     ILogger<RecurringTaskGenerationHandler> logger) : IScheduledJobHandler
 {
-    public const string JobName = "RecurringTaskGeneration";
+    /// <summary>Scheduled job name; also the job tag on its telemetry.</summary>
+    public const string JobName = "recurring_task_generation";
 
     /// <summary>Templates read per keyset page.</summary>
     private const int PageSize = 100;

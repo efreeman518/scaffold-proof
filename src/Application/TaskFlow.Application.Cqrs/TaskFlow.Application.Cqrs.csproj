@@ -12,8 +12,6 @@
     <PackageReference Include="EF.CQRS" />
     <PackageReference Include="EF.Data.Contracts" />
     <PackageReference Include="EF.Storage.Contracts" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 
   <ItemGroup>

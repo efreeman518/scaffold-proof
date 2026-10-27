@@ -7,7 +7,6 @@
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
     <PackageReference Include="Uno.Extensions.Navigation" />
     <PackageReference Include="Uno.Extensions.Navigation.WinUI" />
     <PackageReference Include="Uno.Extensions.Reactive" />

@@ -14,7 +14,7 @@ RUN --mount=type=secret,id=nuget_credentials,required=true \
     dotnet workload install wasm-tools \
     && dotnet restore src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj -p:Configuration=Release \
     && dotnet publish src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj \
-      -f net10.0-browserwasm -p:TargetFrameworkOverride=net10.0-browserwasm \
+      -f net11.0-browserwasm -p:TargetFrameworkOverride=net11.0-browserwasm \
       -p:EnableUnoWasm=true -c Release -p:PublishDir=/app -m:1 --no-restore
 
 FROM nginxinc/nginx-unprivileged:1.29.8-alpine@sha256:0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6 AS runtime

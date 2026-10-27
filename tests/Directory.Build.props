@@ -1,9 +1,13 @@
 <Project>
   <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
 
-  <!-- Unconditional: IsTestProject is not yet defined when Directory.Build.props is evaluated. -->
-  <PropertyGroup>
-    <VSTestResultsDirectory>$(MSBuildThisFileDirectory)TestResults</VSTestResultsDirectory>
+  <!-- Microsoft.Testing.Platform (global.json test runner): every MSTest project is its own executable.
+       Keyed on the project name because IsTestProject is not yet defined when Directory.Build.props is
+       evaluated. Test.Support is the shared harness library and Test.Benchmarks is a BenchmarkDotNet
+       console, so neither is a test application. -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' != 'Test.Support' and '$(MSBuildProjectName)' != 'Test.Benchmarks'">
+    <OutputType>Exe</OutputType>
+    <EnableMSTestRunner>true</EnableMSTestRunner>
   </PropertyGroup>
 
   <!-- AdditionalProperties for the test projects' references to AppHost and the Uno WASM host: a direct test-project

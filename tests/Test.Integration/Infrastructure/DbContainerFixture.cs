@@ -67,7 +67,7 @@ internal static class DbContainerFixture
     internal static TaskFlowFlowEngineDbContext CreateFlowEngineContext(string? connString = null) =>
         new(Container.BuildOptions<TaskFlowFlowEngineDbContext>(connString, TaskFlowFlowEngineDbContext.MigrationHistoryTable, TaskFlowFlowEngineDbContext.SchemaName));
 
-    /// <summary>Builds a TickerQ context against the container.</summary>
-    internal static TaskFlowTickerQDbContext CreateTickerQContext(string? connString = null) =>
-        new(Container.BuildOptions<TaskFlowTickerQDbContext>(connString, TaskFlowTickerQDbContext.MigrationHistoryTable, TaskFlowTickerQDbContext.SchemaName));
+    /// <summary>Builds a Scheduler context against the container.</summary>
+    internal static TaskFlowSchedulerDbContext CreateSchedulerContext(string? connString = null) =>
+        new(Container.BuildOptions<TaskFlowSchedulerDbContext>(connString, TaskFlowSchedulerDbContext.MigrationHistoryTable, TaskFlowSchedulerDbContext.SchemaName));
 }

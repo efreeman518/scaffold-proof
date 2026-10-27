@@ -69,14 +69,14 @@ public class OutboxClaimTests
         var work = Store(db, clock);
 
         // A replica claims and then dies without releasing: the lease must expire, not park the row forever.
-        var abandoned = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, MaxAttempts, "dead-replica"), ct);
+        var abandoned = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, MaxAttempts, "dead-replica"), filter: null, ct);
         Assert.AreEqual(1, abandoned.Items.Count);
         Assert.AreEqual(1, abandoned.Items[0].AttemptCount);
-        Assert.AreEqual(0, (await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, MaxAttempts, "live-replica"), ct)).Items.Count,
+        Assert.AreEqual(0, (await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, MaxAttempts, "live-replica"), filter: null, ct)).Items.Count,
             "a live lease is not claimable");
 
         clock.Advance(Lease + TimeSpan.FromSeconds(1));
-        var reclaimed = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, MaxAttempts, "live-replica"), ct);
+        var reclaimed = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, MaxAttempts, "live-replica"), filter: null, ct);
         Assert.AreEqual(1, reclaimed.Items.Count);
         Assert.AreNotEqual(abandoned.LeaseToken, reclaimed.LeaseToken);
         Assert.AreEqual(2, reclaimed.Items[0].AttemptCount, "each claim counts as an attempt");
@@ -91,12 +91,12 @@ public class OutboxClaimTests
         Assert.AreEqual("poison", parked.LastError);
         Assert.IsNull(parked.LeaseToken);
 
-        var afterDeadLetter = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, MaxAttempts, "live-replica"), ct);
+        var afterDeadLetter = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, MaxAttempts, "live-replica"), filter: null, ct);
         Assert.AreEqual(0, afterDeadLetter.Items.Count, "a dead-lettered row is never claimed again");
 
         // The admin retry endpoint puts it back in play.
         Assert.IsTrue(await work.RetryDeadLetteredAsync<OutboxMessage>(row.Id, ct));
-        var afterRetry = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, MaxAttempts, "live-replica"), ct);
+        var afterRetry = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, MaxAttempts, "live-replica"), filter: null, ct);
         Assert.AreEqual(1, afterRetry.Items.Count);
     }
 
@@ -120,13 +120,13 @@ public class OutboxClaimTests
 
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            var claim = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, maxAttempts, "crashing-replica"), ct);
+            var claim = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, maxAttempts, "crashing-replica"), filter: null, ct);
             Assert.AreEqual(1, claim.Items.Count, $"attempt {attempt} should still claim the row");
             Assert.AreEqual(attempt, claim.Items[0].AttemptCount);
             clock.Advance(Lease + TimeSpan.FromSeconds(1)); // the replica dies holding the lease
         }
 
-        var afterLast = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, maxAttempts, "live-replica"), ct);
+        var afterLast = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, maxAttempts, "live-replica"), filter: null, ct);
         Assert.AreEqual(0, afterLast.Items.Count, "an exhausted row must not be leased a fourth time");
 
         await using var verify = DbContainerFixture.CreateTrxnContext(connString);
@@ -154,12 +154,12 @@ public class OutboxClaimTests
         await db.OutboxMessages.ExecuteUpdateAsync(s => s.SetProperty(m => m.AttemptCount, 2), ct);
         var work = Store(db);
 
-        var underThree = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, 3, "replica"), ct);
+        var underThree = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, 3, "replica"), filter: null, ct);
         Assert.AreEqual(1, underThree.Items.Count, "attempt 3 of 3 is still allowed");
         Assert.AreEqual(3, underThree.Items[0].AttemptCount);
         Assert.AreEqual(1, await work.AbandonAsync<OutboxMessage>(underThree.LeaseToken, [underThree.Items[0].Id], ct));
 
-        var underTwo = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, 2, "replica"), ct);
+        var underTwo = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, 2, "replica"), filter: null, ct);
         Assert.AreEqual(0, underTwo.Items.Count, "two attempts are spent under a ceiling of 2");
 
         await using var verify = DbContainerFixture.CreateTrxnContext(connString);
@@ -182,7 +182,7 @@ public class OutboxClaimTests
 
         await using var db = DbContainerFixture.CreateTrxnContext(connString);
         var work = Store(db);
-        var claim = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, MaxAttempts, "stopping-replica"), ct);
+        var claim = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, MaxAttempts, "stopping-replica"), filter: null, ct);
         var id = claim.Items[0].Id;
         var foreign = Guid.CreateVersion7();
 
@@ -192,7 +192,7 @@ public class OutboxClaimTests
         Assert.AreEqual(0, await work.AbandonAsync<OutboxMessage>(foreign, [id], ct));
 
         Assert.AreEqual(1, await work.AbandonAsync<OutboxMessage>(claim.LeaseToken, [id], ct));
-        var reclaimed = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, MaxAttempts, "next-replica"), ct);
+        var reclaimed = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(10, Lease, MaxAttempts, "next-replica"), filter: null, ct);
         Assert.AreEqual(1, reclaimed.Items.Count, "an abandoned row is claimable at once, without waiting out the lease");
         Assert.AreEqual(1, reclaimed.Items[0].AttemptCount, "the abandoned claim did not consume an attempt");
     }
@@ -265,7 +265,7 @@ public class OutboxClaimTests
         {
             await using var db = DbContainerFixture.CreateTrxnContext(connString);
             var work = Store(db);
-            var batch = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(25, Lease, MaxAttempts, owner), ct);
+            var batch = await work.ClaimAsync<OutboxMessage>(new LeaseRequest(25, Lease, MaxAttempts, owner), filter: null, ct);
             if (batch.Items.Count == 0) break;
 
             foreach (var item in batch.Items)

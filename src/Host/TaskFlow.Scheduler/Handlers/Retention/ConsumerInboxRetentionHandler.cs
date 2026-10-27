@@ -16,7 +16,8 @@ public sealed class ConsumerInboxRetentionHandler(
     TimeProvider timeProvider,
     IConfiguration config) : IScheduledJobHandler
 {
-    public const string JobName = "ConsumerInboxRetention";
+    /// <summary>Scheduled job name; also the job tag on its telemetry.</summary>
+    public const string JobName = "consumer_inbox_retention";
     private const int DefaultRetentionDays = 7;
 
     /// <summary>Handles consumer inbox and idempotency-key retention requests.</summary>
