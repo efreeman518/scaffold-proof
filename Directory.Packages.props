@@ -67,20 +67,20 @@
     <PackageVersion Include="EF.CosmosDb" Version="2.0.140" />
   </ItemGroup>
   <ItemGroup Label="EF.Packages.Enterprise (Private Feed)">
-    <PackageVersion Include="EF.FilterBuilder" Version="1.0.237" />
-    <PackageVersion Include="EF.FlowEngine" Version="1.0.237" />
-    <PackageVersion Include="EF.FlowEngine.StateStore.Sql" Version="1.0.237" />
-    <PackageVersion Include="EF.FlowEngine.Locks.Sql" Version="1.0.237" />
-    <PackageVersion Include="EF.FlowEngine.WorkflowRegistry.Sql" Version="1.0.237" />
-    <PackageVersion Include="EF.FlowEngine.HumanTaskStore.Sql" Version="1.0.237" />
-    <PackageVersion Include="EF.FlowEngine.Outbox.Sql" Version="1.0.237" />
-    <PackageVersion Include="EF.FlowEngine.CircuitBreaker.Sql" Version="1.0.237" />
-    <PackageVersion Include="EF.FlowEngine.Clients.AI" Version="1.0.237" />
-    <PackageVersion Include="EF.FlowEngine.Clients.Http" Version="1.0.237" />
-    <PackageVersion Include="EF.FlowEngine.Clients.ServiceBus" Version="1.0.237" />
-    <PackageVersion Include="EF.FlowEngine.AdminApi" Version="1.0.237" />
-    <PackageVersion Include="EF.FlowEngine.Dashboard" Version="1.0.237" />
-    <PackageVersion Include="EF.FlowEngine.Testing" Version="1.0.237" />
+    <PackageVersion Include="EF.FilterBuilder" Version="1.0.262" />
+    <PackageVersion Include="EF.FlowEngine" Version="1.0.262" />
+    <PackageVersion Include="EF.FlowEngine.StateStore.Sql" Version="1.0.262" />
+    <PackageVersion Include="EF.FlowEngine.Locks.Sql" Version="1.0.262" />
+    <PackageVersion Include="EF.FlowEngine.WorkflowRegistry.Sql" Version="1.0.262" />
+    <PackageVersion Include="EF.FlowEngine.HumanTaskStore.Sql" Version="1.0.262" />
+    <PackageVersion Include="EF.FlowEngine.Outbox.Sql" Version="1.0.262" />
+    <PackageVersion Include="EF.FlowEngine.CircuitBreaker.Sql" Version="1.0.262" />
+    <PackageVersion Include="EF.FlowEngine.Clients.AI" Version="1.0.262" />
+    <PackageVersion Include="EF.FlowEngine.Clients.Http" Version="1.0.262" />
+    <PackageVersion Include="EF.FlowEngine.Clients.ServiceBus" Version="1.0.262" />
+    <PackageVersion Include="EF.FlowEngine.AdminApi" Version="1.0.262" />
+    <PackageVersion Include="EF.FlowEngine.Dashboard" Version="1.0.262" />
+    <PackageVersion Include="EF.FlowEngine.Testing" Version="1.0.262" />
   </ItemGroup>
   <ItemGroup Label="Microsoft Entity Framework Core">
     <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="11.0.0-rc.2.26504.105" />
@@ -115,7 +115,7 @@
     <PackageVersion Include="Microsoft.Extensions.Configuration" Version="11.0.0-rc.3.26522.148" />
     <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="11.0.0-rc.3.26522.148" />
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.11.0" />
-    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.10.0" />
+    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.11.0" />
   </ItemGroup>
   <ItemGroup Label="Aspire">
     <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.6.4" />
@@ -147,7 +147,7 @@
   <ItemGroup Label="YARP">
     <PackageVersion Include="Scalar.AspNetCore" Version="2.18.0" />
     <PackageVersion Include="Yarp.ReverseProxy" Version="2.3.0" />
-    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery.Yarp" Version="10.10.0" />
+    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery.Yarp" Version="10.11.0" />
   </ItemGroup>
   <ItemGroup Label="Azure Functions">
     <PackageVersion Include="Microsoft.Azure.Functions.Worker" Version="2.52.0" />
@@ -206,7 +206,7 @@
   <ItemGroup Label="AWS S3 (D-037 NonAzure object-storage arm: SeaweedFS locally/on the VPS, any S3-compatible provider in production)">
     <!-- The S3 arm itself is EF.Storage.S3; this direct reference exists for Test.Integration, which drives
          SeaweedFS with its own IAmazonS3 client. Version tracks EF.Storage.S3's own dependency (no downgrade). -->
-    <PackageVersion Include="AWSSDK.S3" Version="4.0.104.6" />
+    <PackageVersion Include="AWSSDK.S3" Version="4.0.104.7" />
   </ItemGroup>
   <ItemGroup Label="Azure Service Bus">
     <PackageVersion Include="Azure.Messaging.ServiceBus" Version="7.21.0" />
@@ -241,6 +241,6 @@
     <!-- Temporary exception: Azure AI Inference has no stable package release.
          Reason: use its latest compatible preview release for the enabled Azure AI proof. Remove when a stable release exists.
          Validate with restore, full build, Test.Aspire AI topology, and the Azure live-provider lane. -->
-    <PackageVersion Include="Aspire.Azure.AI.Inference" Version="13.6.1-preview.1.26506.6" />
+    <PackageVersion Include="Aspire.Azure.AI.Inference" Version="13.6.4-preview.1.26523.11" />
   </ItemGroup>
 </Project>

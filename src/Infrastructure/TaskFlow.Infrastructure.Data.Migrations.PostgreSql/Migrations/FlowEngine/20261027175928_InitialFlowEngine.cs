@@ -120,7 +120,8 @@ namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.FlowEngi
                     CompositeKey = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
                     WorkflowId = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
                     Status = table.Column<int>(type: "integer", nullable: false),
-                    Data = table.Column<string>(type: "text", nullable: false)
+                    Data = table.Column<string>(type: "text", nullable: false),
+                    Revision = table.Column<long>(type: "bigint", nullable: false)
                 },
                 constraints: table =>
                 {
