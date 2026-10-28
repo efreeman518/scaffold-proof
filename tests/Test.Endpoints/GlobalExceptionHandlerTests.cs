@@ -148,6 +148,29 @@ public sealed class GlobalExceptionHandlerTests
     }
 
     /// <summary>
+    /// D-076: a DatabaseConstraintException that escapes a service is 409 with the body a caught one gets from
+    /// SaveFailure.ToError (the fixed save-failed text, code save.constraint); the provider message, which names the
+    /// constraint and the key value, is not sent.
+    /// </summary>
+    [TestMethod]
+    public async Task TryHandleAsync_ConstraintViolation_Returns409WithSaveConstraintCode()
+    {
+        using var provider = BuildProvider();
+        var context = NewContext(provider);
+        var exception = new UniqueConstraintException(
+            "duplicate key value violates unique constraint \"ux_tag_tenant_name\"", new DbUpdateException());
+
+        await Handler(provider).TryHandleAsync(context, exception, CancellationToken.None);
+
+        var root = await ReadBodyAsync(context);
+        Assert.AreEqual(StatusCodes.Status409Conflict, context.Response.StatusCode);
+        Assert.AreEqual("save.constraint", root.GetProperty("code").GetString());
+        Assert.AreEqual(ErrorConstants.ERROR_SAVE_FAILED, root.GetProperty("detail").GetString());
+        Assert.IsFalse(root.GetRawText().Contains("ux_tag_tenant_name", StringComparison.Ordinal));
+        Assert.AreEqual("GET /failure", root.GetProperty("instance").GetString());
+    }
+
+    /// <summary>
     /// A framework ArgumentException (a BCL guard, or an internal one such as an unknown database provider),
     /// FormatException and InvalidOperationException are server bugs, not caller mistakes: they stay 500, with no
     /// exception text on the wire.
@@ -179,8 +202,7 @@ public sealed class GlobalExceptionHandlerTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IHostEnvironment>(new TestHostEnvironment { EnvironmentName = environmentName });
-        services.AddEfProblemDetails();
-        services.AddExceptionClassifier(RegisterApiServices.MapExceptions);
+        RegisterApiServices.AddExceptionHandling(services);
         return services.BuildServiceProvider();
     }
 

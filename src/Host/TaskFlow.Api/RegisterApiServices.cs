@@ -118,12 +118,38 @@ public static class RegisterApiServices
     /// <summary>
     /// Registers the EF.AspNetCore problem-details contract (status from <see cref="ExceptionClassifier"/>,
     /// requestId/traceId/spanId on every problem, no exception text on a 5xx outside Development) with
-    /// TaskFlow's mappings added.
+    /// TaskFlow's mappings added. <see cref="DescribeConstraintFailure"/> runs after the package's own problem
+    /// customization, so the request and trace identifiers stay the package's.
     /// </summary>
-    private static void AddExceptionHandling(IServiceCollection services)
+    internal static void AddExceptionHandling(IServiceCollection services)
     {
         services.AddEfProblemDetails();
         services.AddExceptionClassifier(MapExceptions);
+        services.Configure<ProblemDetailsOptions>(options =>
+        {
+            var previous = options.CustomizeProblemDetails;
+            options.CustomizeProblemDetails = context =>
+            {
+                previous?.Invoke(context);
+                DescribeConstraintFailure(context);
+            };
+        });
+    }
+
+    /// <summary>
+    /// D-076: a <see cref="DatabaseConstraintException"/> that escapes a service (mapped to 409 by
+    /// <see cref="MapExceptions"/>) answers the body the services' <c>SaveFailure.ToError</c> gives a caught one: the
+    /// fixed save-failed text and code <c>save.constraint</c>. The handler would otherwise send the exception message,
+    /// which is the provider's text (constraint, table and key value); it stays in the log.
+    /// shortcut: a request whose Accept header no problem writer accepts (text/html only) gets the handler's fallback
+    /// body, which skips CustomizeProblemDetails and still carries the provider text; upgrade path: EF.AspNetCore runs
+    /// the customization on that fallback write too.
+    /// </summary>
+    internal static void DescribeConstraintFailure(ProblemDetailsContext context)
+    {
+        if (context.Exception is not DatabaseConstraintException) return;
+        context.ProblemDetails.Detail = ErrorConstants.ERROR_SAVE_FAILED;
+        context.ProblemDetails.Extensions["code"] = "save.constraint";
     }
 
     /// <summary>
@@ -133,6 +159,8 @@ public static class RegisterApiServices
     /// UnauthorizedAccess, Timeout and cancellation):
     /// <list type="bullet">
     /// <item>A policy-free save's DbUpdateConcurrencyException is a lost update: 412 / FailedPrecondition.</item>
+    /// <item>A DatabaseConstraintException that escapes a service is a conflict with stored data, as the services
+    /// classify a caught one (D-076): 409 / Aborted, code <c>save.constraint</c>.</item>
     /// <item>Caller input TaskFlow rejects: <see cref="InvalidRequestException"/> (page size out of range) and the
     /// cursor codec's <see cref="InvalidCursorException"/> (tampered, foreign-tenant, other-sort-mode or stale-schema
     /// cursor and continuation tokens): 400 / InvalidArgument. EF.Common's ValidationException is already
@@ -143,6 +171,7 @@ public static class RegisterApiServices
     /// </summary>
     internal static void MapExceptions(ExceptionClassifierOptions options) => options
         .Map<DbUpdateConcurrencyException>(ExceptionCategory.PreconditionFailed)
+        .Map<DatabaseConstraintException>(ExceptionCategory.Conflict)
         .Map<InvalidRequestException>(ExceptionCategory.Validation)
         .Map<InvalidCursorException>(ExceptionCategory.Validation)
         // S21: a call on the EF.AI disabled client (no model wired) is 503 / Unavailable, not a 500.

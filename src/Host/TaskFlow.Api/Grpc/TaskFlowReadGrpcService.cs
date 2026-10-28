@@ -25,7 +25,7 @@ namespace TaskFlow.Api.Grpc;
 /// these:
 /// <list type="table">
 /// <item><term>PreconditionFailedException / DbUpdateConcurrencyException</term><description>412 -> FailedPrecondition</description></item>
-/// <item><term>ConflictException</term><description>409 -> Aborted</description></item>
+/// <item><term>ConflictException / DatabaseConstraintException</term><description>409 -> Aborted</description></item>
 /// <item><term>UnauthorizedAccessException</term><description>403 -> PermissionDenied</description></item>
 /// <item><term>KeyNotFoundException</term><description>404 -> NotFound</description></item>
 /// <item><term>OperationCanceledException</term><description>499 -> Cancelled (DeadlineExceeded when the caller did not cancel)</description></item>
