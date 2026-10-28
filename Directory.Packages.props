@@ -71,20 +71,20 @@
     <PackageVersion Include="EF.CosmosDb" Version="3.0.0-dotnet11.144" />
   </ItemGroup>
   <ItemGroup Label="EF.Packages.Enterprise (Private Feed)">
-    <PackageVersion Include="EF.FilterBuilder" Version="2.0.0-dotnet11.263" />
-    <PackageVersion Include="EF.FlowEngine" Version="2.0.0-dotnet11.263" />
-    <PackageVersion Include="EF.FlowEngine.StateStore.Sql" Version="2.0.0-dotnet11.263" />
-    <PackageVersion Include="EF.FlowEngine.Locks.Sql" Version="2.0.0-dotnet11.263" />
-    <PackageVersion Include="EF.FlowEngine.WorkflowRegistry.Sql" Version="2.0.0-dotnet11.263" />
-    <PackageVersion Include="EF.FlowEngine.HumanTaskStore.Sql" Version="2.0.0-dotnet11.263" />
-    <PackageVersion Include="EF.FlowEngine.Outbox.Sql" Version="2.0.0-dotnet11.263" />
-    <PackageVersion Include="EF.FlowEngine.CircuitBreaker.Sql" Version="2.0.0-dotnet11.263" />
-    <PackageVersion Include="EF.FlowEngine.Clients.AI" Version="2.0.0-dotnet11.263" />
-    <PackageVersion Include="EF.FlowEngine.Clients.Http" Version="2.0.0-dotnet11.263" />
-    <PackageVersion Include="EF.FlowEngine.Clients.ServiceBus" Version="2.0.0-dotnet11.263" />
-    <PackageVersion Include="EF.FlowEngine.AdminApi" Version="2.0.0-dotnet11.263" />
-    <PackageVersion Include="EF.FlowEngine.Dashboard" Version="2.0.0-dotnet11.263" />
-    <PackageVersion Include="EF.FlowEngine.Testing" Version="2.0.0-dotnet11.263" />
+    <PackageVersion Include="EF.FilterBuilder" Version="2.0.0-dotnet11.269" />
+    <PackageVersion Include="EF.FlowEngine" Version="2.0.0-dotnet11.269" />
+    <PackageVersion Include="EF.FlowEngine.StateStore.Sql" Version="2.0.0-dotnet11.269" />
+    <PackageVersion Include="EF.FlowEngine.Locks.Sql" Version="2.0.0-dotnet11.269" />
+    <PackageVersion Include="EF.FlowEngine.WorkflowRegistry.Sql" Version="2.0.0-dotnet11.269" />
+    <PackageVersion Include="EF.FlowEngine.HumanTaskStore.Sql" Version="2.0.0-dotnet11.269" />
+    <PackageVersion Include="EF.FlowEngine.Outbox.Sql" Version="2.0.0-dotnet11.269" />
+    <PackageVersion Include="EF.FlowEngine.CircuitBreaker.Sql" Version="2.0.0-dotnet11.269" />
+    <PackageVersion Include="EF.FlowEngine.Clients.AI" Version="2.0.0-dotnet11.269" />
+    <PackageVersion Include="EF.FlowEngine.Clients.Http" Version="2.0.0-dotnet11.269" />
+    <PackageVersion Include="EF.FlowEngine.Clients.ServiceBus" Version="2.0.0-dotnet11.269" />
+    <PackageVersion Include="EF.FlowEngine.AdminApi" Version="2.0.0-dotnet11.269" />
+    <PackageVersion Include="EF.FlowEngine.Dashboard" Version="2.0.0-dotnet11.269" />
+    <PackageVersion Include="EF.FlowEngine.Testing" Version="2.0.0-dotnet11.269" />
   </ItemGroup>
   <ItemGroup Label="Microsoft Entity Framework Core">
     <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="11.0.0-rc.2.26504.105" />
