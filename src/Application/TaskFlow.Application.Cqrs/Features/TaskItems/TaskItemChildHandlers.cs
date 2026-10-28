@@ -47,7 +47,7 @@ internal sealed class AddTaskItemCommentHandler(
                 repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
                 command.TaskItemId, "TaskItem:AddComment", attemptCt);
             if (error is not null) return error;
-            if (entity is null) return HandlerHelpers.NotFoundResponse<CommentDto>();
+            if (entity is null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
             if (command.Comment.Id is Guid callerId && callerId != Guid.Empty)
             {
@@ -97,12 +97,12 @@ internal sealed class UpdateTaskItemCommentHandler(
                 repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
                 command.TaskItemId, "TaskItem:UpdateComment", attemptCt);
             if (error is not null) return error;
-            if (entity is null) return HandlerHelpers.NotFoundResponse<CommentDto>();
+            if (entity is null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
             ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
 
             var comment = await TaskItemChildLoader.LoadCommentAsync(repoTrxn, command.TaskItemId, command.CommentId, attemptCt);
-            if (comment is null) return HandlerHelpers.NotFoundResponse<CommentDto>();
+            if (comment is null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
             var updateResult = comment.Update(command.Comment.Body);
             if (updateResult.TryGetValue(out Error? updateResultError)) return updateResultError;
@@ -177,7 +177,7 @@ internal sealed class AddTaskItemChecklistItemHandler(
                 repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
                 command.TaskItemId, "TaskItem:AddChecklistItem", attemptCt);
             if (error is not null) return error;
-            if (entity is null) return HandlerHelpers.NotFoundResponse<ChecklistItemDto>();
+            if (entity is null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
             if (command.ChecklistItem.Id is Guid callerId && callerId != Guid.Empty)
             {
@@ -234,12 +234,12 @@ internal sealed class UpdateTaskItemChecklistItemHandler(
                 repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
                 command.TaskItemId, "TaskItem:UpdateChecklistItem", attemptCt);
             if (error is not null) return error;
-            if (entity is null) return HandlerHelpers.NotFoundResponse<ChecklistItemDto>();
+            if (entity is null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
             ConcurrencyGuard.Require(command.ExpectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
 
             var item = await TaskItemChildLoader.LoadChecklistItemAsync(repoTrxn, command.TaskItemId, command.ChecklistItemId, attemptCt);
-            if (item is null) return HandlerHelpers.NotFoundResponse<ChecklistItemDto>();
+            if (item is null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
             var updateResult = item.Update(timeProvider.GetUtcNow(), command.ChecklistItem.Title, command.ChecklistItem.IsCompleted, command.ChecklistItem.SortOrder);
             if (updateResult.TryGetValue(out Error? updateResultError)) return updateResultError;
@@ -308,7 +308,7 @@ internal sealed class AssociateTaskItemTagHandler(
                 repoTrxn, tenantBoundaryValidator, logger, requestContext.TenantId, requestContext.Roles,
                 command.TaskItemId, "TaskItem:AssociateTag", attemptCt);
             if (error is not null) return error;
-            if (entity is null) return HandlerHelpers.NotFoundResponse<TaskItemTagDto>();
+            if (entity is null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
             // Association is idempotent by tag id: an existing row is returned rather than duplicated.
             var existing = await TaskItemChildLoader.LoadTaskItemTagAsync(repoTrxn, command.TaskItemId, command.TagId, attemptCt);

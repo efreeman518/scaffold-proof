@@ -253,10 +253,7 @@ internal sealed class UpdateAttachmentHandler(
     private async Task<Result<DefaultResponse<AttachmentDto>>> UpdateOnceAsync(AttachmentDto dto, long? expectedVersion, CancellationToken ct)
     {
         var entity = await repoTrxn.GetAttachmentAsync(AttachmentId.From(dto.Id!.Value), ct);
-        if (entity is null)
-        {
-            return HandlerHelpers.NotFoundResponse<AttachmentDto>();
-        }
+        if (entity is null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,

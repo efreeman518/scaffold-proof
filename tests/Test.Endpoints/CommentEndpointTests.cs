@@ -120,7 +120,9 @@ public class CommentEndpointTests
         Assert.AreEqual(HttpStatusCode.NotFound, getResp.StatusCode);
     }
 
-    /// <summary>Verifies that adding a comment to a missing TaskItem returns 404.</summary>
+    /// <summary>
+    /// Adding a comment to a missing TaskItem is the NotFoundError problem (404, code <c>not_found</c>), not a bare id.
+    /// </summary>
     [TestCategory("Endpoint")]
     [DataRow(EndpointStyles.Service)]
     [DataRow(EndpointStyles.Cqrs)]
@@ -130,10 +132,14 @@ public class CommentEndpointTests
         EndpointStyles.SkipWhenStyleForced();
         using var client = CreateClient(style);
 
-        var response = await client.PostAsJsonAsync($"/api/v1/task-items/{Guid.NewGuid()}/comments",
+        using var response = await client.PostAsJsonAsync($"/api/v1/task-items/{Guid.NewGuid()}/comments",
             new DefaultRequest<CommentDto> { Item = new CommentDto { Body = "Orphan" } }, cancellationToken: TestContext.CancellationToken);
 
-        Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync(TestContext.CancellationToken);
+        Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode, body);
+        Assert.AreEqual("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        using var problem = JsonDocument.Parse(body);
+        Assert.AreEqual("not_found", problem.RootElement.GetProperty("code").GetString());
     }
 
     public TestContext TestContext { get; set; } = null!;

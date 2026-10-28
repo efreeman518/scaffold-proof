@@ -113,6 +113,30 @@ public class CategoryEndpointTests
         Assert.AreEqual("After", updated!.Name);
     }
 
+    /// <summary>
+    /// A PUT for a category that does not exist is the service's or handler's NotFoundError, answered through ToHttp
+    /// as a 404 problem with code <c>not_found</c>, not a bare id.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_NonExistentId_When_PutUpdate_Then_Returns404Problem(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
+        var id = Guid.CreateVersion7();
+        var dto = new CategoryDto { Id = id, Name = "Missing", SortOrder = 1, IsActive = true };
+
+        using var response = await client.PutAsJsonWithIfMatchAsync($"/api/v1/categories/{id}", new DefaultRequest<CategoryDto> { Item = dto }, ConcurrencyHttpExtensions.FormatStrongETag(1), JsonTestOptions.Default, TestContext.CancellationToken);
+
+        var body = await response.Content.ReadAsStringAsync(TestContext.CancellationToken);
+        Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode, body);
+        Assert.AreEqual("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        using var problem = JsonDocument.Parse(body);
+        Assert.AreEqual("not_found", problem.RootElement.GetProperty("code").GetString());
+    }
+
     /// <summary>Verifies that given existing category, when delete, then returns 204.</summary>
     [TestCategory("Endpoint")]
     [DataRow(EndpointStyles.Service)]

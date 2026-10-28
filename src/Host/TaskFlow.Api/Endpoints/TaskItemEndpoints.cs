@@ -193,7 +193,7 @@ public static class TaskItemEndpoints
                 $"{ErrorConstants.ERROR_URL_BODY_ID_MISMATCH}: {id} <> {request.Item.Id}"));
 
         var result = await service.UpdateAsync(request, ifMatch.ExpectedVersion, ct);
-        return result.ToHttp(response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response));
+        return result.ToHttp(response => TypedResults.Ok(response));
     }
 
     /// <summary>Applies a sparse partial update (JSON merge patch) to a TaskItem through the aggregate root.</summary>
@@ -206,7 +206,7 @@ public static class TaskItemEndpoints
         CancellationToken ct)
     {
         var result = await service.PatchAsync(id, request.Item, ifMatch.ExpectedVersion, ct);
-        return result.ToHttp(response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response));
+        return result.ToHttp(response => TypedResults.Ok(response));
     }
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>
@@ -227,11 +227,9 @@ public static class TaskItemEndpoints
         CancellationToken ct)
     {
         var result = await service.AddCommentAsync(id, request.Item, ct);
-        return result.ToHttp(response => response.Item is null
-                ? Results.NotFound(id)
-                : response.IsReplay
-                    ? TypedResults.Ok(response)
-                    : TypedResults.Created($"{httpContext.Request.Path}/{response.Item.Id}", response));
+        return result.ToHttp(response => response.IsReplay
+                ? TypedResults.Ok(response)
+                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response));
     }
 
     /// <summary>Updates a comment owned by the TaskItem aggregate.</summary>
@@ -245,7 +243,7 @@ public static class TaskItemEndpoints
         CancellationToken ct)
     {
         var result = await service.UpdateCommentAsync(id, commentId, request.Item, ifMatch.ExpectedVersion, ct);
-        return result.ToHttp(response => response.Item is null ? Results.NotFound(commentId) : TypedResults.Ok(response));
+        return result.ToHttp(response => TypedResults.Ok(response));
     }
 
     /// <summary>Removes a comment from the TaskItem aggregate through the root.</summary>
@@ -270,11 +268,9 @@ public static class TaskItemEndpoints
         CancellationToken ct)
     {
         var result = await service.AddChecklistItemAsync(id, request.Item, ct);
-        return result.ToHttp(response => response.Item is null
-                ? Results.NotFound(id)
-                : response.IsReplay
-                    ? TypedResults.Ok(response)
-                    : TypedResults.Created($"{httpContext.Request.Path}/{response.Item.Id}", response));
+        return result.ToHttp(response => response.IsReplay
+                ? TypedResults.Ok(response)
+                : TypedResults.Created($"{httpContext.Request.Path}/{response.Item?.Id}", response));
     }
 
     /// <summary>Updates a checklist item owned by the TaskItem aggregate.</summary>
@@ -288,7 +284,7 @@ public static class TaskItemEndpoints
         CancellationToken ct)
     {
         var result = await service.UpdateChecklistItemAsync(id, checklistItemId, request.Item, ifMatch.ExpectedVersion, ct);
-        return result.ToHttp(response => response.Item is null ? Results.NotFound(checklistItemId) : TypedResults.Ok(response));
+        return result.ToHttp(response => TypedResults.Ok(response));
     }
 
     /// <summary>Removes a checklist item from the TaskItem aggregate through the root.</summary>
@@ -313,11 +309,9 @@ public static class TaskItemEndpoints
         CancellationToken ct)
     {
         var result = await service.AssociateTagAsync(id, tagId, ct);
-        return result.ToHttp(response => response.Item is null
-                ? Results.NotFound(id)
-                : response.IsReplay
-                    ? TypedResults.Ok(response)
-                    : TypedResults.Created($"{httpContext.Request.Path}", response));
+        return result.ToHttp(response => response.IsReplay
+                ? TypedResults.Ok(response)
+                : TypedResults.Created($"{httpContext.Request.Path}", response));
     }
 
     /// <summary>Removes a Tag association from the TaskItem aggregate through the root.</summary>

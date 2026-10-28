@@ -144,8 +144,7 @@ internal class CategoryService(
     private async Task<Result<DefaultResponse<CategoryDto>>> UpdateOnceAsync(CategoryDto dto, long? expectedVersion, CancellationToken ct)
     {
         var entity = await repoTrxn.GetCategoryAsync(CategoryId.From(dto.Id!.Value), ct);
-        if (entity == null)
-            return new DefaultResponse<CategoryDto> { Item = null };
+        if (entity == null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             RequestTenantId, RequestRoles, entity.TenantId.Value,

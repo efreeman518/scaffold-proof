@@ -147,10 +147,7 @@ internal sealed class UpdateCategoryHandler(
     private async Task<Result<DefaultResponse<CategoryDto>>> UpdateOnceAsync(CategoryDto dto, long? expectedVersion, CancellationToken ct)
     {
         var entity = await repoTrxn.GetCategoryAsync(CategoryId.From(dto.Id!.Value), ct);
-        if (entity is null)
-        {
-            return HandlerHelpers.NotFoundResponse<CategoryDto>();
-        }
+        if (entity is null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,

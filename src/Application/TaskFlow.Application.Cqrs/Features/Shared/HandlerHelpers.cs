@@ -24,10 +24,6 @@ internal static class HandlerHelpers
     public static Result<DefaultResponse<TDto>> SuccessForChild<TDto>(TDto? dto, long aggregateVersion) =>
         new DefaultResponse<TDto> { Item = dto, TenantInfo = null, AggregateVersion = aggregateVersion };
 
-    /// <summary>Provides the not found response operation for handler helpers.</summary>
-    public static Result<DefaultResponse<TDto>> NotFoundResponse<TDto>() =>
-        Success<TDto>(default);
-
     /// <summary>
     /// The cache tag a successful write to one entity type invalidates. Handlers evict by what they changed;
     /// which cached snapshots carry that tag is the cache's business, not the handler's.

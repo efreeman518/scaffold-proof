@@ -183,8 +183,7 @@ internal class TaskItemService(
     private async Task<Result<DefaultResponse<TaskItemDto>>> UpdateOnceAsync(TaskItemDto dto, long? expectedVersion, CancellationToken ct)
     {
         var entity = await repoTrxn.GetTaskItemAsync(TaskItemId.From(dto.Id!.Value), ct: ct);
-        if (entity == null)
-            return new DefaultResponse<TaskItemDto> { Item = null };
+        if (entity == null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             RequestTenantId, RequestRoles, entity.TenantId.Value,
@@ -270,8 +269,7 @@ internal class TaskItemService(
         Guid id, TaskItemPatchDto patch, long? expectedVersion, CancellationToken ct)
     {
         var entity = await repoTrxn.GetTaskItemAsync(TaskItemId.From(id), ct: ct);
-        if (entity == null)
-            return new DefaultResponse<TaskItemDto> { Item = null };
+        if (entity == null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             RequestTenantId, RequestRoles, entity.TenantId.Value,
@@ -402,7 +400,7 @@ internal class TaskItemService(
         {
             var (entity, error) = await LoadRootAsync(taskItemId, "TaskItem:AddComment", attemptCt);
             if (error is not null) return error;
-            if (entity is null) return new DefaultResponse<CommentDto> { Item = null };
+            if (entity is null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
             if (comment.Id is Guid callerId && callerId != Guid.Empty)
             {
@@ -440,13 +438,13 @@ internal class TaskItemService(
         {
             var (entity, error) = await LoadRootAsync(taskItemId, "TaskItem:UpdateComment", attemptCt);
             if (error is not null) return error;
-            if (entity is null) return new DefaultResponse<CommentDto> { Item = null };
+            if (entity is null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
             // Child writes carry the ROOT ETag (D-031).
             ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
 
             var target = await TaskItemChildLoader.LoadCommentAsync(repoTrxn, taskItemId, commentId, attemptCt);
-            if (target is null) return new DefaultResponse<CommentDto> { Item = null };
+            if (target is null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
             var updateResult = target.Update(comment.Body);
             if (updateResult.TryGetValue(out Error? updateResultError)) return updateResultError;
@@ -498,7 +496,7 @@ internal class TaskItemService(
         {
             var (entity, error) = await LoadRootAsync(taskItemId, "TaskItem:AddChecklistItem", attemptCt);
             if (error is not null) return error;
-            if (entity is null) return new DefaultResponse<ChecklistItemDto> { Item = null };
+            if (entity is null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
             if (checklistItem.Id is Guid callerId && callerId != Guid.Empty)
             {
@@ -538,12 +536,12 @@ internal class TaskItemService(
         {
             var (entity, error) = await LoadRootAsync(taskItemId, "TaskItem:UpdateChecklistItem", attemptCt);
             if (error is not null) return error;
-            if (entity is null) return new DefaultResponse<ChecklistItemDto> { Item = null };
+            if (entity is null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
             ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
 
             var target = await TaskItemChildLoader.LoadChecklistItemAsync(repoTrxn, taskItemId, checklistItemId, attemptCt);
-            if (target is null) return new DefaultResponse<ChecklistItemDto> { Item = null };
+            if (target is null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
             var updateResult = target.Update(timeProvider.GetUtcNow(), checklistItem.Title, checklistItem.IsCompleted, checklistItem.SortOrder);
             if (updateResult.TryGetValue(out Error? updateResultError)) return updateResultError;
@@ -590,7 +588,7 @@ internal class TaskItemService(
         {
             var (entity, error) = await LoadRootAsync(taskItemId, "TaskItem:AssociateTag", attemptCt);
             if (error is not null) return error;
-            if (entity is null) return new DefaultResponse<TaskItemTagDto> { Item = null };
+            if (entity is null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
             // Association is idempotent by tag id: an existing row is returned rather than duplicated.
             var existing = await TaskItemChildLoader.LoadTaskItemTagAsync(repoTrxn, taskItemId, tagId, attemptCt);

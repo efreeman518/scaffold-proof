@@ -164,10 +164,7 @@ internal sealed class UpdateTaskItemHandler(
     private async Task<Result<DefaultResponse<TaskItemDto>>> UpdateOnceAsync(TaskItemDto dto, long? expectedVersion, CancellationToken ct)
     {
         var entity = await repoTrxn.GetTaskItemAsync(TaskItemId.From(dto.Id!.Value), ct: ct);
-        if (entity is null)
-        {
-            return HandlerHelpers.NotFoundResponse<TaskItemDto>();
-        }
+        if (entity is null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,
@@ -295,7 +292,7 @@ internal sealed class PatchTaskItemHandler(
     private async Task<Result<DefaultResponse<TaskItemDto>>> PatchOnceAsync(PatchTaskItemCommand command, CancellationToken ct)
     {
         var entity = await repoTrxn.GetTaskItemAsync(TaskItemId.From(command.Id), ct: ct);
-        if (entity is null) return HandlerHelpers.NotFoundResponse<TaskItemDto>();
+        if (entity is null) return new NotFoundError(ErrorConstants.ERROR_ITEM_NOTFOUND);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
             requestContext.TenantId, requestContext.Roles, entity.TenantId.Value,

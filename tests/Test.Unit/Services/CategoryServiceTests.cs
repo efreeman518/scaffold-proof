@@ -129,18 +129,17 @@ public class CategoryServiceTests
         Assert.AreEqual("Updated Name", result.GetValueOrThrow().Item!.Name);
     }
 
-    /// <summary>Verifies that given non existent ID, when update, then returns null item.</summary>
+    /// <summary>Verifies that given non existent ID, when update, then returns not found.</summary>
     [TestMethod]
     [TestCategory("Unit")]
-    public async Task Given_NonExistentId_When_UpdateAsync_Then_ReturnsNullItem()
+    public async Task Given_NonExistentId_When_UpdateAsync_Then_ReturnsNotFound()
     {
         _repoTrxnMock.Setup(r => r.GetCategoryAsync(It.IsAny<CategoryId>(), It.IsAny<CancellationToken>())).ReturnsAsync((Category?)null);
 
         var dto = new CategoryDto { Id = Guid.NewGuid(), Name = "Updated" };
         var result = await CreateService().UpdateAsync(new DefaultRequest<CategoryDto> { Item = dto }, null, TestContext.CancellationToken);
 
-        Assert.IsTrue(result.IsSuccess);
-        Assert.IsNull(result.GetValueOrThrow().Item);
+        Assert.IsInstanceOfType<NotFoundError>(result.Value);
     }
 
     /// <summary>Verifies that given existing entity, when delete, then returns success.</summary>

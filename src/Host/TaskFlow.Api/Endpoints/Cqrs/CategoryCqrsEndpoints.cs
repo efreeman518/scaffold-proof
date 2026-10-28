@@ -114,7 +114,7 @@ public static class CategoryCqrsEndpoints
                 $"{ErrorConstants.ERROR_URL_BODY_ID_MISMATCH}: {id} <> {request.Item.Id}"));
 
         var result = await handler.HandleAsync(new UpdateCategoryCommand(request, ifMatch.ExpectedVersion), ct);
-        return result.ToHttp(response => response.Item is null ? Results.NotFound(id) : TypedResults.Ok(response));
+        return result.ToHttp(response => TypedResults.Ok(response));
     }
 
     /// <summary>Deletes requested data and maps failures to the caller contract.</summary>

@@ -126,18 +126,17 @@ public class TagServiceTests
         Assert.AreEqual("Updated", result.GetValueOrThrow().Item!.Name);
     }
 
-    /// <summary>Verifies that given non existent ID, when update, then returns null item.</summary>
+    /// <summary>Verifies that given non existent ID, when update, then returns not found.</summary>
     [TestMethod]
     [TestCategory("Unit")]
-    public async Task Given_NonExistentId_When_UpdateAsync_Then_ReturnsNullItem()
+    public async Task Given_NonExistentId_When_UpdateAsync_Then_ReturnsNotFound()
     {
         _repoTrxnMock.Setup(r => r.GetAsync(It.IsAny<TagId>(), It.IsAny<CancellationToken>())).ReturnsAsync((Tag?)null);
 
         var dto = new TagDto { Id = Guid.NewGuid(), Name = "Updated" };
         var result = await CreateService().UpdateAsync(new DefaultRequest<TagDto> { Item = dto }, null, TestContext.CancellationToken);
 
-        Assert.IsTrue(result.IsSuccess);
-        Assert.IsNull(result.GetValueOrThrow().Item);
+        Assert.IsInstanceOfType<NotFoundError>(result.Value);
     }
 
     /// <summary>Verifies that given existing entity, when delete, then returns success.</summary>
