@@ -32,8 +32,8 @@ namespace TaskFlow.Api.Grpc;
 /// <item><term>InvalidRequestException / InvalidCursorException (caller input)</term><description>400 -> InvalidArgument</description></item>
 /// <item><term>anything else</term><description>500 -> Internal</description></item>
 /// </list>
-/// A missing task is not an exception on either transport: REST answers 404 from the Result's None
-/// arm, and this answers NotFound from the same arm.
+/// A missing task is not an exception on either transport: the read returns a NotFoundError, which REST
+/// answers as a 404 problem through ToHttp and this answers as NotFound.
 /// </summary>
 internal sealed class TaskFlowReadGrpcService(
     ITaskFlowReadService reads,

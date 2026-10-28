@@ -1,7 +1,7 @@
-using EF.Domain.Contracts;
 ﻿using EF.Common.Contracts;
 using EF.CQRS.Validation;
 using EF.Data.Contracts;
+using EF.Domain.Contracts;
 using Microsoft.Extensions.Logging;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Concurrency;
@@ -20,8 +20,9 @@ internal static class CqrsHandlerSupport
     /// <summary>
     /// Saves with the throwing concurrency policy and maps other failures to a Result with a fixed message.
     /// The exception filter is load-bearing: without it a lost-update failure would be caught here and
-    /// returned as a generic 400 instead of reaching the handler as a 412, and a cancellation would become
-    /// a 400 instead of the host's 499/504.
+    /// returned as a save-failed 500 (<c>save.failed</c>) instead of reaching the handler as a 412, and a
+    /// cancellation would become that 500 instead of the host's 499/504. A caught failure is classified by
+    /// <c>SaveFailure.ToError</c>: a constraint is 409 <c>save.constraint</c>, anything else 500 (D-076).
     /// </summary>
     public static Task<Result<Unit>> TrySaveAsync(
         IRepositoryBase repository,

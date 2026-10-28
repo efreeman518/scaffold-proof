@@ -19,7 +19,7 @@ namespace Test.Integration;
 public sealed partial class AiWorkflowIntegrationTests
 {
     /// <summary>
-    /// The start path of compliance-check (D-075) without the self-call relay (Scaffold mode): the Scheduler's ComplianceCheck
+    /// The start path of compliance-check (D-075) without the self-call relay (Scaffold mode): the Scheduler's <c>compliance_check</c>
     /// job starts the workflow only for the tenant its API calls act for, the scaffold tenant, and that instance scans the
     /// tenant's due compliance tasks and reads the evidence (refused to an instance without a tenant, see
     /// <see cref="AdminStart_CarriesTheRequestedTenant_AndWithoutOneIsRefusedTheEvidence"/>). Another tenant with a due task

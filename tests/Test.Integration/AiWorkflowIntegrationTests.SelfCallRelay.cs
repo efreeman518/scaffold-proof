@@ -17,7 +17,7 @@ public sealed partial class AiWorkflowIntegrationTests
 {
     /// <summary>
     /// The workflow self-call relay (D-068) end to end, with the test-only app token scheme standing in for a deployment's:
-    /// with <c>FlowEngine:SelfCall:TokenScope</c> set and the workflow host's caller id trusted, the ComplianceCheck job
+    /// with <c>FlowEngine:SelfCall:TokenScope</c> set and the workflow host's caller id trusted, the <c>compliance_check</c> job
     /// starts every qualifying tenant, and each instance's API calls act for that instance's tenant. Tenant B's instance
     /// scans B's two due compliance tasks only (the scaffold tenant's due task is not visible to it), reads B's evidence and
     /// reminds B's task; the scaffold tenant's instance scans its own task only. A re-run the same UTC day starts no

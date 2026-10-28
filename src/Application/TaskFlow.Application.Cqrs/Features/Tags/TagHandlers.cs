@@ -1,6 +1,6 @@
-using EF.Domain.Contracts;
 ﻿using EF.Cache;
 using EF.Tenancy;
+using EF.Domain.Contracts;
 using EF.Common.Contracts;
 using EF.CQRS.Abstractions;
 using EF.Data.Contracts;

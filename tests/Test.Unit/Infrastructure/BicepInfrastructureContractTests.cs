@@ -135,7 +135,7 @@ public sealed class BicepInfrastructureContractTests
 
     /// <summary>
     /// Every host that runs workflow nodes calling "taskflow-api" gets the Api's address, or the client falls back to
-    /// https://localhost and every self-call fails: the Scheduler (the ComplianceCheck job) and the Api itself (human-task
+    /// https://localhost and every self-call fails: the Scheduler (the <c>compliance_check</c> job) and the Api itself (human-task
     /// responses, dashboard starts) through the Api's internal ingress, and the Function App (the ai-task-triage
     /// trigger), outside the Container Apps environment, through the public gateway.
     /// </summary>
