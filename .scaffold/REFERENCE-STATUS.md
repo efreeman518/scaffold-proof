@@ -4,7 +4,7 @@ Canonical current evidence for the TaskFlow reference application. Historical ph
 
 > Update this file only from observed results. TaskFlow CI records the scaffold checkout commit used for cross-repository validation so failures remain diagnosable without creating a compatibility pin.
 
-TaskFlow targets net11.0 on .NET SDK 11.0.100-rc.3.26522.148 (`global.json`, `rollForward: latestFeature`, prerelease allowed) with the Microsoft.Testing.Platform test runner. Runtime, ASP.NET Core and Microsoft.Extensions packages are on 11.0.0-rc.3.26522.148; the EF Core family (and dotnet-ef) is on 11.0.0-rc.2.26504.105 because Npgsql.EntityFrameworkCore.PostgreSQL 11.0.0-rc.2 pins EF Core rc.2 exactly. TaskFlow stays on the EF.Packages 2.0 platform packages (every `EF.*` platform id at 2.0.140; EF.FilterBuilder and the EF.FlowEngine ids at 1.0.262); their .NET 11 builds are not adopted. The Uno head is on the Uno.Sdk 7.0.0-dev.89 preview with Uno.Extensions 8.0.0-dev.135 (stable Uno.Sdk supports net10.0 only). Microsoft.AspNetCore.OpenApi is held on 10.0.14 and KubernetesClient on 19.0.2; both pins and their reasons are in `Directory.Packages.props`. Results below distinguish passed, failed, blocked, and not-run evidence; each table names its run date.
+TaskFlow targets net11.0 on .NET SDK 11.0.100-rc.3.26522.148 (`global.json`, `rollForward: latestFeature`, prerelease allowed) with the Microsoft.Testing.Platform test runner. Runtime, ASP.NET Core and Microsoft.Extensions packages are on 11.0.0-rc.3.26522.148; the EF Core family (and dotnet-ef) is on 11.0.0-rc.2.26504.105 because Npgsql.EntityFrameworkCore.PostgreSQL 11.0.0-rc.2 pins EF Core rc.2 exactly. TaskFlow is on the EF.Packages 3.0 prereleases (every `EF.*` platform id at 3.0.0-dotnet11.144) and the EF.Packages.Enterprise 2.0 prereleases (EF.FilterBuilder and the EF.FlowEngine ids at 2.0.0-dotnet11.269), with the `Result<T>` union and closed `Error` hierarchy adopted. The Uno head is on the Uno.Sdk 7.0.0-dev.89 preview with Uno.Extensions 8.0.0-dev.135 (stable Uno.Sdk supports net10.0 only). Microsoft.AspNetCore.OpenApi is on 11.0.0-rc.3.26522.148 and the committed OpenAPI document is 3.2. KubernetesClient is held on 19.0.2 and Microsoft.CodeAnalysis on 5.9.0 (EF.FlowEngine scripting); the pins and their reasons are in `Directory.Packages.props`. Results below distinguish passed, failed, blocked, and not-run evidence; each table names its run date.
 
 ## Current acceptance (.NET 11 RC 3, 2026-10-27)
 
@@ -12,25 +12,22 @@ Release clean build: `dotnet clean`, `dotnet restore TaskFlow.slnx -p:Configurat
 
 All six initial migrations (TaskFlow `InitialCreate`, `InitialFlowEngine`, `InitialScheduler`, each for SqlServer and PostgreSql) are regenerated with dotnet-ef 11.0.0-rc.2.26504.105; EF Core 11 names each migration class after its full id (`_<timestamp>_<name>`), and `MigrationBaselineArchitectureTests` reads the name from the `[Migration]` id. `MigrationModelContractTests` (5) pass.
 
-Release `--no-build` runs, serially, `dotnet test --project <csproj> --results-directory tests/TestResults/<project> --report-trx`, Podman Docker-compatible context:
+Release `--no-build` runs, serially, `dotnet test --project <csproj> --results-directory tests/TestResults/<project> --report-trx`, Podman Docker-compatible context. Rows dated 2026-10-28 ran after the EF.Packages 3.0 / Enterprise 2.0 adoption, the closed domain-event hierarchy and the TimeProvider change (Release solution build: 0 warnings, 0 errors); rows dated 2026-10-27 ran on the platform move before that adoption and are not rerun.
 
-| Scope | Passed | Failed | Skipped |
-|---|---:|---:|---:|
-| Test.Unit | 740 | 0 | 0 |
-| Test.Architecture | 87 | 0 | 0 |
-| Test.Endpoints | 293 | 4 | 0 |
-| Test.Integration.FlowEngine | 40 | 0 | 0 |
-| Test.UI | 54 | 0 | 0 |
-| Test.Mutation | 27 | 0 | 0 |
-| Test.Integration, `TASKFLOW_LANE=NonAzure` / PostgreSqlJsonb | 154 | 12 | 5 (Azure/Mongo-only) |
-| Test.E2E, NonAzure | 10 | 0 | 0 |
-| Test.Aspire topology contracts (`AppHostLaneTopologyTests`, `AppHostMigratorTopologyTests`) | 43 | 0 | 0 |
-| **Total** | **1448** | **16** | **5** |
+| Scope | Date | Passed | Failed | Skipped |
+|---|---|---:|---:|---:|
+| Test.Unit | 2026-10-28 | 742 | 0 | 0 |
+| Test.Architecture | 2026-10-28 | 89 | 0 | 0 |
+| Test.Endpoints | 2026-10-28 | 297 | 0 | 0 |
+| Test.Integration.FlowEngine | 2026-10-28 | 40 | 0 | 0 |
+| Test.UI | 2026-10-28 | 54 | 0 | 0 |
+| Test.Mutation | 2026-10-28 | 27 | 0 | 0 |
+| Test.Integration, `TASKFLOW_LANE=NonAzure` / PostgreSqlJsonb | 2026-10-28 | 167 | 0 | 5 (Azure/Mongo-only) |
+| Test.E2E, NonAzure | 2026-10-27 | 10 | 0 | 0 |
+| Test.Aspire topology contracts (`AppHostLaneTopologyTests`, `AppHostMigratorTopologyTests`) | 2026-10-27 | 43 | 0 | 0 |
+| **Total** | | **1469** | **0** | **5** |
 
-Failures:
-
-- Test.Endpoints, the 4 `OpenApiEndpointTests` that request `/openapi/v1.json`: the request returns 500 with `System.ArgumentException: An item with the same key has already been added. Key: 400` at `Microsoft.AspNetCore.OpenApi.OpenApiDocumentService.GetResponsesAsync`. Microsoft.AspNetCore.OpenApi 10.0.14 runs on the ASP.NET Core 11 shared framework; version 11 needs Microsoft.OpenApi 3.x, which EF.AspNetCore 2.0 (through Asp.Versioning.OpenApi) does not allow. The build-time document (`-t:GenerateOpenApiDocuments`) goes through the same document service and is not regenerated.
-- Test.Integration, 12 tests on the unique-constraint and failed-save paths (`ChildAddConcurrencyTests` 6, `IdempotencyKeyIntegrationTests.GetOrAdd_WhenAConcurrentDuplicateStoresTheKeyFirst_ReturnsTheWinnersId`, the two concurrent same-key POST tests, `WildcardDeleteLandedCommitTests` 2, `Given_DeleteSaveFailsWithTheRowStored_When_Deleted_Then_TheOriginalFailurePropagates`): `System.MissingMethodException: Method not found: IReadOnlyList<IProperty> Microsoft.EntityFrameworkCore.Metadata.IIndex.get_Properties()` in `EntityFramework.Exceptions.Common.ExceptionProcessorInterceptor.SetConstraintDetails`. EF.Data.PostgreSql and EF.Data.SqlServer 2.0.140 depend on EntityFrameworkCore.Exceptions 10.0.1, built against EF Core 10; nuget.org has no EF Core 11 build of it.
+Known gap: `RecurrencePattern` stays on `OwnsOne(...).ToJson()`. `ComplexProperty(...).ToJson()` produces identical relational migrations, but the EF Core 11 rc.2 InMemory provider fails to compile any TaskItem query with it (`KeyNotFoundException: The given key 'Property: TaskItem.RecurrencePattern#RecurrencePattern.Frequency (string) Required' was not present in the dictionary.` in `InMemoryShapedQueryCompilingExpressionVisitor`), which breaks the Test.Unit and Test.Endpoints hosts. `RecurrencePatternJsonRoundTripTests` pins the stored document for a later attempt.
 
 Not run on .NET 11: Test.Integration on the Azure lane and with MongoDb, Test.E2E on the Azure lane, Aspire core-lane and full-lane meshes, Test.PlaywrightUI, Test.Load, benchmarks, Stryker, the Android Appium runner (no API 37 platform), iOS (needs a Mac) and live Azure Foundry. The sections below that name earlier dates are .NET 10 evidence.
 
