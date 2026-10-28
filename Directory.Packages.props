@@ -2,9 +2,9 @@
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <!-- One Uno.Extensions version for the Uno head and the shared Uno libraries. Uno.Sdk reads this property for
-         its implicit Uno.Extensions references (its own default, 8.0.0-dev.118, depends on an older Uno.WinUI
-         than the SDK's Uno.WinUI 7.0.0-dev.2428; 8.0.0-dev.135 depends on that same Uno.WinUI). -->
-    <UnoExtensionsVersion>8.0.0-dev.135</UnoExtensionsVersion>
+         its implicit Uno.Extensions references; keep it at the version the Uno.Sdk in TaskFlow.Uno.csproj ships
+         (Uno.Sdk 7.0.0-dev.97: Uno.Extensions 8.0.0-dev.147 on Uno.WinUI 7.0.0-dev.2498). -->
+    <UnoExtensionsVersion>8.0.0-dev.147</UnoExtensionsVersion>
   </PropertyGroup>
   <ItemGroup Label="EF.Packages (Private Feed - github.com/efreeman518/EF.Packages)">
     <!-- Core packages - always available -->

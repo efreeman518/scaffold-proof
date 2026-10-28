@@ -9,6 +9,6 @@ namespace TaskFlow.Uno.Droid;
     ConfigurationChanges = global::Uno.UI.ActivityHelper.AllConfigChanges,
     WindowSoftInputMode = SoftInput.AdjustNothing | SoftInput.StateHidden
 )]
-public class MainActivity : Microsoft.UI.Xaml.ApplicationActivity
+public class MainActivity : global::Uno.UI.Runtime.Android.ApplicationActivity
 {
 }

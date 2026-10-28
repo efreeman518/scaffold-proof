@@ -1,4 +1,6 @@
 using Android.Runtime;
+using Uno.UI.Hosting;
+using Uno.UI.Runtime.Android;
 
 namespace TaskFlow.Uno.Droid;
 
@@ -9,11 +11,18 @@ namespace TaskFlow.Uno.Droid;
     HardwareAccelerated = true,
     Theme = "@style/AppTheme"
 )]
-public class Application : Microsoft.UI.Xaml.NativeApplication
+public class Application : NativeApplication
 {
     /// <summary>Initializes application with required dependencies and default state.</summary>
     public Application(IntPtr javaReference, JniHandleOwnership transfer)
-        : base(() => new App(), javaReference, transfer)
+        : base(javaReference, transfer)
     {
     }
+
+    /// <summary>Builds the Android host for the shared app, as the iOS entry point does for UIKit.</summary>
+    protected override UnoPlatformHost CreateHost() =>
+        UnoPlatformHostBuilder.Create()
+            .App(() => new App())
+            .UseAndroid()
+            .Build();
 }
