@@ -6,11 +6,13 @@ namespace TaskFlow.Uno.Core.Business.Services;
 
 /// <summary>
 /// Stateful mock handler - CRUD operations modify in-memory collections.
-/// Thread-safe via lock; data persists for the app session lifetime.
+/// Thread-safe via lock; data persists for the app session lifetime. Seed due dates and the summary's
+/// overdue count and timestamps read <paramref name="timeProvider"/> (the system clock when none is given).
 /// </summary>
-public class MockHttpMessageHandler : HttpMessageHandler
+public class MockHttpMessageHandler(TimeProvider? timeProvider = null) : HttpMessageHandler
 {
     private readonly Lock _lock = new();
+    private readonly TimeProvider _clock = timeProvider ?? TimeProvider.System;
 
     private readonly List<CategoryDto> _categories =
     [
@@ -42,13 +44,11 @@ public class MockHttpMessageHandler : HttpMessageHandler
                 OwnerType = "TaskItem", OwnerId = Guid.Parse("33333333-3333-3333-3333-111111111111") }
     ];
 
-    private readonly List<TaskItemDto> _tasks = CreateSeedTasks();
+    private readonly List<TaskItemDto> _tasks = CreateSeedTasks((timeProvider ?? TimeProvider.System).GetUtcNow());
 
     /// <summary>Creates requested data after validation and maps the result to the caller contract.</summary>
-    private static List<TaskItemDto> CreateSeedTasks()
+    private static List<TaskItemDto> CreateSeedTasks(DateTimeOffset now)
     {
-        var now = DateTimeOffset.UtcNow;
-
         return
         [
             new() { Id = Guid.Parse("33333333-3333-3333-3333-111111111111"), Version = 1, Title = "Build dashboard UI", Description = "Create the main dashboard page with stats and recent activity",
@@ -286,7 +286,7 @@ public class MockHttpMessageHandler : HttpMessageHandler
         var byStatus = _tasks.GroupBy(t => t.Status ?? "Open")
             .Select(g => new TaskItemStatusCountDto { Status = g.Key, Count = g.Count() })
             .ToList();
-        var overdue = _tasks.Count(t => t.DueDate is { } due && due < DateTimeOffset.UtcNow
+        var overdue = _tasks.Count(t => t.DueDate is { } due && due < _clock.GetUtcNow()
             && t.Status is not ("Completed" or "Cancelled"));
 
         return JsonResponse(new TaskItemSummaryDto
@@ -294,7 +294,7 @@ public class MockHttpMessageHandler : HttpMessageHandler
             ByStatus = byStatus,
             Overdue = overdue,
             Total = _tasks.Count,
-            GeneratedAtUtc = DateTimeOffset.UtcNow
+            GeneratedAtUtc = _clock.GetUtcNow()
         });
     }
 
@@ -302,7 +302,7 @@ public class MockHttpMessageHandler : HttpMessageHandler
     {
         Categories = [.. _categories],
         Tags = [.. _tags],
-        GeneratedAtUtc = DateTimeOffset.UtcNow
+        GeneratedAtUtc = _clock.GetUtcNow()
     });
 
     private HttpResponseMessage AddComment(Guid taskId, HttpRequestMessage request)

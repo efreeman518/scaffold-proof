@@ -103,9 +103,9 @@ public class SchedulerTransactionRetryTests
         await using (var seed = DbContainerFixture.CreateTrxnContext())
         {
             var template = TaskItem.Create(TenantId.From(tenantId), "Weekly report").GetValueOrThrow();
-            template.Update(features: TaskFeatures.Recurring);
+            template.Update(Now, features: TaskFeatures.Recurring);
             template.UpdateDateRange(null, Now.AddDays(-3));
-            template.UpdateRecurrencePattern(new RecurrencePattern { Frequency = RecurrencePattern.Daily, Interval = 1 });
+            template.UpdateRecurrencePattern(new RecurrencePattern { Frequency = RecurrencePattern.Daily, Interval = 1 }, Now);
             seed.TaskItems.Add(template);
             await seed.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
         }
@@ -139,7 +139,7 @@ public class SchedulerTransactionRetryTests
         await using (var seed = DbContainerFixture.CreateTrxnContext())
         {
             var task = TaskItem.Create(typedTenantId, "Cancelled long ago").GetValueOrThrow();
-            task.TransitionStatus(TaskItemStatus.Cancelled);
+            task.TransitionStatus(TaskItemStatus.Cancelled, Now);
             seed.TaskItems.Add(task);
             await seed.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
             await seed.Set<TaskItem>().IgnoreQueryFilters()
@@ -218,9 +218,9 @@ public class SchedulerTransactionRetryTests
         await using (var seed = DbContainerFixture.CreateTrxnContext())
         {
             var template = TaskItem.Create(TenantId.From(tenantId), "Daily standup").GetValueOrThrow();
-            template.Update(features: TaskFeatures.Recurring);
+            template.Update(Now, features: TaskFeatures.Recurring);
             template.UpdateDateRange(null, dueFrom);
-            template.UpdateRecurrencePattern(new RecurrencePattern { Frequency = RecurrencePattern.Daily, Interval = 1 });
+            template.UpdateRecurrencePattern(new RecurrencePattern { Frequency = RecurrencePattern.Daily, Interval = 1 }, Now);
             seed.TaskItems.Add(template);
             await seed.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
             templateId = template.Id;
@@ -265,7 +265,7 @@ public class SchedulerTransactionRetryTests
             for (var i = 0; i < 3; i++)
             {
                 var task = TaskItem.Create(typedTenantId, $"Cancelled {i}").GetValueOrThrow();
-                task.TransitionStatus(TaskItemStatus.Cancelled);
+                task.TransitionStatus(TaskItemStatus.Cancelled, Now);
                 seed.TaskItems.Add(task);
                 seed.Attachments.Add(Attachment.Create(
                     typedTenantId, $"spec-{i}.pdf", "application/pdf", 1024, $"https://example/spec-{i}.pdf",

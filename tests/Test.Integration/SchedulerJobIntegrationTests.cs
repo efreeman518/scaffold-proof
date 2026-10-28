@@ -79,13 +79,13 @@ public class SchedulerJobIntegrationTests
         await using (var seed = DbContainerFixture.CreateTrxnContext())
         {
             var template = TaskItem.Create(TenantId.From(tenantId), "Weekly report").GetValueOrThrow();
-            template.Update(features: TaskFeatures.Recurring);
+            template.Update(Now, features: TaskFeatures.Recurring);
             template.UpdateDateRange(null, Now.AddDays(-3));
             template.UpdateRecurrencePattern(new RecurrencePattern
             {
                 Frequency = RecurrencePattern.Daily,
                 Interval = 1
-            });
+            }, Now);
             seed.TaskItems.Add(template);
             await seed.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
         }
@@ -114,7 +114,7 @@ public class SchedulerJobIntegrationTests
         await using (var seed = DbContainerFixture.CreateTrxnContext())
         {
             var task = TaskItem.Create(typedTenantId, "Cancelled long ago").GetValueOrThrow();
-            task.TransitionStatus(TaskItemStatus.Cancelled);
+            task.TransitionStatus(TaskItemStatus.Cancelled, Now);
             seed.TaskItems.Add(task);
             await seed.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
             taskId = task.Id.Value;
@@ -180,8 +180,8 @@ public class SchedulerJobIntegrationTests
             var completed = TaskItem.Create(TenantId.From(completedOnly), "Compliance stream completed").GetValueOrThrow();
             completed.UpdateDateRange(null, Now.AddDays(1));
             completed.AssociateTag(completedTag.Id);
-            Assert.IsTrue(completed.TransitionStatus(TaskItemStatus.InProgress).IsSuccess);
-            Assert.IsTrue(completed.TransitionStatus(TaskItemStatus.Completed).IsSuccess);
+            Assert.IsTrue(completed.TransitionStatus(TaskItemStatus.InProgress, Now).IsSuccess);
+            Assert.IsTrue(completed.TransitionStatus(TaskItemStatus.Completed, Now).IsSuccess);
             seed.Tags.Add(completedTag);
             seed.TaskItems.Add(completed);
             await seed.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: ct);

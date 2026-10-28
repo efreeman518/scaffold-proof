@@ -82,7 +82,7 @@ public class MapperVersionProjectionTests
     {
         var id = Guid.CreateVersion7();
 
-        var taskItem = new TaskItemDto { Id = id, Title = "Caller id" }.ToEntity(TestConstants.TenantId).GetValueOrThrow();
+        var taskItem = new TaskItemDto { Id = id, Title = "Caller id" }.ToEntity(TestConstants.TenantId, DateTimeOffset.UtcNow).GetValueOrThrow();
         var category = new CategoryDto { Id = id, Name = "Caller id" }.ToEntity(TestConstants.TenantId).GetValueOrThrow();
         var tag = new TagDto { Id = id, Name = "caller-id" }.ToEntity(TestConstants.TenantId).GetValueOrThrow();
 

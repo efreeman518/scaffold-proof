@@ -157,7 +157,7 @@ public sealed class SystemRequestContextTests
             repoTrxn.Object,
             Mock.Of<ITaskItemRepositoryQuery>(),
             scope.ServiceProvider.GetRequiredService<ITenantBoundaryValidator>(),
-            Mock.Of<ITypedCache>());
+            Mock.Of<ITypedCache>(), TimeProvider.System);
 
         var result = await service.AddCommentAsync(task.Id.Value, new CommentDto { Body = "AI readiness review" },
             TestContext.CancellationToken);

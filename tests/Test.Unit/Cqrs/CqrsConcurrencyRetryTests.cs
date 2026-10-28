@@ -76,7 +76,7 @@ public sealed class CqrsConcurrencyRetryTests
     {
         RunWorkInsideRetry<ChecklistItemDto>();
         var handler = new AddTaskItemChecklistItemHandler(
-            NullLogger<AddTaskItemChecklistItemHandler>.Instance, _requestContext.Object, _repoTrxn.Object, _tenantBoundary.Object);
+            NullLogger<AddTaskItemChecklistItemHandler>.Instance, _requestContext.Object, _repoTrxn.Object, _tenantBoundary.Object, TimeProvider.System);
 
         var result = await handler.HandleAsync(
             new AddTaskItemChecklistItemCommand(_task.Id.Value, new ChecklistItemDto { Title = "retry-wrapped", SortOrder = 1 }),
@@ -155,11 +155,11 @@ public sealed class CqrsConcurrencyRetryTests
             case "UpdateTaskItem":
                 _repoTrxn.Setup(r => r.UpdateFromDto(It.IsAny<TaskItem>(), It.IsAny<TaskItemDto>(), It.IsAny<RelatedDeleteBehavior>()))
                     .Returns((TaskItem e, TaskItemDto _, RelatedDeleteBehavior __) => new Result<TaskItem>(e));
-                _run = v => Plain(new UpdateTaskItemHandler(Log<UpdateTaskItemHandler>(), _requestContext.Object, _repoTrxn.Object, _tenantBoundary.Object, _cache.Object)
+                _run = v => Plain(new UpdateTaskItemHandler(Log<UpdateTaskItemHandler>(), _requestContext.Object, _repoTrxn.Object, _tenantBoundary.Object, _cache.Object, TimeProvider.System)
                     .HandleAsync(new UpdateTaskItemCommand(new DefaultRequest<TaskItemDto> { Item = _task.ToDto() }, v), ct));
                 break;
             case "PatchTaskItem":
-                _run = v => Plain(new PatchTaskItemHandler(Log<PatchTaskItemHandler>(), _requestContext.Object, _repoTrxn.Object, _tenantBoundary.Object, _cache.Object)
+                _run = v => Plain(new PatchTaskItemHandler(Log<PatchTaskItemHandler>(), _requestContext.Object, _repoTrxn.Object, _tenantBoundary.Object, _cache.Object, TimeProvider.System)
                     .HandleAsync(new PatchTaskItemCommand(taskId, new TaskItemPatchDto { Title = "probed" }, v), ct));
                 break;
             case "DeleteTaskItem":
@@ -181,7 +181,7 @@ public sealed class CqrsConcurrencyRetryTests
                 var item = new ChecklistItemBuilder().WithTaskItemId(taskId).Build();
                 _repoTrxn.Setup(r => r.GetChecklistItemAsync(_task.Id, item.Id, It.IsAny<CancellationToken>())).ReturnsAsync(item);
                 _run = write == "UpdateChecklistItem"
-                    ? v => Plain(new UpdateTaskItemChecklistItemHandler(Log<UpdateTaskItemChecklistItemHandler>(), _requestContext.Object, _repoTrxn.Object, _tenantBoundary.Object)
+                    ? v => Plain(new UpdateTaskItemChecklistItemHandler(Log<UpdateTaskItemChecklistItemHandler>(), _requestContext.Object, _repoTrxn.Object, _tenantBoundary.Object, TimeProvider.System)
                         .HandleAsync(new UpdateTaskItemChecklistItemCommand(taskId, item.Id.Value, new ChecklistItemDto { Title = "probed", SortOrder = 1 }, v), ct))
                     : v => new RemoveTaskItemChecklistItemHandler(Log<RemoveTaskItemChecklistItemHandler>(), _requestContext.Object, _repoTrxn.Object, _tenantBoundary.Object)
                         .HandleAsync(new RemoveTaskItemChecklistItemCommand(taskId, item.Id.Value, v), ct);

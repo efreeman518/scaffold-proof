@@ -118,9 +118,9 @@ public sealed class SetBasedVersionStampTests
     {
         var ct = TestContext.CancellationToken;
         var template = TaskItem.Create(TenantId.From(TestConstants.TenantId), $"Template-{Guid.NewGuid():N}").GetValueOrThrow();
-        template.Update(features: TaskFeatures.Recurring);
+        template.Update(DateTimeOffset.UtcNow, features: TaskFeatures.Recurring);
         template.UpdateDateRange(null, DateTimeOffset.UtcNow.AddDays(-3));
-        template.UpdateRecurrencePattern(new RecurrencePattern { Frequency = RecurrencePattern.Daily, Interval = 1 });
+        template.UpdateRecurrencePattern(new RecurrencePattern { Frequency = RecurrencePattern.Daily, Interval = 1 }, DateTimeOffset.UtcNow);
         var before = await SeedAsync(template, ct);
         var expectedNext = template.NextOccurrenceAtUtc!.Value;
 

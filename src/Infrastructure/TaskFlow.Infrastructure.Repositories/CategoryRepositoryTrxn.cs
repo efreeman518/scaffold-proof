@@ -61,7 +61,7 @@ public class CategoryRepositoryTrxn(TaskFlowDbContextTrxn db)
             // The InMemory test provider has no ExecuteUpdate; clear through the tracked aggregate, in the same save.
             foreach (var task in await tasks.ToListAsync(ct).ConfigureAwait(ConfigureAwaitOptions.None))
             {
-                task.Update(categoryId: CategoryId.From(Guid.Empty));
+                task.Update(DB.Clock.GetUtcNow(), categoryId: CategoryId.From(Guid.Empty));
             }
         }
 

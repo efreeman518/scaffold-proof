@@ -23,7 +23,8 @@ internal sealed class TaskFlowReadService(
     ITaskItemRepositoryQuery taskItemRepoQuery,
     ICategoryRepositoryQuery categoryRepoQuery,
     ITagRepositoryQuery tagRepoQuery,
-    ITypedCache cache) : ITaskFlowReadService
+    ITypedCache cache,
+    TimeProvider timeProvider) : ITaskFlowReadService
 {
     private Guid TenantId => requestContext.TenantId ?? Guid.Empty;
 
@@ -80,7 +81,7 @@ internal sealed class TaskFlowReadService(
         {
             Categories = categories,
             Tags = tags,
-            GeneratedAtUtc = DateTimeOffset.UtcNow
+            GeneratedAtUtc = timeProvider.GetUtcNow()
         };
     }
 }

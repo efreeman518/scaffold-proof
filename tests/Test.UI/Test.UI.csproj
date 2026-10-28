@@ -11,6 +11,7 @@
   <ItemGroup>
     <PackageReference Include="MSTest" />
     <PackageReference Include="Moq" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
     <PackageReference Include="EF.Testing" />
     <PackageReference Include="Microsoft.Extensions.Configuration" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />

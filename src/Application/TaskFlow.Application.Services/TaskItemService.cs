@@ -32,7 +32,8 @@ internal class TaskItemService(
     ITaskItemRepositoryTrxn repoTrxn,
     ITaskItemRepositoryQuery repoQuery,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    ITypedCache cache) : ITaskItemService
+    ITypedCache cache,
+    TimeProvider timeProvider) : ITaskItemService
 {
     private Guid? RequestTenantId => requestContext.TenantId;
     private IReadOnlyCollection<string> RequestRoles => requestContext.Roles;
@@ -124,7 +125,7 @@ internal class TaskItemService(
             }
         }
 
-        var entityResult = dto.ToEntity(dto.TenantId)
+        var entityResult = dto.ToEntity(dto.TenantId, timeProvider.GetUtcNow())
             .Bind(e => repoTrxn.UpdateFromDto(e, dto));
         if (entityResult.TryGetValue(out Error? entityResultError)) return entityResultError;
 
@@ -198,14 +199,15 @@ internal class TaskItemService(
         if (tenantChangeCheck.TryGetValue(out Error? tenantChangeCheckError)) return tenantChangeCheckError;
 
         // Handle status transition if changed. The aggregate raises the status/completed events (D-026).
+        var now = timeProvider.GetUtcNow();
         if (dto.Status != entity.Status)
         {
-            var transitionResult = entity.TransitionStatus(dto.Status);
+            var transitionResult = entity.TransitionStatus(dto.Status, now);
             if (transitionResult.TryGetValue(out Error? transitionResultError)) return transitionResultError;
         }
 
         var updateResult = entity.Update(
-            dto.Title, dto.Description, dto.Priority, dto.Features,
+            now, dto.Title, dto.Description, dto.Priority, dto.Features,
             dto.EstimatedEffort, dto.ActualEffort,
             DomainId.FromNullable<CategoryId>(dto.CategoryId),
             DomainId.FromNullable<TaskItemId>(dto.ParentTaskItemId));
@@ -221,11 +223,11 @@ internal class TaskItemService(
                 Interval = dto.RecurrenceInterval.Value,
                 Frequency = dto.RecurrenceFrequency!,
                 EndDate = dto.RecurrenceEndDate
-            });
+            }, now);
         }
         else
         {
-            entity.UpdateRecurrencePattern(null);
+            entity.UpdateRecurrencePattern(null, now);
         }
 
         // Sync child collections via Updater - removed items must be hard-deleted,
@@ -279,6 +281,7 @@ internal class TaskItemService(
         ConcurrencyGuard.Require(expectedVersion, entity.Version, nameof(TaskItem), entity.Id.Value);
 
         var updateResult = entity.Update(
+            timeProvider.GetUtcNow(),
             title: patch.Title,
             description: patch.Description,
             priority: patch.Priority,
@@ -513,7 +516,7 @@ internal class TaskItemService(
             var addResult = entity.AddChecklistItem(
                 checklistItem.Title, checklistItem.SortOrder, DomainId.FromNullable<ChecklistItemId>(checklistItem.Id));
             if (addResult.TryGetValue(out Error? addResultError)) return addResultError;
-            if (checklistItem.IsCompleted) addResult.GetValueOrThrow().Update(isCompleted: true);
+            if (checklistItem.IsCompleted) addResult.GetValueOrThrow().Update(timeProvider.GetUtcNow(), isCompleted: true);
 
             var save = await SaveAddAsync(
                 checklistItem.Id is Guid id && id != Guid.Empty
@@ -542,7 +545,7 @@ internal class TaskItemService(
             var target = await TaskItemChildLoader.LoadChecklistItemAsync(repoTrxn, taskItemId, checklistItemId, attemptCt);
             if (target is null) return new DefaultResponse<ChecklistItemDto> { Item = null };
 
-            var updateResult = target.Update(checklistItem.Title, checklistItem.IsCompleted, checklistItem.SortOrder);
+            var updateResult = target.Update(timeProvider.GetUtcNow(), checklistItem.Title, checklistItem.IsCompleted, checklistItem.SortOrder);
             if (updateResult.TryGetValue(out Error? updateResultError)) return updateResultError;
             entity.MarkChildMutated();
 

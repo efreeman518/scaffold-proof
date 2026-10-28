@@ -5,6 +5,7 @@ using EF.Data.Contracts;
 using EF.Domain.Contracts;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using TaskFlow.Application.Contracts;
 using TaskFlow.Application.Contracts.Caching;
@@ -36,6 +37,7 @@ public class TaskItemServiceTests
     private readonly Mock<IRequestContext<string, Guid?>> _requestContextMock = new();
     private readonly Mock<ITenantBoundaryValidator> _tenantBoundaryValidatorMock = new();
     private readonly Mock<ITypedCache> _cacheMock = new();
+    private readonly FakeTimeProvider _clock = new(new DateTimeOffset(2026, 10, 28, 12, 0, 0, TimeSpan.Zero));
 
     /// <summary>Prepares per-test fixtures so each test starts from a predictable state.</summary>
     [TestInitialize]
@@ -60,7 +62,8 @@ public class TaskItemServiceTests
         _repoTrxnMock.Object,
         _repoQueryMock.Object,
         _tenantBoundaryValidatorMock.Object,
-        _cacheMock.Object);
+        _cacheMock.Object,
+        _clock);
 
     /// <summary>Verifies that given valid DTO, when create, then returns success.</summary>
     [TestMethod]
@@ -153,6 +156,33 @@ public class TaskItemServiceTests
 
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual(TaskItemStatus.InProgress, result.GetValueOrThrow().Item!.Status);
+    }
+
+    /// <summary>
+    /// Verifies the completion time comes from the injected clock: the service passes its TimeProvider reading to
+    /// the aggregate, which stamps CompletedDate, TerminalAtUtc and the completed event with it.
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public async Task Given_InProgressEntity_When_UpdatedToCompleted_Then_StampsTheInjectedClock()
+    {
+        var entity = new TaskItemBuilder().Build();
+        Assert.IsTrue(entity.TransitionStatus(TaskItemStatus.InProgress, _clock.GetUtcNow()).IsSuccess);
+        entity.ClearDomainEvents();
+        _clock.Advance(TimeSpan.FromHours(3));
+        _repoTrxnMock.Setup(r => r.GetTaskItemAsync(entity.Id, It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync(entity);
+        _repoTrxnMock.Setup(r => r.UpdateFromDto(It.IsAny<TaskItem>(), It.IsAny<TaskItemDto>(), It.IsAny<RelatedDeleteBehavior>()))
+            .Returns((TaskItem e, TaskItemDto _, RelatedDeleteBehavior __) => new Result<TaskItem>(e));
+        _repoTrxnMock.Setup(r => r.SaveChangesAsync(It.IsAny<OptimisticConcurrencyWinner>(), It.IsAny<CancellationToken>())).ReturnsAsync(0);
+
+        var dto = new TaskItemDto { Id = entity.Id, Title = entity.Title, Status = TaskItemStatus.Completed };
+        var result = await CreateService().UpdateAsync(new DefaultRequest<TaskItemDto> { Item = dto }, null, TestContext.CancellationToken);
+
+        Assert.IsTrue(result.IsSuccess);
+        var completedAt = new DateTimeOffset(2026, 10, 28, 15, 0, 0, TimeSpan.Zero);
+        Assert.AreEqual(completedAt, entity.CompletedDate);
+        Assert.AreEqual(completedAt, entity.TerminalAtUtc);
+        Assert.AreEqual(completedAt, entity.DomainEvents.OfType<TaskFlow.Domain.Shared.Events.TaskItemCompletedEvent>().Single().CompletedDate);
     }
 
     /// <summary>Verifies that given existing entity, when update with invalid transition, then returns failure.</summary>

@@ -58,7 +58,7 @@ public class WildcardWriteConcurrencyTests
 
         var result = await InvokeRacedAsync(style,
             (service, ct) => service.PatchAsync(taskId, patch, expectedVersion: null, ct),
-            (repo, ct) => new PatchTaskItemHandler(NullLogger<PatchTaskItemHandler>.Instance, RequestContext(), repo, Boundary, Cache)
+            (repo, ct) => new PatchTaskItemHandler(NullLogger<PatchTaskItemHandler>.Instance, RequestContext(), repo, Boundary, Cache, TimeProvider.System)
                 .HandleAsync(new PatchTaskItemCommand(taskId, patch, ExpectedVersion: null), ct),
             race);
 
@@ -87,7 +87,7 @@ public class WildcardWriteConcurrencyTests
 
         var result = await InvokeRacedAsync(style,
             (service, ct) => service.UpdateAsync(new DefaultRequest<TaskItemDto> { Item = dto }, expectedVersion: null, ct),
-            (repo, ct) => new UpdateTaskItemHandler(NullLogger<UpdateTaskItemHandler>.Instance, RequestContext(), repo, Boundary, Cache)
+            (repo, ct) => new UpdateTaskItemHandler(NullLogger<UpdateTaskItemHandler>.Instance, RequestContext(), repo, Boundary, Cache, TimeProvider.System)
                 .HandleAsync(new UpdateTaskItemCommand(new DefaultRequest<TaskItemDto> { Item = dto }, ExpectedVersion: null), ct),
             race);
 
@@ -168,7 +168,7 @@ public class WildcardWriteConcurrencyTests
 
         await Assert.ThrowsExactlyAsync<ConflictException>(() => InvokeRacedAsync(style,
             (service, ct) => service.PatchAsync(taskId, patch, expectedVersion: null, ct),
-            (repo, ct) => new PatchTaskItemHandler(NullLogger<PatchTaskItemHandler>.Instance, RequestContext(), repo, Boundary, Cache)
+            (repo, ct) => new PatchTaskItemHandler(NullLogger<PatchTaskItemHandler>.Instance, RequestContext(), repo, Boundary, Cache, TimeProvider.System)
                 .HandleAsync(new PatchTaskItemCommand(taskId, patch, ExpectedVersion: null), ct),
             race));
 
@@ -194,7 +194,7 @@ public class WildcardWriteConcurrencyTests
 
         await Assert.ThrowsExactlyAsync<PreconditionFailedException>(() => InvokeRacedAsync(style,
             (service, ct) => service.PatchAsync(taskId, patch, seeded.Version, ct),
-            (repo, ct) => new PatchTaskItemHandler(NullLogger<PatchTaskItemHandler>.Instance, RequestContext(), repo, Boundary, Cache)
+            (repo, ct) => new PatchTaskItemHandler(NullLogger<PatchTaskItemHandler>.Instance, RequestContext(), repo, Boundary, Cache, TimeProvider.System)
                 .HandleAsync(new PatchTaskItemCommand(taskId, patch, seeded.Version), ct),
             race));
 
@@ -222,7 +222,7 @@ public class WildcardWriteConcurrencyTests
                 repo,
                 new TaskItemRepositoryQuery(queryDb, TestColumnEncryption.Keys, TestCursorCodec.Instance),
                 Boundary,
-                Cache), ct)
+                Cache, TimeProvider.System), ct)
             : await viaCqrs(repo, ct);
     }
 

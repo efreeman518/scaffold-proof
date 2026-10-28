@@ -54,7 +54,7 @@ public class TaskItemMapperTests
     public void Given_ValidDto_When_MappedToEntity_Then_ReturnsSuccessResult()
     {
         var dto = new TaskItemDto { Title = "New Task", Priority = Priority.Medium };
-        var result = dto.ToEntity(TestConstants.TenantId);
+        var result = dto.ToEntity(TestConstants.TenantId, DateTimeOffset.UtcNow);
 
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual("New Task", result.GetValueOrThrow().Title);
@@ -70,7 +70,7 @@ public class TaskItemMapperTests
         var start = StoredPrecision.Timestamp(DateTimeOffset.UtcNow);
         var due = start.AddDays(5);
         var dto = new TaskItemDto { Title = "With Dates", StartDate = start, DueDate = due };
-        var result = dto.ToEntity(TestConstants.TenantId);
+        var result = dto.ToEntity(TestConstants.TenantId, DateTimeOffset.UtcNow);
 
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual(start, result.GetValueOrThrow().DateRange.StartDate);
@@ -89,7 +89,7 @@ public class TaskItemMapperTests
             RecurrenceFrequency = "Weekly",
             RecurrenceEndDate = DateTimeOffset.UtcNow.AddMonths(3)
         };
-        var result = dto.ToEntity(TestConstants.TenantId);
+        var result = dto.ToEntity(TestConstants.TenantId, DateTimeOffset.UtcNow);
 
         Assert.IsTrue(result.IsSuccess);
         var pattern = result.GetValueOrThrow().RecurrencePattern;
@@ -104,7 +104,7 @@ public class TaskItemMapperTests
     public void Given_InvalidDto_When_MappedToEntity_Then_ReturnsFailure()
     {
         var dto = new TaskItemDto { Title = "" };
-        var result = dto.ToEntity(TestConstants.TenantId);
+        var result = dto.ToEntity(TestConstants.TenantId, DateTimeOffset.UtcNow);
 
         Assert.IsFalse(result.IsSuccess);
     }

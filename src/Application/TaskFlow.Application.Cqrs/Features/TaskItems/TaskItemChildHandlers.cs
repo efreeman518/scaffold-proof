@@ -158,7 +158,8 @@ internal sealed class AddTaskItemChecklistItemHandler(
     ILogger<AddTaskItemChecklistItemHandler> logger,
     IRequestContext<string, Guid?> requestContext,
     ITaskItemRepositoryTrxn repoTrxn,
-    ITenantBoundaryValidator tenantBoundaryValidator)
+    ITenantBoundaryValidator tenantBoundaryValidator,
+    TimeProvider timeProvider)
     : IRequestHandler<AddTaskItemChecklistItemCommand, Result<DefaultResponse<ChecklistItemDto>>>
 {
     /// <summary>Handles add checklist item requests and returns the application result.</summary>
@@ -198,7 +199,7 @@ internal sealed class AddTaskItemChecklistItemHandler(
 
             // AddChecklistItem/Create does not take IsCompleted; apply it on the new child so a
             // pre-checked item is not silently dropped.
-            if (command.ChecklistItem.IsCompleted) addResult.GetValueOrThrow().Update(isCompleted: true);
+            if (command.ChecklistItem.IsCompleted) addResult.GetValueOrThrow().Update(timeProvider.GetUtcNow(), isCompleted: true);
 
             var save = await CqrsHandlerSupport.TrySaveAddAsync(
                 repoTrxn,
@@ -218,7 +219,8 @@ internal sealed class UpdateTaskItemChecklistItemHandler(
     ILogger<UpdateTaskItemChecklistItemHandler> logger,
     IRequestContext<string, Guid?> requestContext,
     ITaskItemRepositoryTrxn repoTrxn,
-    ITenantBoundaryValidator tenantBoundaryValidator)
+    ITenantBoundaryValidator tenantBoundaryValidator,
+    TimeProvider timeProvider)
     : IRequestHandler<UpdateTaskItemChecklistItemCommand, Result<DefaultResponse<ChecklistItemDto>>>
 {
     /// <summary>Handles update checklist item requests and returns the application result.</summary>
@@ -239,7 +241,7 @@ internal sealed class UpdateTaskItemChecklistItemHandler(
             var item = await TaskItemChildLoader.LoadChecklistItemAsync(repoTrxn, command.TaskItemId, command.ChecklistItemId, attemptCt);
             if (item is null) return HandlerHelpers.NotFoundResponse<ChecklistItemDto>();
 
-            var updateResult = item.Update(command.ChecklistItem.Title, command.ChecklistItem.IsCompleted, command.ChecklistItem.SortOrder);
+            var updateResult = item.Update(timeProvider.GetUtcNow(), command.ChecklistItem.Title, command.ChecklistItem.IsCompleted, command.ChecklistItem.SortOrder);
             if (updateResult.TryGetValue(out Error? updateResultError)) return updateResultError;
             entity.MarkChildMutated();
 

@@ -48,7 +48,7 @@ public sealed class AuditMaskingTests
         {
             var loaded = await db.TaskItems.SingleAsync(t => t.Id == task.Id, ct);
             Assert.AreEqual(RandomPlain, loaded.SecureRandom, "the domain still sees the decrypted value");
-            loaded.Update(secureDeterministic: DeterministicPlainUpdated, secureRandom: RandomPlainUpdated);
+            loaded.Update(DateTimeOffset.UtcNow, secureDeterministic: DeterministicPlainUpdated, secureRandom: RandomPlainUpdated);
             await db.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: ct);
         }
 

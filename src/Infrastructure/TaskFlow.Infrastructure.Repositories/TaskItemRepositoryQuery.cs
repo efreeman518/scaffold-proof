@@ -74,7 +74,7 @@ public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryption
         // InvalidCursorException, which the API answers 400 with ERROR_CURSOR_INVALID.
         var cursor = new KeysetCursor(cursorCodec, CursorScope(tenantId, request.SortMode), request.Cursor);
 
-        var q = ApplyFilters(DB.Set<TaskItem>().AsNoTracking(), request.Filter);
+        var q = ApplyFilters(DB.Set<TaskItem>().AsNoTracking(), request.Filter, DB.Clock.GetUtcNow());
         var projector = TaskItemMapper.ProjectorSearch;
 
         // Each arm names the index its ORDER BY must hit; a mode whose ORDER BY does not match an index
@@ -130,7 +130,7 @@ public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryption
     public async Task<TaskItemSummaryDto> GetSummaryAsync(Guid tenantId, CancellationToken ct = default)
     {
         var typedTenantId = TenantId.From(tenantId);
-        var now = DateTimeOffset.UtcNow;
+        var now = DB.Clock.GetUtcNow();
 
         var aggregate = await DB.Set<TaskItem>()
             .AsNoTracking()
@@ -214,7 +214,7 @@ public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryption
     };
 
     /// <summary>Applies the TaskItem search filter shared by the cursor search.</summary>
-    private static IQueryable<TaskItem> ApplyFilters(IQueryable<TaskItem> q, TaskItemSearchFilter? filter)
+    private static IQueryable<TaskItem> ApplyFilters(IQueryable<TaskItem> q, TaskItemSearchFilter? filter, DateTimeOffset now)
     {
         if (filter is null) return q;
 
@@ -271,7 +271,7 @@ public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryption
         }
 
         if (filter.IsOverdue.HasValue && filter.IsOverdue.Value)
-            q = q.Where(e => e.DueDate != null && e.DueDate < DateTimeOffset.UtcNow && e.CompletedDate == null);
+            q = q.Where(e => e.DueDate != null && e.DueDate < now && e.CompletedDate == null);
 
         var tagName = filter.TagName?.Trim();
         if (!string.IsNullOrEmpty(tagName))

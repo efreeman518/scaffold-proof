@@ -3,6 +3,7 @@
 @inject ITaskFlowApiClient Api
 @inject TaskFlow.Contracts.Grpc.TaskFlowRead.TaskFlowReadClient GrpcReads
 @inject ClientReadSettings ReadSettings
+@inject TimeProvider Clock
 @inject NavigationManager Nav
 @implements IDisposable
 
@@ -93,7 +94,7 @@
         // return the identical DTO, which is the point of the proof.
         var summary = await FloatService.ExecuteWithProgressAsync(
             () => ReadSettings.UseGrpcReads
-                ? GrpcReads.GetTaskItemSummaryDtoAsync(ReadSettings)
+                ? GrpcReads.GetTaskItemSummaryDtoAsync(ReadSettings, Clock)
                 : Api.GetTaskItemSummaryAsync(),
             "Failed to load task summary.");
         if (summary is not null)

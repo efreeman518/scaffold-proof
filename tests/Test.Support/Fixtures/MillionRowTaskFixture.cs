@@ -79,7 +79,7 @@ public sealed class MillionRowTaskFixture
         if (roll < StaleCancelledShare)
         {
             // Cancelled long enough ago to be inside the stale-cleanup window.
-            task.TransitionStatus(TaskItemStatus.Cancelled);
+            task.TransitionStatus(TaskItemStatus.Cancelled, _now);
             task.UpdateDateRange(null, _now.AddDays(-_random.Next(120, 400)));
             return task;
         }
@@ -87,14 +87,14 @@ public sealed class MillionRowTaskFixture
         if (roll < StaleCancelledShare + RecurringShare)
         {
             // A recurring template whose next occurrence is already due.
-            task.Update(features: TaskFeatures.Recurring);
+            task.Update(_now, features: TaskFeatures.Recurring);
             task.UpdateDateRange(null, _now.AddDays(-_random.Next(1, 30)));
             task.UpdateRecurrencePattern(new RecurrencePattern
             {
                 Frequency = RecurrencePattern.Daily,
                 Interval = 1 + _random.Next(0, 6),
                 EndDate = _now.AddYears(1)
-            });
+            }, _now);
             return task;
         }
 

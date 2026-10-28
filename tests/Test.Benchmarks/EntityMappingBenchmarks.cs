@@ -78,6 +78,6 @@ public class EntityMappingBenchmarks
     public object TaskItemDtoRoundTrip()
     {
         var dto = _taskItem.ToDto();
-        return dto.ToEntity(_taskItem.TenantId);
+        return dto.ToEntity(_taskItem.TenantId, DateTimeOffset.UtcNow);
     }
 }

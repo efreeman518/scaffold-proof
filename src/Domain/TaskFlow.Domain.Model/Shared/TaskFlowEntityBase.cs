@@ -19,8 +19,10 @@ public abstract class TaskFlowEntityBase<TId> : EntityBase<TId>, ITimestampedEnt
     /// <summary>
     /// Marks the aggregate root as changed so EF puts it in the Modified state and the base context's
     /// save pipeline bumps <see cref="EntityBase{TId}.Version"/> (D-031: one ETag per aggregate).
-    /// The written value is overwritten by the save-time stamp; the point is the entry state,
-    /// which is the only way a child-only mutation can move the root's concurrency token.
+    /// The written value is overwritten by the save-time stamp (from the context clock); the point is the
+    /// entry state, which is the only way a child-only mutation can move the root's concurrency token. Any
+    /// value that differs from the loaded one does that, so this moves it by one tick rather than reading a
+    /// clock the save discards.
     /// </summary>
-    protected void Touch() => ModifiedAtUtc = DateTimeOffset.UtcNow;
+    protected void Touch() => ModifiedAtUtc = ModifiedAtUtc.AddTicks(1);
 }

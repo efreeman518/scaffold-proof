@@ -13,6 +13,8 @@ namespace Test.Unit.Domain;
 [TestClass]
 public class TaskItemStatusTransitionTests
 {
+    private static readonly DateTimeOffset Now = new(2026, 10, 28, 12, 0, 0, TimeSpan.Zero);
+
     /// <summary>Verifies that given valid transition, when transitioned, then succeeds.</summary>
     [TestMethod]
     [TestCategory("Unit")]
@@ -29,7 +31,7 @@ public class TaskItemStatusTransitionTests
     {
         var task = CreateTaskAtStatus(current);
 
-        var result = task.TransitionStatus(target);
+        var result = task.TransitionStatus(target, Now);
 
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual(target, task.Status);
@@ -50,7 +52,7 @@ public class TaskItemStatusTransitionTests
     {
         var task = CreateTaskAtStatus(current);
 
-        var result = task.TransitionStatus(target);
+        var result = task.TransitionStatus(target, Now);
 
         Assert.IsFalse(result.IsSuccess);
         Assert.AreEqual(current, task.Status);
@@ -63,7 +65,7 @@ public class TaskItemStatusTransitionTests
     {
         var task = CreateTaskAtStatus(TaskItemStatus.Open);
 
-        var result = task.TransitionStatus(TaskItemStatus.None);
+        var result = task.TransitionStatus(TaskItemStatus.None, Now);
 
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual(TaskItemStatus.None, task.Status);
@@ -84,7 +86,7 @@ public class TaskItemStatusTransitionTests
         };
 
         foreach (var next in path)
-            Assert.IsTrue(task.TransitionStatus(next).IsSuccess);
+            Assert.IsTrue(task.TransitionStatus(next, Now).IsSuccess);
 
         return task;
     }

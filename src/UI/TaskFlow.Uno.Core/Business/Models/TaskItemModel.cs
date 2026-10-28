@@ -27,6 +27,7 @@ public record TaskItemModel
     public IReadOnlyList<AttachmentModel>? Attachments { get; init; }
     public IReadOnlyList<TaskItemModel>? SubTasks { get; init; }
 
-    public bool IsOverdue => DueDate.HasValue && DueDate.Value < DateTimeOffset.UtcNow
-                             && Status is not ("Completed" or "Cancelled");
+    /// <summary>True when the task is past due at <paramref name="now"/> and not completed or cancelled.</summary>
+    public bool IsOverdueAt(DateTimeOffset now) => DueDate.HasValue && DueDate.Value < now
+                                                   && Status is not ("Completed" or "Cancelled");
 }

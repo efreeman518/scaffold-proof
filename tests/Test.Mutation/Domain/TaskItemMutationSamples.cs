@@ -25,6 +25,7 @@ namespace Test.Mutation.Domain;
 public class TaskItemMutationSamples
 {
     private static readonly TenantId TenantId = TenantId.From(Guid.Parse("8d955af4-9444-45d6-90b6-8f4572611d82"));
+    private static readonly DateTimeOffset Now = new(2026, 10, 28, 12, 0, 0, TimeSpan.Zero);
 
     /// <summary>Verifies that given title at minimum length, when task item created, then succeeds.</summary>
     [TestMethod]
@@ -89,7 +90,7 @@ public class TaskItemMutationSamples
     {
         var task = CreateTaskAtStatus(current);
 
-        var result = task.TransitionStatus(target);
+        var result = task.TransitionStatus(target, Now);
 
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual(target, task.Status);
@@ -106,7 +107,7 @@ public class TaskItemMutationSamples
     {
         var task = CreateTaskAtStatus(current);
 
-        var result = task.TransitionStatus(target);
+        var result = task.TransitionStatus(target, Now);
 
         Assert.IsFalse(result.IsSuccess);
         Assert.Contains($"Cannot transition from {current} to {target}.", result.ToString());
@@ -119,7 +120,7 @@ public class TaskItemMutationSamples
     {
         var task = TaskItem.Create(TenantId, "Mutation sample").GetValueOrThrow();
 
-        var result = task.TransitionStatus(TaskItemStatus.Blocked);
+        var result = task.TransitionStatus(TaskItemStatus.Blocked, Now);
 
         Assert.IsFalse(result.IsSuccess);
         Assert.Contains("Cannot transition from Open to Blocked.", result.ToString());
@@ -131,11 +132,11 @@ public class TaskItemMutationSamples
     public void Given_CompletedTask_When_Reopened_Then_CompletedDateCleared()
     {
         var task = TaskItem.Create(TenantId, "Mutation sample").GetValueOrThrow();
-        Assert.IsTrue(task.TransitionStatus(TaskItemStatus.InProgress).IsSuccess);
-        Assert.IsTrue(task.TransitionStatus(TaskItemStatus.Completed).IsSuccess);
+        Assert.IsTrue(task.TransitionStatus(TaskItemStatus.InProgress, Now).IsSuccess);
+        Assert.IsTrue(task.TransitionStatus(TaskItemStatus.Completed, Now).IsSuccess);
         Assert.IsNotNull(task.CompletedDate);
 
-        var result = task.TransitionStatus(TaskItemStatus.Open);
+        var result = task.TransitionStatus(TaskItemStatus.Open, Now);
 
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual(TaskItemStatus.Open, task.Status);
@@ -147,11 +148,11 @@ public class TaskItemMutationSamples
     public void Given_CompletedTask_When_ResetToNone_Then_StatusAndCompletedDateReset()
     {
         var task = TaskItem.Create(TenantId, "Mutation sample").GetValueOrThrow();
-        Assert.IsTrue(task.TransitionStatus(TaskItemStatus.InProgress).IsSuccess);
-        Assert.IsTrue(task.TransitionStatus(TaskItemStatus.Completed).IsSuccess);
+        Assert.IsTrue(task.TransitionStatus(TaskItemStatus.InProgress, Now).IsSuccess);
+        Assert.IsTrue(task.TransitionStatus(TaskItemStatus.Completed, Now).IsSuccess);
         Assert.IsNotNull(task.CompletedDate);
 
-        var result = task.TransitionStatus(TaskItemStatus.None);
+        var result = task.TransitionStatus(TaskItemStatus.None, Now);
 
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual(TaskItemStatus.None, task.Status);
@@ -190,6 +191,7 @@ public class TaskItemMutationSamples
             originalParentId).GetValueOrThrow();
 
         var result = task.Update(
+            Now,
             title: "Updated title",
             description: "Updated description",
             priority: Priority.Critical,
@@ -219,7 +221,7 @@ public class TaskItemMutationSamples
         var task = TaskItem.Create(TenantId, "Mutation sample", categoryId: categoryId, parentTaskItemId: parentId).GetValueOrThrow();
         var replacementCategoryId = CategoryId.From(Guid.Parse("7b18b783-2554-4d68-9220-588667e3e8c2"));
 
-        var result = task.Update(categoryId: replacementCategoryId, parentTaskItemId: TaskItemId.From(Guid.Empty));
+        var result = task.Update(Now, categoryId: replacementCategoryId, parentTaskItemId: TaskItemId.From(Guid.Empty));
 
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual(replacementCategoryId, task.CategoryId!.Value);
@@ -232,7 +234,7 @@ public class TaskItemMutationSamples
     {
         var task = TaskItem.Create(TenantId, "Mutation sample").GetValueOrThrow();
 
-        var result = task.Update(title: "   ");
+        var result = task.Update(Now, title: "   ");
 
         Assert.IsFalse(result.IsSuccess);
         Assert.Contains("Title is required.", result.ToString());
@@ -320,13 +322,13 @@ public class TaskItemMutationSamples
         };
 
         task.UpdateDateRange(startDate, dueDate);
-        task.UpdateRecurrencePattern(pattern);
+        task.UpdateRecurrencePattern(pattern, Now);
 
         Assert.AreEqual(startDate, task.DateRange.StartDate);
         Assert.AreEqual(dueDate, task.DateRange.DueDate);
         Assert.AreSame(pattern, task.RecurrencePattern);
 
-        task.UpdateRecurrencePattern(null);
+        task.UpdateRecurrencePattern(null, Now);
 
         Assert.IsNull(task.RecurrencePattern);
     }
@@ -338,7 +340,7 @@ public class TaskItemMutationSamples
 
         foreach (var nextStatus in PathTo(status))
         {
-            Assert.IsTrue(task.TransitionStatus(nextStatus).IsSuccess);
+            Assert.IsTrue(task.TransitionStatus(nextStatus, Now).IsSuccess);
         }
 
         Assert.AreEqual(status, task.Status);

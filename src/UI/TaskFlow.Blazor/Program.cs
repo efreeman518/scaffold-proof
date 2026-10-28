@@ -100,6 +100,8 @@ if (useGrpcReads && grpcReadAddress is null)
 // Grpc:TaskFlowRead:DeadlineSeconds so a stalled read does not hang the circuit indefinitely.
 var grpcReadDeadlineSeconds = builder.Configuration.GetValue("Grpc:TaskFlowRead:DeadlineSeconds", 10);
 builder.Services.AddSingleton(new ClientReadSettings(useGrpcReads, grpcReadDeadlineSeconds));
+// The deadline is computed from the injected clock, as every time reading in src/ is (Test.Architecture).
+builder.Services.AddSingleton(TimeProvider.System);
 
 // Registered unconditionally so the pages can inject the client the same way they inject the Refit one.
 // With no address configured the flag above is off and the client is constructed but never called; the

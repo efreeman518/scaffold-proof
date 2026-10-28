@@ -5,6 +5,7 @@
 @inject ITaskFlowApiClient Api
 @inject TaskFlow.Contracts.Grpc.TaskFlowRead.TaskFlowReadClient GrpcReads
 @inject ClientReadSettings ReadSettings
+@inject TimeProvider Clock
 @inject NavigationManager Nav
 @inject IDialogService DialogService
 
@@ -217,7 +218,7 @@ else
         // the ETag the REST response carries, and D-054 scopes the proof to the aggregate reads.
         var result = await FloatService.ExecuteWithProgressAsync(
             () => ReadSettings.UseGrpcReads
-                ? GrpcReads.GetTaskMetadataDtoAsync(ReadSettings)
+                ? GrpcReads.GetTaskMetadataDtoAsync(ReadSettings, Clock)
                 : Api.GetTaskMetadataAsync(),
             "Failed to load categories.");
         _categories = result?.Categories?.Where(c => c.IsActive).ToList() ?? [];

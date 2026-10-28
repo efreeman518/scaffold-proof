@@ -167,14 +167,14 @@ public class RecurringTaskGenerationHandlerTests
     {
         var template = TaskItem.Create(
             TenantId.From(TenantA), "Weekly report", "template", Priority.Medium).GetValueOrThrow();
-        template.Update(features: TaskFeatures.Recurring);
+        template.Update(Now, features: TaskFeatures.Recurring);
         template.UpdateDateRange(null, nextOccurrenceAtUtc);
         template.UpdateRecurrencePattern(new RecurrencePattern
         {
             Frequency = frequency,
             Interval = interval,
             EndDate = endDate
-        });
+        }, Now);
         return template;
     }
 

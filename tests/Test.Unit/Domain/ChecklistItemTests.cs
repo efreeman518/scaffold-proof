@@ -12,6 +12,8 @@ namespace Test.Unit.Domain;
 [TestClass]
 public class ChecklistItemTests
 {
+    private static readonly DateTimeOffset Now = new(2026, 10, 28, 12, 0, 0, TimeSpan.Zero);
+
     private static TenantId TenantId => TenantId.From(TestConstants.TenantId);
 
     /// <summary>Verifies that given valid input, when checklist item created, then returns success.</summary>
@@ -55,7 +57,7 @@ public class ChecklistItemTests
     public void Given_ExistingItem_When_UpdatedWithTitle_Then_ReturnsUpdatedValues()
     {
         var item = ChecklistItem.Create(TenantId, TaskItemId.From(Guid.NewGuid()), "Original").GetValueOrThrow();
-        var result = item.Update(title: "Updated");
+        var result = item.Update(Now, title: "Updated");
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual("Updated", result.GetValueOrThrow().Title);
     }
@@ -66,10 +68,10 @@ public class ChecklistItemTests
     public void Given_IncompleteItem_When_CompletionSet_Then_CompletedDateSet()
     {
         var item = ChecklistItem.Create(TenantId, TaskItemId.From(Guid.NewGuid()), "Item").GetValueOrThrow();
-        var result = item.Update(isCompleted: true);
+        var result = item.Update(Now, isCompleted: true);
         Assert.IsTrue(result.IsSuccess);
         Assert.IsTrue(result.GetValueOrThrow().IsCompleted);
-        Assert.IsNotNull(result.GetValueOrThrow().CompletedDate);
+        Assert.AreEqual(Now, result.GetValueOrThrow().CompletedDate, "The completion stamp is the caller's clock reading.");
     }
 
     /// <summary>Verifies that given completed item, when uncompleted, then completed date cleared.</summary>
@@ -78,10 +80,10 @@ public class ChecklistItemTests
     public void Given_CompletedItem_When_Uncompleted_Then_CompletedDateCleared()
     {
         var item = ChecklistItem.Create(TenantId, TaskItemId.From(Guid.NewGuid()), "Item").GetValueOrThrow();
-        item.Update(isCompleted: true);
+        item.Update(Now, isCompleted: true);
         Assert.IsNotNull(item.CompletedDate);
 
-        var result = item.Update(isCompleted: false);
+        var result = item.Update(Now, isCompleted: false);
         Assert.IsTrue(result.IsSuccess);
         Assert.IsFalse(result.GetValueOrThrow().IsCompleted);
         Assert.IsNull(result.GetValueOrThrow().CompletedDate);
@@ -93,7 +95,7 @@ public class ChecklistItemTests
     public void Given_NullUpdate_When_Updated_Then_OriginalValuesPreserved()
     {
         var item = ChecklistItem.Create(TenantId, TaskItemId.From(Guid.NewGuid()), "Original", 5).GetValueOrThrow();
-        var result = item.Update();
+        var result = item.Update(Now);
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual("Original", result.GetValueOrThrow().Title);
         Assert.AreEqual(5, result.GetValueOrThrow().SortOrder);

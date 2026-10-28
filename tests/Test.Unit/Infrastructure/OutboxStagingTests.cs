@@ -1,4 +1,4 @@
-using EF.Data.Contracts;
+﻿using EF.Data.Contracts;
 using EF.Messaging;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
@@ -54,7 +54,7 @@ public sealed class OutboxStagingTests
         // purpose - a title or description edit would legitimately raise TaskItemContentChangedEvent
         // (D-040) and this assertion is about re-staging, not about how many events an update raises.
         Assert.AreEqual(0, task.DomainEvents.Count);
-        task.Update(priority: TaskFlow.Domain.Shared.Enums.Priority.High);
+        task.Update(Now, priority: TaskFlow.Domain.Shared.Enums.Priority.High);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: ct);
         Assert.AreEqual(1, await db.OutboxMessages.CountAsync(ct));
     }
@@ -69,8 +69,8 @@ public sealed class OutboxStagingTests
 
         await using var db = Create(dbName);
         db.TaskItems.Add(task);
-        Assert.IsTrue(task.TransitionStatus(TaskItemStatus.InProgress).IsSuccess);
-        Assert.IsTrue(task.TransitionStatus(TaskItemStatus.Completed).IsSuccess);
+        Assert.IsTrue(task.TransitionStatus(TaskItemStatus.InProgress, Now).IsSuccess);
+        Assert.IsTrue(task.TransitionStatus(TaskItemStatus.Completed, Now).IsSuccess);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: ct);
 
         var types = await db.OutboxMessages.Select(m => m.EventType).ToListAsync(ct);
@@ -95,7 +95,7 @@ public sealed class OutboxStagingTests
 
         await using var db = Create(dbName);
         db.TaskItems.Add(task);
-        Assert.IsTrue(task.TransitionStatus(TaskItemStatus.InProgress).IsSuccess);
+        Assert.IsTrue(task.TransitionStatus(TaskItemStatus.InProgress, Now).IsSuccess);
 
         // Two events are buffered on the aggregate and no row exists: the interceptor, not the raise, writes.
         Assert.AreEqual(2, task.DomainEvents.Count);

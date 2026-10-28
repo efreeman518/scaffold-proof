@@ -89,12 +89,12 @@ public sealed class ColumnEncryptionIntegrationTests
         await using var stale = DbContainerFixture.CreateTrxnContext();
         var staleCopy = await stale.TaskItems.SingleAsync(t => t.Id == task.Id, TestContext.CancellationToken);
 
-        task.Update(title: "first writer");
+        task.Update(DateTimeOffset.UtcNow, title: "first writer");
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
         Assert.AreEqual(2, task.Version);
 
         // Throw (not the package ClientWins retry) so the conflict surfaces to the caller.
-        staleCopy.Update(title: "stale writer");
+        staleCopy.Update(DateTimeOffset.UtcNow, title: "stale writer");
         var failure = await Assert.ThrowsExactlyAsync<EF.Common.Contracts.PreconditionFailedException>(
             () => stale.SaveChangesAsync(OptimisticConcurrencyWinner.Throw, cancellationToken: TestContext.CancellationToken));
         Assert.IsInstanceOfType<DbUpdateConcurrencyException>(failure.InnerException);

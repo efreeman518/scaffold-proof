@@ -83,7 +83,7 @@ public class ChildAddConcurrencyTests
 
         var (response, race) = await RunRacedAsync(taskId, style,
             (service, ct) => service.AddChecklistItemAsync(taskId, dto, ct),
-            (repo, ct) => new AddTaskItemChecklistItemHandler(NullLogger<AddTaskItemChecklistItemHandler>.Instance, RequestContext(), repo, Boundary)
+            (repo, ct) => new AddTaskItemChecklistItemHandler(NullLogger<AddTaskItemChecklistItemHandler>.Instance, RequestContext(), repo, Boundary, TimeProvider.System)
                 .HandleAsync(new AddTaskItemChecklistItemCommand(taskId, dto), ct));
 
         Assert.IsFalse(response.IsReplay);
@@ -168,7 +168,7 @@ public class ChildAddConcurrencyTests
 
         var (response, _) = await RunRacedAsync(taskId, style,
             (service, ct) => service.AddChecklistItemAsync(taskId, dto, ct),
-            (repo, ct) => new AddTaskItemChecklistItemHandler(NullLogger<AddTaskItemChecklistItemHandler>.Instance, RequestContext(), repo, Boundary)
+            (repo, ct) => new AddTaskItemChecklistItemHandler(NullLogger<AddTaskItemChecklistItemHandler>.Instance, RequestContext(), repo, Boundary, TimeProvider.System)
                 .HandleAsync(new AddTaskItemChecklistItemCommand(taskId, dto), ct),
             race);
 
@@ -267,7 +267,7 @@ public class ChildAddConcurrencyTests
                 repo,
                 new TaskItemRepositoryQuery(queryDb, TestColumnEncryption.Keys, TestCursorCodec.Instance),
                 Boundary,
-                Cache), ct)
+                Cache, TimeProvider.System), ct)
             : await viaCqrs(repo, ct);
     }
 

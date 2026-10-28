@@ -52,8 +52,8 @@ public class TaskSummaryRoundTripTests
             }
 
             var completed = TaskItem.Create(typedTenantId, "Completed task").GetValueOrThrow();
-            completed.TransitionStatus(TaskItemStatus.InProgress);
-            completed.TransitionStatus(TaskItemStatus.Completed);
+            completed.TransitionStatus(TaskItemStatus.InProgress, DateTimeOffset.UtcNow);
+            completed.TransitionStatus(TaskItemStatus.Completed, DateTimeOffset.UtcNow);
             seed.TaskItems.Add(completed);
 
             await seed.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);

@@ -1,4 +1,5 @@
 using EF.Testing.Http;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using System.Net;
 using System.Text;
@@ -18,6 +19,8 @@ namespace Test.UI.Uno;
 [TestCategory("UI")]
 public class TaskItemApiServiceTests
 {
+    // The mock seeds its due dates from this clock, so overdue is decided against a fixed instant.
+    private readonly FakeTimeProvider _clock = new(new DateTimeOffset(2026, 10, 28, 12, 0, 0, TimeSpan.Zero));
     private MockHttpMessageHandler _handler = null!;
     private HttpClient _httpClient = null!;
     private TaskFlowApiClient _apiClient = null!;
@@ -27,7 +30,7 @@ public class TaskItemApiServiceTests
     [TestInitialize]
     public void Setup()
     {
-        _handler = new MockHttpMessageHandler();
+        _handler = new MockHttpMessageHandler(_clock);
         _httpClient = new HttpClient(_handler) { BaseAddress = new Uri("https://localhost:7200") };
         _apiClient = new TaskFlowApiClient(_httpClient);
         _service = new TaskItemApiService(_apiClient, Mock.Of<INotificationService>());
@@ -76,7 +79,9 @@ public class TaskItemApiServiceTests
 
         var overdueTask = page.Items.FirstOrDefault(t => t.Title == "Fix login validation");
         Assert.IsNotNull(overdueTask);
-        Assert.IsTrue(overdueTask.IsOverdue);
+        Assert.IsTrue(overdueTask.IsOverdueAt(_clock.GetUtcNow()));
+        // Seeded one day past due: two days earlier it was not yet due.
+        Assert.IsFalse(overdueTask.IsOverdueAt(_clock.GetUtcNow().AddDays(-2)));
     }
 
     /// <summary>Creates returns mapped model used by the surrounding test cases.</summary>

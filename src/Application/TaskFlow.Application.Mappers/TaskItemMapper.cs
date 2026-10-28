@@ -86,8 +86,11 @@ public static class TaskItemMapper
     /// <summary>Converts the current value to DTO.</summary>
     public static TaskItemDto ToDto(this TaskItem entity) => Compiled(entity);
 
-    /// <summary>Converts the current value to entity.</summary>
-    public static Result<TaskItem> ToEntity(this TaskItemDto dto, Guid tenantId)
+    /// <summary>
+    /// Converts the current value to entity. <paramref name="now"/> seeds the first occurrence of a recurring
+    /// task that has no dates.
+    /// </summary>
+    public static Result<TaskItem> ToEntity(this TaskItemDto dto, Guid tenantId, DateTimeOffset now)
     {
         var categoryId = DomainId.FromNullable<CategoryId>(dto.CategoryId);
         var parentTaskItemId = DomainId.FromNullable<TaskItemId>(dto.ParentTaskItemId);
@@ -104,7 +107,7 @@ public static class TaskItemMapper
                 Interval = dto.RecurrenceInterval.Value,
                 Frequency = dto.RecurrenceFrequency!,
                 EndDate = dto.RecurrenceEndDate
-            });
+            }, now);
         }
 
         return entity;

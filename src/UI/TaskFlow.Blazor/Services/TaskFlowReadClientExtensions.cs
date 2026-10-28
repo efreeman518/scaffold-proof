@@ -17,27 +17,29 @@ public static class TaskFlowReadClientExtensions
 {
     /// <summary>Tenant task counts by status plus overdue and total.</summary>
     public static async Task<TaskItemSummaryDto> GetTaskItemSummaryDtoAsync(
-        this TaskFlowRead.TaskFlowReadClient client, ClientReadSettings settings, CancellationToken ct = default)
+        this TaskFlowRead.TaskFlowReadClient client, ClientReadSettings settings, TimeProvider timeProvider, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(client);
         ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(timeProvider);
         // D-064: per-call deadline, so a stalled read fails instead of hanging the circuit.
         return (await client.GetTaskItemSummaryAsync(
             new GetTaskItemSummaryRequest(),
-            deadline: DateTime.UtcNow.AddSeconds(settings.DeadlineSeconds),
+            deadline: timeProvider.GetUtcNow().UtcDateTime.AddSeconds(settings.DeadlineSeconds),
             cancellationToken: ct)).ToDto();
     }
 
     /// <summary>Full category and tag lists for pickers.</summary>
     public static async Task<TaskMetadataDto> GetTaskMetadataDtoAsync(
-        this TaskFlowRead.TaskFlowReadClient client, ClientReadSettings settings, CancellationToken ct = default)
+        this TaskFlowRead.TaskFlowReadClient client, ClientReadSettings settings, TimeProvider timeProvider, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(client);
         ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(timeProvider);
         // D-064: per-call deadline, so a stalled read fails instead of hanging the circuit.
         return (await client.GetTaskMetadataAsync(
             new GetTaskMetadataRequest(),
-            deadline: DateTime.UtcNow.AddSeconds(settings.DeadlineSeconds),
+            deadline: timeProvider.GetUtcNow().UtcDateTime.AddSeconds(settings.DeadlineSeconds),
             cancellationToken: ct)).ToDto();
     }
 }

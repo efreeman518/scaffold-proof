@@ -5,14 +5,14 @@ using Microsoft.Extensions.Logging;
 namespace TaskFlow.Functions;
 
 /// <summary>Configures function HTTP trigger host behavior for TaskFlow runtime services.</summary>
-public class FunctionHttpTrigger(ILogger<FunctionHttpTrigger> logger)
+public class FunctionHttpTrigger(ILogger<FunctionHttpTrigger> logger, TimeProvider timeProvider)
 {
     /// <summary>Provides the health check operation for function HTTP trigger.</summary>
     [Function("HealthCheck")]
     public async Task<HttpResponseData> HealthCheck(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "health")] HttpRequestData req)
     {
-        logger.HealthCheckRequested(DateTime.UtcNow);
+        logger.HealthCheckRequested(timeProvider.GetUtcNow().UtcDateTime);
         var response = req.CreateResponse(System.Net.HttpStatusCode.OK);
         await response.WriteStringAsync("Healthy");
         return response;
@@ -24,7 +24,7 @@ public class FunctionHttpTrigger(ILogger<FunctionHttpTrigger> logger)
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "v1/tasks")] HttpRequestData req,
         CancellationToken ct)
     {
-        logger.TaskApiProxyInvoked(DateTime.UtcNow);
+        logger.TaskApiProxyInvoked(timeProvider.GetUtcNow().UtcDateTime);
 
         // Read-only proxy: forwards to the task service for lightweight queries
         // Future: wire to ITaskItemService.SearchAsync for direct read access

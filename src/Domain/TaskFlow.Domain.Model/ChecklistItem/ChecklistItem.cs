@@ -42,15 +42,18 @@ public class ChecklistItem : TaskFlowEntityBase<DomainChecklistItemId>, ITenantE
         return entity.Valid();
     }
 
-    /// <summary>Updates existing data after validation and preserves domain invariants.</summary>
-    public Result<ChecklistItem> Update(string? title = null, bool? isCompleted = null, int? sortOrder = null)
+    /// <summary>
+    /// Updates existing data after validation and preserves domain invariants. Completing the item stamps
+    /// <see cref="CompletedDate"/> with the caller's <paramref name="now"/>.
+    /// </summary>
+    public Result<ChecklistItem> Update(DateTimeOffset now, string? title = null, bool? isCompleted = null, int? sortOrder = null)
     {
         if (title is not null) Title = title;
         if (sortOrder.HasValue) SortOrder = sortOrder.Value;
         if (isCompleted.HasValue)
         {
             IsCompleted = isCompleted.Value;
-            CompletedDate = isCompleted.Value ? DateTimeOffset.UtcNow : null;
+            CompletedDate = isCompleted.Value ? now : null;
         }
         return Valid();
     }

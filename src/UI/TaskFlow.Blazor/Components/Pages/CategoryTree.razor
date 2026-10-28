@@ -3,6 +3,7 @@
 @inject ITaskFlowApiClient Api
 @inject TaskFlow.Contracts.Grpc.TaskFlowRead.TaskFlowReadClient GrpcReads
 @inject ClientReadSettings ReadSettings
+@inject TimeProvider Clock
 @inject IDialogService DialogService
 
 <PageTitle>Categories - TaskFlow</PageTitle>
@@ -107,7 +108,7 @@
         // D-054: gRPC when the internal read hop is configured, REST through the gateway otherwise.
         var result = await FloatService.ExecuteWithProgressAsync(
             () => ReadSettings.UseGrpcReads
-                ? GrpcReads.GetTaskMetadataDtoAsync(ReadSettings)
+                ? GrpcReads.GetTaskMetadataDtoAsync(ReadSettings, Clock)
                 : Api.GetTaskMetadataAsync(),
             "Failed to load categories.");
         _categories = result?.Categories?.ToList() ?? [];

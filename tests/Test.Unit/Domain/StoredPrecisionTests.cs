@@ -7,6 +7,8 @@ namespace Test.Unit.Domain;
 [TestClass]
 public class StoredPrecisionTests
 {
+    private static readonly DateTimeOffset Now = new(2026, 10, 28, 12, 0, 0, TimeSpan.Zero);
+
     /// <summary>Effort rounds to two decimals; the midpoint goes away from zero, not to even.</summary>
     [DataRow("1.23456", "1.23")]
     [DataRow("1.235", "1.24")]
@@ -45,7 +47,7 @@ public class StoredPrecisionTests
         var item = TaskItem.Create(TenantId.From(Guid.NewGuid()), "Normalize").GetValueOrThrow();
         var ticks = new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero).AddTicks(9);
 
-        item.Update(estimatedEffort: 1.23456m, actualEffort: 0.005m);
+        item.Update(Now, estimatedEffort: 1.23456m, actualEffort: 0.005m);
         item.UpdateDateRange(ticks, ticks);
 
         Assert.AreEqual(1.23m, item.EstimatedEffort);

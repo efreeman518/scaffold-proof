@@ -76,7 +76,8 @@ internal sealed class CreateTaskItemHandler(
     ITaskItemRepositoryTrxn repoTrxn,
     ITaskItemRepositoryQuery repoQuery,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    ITypedCache cache)
+    ITypedCache cache,
+    TimeProvider timeProvider)
     : IRequestHandler<CreateTaskItemCommand, Result<DefaultResponse<TaskItemDto>>>
 {
     /// <summary>Handles create task item requests and returns the application result.</summary>
@@ -104,7 +105,7 @@ internal sealed class CreateTaskItemHandler(
             }
         }
 
-        var entityResult = dto.ToEntity(dto.TenantId)
+        var entityResult = dto.ToEntity(dto.TenantId, timeProvider.GetUtcNow())
             .Bind(e => repoTrxn.UpdateFromDto(e, dto));
         if (entityResult.TryGetValue(out Error? entityResultError)) return entityResultError;
 
@@ -138,7 +139,8 @@ internal sealed class UpdateTaskItemHandler(
     IRequestContext<string, Guid?> requestContext,
     ITaskItemRepositoryTrxn repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    ITypedCache cache)
+    ITypedCache cache,
+    TimeProvider timeProvider)
     : IRequestHandler<UpdateTaskItemCommand, Result<DefaultResponse<TaskItemDto>>>
 {
     /// <summary>Handles update task item requests and returns the application result.</summary>
@@ -180,14 +182,15 @@ internal sealed class UpdateTaskItemHandler(
         if (tenantChangeCheck.TryGetValue(out Error? tenantChangeCheckError)) return tenantChangeCheckError;
 
         // The aggregate raises the status/completed events; the staging interceptor writes them (D-026).
+        var now = timeProvider.GetUtcNow();
         if (dto.Status != entity.Status)
         {
-            var transitionResult = entity.TransitionStatus(dto.Status);
+            var transitionResult = entity.TransitionStatus(dto.Status, now);
             if (transitionResult.TryGetValue(out Error? transitionResultError)) return transitionResultError;
         }
 
         var updateResult = entity.Update(
-            dto.Title, dto.Description, dto.Priority, dto.Features,
+            now, dto.Title, dto.Description, dto.Priority, dto.Features,
             dto.EstimatedEffort, dto.ActualEffort,
             DomainId.FromNullable<CategoryId>(dto.CategoryId),
             DomainId.FromNullable<TaskItemId>(dto.ParentTaskItemId));
@@ -202,11 +205,11 @@ internal sealed class UpdateTaskItemHandler(
                 Interval = dto.RecurrenceInterval.Value,
                 Frequency = dto.RecurrenceFrequency!,
                 EndDate = dto.RecurrenceEndDate
-            });
+            }, now);
         }
         else
         {
-            entity.UpdateRecurrencePattern(null);
+            entity.UpdateRecurrencePattern(null, now);
         }
 
         var syncResult = repoTrxn.UpdateFromDto(entity, dto, RelatedDeleteBehavior.RelationshipAndEntity);
@@ -273,7 +276,8 @@ internal sealed class PatchTaskItemHandler(
     IRequestContext<string, Guid?> requestContext,
     ITaskItemRepositoryTrxn repoTrxn,
     ITenantBoundaryValidator tenantBoundaryValidator,
-    ITypedCache cache)
+    ITypedCache cache,
+    TimeProvider timeProvider)
     : IRequestHandler<PatchTaskItemCommand, Result<DefaultResponse<TaskItemDto>>>
 {
     /// <summary>Handles patch task item requests and returns the application result.</summary>
@@ -302,6 +306,7 @@ internal sealed class PatchTaskItemHandler(
 
         var patch = command.Patch;
         var updateResult = entity.Update(
+            timeProvider.GetUtcNow(),
             title: patch.Title,
             description: patch.Description,
             priority: patch.Priority,

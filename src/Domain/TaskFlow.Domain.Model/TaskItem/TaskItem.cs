@@ -137,9 +137,11 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
 
     /// <summary>
     /// Applies a partial update. Null means "leave current value"; Guid.Empty clears optional
-    /// category and parent links for DTO-driven updates.
+    /// category and parent links for DTO-driven updates. <paramref name="now"/> is the caller's clock reading,
+    /// stamped on <see cref="TaskItemContentChangedEvent"/> when the title or description changes.
     /// </summary>
     public Result<TaskItem> Update(
+        DateTimeOffset now,
         string? title = null, string? description = null,
         Priority? priority = null, TaskFeatures? features = null,
         decimal? estimatedEffort = null, decimal? actualEffort = null,
@@ -167,15 +169,16 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
         var validated = Valid();
         // Raised only on a successful update, the same rule Create follows: a rejected edit never happened.
         if (contentChanged && validated.IsSuccess)
-            _domainEvents.Raise(new TaskItemContentChangedEvent(Id.Value, TenantId.Value, DateTimeOffset.UtcNow));
+            _domainEvents.Raise(new TaskItemContentChangedEvent(Id.Value, TenantId.Value, now));
         return validated;
     }
 
     /// <summary>
     /// Moves the task through the allowed status state machine and keeps CompletedDate and TerminalAtUtc
-    /// aligned with the terminal statuses. TaskItemStatus.None is a reset escape hatch for seed/test data.
+    /// aligned with the terminal statuses, both stamped with the caller's <paramref name="now"/>.
+    /// TaskItemStatus.None is a reset escape hatch for seed/test data.
     /// </summary>
-    public Result<TaskItem> TransitionStatus(TaskItemStatus newStatus)
+    public Result<TaskItem> TransitionStatus(TaskItemStatus newStatus, DateTimeOffset now)
     {
         if (newStatus == TaskItemStatus.None)
         {
@@ -189,7 +192,6 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
             return new RuleError($"Cannot transition from {Status} to {newStatus}.", "task.status_transition");
 
         var previousStatus = Status;
-        var now = DateTimeOffset.UtcNow;
         Status = newStatus;
 
         if (newStatus == TaskItemStatus.Completed)
@@ -335,16 +337,17 @@ public class TaskItem : TaskFlowEntityBase<DomainTaskItemId>, ITenantEntity<Doma
     /// signal; this aggregate does not create recurring child tasks itself.
     /// <para>
     /// The generator scans <c>IX_TaskItem_TenantId_NextOccurrenceAtUtc</c>, so a template with no first
-    /// due point is invisible to it. Attaching a pattern seeds that point from the task's own schedule;
-    /// removing the pattern clears it. An already-scheduled series keeps its position.
+    /// due point is invisible to it. Attaching a pattern seeds that point from the task's own schedule, or
+    /// from the caller's <paramref name="now"/> when the task has no dates; removing the pattern clears it.
+    /// An already-scheduled series keeps its position.
     /// </para>
     /// </summary>
-    public void UpdateRecurrencePattern(RecurrencePattern? pattern)
+    public void UpdateRecurrencePattern(RecurrencePattern? pattern, DateTimeOffset now)
     {
         RecurrencePattern = pattern;
         NextOccurrenceAtUtc = pattern is null
             ? null
-            : NextOccurrenceAtUtc ?? DueDate ?? StartDate ?? DateTimeOffset.UtcNow;
+            : NextOccurrenceAtUtc ?? DueDate ?? StartDate ?? now;
     }
 
     /// <summary>

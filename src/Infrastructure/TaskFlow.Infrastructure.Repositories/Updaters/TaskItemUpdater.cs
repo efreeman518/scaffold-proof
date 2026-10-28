@@ -22,7 +22,10 @@ internal static class TaskItemUpdater
     public static Result<TaskItem> UpdateFromDto(this TaskFlowDbContextTrxn db, TaskItem entity, TaskItemDto dto,
         RelatedDeleteBehavior relatedDeleteBehavior = RelatedDeleteBehavior.None)
     {
+        // The context clock (TimeProvider) stamps the content-changed event and a completed checklist item.
+        var now = db.Clock.GetUtcNow();
         return entity.Update(
+            now,
             title: dto.Title,
             description: dto.Description,
             priority: dto.Priority,
@@ -67,11 +70,11 @@ internal static class TaskItemUpdater
                     // without this follow-up Update on the newly created child.
                     if (result.TryGetValue(out ChecklistItem? added) && incomingDto.IsCompleted)
                     {
-                        added.Update(isCompleted: true);
+                        added.Update(now, isCompleted: true);
                     }
                     return result.Map(_ => Unit.Value);
                 },
-                (existing, incomingDto) => existing.Update(incomingDto.Title, incomingDto.IsCompleted, incomingDto.SortOrder).Map(_ => Unit.Value),
+                (existing, incomingDto) => existing.Update(now, incomingDto.Title, incomingDto.IsCompleted, incomingDto.SortOrder).Map(_ => Unit.Value),
                 toRemove =>
                 {
                     if (relatedDeleteBehavior == RelatedDeleteBehavior.None) return Result.Ok();

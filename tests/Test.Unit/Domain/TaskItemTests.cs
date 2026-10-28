@@ -16,6 +16,8 @@ namespace Test.Unit.Domain;
 [TestClass]
 public class TaskItemTests
 {
+    private static readonly DateTimeOffset Now = new(2026, 10, 28, 12, 0, 0, TimeSpan.Zero);
+
     private static TenantId TenantId => TenantId.From(TestConstants.TenantId);
 
     /// <summary>Verifies that given valid input, when task item created, then returns success.</summary>
@@ -53,11 +55,11 @@ public class TaskItemTests
         var task = TaskItem.Create(TenantId, "Original", "Original body").GetValueOrThrow();
         task.ClearDomainEvents();
 
-        task.Update(title: "Renamed");
+        task.Update(Now, title: "Renamed");
         Assert.AreEqual(1, ContentChangedCount(task));
 
         task.ClearDomainEvents();
-        task.Update(description: "Rewritten body");
+        task.Update(Now, description: "Rewritten body");
         Assert.AreEqual(1, ContentChangedCount(task));
     }
 
@@ -70,8 +72,8 @@ public class TaskItemTests
         task.ClearDomainEvents();
 
         // Priority-only edit, and a title/description resubmitted with identical values.
-        task.Update(priority: Priority.Critical);
-        task.Update(title: "Original", description: "Original body");
+        task.Update(Now, priority: Priority.Critical);
+        task.Update(Now, title: "Original", description: "Original body");
 
         Assert.AreEqual(0, ContentChangedCount(task));
     }
@@ -84,7 +86,7 @@ public class TaskItemTests
         var task = TaskItem.Create(TenantId, "Original").GetValueOrThrow();
         task.ClearDomainEvents();
 
-        var result = task.Update(title: "   ");
+        var result = task.Update(Now, title: "   ");
 
         Assert.IsFalse(result.IsSuccess);
         Assert.AreEqual(0, ContentChangedCount(task));
@@ -108,7 +110,7 @@ public class TaskItemTests
     public void Given_ExistingTaskItem_When_Updated_Then_ReturnsUpdatedValues()
     {
         var task = TaskItem.Create(TenantId, "Original").GetValueOrThrow();
-        var result = task.Update(title: "Updated", description: "New desc", priority: Priority.Critical);
+        var result = task.Update(Now, title: "Updated", description: "New desc", priority: Priority.Critical);
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual("Updated", result.GetValueOrThrow().Title);
         Assert.AreEqual("New desc", result.GetValueOrThrow().Description);
@@ -121,7 +123,7 @@ public class TaskItemTests
     public void Given_NullUpdate_When_Updated_Then_OriginalValuesPreserved()
     {
         var task = TaskItem.Create(TenantId, "Original", "Desc", Priority.Low).GetValueOrThrow();
-        var result = task.Update();
+        var result = task.Update(Now);
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual("Original", result.GetValueOrThrow().Title);
         Assert.AreEqual("Desc", result.GetValueOrThrow().Description);
@@ -134,7 +136,7 @@ public class TaskItemTests
     public void Given_OpenTask_When_TransitionToInProgress_Then_Succeeds()
     {
         var task = TaskItem.Create(TenantId, "Task").GetValueOrThrow();
-        var result = task.TransitionStatus(TaskItemStatus.InProgress);
+        var result = task.TransitionStatus(TaskItemStatus.InProgress, Now);
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual(TaskItemStatus.InProgress, result.GetValueOrThrow().Status);
     }
@@ -145,11 +147,11 @@ public class TaskItemTests
     public void Given_InProgressTask_When_TransitionToCompleted_Then_SetsCompletedDate()
     {
         var task = TaskItem.Create(TenantId, "Task").GetValueOrThrow();
-        task.TransitionStatus(TaskItemStatus.InProgress);
-        var result = task.TransitionStatus(TaskItemStatus.Completed);
+        task.TransitionStatus(TaskItemStatus.InProgress, Now);
+        var result = task.TransitionStatus(TaskItemStatus.Completed, Now);
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual(TaskItemStatus.Completed, result.GetValueOrThrow().Status);
-        Assert.IsNotNull(result.GetValueOrThrow().CompletedDate);
+        Assert.AreEqual(Now, result.GetValueOrThrow().CompletedDate, "The completion stamp is the caller's clock reading.");
     }
 
     /// <summary>Verifies that given completed task, when reopened, then clears completed date.</summary>
@@ -158,11 +160,11 @@ public class TaskItemTests
     public void Given_CompletedTask_When_Reopened_Then_ClearsCompletedDate()
     {
         var task = TaskItem.Create(TenantId, "Task").GetValueOrThrow();
-        task.TransitionStatus(TaskItemStatus.InProgress);
-        task.TransitionStatus(TaskItemStatus.Completed);
+        task.TransitionStatus(TaskItemStatus.InProgress, Now);
+        task.TransitionStatus(TaskItemStatus.Completed, Now);
         Assert.IsNotNull(task.CompletedDate);
 
-        var result = task.TransitionStatus(TaskItemStatus.Open);
+        var result = task.TransitionStatus(TaskItemStatus.Open, Now);
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual(TaskItemStatus.Open, result.GetValueOrThrow().Status);
         Assert.IsNull(result.GetValueOrThrow().CompletedDate);
@@ -174,7 +176,7 @@ public class TaskItemTests
     public void Given_OpenTask_When_TransitionToBlocked_Then_Fails()
     {
         var task = TaskItem.Create(TenantId, "Task").GetValueOrThrow();
-        var result = task.TransitionStatus(TaskItemStatus.Blocked);
+        var result = task.TransitionStatus(TaskItemStatus.Blocked, Now);
         Assert.IsFalse(result.IsSuccess);
     }
 
@@ -218,7 +220,7 @@ public class TaskItemTests
     public void Given_NullSecureUpdate_When_Updated_Then_SecureValuePreserved()
     {
         var task = TaskItem.Create(TenantId, "Task", secureDeterministic: "keep-me").GetValueOrThrow();
-        var result = task.Update(secureRandom: "added");
+        var result = task.Update(Now, secureRandom: "added");
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual("keep-me", result.GetValueOrThrow().SecureDeterministic);
         Assert.AreEqual("added", result.GetValueOrThrow().SecureRandom);
@@ -242,11 +244,11 @@ public class TaskItemTests
         var task = TaskItem.Create(TenantId, "Task").GetValueOrThrow();
         // Task starts as Open; transitioning to Open from Open is not in the valid set,
         // but None -> Open is valid. Test same-status for InProgress:
-        task.TransitionStatus(TaskItemStatus.InProgress);
+        task.TransitionStatus(TaskItemStatus.InProgress, Now);
         // InProgress -> InProgress is not a defined valid transition.
         // The state machine only allows defined transitions + same-status is handled by
         // the IsValidTransition returning false. Let's test a valid full round-trip instead.
-        var result = task.TransitionStatus(TaskItemStatus.Completed);
+        var result = task.TransitionStatus(TaskItemStatus.Completed, Now);
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual(TaskItemStatus.Completed, task.Status);
     }

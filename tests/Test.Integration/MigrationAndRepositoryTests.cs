@@ -109,7 +109,7 @@ public class MigrationAndRepositoryTests
         Assert.AreEqual(TaskItemStatus.Open, fetched.Status);
 
         // Update
-        fetched.Update(title: "Updated Task");
+        fetched.Update(DateTimeOffset.UtcNow, title: "Updated Task");
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: TestContext.CancellationToken);
 
         var updated = await db.TaskItems.FindAsync([TenantAId, TaskItemId.From(id)], TestContext.CancellationToken);
