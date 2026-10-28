@@ -411,8 +411,10 @@ if (!isTesting || schedulerAvailableInTesting || fullLaneAvailableInTesting)
         // The compliance_check job starts compliance-check in this host, so its workflow self-calls (the "taskflow-api"
         // FlowEngine client) leave from here and need the Api's address; unset, the client falls back to https://localhost.
         .WithEnvironment("FlowEngine__TaskFlowApiBaseUrl", api.GetEndpoint("http"))
-        // Two replicas so the outbox/blob lease path is exercised locally (D-026): both drain, neither doubles
-        // up. One replica under test so the graph boot stays inside the mesh startup budget.
+        // Two replicas, as every Bicep profile runs (infra/README.md): EF.Data.Scheduling enqueues each cron occurrence
+        // once and leases each run to one replica, and the outbox/blob workers lease their rows (D-026), so both drain
+        // and neither doubles up, and the multi-replica claim path is exercised locally. One replica under test so the
+        // graph boot stays inside the mesh startup budget.
         .WithReplicas(isTesting ? 1 : 2)
         .WaitForCompletion(migrator)
         .WaitFor(taskflowDb);

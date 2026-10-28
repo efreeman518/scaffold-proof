@@ -89,10 +89,10 @@ param apiProfile object = {
   memory: '1Gi'
 }
 
-@description('Scheduler container app scale/sizing profile')
+@description('Scheduler container app scale/sizing profile: two always-on replicas in every profile (infra/README.md)')
 param schedulerProfile object = {
-  minReplicas: 1
-  maxReplicas: 1
+  minReplicas: 2
+  maxReplicas: 2
   concurrentRequests: 0
   cpu: '0.25'
   memory: '0.5Gi'

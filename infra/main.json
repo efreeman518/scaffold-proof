@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "1671025974512729554"
+      "templateHash": "17427517147632840345"
     }
   },
   "parameters": {
@@ -183,14 +183,14 @@
     "schedulerProfile": {
       "type": "object",
       "defaultValue": {
-        "minReplicas": 1,
-        "maxReplicas": 1,
+        "minReplicas": 2,
+        "maxReplicas": 2,
         "concurrentRequests": 0,
         "cpu": "0.25",
         "memory": "0.5Gi"
       },
       "metadata": {
-        "description": "Scheduler container app scale/sizing profile"
+        "description": "Scheduler container app scale/sizing profile: two always-on replicas in every profile (infra/README.md)"
       }
     },
     "blazorProfile": {
