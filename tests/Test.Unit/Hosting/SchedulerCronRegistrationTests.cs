@@ -73,6 +73,24 @@ public sealed class SchedulerCronRegistrationTests
         Assert.AreEqual(TimeSpan.FromDays(1), provider.GetRequiredService<IOptions<SchedulerRetentionSettings>>().Value.RunRetention);
     }
 
+    /// <summary>
+    /// <c>Scheduling</c> is bound by EF.Data.Scheduling (root, Jobs, Retention, Health); TaskFlow's own job settings live
+    /// in <c>TaskFlowScheduler</c>, so a future package option cannot collide with an app key.
+    /// </summary>
+    [TestMethod]
+    public void Given_ShippedSchedulerSettings_When_Read_Then_AppJobSettingsLiveOutsideThePackageSection()
+    {
+        var config = new ConfigurationBuilder()
+            .AddJsonFile(RepoRoot.Combine("src", "Host", "TaskFlow.Scheduler", "appsettings.json"), optional: false)
+            .Build();
+
+        foreach (var key in new[] { "OwnsRetention", "StaleCleanup", "Compliance", "Retention:OutboxDays", "Retention:ConsumerInboxDays", "Retention:IdempotencyKeyDays" })
+        {
+            Assert.IsFalse(config.GetSection($"Scheduling:{key}").Exists(), $"Scheduling:{key} is an app key inside the package section");
+            Assert.IsTrue(config.GetSection($"TaskFlowScheduler:{key}").Exists(), $"TaskFlowScheduler:{key} is missing");
+        }
+    }
+
     private static ServiceProvider BuildSchedulerServices()
     {
         var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());

@@ -119,7 +119,7 @@ public class StaleTaskCleanupHandlerTests
                 ? []
                 : new Dictionary<string, string?>
                 {
-                    ["Scheduling:StaleCleanup:RetentionDays"] = retentionDays.Value.ToString()
+                    ["TaskFlowScheduler:StaleCleanup:RetentionDays"] = retentionDays.Value.ToString()
                 })
             .Build();
 

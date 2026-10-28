@@ -232,7 +232,7 @@ public class ComplianceCheckHandlerTests
     public void Registration_ValidatesWindowDays(string windowDays, bool valid)
     {
         var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["Scheduling:Compliance:WindowDays"] = windowDays })
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["TaskFlowScheduler:Compliance:WindowDays"] = windowDays })
             .Build();
         using var provider = new ServiceCollection().AddSchedulerServices(config).BuildServiceProvider();
 

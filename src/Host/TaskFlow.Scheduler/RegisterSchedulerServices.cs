@@ -84,6 +84,10 @@ public static class RegisterSchedulerServices
     /// or Timeout. Crons have six fields (seconds first) and read in UTC. Retention sweeps are staggered off the hour and
     /// off each other: they all delete, and running them together would concentrate the lock and log pressure they exist
     /// to spread out. The stall check (<c>Scheduling:Health:StallThreshold</c>, Degraded) reads the run history.
+    /// <c>Scheduling</c> belongs to the package (it binds the root, <c>Jobs</c>, <c>Retention</c> and <c>Health</c>);
+    /// TaskFlow's own job settings (FlowEngine retention ownership, the stale-cleanup age, the compliance window and the
+    /// outbox, inbox and idempotency-key retention days) live in <c>TaskFlowScheduler</c>, so a new package option
+    /// cannot collide with them.
     /// </summary>
     public static IHostApplicationBuilder AddJobScheduler(this IHostApplicationBuilder builder)
     {

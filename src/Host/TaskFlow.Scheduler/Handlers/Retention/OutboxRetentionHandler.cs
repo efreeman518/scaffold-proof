@@ -23,7 +23,7 @@ public sealed class OutboxRetentionHandler(
     public async Task HandleAsync(CancellationToken ct)
     {
         var cutoffUtc = timeProvider.GetUtcNow()
-            .AddDays(-config.GetValue("Scheduling:Retention:OutboxDays", DefaultRetentionDays));
+            .AddDays(-config.GetValue("TaskFlowScheduler:Retention:OutboxDays", DefaultRetentionDays));
 
         telemetry.RecordRetention("outbox", await workRepository.PurgeDeadLetteredAsync<OutboxMessage>(cutoffUtc, ct));
         telemetry.RecordRetention("blobdelete", await workRepository.PurgeDeadLetteredAsync<BlobDeleteWork>(cutoffUtc, ct));

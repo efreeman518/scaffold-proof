@@ -26,7 +26,7 @@ public sealed class StaleTaskCleanupHandler(
     /// <summary>Handles stale task cleanup requests and returns the application result.</summary>
     public async Task HandleAsync(CancellationToken ct)
     {
-        var retentionDays = config.GetValue("Scheduling:StaleCleanup:RetentionDays", DefaultRetentionDays);
+        var retentionDays = config.GetValue("TaskFlowScheduler:StaleCleanup:RetentionDays", DefaultRetentionDays);
         var cutoffUtc = timeProvider.GetUtcNow().AddDays(-retentionDays);
 
         var scanned = 0;

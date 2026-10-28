@@ -12,7 +12,7 @@ namespace TaskFlow.Scheduler.Handlers;
 
 /// <summary>
 /// The start path of the <c>compliance-check</c> workflow (D-075). It streams, over the system repository, the tenants
-/// with an open task tagged <c>compliance</c> due within <c>Scheduling:Compliance:WindowDays</c>, and starts one
+/// with an open task tagged <c>compliance</c> due within <c>TaskFlowScheduler:Compliance:WindowDays</c>, and starts one
 /// instance through <see cref="IFlowEngine.StartBackgroundAsync"/> with <see cref="StartRequest.TenantId"/> set, so the
 /// instance and its <c>compliance-check-item</c> children read evidence as that tenant.
 /// <para>

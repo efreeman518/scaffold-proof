@@ -26,8 +26,8 @@ public sealed class ConsumerInboxRetentionHandler(
         var now = timeProvider.GetUtcNow();
 
         telemetry.RecordRetention("consumerinbox", await inboxStore.PurgeAsync(
-            now.AddDays(-config.GetValue("Scheduling:Retention:ConsumerInboxDays", DefaultRetentionDays)), ct));
+            now.AddDays(-config.GetValue("TaskFlowScheduler:Retention:ConsumerInboxDays", DefaultRetentionDays)), ct));
         telemetry.RecordRetention("idempotencykey", await idempotencyKeys.PurgeAsync(
-            now.AddDays(-config.GetValue("Scheduling:Retention:IdempotencyKeyDays", DefaultRetentionDays)), ct));
+            now.AddDays(-config.GetValue("TaskFlowScheduler:Retention:IdempotencyKeyDays", DefaultRetentionDays)), ct));
     }
 }
