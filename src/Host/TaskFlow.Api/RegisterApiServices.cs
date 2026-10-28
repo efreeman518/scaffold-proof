@@ -140,10 +140,8 @@ public static class RegisterApiServices
     /// D-076: a <see cref="DatabaseConstraintException"/> that escapes a service (mapped to 409 by
     /// <see cref="MapExceptions"/>) answers the body the services' <c>SaveFailure.ToError</c> gives a caught one: the
     /// fixed save-failed text and code <c>save.constraint</c>. The handler would otherwise send the exception message,
-    /// which is the provider's text (constraint, table and key value); it stays in the log.
-    /// shortcut: a request whose Accept header no problem writer accepts (text/html only) gets the handler's fallback
-    /// body, which skips CustomizeProblemDetails and still carries the provider text; upgrade path: EF.AspNetCore runs
-    /// the customization on that fallback write too.
+    /// which is the provider's text (constraint, table and key value); it stays in the log. EF.AspNetCore runs this
+    /// customization on its fallback write too, so a text/html-only request gets the same body.
     /// </summary>
     internal static void DescribeConstraintFailure(ProblemDetailsContext context)
     {

@@ -150,13 +150,16 @@ public sealed class GlobalExceptionHandlerTests
     /// <summary>
     /// D-076: a DatabaseConstraintException that escapes a service is 409 with the body a caught one gets from
     /// SaveFailure.ToError (the fixed save-failed text, code save.constraint); the provider message, which names the
-    /// constraint and the key value, is not sent.
+    /// constraint and the key value, is not sent, also when no problem writer accepts the request (text/html only).
     /// </summary>
     [TestMethod]
-    public async Task TryHandleAsync_ConstraintViolation_Returns409WithSaveConstraintCode()
+    [DataRow(null)]
+    [DataRow("text/html")]
+    public async Task TryHandleAsync_ConstraintViolation_Returns409WithSaveConstraintCode(string? accept)
     {
         using var provider = BuildProvider();
         var context = NewContext(provider);
+        if (accept is not null) context.Request.Headers.Accept = accept;
         var exception = new UniqueConstraintException(
             "duplicate key value violates unique constraint \"ux_tag_tenant_name\"", new DbUpdateException());
 

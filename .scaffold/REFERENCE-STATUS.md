@@ -4,7 +4,7 @@ Canonical current evidence for the TaskFlow reference application. Historical ph
 
 > Update this file only from observed results. TaskFlow CI records the scaffold checkout commit used for cross-repository validation so failures remain diagnosable without creating a compatibility pin.
 
-TaskFlow targets net11.0 on .NET SDK 11.0.100-rc.3.26522.148 (`global.json`, `rollForward: latestFeature`, prerelease allowed) with the Microsoft.Testing.Platform test runner. Runtime, ASP.NET Core and Microsoft.Extensions packages are on 11.0.0-rc.3.26522.148; the EF Core family (and dotnet-ef) is on 11.0.0-rc.2.26504.105 because Npgsql.EntityFrameworkCore.PostgreSQL 11.0.0-rc.2 pins EF Core rc.2 exactly. TaskFlow is on the EF.Packages 3.0 prereleases (every `EF.*` platform id at 3.0.0-dotnet11.144) and the EF.Packages.Enterprise 2.0 prereleases (EF.FilterBuilder and the EF.FlowEngine ids at 2.0.0-dotnet11.269), with the `Result<T>` union and closed `Error` hierarchy adopted. The Uno head is on the Uno.Sdk 7.0.0-dev.89 preview with Uno.Extensions 8.0.0-dev.135 (stable Uno.Sdk supports net10.0 only). Microsoft.AspNetCore.OpenApi is on 11.0.0-rc.3.26522.148 and the committed OpenAPI document is 3.2. KubernetesClient is held on 19.0.2 and Microsoft.CodeAnalysis on 5.9.0 (EF.FlowEngine scripting); the pins and their reasons are in `Directory.Packages.props`. Results below distinguish passed, failed, blocked, and not-run evidence; each table names its run date.
+TaskFlow targets net11.0 on .NET SDK 11.0.100-rc.3.26522.148 (`global.json`, `rollForward: latestFeature`, prerelease allowed) with the Microsoft.Testing.Platform test runner. Runtime, ASP.NET Core and Microsoft.Extensions packages are on 11.0.0-rc.3.26522.148; the EF Core family (and dotnet-ef) is on 11.0.0-rc.2.26504.105 because Npgsql.EntityFrameworkCore.PostgreSQL 11.0.0-rc.2 pins EF Core rc.2 exactly. TaskFlow is on the EF.Packages 3.0 prereleases (every `EF.*` platform id at 3.0.0-dotnet11.145) and the EF.Packages.Enterprise 2.0 prereleases (EF.FilterBuilder and the EF.FlowEngine ids at 2.0.0-dotnet11.269), with the `Result<T>` union and closed `Error` hierarchy adopted. The Uno head is on the Uno.Sdk 7.0.0-dev.89 preview with Uno.Extensions 8.0.0-dev.135 (stable Uno.Sdk supports net10.0 only). Microsoft.AspNetCore.OpenApi is on 11.0.0-rc.3.26522.148 and the committed OpenAPI document is 3.2. KubernetesClient is held on 19.0.2 and Microsoft.CodeAnalysis on 5.9.0 (EF.FlowEngine scripting); the pins and their reasons are in `Directory.Packages.props`. Results below distinguish passed, failed, blocked, and not-run evidence; each table names its run date.
 
 ## Current acceptance (.NET 11 RC 3, 2026-10-27)
 
@@ -18,14 +18,14 @@ Release `--no-build` runs, serially, `dotnet test --project <csproj> --results-d
 |---|---|---:|---:|---:|
 | Test.Unit | 2026-10-28 | 743 | 0 | 0 |
 | Test.Architecture | 2026-10-28 | 89 | 0 | 0 |
-| Test.Endpoints | 2026-10-28 | 302 | 0 | 0 |
+| Test.Endpoints | 2026-10-28 | 303 | 0 | 0 |
 | Test.Integration.FlowEngine | 2026-10-28 | 40 | 0 | 0 |
 | Test.UI | 2026-10-28 | 54 | 0 | 0 |
 | Test.Mutation | 2026-10-28 | 27 | 0 | 0 |
 | Test.Integration, `TASKFLOW_LANE=NonAzure` / PostgreSqlJsonb | 2026-10-28 | 167 | 0 | 5 (Azure/Mongo-only) |
 | Test.E2E, NonAzure | 2026-10-27 | 10 | 0 | 0 |
 | Test.Aspire topology contracts (`AppHostLaneTopologyTests`, `AppHostMigratorTopologyTests`) | 2026-10-27 | 43 | 0 | 0 |
-| **Total** | | **1475** | **0** | **5** |
+| **Total** | | **1476** | **0** | **5** |
 
 Known gap: `RecurrencePattern` stays on `OwnsOne(...).ToJson()`. `ComplexProperty(...).ToJson()` produces identical relational migrations, but the EF Core 11 rc.2 InMemory provider fails to compile any TaskItem query with it (`KeyNotFoundException: The given key 'Property: TaskItem.RecurrencePattern#RecurrencePattern.Frequency (string) Required' was not present in the dictionary.` in `InMemoryShapedQueryCompilingExpressionVisitor`), which breaks the Test.Unit and Test.Endpoints hosts. `RecurrencePatternJsonRoundTripTests` pins the stored document for a later attempt.
 
