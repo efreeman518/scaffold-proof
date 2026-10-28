@@ -71,29 +71,29 @@ public class JsonContextCompletenessTests
     }
 
     /// <summary>
-    /// Verifies the messaging context covers exactly the event types the envelope claims to know. The two
-    /// lists are independent declarations of the same fact, and a payload record present in one but not the
-    /// other means either an event that cannot be consumed or one that silently serializes by reflection.
+    /// Verifies every event record is both registered on the messaging context and known to the reader. The
+    /// closed <see cref="TenantDomainEvent"/> hierarchy is the list: <c>TaskFlowIntegrationEvents.VersionOf</c>
+    /// switches over it without a discard, so a new record already fails the build until it has a version, and
+    /// this covers the two name-based declarations the compiler cannot see. A record missing from either is an
+    /// event that throws when it is staged or is dead-lettered as unknown when it is read.
     /// </summary>
     [TestMethod]
     public void Given_DomainEventRecords_When_ResolvedThroughMessagingContext_Then_MatchesKnownEventTypes()
     {
-        var eventTypes = typeof(ITenantDomainEvent).Assembly.GetExportedTypes()
-            .Where(t => t is { IsAbstract: false, IsInterface: false } && typeof(ITenantDomainEvent).IsAssignableFrom(t))
+        var eventTypes = typeof(TenantDomainEvent).Assembly.GetExportedTypes()
+            .Where(t => t is { IsAbstract: false } && t.IsSubclassOf(typeof(TenantDomainEvent)))
             .ToList();
 
         Assert.IsTrue(eventTypes.Count > 0, "No domain event records found; the scan must be wrong.");
 
         foreach (var eventType in eventTypes)
         {
-            var generated = TaskFlowMessagingJsonContext.Default.GetTypeInfo(eventType) is not null;
-            var known = TaskFlowIntegrationEvents.IsKnownType(eventType.Name);
-
-            Assert.AreEqual(known, generated,
-                $"{eventType.Name} is {(known ? "listed in" : "absent from")} "
-                + $"TaskFlowIntegrationEvents.Versions but {(generated ? "is" : "is not")} registered on "
-                + "TaskFlowMessagingJsonContext. TaskFlowIntegrationEvents.Envelope resolves the payload "
-                + "through that context and throws when it is missing, so the two lists have to agree.");
+            Assert.IsNotNull(TaskFlowMessagingJsonContext.Default.GetTypeInfo(eventType),
+                $"{eventType.Name} is not registered on TaskFlowMessagingJsonContext. TaskFlowIntegrationEvents.Envelope "
+                + "resolves the payload through that context and throws when it is missing.");
+            Assert.IsTrue(TaskFlowIntegrationEvents.IsKnownType(eventType.Name),
+                $"{eventType.Name} is absent from TaskFlowIntegrationEvents.KnownTypes, so every reader dead-letters it "
+                + "as an unknown type.");
         }
     }
 

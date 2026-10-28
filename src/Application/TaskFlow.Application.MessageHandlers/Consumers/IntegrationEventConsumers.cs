@@ -21,15 +21,15 @@ internal static class PayloadTenant
 {
     /// <summary>
     /// Owning tenant of the message. The package envelope frame carries no tenant, so it is read from the
-    /// payload, which every <see cref="ITenantDomainEvent"/> carries and which the producer copied onto the
+    /// payload, which every <see cref="TenantDomainEvent"/> carries and which the producer copied onto the
     /// broker <c>TenantId</c> header.
     /// </summary>
     /// <exception cref="InvalidOperationException">The payload has no Guid TenantId.</exception>
     public static Guid Of(IntegrationEventEnvelope envelope) =>
-        envelope.Payload.TryGetProperty(nameof(ITenantDomainEvent.TenantId), out var value) && value.TryGetGuid(out var id)
+        envelope.Payload.TryGetProperty(nameof(TenantDomainEvent.TenantId), out var value) && value.TryGetGuid(out var id)
             ? id
             : throw new InvalidOperationException(
-                $"Envelope {envelope.Id} ({envelope.Type}) has no {nameof(ITenantDomainEvent.TenantId)}.");
+                $"Envelope {envelope.Id} ({envelope.Type}) has no {nameof(TenantDomainEvent.TenantId)}.");
 }
 
 /// <summary>

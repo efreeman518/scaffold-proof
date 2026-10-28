@@ -82,7 +82,7 @@ public sealed class RabbitMqTransportTests
             // The envelope frame carries no tenant; it travels in the payload and on the broker header above.
             Assert.AreEqual(
                 TestConstants.TenantId,
-                read.Payload.GetProperty(nameof(TaskFlow.Domain.Shared.ITenantDomainEvent.TenantId)).GetGuid());
+                read.Payload.GetProperty(nameof(TaskFlow.Domain.Shared.TenantDomainEvent.TenantId)).GetGuid());
         }
     }
 

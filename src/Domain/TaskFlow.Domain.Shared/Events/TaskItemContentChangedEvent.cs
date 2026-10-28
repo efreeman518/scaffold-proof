@@ -11,4 +11,4 @@ namespace TaskFlow.Domain.Shared.Events;
 public record TaskItemContentChangedEvent(
     Guid TaskItemId,
     Guid TenantId,
-    DateTimeOffset OccurredAtUtc) : ITenantDomainEvent;
+    DateTimeOffset OccurredAtUtc) : TenantDomainEvent;

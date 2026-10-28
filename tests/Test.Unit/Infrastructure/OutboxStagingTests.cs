@@ -1,4 +1,4 @@
-﻿using EF.Data.Contracts;
+using EF.Data.Contracts;
 using EF.Messaging;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
@@ -169,7 +169,64 @@ public sealed class OutboxStagingTests
     {
         Assert.IsTrue(TaskFlowIntegrationEvents.IsKnownType(nameof(TaskItemCreatedEvent)));
         Assert.IsFalse(TaskFlowIntegrationEvents.IsKnownType("SomeFutureEvent"));
-        Assert.AreEqual(1, TaskFlowIntegrationEvents.VersionFor(nameof(TaskItemCreatedEvent)));
+        Assert.AreEqual(1, TaskFlowIntegrationEvents.VersionOf(new TaskItemCreatedEvent(Guid.Empty, TestConstants.TenantId, "v")));
+    }
+
+    /// <summary>
+    /// Pins the serialized envelope of every published event type byte for byte. The outbox row and the broker
+    /// body are this string, and a message already in a queue during a rolling deploy is read by the other build,
+    /// so a change to the event records (a base type, a property moved or reordered, a renamed type) must not
+    /// change it. A new event type gets a line here when it is added.
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Unit")]
+    public void EveryEventType_KeepsItsWireFormat()
+    {
+        var a = Guid.Parse("0198a0c0-0000-7000-8000-00000000000a");
+        var b = Guid.Parse("0198a0c0-0000-7000-8000-00000000000b");
+        var tenant = Guid.Parse("0198a0c0-0000-7000-8000-0000000000aa");
+        var messageId = Guid.Parse("0198a0c0-0000-7000-8000-0000000000ff");
+        const string frame = """{"Id":"0198a0c0-0000-7000-8000-0000000000ff","Type":"{type}","Version":1,"OccurredAtUtc":"2026-09-04T12:00:00+00:00","CorrelationId":"corr-1","Payload":{payload}}""";
+        (TenantDomainEvent Event, string Payload)[] cases =
+        [
+            (new TaskItemCreatedEvent(a, tenant, "wire"),
+                """{"TaskItemId":"0198a0c0-0000-7000-8000-00000000000a","TenantId":"0198a0c0-0000-7000-8000-0000000000aa","Title":"wire"}"""),
+            (new TaskItemContentChangedEvent(a, tenant, Now),
+                """{"TaskItemId":"0198a0c0-0000-7000-8000-00000000000a","TenantId":"0198a0c0-0000-7000-8000-0000000000aa","OccurredAtUtc":"2026-09-04T12:00:00\u002B00:00"}"""),
+            (new TaskItemStatusChangedEvent(a, tenant, TaskItemStatus.Open, TaskItemStatus.InProgress),
+                """{"TaskItemId":"0198a0c0-0000-7000-8000-00000000000a","TenantId":"0198a0c0-0000-7000-8000-0000000000aa","OldStatus":1,"NewStatus":2}"""),
+            (new TaskItemCompletedEvent(a, tenant, Now),
+                """{"TaskItemId":"0198a0c0-0000-7000-8000-00000000000a","TenantId":"0198a0c0-0000-7000-8000-0000000000aa","CompletedDate":"2026-09-04T12:00:00\u002B00:00"}"""),
+            (new TaskItemOverdueSuspectedEvent(a, tenant, Now),
+                """{"TaskItemId":"0198a0c0-0000-7000-8000-00000000000a","TenantId":"0198a0c0-0000-7000-8000-0000000000aa","DueDate":"2026-09-04T12:00:00\u002B00:00"}"""),
+            (new TaskItemRescheduledEvent(a, tenant, Now, null),
+                """{"TaskItemId":"0198a0c0-0000-7000-8000-00000000000a","TenantId":"0198a0c0-0000-7000-8000-0000000000aa","NewStartDate":"2026-09-04T12:00:00\u002B00:00","NewDueDate":null}"""),
+            (new CommentAddedEvent(b, a, tenant),
+                """{"CommentId":"0198a0c0-0000-7000-8000-00000000000b","TaskItemId":"0198a0c0-0000-7000-8000-00000000000a","TenantId":"0198a0c0-0000-7000-8000-0000000000aa"}"""),
+            (new AttachmentUploadedEvent(b, a, AttachmentOwnerType.TaskItem, tenant),
+                """{"AttachmentId":"0198a0c0-0000-7000-8000-00000000000b","OwnerId":"0198a0c0-0000-7000-8000-00000000000a","OwnerType":0,"TenantId":"0198a0c0-0000-7000-8000-0000000000aa"}"""),
+        ];
+
+        var eventRecords = typeof(TenantDomainEvent).Assembly.GetExportedTypes()
+            .Where(t => t is { IsAbstract: false } && t.IsSubclassOf(typeof(TenantDomainEvent)));
+        CollectionAssert.AreEquivalent(eventRecords.ToList(), cases.Select(c => c.Event.GetType()).ToList(),
+            "Every event record needs exactly one pinned wire format here.");
+
+        foreach (var (raised, payload) in cases)
+        {
+            var envelope = TaskFlowIntegrationEvents.Envelope(raised, Now, "corr-1", messageId);
+            var expected = frame.Replace("{type}", raised.GetType().Name, StringComparison.Ordinal)
+                .Replace("{payload}", payload, StringComparison.Ordinal);
+
+            Assert.AreEqual(expected, EnvelopeSerializer.Serialize(envelope, TaskFlowMessagingJsonContext.Default.Options),
+                $"{raised.GetType().Name} changed its wire format.");
+
+            // The outbox mapper, which the staging interceptor calls, stages the same type, version and payload.
+            var mapped = new TaskFlowOutboxEventMapper().Map(raised, Now, "corr-1").Envelope;
+            Assert.AreEqual(envelope.Type, mapped.Type);
+            Assert.AreEqual(envelope.Version, mapped.Version);
+            Assert.AreEqual(envelope.Payload.GetRawText(), mapped.Payload.GetRawText());
+        }
     }
 
     public TestContext TestContext { get; set; } = null!;

@@ -24,9 +24,9 @@ namespace TaskFlow.Application.Contracts.Messaging;
 [JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
 [JsonSerializable(typeof(IntegrationEventEnvelope))]
 // Payload records. TaskFlowIntegrationEvents.Envelope serializes the raised event through this context, so
-// the set here must match TaskFlowIntegrationEvents.Versions - an event type missing from either is dropped
+// the set here must match TaskFlowIntegrationEvents.KnownTypes - an event type missing from either is dropped
 // (unknown type) or falls back to reflection.
-[JsonSerializable(typeof(ITenantDomainEvent))]
+[JsonSerializable(typeof(TenantDomainEvent))]
 [JsonSerializable(typeof(TaskItemCreatedEvent))]
 [JsonSerializable(typeof(TaskItemContentChangedEvent))]
 [JsonSerializable(typeof(TaskItemStatusChangedEvent))]

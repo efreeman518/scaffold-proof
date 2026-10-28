@@ -1,6 +1,7 @@
 using EF.Messaging;
 using EF.Messaging.Outbox;
 using TaskFlow.Domain.Shared;
+using TaskFlow.Domain.Shared.Events;
 
 namespace TaskFlow.Application.Contracts.Messaging;
 
@@ -11,7 +12,7 @@ namespace TaskFlow.Application.Contracts.Messaging;
 /// without deserializing the payload.
 /// <para>
 /// The envelope carries no tenant. TaskFlow's tenant travels in the payload (every
-/// <see cref="ITenantDomainEvent"/> has one) and as the <see cref="TenantIdHeader"/> outbox header, which the
+/// <see cref="TenantDomainEvent"/> has one) and as the <see cref="TenantIdHeader"/> outbox header, which the
 /// transport copies onto the broker message, where a subscription rule and a partition key actually read it.
 /// </para>
 /// </summary>
@@ -23,27 +24,43 @@ public static class TaskFlowIntegrationEvents
     /// <summary>Outbox header, and broker message property, carrying the owning tenant.</summary>
     public const string TenantIdHeader = "TenantId";
     /// <summary>
-    /// Per-type payload schema version. A record whose shape changes gets a bumped entry here and a consumer
-    /// that switches on EventVersion; unlisted types are version 1.
+    /// Envelope types a reader accepts. The reader sees only the wire name, so this is a name set; it lists every
+    /// <see cref="TenantDomainEvent"/> record, which <c>JsonContextCompletenessTests</c> checks against the closed
+    /// hierarchy, and a removed record fails the build here through its <c>nameof</c>.
     /// </summary>
-    private static readonly Dictionary<string, int> Versions = new(StringComparer.Ordinal)
+    private static readonly HashSet<string> KnownTypes = new(StringComparer.Ordinal)
     {
-        [nameof(Domain.Shared.Events.TaskItemCreatedEvent)] = IntegrationEventEnvelope.InitialVersion,
-        [nameof(Domain.Shared.Events.TaskItemContentChangedEvent)] = IntegrationEventEnvelope.InitialVersion,
-        [nameof(Domain.Shared.Events.TaskItemStatusChangedEvent)] = IntegrationEventEnvelope.InitialVersion,
-        [nameof(Domain.Shared.Events.TaskItemCompletedEvent)] = IntegrationEventEnvelope.InitialVersion,
-        [nameof(Domain.Shared.Events.TaskItemOverdueSuspectedEvent)] = IntegrationEventEnvelope.InitialVersion,
-        [nameof(Domain.Shared.Events.TaskItemRescheduledEvent)] = IntegrationEventEnvelope.InitialVersion,
-        [nameof(Domain.Shared.Events.CommentAddedEvent)] = IntegrationEventEnvelope.InitialVersion,
-        [nameof(Domain.Shared.Events.AttachmentUploadedEvent)] = IntegrationEventEnvelope.InitialVersion
+        nameof(TaskItemCreatedEvent),
+        nameof(TaskItemContentChangedEvent),
+        nameof(TaskItemStatusChangedEvent),
+        nameof(TaskItemCompletedEvent),
+        nameof(TaskItemOverdueSuspectedEvent),
+        nameof(TaskItemRescheduledEvent),
+        nameof(CommentAddedEvent),
+        nameof(AttachmentUploadedEvent)
     };
 
-    /// <summary>Payload schema version for an event type name.</summary>
-    public static int VersionFor(string eventType) =>
-        Versions.TryGetValue(eventType, out var version) ? version : IntegrationEventEnvelope.InitialVersion;
+    /// <summary>
+    /// Payload schema version of an event. A record whose shape changes gets a bumped arm here and a consumer
+    /// that switches on EventVersion. There is no discard arm: <see cref="TenantDomainEvent"/> is closed, so a new
+    /// event record does not compile until it is given a version here, which is also the place to add it to
+    /// <see cref="KnownTypes"/> and to <see cref="TaskFlowMessagingJsonContext"/>.
+    /// </summary>
+    /// <param name="domainEvent">The raised event.</param>
+    public static int VersionOf(TenantDomainEvent domainEvent) => domainEvent switch
+    {
+        TaskItemCreatedEvent => IntegrationEventEnvelope.InitialVersion,
+        TaskItemContentChangedEvent => IntegrationEventEnvelope.InitialVersion,
+        TaskItemStatusChangedEvent => IntegrationEventEnvelope.InitialVersion,
+        TaskItemCompletedEvent => IntegrationEventEnvelope.InitialVersion,
+        TaskItemOverdueSuspectedEvent => IntegrationEventEnvelope.InitialVersion,
+        TaskItemRescheduledEvent => IntegrationEventEnvelope.InitialVersion,
+        CommentAddedEvent => IntegrationEventEnvelope.InitialVersion,
+        AttachmentUploadedEvent => IntegrationEventEnvelope.InitialVersion
+    };
 
     /// <summary>True when the event type is one this deployment knows how to consume.</summary>
-    public static bool IsKnownType(string eventType) => Versions.ContainsKey(eventType);
+    public static bool IsKnownType(string eventType) => KnownTypes.Contains(eventType);
 
     /// <summary>
     /// The one reader configuration every transport uses (D-034, D-048): envelopes deserialize through the
@@ -66,7 +83,7 @@ public static class TaskFlowIntegrationEvents
     /// The event record is not registered on <see cref="TaskFlowMessagingJsonContext"/>.
     /// </exception>
     public static IntegrationEventEnvelope Envelope(
-        ITenantDomainEvent domainEvent, DateTimeOffset occurredAtUtc, string? correlationId, Guid? id = null)
+        TenantDomainEvent domainEvent, DateTimeOffset occurredAtUtc, string? correlationId, Guid? id = null)
     {
         ArgumentNullException.ThrowIfNull(domainEvent);
         var eventType = domainEvent.GetType();
@@ -78,14 +95,14 @@ public static class TaskFlowIntegrationEvents
         {
             throw new InvalidOperationException(
                 $"{eventType.Name} is not registered on TaskFlowMessagingJsonContext (D-048). Add a "
-                + "[JsonSerializable] entry for it alongside its Versions entry.");
+                + "[JsonSerializable] entry for it alongside its VersionOf arm.");
         }
 
         return IntegrationEventEnvelope.From(
             domainEvent,
             occurredAtUtc,
             correlationId,
-            VersionFor(eventType.Name),
+            VersionOf(domainEvent),
             id,
             TaskFlowMessagingJsonContext.Default.Options);
     }
