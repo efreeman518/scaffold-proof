@@ -134,7 +134,7 @@ internal class AttachmentService(
         if (boundary.TryGetValue(out Error? boundaryError)) return boundaryError;
 
         if (Domain.Model.Attachment.FileNameError(fileName) is { } fileNameError)
-            return new ValidationError(fileNameError, "fileName");
+            return new ValidationError(fileNameError, "fileName", "file_name.invalid");
 
         if (blobStorage is null)
             return new UnexpectedError("Blob storage is not configured.");

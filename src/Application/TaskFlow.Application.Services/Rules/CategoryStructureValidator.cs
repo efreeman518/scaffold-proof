@@ -15,9 +15,9 @@ internal static class CategoryStructureValidator
         if (common.TryGetValue(out Error? commonError)) return commonError;
 
         var errors = new List<ValidationIssue>();
-        if (string.IsNullOrWhiteSpace(dto.Name)) errors.Add(new ValidationIssue("Category name is required."));
-        if (dto.Name?.Length > DomainConstants.RULE_CATEGORY_NAME_LENGTH_MAX) errors.Add(new ValidationIssue($"Category name cannot exceed {DomainConstants.RULE_CATEGORY_NAME_LENGTH_MAX} characters."));
-        if (dto.Description?.Length > DomainConstants.RULE_CATEGORY_DESCRIPTION_LENGTH_MAX) errors.Add(new ValidationIssue($"Description cannot exceed {DomainConstants.RULE_CATEGORY_DESCRIPTION_LENGTH_MAX} characters."));
+        if (string.IsNullOrWhiteSpace(dto.Name)) errors.Add(new ValidationIssue("Category name is required.", nameof(CategoryDto.Name), "name.required"));
+        if (dto.Name?.Length > DomainConstants.RULE_CATEGORY_NAME_LENGTH_MAX) errors.Add(new ValidationIssue($"Category name cannot exceed {DomainConstants.RULE_CATEGORY_NAME_LENGTH_MAX} characters.", nameof(CategoryDto.Name), "name.max_length"));
+        if (dto.Description?.Length > DomainConstants.RULE_CATEGORY_DESCRIPTION_LENGTH_MAX) errors.Add(new ValidationIssue($"Description cannot exceed {DomainConstants.RULE_CATEGORY_DESCRIPTION_LENGTH_MAX} characters.", nameof(CategoryDto.Description), "description.max_length"));
         return errors.Count > 0 ? new ValidationError(errors) : dto;
     }
 
@@ -28,9 +28,9 @@ internal static class CategoryStructureValidator
         if (common.TryGetValue(out Error? commonError)) return commonError;
 
         var errors = new List<ValidationIssue>();
-        if (string.IsNullOrWhiteSpace(dto.Name)) errors.Add(new ValidationIssue("Category name is required."));
-        if (dto.Name?.Length > DomainConstants.RULE_CATEGORY_NAME_LENGTH_MAX) errors.Add(new ValidationIssue($"Category name cannot exceed {DomainConstants.RULE_CATEGORY_NAME_LENGTH_MAX} characters."));
-        if (dto.Description?.Length > DomainConstants.RULE_CATEGORY_DESCRIPTION_LENGTH_MAX) errors.Add(new ValidationIssue($"Description cannot exceed {DomainConstants.RULE_CATEGORY_DESCRIPTION_LENGTH_MAX} characters."));
+        if (string.IsNullOrWhiteSpace(dto.Name)) errors.Add(new ValidationIssue("Category name is required.", nameof(CategoryDto.Name), "name.required"));
+        if (dto.Name?.Length > DomainConstants.RULE_CATEGORY_NAME_LENGTH_MAX) errors.Add(new ValidationIssue($"Category name cannot exceed {DomainConstants.RULE_CATEGORY_NAME_LENGTH_MAX} characters.", nameof(CategoryDto.Name), "name.max_length"));
+        if (dto.Description?.Length > DomainConstants.RULE_CATEGORY_DESCRIPTION_LENGTH_MAX) errors.Add(new ValidationIssue($"Description cannot exceed {DomainConstants.RULE_CATEGORY_DESCRIPTION_LENGTH_MAX} characters.", nameof(CategoryDto.Description), "description.max_length"));
         return errors.Count > 0 ? new ValidationError(errors) : dto;
     }
 }

@@ -137,6 +137,31 @@ public class CategoryEndpointTests
         Assert.AreEqual("not_found", problem.RootElement.GetProperty("code").GetString());
     }
 
+    /// <summary>
+    /// A blank name fails the structure validator: the 400 problem carries code <c>validation</c> and one
+    /// <c>errors</c> entry naming the field and its stable code.
+    /// </summary>
+    [TestCategory("Endpoint")]
+    [DataRow(EndpointStyles.Service)]
+    [DataRow(EndpointStyles.Cqrs)]
+    [TestMethod]
+    public async Task Given_BlankName_When_PostCategory_Then_Returns400WithFieldAndCode(string style)
+    {
+        EndpointStyles.SkipWhenStyleForced();
+        using var client = CreateClient(style);
+        var dto = new CategoryDto { Name = " ", SortOrder = 1, IsActive = true };
+
+        using var response = await client.PostAsJsonAsync("/api/v1/categories", new DefaultRequest<CategoryDto> { Item = dto }, cancellationToken: TestContext.CancellationToken);
+
+        var body = await response.Content.ReadAsStringAsync(TestContext.CancellationToken);
+        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode, body);
+        using var problem = JsonDocument.Parse(body);
+        Assert.AreEqual("validation", problem.RootElement.GetProperty("code").GetString());
+        var issue = problem.RootElement.GetProperty("errors").EnumerateArray().Single();
+        Assert.AreEqual("Name", issue.GetProperty("field").GetString());
+        Assert.AreEqual("name.required", issue.GetProperty("code").GetString());
+    }
+
     /// <summary>Verifies that given existing category, when delete, then returns 204.</summary>
     [TestCategory("Endpoint")]
     [DataRow(EndpointStyles.Service)]

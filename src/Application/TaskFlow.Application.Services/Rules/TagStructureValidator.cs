@@ -15,9 +15,9 @@ internal static class TagStructureValidator
         if (common.TryGetValue(out Error? commonError)) return commonError;
 
         var errors = new List<ValidationIssue>();
-        if (string.IsNullOrWhiteSpace(dto.Name)) errors.Add(new ValidationIssue("Tag name is required."));
-        if (dto.Name?.Length > DomainConstants.RULE_TAG_NAME_LENGTH_MAX) errors.Add(new ValidationIssue($"Tag name cannot exceed {DomainConstants.RULE_TAG_NAME_LENGTH_MAX} characters."));
-        if (dto.Color?.Length > DomainConstants.RULE_TAG_COLOR_LENGTH_MAX) errors.Add(new ValidationIssue($"Color cannot exceed {DomainConstants.RULE_TAG_COLOR_LENGTH_MAX} characters."));
+        if (string.IsNullOrWhiteSpace(dto.Name)) errors.Add(new ValidationIssue("Tag name is required.", nameof(TagDto.Name), "name.required"));
+        if (dto.Name?.Length > DomainConstants.RULE_TAG_NAME_LENGTH_MAX) errors.Add(new ValidationIssue($"Tag name cannot exceed {DomainConstants.RULE_TAG_NAME_LENGTH_MAX} characters.", nameof(TagDto.Name), "name.max_length"));
+        if (dto.Color?.Length > DomainConstants.RULE_TAG_COLOR_LENGTH_MAX) errors.Add(new ValidationIssue($"Color cannot exceed {DomainConstants.RULE_TAG_COLOR_LENGTH_MAX} characters.", nameof(TagDto.Color), "color.max_length"));
         return errors.Count > 0 ? new ValidationError(errors) : dto;
     }
 
@@ -28,9 +28,9 @@ internal static class TagStructureValidator
         if (common.TryGetValue(out Error? commonError)) return commonError;
 
         var errors = new List<ValidationIssue>();
-        if (string.IsNullOrWhiteSpace(dto.Name)) errors.Add(new ValidationIssue("Tag name is required."));
-        if (dto.Name?.Length > DomainConstants.RULE_TAG_NAME_LENGTH_MAX) errors.Add(new ValidationIssue($"Tag name cannot exceed {DomainConstants.RULE_TAG_NAME_LENGTH_MAX} characters."));
-        if (dto.Color?.Length > DomainConstants.RULE_TAG_COLOR_LENGTH_MAX) errors.Add(new ValidationIssue($"Color cannot exceed {DomainConstants.RULE_TAG_COLOR_LENGTH_MAX} characters."));
+        if (string.IsNullOrWhiteSpace(dto.Name)) errors.Add(new ValidationIssue("Tag name is required.", nameof(TagDto.Name), "name.required"));
+        if (dto.Name?.Length > DomainConstants.RULE_TAG_NAME_LENGTH_MAX) errors.Add(new ValidationIssue($"Tag name cannot exceed {DomainConstants.RULE_TAG_NAME_LENGTH_MAX} characters.", nameof(TagDto.Name), "name.max_length"));
+        if (dto.Color?.Length > DomainConstants.RULE_TAG_COLOR_LENGTH_MAX) errors.Add(new ValidationIssue($"Color cannot exceed {DomainConstants.RULE_TAG_COLOR_LENGTH_MAX} characters.", nameof(TagDto.Color), "color.max_length"));
         return errors.Count > 0 ? new ValidationError(errors) : dto;
     }
 }
