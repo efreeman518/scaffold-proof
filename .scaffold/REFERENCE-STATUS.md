@@ -12,20 +12,20 @@ Release clean build: `dotnet clean`, `dotnet restore TaskFlow.slnx -p:Configurat
 
 All six initial migrations (TaskFlow `InitialCreate`, `InitialFlowEngine`, `InitialScheduler`, each for SqlServer and PostgreSql) are regenerated with dotnet-ef 11.0.0-rc.2.26504.105; EF Core 11 names each migration class after its full id (`_<timestamp>_<name>`), and `MigrationBaselineArchitectureTests` reads the name from the `[Migration]` id. `MigrationModelContractTests` (5) pass.
 
-Release `--no-build` runs, serially, `dotnet test --project <csproj> --results-directory tests/TestResults/<project> --report-trx`, Podman Docker-compatible context. Rows dated 2026-10-28 ran after the EF.Packages 3.0 / Enterprise 2.0 adoption, the closed domain-event hierarchy and the TimeProvider change (Release solution build: 0 warnings, 0 errors); rows dated 2026-10-27 ran on the platform move before that adoption and are not rerun.
+Release `--no-build` runs, serially, `dotnet test --project <csproj> --results-directory tests/TestResults/<project> --report-trx`, Podman Docker-compatible context. Rows dated 2026-10-28 ran after the EF.Packages 3.0 / Enterprise 2.0 adoption, the closed domain-event hierarchy, the TimeProvider change and the review fixes (NotFoundError for a missing update target, field and code on every structure-validator issue, the escaped-constraint 409 mapping, two Scheduler replicas in every profile, the `TaskFlowScheduler` settings section) (Release solution build: 0 warnings, 0 errors); rows dated 2026-10-27 ran on the platform move before that adoption and are not rerun.
 
 | Scope | Date | Passed | Failed | Skipped |
 |---|---|---:|---:|---:|
-| Test.Unit | 2026-10-28 | 742 | 0 | 0 |
+| Test.Unit | 2026-10-28 | 743 | 0 | 0 |
 | Test.Architecture | 2026-10-28 | 89 | 0 | 0 |
-| Test.Endpoints | 2026-10-28 | 297 | 0 | 0 |
+| Test.Endpoints | 2026-10-28 | 302 | 0 | 0 |
 | Test.Integration.FlowEngine | 2026-10-28 | 40 | 0 | 0 |
 | Test.UI | 2026-10-28 | 54 | 0 | 0 |
 | Test.Mutation | 2026-10-28 | 27 | 0 | 0 |
 | Test.Integration, `TASKFLOW_LANE=NonAzure` / PostgreSqlJsonb | 2026-10-28 | 167 | 0 | 5 (Azure/Mongo-only) |
 | Test.E2E, NonAzure | 2026-10-27 | 10 | 0 | 0 |
 | Test.Aspire topology contracts (`AppHostLaneTopologyTests`, `AppHostMigratorTopologyTests`) | 2026-10-27 | 43 | 0 | 0 |
-| **Total** | | **1469** | **0** | **5** |
+| **Total** | | **1475** | **0** | **5** |
 
 Known gap: `RecurrencePattern` stays on `OwnsOne(...).ToJson()`. `ComplexProperty(...).ToJson()` produces identical relational migrations, but the EF Core 11 rc.2 InMemory provider fails to compile any TaskItem query with it (`KeyNotFoundException: The given key 'Property: TaskItem.RecurrencePattern#RecurrencePattern.Frequency (string) Required' was not present in the dictionary.` in `InMemoryShapedQueryCompilingExpressionVisitor`), which breaks the Test.Unit and Test.Endpoints hosts. `RecurrencePatternJsonRoundTripTests` pins the stored document for a later attempt.
 
