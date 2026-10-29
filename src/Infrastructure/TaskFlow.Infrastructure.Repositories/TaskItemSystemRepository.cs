@@ -96,7 +96,7 @@ public sealed class TaskItemSystemRepository(TaskFlowDbContextTrxn db, TimeProvi
 
     /// <inheritdoc />
     // D-028: MERGE on SQL Server, ON CONFLICT DO NOTHING on PostgreSQL, keyed on the unique
-    // IX_TaskItem_TenantId_RecurrenceTemplateId_OccurrenceUtc. A null whenMatched is the package's
+    // IX_TaskItem_TenantId_RecurrenceTemplateId_OccurrenceUtc. A null update is the package's
     // insert-if-absent arm, so a template that already produced this occurrence is left untouched and the
     // statement affects no row.
     // The upsert bypasses the save pipeline, so the occurrence is stamped as a tracked insert would be (D-073).

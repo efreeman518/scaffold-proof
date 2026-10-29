@@ -2094,7 +2094,7 @@ curl -sk &quot;$GW/api/flowengine/instances/$INSTANCE_ID&quot; | jq &#39;{ statu
 <tr>
 <td><code>recurring_task_generation</code></td>
 <td>Daily 2:00 AM UTC</td>
-<td>Streams due recurrence templates, expands up to 12 occurrences per run via <code>TaskItem.CreateOccurrence</code>, upserts them (FlexLabs <code>UpsertRange...NoUpdate()</code>) with deterministic occurrence ids, stages <code>TaskItemCreatedEvent</code> per occurrence, advances the template&#39;s next-occurrence pointer guarded on its expected prior value</td>
+<td>Streams due recurrence templates, expands up to 12 occurrences per run via <code>TaskItem.CreateOccurrence</code>, inserts them if absent (<code>UpsertAsync</code> with no update) with deterministic occurrence ids, stages <code>TaskItemCreatedEvent</code> per occurrence, advances the template&#39;s next-occurrence pointer guarded on its expected prior value</td>
 </tr>
 <tr>
 <td><code>stale_task_cleanup</code></td>

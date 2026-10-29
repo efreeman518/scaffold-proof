@@ -12,7 +12,7 @@ namespace Test.Integration;
 /// <summary>
 /// D-038 relational read model against a real database, on whichever provider the lane selected
 /// (TASKFLOW_LANE). Everything asserted here is provider-generated SQL that cannot be reasoned
-/// about from the C#: the FlexLabs upsert (MERGE / ON CONFLICT), the server-side counter deltas that keep
+/// about from the C#: the native upsert (MERGE / ON CONFLICT), the server-side counter deltas that keep
 /// two concurrent projection events from overwriting each other, and the keyset page whose WHERE clause has
 /// to agree with its ORDER BY or a client silently loses rows.
 /// Component tier: contexts directly against the standalone database Testcontainer.

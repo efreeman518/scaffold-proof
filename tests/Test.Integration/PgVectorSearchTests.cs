@@ -18,7 +18,7 @@ namespace Test.Integration;
 /// <summary>
 /// D-040 pgvector search projection against a real database. Everything asserted here is provider behavior
 /// that cannot be reasoned about from the C#: whether the migration installs the extension and the HNSW index,
-/// whether the FlexLabs upsert reaches ON CONFLICT with a vector column, and whether cosine ordering actually
+/// whether the native upsert reaches ON CONFLICT with a vector column, and whether cosine ordering actually
 /// ranks the nearer vector first.
 /// <para>
 /// The suite is provider-split on purpose. On the PostgreSql lane it exercises the arm; on the SqlServer lane

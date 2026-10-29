@@ -42,32 +42,9 @@ public sealed class RelationalTaskViewRepository(TaskFlowDbContextTrxn write, Ta
         ArgumentNullException.ThrowIfNull(taskView);
 
         // D-028: MERGE on SQL Server, ON CONFLICT DO UPDATE on PostgreSQL, keyed on the primary key. Every
-        // non-key column is replaced, which is what Cosmos UpsertItem does with the whole document, so the
-        // whenMatched projection has to name all of them - the package's default (null) is DO NOTHING, which
-        // would silently freeze an already-projected row at its first version.
-        return UpsertAsync(
-            MapToRecord(taskView),
-            e => new { e.TenantId, e.Id },
-            (existing, proposed) => new TaskViewRecord
-            {
-                Title = proposed.Title,
-                Status = proposed.Status,
-                Priority = proposed.Priority,
-                CategoryName = proposed.CategoryName,
-                StartDate = proposed.StartDate,
-                DueDate = proposed.DueDate,
-                CompletedDate = proposed.CompletedDate,
-                IsOverdue = proposed.IsOverdue,
-                CommentCount = proposed.CommentCount,
-                ChecklistTotal = proposed.ChecklistTotal,
-                ChecklistCompleted = proposed.ChecklistCompleted,
-                AttachmentCount = proposed.AttachmentCount,
-                SubTaskCount = proposed.SubTaskCount,
-                CreatedUtc = proposed.CreatedUtc,
-                LastModifiedUtc = proposed.LastModifiedUtc,
-                Document = proposed.Document
-            },
-            ct);
+        // non-key column is replaced (e => e), which is what Cosmos UpsertItem does with the whole document; a null
+        // update is DO NOTHING, which would silently freeze an already-projected row at its first version.
+        return UpsertAsync(MapToRecord(taskView), e => new { e.TenantId, e.Id }, e => e, ct);
     }
 
     /// <inheritdoc />

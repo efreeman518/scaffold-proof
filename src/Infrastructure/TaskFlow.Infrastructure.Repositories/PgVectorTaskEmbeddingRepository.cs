@@ -59,17 +59,7 @@ public sealed class PgVectorTaskEmbeddingRepository(TaskFlowDbContextTrxn write,
             UpdatedUtc = updatedUtc
         };
 
-        return UpsertAsync(
-            row,
-            e => new { e.TenantId, e.TaskItemId },
-            (existing, proposed) => new TaskItemEmbedding
-            {
-                Embedding = proposed.Embedding,
-                Dimensions = proposed.Dimensions,
-                ModelId = proposed.ModelId,
-                UpdatedUtc = proposed.UpdatedUtc
-            },
-            ct);
+        return UpsertAsync(row, e => new { e.TenantId, e.TaskItemId }, e => e, ct);
     }
 
     /// <inheritdoc />
