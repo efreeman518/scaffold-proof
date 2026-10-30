@@ -33,6 +33,12 @@ Not run on .NET 11: Test.Integration on the Azure lane and with MongoDb, Test.E2
 
 The Azure Functions Flex runtime in `infra/` stays `dotnet-isolated` 10.0: Azure Functions does not list .NET 11 for the isolated worker model (checked 2026-10-27), while `TaskFlow.Functions` targets net11.0.
 
+GA merge decision (2026-10-30): the .NET 11 branch merges at .NET 11 GA even if Azure Functions still does not list .NET 11 or Uno has no stable net11 release. The PR then records two known exceptions:
+- the Functions runtime setting above;
+- `Uno.Sdk` 7.0.0-dev.* with the three workaround comments in `TaskFlow.Uno.csproj`.
+
+Each is removed once its upstream support ships.
+
 ## Previous acceptance on .NET 10 (2026-10-13, SDK recheck 2026-10-27)
 
 SDK 10.0.403 recheck (2026-10-27, with Aspire 13.6.4, the package refresh above, Microsoft 10.0.14 and Microsoft.Extensions.AI/Http.Resilience/ServiceDiscovery 10.11.0, and `InitialFlowEngine` regenerated for the FlowEngine 1.0.262 `Revision` column): Release `--no-incremental` solution build (0 warnings, 0 errors), Uno build of all three targets (`-p:BuildAllUnoTargets=true`: browserwasm, android, ios; 0 warnings) and the CI Release Uno build (0 warnings), clean transitive vulnerability audit (47 projects), and Release `--no-build` Test.Unit 746, Test.Architecture 87, Test.Endpoints 297, Test.Integration.FlowEngine 40, Test.UI 54, Test.Mutation 27 and Test.Integration NonAzure 166 (5 Azure-only skipped), 0 failed. The table below is the 2026-10-13 run on SDK 10.0.401.
