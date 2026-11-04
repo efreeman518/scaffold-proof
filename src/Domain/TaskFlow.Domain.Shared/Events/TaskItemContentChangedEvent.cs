@@ -8,7 +8,7 @@ namespace TaskFlow.Domain.Shared.Events;
 /// <param name="TaskItemId">Task whose content changed.</param>
 /// <param name="TenantId">Owning tenant.</param>
 /// <param name="OccurredAtUtc">When the content changed, taken from the aggregate rather than the dispatcher.</param>
-public record TaskItemContentChangedEvent(
+public sealed record TaskItemContentChangedEvent(
     Guid TaskItemId,
     Guid TenantId,
     DateTimeOffset OccurredAtUtc) : TenantDomainEvent;

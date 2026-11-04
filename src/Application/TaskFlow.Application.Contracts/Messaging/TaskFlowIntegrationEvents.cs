@@ -28,8 +28,9 @@ public static class TaskFlowIntegrationEvents
     /// <see cref="TenantDomainEvent"/> record, which <c>JsonContextCompletenessTests</c> checks against the closed
     /// hierarchy, and a removed record fails the build here through its <c>nameof</c>.
     /// </summary>
-    private static readonly HashSet<string> KnownTypes = new(StringComparer.Ordinal)
-    {
+    private static readonly HashSet<string> KnownTypes =
+    [
+        with(StringComparer.Ordinal),
         nameof(TaskItemCreatedEvent),
         nameof(TaskItemContentChangedEvent),
         nameof(TaskItemStatusChangedEvent),
@@ -38,7 +39,7 @@ public static class TaskFlowIntegrationEvents
         nameof(TaskItemRescheduledEvent),
         nameof(CommentAddedEvent),
         nameof(AttachmentUploadedEvent)
-    };
+    ];
 
     /// <summary>
     /// Payload schema version of an event. A record whose shape changes gets a bumped arm here and a consumer

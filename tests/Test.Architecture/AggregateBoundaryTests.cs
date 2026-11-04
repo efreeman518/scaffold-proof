@@ -87,8 +87,7 @@ public sealed class AggregateBoundaryTests : BaseTest
     [TestMethod]
     public void OwnedChildren_ServiceContractsExposeReadsOnly()
     {
-        var writeMethods = new HashSet<string>(
-            ["CreateAsync", "UpdateAsync", "DeleteAsync", "UpsertAsync"], StringComparer.Ordinal);
+        HashSet<string> writeMethods = [with(StringComparer.Ordinal), "CreateAsync", "UpdateAsync", "DeleteAsync", "UpsertAsync"];
         var offenders = new List<string>();
 
         foreach (var child in OwnedChildEntities)
