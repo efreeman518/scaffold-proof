@@ -16,14 +16,14 @@ partial class TaskFlowFlowEngineDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261027182930_InitialFlowEngine";
+    public override string LastMigrationId => "20261106212021_InitialFlowEngine";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
 #pragma warning disable 612, 618
         modelBuilder
             .HasDefaultSchema("flowengine")
-            .HasAnnotation("ProductVersion", "11.0.0-rc.2.26504.105")
+            .HasAnnotation("ProductVersion", "11.0.0-rc.3.26522.148")
             .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
         SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -46,6 +46,10 @@ partial class TaskFlowFlowEngineDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<DateTimeOffset>("UpdatedAt")
                     .HasColumnType("datetimeoffset");
+
+                b.Property<long>("Version")
+                    .IsConcurrencyToken()
+                    .HasColumnType("bigint");
 
                 b.HasKey("Key");
 
@@ -261,6 +265,10 @@ partial class TaskFlowFlowEngineDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<int>("Status")
                     .HasColumnType("int");
+
+                b.Property<long>("Version")
+                    .IsConcurrencyToken()
+                    .HasColumnType("bigint");
 
                 b.HasKey("Id");
 

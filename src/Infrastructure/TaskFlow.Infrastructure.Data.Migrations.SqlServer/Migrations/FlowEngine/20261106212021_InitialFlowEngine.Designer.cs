@@ -12,8 +12,8 @@ using TaskFlow.Infrastructure.Data;
 namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.FlowEngine;
 
 [DbContext(typeof(TaskFlowFlowEngineDbContext))]
-[Migration("20261027182930_InitialFlowEngine")]
-partial class _20261027182930_InitialFlowEngine
+[Migration("20261106212021_InitialFlowEngine")]
+partial class _20261106212021_InitialFlowEngine
 {
     /// <inheritdoc />
     protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -21,7 +21,7 @@ partial class _20261027182930_InitialFlowEngine
 #pragma warning disable 612, 618
         modelBuilder
             .HasDefaultSchema("flowengine")
-            .HasAnnotation("ProductVersion", "11.0.0-rc.2.26504.105")
+            .HasAnnotation("ProductVersion", "11.0.0-rc.3.26522.148")
             .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
         SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -44,6 +44,10 @@ partial class _20261027182930_InitialFlowEngine
 
                 b.Property<DateTimeOffset>("UpdatedAt")
                     .HasColumnType("datetimeoffset");
+
+                b.Property<long>("Version")
+                    .IsConcurrencyToken()
+                    .HasColumnType("bigint");
 
                 b.HasKey("Key");
 
@@ -259,6 +263,10 @@ partial class _20261027182930_InitialFlowEngine
 
                 b.Property<int>("Status")
                     .HasColumnType("int");
+
+                b.Property<long>("Version")
+                    .IsConcurrencyToken()
+                    .HasColumnType("bigint");
 
                 b.HasKey("Id");
 

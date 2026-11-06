@@ -7,7 +7,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.FlowEngine;
 
 /// <inheritdoc />
-public partial class _20261027182946_InitialFlowEngine : Migration
+public partial class _20261106212028_InitialFlowEngine : Migration
 {
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)
@@ -39,7 +39,8 @@ public partial class _20261027182946_InitialFlowEngine : Migration
                 OpenUntil = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                 FailureCount = table.Column<int>(type: "integer", nullable: false),
                 FailureTimestampsJson = table.Column<string>(type: "text", nullable: false),
-                UpdatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
+                UpdatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                Version = table.Column<long>(type: "bigint", nullable: false)
             },
             constraints: table =>
             {
@@ -82,7 +83,8 @@ public partial class _20261027182946_InitialFlowEngine : Migration
                 AssignedTo = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
                 Status = table.Column<int>(type: "integer", nullable: false),
                 DueAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
-                Data = table.Column<string>(type: "text", nullable: false)
+                Data = table.Column<string>(type: "text", nullable: false),
+                Version = table.Column<long>(type: "bigint", nullable: false)
             },
             constraints: table =>
             {

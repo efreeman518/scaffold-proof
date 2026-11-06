@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace TaskFlow.Infrastructure.Data.Migrations.SqlServer.Migrations.FlowEngine;
 
 /// <inheritdoc />
-public partial class _20261027182930_InitialFlowEngine : Migration
+public partial class _20261106212021_InitialFlowEngine : Migration
 {
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)
@@ -38,7 +38,8 @@ public partial class _20261027182930_InitialFlowEngine : Migration
                 OpenUntil = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
                 FailureCount = table.Column<int>(type: "int", nullable: false),
                 FailureTimestampsJson = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false)
+                UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                Version = table.Column<long>(type: "bigint", nullable: false)
             },
             constraints: table =>
             {
@@ -81,7 +82,8 @@ public partial class _20261027182930_InitialFlowEngine : Migration
                 AssignedTo = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: false),
                 Status = table.Column<int>(type: "int", nullable: false),
                 DueAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                Data = table.Column<string>(type: "nvarchar(max)", nullable: false)
+                Data = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                Version = table.Column<long>(type: "bigint", nullable: false)
             },
             constraints: table =>
             {

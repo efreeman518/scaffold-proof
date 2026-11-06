@@ -12,8 +12,8 @@ using TaskFlow.Infrastructure.Data;
 namespace TaskFlow.Infrastructure.Data.Migrations.PostgreSql.Migrations.FlowEngine;
 
 [DbContext(typeof(TaskFlowFlowEngineDbContext))]
-[Migration("20261027182946_InitialFlowEngine")]
-partial class _20261027182946_InitialFlowEngine
+[Migration("20261106212028_InitialFlowEngine")]
+partial class _20261106212028_InitialFlowEngine
 {
     /// <inheritdoc />
     protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -21,7 +21,7 @@ partial class _20261027182946_InitialFlowEngine
 #pragma warning disable 612, 618
         modelBuilder
             .HasDefaultSchema("flowengine")
-            .HasAnnotation("ProductVersion", "11.0.0-rc.2.26504.105")
+            .HasAnnotation("ProductVersion", "11.0.0-rc.3.26522.148")
             .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
         NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -44,6 +44,10 @@ partial class _20261027182946_InitialFlowEngine
 
                 b.Property<DateTimeOffset>("UpdatedAt")
                     .HasColumnType("timestamp with time zone");
+
+                b.Property<long>("Version")
+                    .IsConcurrencyToken()
+                    .HasColumnType("bigint");
 
                 b.HasKey("Key");
 
@@ -256,6 +260,10 @@ partial class _20261027182946_InitialFlowEngine
 
                 b.Property<int>("Status")
                     .HasColumnType("integer");
+
+                b.Property<long>("Version")
+                    .IsConcurrencyToken()
+                    .HasColumnType("bigint");
 
                 b.HasKey("Id");
 
