@@ -55,7 +55,6 @@ public sealed class DeploymentWorkflowContractTests
         Assert.IsFalse(workflow.Contains("docker buildx build", StringComparison.Ordinal));
 
         var ciWorkflow = ReadWorkflow("ci.yml");
-        StringAssert.Contains(ciWorkflow, "NuGetPackageSourceCredentials_EFGithub");
         Assert.IsFalse(ciWorkflow.Contains("dotnet nuget update", StringComparison.Ordinal));
 
         var migration = workflow.IndexOf("  run-migrations:", StringComparison.Ordinal);
@@ -997,6 +996,47 @@ public sealed class DeploymentWorkflowContractTests
     }
 
     /// <summary>
+    /// NuGet reads a feed credential from <c>NuGetPackageSourceCredentials_&lt;source key&gt;</c>, so every
+    /// consumer must spell the key <c>nuget.config</c> declares, and each Dockerfile must hand it to
+    /// <c>dotnet restore</c>: <c>env VAR=... a &amp;&amp; b</c> scopes it to <c>a</c> alone. Either mistake
+    /// surfaces only as a 401 during an image build or a deploy.
+    /// </summary>
+    [TestMethod]
+    public void FeedCredential_UsesTheNuGetConfigSourceKeyEverywhere()
+    {
+        var feed = System.Xml.Linq.XDocument.Load(RepoRoot.Combine("nuget.config"))
+            .Descendants("add")
+            .Single(a => ((string?)a.Attribute("value"))?.StartsWith("https://nuget.pkg.github.com/", StringComparison.Ordinal) == true);
+        var variable = $"NuGetPackageSourceCredentials_{(string)feed.Attribute("key")!}";
+
+        foreach (var workflow in new[] { "ci.yml", "build-images.yml", "deploy.yml" })
+        {
+            StringAssert.Contains(ReadWorkflow(workflow), variable, workflow);
+        }
+
+        StringAssert.Contains(
+            File.ReadAllText(RepoRoot.Combine("deploy", "compose", "docker-compose.override.local.yml")),
+            $"environment: {variable}");
+
+        var setter = $"\"{variable}=$(cat /run/secrets/nuget_credentials)\"";
+        foreach (var dockerfile in new[]
+        {
+            "src/Host/TaskFlow.Api/Dockerfile", "src/Host/TaskFlow.Gateway/Dockerfile",
+            "src/Host/TaskFlow.Scheduler/Dockerfile", "src/Host/TaskFlow.DatabaseMigrator/Dockerfile",
+            "src/Host/TaskFlow.Functions/Dockerfile", "src/UI/TaskFlow.Blazor/Dockerfile",
+            "src/UI/TaskFlow.Uno/Dockerfile"
+        })
+        {
+            var content = File.ReadAllText(RepoRoot.Combine(dockerfile.Split('/')));
+            // Exported for the whole RUN, or env-prefixed onto a restore that ends the RUN.
+            var exported = content.Contains($"export {setter}", StringComparison.Ordinal);
+            var envOnRestore = System.Text.RegularExpressions.Regex.IsMatch(
+                content, $@"env {System.Text.RegularExpressions.Regex.Escape(setter)} \\\r?\n\s+dotnet restore [^\r\n]*[^\\\r\n]\r?\n");
+            Assert.IsTrue(exported || envOnRestore, dockerfile);
+        }
+    }
+
+    /// <summary>
     /// Every deployed image is built the same way: private feed as a BuildKit secret, chiseled runtime,
     /// non-root. Gateway is the only host with neither a culture-rendering nor a Microsoft.Data.SqlClient
     /// reason to need ICU (D-047), so it alone stays on the plain chiseled base; every other host takes
@@ -1007,12 +1047,12 @@ public sealed class DeploymentWorkflowContractTests
     {
         foreach (var (dockerfile, runtimeImage) in new[]
         {
-            ("src/Host/TaskFlow.Gateway/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled@sha256:9651fa59abcdf177c30392cb44a820605ca5d618429ab37acbf6e7c644510b02"),
-            ("src/Host/TaskFlow.Api/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra@sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28"),
-            ("src/Host/TaskFlow.Scheduler/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra@sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28"),
-            ("src/Host/TaskFlow.DatabaseMigrator/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra@sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28"),
-            ("src/Host/TaskFlow.Functions/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra@sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28"),
-            ("src/UI/TaskFlow.Blazor/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra@sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28")
+            ("src/Host/TaskFlow.Gateway/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.14-noble-chiseled@sha256:f2557fb81b1cfcfdfcde9d3bf247ed60b2cd38f00a88153f61e34737fab8ade7"),
+            ("src/Host/TaskFlow.Api/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.14-noble-chiseled-extra@sha256:a9298ccc39c6258ae71228479e2f3f8d2ceb6639a9927262a4b0ff7d319a0e7e"),
+            ("src/Host/TaskFlow.Scheduler/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.14-noble-chiseled-extra@sha256:a9298ccc39c6258ae71228479e2f3f8d2ceb6639a9927262a4b0ff7d319a0e7e"),
+            ("src/Host/TaskFlow.DatabaseMigrator/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.14-noble-chiseled-extra@sha256:a9298ccc39c6258ae71228479e2f3f8d2ceb6639a9927262a4b0ff7d319a0e7e"),
+            ("src/Host/TaskFlow.Functions/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.14-noble-chiseled-extra@sha256:a9298ccc39c6258ae71228479e2f3f8d2ceb6639a9927262a4b0ff7d319a0e7e"),
+            ("src/UI/TaskFlow.Blazor/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.14-noble-chiseled-extra@sha256:a9298ccc39c6258ae71228479e2f3f8d2ceb6639a9927262a4b0ff7d319a0e7e")
         })
         {
             var content = File.ReadAllText(RepoRoot.Combine(dockerfile.Split('/')));
