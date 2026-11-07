@@ -10,7 +10,7 @@ TaskFlow runs on the EF.Packages 2.0 platform packages (every `EF.*` platform id
 
 SDK 10.0.403 recheck (2026-10-27, with Aspire 13.6.4, the package refresh above, Microsoft 10.0.14 and Microsoft.Extensions.AI/Http.Resilience/ServiceDiscovery 10.11.0, and `InitialFlowEngine` regenerated for the FlowEngine 1.0.262 `Revision` column): Release `--no-incremental` solution build (0 warnings, 0 errors), Uno build of all three targets (`-p:BuildAllUnoTargets=true`: browserwasm, android, ios; 0 warnings) and the CI Release Uno build (0 warnings), clean transitive vulnerability audit (47 projects), and Release `--no-build` Test.Unit 746, Test.Architecture 87, Test.Endpoints 297, Test.Integration.FlowEngine 40, Test.UI 54, Test.Mutation 27 and Test.Integration NonAzure 166 (5 Azure-only skipped), 0 failed. The table below is the 2026-10-13 run on SDK 10.0.401.
 
-Compatibility-alias removal (2026-11-07, D-076): Debug solution build (0 warnings, 0 errors), Test.Unit 740 (746 minus six alias-only tests), Test.Architecture 87, `AppHostLaneTopologyTests` and the NonAzure `RelationalTaskViewRepositoryTests` passed, 0 failed. Test results now land in `tests/TestResults/<project>/` by default.
+Compatibility-alias removal (2026-11-07, D-076): Debug solution build (0 warnings, 0 errors), Test.Unit 740 passed (alias tests removed, rejection cases added), Test.Architecture 87, `AppHostLaneTopologyTests` and the NonAzure `RelationalTaskViewRepositoryTests` passed, 0 failed. Test results now land in `tests/TestResults/<project>/` by default.
 
 Release `--no-incremental` solution build on .NET SDK 10.0.401 (0 warnings, 0 errors, 145 s), separate Uno build (0 warnings), then Release `--no-build` runs on the final package set, serially, Podman Docker-compatible context:
 
@@ -178,7 +178,7 @@ Status meanings:
 | Capability | Status | Evidence boundary |
 |---|---|---|
 | Service and CQRS application-style switch | proven | Shared Endpoint and E2E suites run both styles on both DB providers; `ApplicationStyleResolver` owns selection |
-| Dual EF Core provider (SQL Server + PostgreSQL) | proven | `TaskFlowDbProviderSelector`/`UseTaskFlowProvider`; Unit, Integration, E2E, and migrator contracts run once per `TASKFLOW_LANE` value |
+| Dual EF Core provider (SQL Server + PostgreSQL) | proven | `TaskFlowDbProviderSelector`/`UseTaskFlowProvider`; the CI `database-lanes` matrix runs Integration, E2E, and migrator contracts once per `TASKFLOW_LANE` value; Test.Unit runs once with no lane set |
 | Composite tenant-first PK, app-managed Version/ETag, migrations | proven | `EF.Data.TenantEntityTypeConfiguration` composite `(TenantId, Id)` key; `EF.Data.DbContextBase` Version and timestamp stamping; two migration assemblies |
 | ETag / If-Match / 412 / 428 concurrency | proven | `EF.Data.Contracts.ConcurrencyGuard`, `EF.AspNetCore.Concurrency` (`RequireIfMatch`, `WithETag`); Endpoint and E2E cases |
 | Caller-supplied UUIDv7 idempotent create | proven | `EF.Common.Contracts.UuidV7`/`IdempotentCreateGuard`; Endpoint cases cover non-v7 400, equivalent replay 200, divergent 409 |

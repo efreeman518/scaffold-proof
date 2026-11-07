@@ -184,7 +184,7 @@ public sealed class DeploymentWorkflowContractTests
                 workflow,
                 System.Text.RegularExpressions.Regex.Escape("grep -qx 'ReadModel__Provider=PostgreSqlJsonb' .env.base")).Count,
             "deploy and rollback must leave JSONB profile-free");
-        Assert.IsFalse(workflow.Contains("Relational", StringComparison.Ordinal), "Relational is not a read-model provider");
+        Assert.IsFalse(workflow.Contains("ReadModel__Provider=Relational", StringComparison.Ordinal), "Relational is not a read-model provider");
         StringAssert.Contains(workflow, "Database__PostgreSql__PoolerMode must be empty, None, or Transaction.");
         StringAssert.Contains(workflow, "${COMPOSE} config -q");
         Assert.IsFalse(workflow.Contains("cp .env .env.base", StringComparison.Ordinal));

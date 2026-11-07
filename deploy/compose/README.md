@@ -54,6 +54,9 @@ Remove any legacy `OTEL_EXPORTER_OTLP_ENDPOINT=` line from `.env.base`. The stri
 `http://openobserve:5081`; operator overrides are rejected so an old `http://otel-lgtm:4317` value cannot
 silently route telemetry to the removed service.
 
+Replace a `ReadModel__Provider=Relational` line in `.env.base` with `ReadModel__Provider=PostgreSqlJsonb`.
+The alias is gone (D-076), so deploy and rollback stop at the read-model check until it is changed.
+
 ## Upgrade to quorum queues
 
 The Scheduler declares every TaskFlow queue (`taskflow.projection`, `taskflow.ai-review`, `taskflow.workflow`,
