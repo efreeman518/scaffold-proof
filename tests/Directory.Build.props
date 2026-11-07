@@ -3,7 +3,7 @@
 
   <!-- Unconditional: IsTestProject is not yet defined when Directory.Build.props is evaluated. -->
   <PropertyGroup>
-    <VSTestResultsDirectory>$(MSBuildThisFileDirectory)TestResults</VSTestResultsDirectory>
+    <VSTestResultsDirectory>$(MSBuildThisFileDirectory)TestResults/$(MSBuildProjectName)</VSTestResultsDirectory>
   </PropertyGroup>
 
   <!-- AdditionalProperties for the test projects' references to AppHost and the Uno WASM host: a direct test-project
