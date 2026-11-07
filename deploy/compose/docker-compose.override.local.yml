@@ -94,4 +94,4 @@ secrets:
   # Same BuildKit secret the deploy image build uses: the private EF.* feed credential never becomes a
   # build arg or an image layer.
   nuget_credentials:
-    environment: NuGetPackageSourceCredentials_efreeman518-github
+    environment: NuGetPackageSourceCredentials_EFGithub

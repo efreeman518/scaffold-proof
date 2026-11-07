@@ -36,7 +36,7 @@ Multi-tenant (row-level tenancy, fail-closed tenant filter). Event-driven async 
 - **.NET 10 SDK** - the exact version is pinned by [`global.json`](global.json).
 - **Workloads:** `dotnet workload install wasm-tools aspire` (required for the Uno WASM host and the Aspire AppHost).
 - **Docker-compatible container runtime** (Docker Desktop, headless Docker Engine, or Podman) - no desktop UI is required. Aspire starts only the selected lane: PostgreSQL/RabbitMQ/SeaweedFS with optional MongoDB by default, or the Azure emulators with `TASKFLOW_LANE=Azure`, plus common Redis and application services.
-- **Private NuGet feed access:** the `EF.*` packages (platform and FlowEngine) restore from GitHub Packages via the `efreeman518-github` source in [`nuget.config`](nuget.config). Supply a `NUGET_PAT` (a GitHub token with `read:packages`) before restoring.
+- **Private NuGet feed access:** the `EF.*` packages (platform and FlowEngine) restore from GitHub Packages via the `EFGithub` source in [`nuget.config`](nuget.config). Supply a `NUGET_PAT` (a GitHub token with `read:packages`) before restoring.
 - **Local tools:** `dotnet tool restore` restores Stryker.NET and the other tools declared in the tool manifest.
 
 ### Run

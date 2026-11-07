@@ -55,7 +55,7 @@ public sealed class DeploymentWorkflowContractTests
         Assert.IsFalse(workflow.Contains("docker buildx build", StringComparison.Ordinal));
 
         var ciWorkflow = ReadWorkflow("ci.yml");
-        StringAssert.Contains(ciWorkflow, "NuGetPackageSourceCredentials_efreeman518-github");
+        StringAssert.Contains(ciWorkflow, "NuGetPackageSourceCredentials_EFGithub");
         Assert.IsFalse(ciWorkflow.Contains("dotnet nuget update", StringComparison.Ordinal));
 
         var migration = workflow.IndexOf("  run-migrations:", StringComparison.Ordinal);
@@ -686,7 +686,7 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(seaweedFixture, ".WithEnvironment(\"AWS_ACCESS_KEY_ID\", AccessKey)");
         StringAssert.Contains(seaweedFixture, ".WithEnvironment(\"AWS_SECRET_ACCESS_KEY\", SecretKey)");
         StringAssert.Contains(local, "- nuget_credentials");
-        StringAssert.Contains(local, "environment: NuGetPackageSourceCredentials_efreeman518-github");
+        StringAssert.Contains(local, "environment: NuGetPackageSourceCredentials_EFGithub");
         StringAssert.Contains(ServiceBlock(local, "openobserve").Text, "profiles: [\"deployment-observability\"]");
         foreach (var host in new[] { "migrator", "api", "gateway", "scheduler", "blazor" })
         {

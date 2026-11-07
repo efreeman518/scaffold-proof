@@ -131,7 +131,7 @@ After bootstrap completes, configure your GitHub repo at **Settings -> Secrets a
 
 ### Private NuGet Feed (`NUGET_PAT`)
 
-The solution references private packages (`EF.*`) from the `efreeman518-github` GitHub Packages feed (configured in `nuget.config`). The build agent needs a PAT to authenticate.
+The solution references private packages (`EF.*`) from the `EFGithub` GitHub Packages feed (configured in `nuget.config`). The build agent needs a PAT to authenticate.
 
 | Secret | Value |
 |--------|-------|
@@ -139,7 +139,7 @@ The solution references private packages (`EF.*`) from the `efreeman518-github` 
 
 The workflow injects this secret without modifying `nuget.config`:
 
-1. **Container restores** - passed as a BuildKit secret and exposed only to the restore process through `NuGetPackageSourceCredentials_efreeman518-github`.
+1. **Container restores** - passed as a BuildKit secret and exposed only to the restore process through `NuGetPackageSourceCredentials_EFGithub`.
 2. **Functions and Uno publishes** - exposed to NuGet through the same process environment convention.
 
 The credential is never passed as a Docker build argument, written into a NuGet config file, or included in an image layer or deployment artifact.
