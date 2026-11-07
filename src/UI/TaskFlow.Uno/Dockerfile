@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM mcr.microsoft.com/dotnet/sdk:10.0.401@sha256:2fa828c68761b1b8c23d7662dc134421b9d3b59fe1425fdbc80804e390cdb24d AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0.403@sha256:212fe4cb74627d5adf9817a4088906ae3edff1bd853bb27565d4b46731efe61e AS build
 WORKDIR /source
 
 RUN apt-get update \
@@ -10,8 +10,8 @@ COPY TaskFlow.slnx Directory.Build.props Directory.Packages.props global.json nu
 COPY src/ src/
 
 RUN --mount=type=secret,id=nuget_credentials,required=true \
-    env "NuGetPackageSourceCredentials_efreeman518-github=$(cat /run/secrets/nuget_credentials)" \
-    dotnet workload install wasm-tools \
+    export "NuGetPackageSourceCredentials_EFGithub=$(cat /run/secrets/nuget_credentials)" \
+    && dotnet workload install wasm-tools \
     && dotnet restore src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj -p:Configuration=Release \
     && dotnet publish src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj \
       -f net10.0-browserwasm -p:TargetFrameworkOverride=net10.0-browserwasm \

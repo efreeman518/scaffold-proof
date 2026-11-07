@@ -159,7 +159,7 @@ curl -fsS "https://$CADDY_DOMAIN/healthz/ready"
 
 ## Why the app services have no healthcheck
 
-The .NET app images use immutable ASP.NET runtime pins: Gateway uses `mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled@sha256:9651fa59abcdf177c30392cb44a820605ca5d618429ab37acbf6e7c644510b02`; API, Scheduler, DatabaseMigrator, Functions, and Blazor use `mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra@sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28`. A chiseled image has
+The .NET app images use immutable ASP.NET runtime pins: Gateway uses `mcr.microsoft.com/dotnet/aspnet:10.0.14-noble-chiseled@sha256:f2557fb81b1cfcfdfcde9d3bf247ed60b2cd38f00a88153f61e34737fab8ade7`; API, Scheduler, DatabaseMigrator, Functions, and Blazor use `mcr.microsoft.com/dotnet/aspnet:10.0.14-noble-chiseled-extra@sha256:a9298ccc39c6258ae71228479e2f3f8d2ceb6639a9927262a4b0ff7d319a0e7e`. A chiseled image has
 no shell and no `curl`, so there is nothing for `healthcheck:` to exec - a `CMD-SHELL` probe would fail
 permanently and a `CMD` probe has no binary to call. Adding `curl` back to the runtime image to satisfy a
 probe would trade the attack surface the chiseled base exists to remove for a status column.
@@ -230,7 +230,7 @@ Generated `.env` is deployment output and must never be edited directly. To rota
    `docker compose up -d --force-recreate <service>` for the affected services.
 
 The private NuGet feed credential is never in `.env`: it reaches the image build as a BuildKit secret
-(`--secret id=nuget_credentials`) and leaves no layer behind.
+(`--secret id=nuget_credentials`) and leaves no layer behind. A local `--profile local` build takes that secret from `NuGetPackageSourceCredentials_EFGithub` (`Username=<user>;Password=<token with read:packages>`) in the shell environment.
 
 ## Rollback
 
