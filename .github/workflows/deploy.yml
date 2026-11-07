@@ -87,7 +87,7 @@ jobs:
           blockers=$(jq '[.check_runs[] | select(.status == "completed" and (.conclusion | IN("failure", "cancelled", "timed_out", "action_required")))] | length' <<< "$checks")
           [[ "$blockers" -eq 0 ]] || { echo "::error::$TARGET_SHA has failed required checks"; exit 1; }
 
-  # The five container images are built by the shared reusable workflow, so the Azure lane and the Portable
+  # The five container images are built by the shared reusable workflow, so the Azure lane and the NonAzure
   # lane (deploy-vps.yml) cannot drift apart in how an image is produced or pinned.
   build-images:
     if: needs.validate-entry.outputs.operation == 'deploy'

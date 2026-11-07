@@ -132,8 +132,8 @@ jobs:
         run: dotnet build TaskFlow.slnx --no-restore --configuration Release -m:1
 
       - name: Unit Tests
-        # The project boundary intentionally includes untagged provider, migration, deployment, and deprecated
-        # alias contract tests. In runs 34718419269 and 34719228357 a relational-audit DI cycle left this testhost
+        # The project boundary intentionally includes untagged provider, migration, and deployment
+        # contract tests. In runs 34718419269 and 34719228357 a relational-audit DI cycle left this testhost
         # silent for more than 13 minutes. The inner collector names the active test; the outer timeout stays red.
         timeout-minutes: 1
         run: |
@@ -542,7 +542,6 @@ jobs:
           if-no-files-found: warn
 
   # Manual Docker-backed acceptance runs through the same canonical lane contract as Aspire and production.
-  # The full Test.Unit project above retains coverage for TASKFLOW_TEST_DB_PROVIDER as a deprecated input alias.
   database-lanes:
     needs: build-and-test
     if: ${{ github.event_name == 'workflow_dispatch' && (inputs.includeE2E == true || inputs.includeIntegration == true) }}

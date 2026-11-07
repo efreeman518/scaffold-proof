@@ -5,9 +5,6 @@ public class TaskFlowAiSettings
 {
     public const string ConfigSectionName = "AiServices";
 
-    // Legacy feature behavior only. D-060 resolves Search:Provider independently and defaults both lanes to Sql.
-    public bool UseSearch { get; set; }
-    public bool UseAgents { get; set; }
     public bool UseVectorSearch { get; set; }
 
     // TODO: [CONFIGURE] Set to your Azure AI Foundry endpoint

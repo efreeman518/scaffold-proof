@@ -58,7 +58,7 @@ $env:TASKFLOW_READMODEL_PROVIDER = "PostgreSqlJsonb" # default; set MongoDb expl
 dotnet test tests/Test.Integration/Test.Integration.csproj
 ```
 
-`TASKFLOW_TEST_DB_PROVIDER` remains a deprecated compatibility input for one release. New runtime, Aspire, Testcontainers, and CI orchestration uses `TASKFLOW_LANE` and `TASKFLOW_READMODEL_PROVIDER`.
+Runtime, Aspire, Testcontainers, and CI orchestration select providers through `TASKFLOW_LANE` and `TASKFLOW_READMODEL_PROVIDER`.
 
 Docker Desktop and headless Docker Engine work without repository-specific configuration when their published ports are reachable on `localhost`. For Podman on Windows/WSL2, use WSL mirrored networking so DCP's loopback-bound ports reach Windows:
 
@@ -82,7 +82,7 @@ Generated API clients (Blazor Refit, React `openapi-typescript`) regenerate per 
 
 ### Hosting lanes: Azure vs NonAzure
 
-`TASKFLOW_LANE = Azure | NonAzure` defaults to `NonAzure`; Azure is the explicit opt-in, and every Azure deployment sets `Hosting__Lane=Azure` itself. `Portable` is a deprecated input alias for `NonAzure` for one release. Lane-owned core provider conflicts fail fast instead of creating a mixed topology.
+`TASKFLOW_LANE = Azure | NonAzure` defaults to `NonAzure`; Azure is the explicit opt-in, and every Azure deployment sets `Hosting__Lane=Azure` itself. Any other lane value fails fast. Lane-owned core provider conflicts fail fast instead of creating a mixed topology.
 
 ```powershell
 dotnet run --project src/Host/Aspire/AppHost                                      # NonAzure (default): PostgreSQL JSONB/RabbitMQ/SeaweedFS, zero Azure
@@ -228,7 +228,7 @@ GitHub Actions runs the fast, no-Docker gate on every pull request: Unit, Archit
 | `includeFullAcceptance` | `false` | Runs unfiltered serial solution acceptance for each selected lane |
 | `includeComposeSmoke` | `false` | Builds and smokes the NonAzure Compose lane through Caddy |
 
-`TASKFLOW_TEST_DB_PROVIDER` remains covered as a deprecated alias, but manual orchestration uses only canonical `TASKFLOW_LANE` and `TASKFLOW_READMODEL_PROVIDER` values.
+Manual orchestration uses the canonical `TASKFLOW_LANE` and `TASKFLOW_READMODEL_PROVIDER` values.
 
 Unfiltered CI acceptance uses explicit false opt-outs for unavailable Functions, Azure Foundry, or mobile lanes. Local acceptance does not require an AI opt-out flag because both hosting lanes default to `None`. Enabled-provider contract failures remain red.
 
