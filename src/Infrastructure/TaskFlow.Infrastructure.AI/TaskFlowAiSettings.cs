@@ -5,8 +5,6 @@ public class TaskFlowAiSettings
 {
     public const string ConfigSectionName = "AiServices";
 
-    public bool UseVectorSearch { get; set; }
-
     // TODO: [CONFIGURE] Set to your Azure AI Foundry endpoint
     public string? FoundryEndpoint { get; set; }
 
