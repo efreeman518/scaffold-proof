@@ -142,28 +142,28 @@ jobs:
               --no-build --configuration Release \
               --blame-hang --blame-hang-timeout 15s \
               --logger "trx;LogFileName=unit-results.trx" \
-              --results-directory ./tests/TestResults
+              --results-directory ./tests/TestResults/Test.Unit
 
       - name: Architecture Tests
         run: >
           dotnet test tests/Test.Architecture/Test.Architecture.csproj
           --no-build --configuration Release
           --logger "trx;LogFileName=arch-results.trx"
-          --results-directory ./tests/TestResults
+          --results-directory ./tests/TestResults/Test.Architecture
 
       - name: Endpoint Tests
         run: >
           dotnet test tests/Test.Endpoints/Test.Endpoints.csproj
           --no-build --configuration Release
           --logger "trx;LogFileName=endpoint-results.trx"
-          --results-directory ./tests/TestResults
+          --results-directory ./tests/TestResults/Test.Endpoints
 
       - name: FlowEngine Definition Tests
         run: >
           dotnet test tests/Test.Integration.FlowEngine/Test.Integration.FlowEngine.csproj
           --no-build --configuration Release
           --logger "trx;LogFileName=flowengine-results.trx"
-          --results-directory ./tests/TestResults
+          --results-directory ./tests/TestResults/Test.Integration.FlowEngine
 
       # Deterministic graph construction only. This proves exact resource membership without claiming the
       # containers or hosts started; the manual full-lane-acceptance job below owns runnable full-lane proof.
@@ -173,7 +173,7 @@ jobs:
           --no-build --configuration Release
           --filter "FullyQualifiedName~AppHostLaneTopologyTests|FullyQualifiedName~AppHostMigratorTopologyTests"
           --logger "trx;LogFileName=aspire-topology-results.trx"
-          --results-directory ./tests/TestResults
+          --results-directory ./tests/TestResults/Test.Aspire
 
       - name: Aspire Core Lane Mesh Tests (manual)
         id: aspire_mesh
@@ -238,7 +238,7 @@ jobs:
                 --no-build --configuration Release \
                 -m:1 \
                 --logger "trx;LogFileName=aspire-${lane}-${read_model}-results.trx" \
-                --results-directory ./tests/TestResults
+                --results-directory ./tests/TestResults/Test.Aspire
           }
 
           # NonAzure is the default lane (D-060), so it runs first; Azure is the explicit opt-in.
@@ -348,7 +348,7 @@ jobs:
                 --no-build --configuration Release \
                 -m:1 \
                 --logger "trx;LogFileName=playwrightui-${lane}-${read_model}-results.trx" \
-                --results-directory ./tests/TestResults
+                --results-directory ./tests/TestResults/Test.PlaywrightUI
           }
 
           if [ "${{ inputs.lane }}" = "both" ] || [ "${{ inputs.lane }}" = "NonAzure" ]; then
@@ -364,7 +364,7 @@ jobs:
           --no-build --configuration Release
           --filter FullyQualifiedName~MigrationModelContractTests
           --logger "trx;LogFileName=migration-model-results.trx"
-          --results-directory ./tests/TestResults
+          --results-directory ./tests/TestResults/Test.Unit
 
       - name: Deployment workflow contract gate
         run: >
@@ -372,7 +372,7 @@ jobs:
           --no-build --configuration Release
           --filter FullyQualifiedName~DeploymentWorkflowContractTests
           --logger "trx;LogFileName=deployment-contract-results.trx"
-          --results-directory ./tests/TestResults
+          --results-directory ./tests/TestResults/Test.Unit
 
       - name: Upload Test Results
         if: always()
@@ -515,14 +515,14 @@ jobs:
               --no-build --configuration Release -m:1 `
               --filter $aspireFilter `
               --logger "trx;LogFileName=full-aspire-${Lane}-${ReadModel}-results.trx" `
-              --results-directory ./tests/TestResults
+              --results-directory ./tests/TestResults/Test.Aspire
             if ($LASTEXITCODE -ne 0) { throw "${Lane} complete Aspire graph acceptance failed." }
 
             dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj `
               --no-build --configuration Release -m:1 `
               --filter "TestCategory=PlaywrightUI|TestCategory=WasmUI" `
               --logger "trx;LogFileName=full-ui-${Lane}-${ReadModel}-results.trx" `
-              --results-directory ./tests/TestResults
+              --results-directory ./tests/TestResults/Test.PlaywrightUI
             if ($LASTEXITCODE -ne 0) { throw "${Lane} browser acceptance failed." }
           }
 
@@ -595,7 +595,7 @@ jobs:
           dotnet test tests/Test.E2E/Test.E2E.csproj
           --no-build --configuration Release
           --logger "trx;LogFileName=e2e-${{ matrix.lane }}-results.trx"
-          --results-directory ./tests/TestResults
+          --results-directory ./tests/TestResults/Test.E2E
 
       - name: Integration Tests (${{ matrix.lane }}, component)
         if: ${{ inputs.includeIntegration == true && (inputs.lane == 'both' || inputs.lane == matrix.lane) }}
@@ -604,7 +604,7 @@ jobs:
           dotnet test tests/Test.Integration/Test.Integration.csproj
           --no-build --configuration Release
           --logger "trx;LogFileName=integration-${{ matrix.lane }}-results.trx"
-          --results-directory ./tests/TestResults
+          --results-directory ./tests/TestResults/Test.Integration
 
       - name: Upload Test Results
         if: ${{ always() && (inputs.lane == 'both' || inputs.lane == matrix.lane) }}
