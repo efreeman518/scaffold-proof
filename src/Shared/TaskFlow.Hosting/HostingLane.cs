@@ -115,8 +115,7 @@ public static class HostingLaneResolver
                 azure ? ["AzureBlob"] : ["S3"]),
             ResolveProvider(configuration, lane, ReadModelEnvironmentVariable, ReadModelConfigurationKey,
                 azure ? "Cosmos" : "PostgreSqlJsonb", ReadModelValues,
-                azure ? ["Cosmos"] : ["PostgreSqlJsonb", "MongoDb"],
-                value => value.Equals("Relational", StringComparison.OrdinalIgnoreCase) ? "PostgreSqlJsonb" : value),
+                azure ? ["Cosmos"] : ["PostgreSqlJsonb", "MongoDb"]),
             ResolveProvider(configuration, lane, AuditEnvironmentVariable, AuditConfigurationKey,
                 azure ? "AzureTable" : "Relational", AuditValues,
                 azure ? ["AzureTable"] : ["Relational"]),
@@ -138,10 +137,9 @@ public static class HostingLaneResolver
         var normalized = value.Trim();
         if (normalized.Equals("Azure", StringComparison.OrdinalIgnoreCase)) return HostingLane.Azure;
         if (normalized.Equals("NonAzure", StringComparison.OrdinalIgnoreCase)) return HostingLane.NonAzure;
-        if (normalized.Equals("Portable", StringComparison.OrdinalIgnoreCase)) return HostingLane.NonAzure;
 
         throw new ArgumentException(
-            $"Unknown hosting lane '{value}'. Allowed values: Azure, NonAzure. Portable is a deprecated alias for NonAzure.");
+            $"Unknown hosting lane '{value}'. Allowed values: Azure, NonAzure.");
     }
 
     private static string ToEnvironmentVariable(string configurationKey) =>
@@ -154,14 +152,12 @@ public static class HostingLaneResolver
         string configurationKey,
         string laneDefault,
         IReadOnlyList<string> knownValues,
-        IReadOnlyList<string> allowedValues,
-        Func<string, string>? normalize = null)
+        IReadOnlyList<string> allowedValues)
     {
         var configured = Environment.GetEnvironmentVariable(environmentVariable) ?? configuration(configurationKey);
         if (string.IsNullOrWhiteSpace(configured)) return laneDefault;
 
-        var normalized = normalize?.Invoke(configured) ?? configured;
-        var canonical = knownValues.FirstOrDefault(value => value.Equals(normalized, StringComparison.OrdinalIgnoreCase));
+        var canonical = knownValues.FirstOrDefault(value => value.Equals(configured, StringComparison.OrdinalIgnoreCase));
         if (canonical is null)
         {
             throw new ArgumentException(

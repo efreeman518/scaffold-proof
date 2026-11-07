@@ -27,8 +27,7 @@ var schedulerAvailableInTesting =
 var defaultSqlPassword = LocalSqlSettings.SharedSaPassword;
 
 // D-060: the strict lane resolver owns every core provider. Unset means NonAzure (TASKFLOW_LANE=Azure opts into
-// the Azure topology); Portable remains a deprecated input alias that normalizes to NonAzure before this
-// graph is built.
+// the Azure topology).
 var lane = LaneDefaults.Resolve(builder.Configuration);
 var nonAzureLane = lane.Lane == HostingLane.NonAzure;
 

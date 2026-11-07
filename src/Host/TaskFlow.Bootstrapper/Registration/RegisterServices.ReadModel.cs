@@ -29,8 +29,7 @@ public static partial class RegisterServices
     public const string ReadModelProviderEnvVar = HostingLaneResolver.ReadModelEnvironmentVariable;
 
     /// <summary>
-    /// Resolves the strict lane's read-model backend through the shared D-060 contract. Relational input is
-    /// normalized to PostgreSqlJsonb for one release by that contract.
+    /// Resolves the strict lane's read-model backend through the shared D-060 contract.
     /// </summary>
     public static ReadModelProvider ResolveReadModelProvider(IConfiguration config)
     {

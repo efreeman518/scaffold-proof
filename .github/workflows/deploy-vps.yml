@@ -218,10 +218,10 @@ jobs:
             compose_profiles=''
             if grep -qx 'ReadModel__Provider=MongoDb' .env.base; then
               compose_profiles=mongo
-            elif grep -Eqx 'ReadModel__Provider=(PostgreSqlJsonb|Relational)' .env.base; then
+            elif grep -qx 'ReadModel__Provider=PostgreSqlJsonb' .env.base; then
               :
             else
-              echo 'ReadModel__Provider must be PostgreSqlJsonb, MongoDb, or deprecated Relational.' >&2
+              echo 'ReadModel__Provider must be PostgreSqlJsonb or MongoDb.' >&2
               exit 1
             fi
             if grep -qx 'Database__PostgreSql__PoolerMode=Transaction' .env.base; then
@@ -500,10 +500,10 @@ jobs:
             compose_profiles=''
             if grep -qx 'ReadModel__Provider=MongoDb' .env.base; then
               compose_profiles=mongo
-            elif grep -Eqx 'ReadModel__Provider=(PostgreSqlJsonb|Relational)' .env.base; then
+            elif grep -qx 'ReadModel__Provider=PostgreSqlJsonb' .env.base; then
               :
             else
-              echo 'ReadModel__Provider must be PostgreSqlJsonb, MongoDb, or deprecated Relational.' >&2
+              echo 'ReadModel__Provider must be PostgreSqlJsonb or MongoDb.' >&2
               exit 1
             fi
             if grep -qx 'Database__PostgreSql__PoolerMode=Transaction' .env.base; then

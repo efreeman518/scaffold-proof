@@ -38,23 +38,10 @@ public static class AiServiceCollectionExtensions
     /// Resolves the strict lane's search backend. Both lanes default to Sql; AzureAiSearch and PgVector
     /// are accepted only in their owning lane (D-060).
     /// </summary>
-    public static SearchProvider ResolveSearchProvider(IConfiguration config, TaskFlowAiSettings settings)
-    {
-        ArgumentNullException.ThrowIfNull(config);
-        ArgumentNullException.ThrowIfNull(settings);
-        return ParseSearchProvider(HostingLaneResolver.Resolve(config).Search);
-    }
-
-    /// <summary>
-    /// Same resolution binding <c>AiServices</c> from configuration first, for callers outside this assembly
-    /// that need the answer before <c>AddAiServices</c> runs (queue topology, consumer registration).
-    /// </summary>
     public static SearchProvider ResolveSearchProvider(IConfiguration config)
     {
         ArgumentNullException.ThrowIfNull(config);
-        return ResolveSearchProvider(
-            config,
-            config.GetSection(TaskFlowAiSettings.ConfigSectionName).Get<TaskFlowAiSettings>() ?? new TaskFlowAiSettings());
+        return ParseSearchProvider(HostingLaneResolver.Resolve(config).Search);
     }
 
     private static SearchProvider ParseSearchProvider(string value) =>
@@ -109,7 +96,7 @@ public static class AiServiceCollectionExtensions
 
         var settings = aiSection.Get<TaskFlowAiSettings>() ?? new TaskFlowAiSettings();
 
-        switch (ResolveSearchProvider(config, settings))
+        switch (ResolveSearchProvider(config))
         {
             case SearchProvider.AzureAiSearch:
                 if (string.IsNullOrWhiteSpace(settings.SearchEndpoint))

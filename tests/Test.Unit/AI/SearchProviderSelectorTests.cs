@@ -15,10 +15,9 @@ using TaskFlow.Infrastructure.Data.Provider;
 namespace Test.Unit.AI;
 
 /// <summary>
-/// Selector-table coverage for the D-040 search provider switch: its D-035 lane default and its legacy
-/// <c>AiServices:UseSearch</c>(+<c>SearchEndpoint</c>) compatibility mapping, kept one release for the
-/// case <c>Search:Provider</c> is unset. <c>AiServiceRegistrationTests</c> covers the same legacy mapping
-/// through <c>AddAiServices</c> end to end; this file targets the resolver and the new arms directly.
+/// Selector-table coverage for the D-040 search provider switch: its lane default, lane ownership and
+/// environment precedence. <c>AiServiceRegistrationTests</c> covers <c>AddAiServices</c> end to end;
+/// this file targets the resolver and the provider arms directly.
 /// Pure-unit tier (in-memory IConfiguration / ServiceCollection): no live Azure AI Search endpoint.
 /// </summary>
 [TestClass]
@@ -31,33 +30,8 @@ public class SearchProviderSelectorTests
             .Build();
 
     [TestMethod]
-    public void ResolveSearchProvider_Unset_UseSearchFalse_DefaultsToSql() =>
-        Assert.AreEqual(
-            SearchProvider.Sql,
-            AiServiceCollectionExtensions.ResolveSearchProvider(Config(), new TaskFlowAiSettings { UseSearch = false }));
-
-    [TestMethod]
-    public void ResolveSearchProvider_Unset_UseSearchTrueWithEndpoint_StillDefaultsToSql() =>
-        Assert.AreEqual(
-            SearchProvider.Sql,
-            AiServiceCollectionExtensions.ResolveSearchProvider(
-                Config(),
-                new TaskFlowAiSettings { UseSearch = true, SearchEndpoint = "https://example.search.windows.net" }));
-
-    [TestMethod]
-    public void ResolveSearchProvider_Unset_UseSearchTrueNoEndpoint_DefaultsToSql() =>
-        Assert.AreEqual(
-            SearchProvider.Sql,
-            AiServiceCollectionExtensions.ResolveSearchProvider(
-                Config(), new TaskFlowAiSettings { UseSearch = true, SearchEndpoint = "" }));
-
-    [TestMethod]
-    public void ResolveSearchProvider_NonAzureLane_DefaultsToSql_EvenWithLegacyUseSearchTrue() =>
-        Assert.AreEqual(
-            SearchProvider.Sql,
-            AiServiceCollectionExtensions.ResolveSearchProvider(
-                Config((HostingLaneResolver.LaneConfigurationKey, "NonAzure")),
-                new TaskFlowAiSettings { UseSearch = true, SearchEndpoint = "https://example.search.windows.net" }));
+    public void ResolveSearchProvider_Unset_DefaultsToSql() =>
+        Assert.AreEqual(SearchProvider.Sql, AiServiceCollectionExtensions.ResolveSearchProvider(Config()));
 
     [TestMethod]
     public void ResolveSearchProvider_CrossLaneValue_Throws() =>
@@ -65,15 +39,13 @@ public class SearchProviderSelectorTests
             AiServiceCollectionExtensions.ResolveSearchProvider(
                 Config(
                     (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
-                    (AiServiceCollectionExtensions.SearchProviderConfigKey, "AzureAiSearch")),
-                new TaskFlowAiSettings()));
+                    (AiServiceCollectionExtensions.SearchProviderConfigKey, "AzureAiSearch"))));
 
     [TestMethod]
     public void ResolveSearchProvider_UnknownValue_Throws() =>
         Assert.ThrowsExactly<ArgumentException>(() =>
             AiServiceCollectionExtensions.ResolveSearchProvider(
-                Config((AiServiceCollectionExtensions.SearchProviderConfigKey, "Elasticsearch")),
-                new TaskFlowAiSettings()));
+                Config((AiServiceCollectionExtensions.SearchProviderConfigKey, "Elasticsearch"))));
 
     [TestMethod]
     [DoNotParallelize]
@@ -85,8 +57,7 @@ public class SearchProviderSelectorTests
         Assert.AreEqual(
             SearchProvider.Sql,
             AiServiceCollectionExtensions.ResolveSearchProvider(
-                Config((AiServiceCollectionExtensions.SearchProviderConfigKey, "AzureAiSearch")),
-                new TaskFlowAiSettings()));
+                Config((AiServiceCollectionExtensions.SearchProviderConfigKey, "AzureAiSearch"))));
     }
 
     [TestMethod]

@@ -5,7 +5,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
-using System.ComponentModel;
 using TaskFlow.Hosting;
 using TaskFlow.Infrastructure.Data.Provider;
 
@@ -14,45 +13,18 @@ namespace Test.Support.Hosting;
 /// <summary>Strict D-060 lane selection for container-backed tests.</summary>
 public static class TestHostingLane
 {
-    public const string LegacyDatabaseProviderEnvironmentVariable = "TASKFLOW_TEST_DB_PROVIDER";
-
     public static HostingLaneSettings Current
     {
         get
         {
-            var configuredLane = Environment.GetEnvironmentVariable(HostingLaneResolver.LaneEnvironmentVariable);
-            var legacyDatabase = Environment.GetEnvironmentVariable(LegacyDatabaseProviderEnvironmentVariable);
-            var legacyProvider = string.IsNullOrWhiteSpace(legacyDatabase)
-                ? (TaskFlowDbProvider?)null
-                : legacyDatabase.Trim() switch
-                {
-                    var value when value.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) =>
-                        TaskFlowDbProvider.SqlServer,
-                    var value when value.Equals("PostgreSql", StringComparison.OrdinalIgnoreCase) =>
-                        TaskFlowDbProvider.PostgreSql,
-                    _ => throw new ArgumentException(
-                        $"Unknown legacy test database provider '{legacyDatabase}'. Allowed values: SqlServer, PostgreSql.")
-                };
-
-            var lane = string.IsNullOrWhiteSpace(configuredLane) && legacyProvider is not null
-                ? legacyProvider == TaskFlowDbProvider.SqlServer ? "Azure" : "NonAzure"
-                : configuredLane;
             var configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    [HostingLaneResolver.LaneConfigurationKey] = lane
+                    [HostingLaneResolver.LaneConfigurationKey] =
+                        Environment.GetEnvironmentVariable(HostingLaneResolver.LaneEnvironmentVariable)
                 })
                 .Build();
-            var settings = HostingLaneResolver.Resolve(configuration);
-
-            if (legacyProvider is not null && legacyProvider != DatabaseProviderFor(settings))
-            {
-                throw new InvalidOperationException(
-                    $"{LegacyDatabaseProviderEnvironmentVariable}={legacyProvider} conflicts with " +
-                    $"{HostingLaneResolver.LaneEnvironmentVariable}={settings.Lane}. Remove the deprecated variable.");
-            }
-
-            return settings;
+            return HostingLaneResolver.Resolve(configuration);
         }
     }
 
@@ -62,16 +34,6 @@ public static class TestHostingLane
 
     private static TaskFlowDbProvider DatabaseProviderFor(HostingLaneSettings settings) =>
         settings.Lane == HostingLane.Azure ? TaskFlowDbProvider.SqlServer : TaskFlowDbProvider.PostgreSql;
-}
-
-/// <summary>Deprecated database-only selector retained for external test extensions.</summary>
-[Obsolete("Use TASKFLOW_LANE=Azure|NonAzure through TestHostingLane.")]
-[EditorBrowsable(EditorBrowsableState.Never)]
-public static class TestDbProvider
-{
-    public const string EnvironmentVariable = TestHostingLane.LegacyDatabaseProviderEnvironmentVariable;
-
-    public static TaskFlowDbProvider Current => TestHostingLane.DatabaseProvider;
 }
 
 /// <summary>

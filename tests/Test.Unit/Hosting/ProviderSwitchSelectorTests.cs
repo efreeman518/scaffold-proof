@@ -45,24 +45,29 @@ public class ProviderSwitchSelectorTests
         Assert.AreEqual(HostingLane.NonAzure, HostingLaneResolver.ResolveLane(Config()));
 
     [TestMethod]
-    public void ResolveHostingLane_ConfigPortable_ReturnsNonAzure() =>
-        Assert.AreEqual(HostingLane.NonAzure, HostingLaneResolver.ResolveLane(
-            Config((HostingLaneResolver.LaneConfigurationKey, "Portable"))));
+    [DataRow("Portable")]
+    [DataRow("portable")]
+    public void ResolveHostingLane_Portable_IsUnknownLane(string lane)
+    {
+        var ex = Assert.ThrowsExactly<ArgumentException>(() =>
+            HostingLaneResolver.ResolveLane(Config((HostingLaneResolver.LaneConfigurationKey, lane))));
+        StringAssert.Contains(ex.Message, "Allowed values: Azure, NonAzure.");
+    }
 
     [TestMethod]
     public void ResolveHostingLane_UnknownValue_Throws()
     {
         var ex = Assert.ThrowsExactly<ArgumentException>(() =>
             HostingLaneResolver.ResolveLane(Config((HostingLaneResolver.LaneConfigurationKey, "OnPrem"))));
-        StringAssert.Contains(ex.Message, "Azure");
-        StringAssert.Contains(ex.Message, "Portable");
+        StringAssert.Contains(ex.Message, "Allowed values: Azure, NonAzure.");
+        Assert.DoesNotContain("Portable", ex.Message);
     }
 
     [TestMethod]
     [DoNotParallelize]
     public void ResolveHostingLane_EnvWinsOverConfig()
     {
-        WithEnv(HostingLaneResolver.LaneEnvironmentVariable, "Portable", () =>
+        WithEnv(HostingLaneResolver.LaneEnvironmentVariable, "NonAzure", () =>
             Assert.AreEqual(
                 HostingLane.NonAzure,
                 HostingLaneResolver.ResolveLane(Config((HostingLaneResolver.LaneConfigurationKey, "Azure")))));
@@ -220,19 +225,26 @@ public class ProviderSwitchSelectorTests
     public void ResolveReadModelProvider_EnvWinsOverConfig()
     {
         WithEnv(HostingLaneResolver.LaneEnvironmentVariable, "NonAzure", () =>
-        WithEnv(RegisterServices.ReadModelProviderEnvVar, "Relational", () =>
+        WithEnv(RegisterServices.ReadModelProviderEnvVar, "PostgreSqlJsonb", () =>
             Assert.AreEqual(
                 ReadModelProvider.PostgreSqlJsonb,
                 RegisterServices.ResolveReadModelProvider(Config((RegisterServices.ReadModelProviderConfigKey, "Cosmos"))))));
     }
 
     [TestMethod]
-    public void AddReadModelServices_Relational_RegistersRelationalRepository()
+    public void ResolveReadModelProvider_Relational_IsUnknownValue() =>
+        Assert.ThrowsExactly<ArgumentException>(() =>
+            RegisterServices.ResolveReadModelProvider(Config(
+                (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
+                (RegisterServices.ReadModelProviderConfigKey, "Relational"))));
+
+    [TestMethod]
+    public void AddReadModelServices_PostgreSqlJsonb_RegistersRelationalRepository()
     {
         var services = InvokeDispatcher("AddReadModelServices",
             Config(
                 (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
-                (RegisterServices.ReadModelProviderConfigKey, "Relational")));
+                (RegisterServices.ReadModelProviderConfigKey, "PostgreSqlJsonb")));
 
         var descriptor = services.Single(d => d.ServiceType == typeof(ITaskViewRepository));
         Assert.AreEqual(typeof(RelationalTaskViewRepository), descriptor.ImplementationType);

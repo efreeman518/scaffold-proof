@@ -65,8 +65,6 @@ public static partial class RegisterServices
         var appName = config.GetValue<string>("AppName") ?? builder.Environment.ApplicationName;
         var env = builder.Environment.EnvironmentName;
 
-        LogLegacyAiSwitchCompatibility(config, logger, appName, env);
-
         var explicitProvider = ResolveAiProvider(config);
         if (explicitProvider == AiProvider.None)
             return Task.CompletedTask; // AddAiServices registers the EF.AI disabled client and provider metadata.
@@ -139,20 +137,5 @@ public static partial class RegisterServices
 
         logger.ConfigureOpenAICompatibleChatClient(appName, env, config[EndpointConfigKey] ?? string.Empty);
         builder.Services.AddSingleton(new AiProviderInfo("openai-compatible"));
-    }
-
-    /// <summary>
-    /// D-042 compatibility: <c>AiServices:UseSearch</c>/<c>UseAgents</c> are the ad hoc kill switches
-    /// P5's dynamic feature flags supersede. Kept working (P2 left the properties in place) but warned
-    /// about for one release when a config still sets either to false explicitly - unset stays silent,
-    /// since that is the common case and not a signal anyone still relies on the old switch.
-    /// </summary>
-    private static void LogLegacyAiSwitchCompatibility(IConfiguration config, ILogger logger, string appName, string env)
-    {
-        if (bool.TryParse(config["AiServices:UseSearch"], out var useSearch) && !useSearch)
-            logger.LegacyAiSwitchSuperseded(appName, env, "AiServices:UseSearch");
-
-        if (bool.TryParse(config["AiServices:UseAgents"], out var useAgents) && !useAgents)
-            logger.LegacyAiSwitchSuperseded(appName, env, "AiServices:UseAgents");
     }
 }
