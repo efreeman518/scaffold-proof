@@ -1011,8 +1011,11 @@ public sealed class DeploymentWorkflowContractTests
 
         foreach (var workflow in new[] { "ci.yml", "build-images.yml", "deploy.yml" })
         {
-            StringAssert.Contains(ReadWorkflow(workflow), variable, workflow);
+            StringAssert.Contains(ReadWorkflow(workflow), $"{variable}: Username=", workflow);
         }
+
+        // The image build hands that same variable to BuildKit as the secret source.
+        StringAssert.Contains(ReadWorkflow("build-images.yml"), $"--secret id=nuget_credentials,env={variable}");
 
         StringAssert.Contains(
             File.ReadAllText(RepoRoot.Combine("deploy", "compose", "docker-compose.override.local.yml")),
@@ -1029,7 +1032,11 @@ public sealed class DeploymentWorkflowContractTests
         {
             var content = File.ReadAllText(RepoRoot.Combine(dockerfile.Split('/')));
             // Exported for the whole RUN, or env-prefixed onto a restore that ends the RUN.
-            var exported = content.Contains($"export {setter}", StringComparison.Ordinal);
+            // An export counts only when the restore runs in the same RUN instruction after it.
+            var exportAt = content.IndexOf($"export {setter}", StringComparison.Ordinal);
+            var restoreAt = exportAt < 0 ? -1 : content.IndexOf("dotnet restore", exportAt, StringComparison.Ordinal);
+            var exported = restoreAt > 0 && !System.Text.RegularExpressions.Regex.IsMatch(
+                content[exportAt..restoreAt], @"\n\s*RUN\s");
             var envOnRestore = System.Text.RegularExpressions.Regex.IsMatch(
                 content, $@"env {System.Text.RegularExpressions.Regex.Escape(setter)} \\\r?\n\s+dotnet restore [^\r\n]*[^\\\r\n]\r?\n");
             Assert.IsTrue(exported || envOnRestore, dockerfile);

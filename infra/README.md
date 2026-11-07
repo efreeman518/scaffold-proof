@@ -144,7 +144,7 @@ The workflow injects this secret without modifying `nuget.config`:
 
 The credential is never passed as a Docker build argument, written into a NuGet config file, or included in an image layer or deployment artifact.
 
-To create the PAT: **GitHub -> Settings -> Developer settings -> Personal access tokens -> Fine-grained tokens** -> grant `read:packages` on the `efreeman518` account.
+To create the PAT: **GitHub -> Settings -> Developer settings -> Personal access tokens -> Tokens (classic)** -> select `read:packages`. GitHub Packages' NuGet registry accepts only classic tokens.
 
 > `NUGET_PAT` is required. The release build fails at entry when it is absent.
 
