@@ -32,14 +32,13 @@ dotnet test --solution TaskFlow.slnx --filter "TestCategory=Unit"   # category-f
 dotnet test --solution TaskFlow.slnx --filter "TestCategory=Architecture|TestCategory=Endpoint"
 dotnet test --solution TaskFlow.slnx --no-build --max-parallel-test-modules 1   # unfiltered serial acceptance; full-stack projects are resource-heavy
 # Dual EF Core provider: TASKFLOW_DB_PROVIDER=SqlServer|PostgreSql selects the runtime provider (lane default: PostgreSql, SqlServer on Azure)
-# TASKFLOW_TEST_DB_PROVIDER=SqlServer|PostgreSql is a deprecated test-only alias for one release; new orchestration uses TASKFLOW_LANE
 # TASKFLOW_MESSAGING_PROVIDER=ServiceBus|RabbitMq selects the messaging transport (lane default: RabbitMq, ServiceBus on Azure); switching needs no code change, only config
-# TASKFLOW_LANE=Azure|NonAzure owns the core provider topology (default NonAzure; Azure is the explicit opt-in); Portable is a deprecated NonAzure alias for one release - D-060
+# TASKFLOW_LANE=Azure|NonAzure owns the core provider topology (default NonAzure; Azure is the explicit opt-in) - D-060
 # Azure: SqlServer, ServiceBus, AzureBlob/Azurite, Cosmos, AzureTable, Blob Data Protection, and Azure-only Functions
 # NonAzure: PostgreSql, RabbitMq, S3/SeaweedFS, Relational audit, Redis Data Protection, PostgreSqlJsonb read model by default, optional MongoDb
 # Lane-owned provider conflicts fail fast; NonAzure also rejects non-empty Azure App Configuration and Key Vault service settings
 # TASKFLOW_STORAGE_PROVIDER=AzureBlob|S3 selects the object-storage backend within its compatible lane - D-037/D-060
-# TASKFLOW_READMODEL_PROVIDER=Cosmos|PostgreSqlJsonb|MongoDb selects the read-model backend; Relational is a deprecated PostgreSqlJsonb alias - D-038/D-060
+# TASKFLOW_READMODEL_PROVIDER=Cosmos|PostgreSqlJsonb|MongoDb selects the read-model backend - D-038/D-060
 # TASKFLOW_AUDIT_PROVIDER=AzureTable|Relational selects the lane-compatible audit sink - D-039/D-060
 # TASKFLOW_SEARCH_PROVIDER=AzureAiSearch|PgVector|Sql selects search; local default Sql, PgVector requires NonAzure PostgreSql - D-040/D-060
 # TASKFLOW_AI_PROVIDER=AzureInference|OpenAICompatible|None selects the lane-compatible LLM client; local default None - D-041/D-060

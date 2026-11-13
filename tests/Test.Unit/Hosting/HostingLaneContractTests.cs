@@ -92,14 +92,15 @@ public sealed class HostingLaneContractTests
     }
 
     [TestMethod]
-    public void Resolve_DeprecatedAliases_NormalizesToCanonicalValues()
+    public void Resolve_RelationalReadModel_IsUnknownValue()
     {
-        var settings = Resolve(
-            (HostingLaneResolver.LaneConfigurationKey, "Portable"),
-            (HostingLaneResolver.ReadModelConfigurationKey, "Relational"));
+        var exception = Assert.ThrowsExactly<ArgumentException>(() =>
+            Resolve(
+                (HostingLaneResolver.LaneConfigurationKey, "NonAzure"),
+                (HostingLaneResolver.ReadModelConfigurationKey, "Relational")));
 
-        Assert.AreEqual(HostingLane.NonAzure, settings.Lane);
-        Assert.AreEqual("PostgreSqlJsonb", settings.ReadModel);
+        StringAssert.Contains(exception.Message, "Relational");
+        StringAssert.Contains(exception.Message, "PostgreSqlJsonb, MongoDb");
     }
 
     [TestMethod]
@@ -107,6 +108,7 @@ public sealed class HostingLaneContractTests
     [DataRow("1")]
     [DataRow("99")]
     [DataRow("OnPrem")]
+    [DataRow("Portable")]
     public void Resolve_NumericOrUndefinedLane_Throws(string lane)
     {
         var exception = Assert.ThrowsExactly<ArgumentException>(() =>

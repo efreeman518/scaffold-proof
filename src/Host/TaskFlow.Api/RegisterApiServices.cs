@@ -137,7 +137,7 @@ public static class RegisterApiServices
     }
 
     /// <summary>
-    /// D-076: a <see cref="DatabaseConstraintException"/> that escapes a service (mapped to 409 by
+    /// D-078: a <see cref="DatabaseConstraintException"/> that escapes a service (mapped to 409 by
     /// <see cref="MapExceptions"/>) answers the body the services' <c>SaveFailure.ToError</c> gives a caught one: the
     /// fixed save-failed text and code <c>save.constraint</c>. The handler would otherwise send the exception message,
     /// which is the provider's text (constraint, table and key value); it stays in the log. EF.AspNetCore runs this
@@ -158,7 +158,7 @@ public static class RegisterApiServices
     /// <list type="bullet">
     /// <item>A policy-free save's DbUpdateConcurrencyException is a lost update: 412 / FailedPrecondition.</item>
     /// <item>A DatabaseConstraintException that escapes a service is a conflict with stored data, as the services
-    /// classify a caught one (D-076): 409 / Aborted, code <c>save.constraint</c>.</item>
+    /// classify a caught one (D-078): 409 / Aborted, code <c>save.constraint</c>.</item>
     /// <item>Caller input TaskFlow rejects: <see cref="InvalidRequestException"/> (page size out of range) and the
     /// cursor codec's <see cref="InvalidCursorException"/> (tampered, foreign-tenant, other-sort-mode or stale-schema
     /// cursor and continuation tokens): 400 / InvalidArgument. EF.Common's ValidationException is already

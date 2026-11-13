@@ -59,21 +59,6 @@ public sealed class AppHostLaneTopologyTests
     }
 
     [TestMethod]
-    public void PortableAlias_NormalizesToExactNonAzureProfile()
-    {
-        var switches = ResolveWithLane("Portable");
-
-        Assert.AreEqual(HostingLane.NonAzure, switches.Lane);
-        Assert.AreEqual("PostgreSql", switches.Database);
-        Assert.AreEqual("RabbitMq", switches.Messaging);
-        Assert.AreEqual("S3", switches.Storage);
-        Assert.AreEqual("PostgreSqlJsonb", switches.ReadModel);
-        Assert.AreEqual("Relational", switches.Audit);
-        Assert.AreEqual("Redis", switches.DataProtection);
-        AssertHostEnvironmentMatches(switches);
-    }
-
-    [TestMethod]
     public void UnsetLane_ResolvesExactNonAzureProfile()
     {
         var switches = ResolveWithLane(lane: null);
@@ -120,9 +105,11 @@ public sealed class AppHostLaneTopologyTests
             ResolveWithLane("NonAzure", (HostingLaneResolver.StorageEnvironmentVariable, "AzureBlob")));
 
     [TestMethod]
-    public void UnknownLane_FailsFastInsteadOfRunningDefaultLane()
+    [DataRow("Vps")]
+    [DataRow("Portable")]
+    public void UnknownLane_FailsFastInsteadOfRunningDefaultLane(string lane)
     {
-        var exception = Assert.ThrowsExactly<ArgumentException>(() => ResolveWithLane("Vps"));
+        var exception = Assert.ThrowsExactly<ArgumentException>(() => ResolveWithLane(lane));
         StringAssert.Contains(exception.Message, "NonAzure");
     }
 

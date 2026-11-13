@@ -36,7 +36,7 @@ Multi-tenant (row-level tenancy, fail-closed tenant filter). Event-driven async 
 - **.NET 11 SDK** (11.0.100 RC 3) - the exact version is pinned by [`global.json`](global.json), which also selects the Microsoft.Testing.Platform test runner for `dotnet test`.
 - **Workloads:** `dotnet workload install wasm-tools aspire` (required for the Uno WASM host and the Aspire AppHost).
 - **Docker-compatible container runtime** (Docker Desktop, headless Docker Engine, or Podman) - no desktop UI is required. Aspire starts only the selected lane: PostgreSQL/RabbitMQ/SeaweedFS with optional MongoDB by default, or the Azure emulators with `TASKFLOW_LANE=Azure`, plus common Redis and application services.
-- **Private NuGet feed access:** the `EF.*` packages (platform and FlowEngine) restore from GitHub Packages via the `efreeman518-github` source in [`nuget.config`](nuget.config). Supply a `NUGET_PAT` (a GitHub token with `read:packages`) before restoring.
+- **Private NuGet feed access:** the `EF.*` packages (platform and FlowEngine) restore from GitHub Packages via the `EFGithub` source in [`nuget.config`](nuget.config). A local restore needs a classic GitHub token with `read:packages` for source key `EFGithub`. On Windows, store it encrypted in your user NuGet config: `dotnet nuget add source https://nuget.pkg.github.com/efreeman518/index.json --name EFGithub --username <user> --password <token> --configfile "$env:APPDATA\NuGet\NuGet.Config"`, or, when that config already has the source, `dotnet nuget update source EFGithub --username <user> --password <token> --configfile "$env:APPDATA\NuGet\NuGet.Config"`. Elsewhere NuGet cannot encrypt a stored password, so set `NuGetPackageSourceCredentials_EFGithub=Username=<user>;Password=<token>` in the environment instead; the local compose build always reads it from there. CI supplies it from the `NUGET_PAT` secret.
 - **Local tools:** `dotnet tool restore` restores Stryker.NET and the other tools declared in the tool manifest.
 
 ### Run
@@ -58,7 +58,7 @@ $env:TASKFLOW_READMODEL_PROVIDER = "PostgreSqlJsonb" # default; set MongoDb expl
 dotnet test --project tests/Test.Integration/Test.Integration.csproj
 ```
 
-`TASKFLOW_TEST_DB_PROVIDER` remains a deprecated compatibility input for one release. New runtime, Aspire, Testcontainers, and CI orchestration uses `TASKFLOW_LANE` and `TASKFLOW_READMODEL_PROVIDER`.
+Runtime, Aspire, Testcontainers, and CI orchestration select providers through `TASKFLOW_LANE` and `TASKFLOW_READMODEL_PROVIDER`.
 
 Docker Desktop and headless Docker Engine work without repository-specific configuration when their published ports are reachable on `localhost`. For Podman on Windows/WSL2, use WSL mirrored networking so DCP's loopback-bound ports reach Windows:
 
@@ -82,7 +82,7 @@ Generated API clients (Blazor Refit, React `openapi-typescript`) regenerate per 
 
 ### Hosting lanes: Azure vs NonAzure
 
-`TASKFLOW_LANE = Azure | NonAzure` defaults to `NonAzure`; Azure is the explicit opt-in, and every Azure deployment sets `Hosting__Lane=Azure` itself. `Portable` is a deprecated input alias for `NonAzure` for one release. Lane-owned core provider conflicts fail fast instead of creating a mixed topology.
+`TASKFLOW_LANE = Azure | NonAzure` defaults to `NonAzure`; Azure is the explicit opt-in, and every Azure deployment sets `Hosting__Lane=Azure` itself. Any other lane value fails fast. Lane-owned core provider conflicts fail fast instead of creating a mixed topology.
 
 ```powershell
 dotnet run --project src/Host/Aspire/AppHost                                      # NonAzure (default): PostgreSQL JSONB/RabbitMQ/SeaweedFS, zero Azure
@@ -228,7 +228,7 @@ GitHub Actions runs the fast, no-Docker gate on every pull request: Unit, Archit
 | `includeFullAcceptance` | `false` | Runs unfiltered serial solution acceptance for each selected lane |
 | `includeComposeSmoke` | `false` | Builds and smokes the NonAzure Compose lane through Caddy |
 
-`TASKFLOW_TEST_DB_PROVIDER` remains covered as a deprecated alias, but manual orchestration uses only canonical `TASKFLOW_LANE` and `TASKFLOW_READMODEL_PROVIDER` values.
+Manual orchestration uses the canonical `TASKFLOW_LANE` and `TASKFLOW_READMODEL_PROVIDER` values.
 
 Unfiltered CI acceptance uses explicit false opt-outs for unavailable Functions, Azure Foundry, or mobile lanes. Local acceptance does not require an AI opt-out flag because both hosting lanes default to `None`. Enabled-provider contract failures remain red.
 

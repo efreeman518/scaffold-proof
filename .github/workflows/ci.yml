@@ -117,7 +117,7 @@ jobs:
 
       - name: Restore
         env:
-          NuGetPackageSourceCredentials_efreeman518-github: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
+          NuGetPackageSourceCredentials_EFGithub: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
         # Restore in the configuration the Release build below uses: Uno.Sdk conditions its implicit DevServer,
         # HotDesign and MCP package references on Optimize, so a Debug restore followed by a Release build with
         # --no-restore imports the DevServer targets and fails with UNOB0019.
@@ -132,8 +132,8 @@ jobs:
         run: dotnet build TaskFlow.slnx --no-restore --configuration Release -m:1
 
       - name: Unit Tests
-        # The project boundary intentionally includes untagged provider, migration, deployment, and deprecated
-        # alias contract tests. In runs 34718419269 and 34719228357 a relational-audit DI cycle left this testhost
+        # The project boundary intentionally includes untagged provider, migration, and deployment
+        # contract tests. In runs 34718419269 and 34719228357 a relational-audit DI cycle left this testhost
         # silent for more than 13 minutes. The inner collector names the active test; the outer timeout stays red.
         timeout-minutes: 1
         run: |
@@ -464,7 +464,7 @@ jobs:
 
       - name: Restore and build complete host/UI graph
         env:
-          NuGetPackageSourceCredentials_efreeman518-github: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
+          NuGetPackageSourceCredentials_EFGithub: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
         run: |
           dotnet restore TaskFlow.slnx -p:Configuration=Release
           if ($LASTEXITCODE -ne 0) { throw "Solution restore failed." }
@@ -543,7 +543,6 @@ jobs:
           if-no-files-found: warn
 
   # Manual Docker-backed acceptance runs through the same canonical lane contract as Aspire and production.
-  # The full Test.Unit project above retains coverage for TASKFLOW_TEST_DB_PROVIDER as a deprecated input alias.
   database-lanes:
     needs: build-and-test
     if: ${{ github.event_name == 'workflow_dispatch' && (inputs.includeE2E == true || inputs.includeIntegration == true) }}
@@ -579,7 +578,7 @@ jobs:
       - name: Restore test lane projects
         if: ${{ inputs.lane == 'both' || inputs.lane == matrix.lane }}
         env:
-          NuGetPackageSourceCredentials_efreeman518-github: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
+          NuGetPackageSourceCredentials_EFGithub: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
         run: |
           dotnet restore tests/Test.E2E/Test.E2E.csproj -p:Configuration=Release
           dotnet restore tests/Test.Integration/Test.Integration.csproj -p:Configuration=Release
@@ -719,7 +718,7 @@ jobs:
 
       - name: Build the seven app images
         env:
-          NuGetPackageSourceCredentials_efreeman518-github: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
+          NuGetPackageSourceCredentials_EFGithub: Username=github-actions;Password=${{ secrets.NUGET_PAT }};ValidAuthenticationTypes=Basic
         run: |
           docker compose -f docker-compose.yml -f docker-compose.override.local.yml --profile local build
 

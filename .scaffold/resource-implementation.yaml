@@ -62,7 +62,7 @@ useAspire: true
 hostingLanes: [Azure, NonAzure]
 
 # TASKFLOW_LANE selects a strict lane; unset means NonAzure and Azure is the explicit
-# opt-in. Portable is a deprecated input alias for NonAzure for one release. Lane-owned core conflicts fail fast. See D-060.
+# opt-in. Lane-owned core conflicts fail fast. See D-060.
 hostingLaneDefaults:
   Azure:
     deploymentTarget: ContainerApps
@@ -94,7 +94,6 @@ zeroAzureNonAzure: { reject: [AppConfig:Endpoint, ConnectionStrings:AppConfig, K
 
 storageProviders: [AzureBlob, S3]                                   # Storage:Provider, see D-037
 readModelProviders: [Cosmos, PostgreSqlJsonb, MongoDb]                 # Canonical providers, see D-060
-readModelProviderAliases: { Relational: PostgreSqlJsonb, expires: one-release } # Deprecated compatibility alias
 auditProviders: [AzureTable, Relational]                             # Audit:Provider, see D-039
 searchProviders: [AzureAiSearch, PgVector, Sql]                      # Search:Provider, see D-040 (Sql = NoOpSearchService prefix search)
 aiProviders: [AzureInference, OpenAICompatible, None]  # AiServices:Provider, see D-041
@@ -289,7 +288,7 @@ entities:
   # TaskView (read-model projection, not a domain aggregate)
   # =========================================================================
   - name: TaskView
-    dataStore: sql   # PostgreSQL JSONB read-model table (ReadModel:Provider=PostgreSqlJsonb, D-038); legacy Relational aliases this arm
+    dataStore: sql   # PostgreSQL JSONB read-model table (ReadModel:Provider=PostgreSqlJsonb, D-038)
     properties:
       - { name: TenantId, type: "Guid", required: true }
       - { name: Title, type: "nvarchar", maxLength: 200, required: true }

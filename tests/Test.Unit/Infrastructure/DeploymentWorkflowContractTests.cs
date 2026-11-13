@@ -55,7 +55,6 @@ public sealed class DeploymentWorkflowContractTests
         Assert.IsFalse(workflow.Contains("docker buildx build", StringComparison.Ordinal));
 
         var ciWorkflow = ReadWorkflow("ci.yml");
-        StringAssert.Contains(ciWorkflow, "NuGetPackageSourceCredentials_efreeman518-github");
         Assert.IsFalse(ciWorkflow.Contains("dotnet nuget update", StringComparison.Ordinal));
 
         var migration = workflow.IndexOf("  run-migrations:", StringComparison.Ordinal);
@@ -182,8 +181,17 @@ public sealed class DeploymentWorkflowContractTests
             2,
             System.Text.RegularExpressions.Regex.Matches(
                 workflow,
-                @"ReadModel__Provider=\(PostgreSqlJsonb\|Relational\)").Count,
-            "deploy and rollback must leave JSONB and its deprecated alias profile-free");
+                System.Text.RegularExpressions.Regex.Escape("grep -qx 'ReadModel__Provider=PostgreSqlJsonb' .env.base")).Count,
+            "deploy and rollback must leave JSONB profile-free");
+        Assert.IsFalse(
+            System.Text.RegularExpressions.Regex.IsMatch(workflow, @"ReadModel__Provider[^\r\n]*Relational"),
+            "Relational is not a read-model provider");
+        Assert.AreEqual(
+            2,
+            System.Text.RegularExpressions.Regex.Matches(
+                workflow,
+                System.Text.RegularExpressions.Regex.Escape("ReadModel__Provider must be PostgreSqlJsonb or MongoDb.")).Count,
+            "deploy and rollback must reject every other read-model value");
         StringAssert.Contains(workflow, "Database__PostgreSql__PoolerMode must be empty, None, or Transaction.");
         StringAssert.Contains(workflow, "${COMPOSE} config -q");
         Assert.IsFalse(workflow.Contains("cp .env .env.base", StringComparison.Ordinal));
@@ -678,7 +686,7 @@ public sealed class DeploymentWorkflowContractTests
         StringAssert.Contains(seaweedFixture, ".WithEnvironment(\"AWS_ACCESS_KEY_ID\", AccessKey)");
         StringAssert.Contains(seaweedFixture, ".WithEnvironment(\"AWS_SECRET_ACCESS_KEY\", SecretKey)");
         StringAssert.Contains(local, "- nuget_credentials");
-        StringAssert.Contains(local, "environment: NuGetPackageSourceCredentials_efreeman518-github");
+        StringAssert.Contains(local, "environment: NuGetPackageSourceCredentials_EFGithub");
         StringAssert.Contains(ServiceBlock(local, "openobserve").Text, "profiles: [\"deployment-observability\"]");
         foreach (var host in new[] { "migrator", "api", "gateway", "scheduler", "blazor" })
         {
@@ -986,6 +994,54 @@ public sealed class DeploymentWorkflowContractTests
         var dockerUnavailable = requireLane.IndexOf("DockerUnavailableReason is not null", StringComparison.Ordinal);
         var laneMismatch = requireLane.IndexOf("_lane != lane", StringComparison.Ordinal);
         Assert.IsTrue(dockerUnavailable >= 0 && dockerUnavailable < laneMismatch);
+    }
+
+    /// <summary>
+    /// NuGet reads a feed credential from <c>NuGetPackageSourceCredentials_&lt;source key&gt;</c>, so every
+    /// consumer must spell the key <c>nuget.config</c> declares, and each Dockerfile must hand it to
+    /// <c>dotnet restore</c>: <c>env VAR=... a &amp;&amp; b</c> scopes it to <c>a</c> alone. Either mistake
+    /// surfaces only as a 401 during an image build or a deploy.
+    /// </summary>
+    [TestMethod]
+    public void FeedCredential_UsesTheNuGetConfigSourceKeyEverywhere()
+    {
+        var feed = System.Xml.Linq.XDocument.Load(RepoRoot.Combine("nuget.config"))
+            .Descendants("add")
+            .Single(a => ((string?)a.Attribute("value"))?.StartsWith("https://nuget.pkg.github.com/", StringComparison.Ordinal) == true);
+        var variable = $"NuGetPackageSourceCredentials_{(string)feed.Attribute("key")!}";
+
+        foreach (var workflow in new[] { "ci.yml", "build-images.yml", "deploy.yml" })
+        {
+            StringAssert.Contains(ReadWorkflow(workflow), $"{variable}: Username=", workflow);
+        }
+
+        // The image build hands that same variable to BuildKit as the secret source.
+        StringAssert.Contains(ReadWorkflow("build-images.yml"), $"--secret id=nuget_credentials,env={variable}");
+
+        StringAssert.Contains(
+            File.ReadAllText(RepoRoot.Combine("deploy", "compose", "docker-compose.override.local.yml")),
+            $"environment: {variable}");
+
+        var setter = $"\"{variable}=$(cat /run/secrets/nuget_credentials)\"";
+        foreach (var dockerfile in new[]
+        {
+            "src/Host/TaskFlow.Api/Dockerfile", "src/Host/TaskFlow.Gateway/Dockerfile",
+            "src/Host/TaskFlow.Scheduler/Dockerfile", "src/Host/TaskFlow.DatabaseMigrator/Dockerfile",
+            "src/Host/TaskFlow.Functions/Dockerfile", "src/UI/TaskFlow.Blazor/Dockerfile",
+            "src/UI/TaskFlow.Uno/Dockerfile"
+        })
+        {
+            var content = File.ReadAllText(RepoRoot.Combine(dockerfile.Split('/')));
+            // Exported for the whole RUN, or env-prefixed onto a restore that ends the RUN.
+            // An export counts only when the restore runs in the same RUN instruction after it.
+            var exportAt = content.IndexOf($"export {setter}", StringComparison.Ordinal);
+            var restoreAt = exportAt < 0 ? -1 : content.IndexOf("dotnet restore", exportAt, StringComparison.Ordinal);
+            var exported = restoreAt > 0 && !System.Text.RegularExpressions.Regex.IsMatch(
+                content[exportAt..restoreAt], @"\n\s*RUN\s");
+            var envOnRestore = System.Text.RegularExpressions.Regex.IsMatch(
+                content, $@"env {System.Text.RegularExpressions.Regex.Escape(setter)} \\\r?\n\s+dotnet restore [^\r\n]*[^\\\r\n]\r?\n");
+            Assert.IsTrue(exported || envOnRestore, dockerfile);
+        }
     }
 
     /// <summary>

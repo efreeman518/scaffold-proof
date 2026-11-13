@@ -124,7 +124,7 @@ public class TaskItemEndpointTests
 
     /// <summary>
     /// Verifies a PUT the service rejects on validation is a 400: the structure validator's ValidationError is
-    /// answered through ToHttp, which takes the status from the error category (D-076).
+    /// answered through ToHttp, which takes the status from the error category (D-078).
     /// </summary>
     [TestCategory("Endpoint")]
     [DataRow(EndpointStyles.Service)]

@@ -9,7 +9,7 @@ COPY TaskFlow.slnx Directory.Build.props Directory.Packages.props global.json nu
 COPY src/ src/
 
 RUN --mount=type=secret,id=nuget_credentials,required=true \
-    env "NuGetPackageSourceCredentials_efreeman518-github=$(cat /run/secrets/nuget_credentials)" \
+    env "NuGetPackageSourceCredentials_EFGithub=$(cat /run/secrets/nuget_credentials)" \
     dotnet restore src/Host/TaskFlow.Functions/TaskFlow.Functions.csproj
 
 RUN dotnet publish src/Host/TaskFlow.Functions/TaskFlow.Functions.csproj -c Release -o /app --no-restore

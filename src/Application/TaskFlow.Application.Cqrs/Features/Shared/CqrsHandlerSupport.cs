@@ -22,7 +22,7 @@ internal static class CqrsHandlerSupport
     /// The exception filter is load-bearing: without it a lost-update failure would be caught here and
     /// returned as a save-failed 500 (<c>save.failed</c>) instead of reaching the handler as a 412, and a
     /// cancellation would become that 500 instead of the host's 499/504. A caught failure is classified by
-    /// <c>SaveFailure.ToError</c>: a constraint is 409 <c>save.constraint</c>, anything else 500 (D-076).
+    /// <c>SaveFailure.ToError</c>: a constraint is 409 <c>save.constraint</c>, anything else 500 (D-078).
     /// </summary>
     public static Task<Result<Unit>> TrySaveAsync(
         IRepositoryBase repository,

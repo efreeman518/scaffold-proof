@@ -43,6 +43,10 @@ Each is removed once its upstream support ships.
 
 SDK 10.0.403 recheck (2026-10-27, with Aspire 13.6.4, the package refresh above, Microsoft 10.0.14 and Microsoft.Extensions.AI/Http.Resilience/ServiceDiscovery 10.11.0, and `InitialFlowEngine` regenerated for the FlowEngine 1.0.262 `Revision` column): Release `--no-incremental` solution build (0 warnings, 0 errors), Uno build of all three targets (`-p:BuildAllUnoTargets=true`: browserwasm, android, ios; 0 warnings) and the CI Release Uno build (0 warnings), clean transitive vulnerability audit (47 projects), and Release `--no-build` Test.Unit 746, Test.Architecture 87, Test.Endpoints 297, Test.Integration.FlowEngine 40, Test.UI 54, Test.Mutation 27 and Test.Integration NonAzure 166 (5 Azure-only skipped), 0 failed. The table below is the 2026-10-13 run on SDK 10.0.401.
 
+Feed key and image pins (2026-11-07): the EF packages source key is `EFGithub`, as in the owner's other repos; Test.Unit 741 passed (feed-credential parity test added), Test.Architecture `HostRuntimeSettingsTests` 16 passed; images move to `sdk:10.0.403` (global.json requires it with `rollForward: disable`) and runtime `aspnet:10.0.14`; Gateway and Uno images built with BuildKit on thinkpad1 (Docker 29) at e1936cb, the Uno restore now receiving the feed credential. A fresh-cache restore of EF.Domain.Contracts 2.0.140 through `NuGetPackageSourceCredentials_EFGithub` succeeded.
+
+Compatibility-alias removal (2026-11-07, D-076): Debug solution build (0 warnings, 0 errors), Test.Unit 740 passed (alias tests removed, rejection cases added), Test.Architecture 87, `AppHostLaneTopologyTests` and the NonAzure `RelationalTaskViewRepositoryTests` passed, 0 failed. Test results now land in `tests/TestResults/<project>/` by default.
+
 Release `--no-incremental` solution build on .NET SDK 10.0.401 (0 warnings, 0 errors, 145 s), separate Uno build (0 warnings), then Release `--no-build` runs on the final package set, serially, Podman Docker-compatible context:
 
 | Scope | Passed | Failed | Skipped |
@@ -103,7 +107,7 @@ Release `--no-build` after a `--no-incremental` Release solution build (0 warnin
 |---|---:|---:|
 | Test.Unit | 740 | 12 s |
 | Test.UI | 54 | 1 s |
-| Test.Architecture | 87 | 2 s |
+| Test.Architecture | 87 | 1 s |
 | Test.Endpoints | 297 | 14 s |
 | Test.Integration.FlowEngine | 40 | 0.3 s |
 | Test.Mutation | 27 | 0.1 s |
@@ -209,7 +213,7 @@ Status meanings:
 | Capability | Status | Evidence boundary |
 |---|---|---|
 | Service and CQRS application-style switch | proven | Shared Endpoint and E2E suites run both styles on both DB providers; `ApplicationStyleResolver` owns selection |
-| Dual EF Core provider (SQL Server + PostgreSQL) | proven | `TaskFlowDbProviderSelector`/`UseTaskFlowProvider`; Unit, Integration, E2E, and migrator contracts run once per `TASKFLOW_TEST_DB_PROVIDER` value |
+| Dual EF Core provider (SQL Server + PostgreSQL) | proven | `TaskFlowDbProviderSelector`/`UseTaskFlowProvider`; the CI `database-lanes` matrix runs Integration, E2E, and migrator contracts once per `TASKFLOW_LANE` value; Test.Unit runs once with no lane set |
 | Composite tenant-first PK, app-managed Version/ETag, migrations | proven | `EF.Data.TenantEntityTypeConfiguration` composite `(TenantId, Id)` key; `EF.Data.DbContextBase` Version and timestamp stamping; two migration assemblies |
 | ETag / If-Match / 412 / 428 concurrency | proven | `EF.Data.Contracts.ConcurrencyGuard`, `EF.AspNetCore.Concurrency` (`RequireIfMatch`, `WithETag`); Endpoint and E2E cases |
 | Caller-supplied UUIDv7 idempotent create | proven | `EF.Common.Contracts.UuidV7`/`IdempotentCreateGuard`; Endpoint cases cover non-v7 400, equivalent replay 200, divergent 409 |
@@ -236,7 +240,7 @@ Status meanings:
 
 ### New capabilities added by this refactor (strict NonAzure lane + scale-guidance alignment)
 
-`TASKFLOW_LANE` owns the strict topology. `Portable` is a deprecated `NonAzure` alias for one release only; incompatible lane-owned settings fail fast.
+`TASKFLOW_LANE` owns the strict topology. Unknown lanes and incompatible lane-owned settings fail fast.
 
 | Lane | Owned local topology |
 |---|---|
@@ -247,7 +251,7 @@ Status meanings:
 
 | Capability | Status | Evidence boundary |
 |---|---|---|
-| Strict hosting lanes (`TASKFLOW_LANE=Azure\|NonAzure`, D-060) | proven | `HostingLaneResolver`; `Test.Unit/Hosting/ProviderSwitchSelectorTests.cs`; `Test.Aspire/AppHostLaneTopologyTests.cs` (23 verified topology/migrator tests, including exact Azure image references). `Portable` is a deprecated alias for `NonAzure` for one release. |
+| Strict hosting lanes (`TASKFLOW_LANE=Azure\|NonAzure`, D-060) | proven | `HostingLaneResolver`; `Test.Unit/Hosting/ProviderSwitchSelectorTests.cs`; `Test.Aspire/AppHostLaneTopologyTests.cs` (23 verified topology/migrator tests, including exact Azure image references). Unknown lanes, including `Portable`, fail fast. |
 | S3 object storage (D-037) | proven | `Test.Integration/S3ObjectStorageRepositoryTests.cs` (SeaweedFS Testcontainers); `Test.Unit/Infrastructure/S3StorageRegistrationTests.cs` |
 | PostgreSQL JSONB read model (D-038) | proven | `Test.Integration/RelationalTaskViewRepositoryTests.cs` in the NonAzure lane; MongoDB is an explicit NonAzure alternative |
 | Relational audit sink (D-039) | proven | `Test.Integration/RelationalAuditLogRepositoryTests.cs`, both DB lanes |

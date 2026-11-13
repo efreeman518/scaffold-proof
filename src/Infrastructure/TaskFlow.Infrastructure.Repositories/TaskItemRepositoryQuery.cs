@@ -223,7 +223,7 @@ public class TaskItemRepositoryQuery(TaskFlowDbContextQuery db, ColumnEncryption
         {
             // Prefix, not substring: StartsWith is an index seek on IX_TaskItem_TenantId_Title_Id, while
             // Contains forces a scan of every task in the tenant on both providers. Substring and fuzzy
-            // matching is what ITaskFlowSearchService is for (AiServices:UseSearch); when that is not
+            // matching is what ITaskFlowSearchService is for (Search:Provider); when that is not
             // configured, NoOpSearchService falls back to this same prefix query rather than nothing.
             q = q.Where(e => e.Title.StartsWith(searchTerm));
         }

@@ -10,8 +10,8 @@ COPY TaskFlow.slnx Directory.Build.props Directory.Packages.props global.json nu
 COPY src/ src/
 
 RUN --mount=type=secret,id=nuget_credentials,required=true \
-    env "NuGetPackageSourceCredentials_efreeman518-github=$(cat /run/secrets/nuget_credentials)" \
-    dotnet workload install wasm-tools \
+    export "NuGetPackageSourceCredentials_EFGithub=$(cat /run/secrets/nuget_credentials)" \
+    && dotnet workload install wasm-tools \
     && dotnet restore src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj -p:Configuration=Release \
     && dotnet publish src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj \
       -f net11.0-browserwasm -p:TargetFrameworkOverride=net11.0-browserwasm \
