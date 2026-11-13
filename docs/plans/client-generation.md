@@ -100,7 +100,7 @@ flattened `DefaultResponseOfTaskItemDto`-equivalent shape is structurally identi
 
 - `refitter` 2.3.1, pinned in `dotnet-tools.json` (repo-local, `dotnet tool restore`).
 - `openapi-typescript` 7.13.0, pinned as a `devDependency` in `src/UI/TaskFlow.React/package.json`.
-- `Microsoft.Extensions.ApiDescription.Server` 11.0.0-rc.3.26522.148 (the build-time document generator),
+- `Microsoft.Extensions.ApiDescription.Server` 11.0.0 (the build-time document generator),
   `PackageVersion` in `Directory.Packages.props`. `Microsoft.AspNetCore.OpenApi` is held on 10.0.14 because
   EF.AspNetCore 2.0 caps `Microsoft.OpenApi` below 3; on net11.0 that combination fails the document request
   (`ArgumentException: An item with the same key has already been added. Key: 400` in

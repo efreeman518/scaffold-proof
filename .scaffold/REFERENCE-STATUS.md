@@ -4,9 +4,28 @@ Canonical current evidence for the TaskFlow reference application. Historical ph
 
 > Update this file only from observed results. TaskFlow CI records the scaffold checkout commit used for cross-repository validation so failures remain diagnosable without creating a compatibility pin.
 
-TaskFlow targets net11.0 on .NET SDK 11.0.100-rc.3.26522.148 (`global.json`, `rollForward: latestFeature`, prerelease allowed) with the Microsoft.Testing.Platform test runner. Runtime, ASP.NET Core and Microsoft.Extensions packages are on 11.0.0-rc.3.26522.148; the EF Core family (and dotnet-ef) is on 11.0.0-rc.3.26522.148 with Npgsql.EntityFrameworkCore.PostgreSQL 11.0.0-rc.3, which pins that EF Core build exactly. TaskFlow is on the EF.Packages 3.0 prereleases (every `EF.*` platform id at 3.0.0-dotnet11.153) and the EF.Packages.Enterprise 2.0 prereleases (EF.FilterBuilder and the EF.FlowEngine ids at 2.0.0-dotnet11.278), with the `Result<T>` union and closed `Error` hierarchy adopted. The Uno head is on the Uno.Sdk 7.0.0-dev.113 preview (Uno.WinUI 7.0.0-dev.2509) with Uno.Extensions 8.0.0-dev.150 (stable Uno.Sdk supports net10.0 only; earlier 7.0 previews reference an unreleased Java.Interop and fail the Android build with CS1705). Microsoft.AspNetCore.OpenApi is on 11.0.0-rc.3.26522.148 and the committed OpenAPI document is 3.2. KubernetesClient is held on 19.0.2 and Microsoft.CodeAnalysis on 5.9.0 (EF.FlowEngine scripting); the pins and their reasons are in `Directory.Packages.props`. Results below distinguish passed, failed, blocked, and not-run evidence; each table names its run date.
+TaskFlow targets net11.0 on the .NET 11 GA release (2026-11-10) with the Microsoft.Testing.Platform test runner. Runtime, ASP.NET Core and Microsoft.Extensions packages are on 11.0.0, and every Dockerfile pins the GA images (`sdk:11.0.100`, `aspnet:11.0.0-resolute-chiseled[-extra]`). `global.json` still names SDK 11.0.100-rc.3.26522.148 with `rollForward: latestFeature` and prerelease allowed, which resolves 11.0.100 where it is installed; it moves to 11.0.100 once the GA SDK is on the dev machine. The EF Core family (and dotnet-ef) stays on 11.0.0-rc.3.26522.148 with Npgsql.EntityFrameworkCore.PostgreSQL 11.0.0-rc.3, which pins that EF Core build exactly and has no 11.0.0 release yet. TaskFlow is on the EF.Packages 3.0 prereleases (every `EF.*` platform id at 3.0.0-dotnet11.155, the first build on the GA packages) and the EF.Packages.Enterprise 2.0 prereleases (EF.FilterBuilder and the EF.FlowEngine ids at 2.0.0-dotnet11.278), with the `Result<T>` union and closed `Error` hierarchy adopted. The Uno head is on stable Uno.Sdk 7.0.5 (Uno.WinUI 7.0.32) with Uno.Extensions 8.0.1. Microsoft.AspNetCore.OpenApi is on 11.0.0 and the committed OpenAPI document is 3.2. OpenAI is held on 2.14.0 (the release Microsoft.Extensions.AI.OpenAI 11.0.0 is built against). KubernetesClient is held on 19.0.2 and Microsoft.CodeAnalysis on 5.9.0 (EF.FlowEngine scripting); the pins and their reasons are in `Directory.Packages.props`. Results below distinguish passed, failed, blocked, and not-run evidence; each table names its run date.
 
-## Current acceptance (.NET 11 RC 3, 2026-10-29)
+## GA move (2026-11-13)
+
+Moved with EF.Packages' `Update-DotNetPlatform.ps1`, after merging `main` (#62, #63). `main`'s D-076 (no compatibility aliases) keeps its number; the branch's failure-result decision is now D-078 and the clock decision stays D-077. Also moved: Aspire 13.6.5 (13.6.4 has a high-severity advisory), Microsoft.Extensions.AI / Http.Resilience / ServiceDiscovery / TimeProvider.Testing 11.0.0, MSTest 4.5.3, Microsoft.Agents.AI 1.28.0, MudBlazor 9.13.0, Scalar.AspNetCore 2.21.0, MongoDB.Driver 3.14.0, Grpc 2.85.0 and the other outdated pins. The Functions Flex runtime in `infra/` is `dotnet-isolated` 11.0 (`infra/main.json` regenerated with Bicep 0.42.1).
+
+Run on the rc.3 SDK and runtime (the GA SDK is not installed on this machine yet), Release, `dotnet restore TaskFlow.slnx -p:Configuration=Release` then `dotnet build --no-restore -m:1`: 0 warnings, 0 errors.
+
+| Project | Passed | Skipped |
+|---|---:|---:|
+| Test.Unit | 738 | 0 |
+| Test.Architecture | 89 | 0 |
+| Test.Endpoints | 303 | 0 |
+| Test.UI | 54 | 0 |
+| Test.Integration.FlowEngine | 40 | 0 |
+| Test.Integration (NonAzure lane) | 167 | 5 |
+
+Uno on 7.0.5: the Debug all-targets build (`-p:BuildAllUnoTargets=true`) compiles browserwasm, android and ios with 0 errors. It reports XA0033 and ANDAS0000 warnings from the Android tooling because this machine now has only JDK 25 and `JAVA_HOME` points at a removed JDK 17. All three workarounds in `TaskFlow.Uno.csproj` were removed and reproduced again (CS8714, the iOS `UseInterpreter` warning, IL2104 on a trimmed browserwasm publish), so they stay.
+
+Not run for this move: container image builds (Podman on Windows could not pass the feed credential as a build secret), Test.Mutation, Test.E2E, Aspire meshes, Test.PlaywrightUI, and everything in the not-run list below. A Flex deployment on the 11.0 runtime has not been run.
+
+## Earlier acceptance (.NET 11 RC 3, 2026-10-29)
 
 Release clean build: `dotnet clean`, `dotnet restore TaskFlow.slnx -p:Configuration=Release` (6.8 s), `dotnet build TaskFlow.slnx -c Release --no-restore /m:1` (1 min 26 s): 0 warnings, 0 errors. A `--no-incremental` build reports one warning, `AZFW0108` from Azure.Functions.Sdk 1.0.1: its Clean step deletes the Functions extension project that the restore hook (`Directory.Solution.targets`) generated, so the build falls back to restoring it. Uno: the CI Release command (`dotnet build src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj --no-restore --configuration Release`) builds with 0 warnings; the Debug all-targets build (`-p:BuildAllUnoTargets=true`) builds browserwasm, android and ios with 0 warnings (2026-10-29; Android SDK platform API 37 and build-tools 37.0.0 installed). `dotnet list TaskFlow.slnx package --vulnerable --include-transitive` reports no vulnerable packages for all 47 projects.
 
@@ -27,17 +46,17 @@ Release `--no-build` runs, serially, `dotnet test --project <csproj> --results-d
 | Test.Aspire topology contracts (`AppHostLaneTopologyTests`, `AppHostMigratorTopologyTests`) | 2026-10-27 | 43 | 0 | 0 |
 | **Total** | | **1476** | **0** | **5** |
 
-Known gap: `RecurrencePattern` stays on `OwnsOne(...).ToJson()`. `ComplexProperty(...).ToJson()` produces identical relational migrations, but the EF Core 11 InMemory provider (rc.2, rechecked on rc.3 2026-10-29) fails to compile any TaskItem query with it (`KeyNotFoundException: The given key 'Property: TaskItem.RecurrencePattern#RecurrencePattern.Frequency (string) Required' was not present in the dictionary.` in `InMemoryShapedQueryCompilingExpressionVisitor`), which breaks the Test.Unit and Test.Endpoints hosts. `RecurrencePatternJsonRoundTripTests` pins the stored document for a later attempt.
+Known gap: `RecurrencePattern` stays on `OwnsOne(...).ToJson()`. `ComplexProperty(...).ToJson()` produces identical relational migrations, but the EF Core 11 InMemory provider (rc.2, rc.3, and 11.0.0 in a scratch repro on 2026-11-13) fails to compile any TaskItem query with it (`KeyNotFoundException: The given key 'Property: TaskItem.RecurrencePattern#RecurrencePattern.Frequency (string) Required' was not present in the dictionary.` in `InMemoryShapedQueryCompilingExpressionVisitor`), which breaks the Test.Unit and Test.Endpoints hosts. `RecurrencePatternJsonRoundTripTests` pins the stored document for a later attempt.
 
 Not run on .NET 11: Test.Integration on the Azure lane and with MongoDb, Test.E2E on the Azure lane, Aspire core-lane and full-lane meshes, Test.PlaywrightUI, Test.Load, benchmarks, Stryker, the Android Appium runner (the android head builds; the emulator run is not done), iOS (needs a Mac) and live Azure Foundry. The sections below that name earlier dates are .NET 10 evidence.
 
-The Azure Functions Flex runtime in `infra/` stays `dotnet-isolated` 10.0: Azure Functions does not list .NET 11 for the isolated worker model (checked 2026-10-27), while `TaskFlow.Functions` targets net11.0.
+Known exceptions for the merge to `main` (2026-11-13). The two recorded on 2026-10-30 are closed: Azure Functions lists .NET 11 as generally available for the isolated worker model, and Uno has a stable net11 SDK. What remains:
+- the EF Core family on 11.0.0-rc.3.26522.148 until Npgsql.EntityFrameworkCore.PostgreSQL 11.0.0 ships, and with it the EF.Packages and EF.Packages.Enterprise prereleases;
+- the three Uno workaround comments in `TaskFlow.Uno.csproj`, still needed on Uno.Sdk 7.0.5;
+- Microsoft.CodeAnalysis 5.9.0 with `LanguageVersion.Preview` until a 5.12 package ships;
+- OpenAI 2.14.0 until Microsoft.Extensions.AI.OpenAI is built against 2.15.
 
-GA merge decision (2026-10-30): the .NET 11 branch merges at .NET 11 GA even if Azure Functions still does not list .NET 11 or Uno has no stable net11 release. The PR then records two known exceptions:
-- the Functions runtime setting above;
-- `Uno.Sdk` 7.0.0-dev.* with the three workaround comments in `TaskFlow.Uno.csproj`.
-
-Each is removed once its upstream support ships.
+Each is removed once its upstream release ships.
 
 ## Previous acceptance on .NET 10 (2026-10-13, SDK recheck 2026-10-27)
 

@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "17427517147632840345"
+      "templateHash": "13228369912645852751"
     }
   },
   "parameters": {
@@ -3753,7 +3753,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "10188614708598953261"
+              "templateHash": "9972058420705219474"
             }
           },
           "parameters": {
@@ -4035,7 +4035,7 @@
                   },
                   "runtime": {
                     "name": "dotnet-isolated",
-                    "version": "10.0"
+                    "version": "11.0"
                   },
                   "scaleAndConcurrency": {
                     "maximumInstanceCount": "[parameters('functionAppScaleLimit')]",

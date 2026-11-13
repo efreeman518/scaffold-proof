@@ -257,7 +257,7 @@ public sealed class BicepInfrastructureContractTests
         StringAssert.Contains(functions, "value: functionDeploymentContainerUri");
         StringAssert.Contains(functions, "type: 'SystemAssignedIdentity'");
         StringAssert.Contains(functions, "name: 'dotnet-isolated'");
-        StringAssert.Contains(functions, "version: '10.0'");
+        StringAssert.Contains(functions, "version: '11.0'");
         StringAssert.Contains(functions, "maximumInstanceCount: functionAppScaleLimit");
         StringAssert.Contains(functions, "instanceMemoryMB: 2048");
         Assert.IsFalse(functions.Contains("functionAppScaleLimit: functionAppScaleLimit", StringComparison.Ordinal));
@@ -305,7 +305,7 @@ public sealed class BicepInfrastructureContractTests
 
         var runtime = config.GetProperty("runtime");
         Assert.AreEqual("dotnet-isolated", runtime.GetProperty("name").GetString());
-        Assert.AreEqual("10.0", runtime.GetProperty("version").GetString());
+        Assert.AreEqual("11.0", runtime.GetProperty("version").GetString());
         Assert.AreEqual(2048, config.GetProperty("scaleAndConcurrency").GetProperty("instanceMemoryMB").GetInt32());
     }
 
