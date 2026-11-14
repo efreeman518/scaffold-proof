@@ -21,7 +21,7 @@ Run on SDK 11.0.100 and runtime 11.0.0, Release, `dotnet restore TaskFlow.slnx -
 | Test.Integration.FlowEngine | 40 | 0 |
 | Test.Integration (NonAzure lane) | 167 | 5 |
 
-Uno on 7.0.5: the Debug all-targets build (`-p:BuildAllUnoTargets=true`) compiles browserwasm, android and ios with 0 errors. It reports XA0033 and ANDAS0000 warnings from the Android tooling because this machine now has only JDK 25 and `JAVA_HOME` points at a removed JDK 17. All three workarounds in `TaskFlow.Uno.csproj` were removed and reproduced again (CS8714, the iOS `UseInterpreter` warning, IL2104 on a trimmed browserwasm publish), so they stay.
+Uno on 7.0.5: the Debug all-targets build (`-p:BuildAllUnoTargets=true`) compiles browserwasm, android and ios with 0 errors. The android target has 0 warnings with `JavaSdkDirectory` set to the JDK 21.0.8 that Visual Studio installs (`C:\Program Files\Android\openjdk\jdk-21.0.8`). Without it the Android tooling picks the Microsoft JDK 25 on this machine and reports XA0033 (it cannot parse the five-part version `25.0.5.0.2`) and ANDAS0000 from `apksigner`; the workload accepts JDK 21.0 through 25, so JDK 17 is no longer an option. All three workarounds in `TaskFlow.Uno.csproj` were removed and reproduced again (CS8714, the iOS `UseInterpreter` warning, IL2104 on a trimmed browserwasm publish), so they stay.
 
 Not run for this move: container image builds (Podman on Windows could not pass the feed credential as a build secret), Test.Mutation, Test.E2E, Aspire meshes, Test.PlaywrightUI, and everything in the not-run list below. A Flex deployment on the 11.0 runtime has not been run.
 
