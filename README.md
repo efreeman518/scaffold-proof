@@ -19,13 +19,13 @@ Reference implementation for [Scaffold AI](https://github.com/efreeman518/scaffo
 
 **Azure lane:** SQL Server 2025, Cosmos DB, Service Bus, Blob Storage/Azurite, Azure Table, and Blob Data Protection.
 
-**NonAzure lane:** PostgreSQL 18 with PostgreSQL JSONB read models by default, RabbitMQ 4, SeaweedFS S3 storage, relational audit, and Redis Data Protection. MongoDB 8 is an explicit read-model alternative. Redis 8, DatabaseMigrator, API, Gateway, Scheduler with embedded TickerQ, Blazor, React, and Uno WASM are common to both lanes; Functions is Azure-only.
+**NonAzure lane:** PostgreSQL 18 with PostgreSQL JSONB read models by default, RabbitMQ 4, SeaweedFS S3 storage, relational audit, and Redis Data Protection. MongoDB 8 is an explicit read-model alternative. Redis 8, DatabaseMigrator, API, Gateway, Scheduler (EF.Data.Scheduling cron jobs), Blazor, React, and Uno WASM are common to both lanes; Functions is Azure-only.
 
 **Workflow orchestration:** EF.FlowEngine - three AI-driven workflows (`ai-task-triage`, `ai-task-decomposer`, `compliance-check`) with human-in-the-loop, saga compensation, atomic outbox, and agent nodes backed by the Aspire `IChatClient`; Blazor-hosted Dashboard + Designer; admin REST at `/api/flowengine/*`. See [Tech Design Section 14](docs/tech-design.html#14-workflow-orchestration-flowengine).
 
 Multi-tenant (row-level tenancy, fail-closed tenant filter). Event-driven async through a transactional outbox and consumer inbox over the lane broker (RabbitMQ or Service Bus). IaC via Bicep (`infra/`).
 
-**Platform packages:** cross-cutting runtime and test support comes from the `EF.*` packages, not app code - data, tenancy and audit (`EF.Data`, `EF.Tenancy`, `EF.Audit.*`), outbox, inbox and transports (`EF.Data.Outbox`, `EF.Messaging.*`), hosting, problem details and concurrency (`EF.Host`, `EF.AspNetCore`, `EF.OpenTelemetry`, `EF.Http.Resilience`), auth, gateway relay, cache and rate limiting (`EF.Auth`, `EF.Gateway`, `EF.Cache`, `EF.RateLimiting`), scheduling (`EF.BackgroundServices.TickerQ`), storage, AI and the Uno client pipeline (`EF.Storage.*`, `EF.CosmosDb`, `EF.AI`, `EF.UI.Client`), and tests (`EF.Testing`, `EF.Testing.Architecture`, `EF.IntegrationTesting.*`). TaskFlow keeps only the app-specific composition.
+**Platform packages:** cross-cutting runtime and test support comes from the `EF.*` packages, not app code - data, tenancy and audit (`EF.Data`, `EF.Tenancy`, `EF.Audit.*`), outbox, inbox and transports (`EF.Data.Outbox`, `EF.Messaging.*`), hosting, problem details and concurrency (`EF.Host`, `EF.AspNetCore`, `EF.OpenTelemetry`, `EF.Http.Resilience`), auth, gateway relay, cache and rate limiting (`EF.Auth`, `EF.Gateway`, `EF.Cache`, `EF.RateLimiting`), scheduling (`EF.Data.Scheduling`), storage, AI and the Uno client pipeline (`EF.Storage.*`, `EF.CosmosDb`, `EF.AI`, `EF.UI.Client`), and tests (`EF.Testing`, `EF.Testing.Architecture`, `EF.IntegrationTesting.*`). TaskFlow keeps only the app-specific composition.
 
 **Detailed docs:** [Tech Design](docs/tech-design.html) - [Tech Design Maintenance](docs/TECH-DESIGN-MAINTENANCE.md) - [DESIGN-DECISIONS.md](.scaffold/DESIGN-DECISIONS.md) - [UBIQUITOUS-LANGUAGE.md](.scaffold/UBIQUITOUS-LANGUAGE.md)
 
@@ -90,7 +90,7 @@ $env:TASKFLOW_LANE = "Azure"; dotnet run --project src/Host/Aspire/AppHost      
 $env:TASKFLOW_READMODEL_PROVIDER = "MongoDb"; dotnet run --project src/Host/Aspire/AppHost # explicit MongoDB alternative
 ```
 
-The NonAzure lane is zero-Azure: non-empty Azure App Configuration and Key Vault service settings are rejected. It uses appsettings/environment configuration, local encryption keys, PostgreSQL, RabbitMQ, SeaweedFS, Redis, and optional MongoDB. Docker Compose places Caddy in front of the same Gateway, Blazor, React, Uno, API, migrator, and Scheduler/TickerQ surfaces as Azure. The Compose files and VPS runbook live under [`deploy/compose/`](deploy/compose/README.md); Azure IaC lives under [`infra/`](infra/README.md).
+The NonAzure lane is zero-Azure: non-empty Azure App Configuration and Key Vault service settings are rejected. It uses appsettings/environment configuration, local encryption keys, PostgreSQL, RabbitMQ, SeaweedFS, Redis, and optional MongoDB. Docker Compose places Caddy in front of the same Gateway, Blazor, React, Uno, API, migrator, and Scheduler surfaces as Azure. The Compose files and VPS runbook live under [`deploy/compose/`](deploy/compose/README.md); Azure IaC lives under [`infra/`](infra/README.md).
 
 Every independent provider switch (object storage, read model, audit sink, search, LLM client, Data Protection persistence, Postgres pooler mode) plus its env var, config key, and default is listed in the `Build and test` section of [`AGENTS.md`](AGENTS.md) - that table is the single source, not duplicated here.
 

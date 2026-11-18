@@ -7,7 +7,7 @@ namespace TaskFlow.Scheduler.Handlers;
 /// </summary>
 public sealed class ComplianceCheckSettings
 {
-    public const string ConfigSectionName = "Scheduling:Compliance";
+    public const string ConfigSectionName = "TaskFlowScheduler:Compliance";
 
     /// <summary>Upper bound on <see cref="WindowDays"/>: a year ahead is already a planning horizon, not a check.</summary>
     public const int MaxWindowDays = 365;

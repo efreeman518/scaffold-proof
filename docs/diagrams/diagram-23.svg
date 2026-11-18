@@ -76,7 +76,7 @@ text { font-family: "trebuchet ms", verdana, arial, sans-serif; fill: #ccc; }
 <g class="node">
 <rect x="730" y="320" width="180" height="60" rx="6"/>
 <text x="820" y="342">Scheduler</text>
-<text x="820" y="358" class="small">TickerQ + RabbitMQ consumers,</text>
+<text x="820" y="358" class="small">Cron + RabbitMQ consumers,</text>
 <text x="820" y="372" class="small">outbox dispatcher + jobs</text>
 </g>
 
@@ -138,5 +138,5 @@ text { font-family: "trebuchet ms", verdana, arial, sans-serif; fill: #ccc; }
 <path class="edge-dashed" d="M450,345 C700,410 900,420 975,370"/>
 <path class="edge-dashed" d="M450,355 C700,440 900,450 975,445"/>
 
-<text x="700" y="765" text-anchor="middle" class="small" font-style="italic">Migrator, Api, Gateway, Scheduler/TickerQ, Blazor, React, and Uno share this zero-Azure graph; only representative dependency edges are drawn.</text>
+<text x="700" y="765" text-anchor="middle" class="small" font-style="italic">Migrator, Api, Gateway, Scheduler, Blazor, React, and Uno share this zero-Azure graph; only representative dependency edges are drawn.</text>
 </svg>

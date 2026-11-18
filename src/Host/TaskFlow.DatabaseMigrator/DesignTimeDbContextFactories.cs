@@ -51,15 +51,15 @@ public sealed class DesignTimeDbContextFactoryFlowEngine : IDesignTimeDbContextF
             TaskFlowFlowEngineDbContext.SchemaName));
 }
 
-/// <summary>Creates the TickerQ context for EF tooling.</summary>
+/// <summary>Creates the Scheduler context for EF tooling.</summary>
 [ExcludeFromCodeCoverage]
-public sealed class DesignTimeDbContextFactoryTickerQ : IDesignTimeDbContextFactory<TaskFlowTickerQDbContext>
+public sealed class DesignTimeDbContextFactoryScheduler : IDesignTimeDbContextFactory<TaskFlowSchedulerDbContext>
 {
-    public TaskFlowTickerQDbContext CreateDbContext(string[] args) =>
-        new(DesignTimeOptions.Build<TaskFlowTickerQDbContext>(
-            "EFCORETOOLSDB_TICKERQ",
-            TaskFlowTickerQDbContext.MigrationHistoryTable,
-            TaskFlowTickerQDbContext.SchemaName));
+    public TaskFlowSchedulerDbContext CreateDbContext(string[] args) =>
+        new(DesignTimeOptions.Build<TaskFlowSchedulerDbContext>(
+            "EFCORETOOLSDB_SCHEDULER",
+            TaskFlowSchedulerDbContext.MigrationHistoryTable,
+            TaskFlowSchedulerDbContext.SchemaName));
 }
 
 file static class DesignTimeOptions

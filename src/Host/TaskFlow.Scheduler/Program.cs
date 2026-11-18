@@ -1,7 +1,6 @@
 using TaskFlow.Bootstrapper;
 using TaskFlow.Scheduler;
 using TaskFlow.Scheduler.Telemetry;
-using TickerQ.DependencyInjection;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,17 +22,16 @@ builder.Services
     .RegisterInfrastructureServices(builder.Configuration)
     .RegisterApplicationServices(builder.Configuration)
     .AddSchedulerServices(builder.Configuration);
-builder.AddTickerQConfig();
+builder.AddJobScheduler();
 
 var app = builder.Build();
 
 // Provision shared external resources before RunAsync starts the RabbitMQ projection consumer.
 await app.RunStartupTasks();
 
-await app.ValidateTickerQDatabase();
+await app.ValidateSchedulerDatabase();
 
-app.UseTickerQ();
 app.MapDefaultEndpoints();
 
-// Cron schedules are declared on [TickerFunction] in TaskMaintenanceJobs; TickerQ seeds them during RunAsync.
+// The cron planner and job worker registered by AddJobScheduler start with the host here.
 await app.RunAsync();

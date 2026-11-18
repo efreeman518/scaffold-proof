@@ -62,7 +62,8 @@
     <PackageVersion Include="EF.Gateway" Version="2.0.162" />
     <PackageVersion Include="EF.RateLimiting" Version="2.0.162" />
     <PackageVersion Include="EF.RateLimiting.Redis" Version="2.0.162" />
-    <PackageVersion Include="EF.BackgroundServices.TickerQ" Version="2.0.137" />
+    <!-- Database-coordinated cron and on-demand job scheduler on EF Core; the Scheduler host executes it. -->
+    <PackageVersion Include="EF.Data.Scheduling" Version="2.0.162" />
     <PackageVersion Include="EF.CosmosDb" Version="2.0.162" />
   </ItemGroup>
   <ItemGroup Label="EF.Packages.Enterprise (Private Feed)">
@@ -160,15 +161,6 @@
     <PackageVersion Include="Microsoft.Azure.Functions.Worker.Extensions.Timer" Version="4.3.1" />
     <PackageVersion Include="Microsoft.Azure.Functions.Worker.Extensions.Storage.Blobs" Version="6.8.2" />
     <PackageVersion Include="Microsoft.Azure.Functions.Worker.Extensions.ServiceBus" Version="5.24.0" />
-  </ItemGroup>
-  <ItemGroup Label="TickerQ">
-    <!-- Temporary exception: held on 10.4.0. TickerQ 10.5 makes the cron argument of [TickerFunction] an error (CS0619) and moves
-         schedules to options.SeedCronTickers, and EF.BackgroundServices.TickerQ 2.0.137, its last release, is built on 10.4.
-         Reason: the scheduler moves to EF.Data.Scheduling with the .NET 11 branch, so the TickerQ jobs are not ported twice.
-         Remove when that branch merges. Validate with the Scheduler build and Test.Unit. -->
-    <PackageVersion Include="TickerQ" Version="10.4.0" />
-    <PackageVersion Include="TickerQ.EntityFrameworkCore" Version="10.4.0" />
-    <PackageVersion Include="TickerQ.Dashboard" Version="10.4.0" />
   </ItemGroup>
   <ItemGroup Label="OpenTelemetry">
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.21.0" />

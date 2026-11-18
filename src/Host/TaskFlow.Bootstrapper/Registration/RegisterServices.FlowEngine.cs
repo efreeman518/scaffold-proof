@@ -58,8 +58,8 @@ public static partial class RegisterServices
 
         // Retention removes terminal workflow instances so the FlowEngine state store stays bounded.
         // UseRetentionPolicy registers a hosted service, and every host loading this assembly would run its
-        // own copy against the same tables; Scheduling:OwnsRetention makes the Scheduler the single owner.
-        if (config.GetValue("Scheduling:OwnsRetention", false))
+        // own copy against the same tables; TaskFlowScheduler:OwnsRetention makes the Scheduler the single owner.
+        if (config.GetValue("TaskFlowScheduler:OwnsRetention", false))
         {
             fe.UseRetentionPolicy(new RetentionPolicy
             {
