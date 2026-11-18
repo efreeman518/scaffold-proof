@@ -46,6 +46,8 @@
     <PackageVersion Include="EF.Grpc" Version="2.0.162" />
     <PackageVersion Include="EF.AI" Version="2.0.162" />
     <PackageVersion Include="Testcontainers.MsSql" Version="4.17.0" />
+    <!-- Direct pin: EF.IntegrationTesting.PostgreSql 2.0.162 brings 4.16.0, which fails at container start (MissingMethodException) beside Testcontainers 4.17.0. Remove when the EF.* in use depends on 4.17.0 or later. -->
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.17.0" />
     <PackageVersion Include="Testcontainers.Azurite" Version="4.17.0" />
     <PackageVersion Include="Testcontainers.Redis" Version="4.17.0" />
     <!-- Generic containers host SeaweedFS and MongoDB without provider-specific fixture packages. -->
