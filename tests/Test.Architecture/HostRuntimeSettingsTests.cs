@@ -119,7 +119,7 @@ public class HostRuntimeSettingsTests
             var text = ReadRepoFile(dockerfile);
             Assert.IsTrue(
                 text.Contains(
-                    "mcr.microsoft.com/dotnet/aspnet:10.0.14-noble-chiseled-extra@sha256:a9298ccc39c6258ae71228479e2f3f8d2ceb6639a9927262a4b0ff7d319a0e7e",
+                    "mcr.microsoft.com/dotnet/aspnet:10.0.15-noble-chiseled-extra@sha256:cae5b962bfb786606def03d250c6a645cc98839095c89e806e4bd8978a68115b",
                     StringComparison.Ordinal),
                 $"{dockerfile} must use the -chiseled-extra runtime base: this host sets "
                 + "InvariantGlobalization=false and plain chiseled ships no ICU.");
