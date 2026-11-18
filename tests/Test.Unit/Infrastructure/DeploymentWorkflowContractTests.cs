@@ -1054,12 +1054,12 @@ public sealed class DeploymentWorkflowContractTests
     {
         foreach (var (dockerfile, runtimeImage) in new[]
         {
-            ("src/Host/TaskFlow.Gateway/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.14-noble-chiseled@sha256:f2557fb81b1cfcfdfcde9d3bf247ed60b2cd38f00a88153f61e34737fab8ade7"),
-            ("src/Host/TaskFlow.Api/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.14-noble-chiseled-extra@sha256:a9298ccc39c6258ae71228479e2f3f8d2ceb6639a9927262a4b0ff7d319a0e7e"),
-            ("src/Host/TaskFlow.Scheduler/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.14-noble-chiseled-extra@sha256:a9298ccc39c6258ae71228479e2f3f8d2ceb6639a9927262a4b0ff7d319a0e7e"),
-            ("src/Host/TaskFlow.DatabaseMigrator/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.14-noble-chiseled-extra@sha256:a9298ccc39c6258ae71228479e2f3f8d2ceb6639a9927262a4b0ff7d319a0e7e"),
-            ("src/Host/TaskFlow.Functions/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.14-noble-chiseled-extra@sha256:a9298ccc39c6258ae71228479e2f3f8d2ceb6639a9927262a4b0ff7d319a0e7e"),
-            ("src/UI/TaskFlow.Blazor/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.14-noble-chiseled-extra@sha256:a9298ccc39c6258ae71228479e2f3f8d2ceb6639a9927262a4b0ff7d319a0e7e")
+            ("src/Host/TaskFlow.Gateway/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.15-noble-chiseled@sha256:7c625e44e5d588b4d7b2a913e94ca4bd5098ce47442da404829e4c7936a764e1"),
+            ("src/Host/TaskFlow.Api/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.15-noble-chiseled-extra@sha256:cae5b962bfb786606def03d250c6a645cc98839095c89e806e4bd8978a68115b"),
+            ("src/Host/TaskFlow.Scheduler/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.15-noble-chiseled-extra@sha256:cae5b962bfb786606def03d250c6a645cc98839095c89e806e4bd8978a68115b"),
+            ("src/Host/TaskFlow.DatabaseMigrator/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.15-noble-chiseled-extra@sha256:cae5b962bfb786606def03d250c6a645cc98839095c89e806e4bd8978a68115b"),
+            ("src/Host/TaskFlow.Functions/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.15-noble-chiseled-extra@sha256:cae5b962bfb786606def03d250c6a645cc98839095c89e806e4bd8978a68115b"),
+            ("src/UI/TaskFlow.Blazor/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:10.0.15-noble-chiseled-extra@sha256:cae5b962bfb786606def03d250c6a645cc98839095c89e806e4bd8978a68115b")
         })
         {
             var content = File.ReadAllText(RepoRoot.Combine(dockerfile.Split('/')));
