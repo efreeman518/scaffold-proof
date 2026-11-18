@@ -241,7 +241,7 @@ public sealed class AppHostLaneTopologyTests
             StringAssert.Contains(source, $"\"{resourceName}\"");
         }
 
-        StringAssert.Contains(source, ".WithReference(taskflowDb, connectionName: \"TickerQDbContext\")");
+        StringAssert.Contains(source, ".WithReference(taskflowDb, connectionName: \"TaskFlowSchedulerDbContext\")");
     }
 
     [TestMethod]
@@ -255,7 +255,7 @@ public sealed class AppHostLaneTopologyTests
     }
 
     /// <summary>
-    /// The ComplianceCheck job starts compliance-check in the Scheduler, so the workflow's "taskflow-api" self-calls
+    /// The <c>compliance_check</c> job starts compliance-check in the Scheduler, so the workflow's "taskflow-api" self-calls
     /// leave from it; without the Api's address the client falls back to https://localhost and every call fails.
     /// </summary>
     [TestMethod]

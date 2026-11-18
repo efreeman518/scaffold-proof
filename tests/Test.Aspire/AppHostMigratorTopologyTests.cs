@@ -28,7 +28,7 @@ public sealed class AppHostMigratorTopologyTests
         Assert.Contains(".WithEnvironment(\"Database__Provider\", dbProviderName)", appHostSource);
         Assert.Contains("connectionName: \"TaskFlowDbContextTrxn\"", appHostSource);
         Assert.Contains("connectionName: \"TaskFlowFlowEngineDbContext\"", appHostSource);
-        Assert.Contains("connectionName: \"TickerQDbContext\"", appHostSource);
+        Assert.Contains("connectionName: \"TaskFlowSchedulerDbContext\"", appHostSource);
         Assert.Contains(".WaitForCompletion(migrator)", appHostSource);
     }
 

@@ -154,7 +154,7 @@ public class ComplianceCheckHandlerTests
 
     /// <summary>
     /// The run's rows affected count the instances it created: the first run 1, a same-day re-run 0. Not parallelized:
-    /// the listener sees every ComplianceCheck measurement in the process.
+    /// the listener sees every <c>compliance_check</c> measurement in the process.
     /// </summary>
     [TestMethod]
     [DoNotParallelize]
@@ -232,7 +232,7 @@ public class ComplianceCheckHandlerTests
     public void Registration_ValidatesWindowDays(string windowDays, bool valid)
     {
         var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["Scheduling:Compliance:WindowDays"] = windowDays })
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["TaskFlowScheduler:Compliance:WindowDays"] = windowDays })
             .Build();
         using var provider = new ServiceCollection().AddSchedulerServices(config).BuildServiceProvider();
 

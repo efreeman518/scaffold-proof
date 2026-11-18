@@ -16,7 +16,8 @@ public sealed class AuditRetentionHandler(
     ScheduledJobTelemetry telemetry,
     TimeProvider timeProvider) : IScheduledJobHandler
 {
-    public const string JobName = "AuditRetention";
+    /// <summary>Scheduled job name; also the job tag on its telemetry.</summary>
+    public const string JobName = "audit_retention";
 
     /// <summary>Handles audit retention requests.</summary>
     public async Task HandleAsync(CancellationToken ct)

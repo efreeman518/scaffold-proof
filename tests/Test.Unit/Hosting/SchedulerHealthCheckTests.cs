@@ -1,19 +1,17 @@
-using EF.BackgroundServices.TickerQ;
+using EF.Data.Scheduling;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using TaskFlow.Infrastructure.Data;
-using TickerQ.Utilities.Entities;
 
 namespace Test.Unit.Hosting;
 
 /// <summary>
-/// The scheduler health check has to catch a scheduler that runs but fires nothing. It used to report Healthy
-/// whenever no occurrence had ever executed, which is exactly how a Scheduler whose cron jobs were never seeded
-/// stayed green in every environment. The check is the EF.BackgroundServices.TickerQ one (S15) over TaskFlow's
-/// operational store, with the stall threshold the Scheduler ships in its settings.
-/// Pure-unit tier: EF InMemory operational store and a fixed clock.
+/// The scheduler health check has to catch a scheduler that runs but fires nothing: a Scheduler whose cron jobs never
+/// run must not stay green. The check is the EF.Data.Scheduling one (S15) over TaskFlow's scheduler context, reading
+/// the run history, with the stall threshold the Scheduler ships in its settings.
+/// Pure-unit tier: EF InMemory scheduler context and a fixed clock.
 /// </summary>
 [TestClass]
 [TestCategory("Unit")]
@@ -63,27 +61,30 @@ public sealed class SchedulerHealthCheckTests
     private async Task<HealthCheckResult> CheckAsync(TimeSpan startedAgo, TimeSpan? lastExecutedAgo)
     {
         var ct = TestContext.CancellationToken;
-        var options = new DbContextOptionsBuilder<TaskFlowTickerQDbContext>()
+        var options = new DbContextOptionsBuilder<TaskFlowSchedulerDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
-        await using var db = new TaskFlowTickerQDbContext(options);
+        await using var db = new TaskFlowSchedulerDbContext(options);
         if (lastExecutedAgo is { } ago)
         {
-            var ticker = new CronTickerEntity { Id = Guid.NewGuid(), Function = "OverdueTaskCheck", Expression = "0 0 */6 * * *", Request = [] };
-            db.Add(ticker);
-            db.Add(new CronTickerOccurrenceEntity<CronTickerEntity>
+            var finished = Now - ago;
+            db.Add(new ScheduledJobRun
             {
-                Id = Guid.NewGuid(),
-                CronTickerId = ticker.Id,
-                LockHolder = "test",
-                ExecutionTime = (Now - ago).UtcDateTime,
-                ExecutedAt = (Now - ago).UtcDateTime
+                Id = Guid.CreateVersion7(),
+                JobId = Guid.CreateVersion7(),
+                JobName = "overdue_task_check",
+                CronOccurrenceUtc = finished - TimeSpan.FromSeconds(30),
+                Attempt = 1,
+                Status = "success",
+                StartedUtc = finished - TimeSpan.FromSeconds(5),
+                FinishedUtc = finished,
+                Node = "test:1"
             });
             await db.SaveChangesAsync(ct);
         }
 
         var startTime = new SchedulerStartTime(new FixedClock(Now - startedAgo));
-        var check = new SchedulerHealthCheck<TaskFlowTickerQDbContext>(
+        var check = new SchedulerHealthCheck<TaskFlowSchedulerDbContext>(
             db, startTime, Options.Create(new SchedulerHealthSettings { StallThreshold = StallThreshold }), new FixedClock(Now));
         return await check.CheckHealthAsync(
             new HealthCheckContext { Registration = new HealthCheckRegistration("scheduler", check, HealthStatus.Degraded, null) }, ct);

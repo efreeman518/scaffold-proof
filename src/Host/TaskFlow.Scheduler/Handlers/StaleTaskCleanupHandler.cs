@@ -16,7 +16,8 @@ public sealed class StaleTaskCleanupHandler(
     IConfiguration config,
     ILogger<StaleTaskCleanupHandler> logger) : IScheduledJobHandler
 {
-    public const string JobName = "StaleTaskCleanup";
+    /// <summary>Scheduled job name; also the job tag on its telemetry.</summary>
+    public const string JobName = "stale_task_cleanup";
 
     /// <summary>Tasks read per keyset page, and the size of one tenant transaction at most.</summary>
     private const int PageSize = 200;
@@ -25,7 +26,7 @@ public sealed class StaleTaskCleanupHandler(
     /// <summary>Handles stale task cleanup requests and returns the application result.</summary>
     public async Task HandleAsync(CancellationToken ct)
     {
-        var retentionDays = config.GetValue("Scheduling:StaleCleanup:RetentionDays", DefaultRetentionDays);
+        var retentionDays = config.GetValue("TaskFlowScheduler:StaleCleanup:RetentionDays", DefaultRetentionDays);
         var cutoffUtc = timeProvider.GetUtcNow().AddDays(-retentionDays);
 
         var scanned = 0;

@@ -12,11 +12,11 @@ builder.AddServiceDefaults();
 builder.Services
     .AddDatabaseMigrationRunner()
     .AddTaskFlowMigrationDbContexts(builder.Configuration)
-    // Order is intentional: app schema first, FlowEngine second, Scheduler/TickerQ last.
+    // Order is intentional: app schema first, FlowEngine second, Scheduler last.
     // Each target keeps its own migration history table even when local Aspire shares taskflowdb.
     .AddEfCoreMigrationTarget<TaskFlowDbContextTrxn>("TaskFlowDbContextTrxn", 10)
     .AddEfCoreMigrationTarget<TaskFlowFlowEngineDbContext>("TaskFlowFlowEngineDbContext", 20)
-    .AddEfCoreMigrationTarget<TaskFlowTickerQDbContext>("TaskFlowTickerQDbContext", 30);
+    .AddEfCoreMigrationTarget<TaskFlowSchedulerDbContext>("TaskFlowSchedulerDbContext", 30);
 
 using var host = builder.Build();
 using var scope = host.Services.CreateScope();
@@ -30,10 +30,10 @@ static class DatabaseMigratorRegistration
         IConfiguration config)
     {
         var trxn = RequireConnectionString(config, "TaskFlowDbContextTrxn");
-        // FlowEngine and TickerQ can share the same physical database locally, but they keep
+        // FlowEngine and the Scheduler can share the same physical database locally, but they keep
         // distinct logical connection names so Azure can split them later through configuration.
         var flowEngine = config.GetConnectionString("TaskFlowFlowEngineDbContext") ?? trxn;
-        var tickerQ = RequireConnectionString(config, "TickerQDbContext");
+        var scheduler = RequireConnectionString(config, "TaskFlowSchedulerDbContext");
         var commandTimeoutSeconds = config.GetValue<int?>("Database:MigrationCommandTimeoutSeconds") ?? 1800;
 
         services.AddDbContextFactory<TaskFlowDbContextTrxn>(options =>
@@ -44,9 +44,9 @@ static class DatabaseMigratorRegistration
             options.UseTaskFlowProvider(TaskFlowProviderOptions.FromConfiguration(
                 config, flowEngine, TaskFlowFlowEngineDbContext.MigrationHistoryTable, TaskFlowFlowEngineDbContext.SchemaName, commandTimeoutSeconds)));
 
-        services.AddDbContextFactory<TaskFlowTickerQDbContext>(options =>
+        services.AddDbContextFactory<TaskFlowSchedulerDbContext>(options =>
             options.UseTaskFlowProvider(TaskFlowProviderOptions.FromConfiguration(
-                config, tickerQ, TaskFlowTickerQDbContext.MigrationHistoryTable, TaskFlowTickerQDbContext.SchemaName, commandTimeoutSeconds)));
+                config, scheduler, TaskFlowSchedulerDbContext.MigrationHistoryTable, TaskFlowSchedulerDbContext.SchemaName, commandTimeoutSeconds)));
 
         return services;
     }

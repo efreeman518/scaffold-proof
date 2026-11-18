@@ -135,7 +135,7 @@ public sealed class BicepInfrastructureContractTests
 
     /// <summary>
     /// Every host that runs workflow nodes calling "taskflow-api" gets the Api's address, or the client falls back to
-    /// https://localhost and every self-call fails: the Scheduler (the ComplianceCheck job) and the Api itself (human-task
+    /// https://localhost and every self-call fails: the Scheduler (the <c>compliance_check</c> job) and the Api itself (human-task
     /// responses, dashboard starts) through the Api's internal ingress, and the Function App (the ai-task-triage
     /// trigger), outside the Container Apps environment, through the public gateway.
     /// </summary>
@@ -410,9 +410,12 @@ public sealed class BicepInfrastructureContractTests
 
         StringAssert.Contains(scheduler, "ingressEnabled: false");
         StringAssert.Contains(scheduler, "minReplicas: schedulerProfile.minReplicas");
-        StringAssert.Contains(defaultProfile, "minReplicas: 1");
-        StringAssert.Contains(devProfile, "minReplicas: 1");
+        StringAssert.Contains(defaultProfile, "minReplicas: 2");
+        StringAssert.Contains(devProfile, "minReplicas: 2");
         StringAssert.Contains(prodProfile, "minReplicas: 2");
+        // Two fixed replicas everywhere, as the AppHost runs (infra/README.md): EF.Data.Scheduling is multi-replica safe.
+        foreach (var profile in new[] { defaultProfile, devProfile, prodProfile })
+            StringAssert.Contains(profile, "maxReplicas: 2");
         Assert.IsFalse(defaultProfile.Contains("minReplicas: 0", StringComparison.Ordinal));
         Assert.IsFalse(devProfile.Contains("minReplicas: 0", StringComparison.Ordinal));
     }

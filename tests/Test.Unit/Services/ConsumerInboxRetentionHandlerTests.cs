@@ -27,8 +27,8 @@ public sealed class ConsumerInboxRetentionHandlerTests
         var keys = new Mock<IIdempotencyKeyRepository>();
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["Scheduling:Retention:ConsumerInboxDays"] = "10",
-            ["Scheduling:Retention:IdempotencyKeyDays"] = "3"
+            ["TaskFlowScheduler:Retention:ConsumerInboxDays"] = "10",
+            ["TaskFlowScheduler:Retention:IdempotencyKeyDays"] = "3"
         }).Build();
 
         await new ConsumerInboxRetentionHandler(inbox.Object, keys.Object, SchedulerTestTelemetry.Create(), new FixedTimeProvider(Now), config)

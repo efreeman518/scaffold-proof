@@ -15,14 +15,15 @@ public sealed class OutboxRetentionHandler(
     TimeProvider timeProvider,
     IConfiguration config) : IScheduledJobHandler
 {
-    public const string JobName = "OutboxRetention";
+    /// <summary>Scheduled job name; also the job tag on its telemetry.</summary>
+    public const string JobName = "outbox_retention";
     private const int DefaultRetentionDays = 7;
 
     /// <summary>Handles outbox retention requests.</summary>
     public async Task HandleAsync(CancellationToken ct)
     {
         var cutoffUtc = timeProvider.GetUtcNow()
-            .AddDays(-config.GetValue("Scheduling:Retention:OutboxDays", DefaultRetentionDays));
+            .AddDays(-config.GetValue("TaskFlowScheduler:Retention:OutboxDays", DefaultRetentionDays));
 
         telemetry.RecordRetention("outbox", await workRepository.PurgeDeadLetteredAsync<OutboxMessage>(cutoffUtc, ct));
         telemetry.RecordRetention("blobdelete", await workRepository.PurgeDeadLetteredAsync<BlobDeleteWork>(cutoffUtc, ct));
