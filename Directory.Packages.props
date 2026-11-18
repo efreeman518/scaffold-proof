@@ -3,7 +3,7 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <!-- One Uno.Extensions version for the Uno head and the shared Uno libraries. Uno.Sdk reads this property for
          its implicit Uno.Extensions references; keep it at the version the Uno.Sdk in TaskFlow.Uno.csproj ships
-         (Uno.Sdk 7.0.5: Uno.Extensions 8.0.1 on Uno.WinUI 7.0.32). -->
+         (Uno.Sdk 7.0.22: Uno.Extensions 8.0.1). -->
     <UnoExtensionsVersion>8.0.1</UnoExtensionsVersion>
   </PropertyGroup>
   <ItemGroup Label="EF.Packages (Private Feed - github.com/efreeman518/EF.Packages)">
@@ -49,11 +49,11 @@
     <PackageVersion Include="EF.Audit.Data" Version="3.0.0-dotnet11.163" />
     <PackageVersion Include="EF.Grpc" Version="3.0.0-dotnet11.163" />
     <PackageVersion Include="EF.AI" Version="3.0.0-dotnet11.163" />
-    <PackageVersion Include="Testcontainers.MsSql" Version="4.16.0" />
-    <PackageVersion Include="Testcontainers.Azurite" Version="4.16.0" />
-    <PackageVersion Include="Testcontainers.Redis" Version="4.16.0" />
+    <PackageVersion Include="Testcontainers.MsSql" Version="4.17.0" />
+    <PackageVersion Include="Testcontainers.Azurite" Version="4.17.0" />
+    <PackageVersion Include="Testcontainers.Redis" Version="4.17.0" />
     <!-- Generic containers host SeaweedFS and MongoDB without provider-specific fixture packages. -->
-    <PackageVersion Include="Testcontainers" Version="4.16.0" />
+    <PackageVersion Include="Testcontainers" Version="4.17.0" />
   </ItemGroup>
   <ItemGroup Label="EF.Packages hosting, web and UI client">
     <PackageVersion Include="EF.AspNetCore.DataProtection" Version="3.0.0-dotnet11.163" />
@@ -142,7 +142,7 @@
     <PackageVersion Include="Aspire.RabbitMQ.Client" Version="13.6.5" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="11.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="11.0.0" />
-    <PackageVersion Include="Testcontainers.RabbitMq" Version="4.16.0" />
+    <PackageVersion Include="Testcontainers.RabbitMq" Version="4.17.0" />
   </ItemGroup>
   <ItemGroup Label="gRPC (D-054 internal read service)">
     <!-- Grpc.Tools is a build-time-only protoc/codegen package: referenced with PrivateAssets=all in the
@@ -153,7 +153,7 @@
     <PackageVersion Include="Grpc.AspNetCore" Version="2.85.0" />
   </ItemGroup>
   <ItemGroup Label="YARP">
-    <PackageVersion Include="Scalar.AspNetCore" Version="2.21.0" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="3.0.2" />
     <PackageVersion Include="Yarp.ReverseProxy" Version="2.3.0" />
     <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery.Yarp" Version="11.0.0" />
   </ItemGroup>
@@ -173,7 +173,7 @@
     <!-- Microsoft.Testing.Platform hang dump diagnostics for the CI Test.Unit step; the MSTest metapackage
          already brings the TRX report and code coverage extensions. -->
     <PackageVersion Include="Microsoft.Testing.Extensions.HangDump" Version="2.5.3" />
-    <PackageVersion Include="Microsoft.Playwright" Version="1.64.1" />
+    <PackageVersion Include="Microsoft.Playwright" Version="1.65.1" />
     <PackageVersion Include="Appium.WebDriver" Version="9.0.0" />
     <PackageVersion Include="Moq" Version="4.21.0" />
     <!-- FakeTimeProvider: tests that assert on a time reading drive the injected TimeProvider (src/ reads no ambient clock). -->
@@ -184,10 +184,10 @@
   </ItemGroup>
   <ItemGroup Label="UI">
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-    <PackageVersion Include="MudBlazor" Version="9.13.0" />
+    <PackageVersion Include="MudBlazor" Version="9.14.0" />
     <PackageVersion Include="Refit" Version="16.4.0" />
     <PackageVersion Include="Refit.HttpClientFactory" Version="16.4.0" />
-    <PackageVersion Include="Microsoft.Kiota.Abstractions" Version="2.1.6" />
+    <PackageVersion Include="Microsoft.Kiota.Abstractions" Version="2.2.0" />
     <PackageVersion Include="Uno.Extensions.Navigation" Version="$(UnoExtensionsVersion)" />
     <PackageVersion Include="Uno.Extensions.Navigation.WinUI" Version="$(UnoExtensionsVersion)" />
     <PackageVersion Include="Uno.Extensions.Reactive" Version="$(UnoExtensionsVersion)" />
@@ -207,7 +207,7 @@
     <!-- Temporary exception: shared test packages resolve vulnerable SSH.NET transitives.
          Reason: direct reference lifts every affected transitive. Remove when the parents resolve a non-vulnerable release.
          Validate with the transitive vulnerability audit and the Test.Support consumers. -->
-    <PackageVersion Include="SSH.NET" Version="2026.0.0" />
+    <PackageVersion Include="SSH.NET" Version="2026.0.1" />
   </ItemGroup>
   <ItemGroup Label="Azure Storage">
     <PackageVersion Include="Azure.Data.Tables" Version="12.13.0" />
@@ -218,7 +218,7 @@
   <ItemGroup Label="AWS S3 (D-037 NonAzure object-storage arm: SeaweedFS locally/on the VPS, any S3-compatible provider in production)">
     <!-- The S3 arm itself is EF.Storage.S3; this direct reference exists for Test.Integration, which drives
          SeaweedFS with its own IAmazonS3 client. Version tracks EF.Storage.S3's own dependency (no downgrade). -->
-    <PackageVersion Include="AWSSDK.S3" Version="4.1.0" />
+    <PackageVersion Include="AWSSDK.S3" Version="4.1.2" />
   </ItemGroup>
   <ItemGroup Label="Azure Service Bus">
     <PackageVersion Include="Azure.Messaging.ServiceBus" Version="7.21.0" />
