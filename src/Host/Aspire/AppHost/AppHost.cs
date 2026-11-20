@@ -304,7 +304,7 @@ var blindIndexKey = builder.AddParameter("blind-index-key", new Base64KeyParamet
 
 // Single migration owner. Runtime hosts wait for this project and never mutate schema on startup.
 // Connection names stay separate even when local Aspire maps them to the same taskflowdb database.
-var migrator = builder.AddProject<Projects.TaskFlow_DatabaseMigrator>("taskflowmigrator")
+var migrator = builder.AddDotnetProject("taskflowmigrator", "../../TaskFlow.DatabaseMigrator/TaskFlow.DatabaseMigrator.csproj")
     .WithReference(taskflowDb, connectionName: "TaskFlowDbContextTrxn")
     .WithReference(taskflowDb, connectionName: "TaskFlowFlowEngineDbContext")
     .WithReference(taskflowDb, connectionName: "TaskFlowSchedulerDbContext")
@@ -324,7 +324,7 @@ migrator = WithLaneEnvironment(migrator);
 // endpoint already exists, and re-declaring the target port would pin the DCP proxy port and the app
 // port to the same 8081 in run mode. Endpoint names compare case-insensitively, so GetEndpoint("http")
 // below still resolves the "Http" endpoint.
-var api = builder.AddProject<Projects.TaskFlow_Api>("taskflowapi")
+var api = builder.AddDotnetProject("taskflowapi", "../../TaskFlow.Api/TaskFlow.Api.csproj")
     .WithReference(taskflowDb, connectionName: "TaskFlowDbContextTrxn")
     .WithReference(taskflowDb, connectionName: "TaskFlowDbContextQuery")
     .WithReference(taskflowDb, connectionName: "TaskFlowFlowEngineDbContext")
@@ -370,7 +370,7 @@ if (!string.IsNullOrWhiteSpace(applicationStyle))
 }
 
 // Gateway is part of the default test graph because all browser-facing hosts route through it.
-var gateway = builder.AddProject<Projects.TaskFlow_Gateway>("taskflowgateway")
+var gateway = builder.AddDotnetProject("taskflowgateway", "../../TaskFlow.Gateway/TaskFlow.Gateway.csproj")
     .WithReference(api)
     .WithEnvironment("ReverseProxy__Routes__api-route__Match__Path", "/api/{**catch-all}")
     .WithEnvironment("ReverseProxy__Clusters__api-cluster__Destinations__api__Address", api.GetEndpoint("http"))
@@ -379,7 +379,7 @@ if (isTesting)
     gateway = gateway.WithEnvironment("RateLimiting__Edge__Enabled", "false");
 gateway = WithLaneEnvironment(gateway);
 
-var blazor = builder.AddProject<Projects.TaskFlow_Blazor>("taskflowblazor")
+var blazor = builder.AddDotnetProject("taskflowblazor", "../../../UI/TaskFlow.Blazor/TaskFlow.Blazor.csproj")
     .WithReference(gateway)
     .WithEnvironment("Gateway__BaseUrl", gateway.GetEndpoint("http"))
     // D-054: the one in-cluster service-to-service hop. Blazor Server reads the dashboard summary and
@@ -397,7 +397,7 @@ if (!isTesting || schedulerAvailableInTesting || fullLaneAvailableInTesting)
 {
     // Scheduler host. Opt-in under test: without it nothing staged is ever delivered, so the messaging mesh
     // test asks for it explicitly rather than making every Aspire class pay for the extra boot.
-    var scheduler = builder.AddProject<Projects.TaskFlow_Scheduler>("taskflowscheduler")
+    var scheduler = builder.AddDotnetProject("taskflowscheduler", "../../TaskFlow.Scheduler/TaskFlow.Scheduler.csproj")
         .WithReference(taskflowDb, connectionName: "TaskFlowDbContextTrxn")
         .WithReference(taskflowDb, connectionName: "TaskFlowDbContextQuery")
         .WithReference(taskflowDb, connectionName: "TaskFlowFlowEngineDbContext")
@@ -441,7 +441,7 @@ if (!isTesting || reactAvailableInTesting || fullLaneAvailableInTesting)
 
 if (!isTesting || unoWasmAvailableInTesting || fullLaneAvailableInTesting)
 {
-    var unoWasm = builder.AddProject<Projects.TaskFlow_Uno_WasmHost>("taskflowuno")
+    var unoWasm = builder.AddDotnetProject("taskflowuno", "../../TaskFlow.Uno.WasmHost/TaskFlow.Uno.WasmHost.csproj")
         .WithReference(gateway)
         .WithEnvironment("Gateway__BaseUrl", gateway.GetEndpoint("http"))
         .WaitFor(gateway)
@@ -460,7 +460,7 @@ if (!isTesting || unoWasmAvailableInTesting || fullLaneAvailableInTesting)
 if (!nonAzureLane && (!isTesting || functionsAvailableInTesting || fullLaneAvailableInTesting))
 {
     // Functions host
-    var functions = builder.AddAzureFunctionsProject<Projects.TaskFlow_Functions>("taskflowfunctions")
+    var functions = builder.AddAzureFunctionsProject("taskflowfunctions", "../../TaskFlow.Functions/TaskFlow.Functions.csproj")
         .WithHostStorage(storage!)
         // The Functions host process emits request telemetry itself; suppress the worker's ASP.NET Core
         // instrumentation so requests are not double-reported when the Azure Monitor distro is active.

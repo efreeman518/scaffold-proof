@@ -21,7 +21,7 @@ public sealed class AppHostMigratorTopologyTests
     {
         var appHostSource = ReadAppHostSource();
 
-        Assert.Contains("TaskFlow_DatabaseMigrator", appHostSource);
+        Assert.Contains("TaskFlow.DatabaseMigrator.csproj", appHostSource);
         // D-020: both providers are declared, one is selected per run, and every host learns the choice.
         Assert.Contains("AddSqlServer(\"sql\"", appHostSource);
         Assert.Contains("AddPostgres(\"postgres\"", appHostSource);
