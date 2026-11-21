@@ -10,7 +10,6 @@
     <PackageReference Include="EF.Testing" />
     <!-- Cache backplane and distributed rate-limiter lanes: both behaviors only exist across processes. -->
     <PackageReference Include="Testcontainers.Redis" />
-    <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <!-- Flow patched transitive versions to every test project that consumes this shared harness. -->
     <PackageReference Include="SSH.NET" />

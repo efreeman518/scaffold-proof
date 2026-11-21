@@ -1,7 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <Sdk Name="Aspire.AppHost.Sdk" Version="13.6.5" />
-
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <UserSecretsId>1ff79f7a-4df8-4442-a9ed-762565d2e039</UserSecretsId>
@@ -10,6 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="Aspire.Hosting.AppHost" />
+    <PackageReference Include="Aspire.Hosting.Dotnet" />
     <PackageReference Include="Aspire.Hosting.JavaScript" />
     <PackageReference Include="Aspire.Hosting.SqlServer" />
     <!-- Temporary direct reference lifting a vulnerable transitive - see Directory.Packages.props. -->
@@ -42,14 +41,14 @@
   </ItemDefinitionGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\Shared\TaskFlow.Hosting\TaskFlow.Hosting.csproj" IsAspireProjectResource="false" />
-    <ProjectReference Include="..\..\TaskFlow.Api\TaskFlow.Api.csproj" />
-    <ProjectReference Include="..\..\TaskFlow.DatabaseMigrator\TaskFlow.DatabaseMigrator.csproj" />
-    <ProjectReference Include="..\..\TaskFlow.Scheduler\TaskFlow.Scheduler.csproj" />
-    <ProjectReference Include="..\..\TaskFlow.Gateway\TaskFlow.Gateway.csproj" />
-    <ProjectReference Include="..\..\TaskFlow.Functions\TaskFlow.Functions.csproj" />
-    <ProjectReference Include="..\..\..\UI\TaskFlow.Blazor\TaskFlow.Blazor.csproj" />
-    <ProjectReference Include="..\..\TaskFlow.Uno.WasmHost\TaskFlow.Uno.WasmHost.csproj" GlobalPropertiesToRemove="" />
+    <ProjectReference Include="..\..\..\Shared\TaskFlow.Hosting\TaskFlow.Hosting.csproj" />
+    <ProjectReference Include="..\..\TaskFlow.Api\TaskFlow.Api.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\TaskFlow.DatabaseMigrator\TaskFlow.DatabaseMigrator.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\TaskFlow.Scheduler\TaskFlow.Scheduler.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\TaskFlow.Gateway\TaskFlow.Gateway.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\TaskFlow.Functions\TaskFlow.Functions.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\..\UI\TaskFlow.Blazor\TaskFlow.Blazor.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\TaskFlow.Uno.WasmHost\TaskFlow.Uno.WasmHost.csproj" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="" />
   </ItemGroup>
 
 </Project>
