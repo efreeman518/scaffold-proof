@@ -20,7 +20,7 @@ internal static class Program
         catch (PlaywrightException ex) when (ex.Message.Contains("Executable doesn't exist", StringComparison.OrdinalIgnoreCase))
         {
             Console.Error.WriteLine("Playwright browser executable is missing.");
-            Console.Error.WriteLine("Run: rtk powershell -NoProfile -File tests\\Test.PlaywrightUI\\bin\\Debug\\net10.0\\playwright.ps1 install chromium");
+            Console.Error.WriteLine("Run: pwsh -NoProfile -File tests\\Test.PlaywrightUI\\bin\\Debug\\net10.0\\playwright.ps1 install chromium");
             Console.Error.WriteLine(ex.Message);
             return 3;
         }
